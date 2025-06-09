@@ -10,6 +10,6 @@ pub struct DeploymentWaitlistUser {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub email_address: String,
-    pub first_name: String,
-    pub last_name: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
 }

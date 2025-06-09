@@ -152,6 +152,7 @@ pub struct DeploymentRestrictionsUpdates {
     pub allowlisted_resources: Option<Vec<String>>,
     pub blocklisted_resources: Option<Vec<String>>,
     pub sign_up_mode: Option<DeploymentRestrictionsSignUpMode>,
+    pub waitlist_collect_names: Option<bool>,
     pub multi_session_support: Option<MultiSessionSupport>,
     pub session_token_lifetime: Option<i64>,
     pub session_validity_period: Option<i64>,

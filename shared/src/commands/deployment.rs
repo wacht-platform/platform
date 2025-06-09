@@ -344,6 +344,11 @@ impl Command for UpdateDeploymentRestrictionsCommand {
             query_builder.push_bind(sign_up_mode.to_string());
         }
 
+        if let Some(waitlist_collect_names) = self.updates.waitlist_collect_names {
+            query_builder.push(", waitlist_collect_names = ");
+            query_builder.push_bind(waitlist_collect_names);
+        }
+
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 

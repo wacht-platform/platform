@@ -149,7 +149,8 @@ impl Query for GetDeploymentWithSettingsQuery {
                 deployment_restrictions.banned_keywords,
                 deployment_restrictions.allowlisted_resources,
                 deployment_restrictions.blocklisted_resources,
-                deployment_restrictions.sign_up_mode
+                deployment_restrictions.sign_up_mode,
+                deployment_restrictions.waitlist_collect_names
 
             FROM deployments
             LEFT JOIN deployment_auth_settings
@@ -281,6 +282,7 @@ impl Query for GetDeploymentWithSettingsQuery {
                     blocklisted_resources: row.blocklisted_resources,
                     sign_up_mode: DeploymentRestrictionsSignUpMode::from_str(&row.sign_up_mode)
                         .unwrap(),
+                    waitlist_collect_names: row.waitlist_collect_names,
                 })
             } else {
                 None

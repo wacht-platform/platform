@@ -179,6 +179,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             allowlisted_resources: Default::default(),
             blocklisted_resources: Default::default(),
             sign_up_mode: Default::default(),
+            waitlist_collect_names: true, // Default to true for backward compatibility
             ..Default::default()
         }
     }
@@ -443,10 +444,11 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
                 allowlisted_resources,
                 blocklisted_resources,
                 sign_up_mode,
+                waitlist_collect_names,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             "#,
             app_state.sf.next_id()? as i64,
             restrictions.deployment_id,
@@ -461,6 +463,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             &restrictions.allowlisted_resources,
             &restrictions.blocklisted_resources,
             restrictions.sign_up_mode.to_string(),
+            restrictions.waitlist_collect_names,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
@@ -970,6 +973,7 @@ impl CreateProductionDeploymentCommand {
             allowlisted_resources: Default::default(),
             blocklisted_resources: Default::default(),
             sign_up_mode: Default::default(),
+            waitlist_collect_names: true, // Default to true for backward compatibility
             ..Default::default()
         }
     }
@@ -1559,10 +1563,11 @@ impl Command for CreateProductionDeploymentCommand {
                 allowlisted_resources,
                 blocklisted_resources,
                 sign_up_mode,
+                waitlist_collect_names,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             "#,
             app_state.sf.next_id()? as i64,
             deployment_row.id,
@@ -1577,6 +1582,7 @@ impl Command for CreateProductionDeploymentCommand {
             &restrictions.allowlisted_resources,
             &restrictions.blocklisted_resources,
             restrictions.sign_up_mode.to_string(),
+            restrictions.waitlist_collect_names,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )

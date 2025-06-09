@@ -22,6 +22,7 @@ pub struct DeploymentRestrictions {
     pub allowlisted_resources: Vec<String>,
     pub blocklisted_resources: Vec<String>,
     pub sign_up_mode: DeploymentRestrictionsSignUpMode,
+    pub waitlist_collect_names: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
