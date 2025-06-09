@@ -2,21 +2,32 @@ FROM rust:1.85.1 as build
 
 WORKDIR /app
 
-# Copy our application source
-COPY . /app
+# Copy workspace configuration
+COPY Cargo.toml Cargo.lock ./
 
-# Build the application
-RUN cargo build --release
+# Copy source code for all workspace members
+COPY console/ ./console/
+COPY shared/ ./shared/
 
-FROM rust:1.85.1
+# Build the console application
+RUN cargo build --release --bin console
+
+# Use a smaller runtime image
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Copy the released application from the previous image
-COPY --from=build /app/target/release/dashboard-api /app/
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the console binary from the build stage
+COPY --from=build /app/target/release/console /app/console
 
 # Expose the port the application will run on
-EXPOSE 3000
+EXPOSE 3001
 
-# Run the application
-CMD ["./dashboard-api"]
+# Run the console application
+CMD ["./console"]
