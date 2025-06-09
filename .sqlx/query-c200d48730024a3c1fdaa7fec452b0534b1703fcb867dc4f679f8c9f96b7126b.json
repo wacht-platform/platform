@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                u.id, u.created_at, u.updated_at,\n                u.first_name, u.last_name, u.username,\n                u.schema_version, u.disabled, u.second_factor_policy,\n                u.active_organization_membership_id, u.active_workspace_membership_id,\n                u.deployment_id, u.public_metadata, u.private_metadata,\n                u.password, u.otp_secret, u.backup_codes,\n                e.email_address as primary_email_address,\n                p.phone_number as \"primary_phone_number?\"\n            FROM users u\n            LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id\n            LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id\n            WHERE u.deployment_id = $1 AND u.id = $2\n            ",
+  "query": "\n            SELECT\n                u.id, u.created_at, u.updated_at,\n                u.first_name, u.last_name, u.username, u.profile_picture_url,\n                u.schema_version, u.disabled, u.second_factor_policy,\n                u.active_organization_membership_id, u.active_workspace_membership_id,\n                u.deployment_id, u.public_metadata, u.private_metadata,\n                u.password, u.otp_secret, u.backup_codes,\n                e.email_address as primary_email_address,\n                p.phone_number as \"primary_phone_number?\"\n            FROM users u\n            LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id\n            LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id\n            WHERE u.deployment_id = $1 AND u.id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -35,66 +35,71 @@
       },
       {
         "ordinal": 6,
-        "name": "schema_version",
+        "name": "profile_picture_url",
         "type_info": "Text"
       },
       {
         "ordinal": 7,
+        "name": "schema_version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
         "name": "disabled",
         "type_info": "Bool"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "second_factor_policy",
         "type_info": "Text"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "active_organization_membership_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "active_workspace_membership_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "deployment_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "public_metadata",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "private_metadata",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "password",
         "type_info": "Text"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "otp_secret",
         "type_info": "Text"
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "backup_codes",
         "type_info": "TextArray"
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "primary_email_address",
         "type_info": "Text"
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "primary_phone_number?",
         "type_info": "Text"
       }
@@ -106,6 +111,7 @@
       ]
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -127,5 +133,5 @@
       false
     ]
   },
-  "hash": "33e72e103a0b80645ac7790aea9d38a860da774530d4bb5ebc220e8de22ce7cd"
+  "hash": "c200d48730024a3c1fdaa7fec452b0534b1703fcb867dc4f679f8c9f96b7126b"
 }

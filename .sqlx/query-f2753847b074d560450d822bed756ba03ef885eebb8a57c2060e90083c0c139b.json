@@ -6,7 +6,7 @@
     "parameters": {
       "Left": [
         "Jsonb",
-        "Bytea",
+        "Jsonb",
         "Timestamptz",
         "Int8"
       ]

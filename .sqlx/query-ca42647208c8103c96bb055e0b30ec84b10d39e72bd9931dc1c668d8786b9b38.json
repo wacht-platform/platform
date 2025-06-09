@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, created_at, updated_at, maintenance_mode, backend_host, frontend_host,\n                   publishable_key, project_id, mode, mail_from_host, domain_verification_records,\n                   email_verification_records\n            FROM deployments\n            WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL\n            ",
+  "query": "\n            SELECT id, created_at, updated_at, deleted_at,\n                   maintenance_mode, backend_host, frontend_host, publishable_key,\n                   project_id, mode, mail_from_host,\n                   domain_verification_records::jsonb as domain_verification_records,\n                   email_verification_records::jsonb as email_verification_records\n            FROM deployments\n            WHERE id = $1 AND deleted_at IS NULL\n            ",
   "describe": {
     "columns": [
       {
@@ -20,53 +20,57 @@
       },
       {
         "ordinal": 3,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
         "name": "maintenance_mode",
         "type_info": "Bool"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "backend_host",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "frontend_host",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "publishable_key",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "project_id",
         "type_info": "Int8"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "mode",
         "type_info": "Text"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "mail_from_host",
         "type_info": "Text"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "domain_verification_records",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "email_verification_records",
-        "type_info": "Bytea"
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
         "Int8"
       ]
     },
@@ -74,6 +78,7 @@
       false,
       false,
       false,
+      true,
       false,
       false,
       false,
@@ -85,5 +90,5 @@
       true
     ]
   },
-  "hash": "b61be8186c68dee801169cbd85729ad46b060c45a05029f2fbbd25d8bb24bb25"
+  "hash": "ca42647208c8103c96bb055e0b30ec84b10d39e72bd9931dc1c668d8786b9b38"
 }

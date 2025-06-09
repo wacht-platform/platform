@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM workspace_memberships WHERE organization_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "497a9c47dd84e55885ea9f391e2e032d99e487f2b4cb8c0210dc9d15a4d0cf21"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO organization_roles (id, organization_id, name, permissions, created_at, updated_at)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            RETURNING id, created_at, updated_at, permissions\n            ",
+  "query": "\n            INSERT INTO organization_roles (id, organization_id, deployment_id, name, permissions, created_at, updated_at)\n            VALUES ($1, $2, $3, $4, $5, $6, $7)\n            RETURNING id, created_at, updated_at, permissions\n            ",
   "describe": {
     "columns": [
       {
@@ -28,6 +28,7 @@
       "Left": [
         "Int8",
         "Int8",
+        "Int8",
         "Text",
         "TextArray",
         "Timestamptz",
@@ -41,5 +42,5 @@
       false
     ]
   },
-  "hash": "552f0a25bb7eb2dd1af8d8ba44adc8ad6f2bac8192eddbbcdcc79a6226aefc74"
+  "hash": "2e60ef21b71d3269e56cd37be522f1c9935018a546a794243820073cff1f3d20"
 }
