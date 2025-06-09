@@ -5,6 +5,9 @@ WORKDIR /app
 # Copy workspace configuration
 COPY Cargo.toml Cargo.lock ./
 
+# Copy SQLx metadata for compile-time verification
+COPY .sqlx/ ./.sqlx/
+
 # Copy source code for all workspace members
 COPY console/ ./console/
 COPY shared/ ./shared/
