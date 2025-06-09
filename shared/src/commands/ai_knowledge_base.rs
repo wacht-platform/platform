@@ -199,6 +199,33 @@ impl Command for DeleteAiKnowledgeBaseCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Check if any tools depend on this knowledge base
+        let dependent_tools = sqlx::query!(
+            r#"
+            SELECT t.id, t.name
+            FROM ai_tools t
+            WHERE t.deployment_id = $1
+            AND t.tool_type = 'knowledge_base'
+            AND t.configuration->>'knowledge_base_id' = $2::text
+            "#,
+            self.deployment_id,
+            self.knowledge_base_id.to_string()
+        )
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        if !dependent_tools.is_empty() {
+            let tool_names: Vec<String> = dependent_tools.iter()
+                .map(|tool| tool.name.clone())
+                .collect();
+
+            return Err(AppError::BadRequest(format!(
+                "Cannot delete knowledge base. The following tools depend on it: {}. Please delete or update these tools first.",
+                tool_names.join(", ")
+            )));
+        }
+
         let mut tx = app_state
             .db_pool
             .begin()

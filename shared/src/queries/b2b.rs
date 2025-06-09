@@ -331,13 +331,15 @@ impl Query for GetOrganizationDetailsQuery {
         .fetch_all(&app_state.db_pool)
         .await?;
 
-        // Get organization roles with permissions
+        // Get organization roles with permissions (both deployment-level and organization-specific)
         let role_rows = sqlx::query!(
             r#"
-            SELECT id, created_at, updated_at, name, permissions
+            SELECT id, created_at, updated_at, name, permissions, organization_id
             FROM organization_roles
-            WHERE organization_id = $1
+            WHERE (deployment_id = $1 AND organization_id IS NULL)
+               OR organization_id = $2
             "#,
+            self.deployment_id,
             self.organization_id
         )
         .fetch_all(&app_state.db_pool)
@@ -345,27 +347,13 @@ impl Query for GetOrganizationDetailsQuery {
 
         let roles: Vec<OrganizationRole> = role_rows
             .into_iter()
-            .map(|row| {
-                let permissions_vec: Vec<String> = row.permissions.clone();
-                let permission_objects = permissions_vec
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, permission)| crate::models::OrganizationPermission {
-                        id: i as i64,
-                        created_at: row.created_at,
-                        updated_at: row.updated_at,
-                        org_role_id: row.id,
-                        permission,
-                    })
-                    .collect();
-
-                OrganizationRole {
-                    id: row.id,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                    name: row.name,
-                    permissions: permission_objects,
-                }
+            .map(|row| OrganizationRole {
+                id: row.id,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                name: row.name,
+                permissions: row.permissions,
+                is_deployment_level: row.organization_id.is_none(),
             })
             .collect();
 
@@ -497,13 +485,15 @@ impl Query for GetWorkspaceDetailsQuery {
         .fetch_all(&app_state.db_pool)
         .await?;
 
-        // Get workspace roles with permissions
+        // Get workspace roles with permissions (both deployment-level and workspace-specific)
         let role_rows = sqlx::query!(
             r#"
-            SELECT id, created_at, updated_at, name, permissions
+            SELECT id, created_at, updated_at, name, permissions, workspace_id
             FROM workspace_roles
-            WHERE workspace_id = $1
+            WHERE (deployment_id = $1 AND workspace_id IS NULL)
+               OR workspace_id = $2
             "#,
+            self.deployment_id,
             self.workspace_id
         )
         .fetch_all(&app_state.db_pool)
@@ -516,18 +506,8 @@ impl Query for GetWorkspaceDetailsQuery {
                 created_at: row.created_at,
                 updated_at: row.updated_at,
                 name: row.name,
-                permissions: row
-                    .permissions
-                    .iter()
-                    .enumerate()
-                    .map(|(i, permission)| crate::models::WorkspacePermission {
-                        id: (row.id * 1000 + i as i64),
-                        created_at: row.created_at,
-                        updated_at: row.updated_at,
-                        workspace_role_id: row.id,
-                        permission: permission.clone(),
-                    })
-                    .collect(),
+                permissions: row.permissions,
+                is_deployment_level: row.workspace_id.is_none(),
             })
             .collect();
 

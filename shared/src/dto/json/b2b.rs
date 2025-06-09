@@ -41,12 +41,15 @@ pub struct UpdateWorkspaceRequest {
 // Organization member models
 #[derive(Debug, Deserialize)]
 pub struct AddOrganizationMemberRequest {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub user_id: i64,
+    #[serde(with = "crate::utils::serde::vec_i64_as_string")]
     pub role_ids: Vec<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateOrganizationMemberRequest {
+    #[serde(with = "crate::utils::serde::vec_i64_as_string")]
     pub role_ids: Vec<i64>,
 }
 
@@ -59,6 +62,19 @@ pub struct CreateOrganizationRoleRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateOrganizationRoleRequest {
+    pub name: Option<String>,
+    pub permissions: Option<Vec<String>>,
+}
+
+// Workspace role models
+#[derive(Debug, Deserialize)]
+pub struct CreateWorkspaceRoleRequest {
+    pub name: String,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateWorkspaceRoleRequest {
     pub name: Option<String>,
     pub permissions: Option<Vec<String>>,
 }

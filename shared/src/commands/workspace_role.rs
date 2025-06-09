@@ -1,55 +1,42 @@
 use crate::{
     error::AppError, state::AppState,
-    commands::Command, models::OrganizationRole,
+    commands::Command, models::WorkspaceRole,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CreateOrganizationRoleCommand {
+pub struct CreateWorkspaceRoleCommand {
     pub deployment_id: i64,
-    pub organization_id: i64,
+    pub workspace_id: i64,
     pub name: String,
     pub permissions: Vec<String>,
 }
 
-impl CreateOrganizationRoleCommand {
+impl CreateWorkspaceRoleCommand {
     pub fn new(
         deployment_id: i64,
-        organization_id: i64,
+        workspace_id: i64,
         name: String,
         permissions: Vec<String>,
     ) -> Self {
         Self {
             deployment_id,
-            organization_id,
+            workspace_id,
             name,
             permissions,
         }
     }
 }
 
-impl Command for CreateOrganizationRoleCommand {
-    type Output = OrganizationRole;
+impl Command for CreateWorkspaceRoleCommand {
+    type Output = WorkspaceRole;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Check if organization exists
-        let org_exists = sqlx::query!(
-            "SELECT id FROM organizations WHERE deployment_id = $1 AND id = $2",
-            self.deployment_id,
-            self.organization_id
-        )
-        .fetch_optional(&app_state.db_pool)
-        .await?;
-
-        if org_exists.is_none() {
-            return Err(AppError::NotFound("Organization not found".to_string()));
-        }
-
-        // Check if role name already exists in this organization
+        // Check if role with same name already exists in this workspace
         let existing_role = sqlx::query!(
-            "SELECT id FROM organization_roles WHERE organization_id = $1 AND name = $2",
-            self.organization_id,
+            "SELECT id FROM workspace_roles WHERE workspace_id = $1 AND name = $2",
+            self.workspace_id,
             self.name
         )
         .fetch_optional(&app_state.db_pool)
@@ -64,12 +51,12 @@ impl Command for CreateOrganizationRoleCommand {
         // Create role with permissions stored as array
         let role = sqlx::query!(
             r#"
-            INSERT INTO organization_roles (id, organization_id, deployment_id, name, permissions, created_at, updated_at)
+            INSERT INTO workspace_roles (id, workspace_id, deployment_id, name, permissions, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id, created_at, updated_at, permissions
             "#,
             app_state.sf.next_id()? as i64,
-            self.organization_id,
+            self.workspace_id,
             self.deployment_id,
             self.name,
             &self.permissions,
@@ -79,37 +66,37 @@ impl Command for CreateOrganizationRoleCommand {
         .fetch_one(&app_state.db_pool)
         .await?;
 
-        Ok(OrganizationRole {
+        Ok(WorkspaceRole {
             id: role.id,
             created_at: role.created_at,
             updated_at: role.updated_at,
             name: self.name,
             permissions: role.permissions,
-            is_deployment_level: false, // Organization-specific roles are never deployment-level
+            is_deployment_level: false, // Workspace-specific roles are never deployment-level
         })
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateOrganizationRoleCommand {
+pub struct UpdateWorkspaceRoleCommand {
     pub deployment_id: i64,
-    pub organization_id: i64,
+    pub workspace_id: i64,
     pub role_id: i64,
     pub name: Option<String>,
     pub permissions: Option<Vec<String>>,
 }
 
-impl UpdateOrganizationRoleCommand {
+impl UpdateWorkspaceRoleCommand {
     pub fn new(
         deployment_id: i64,
-        organization_id: i64,
+        workspace_id: i64,
         role_id: i64,
         name: Option<String>,
         permissions: Option<Vec<String>>,
     ) -> Self {
         Self {
             deployment_id,
-            organization_id,
+            workspace_id,
             role_id,
             name,
             permissions,
@@ -117,22 +104,22 @@ impl UpdateOrganizationRoleCommand {
     }
 }
 
-impl Command for UpdateOrganizationRoleCommand {
-    type Output = OrganizationRole;
+impl Command for UpdateWorkspaceRoleCommand {
+    type Output = WorkspaceRole;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         // Check if role exists
         let role_exists = sqlx::query!(
-            "SELECT id FROM organization_roles WHERE id = $1 AND organization_id = $2",
+            "SELECT id FROM workspace_roles WHERE id = $1 AND workspace_id = $2",
             self.role_id,
-            self.organization_id
+            self.workspace_id
         )
         .fetch_optional(&app_state.db_pool)
         .await?;
 
         if role_exists.is_none() {
             return Err(AppError::NotFound(
-                "Organization role not found".to_string(),
+                "Workspace role not found".to_string(),
             ));
         }
 
@@ -156,7 +143,7 @@ impl Command for UpdateOrganizationRoleCommand {
         query_parts.push(format!("updated_at = ${}", param_count));
 
         let query_str = format!(
-            "UPDATE organization_roles SET {} WHERE id = $1 RETURNING id, created_at, updated_at, name, permissions",
+            "UPDATE workspace_roles SET {} WHERE id = $1 RETURNING id, created_at, updated_at, name, permissions",
             query_parts.join(", ")
         );
 
@@ -176,55 +163,55 @@ impl Command for UpdateOrganizationRoleCommand {
         // Get permissions from database
         let permissions_vec: Vec<String> = role.get("permissions");
 
-        Ok(OrganizationRole {
+        Ok(WorkspaceRole {
             id: role.get("id"),
             created_at: role.get("created_at"),
             updated_at: role.get("updated_at"),
             name: role.get("name"),
             permissions: permissions_vec,
-            is_deployment_level: false, // Organization-specific roles are never deployment-level
+            is_deployment_level: false, // Workspace-specific roles are never deployment-level
         })
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DeleteOrganizationRoleCommand {
+pub struct DeleteWorkspaceRoleCommand {
     pub deployment_id: i64,
-    pub organization_id: i64,
+    pub workspace_id: i64,
     pub role_id: i64,
 }
 
-impl DeleteOrganizationRoleCommand {
-    pub fn new(deployment_id: i64, organization_id: i64, role_id: i64) -> Self {
+impl DeleteWorkspaceRoleCommand {
+    pub fn new(deployment_id: i64, workspace_id: i64, role_id: i64) -> Self {
         Self {
             deployment_id,
-            organization_id,
+            workspace_id,
             role_id,
         }
     }
 }
 
-impl Command for DeleteOrganizationRoleCommand {
+impl Command for DeleteWorkspaceRoleCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         // Check if role exists
         let role_exists = sqlx::query!(
-            "SELECT id FROM organization_roles WHERE id = $1 AND organization_id = $2",
+            "SELECT id FROM workspace_roles WHERE id = $1 AND workspace_id = $2",
             self.role_id,
-            self.organization_id
+            self.workspace_id
         )
         .fetch_optional(&app_state.db_pool)
         .await?;
 
         if role_exists.is_none() {
             return Err(AppError::NotFound(
-                "Organization role not found".to_string(),
+                "Workspace role not found".to_string(),
             ));
         }
 
         // Delete role (this should cascade to permissions and role assignments)
-        sqlx::query!("DELETE FROM organization_roles WHERE id = $1", self.role_id)
+        sqlx::query!("DELETE FROM workspace_roles WHERE id = $1", self.role_id)
             .execute(&app_state.db_pool)
             .await?;
 

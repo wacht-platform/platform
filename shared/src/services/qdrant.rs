@@ -27,7 +27,6 @@ pub struct SearchResult {
 }
 
 impl QdrantService {
-    /// Create a new Qdrant client connection
     pub async fn connect() -> Result<Qdrant, AppError> {
         let qdrant_url =
             std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:6334".to_string());
@@ -41,19 +40,14 @@ impl QdrantService {
         client.map_err(|e| AppError::Internal(format!("Failed to connect to Qdrant: {}", e)))
     }
 
-    /// Get the default collection name for multitenancy
     pub fn default_collection() -> String {
         std::env::var("QDRANT_DEFAULT_COLLECTION").unwrap_or_else(|_| "knowledge_base".to_string())
     }
 
-    /// Initialize Qdrant collection and indexes - call this on application startup
     pub async fn initialize() -> Result<(), AppError> {
         let client = Self::connect().await?;
         let collection_name = Self::default_collection();
 
-        println!("Initializing Qdrant collection: {}", collection_name);
-
-        // Check if collection exists
         let collections = client
             .list_collections()
             .await
@@ -67,14 +61,13 @@ impl QdrantService {
         if !collection_exists {
             println!("Creating Qdrant collection: {}", collection_name);
 
-            // Create collection with optimized settings for multitenancy
             client
                 .create_collection(
                     CreateCollectionBuilder::new(&collection_name)
                         .vectors_config(VectorParamsBuilder::new(768, Distance::Cosine))
                         .hnsw_config(HnswConfigDiff {
-                            payload_m: Some(16), // Enable payload-based indexing for tenant filtering
-                            m: Some(0),          // Disable global index for better tenant isolation
+                            payload_m: Some(16), 
+                            m: Some(0),         
                             ..Default::default()
                         }),
                 )
@@ -89,7 +82,6 @@ impl QdrantService {
             println!("Qdrant collection already exists: {}", collection_name);
         }
 
-        // Always try to create the index (it's safe to call even if it exists)
         println!("Creating/verifying integer index on knowledge_base_id field...");
         match client
             .create_field_index(CreateFieldIndexCollectionBuilder::new(
@@ -124,8 +116,6 @@ impl QdrantService {
         Ok(())
     }
 
-    /// Ensure the default collection exists with multitenancy configuration
-    /// This is a lightweight version that just ensures collection exists
     pub async fn ensure_default_collection() -> Result<(), AppError> {
         let client = Self::connect().await?;
         let collection_name = Self::default_collection();
@@ -141,7 +131,6 @@ impl QdrantService {
             .any(|c| c.name == collection_name);
 
         if !collection_exists {
-            // If collection doesn't exist, run full initialization
             return Self::initialize().await;
         }
 
@@ -225,11 +214,9 @@ impl QdrantService {
             .map(|scored_point| {
                 let id = scored_point.id
                     .map(|point_id| {
-                        // Convert PointId to i64 - PointId can be either u64 or string
                         match point_id {
                             qdrant_client::qdrant::PointId { point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Num(num)) } => num as i64,
                             qdrant_client::qdrant::PointId { point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(uuid)) } => {
-                                // Try to parse UUID as number, fallback to 0
                                 uuid.parse::<i64>().unwrap_or(0)
                             },
                             _ => 0,

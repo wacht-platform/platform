@@ -46,6 +46,10 @@ fn deployment_routes() -> Router<HttpState> {
             patch(api::deployment::user::update_user),
         )
         .route(
+            "/users/{user_id}/password",
+            patch(api::deployment::user::update_user_password),
+        )
+        .route(
             "/users/{user_id}/emails",
             post(api::deployment::user::add_user_email),
         )
@@ -109,7 +113,9 @@ fn deployment_routes() -> Router<HttpState> {
         .route("/workspaces", get(api::deployment::b2b::get_workspace_list))
         .route(
             "/workspaces/{workspace_id}",
-            get(api::deployment::b2b::get_workspace_details),
+            get(api::deployment::b2b::get_workspace_details)
+                .patch(api::deployment::b2b::update_workspace)
+                .delete(api::deployment::b2b::delete_workspace),
         )
         .route(
             "/workspace-roles",
@@ -129,6 +135,15 @@ fn deployment_routes() -> Router<HttpState> {
         .route(
             "/organizations/{organization_id}/workspaces",
             post(api::deployment::b2b::create_workspace_for_organization),
+        )
+        .route(
+            "/workspaces/{workspace_id}/roles",
+            post(api::deployment::b2b::create_workspace_role),
+        )
+        .route(
+            "/workspaces/{workspace_id}/roles/{role_id}",
+            patch(api::deployment::b2b::update_workspace_role)
+                .delete(api::deployment::b2b::delete_workspace_role),
         )
         .route(
             "/organizations/{organization_id}/members",

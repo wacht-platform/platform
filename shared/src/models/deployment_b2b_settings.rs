@@ -29,6 +29,8 @@ pub struct DeploymentB2bSettings {
     pub default_workspace_member_role_id: i64,
     pub default_org_creator_role_id: i64,
     pub default_org_member_role_id: i64,
+    pub workspace_permissions: Option<Vec<String>>,
+    pub organization_permissions: Option<Vec<String>>,
 }
 
 impl Default for DeploymentB2bSettings {
@@ -57,6 +59,8 @@ impl Default for DeploymentB2bSettings {
             default_org_member_role_id: 0,
             allow_users_to_create_orgs: true,
             max_orgs_per_user: 0,
+            workspace_permissions: None,
+            organization_permissions: None,
         }
     }
 }

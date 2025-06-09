@@ -129,7 +129,7 @@ impl Query for DeploymentActiveUserListQuery {
             r#"
             SELECT
                 u.id, u.created_at, u.updated_at,
-                u.first_name, u.last_name, u.username,
+                u.first_name, u.last_name, u.username, u.profile_picture_url,
                 e.email_address as primary_email_address,
                 p.phone_number as primary_phone_number
             FROM users u
@@ -171,6 +171,7 @@ impl Query for DeploymentActiveUserListQuery {
                 first_name: row.get("first_name"),
                 last_name: row.get("last_name"),
                 username: row.get("username"),
+                profile_picture_url: row.get("profile_picture_url"),
                 primary_email_address: row.get("primary_email_address"),
                 primary_phone_number: row.get("primary_phone_number"),
             })
@@ -260,7 +261,7 @@ impl Query for GetUserDetailsQuery {
             r#"
             SELECT
                 u.id, u.created_at, u.updated_at,
-                u.first_name, u.last_name, u.username,
+                u.first_name, u.last_name, u.username, u.profile_picture_url,
                 u.schema_version, u.disabled, u.second_factor_policy,
                 u.active_organization_membership_id, u.active_workspace_membership_id,
                 u.deployment_id, u.public_metadata, u.private_metadata,
@@ -377,6 +378,7 @@ impl Query for GetUserDetailsQuery {
             } else {
                 Some(user_row.username)
             },
+            profile_picture_url: user_row.profile_picture_url,
             schema_version: crate::models::SchemaVersion::from_str(&user_row.schema_version)
                 .unwrap_or(crate::models::SchemaVersion::V1),
             disabled: user_row.disabled,

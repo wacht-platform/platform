@@ -45,6 +45,29 @@ pub mod i64_as_string_option {
     }
 }
 
+pub mod vec_i64_as_string {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &Vec<i64>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let string_vec: Vec<String> = value.iter().map(|v| v.to_string()).collect();
+        string_vec.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<i64>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string_vec = Vec::<String>::deserialize(deserializer)?;
+        string_vec
+            .into_iter()
+            .map(|s| s.parse::<i64>().map_err(serde::de::Error::custom))
+            .collect()
+    }
+}
+
 pub mod enum_from_str {
     use serde::{Deserialize, Deserializer};
     use std::{fmt::Display, str::FromStr};

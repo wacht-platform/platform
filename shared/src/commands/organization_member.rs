@@ -153,18 +153,8 @@ impl Command for AddOrganizationMemberCommand {
                         created_at: role_row.created_at,
                         updated_at: role_row.updated_at,
                         name: role_row.name,
-                        permissions: role_row
-                            .permissions
-                            .iter()
-                            .enumerate()
-                            .map(|(i, permission)| crate::models::OrganizationPermission {
-                                id: (role_row.id * 1000 + i as i64), // Generate unique ID
-                                created_at: role_row.created_at,
-                                updated_at: role_row.updated_at,
-                                org_role_id: role_row.id,
-                                permission: permission.clone(),
-                            })
-                            .collect(),
+                        permissions: role_row.permissions,
+                        is_deployment_level: false, // This context doesn't distinguish, assume organization-specific
                     })
                     .collect()
             },

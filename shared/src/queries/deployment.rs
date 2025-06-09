@@ -7,7 +7,7 @@ use crate::{
         DeploymentAuthSettings, DeploymentB2bSettings, DeploymentB2bSettingsWithRoles,
         DeploymentJwtTemplate, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
         DeploymentRestrictionsSignUpMode, DeploymentSocialConnection, DeploymentUISettings,
-        DeploymentWithSettings, DeploymentWorkspaceRole, EmailTemplate,
+        DeploymentWithSettings, DeploymentWorkspaceRole, EmailTemplate, SecondFactorPolicy, FirstFactor,
     },
     state::AppState,
 };
@@ -114,6 +114,8 @@ impl Query for GetDeploymentWithSettingsQuery {
                 deployment_b2b_settings.default_workspace_member_role_id as "b2b_settings_default_workspace_member_role_id?",
                 deployment_b2b_settings.default_org_creator_role_id as "b2b_settings_default_org_creator_role_id?",
                 deployment_b2b_settings.default_org_member_role_id as "b2b_settings_default_org_member_role_id?",
+                deployment_b2b_settings.workspace_permissions as "b2b_settings_workspace_permissions?",
+                deployment_b2b_settings.organization_permissions as "b2b_settings_organization_permissions?",
 
                 deployment_default_workspace_creator_role.created_at as "default_workspace_creator_role_created_at?",
                 deployment_default_workspace_creator_role.updated_at as "default_workspace_creator_role_updated_at?",
@@ -330,6 +332,8 @@ impl Query for GetDeploymentWithSettingsQuery {
                         .b2b_settings_allow_users_to_create_orgs
                         .unwrap(),
                     max_orgs_per_user: row.b2b_settings_max_orgs_per_user.unwrap(),
+                    workspace_permissions: row.b2b_settings_workspace_permissions,
+                    organization_permissions: row.b2b_settings_organization_permissions,
                 };
                 Some(DeploymentB2bSettingsWithRoles {
                     settings: b2b_settings,
@@ -724,19 +728,38 @@ impl Query for GetDeploymentAuthSettingsQuery {
             created_at: Some(row.created_at),
             updated_at: Some(row.updated_at),
             deployment_id: row.deployment_id,
-            email_address: serde_json::from_value(row.email_address)?,
-            phone_number: serde_json::from_value(row.phone_number)?,
-            username: serde_json::from_value(row.username)?,
-            first_name: serde_json::from_value(row.first_name)?,
-            last_name: serde_json::from_value(row.last_name)?,
-            password: serde_json::from_value(row.password)?,
+            email_address: serde_json::from_value(row.email_address)
+                .map_err(|e| AppError::BadRequest(format!("Failed to parse email_address: {}", e)))?,
+            phone_number: serde_json::from_value(row.phone_number)
+                .map_err(|e| AppError::BadRequest(format!("Failed to parse phone_number: {}", e)))?,
+            username: serde_json::from_value(row.username)
+                .map_err(|e| AppError::BadRequest(format!("Failed to parse username: {}", e)))?,
+            first_name: serde_json::from_value(row.first_name)
+                .map_err(|e| AppError::BadRequest(format!("Failed to parse first_name: {}", e)))?,
+            last_name: serde_json::from_value(row.last_name)
+                .map_err(|e| AppError::BadRequest(format!("Failed to parse last_name: {}", e)))?,
+            password: serde_json::from_value(row.password)
+                .map_err(|e| AppError::BadRequest(format!("Failed to parse password: {}", e)))?,
             magic_link: serde_json::from_value(row.magic_link).ok(),
             passkey: serde_json::from_value(row.passkey).ok(),
-            auth_factors_enabled: serde_json::from_value(row.auth_factors_enabled)?,
-            verification_policy: serde_json::from_value(row.verification_policy)?,
-            second_factor_policy: serde_json::from_str(&row.second_factor_policy)?,
-            first_factor: serde_json::from_str(&row.first_factor)?,
-            multi_session_support: serde_json::from_value(row.multi_session_support)?,
+            auth_factors_enabled: serde_json::from_value(row.auth_factors_enabled)
+                .map_err(|e| AppError::BadRequest(format!("Failed to parse auth_factors_enabled: {}", e)))?,
+            verification_policy: serde_json::from_value(row.verification_policy)
+                .map_err(|e| AppError::BadRequest(format!("Failed to parse verification_policy: {}", e)))?,
+            second_factor_policy: if row.second_factor_policy.trim().is_empty() {
+                SecondFactorPolicy::Optional
+            } else {
+                SecondFactorPolicy::from_str(&row.second_factor_policy)
+                    .map_err(|e| AppError::BadRequest(format!("Failed to parse second_factor_policy '{}': {}", row.second_factor_policy, e)))?
+            },
+            first_factor: if row.first_factor.trim().is_empty() {
+                FirstFactor::EmailPassword
+            } else {
+                FirstFactor::from_str(&row.first_factor)
+                    .map_err(|e| AppError::BadRequest(format!("Failed to parse first_factor '{}': {}", row.first_factor, e)))?
+            },
+            multi_session_support: serde_json::from_value(row.multi_session_support)
+                .map_err(|e| AppError::BadRequest(format!("Failed to parse multi_session_support: {}", e)))?,
             session_token_lifetime: row.session_token_lifetime,
             session_validity_period: row.session_validity_period,
             session_inactive_timeout: row.session_inactive_timeout,

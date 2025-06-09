@@ -169,6 +169,7 @@ pub struct ActionNodeConfig {
     pub api_config: Option<ApiActionConfig>,
     pub knowledge_base_config: Option<KnowledgeBaseActionConfig>,
     pub trigger_workflow_config: Option<TriggerWorkflowActionConfig>,
+    pub platform_event_config: Option<PlatformEventActionConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -176,6 +177,7 @@ pub enum ActionType {
     ApiCall,
     KnowledgeBaseSearch,
     TriggerWorkflow,
+    PlatformEvent,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -194,6 +196,7 @@ pub struct KnowledgeBaseActionConfig {
     pub query: String,
     pub max_results: Option<u32>,
     pub similarity_threshold: Option<f32>,
+    pub sort_by_relevance: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -203,6 +206,12 @@ pub struct TriggerWorkflowActionConfig {
     pub input_mapping: HashMap<String, String>,
     pub wait_for_completion: bool,
     pub timeout_seconds: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlatformEventActionConfig {
+    pub event_label: String,
+    pub event_data: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

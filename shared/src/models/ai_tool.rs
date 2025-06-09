@@ -30,9 +30,12 @@ pub struct AiToolWithDetails {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum AiToolType {
     Api,
     KnowledgeBase,
+    PlatformEvent,
+    PlatformFunction,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -40,6 +43,8 @@ pub enum AiToolType {
 pub enum AiToolConfiguration {
     Api(ApiToolConfiguration),
     KnowledgeBase(KnowledgeBaseToolConfiguration),
+    PlatformEvent(PlatformEventToolConfiguration),
+    PlatformFunction(PlatformFunctionToolConfiguration),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -50,6 +55,10 @@ pub struct ApiToolConfiguration {
     pub query_parameters: Vec<HttpParameter>,
     pub body_parameters: Vec<HttpParameter>,
     pub authorization: Option<AuthorizationConfiguration>,
+    pub request_body_schema: Option<Vec<SchemaField>>,
+    pub url_params_schema: Option<Vec<SchemaField>>,
+    pub query_params_schema: Option<Vec<SchemaField>>,
+    pub timeout_seconds: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -64,12 +73,36 @@ pub struct KnowledgeBaseSearchSettings {
     pub max_results: Option<u32>,
     pub similarity_threshold: Option<f32>,
     pub include_metadata: bool,
+    pub sort_by_relevance: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlatformEventToolConfiguration {
+    pub event_label: String,
+    pub event_data: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlatformFunctionToolConfiguration {
+    pub function_name: String,
+    pub function_description: Option<String>,
+    pub input_schema: Option<Vec<SchemaField>>,
+    pub output_schema: Option<Vec<SchemaField>>,
+    pub is_overridable: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HttpParameter {
     pub name: String,
     pub value_type: ParameterValueType,
+    pub required: bool,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SchemaField {
+    pub name: String,
+    pub field_type: String,
     pub required: bool,
     pub description: Option<String>,
 }
@@ -102,6 +135,8 @@ impl From<String> for AiToolType {
         match tool_type.as_str() {
             "api" => AiToolType::Api,
             "knowledge_base" => AiToolType::KnowledgeBase,
+            "platform_event" => AiToolType::PlatformEvent,
+            "platform_function" => AiToolType::PlatformFunction,
             _ => AiToolType::Api,
         }
     }
@@ -112,6 +147,8 @@ impl From<AiToolType> for String {
         match tool_type {
             AiToolType::Api => "api".to_string(),
             AiToolType::KnowledgeBase => "knowledge_base".to_string(),
+            AiToolType::PlatformEvent => "platform_event".to_string(),
+            AiToolType::PlatformFunction => "platform_function".to_string(),
         }
     }
 }
@@ -147,22 +184,29 @@ impl Default for KnowledgeBaseSearchSettings {
             max_results: Some(10),
             similarity_threshold: Some(0.7),
             include_metadata: true,
+            sort_by_relevance: true,
         }
     }
 }
 
 impl Default for AiToolConfiguration {
     fn default() -> Self {
-        Self::Api(ApiToolConfiguration {
-            endpoint: "".to_string(),
+        AiToolConfiguration::Api(ApiToolConfiguration {
+            endpoint: String::new(),
             method: HttpMethod::GET,
             headers: Vec::new(),
             query_parameters: Vec::new(),
             body_parameters: Vec::new(),
             authorization: None,
+            request_body_schema: None,
+            url_params_schema: None,
+            query_params_schema: None,
+            timeout_seconds: Some(30),
         })
     }
 }
+
+
 
 impl Default for ApiToolConfiguration {
     fn default() -> Self {
@@ -173,6 +217,10 @@ impl Default for ApiToolConfiguration {
             query_parameters: Vec::new(),
             body_parameters: Vec::new(),
             authorization: None,
+            request_body_schema: None,
+            url_params_schema: None,
+            query_params_schema: None,
+            timeout_seconds: Some(30),
         }
     }
 }
@@ -182,6 +230,18 @@ impl Default for KnowledgeBaseToolConfiguration {
         Self {
             knowledge_base_id: 0,
             search_settings: KnowledgeBaseSearchSettings::default(),
+        }
+    }
+}
+
+impl Default for PlatformFunctionToolConfiguration {
+    fn default() -> Self {
+        Self {
+            function_name: "".to_string(),
+            function_description: None,
+            input_schema: None,
+            output_schema: None,
+            is_overridable: true,
         }
     }
 }

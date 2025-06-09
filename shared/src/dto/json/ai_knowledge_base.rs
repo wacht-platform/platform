@@ -45,6 +45,7 @@ pub struct SearchKnowledgeBaseQuery {
     pub query: String,
     pub limit: Option<u64>,
     pub knowledge_base_id: Option<i64>,
+    pub sort_by_relevance: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]

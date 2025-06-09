@@ -72,10 +72,10 @@ impl Command for CreateUserCommand {
             r#"
             INSERT INTO users (
                 id, created_at, updated_at, first_name, last_name, username,
-                password, schema_version, disabled, second_factor_policy,
+                password, profile_picture_url, schema_version, disabled, second_factor_policy,
                 deployment_id, public_metadata, private_metadata, otp_secret, backup_codes
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             "#,
             user_id,
             now,
@@ -84,6 +84,7 @@ impl Command for CreateUserCommand {
             self.request.last_name,
             self.request.username,
             hashed_password,
+            "", // Empty profile_picture_url, will be updated later if image is provided
             "v1",
             false,
             "optional",
@@ -177,6 +178,7 @@ impl Command for CreateUserCommand {
             first_name: self.request.first_name,
             last_name: self.request.last_name,
             username: self.request.username,
+            profile_picture_url: String::new(), // Empty initially, will be updated if image is provided
             primary_email_address,
             primary_phone_number,
         };
@@ -393,207 +395,43 @@ impl Command for UpdateUserCommand {
     type Output = UserDetails;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Update the user with provided fields using compile-time verified queries
-        match (
-            &self.request.first_name,
-            &self.request.last_name,
-            &self.request.username,
-            &self.request.public_metadata,
-            &self.request.private_metadata,
-        ) {
-            (
-                Some(first_name),
-                Some(last_name),
-                Some(username),
-                Some(public_metadata),
-                Some(private_metadata),
-            ) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW(), first_name = $1, last_name = $2, username = $3,
-                        public_metadata = $4, private_metadata = $5
-                    WHERE deployment_id = $6 AND id = $7
-                    "#,
-                    first_name,
-                    last_name,
-                    username,
-                    public_metadata,
-                    private_metadata,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (Some(first_name), Some(last_name), Some(username), None, None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW(), first_name = $1, last_name = $2, username = $3
-                    WHERE deployment_id = $4 AND id = $5
-                    "#,
-                    first_name,
-                    last_name,
-                    username,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (Some(first_name), Some(last_name), None, None, None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW(), first_name = $1, last_name = $2
-                    WHERE deployment_id = $3 AND id = $4
-                    "#,
-                    first_name,
-                    last_name,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (Some(first_name), None, None, None, None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW(), first_name = $1
-                    WHERE deployment_id = $2 AND id = $3
-                    "#,
-                    first_name,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, Some(last_name), None, None, None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW(), last_name = $1
-                    WHERE deployment_id = $2 AND id = $3
-                    "#,
-                    last_name,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, None, Some(username), None, None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW(), username = $1
-                    WHERE deployment_id = $2 AND id = $3
-                    "#,
-                    username,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, None, None, Some(public_metadata), None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW(), public_metadata = $1
-                    WHERE deployment_id = $2 AND id = $3
-                    "#,
-                    public_metadata,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, None, None, None, Some(private_metadata)) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW(), private_metadata = $1
-                    WHERE deployment_id = $2 AND id = $3
-                    "#,
-                    private_metadata,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, None, None, Some(public_metadata), Some(private_metadata)) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW(), public_metadata = $1, private_metadata = $2
-                    WHERE deployment_id = $3 AND id = $4
-                    "#,
-                    public_metadata,
-                    private_metadata,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (
-                Some(first_name),
-                Some(last_name),
-                None,
-                Some(public_metadata),
-                Some(private_metadata),
-            ) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW(), first_name = $1, last_name = $2,
-                        public_metadata = $3, private_metadata = $4
-                    WHERE deployment_id = $5 AND id = $6
-                    "#,
-                    first_name,
-                    last_name,
-                    public_metadata,
-                    private_metadata,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, None, None, None, None) => {
-                // Just update the timestamp
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW()
-                    WHERE deployment_id = $1 AND id = $2
-                    "#,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            _ => {
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET updated_at = NOW()
-                    WHERE deployment_id = $1 AND id = $2
-                    "#,
-                    self.deployment_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
+        // Build a single dynamic UPDATE query
+        let mut query_builder = sqlx::QueryBuilder::new("UPDATE users SET updated_at = NOW()");
+
+        if let Some(first_name) = &self.request.first_name {
+            query_builder.push(", first_name = ");
+            query_builder.push_bind(first_name);
         }
+
+        if let Some(last_name) = &self.request.last_name {
+            query_builder.push(", last_name = ");
+            query_builder.push_bind(last_name);
+        }
+
+        if let Some(username) = &self.request.username {
+            query_builder.push(", username = ");
+            query_builder.push_bind(username);
+        }
+
+        if let Some(public_metadata) = &self.request.public_metadata {
+            query_builder.push(", public_metadata = ");
+            query_builder.push_bind(public_metadata);
+        }
+
+        if let Some(private_metadata) = &self.request.private_metadata {
+            query_builder.push(", private_metadata = ");
+            query_builder.push_bind(private_metadata);
+        }
+
+        query_builder.push(" WHERE deployment_id = ");
+        query_builder.push_bind(self.deployment_id);
+        query_builder.push(" AND id = ");
+        query_builder.push_bind(self.user_id);
+
+        // Execute the single query
+        query_builder.build().execute(&app_state.db_pool).await?;
+
+
 
         use crate::queries::{GetUserDetailsQuery, Query};
         let user_details = GetUserDetailsQuery::new(self.deployment_id, self.user_id)
@@ -601,5 +439,77 @@ impl Command for UpdateUserCommand {
             .await?;
 
         Ok(user_details)
+    }
+}
+
+#[derive(Debug)]
+pub struct UpdateUserProfileImageCommand {
+    pub deployment_id: i64,
+    pub user_id: i64,
+    pub profile_picture_url: String,
+}
+
+impl UpdateUserProfileImageCommand {
+    pub fn new(deployment_id: i64, user_id: i64, profile_picture_url: String) -> Self {
+        Self {
+            deployment_id,
+            user_id,
+            profile_picture_url,
+        }
+    }
+}
+
+impl Command for UpdateUserProfileImageCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query!(
+            "UPDATE users SET updated_at = NOW(), profile_picture_url = $1, has_profile_picture = true WHERE deployment_id = $2 AND id = $3",
+            self.profile_picture_url,
+            self.deployment_id,
+            self.user_id
+        )
+        .execute(&app_state.db_pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct UpdateUserPasswordCommand {
+    pub deployment_id: i64,
+    pub user_id: i64,
+    pub new_password: String,
+}
+
+impl UpdateUserPasswordCommand {
+    pub fn new(deployment_id: i64, user_id: i64, new_password: String) -> Self {
+        Self {
+            deployment_id,
+            user_id,
+            new_password,
+        }
+    }
+}
+
+impl Command for UpdateUserPasswordCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Hash the new password
+        let hashed_password = PasswordHasher::hash_password(&self.new_password)?;
+
+        // Update the password
+        sqlx::query!(
+            "UPDATE users SET updated_at = NOW(), password = $1 WHERE deployment_id = $2 AND id = $3",
+            hashed_password,
+            self.deployment_id,
+            self.user_id
+        )
+        .execute(&app_state.db_pool)
+        .await?;
+
+        Ok(())
     }
 }

@@ -38,8 +38,6 @@ impl AppState {
             .await
             .expect("Failed to connect to database");
 
-        println!("Database connected");
-
         let r2_endpoint_url =
             std::env::var("R2_ENDPOINT_URL").expect("R2_ENDPOINT_URL must be set");
         let r2_access_key_id =
@@ -101,12 +99,8 @@ impl AppState {
         let clickhouse_password =
             std::env::var("CLICKHOUSE_PASSWORD").unwrap_or_else(|_| "".to_string());
 
-        println!("ClickHouse URL: {}", clickhouse_url);
-        println!("ClickHouse Password: {}", clickhouse_password);
         let clickhouse_service = ClickHouseService::new(&clickhouse_url, &clickhouse_password)
             .expect("Failed to initialize ClickHouse service");
-
-        println!("ClickHouse service initialized");
 
         Self {
             db_pool: pool,

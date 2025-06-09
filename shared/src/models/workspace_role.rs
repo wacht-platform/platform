@@ -1,8 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::WorkspacePermission;
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WorkspaceRole {
     #[serde(with = "crate::utils::serde::i64_as_string")]
@@ -10,5 +8,6 @@ pub struct WorkspaceRole {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub name: String,
-    pub permissions: Vec<WorkspacePermission>,
+    pub permissions: Vec<String>,
+    pub is_deployment_level: bool,
 }

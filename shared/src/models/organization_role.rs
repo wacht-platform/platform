@@ -1,8 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::OrganizationPermission;
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OrganizationRole {
     #[serde(with = "crate::utils::serde::i64_as_string")]
@@ -10,5 +8,6 @@ pub struct OrganizationRole {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub name: String,
-    pub permissions: Vec<OrganizationPermission>,
+    pub permissions: Vec<String>,
+    pub is_deployment_level: bool,
 }

@@ -132,6 +132,7 @@ pub struct User {
     pub last_name: String,
     pub username: String,
     pub password: String,
+    pub profile_picture_url: String,
     pub schema_version: SchemaVersion,
     pub disabled: bool,
     pub primary_email_address_id: Option<i64>,
@@ -155,6 +156,7 @@ pub struct UserWithIdentifiers {
     pub first_name: String,
     pub last_name: String,
     pub username: Option<String>,
+    pub profile_picture_url: String,
     pub primary_email_address: Option<String>,
     pub primary_phone_number: Option<String>,
 }

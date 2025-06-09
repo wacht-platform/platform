@@ -30,12 +30,65 @@ impl CreateAiToolCommand {
             configuration,
         }
     }
+
+    async fn validate(&self, app_state: &AppState) -> Result<(), AppError> {
+        // Basic validation
+        if self.name.trim().is_empty() {
+            return Err(AppError::BadRequest("Tool name is required".to_string()));
+        }
+
+        // Type-specific validation
+        match &self.configuration {
+            AiToolConfiguration::Api(config) => {
+                if config.endpoint.trim().is_empty() {
+                    return Err(AppError::BadRequest("API endpoint is required".to_string()));
+                }
+                if !config.endpoint.starts_with("http://") && !config.endpoint.starts_with("https://") {
+                    return Err(AppError::BadRequest("API endpoint must be a valid URL (http:// or https://)".to_string()));
+                }
+            }
+            AiToolConfiguration::KnowledgeBase(config) => {
+                if config.knowledge_base_id <= 0 {
+                    return Err(AppError::BadRequest("Knowledge base selection is required".to_string()));
+                }
+
+                // Check if knowledge base exists and belongs to the same deployment
+                let kb_exists = sqlx::query!(
+                    "SELECT id FROM ai_knowledge_bases WHERE id = $1 AND deployment_id = $2",
+                    config.knowledge_base_id,
+                    self.deployment_id
+                )
+                .fetch_optional(&app_state.db_pool)
+                .await
+                .map_err(|e| AppError::Database(e))?;
+
+                if kb_exists.is_none() {
+                    return Err(AppError::BadRequest("Selected knowledge base does not exist or does not belong to this deployment".to_string()));
+                }
+            }
+            AiToolConfiguration::PlatformEvent(config) => {
+                if config.event_label.trim().is_empty() {
+                    return Err(AppError::BadRequest("Event label is required".to_string()));
+                }
+            }
+            AiToolConfiguration::PlatformFunction(config) => {
+                if config.function_name.trim().is_empty() {
+                    return Err(AppError::BadRequest("Function name is required".to_string()));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Command for CreateAiToolCommand {
     type Output = AiTool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Validate the tool configuration
+        self.validate(&app_state).await?;
+
         let tool_id = app_state.sf.next_id()? as i64;
         let now = Utc::now();
         let tool_type_str: String = self.tool_type.into();
@@ -118,12 +171,69 @@ impl UpdateAiToolCommand {
         self.configuration = Some(configuration);
         self
     }
+
+    async fn validate(&self, app_state: &AppState) -> Result<(), AppError> {
+        // Basic validation
+        if let Some(name) = &self.name {
+            if name.trim().is_empty() {
+                return Err(AppError::BadRequest("Tool name is required".to_string()));
+            }
+        }
+
+        // Type-specific validation
+        if let Some(configuration) = &self.configuration {
+            match configuration {
+                AiToolConfiguration::Api(config) => {
+                    if config.endpoint.trim().is_empty() {
+                        return Err(AppError::BadRequest("API endpoint is required".to_string()));
+                    }
+                    if !config.endpoint.starts_with("http://") && !config.endpoint.starts_with("https://") {
+                        return Err(AppError::BadRequest("API endpoint must be a valid URL (http:// or https://)".to_string()));
+                    }
+                }
+                AiToolConfiguration::KnowledgeBase(config) => {
+                    if config.knowledge_base_id <= 0 {
+                        return Err(AppError::BadRequest("Knowledge base selection is required".to_string()));
+                    }
+
+                    // Check if knowledge base exists and belongs to the same deployment
+                    let kb_exists = sqlx::query!(
+                        "SELECT id FROM ai_knowledge_bases WHERE id = $1 AND deployment_id = $2",
+                        config.knowledge_base_id,
+                        self.deployment_id
+                    )
+                    .fetch_optional(&app_state.db_pool)
+                    .await
+                    .map_err(|e| AppError::Database(e))?;
+
+                    if kb_exists.is_none() {
+                        return Err(AppError::BadRequest("Selected knowledge base does not exist or does not belong to this deployment".to_string()));
+                    }
+                }
+                AiToolConfiguration::PlatformEvent(config) => {
+                    if config.event_label.trim().is_empty() {
+                        return Err(AppError::BadRequest("Event label is required".to_string()));
+                    }
+                }
+                AiToolConfiguration::PlatformFunction(config) => {
+                    if config.function_name.trim().is_empty() {
+                        return Err(AppError::BadRequest("Function name is required".to_string()));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Command for UpdateAiToolCommand {
     type Output = AiTool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Validate the tool configuration
+        self.validate(&app_state).await?;
+
         let now = Utc::now();
 
         // Build dynamic query based on provided fields
