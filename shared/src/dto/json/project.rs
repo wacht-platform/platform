@@ -8,6 +8,11 @@ pub struct CreateProjectRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CreateStagingDeploymentRequest {
+    pub auth_methods: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateProductionDeploymentRequest {
     pub custom_domain: String,
     pub auth_methods: Vec<String>,

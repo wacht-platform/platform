@@ -8,9 +8,10 @@ use crate::{
     core::{
         commands::{
             Command, CreateProductionDeploymentCommand, CreateProjectWithStagingDeploymentCommand,
-            DeleteDeploymentCommand, DeleteProjectCommand, VerifyDeploymentDnsRecordsCommand,
+            CreateStagingDeploymentCommand, DeleteDeploymentCommand, DeleteProjectCommand,
+            VerifyDeploymentDnsRecordsCommand,
         },
-        dto::json::project::CreateProductionDeploymentRequest,
+        dto::json::project::{CreateProductionDeploymentRequest, CreateStagingDeploymentRequest},
         models::{Deployment, ProjectWithDeployments},
         queries::{GetProjectsWithDeploymentQuery, Query},
     },
@@ -71,6 +72,21 @@ pub async fn create_project(
         .map_err(Into::into)
 }
 
+pub async fn create_staging_deployment(
+    State(app_state): State<HttpState>,
+    Path(project_id): Path<i64>,
+    Json(request): Json<CreateStagingDeploymentRequest>,
+) -> ApiResult<Deployment> {
+    let command = CreateStagingDeploymentCommand::new(
+        project_id,
+        request.auth_methods,
+    )
+    .execute(&app_state)
+    .await?;
+
+    Ok(command.into())
+}
+
 pub async fn create_production_deployment(
     State(app_state): State<HttpState>,
     Path(project_id): Path<i64>,
@@ -82,8 +98,7 @@ pub async fn create_production_deployment(
         request.auth_methods,
     )
     .execute(&app_state)
-    .await
-    .unwrap();
+    .await?;
 
     Ok(command.into())
 }

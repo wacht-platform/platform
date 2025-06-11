@@ -20,6 +20,10 @@ fn project_routes() -> Router<HttpState> {
         .route("/project", post(api::project::create_project))
         .route("/project/{id}", delete(api::project::delete_project))
         .route(
+            "/project/{project_id}/staging-deployment",
+            post(api::project::create_staging_deployment),
+        )
+        .route(
             "/project/{project_id}/production-deployment",
             post(api::project::create_production_deployment),
         )

@@ -742,6 +742,8 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             "microsoft",
             "discord",
             "linkedin",
+            "x",
+            "gitlab",
         ];
 
         let empty_credentials = serde_json::to_value(OauthCredentials::default())
@@ -812,6 +814,174 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             name: project_row.name,
             deployments: vec![deployment],
         })
+    }
+}
+
+pub struct CreateStagingDeploymentCommand {
+    project_id: i64,
+    auth_methods: Vec<String>,
+}
+
+impl CreateStagingDeploymentCommand {
+    pub fn new(project_id: i64, auth_methods: Vec<String>) -> Self {
+        Self {
+            project_id,
+            auth_methods,
+        }
+    }
+
+    fn create_auth_settings(&self, deployment_id: i64) -> DeploymentAuthSettings {
+        let email_enabled = self.auth_methods.contains(&"email".to_string());
+        let phone_enabled = self.auth_methods.contains(&"phone".to_string());
+        let username_enabled = self.auth_methods.contains(&"username".to_string());
+
+        let mut first_factor = FirstFactor::EmailPassword;
+        let mut alternate_first_factors: Vec<FirstFactor> = Vec::new();
+
+        if email_enabled {
+            first_factor = FirstFactor::EmailPassword;
+            if phone_enabled {
+                alternate_first_factors.push(FirstFactor::PhoneOtp);
+            }
+            if username_enabled {
+                alternate_first_factors.push(FirstFactor::UsernamePassword);
+            }
+        } else if phone_enabled {
+            first_factor = FirstFactor::PhoneOtp;
+            if username_enabled {
+                alternate_first_factors.push(FirstFactor::UsernamePassword);
+            }
+        } else if username_enabled {
+            first_factor = FirstFactor::UsernamePassword;
+        }
+
+        let email_settings = EmailSettings {
+            enabled: email_enabled,
+            required: email_enabled,
+            ..EmailSettings::default()
+        };
+
+        let phone_settings = PhoneSettings {
+            enabled: phone_enabled,
+            required: phone_enabled,
+            ..PhoneSettings::default()
+        };
+
+        let username_settings = UsernameSettings {
+            enabled: username_enabled,
+            required: username_enabled,
+            ..UsernameSettings::default()
+        };
+
+        let password_settings = PasswordSettings::default();
+        let first_name_settings = IndividualAuthSettings::default();
+        let last_name_settings = IndividualAuthSettings::default();
+
+        let auth_factors_enabled = AuthFactorsEnabled::default()
+            .with_email(email_enabled)
+            .with_phone(phone_enabled)
+            .with_username(username_enabled);
+
+        let verification_policy = VerificationPolicy {
+            phone_number: phone_enabled,
+            email: email_enabled,
+        };
+
+        DeploymentAuthSettings {
+            deployment_id,
+            email_address: email_settings,
+            phone_number: phone_settings,
+            username: username_settings,
+            first_factor,
+            first_name: first_name_settings,
+            last_name: last_name_settings,
+            password: password_settings,
+            auth_factors_enabled,
+            verification_policy,
+            second_factor_policy: SecondFactorPolicy::None,
+            ..DeploymentAuthSettings::default()
+        }
+    }
+
+    fn create_b2b_settings(&self, deployment_id: i64) -> DeploymentB2bSettingsWithRoles {
+        DeploymentB2bSettingsWithRoles {
+            settings: DeploymentB2bSettings {
+                deployment_id,
+                ..DeploymentB2bSettings::default()
+            },
+            default_workspace_creator_role: DeploymentWorkspaceRole::admin(),
+            default_workspace_member_role: DeploymentWorkspaceRole::member(),
+            default_org_creator_role: DeploymentOrganizationRole::admin(),
+            default_org_member_role: DeploymentOrganizationRole::member(),
+        }
+    }
+
+    fn create_key_pair(&self, deployment_id: i64) -> Result<DeploymentKeyPair, AppError> {
+        let pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+
+        Ok(DeploymentKeyPair {
+            id: 0,
+            deployment_id,
+            public_key: pair.public_key_pem(),
+            private_key: pair.serialize_pem(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        })
+    }
+
+    fn create_ui_settings(
+        &self,
+        deployment_id: i64,
+        app_name: String,
+    ) -> DeploymentUISettings {
+        DeploymentUISettings {
+            deployment_id,
+            app_name,
+            after_sign_out_all_page_url: "https://staging.wacht.services/sign-in".to_string(),
+            after_sign_out_one_page_url: "https://staging.wacht.services/account-picker".to_string(),
+            sign_in_page_url: "https://staging.wacht.services/sign-in".to_string(),
+            sign_up_page_url: "https://staging.wacht.services/sign-up".to_string(),
+            dark_mode_settings: DarkModeSettings::default(),
+            light_mode_settings: LightModeSettings::default(),
+            organization_profile_url: "https://staging.wacht.services/organization".to_string(),
+            create_organization_url: "https://staging.wacht.services/create-organization".to_string(),
+            user_profile_url: "https://staging.wacht.services/me".to_string(),
+            use_initials_for_organization_profile_image: true,
+            use_initials_for_user_profile_image: true,
+            ..DeploymentUISettings::default()
+        }
+    }
+
+    fn create_restrictions(&self, deployment_id: i64) -> DeploymentRestrictions {
+        DeploymentRestrictions {
+            deployment_id,
+            allowlist_enabled: false,
+            blocklist_enabled: false,
+            block_subaddresses: false,
+            block_disposable_emails: false,
+            block_voip_numbers: false,
+            country_restrictions: Default::default(),
+            banned_keywords: Default::default(),
+            allowlisted_resources: Default::default(),
+            blocklisted_resources: Default::default(),
+            sign_up_mode: Default::default(),
+            waitlist_collect_names: true,
+            ..Default::default()
+        }
+    }
+
+    fn create_sms_templates(&self, deployment_id: i64) -> DeploymentSmsTemplate {
+        DeploymentSmsTemplate {
+            deployment_id,
+            ..Default::default()
+        }
+    }
+
+    fn create_email_templates(&self, deployment_id: i64) -> DeploymentEmailTemplate {
+        DeploymentEmailTemplate {
+            deployment_id,
+            ..Default::default()
+        }
     }
 }
 
@@ -1159,6 +1329,474 @@ impl CreateProductionDeploymentCommand {
                 tracing::info!("No Postmark domain to cleanup for: {}", domain);
             }
         }
+    }
+}
+
+impl Command for CreateStagingDeploymentCommand {
+    type Output = Deployment;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let validator = ProjectValidator::new();
+        validator.validate_auth_methods(&self.auth_methods)?;
+
+        let mut tx = app_state.db_pool.begin().await?;
+
+        let project = sqlx::query!(
+            "SELECT name FROM projects WHERE id = $1 AND deleted_at IS NULL",
+            self.project_id
+        )
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| {
+            AppError::NotFound(format!("Project with id {} not found", self.project_id))
+        })?;
+
+        // Check staging deployment limit (max 3)
+        let staging_count = sqlx::query!(
+            "SELECT COUNT(*) as count FROM deployments WHERE project_id = $1 AND mode = 'staging' AND deleted_at IS NULL",
+            self.project_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        if staging_count.count.unwrap_or(0) >= 3 {
+            return Err(AppError::BadRequest(
+                "Maximum of 3 staging deployments allowed per project".to_string(),
+            ));
+        }
+
+        // Generate unique staging subdomain
+        let staging_number = staging_count.count.unwrap_or(0) + 1;
+        let backend_host = if staging_number == 1 {
+            "staging.wacht.services".to_string()
+        } else {
+            format!("staging-{}.wacht.services", staging_number)
+        };
+        let frontend_host = backend_host.clone();
+
+        let mut publishable_key = String::from("pk_test_");
+        let base64_backend_host = BASE64_STANDARD.encode(format!("https://{}", backend_host));
+        publishable_key.push_str(&base64_backend_host);
+
+        let deployment_row = sqlx::query!(
+            r#"
+            INSERT INTO deployments (
+                id,
+                project_id,
+                mode,
+                backend_host,
+                frontend_host,
+                publishable_key,
+                maintenance_mode,
+                mail_from_host,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id, created_at, updated_at, deleted_at,
+                     maintenance_mode, backend_host, frontend_host, publishable_key, project_id, mode, mail_from_host
+            "#,
+            app_state.sf.next_id()? as i64,
+            self.project_id,
+            "staging",
+            backend_host,
+            frontend_host,
+            publishable_key,
+            false,
+            "staging.wacht.services",
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let auth_settings = self.create_auth_settings(deployment_row.id);
+
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_auth_settings (
+                id,
+                deployment_id,
+                email_address,
+                phone_number,
+                username,
+                first_name,
+                last_name,
+                password,
+                magic_link,
+                passkey,
+                auth_factors_enabled,
+                verification_policy,
+                second_factor_policy,
+                first_factor,
+                multi_session_support,
+                session_token_lifetime,
+                session_validity_period,
+                session_inactive_timeout,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+            "#,
+            app_state.sf.next_id()? as i64,
+            deployment_row.id,
+            serde_json::to_value(&auth_settings.email_address)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.phone_number)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.username)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.first_name)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.last_name)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.password)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.magic_link)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.passkey)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.auth_factors_enabled)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.verification_policy)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            auth_settings.second_factor_policy.to_string(),
+            auth_settings.first_factor.to_string(),
+            serde_json::to_value(&auth_settings.multi_session_support)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            auth_settings.session_token_lifetime,
+            auth_settings.session_validity_period,
+            auth_settings.session_inactive_timeout,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let ui_settings = self.create_ui_settings(deployment_row.id, project.name.clone());
+
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_ui_settings (
+                id,
+                deployment_id,
+                app_name,
+                tos_page_url,
+                sign_in_page_url,
+                sign_up_page_url,
+                after_sign_out_one_page_url,
+                after_sign_out_all_page_url,
+                favicon_image_url,
+                logo_image_url,
+                privacy_policy_url,
+                signup_terms_statement,
+                signup_terms_statement_shown,
+                light_mode_settings,
+                dark_mode_settings,
+                after_logo_click_url,
+                organization_profile_url,
+                create_organization_url,
+                default_user_profile_image_url,
+                default_organization_profile_image_url,
+                user_profile_url,
+                use_initials_for_user_profile_image,
+                use_initials_for_organization_profile_image,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+            "#,
+            app_state.sf.next_id()? as i64,
+            ui_settings.deployment_id,
+            ui_settings.app_name,
+            ui_settings.tos_page_url,
+            ui_settings.sign_in_page_url,
+            ui_settings.sign_up_page_url,
+            ui_settings.after_sign_out_one_page_url,
+            ui_settings.after_sign_out_all_page_url,
+            ui_settings.favicon_image_url,
+            ui_settings.logo_image_url,
+            ui_settings.privacy_policy_url,
+            ui_settings.signup_terms_statement,
+            ui_settings.signup_terms_statement_shown,
+            serde_json::to_value(&ui_settings.light_mode_settings)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&ui_settings.dark_mode_settings)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            ui_settings.after_logo_click_url,
+            ui_settings.organization_profile_url,
+            ui_settings.create_organization_url,
+            ui_settings.default_user_profile_image_url,
+            ui_settings.default_organization_profile_image_url,
+            ui_settings.user_profile_url,
+            ui_settings.use_initials_for_user_profile_image,
+            ui_settings.use_initials_for_organization_profile_image,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let b2b_settings = self.create_b2b_settings(deployment_row.id);
+
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_b2b_settings (
+                id,
+                deployment_id,
+                default_workspace_creator_role_id,
+                default_workspace_member_role_id,
+                default_org_creator_role_id,
+                default_org_member_role_id,
+                limit_org_creation_per_user,
+                limit_workspace_creation_per_org,
+                org_creation_per_user_count,
+                workspaces_per_org_count,
+                allow_users_to_create_orgs,
+                max_orgs_per_user,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            "#,
+            app_state.sf.next_id()? as i64,
+            deployment_row.id,
+            b2b_settings.default_workspace_creator_role.id,
+            b2b_settings.default_workspace_member_role.id,
+            b2b_settings.default_org_creator_role.id,
+            b2b_settings.default_org_member_role.id,
+            b2b_settings.settings.limit_org_creation_per_user,
+            b2b_settings.settings.limit_workspace_creation_per_org,
+            b2b_settings.settings.org_creation_per_user_count,
+            b2b_settings.settings.workspaces_per_org_count,
+            b2b_settings.settings.allow_users_to_create_orgs,
+            b2b_settings.settings.max_orgs_per_user,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let restrictions = self.create_restrictions(deployment_row.id);
+
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_restrictions (
+                id,
+                deployment_id,
+                allowlist_enabled,
+                blocklist_enabled,
+                block_subaddresses,
+                block_disposable_emails,
+                block_voip_numbers,
+                country_restrictions,
+                banned_keywords,
+                allowlisted_resources,
+                blocklisted_resources,
+                sign_up_mode,
+                waitlist_collect_names,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            "#,
+            app_state.sf.next_id()? as i64,
+            deployment_row.id,
+            restrictions.allowlist_enabled,
+            restrictions.blocklist_enabled,
+            restrictions.block_subaddresses,
+            restrictions.block_disposable_emails,
+            restrictions.block_voip_numbers,
+            serde_json::to_value(&restrictions.country_restrictions)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            &restrictions.banned_keywords,
+            &restrictions.allowlisted_resources,
+            &restrictions.blocklisted_resources,
+            restrictions.sign_up_mode.to_string(),
+            restrictions.waitlist_collect_names,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let sms_templates = self.create_sms_templates(deployment_row.id);
+
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_sms_templates (
+                id,
+                deployment_id,
+                reset_password_code_template,
+                verification_code_template,
+                password_change_template,
+                password_remove_template,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            "#,
+            app_state.sf.next_id()? as i64,
+            sms_templates.deployment_id,
+            sms_templates.reset_password_code_template,
+            sms_templates.verification_code_template,
+            sms_templates.password_change_template,
+            sms_templates.password_remove_template,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let key_pair = self.create_key_pair(deployment_row.id)?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_key_pairs (
+                id,
+                deployment_id,
+                public_key,
+                private_key,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+            app_state.sf.next_id()? as i64,
+            deployment_row.id,
+            key_pair.public_key,
+            key_pair.private_key,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let email_templates = self.create_email_templates(deployment_row.id);
+
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_email_templates (
+                id,
+                deployment_id,
+                organization_invite_template,
+                verification_code_template,
+                reset_password_code_template,
+                primary_email_change_template,
+                password_change_template,
+                password_remove_template,
+                sign_in_from_new_device_template,
+                magic_link_template,
+                waitlist_signup_template,
+                waitlist_invite_template,
+                workspace_invite_template,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            "#,
+            app_state.sf.next_id()? as i64,
+            email_templates.deployment_id,
+            serde_json::to_value(&email_templates.organization_invite_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&email_templates.verification_code_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&email_templates.reset_password_code_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&email_templates.primary_email_change_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&email_templates.password_change_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&email_templates.password_remove_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&email_templates.sign_in_from_new_device_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&email_templates.magic_link_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&email_templates.waitlist_signup_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&email_templates.waitlist_invite_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&email_templates.workspace_invite_template)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // Create social connections for OAuth providers
+        let social_providers = [
+            "google",
+            "apple",
+            "facebook",
+            "github",
+            "microsoft",
+            "discord",
+            "linkedin",
+            "x",
+            "gitlab",
+        ];
+
+        let empty_credentials = serde_json::to_value(OauthCredentials::default())
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+
+        for provider in social_providers.iter() {
+            let provider_with_oauth = format!("{}_oauth", provider);
+            if (self.auth_methods.contains(&provider.to_string())
+                || self.auth_methods.contains(&provider_with_oauth))
+                && SocialConnectionProvider::from_str(*provider).is_ok()
+            {
+                sqlx::query!(
+                    r#"
+                    INSERT INTO deployment_social_connections (
+                        id,
+                        deployment_id,
+                        provider,
+                        enabled,
+                        credentials,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        $1,
+                        $2,
+                        $3,
+                        true,
+                        $4,
+                        $5,
+                        $6
+                    )
+                    "#,
+                    app_state.sf.next_id()? as i64,
+                    deployment_row.id,
+                    provider,
+                    empty_credentials,
+                    chrono::Utc::now(),
+                    chrono::Utc::now(),
+                )
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
+        tx.commit().await?;
+
+        Ok(Deployment {
+            id: deployment_row.id,
+            created_at: deployment_row.created_at,
+            updated_at: deployment_row.updated_at,
+            maintenance_mode: deployment_row.maintenance_mode,
+            backend_host: deployment_row.backend_host,
+            frontend_host: deployment_row.frontend_host,
+            publishable_key: deployment_row.publishable_key,
+            project_id: deployment_row.project_id,
+            mode: DeploymentMode::from(deployment_row.mode),
+            mail_from_host: deployment_row.mail_from_host,
+            verification_status: Some(crate::models::VerificationStatus::Verified),
+            domain_verification_records: None,
+            email_verification_records: None,
+        })
     }
 }
 
@@ -1696,6 +2334,8 @@ impl Command for CreateProductionDeploymentCommand {
             "microsoft",
             "discord",
             "linkedin",
+            "x",
+            "gitlab",
         ];
 
         let empty_credentials = serde_json::to_value(crate::models::OauthCredentials::default())

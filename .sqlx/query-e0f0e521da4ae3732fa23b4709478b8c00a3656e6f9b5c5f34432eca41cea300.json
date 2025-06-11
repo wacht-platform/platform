@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO deployment_restrictions (\n                id,\n                deployment_id,\n                allowlist_enabled,\n                blocklist_enabled,\n                block_subaddresses,\n                block_disposable_emails,\n                block_voip_numbers,\n                country_restrictions,\n                banned_keywords,\n                allowlisted_resources,\n                blocklisted_resources,\n                sign_up_mode,\n                waitlist_collect_names,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Jsonb",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e0f0e521da4ae3732fa23b4709478b8c00a3656e6f9b5c5f34432eca41cea300"
+}

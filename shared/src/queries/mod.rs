@@ -28,8 +28,12 @@ pub trait Query {
 
 pub mod b2b;
 pub mod deployment;
+pub mod invitation;
+pub mod organization;
 pub mod project;
+pub mod signin;
 pub mod user;
+pub mod workspace;
 
 // AI-related queries
 pub mod ai_agent;
@@ -39,8 +43,12 @@ pub mod ai_workflow;
 
 pub use b2b::*;
 pub use deployment::*;
+pub use invitation::*;
+pub use organization::*;
 pub use project::*;
+pub use signin::*;
 pub use user::*;
+pub use workspace::*;
 
 // AI-related exports
 pub use ai_agent::*;
