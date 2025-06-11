@@ -11,6 +11,7 @@ COPY .sqlx/ ./.sqlx/
 # Copy source code for all workspace members
 COPY console/ ./console/
 COPY shared/ ./shared/
+COPY worker/ ./worker/
 
 # Build the console application
 RUN cargo build --release --bin console
