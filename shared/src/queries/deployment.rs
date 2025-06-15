@@ -85,12 +85,15 @@ impl Query for GetDeploymentWithSettingsQuery {
                 deployment_ui_settings.create_organization_url,
                 deployment_ui_settings.default_user_profile_image_url,
                 deployment_ui_settings.default_organization_profile_image_url,
+                deployment_ui_settings.default_workspace_profile_image_url,
                 deployment_ui_settings.use_initials_for_user_profile_image,
                 deployment_ui_settings.use_initials_for_organization_profile_image,
                 deployment_ui_settings.after_signup_redirect_url,
                 deployment_ui_settings.after_signin_redirect_url,
                 deployment_ui_settings.user_profile_url,
                 deployment_ui_settings.after_create_organization_redirect_url,
+                deployment_ui_settings.waitlist_page_url,
+                deployment_ui_settings.support_page_url,
 
                 deployment_b2b_settings.id as "b2b_settings_id?",
                 deployment_b2b_settings.created_at as "b2b_settings_created_at?",
@@ -253,6 +256,7 @@ impl Query for GetDeploymentWithSettingsQuery {
                     default_user_profile_image_url: row.default_user_profile_image_url,
                     default_organization_profile_image_url: row
                         .default_organization_profile_image_url,
+                    default_workspace_profile_image_url: row.default_workspace_profile_image_url,
                     use_initials_for_user_profile_image: row.use_initials_for_user_profile_image,
                     use_initials_for_organization_profile_image: row
                         .use_initials_for_organization_profile_image,
@@ -261,6 +265,8 @@ impl Query for GetDeploymentWithSettingsQuery {
                     user_profile_url: row.user_profile_url,
                     after_create_organization_redirect_url: row
                         .after_create_organization_redirect_url,
+                    waitlist_page_url: row.waitlist_page_url,
+                    support_page_url: row.support_page_url,
                 })
             } else {
                 None

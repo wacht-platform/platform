@@ -91,9 +91,7 @@ impl QdrantService {
             ))
             .await
         {
-            Ok(_) => {
-                println!("✅ Successfully created/verified integer index on knowledge_base_id")
-            }
+            Ok(_) => {}
             Err(e) => {
                 let error_msg = e.to_string();
                 if error_msg.contains("already exists")
@@ -109,10 +107,6 @@ impl QdrantService {
             }
         }
 
-        println!(
-            "🎉 Qdrant initialization completed successfully for collection: {}",
-            collection_name
-        );
         Ok(())
     }
 

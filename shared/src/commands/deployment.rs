@@ -3,17 +3,51 @@ use std::str::FromStr;
 
 use super::Command;
 use crate::{
-    error::AppError, state::AppState,
-        dto::json::{
-            DeploymentAuthSettingsUpdates, DeploymentB2bSettingsUpdates,
-            DeploymentDisplaySettingsUpdates, DeploymentRestrictionsUpdates,
-            DeploymentSocialConnectionUpsert, NewDeploymentJwtTemplate,
-            PartialDeploymentJwtTemplate,
-        },
-        models::{DeploymentJwtTemplate, DeploymentSocialConnection, SocialConnectionProvider},
+    dto::json::{
+        DeploymentAuthSettingsUpdates, DeploymentB2bSettingsUpdates,
+        DeploymentDisplaySettingsUpdates, DeploymentRestrictionsUpdates,
+        DeploymentSocialConnectionUpsert, NewDeploymentJwtTemplate, PartialDeploymentJwtTemplate,
+    },
+    error::AppError,
+    models::{DeploymentJwtTemplate, DeploymentSocialConnection, SocialConnectionProvider},
+    state::AppState,
 };
 use chrono::Utc;
+use redis::AsyncCommands;
 use serde_json::{Map, Value, json};
+
+pub struct ClearDeploymentCacheCommand {
+    pub deployment_id: i64,
+}
+
+impl ClearDeploymentCacheCommand {
+    pub fn new(deployment_id: i64) -> Self {
+        Self { deployment_id }
+    }
+}
+
+impl Command for ClearDeploymentCacheCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let deployment_row = sqlx::query!(
+            "SELECT backend_host FROM deployments WHERE id = $1",
+            self.deployment_id
+        )
+        .fetch_one(&app_state.db_pool)
+        .await?;
+
+        let mut redis_conn = app_state
+            .redis_client
+            .get_multiplexed_tokio_connection()
+            .await?;
+
+        let cache_key = format!("deployment:{}", deployment_row.backend_host);
+        let _: () = redis_conn.del(cache_key).await?;
+
+        Ok(())
+    }
+}
 
 pub struct UpdateDeploymentAuthSettingsCommand {
     pub deployment_id: i64,
@@ -221,6 +255,10 @@ impl Command for UpdateDeploymentAuthSettingsCommand {
             .await
             .unwrap();
 
+        ClearDeploymentCacheCommand::new(self.deployment_id)
+            .execute(app_state)
+            .await?;
+
         Ok(())
     }
 }
@@ -268,6 +306,10 @@ impl Command for UpsertDeploymentSocialConnectionCommand {
             enabled: result.enabled,
             credentials: serde_json::from_value(result.credentials.unwrap()).unwrap_or(None),
         };
+
+        ClearDeploymentCacheCommand::new(self.deployment_id)
+            .execute(app_state)
+            .await?;
 
         Ok(connection)
     }
@@ -354,6 +396,10 @@ impl Command for UpdateDeploymentRestrictionsCommand {
 
         query_builder.build().execute(&app_state.db_pool).await?;
 
+        ClearDeploymentCacheCommand::new(self.deployment_id)
+            .execute(app_state)
+            .await?;
+
         Ok(().into())
     }
 }
@@ -408,6 +454,11 @@ impl Command for CreateDeploymentJwtTemplateCommand {
                 .map(|v| serde_json::from_value(v).unwrap_or_default()),
             template: serde_json::from_value(result.template).unwrap_or_default(),
         };
+
+        ClearDeploymentCacheCommand::new(self.deployment_id)
+            .execute(app_state)
+            .await?;
+
         Ok(template)
     }
 }
@@ -475,6 +526,11 @@ impl Command for UpdateDeploymentJwtTemplateCommand {
             template: result.get("template"),
         };
 
+        let deployment_id: i64 = result.get("deployment_id");
+        ClearDeploymentCacheCommand::new(deployment_id)
+            .execute(app_state)
+            .await?;
+
         Ok(template)
     }
 }
@@ -493,10 +549,23 @@ impl Command for DeleteDeploymentJwtTemplateCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let deployment_row = sqlx::query!(
+            "SELECT deployment_id FROM deployment_jwt_templates WHERE id = $1",
+            self.id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
         sqlx::query("DELETE FROM deployment_jwt_templates WHERE id = $1")
             .bind(self.id)
             .execute(&app_state.db_pool)
             .await?;
+
+        if let Some(row) = deployment_row {
+            ClearDeploymentCacheCommand::new(row.deployment_id)
+                .execute(app_state)
+                .await?;
+        }
 
         Ok(().into())
     }
@@ -634,6 +703,10 @@ impl Command for UpdateDeploymentB2bSettingsCommand {
                 self.deployment_id
             )));
         }
+
+        ClearDeploymentCacheCommand::new(self.deployment_id)
+            .execute(app_state)
+            .await?;
 
         Ok(())
     }
@@ -789,6 +862,23 @@ impl Command for UpdateDeploymentDisplaySettingsCommand {
             query_builder.push_bind(after_create_organization_redirect_url);
         }
 
+        if let Some(default_workspace_profile_image_url) =
+            &self.settings.default_workspace_profile_image_url
+        {
+            query_builder.push(", default_workspace_profile_image_url = ");
+            query_builder.push_bind(default_workspace_profile_image_url);
+        }
+
+        if let Some(waitlist_page_url) = &self.settings.waitlist_page_url {
+            query_builder.push(", waitlist_page_url = ");
+            query_builder.push_bind(waitlist_page_url);
+        }
+
+        if let Some(support_page_url) = &self.settings.support_page_url {
+            query_builder.push(", support_page_url = ");
+            query_builder.push_bind(support_page_url);
+        }
+
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 
@@ -800,6 +890,10 @@ impl Command for UpdateDeploymentDisplaySettingsCommand {
                 self.deployment_id
             )));
         }
+
+        ClearDeploymentCacheCommand::new(self.deployment_id)
+            .execute(app_state)
+            .await?;
 
         Ok(().into())
     }

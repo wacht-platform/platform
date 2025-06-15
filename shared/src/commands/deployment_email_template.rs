@@ -29,6 +29,7 @@ impl Command for UpdateDeploymentEmailTemplateCommand {
     type Output = EmailTemplate;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+
         let column_name = match self.template_name {
             DeploymentNameParams::OrganizationInviteTemplate => "organization_invite_template",
             DeploymentNameParams::VerificationCodeTemplate => "verification_code_template",
@@ -55,6 +56,12 @@ impl Command for UpdateDeploymentEmailTemplateCommand {
             .bind(template_json)
             .bind(self.deployment_id)
             .execute(&app_state.db_pool)
+            .await?;
+
+        // Clear Redis cache for deployment
+        use crate::commands::deployment::ClearDeploymentCacheCommand;
+        ClearDeploymentCacheCommand::new(self.deployment_id)
+            .execute(app_state)
             .await?;
 
         Ok(self.template)

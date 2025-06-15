@@ -105,10 +105,20 @@ pub async fn upload_image(
                 deployment_id, file_extension
             )
         }
+        "workspace-profile" => {
+            updates.default_workspace_profile_image_url = Some(format!(
+                "https://cdn.wacht.services/deployments/{}/workspace-profile.{}",
+                deployment_id, file_extension
+            ));
+            format!(
+                "deployments/{}/workspace-profile.{}",
+                deployment_id, file_extension
+            )
+        }
         _ => {
             return Err((
                 StatusCode::BAD_REQUEST,
-                "Invalid image type. Allowed types: logo, favicon, user-profile, org-profile"
+                "Invalid image type. Allowed types: logo, favicon, user-profile, org-profile, workspace-profile"
                     .to_string(),
             )
                 .into());

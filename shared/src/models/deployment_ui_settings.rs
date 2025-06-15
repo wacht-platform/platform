@@ -60,12 +60,15 @@ pub struct DeploymentUISettings {
     pub create_organization_url: String,
     pub default_user_profile_image_url: String,
     pub default_organization_profile_image_url: String,
+    pub default_workspace_profile_image_url: String,
     pub use_initials_for_user_profile_image: bool,
     pub use_initials_for_organization_profile_image: bool,
     pub after_signup_redirect_url: String,
     pub after_signin_redirect_url: String,
     pub user_profile_url: String,
     pub after_create_organization_redirect_url: String,
+    pub waitlist_page_url: String,
+    pub support_page_url: String,
 }
 
 impl Default for DeploymentUISettings {
@@ -94,12 +97,15 @@ impl Default for DeploymentUISettings {
             create_organization_url: "".to_string(),
             default_user_profile_image_url: "".to_string(),
             default_organization_profile_image_url: "".to_string(),
+            default_workspace_profile_image_url: "".to_string(),
             use_initials_for_user_profile_image: true,
             use_initials_for_organization_profile_image: true,
             after_signup_redirect_url: "".to_string(),
             after_signin_redirect_url: "".to_string(),
             user_profile_url: "".to_string(),
             after_create_organization_redirect_url: "".to_string(),
+            waitlist_page_url: "".to_string(),
+            support_page_url: "".to_string(),
         }
     }
 }

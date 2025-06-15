@@ -235,10 +235,13 @@ pub struct DeploymentDisplaySettingsUpdates {
     pub create_organization_url: Option<String>,
     pub default_user_profile_image_url: Option<String>,
     pub default_organization_profile_image_url: Option<String>,
+    pub default_workspace_profile_image_url: Option<String>,
     pub use_initials_for_user_profile_image: Option<bool>,
     pub use_initials_for_organization_profile_image: Option<bool>,
     pub after_signup_redirect_url: Option<String>,
     pub after_signin_redirect_url: Option<String>,
     pub user_profile_url: Option<String>,
     pub after_create_organization_redirect_url: Option<String>,
+    pub waitlist_page_url: Option<String>,
+    pub support_page_url: Option<String>,
 }
