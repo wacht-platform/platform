@@ -330,17 +330,30 @@ impl Command for DeleteAiToolCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_pool.begin().await
-            .map_err(|e| AppError::Database(e))?;
-
-        // Delete all tool relationships first
-        sqlx::query!(
-            "DELETE FROM ai_agent_tools WHERE tool_id = $1",
-            self.tool_id
+        let dependent_agents = sqlx::query!(
+            r#"
+            SELECT a.id, a.name
+            FROM ai_agents a
+            WHERE a.deployment_id = $1
+            AND a.configuration->'tool_ids' ? $2::text
+            "#,
+            self.deployment_id,
+            self.tool_id.to_string()
         )
-        .execute(&mut *tx)
+        .fetch_all(&app_state.db_pool)
         .await
         .map_err(|e| AppError::Database(e))?;
+
+        if !dependent_agents.is_empty() {
+            let agent_names: Vec<String> = dependent_agents.iter()
+                .map(|agent| agent.name.clone())
+                .collect();
+
+            return Err(AppError::BadRequest(format!(
+                "Cannot delete tool. The following agents depend on it: {}. Please remove this tool from these agents first.",
+                agent_names.join(", ")
+            )));
+        }
 
         // Delete the tool
         sqlx::query!(
@@ -348,12 +361,9 @@ impl Command for DeleteAiToolCommand {
             self.tool_id,
             self.deployment_id
         )
-        .execute(&mut *tx)
+        .execute(&app_state.db_pool)
         .await
         .map_err(|e| AppError::Database(e))?;
-
-        tx.commit().await
-            .map_err(|e| AppError::Database(e))?;
 
         Ok(())
     }

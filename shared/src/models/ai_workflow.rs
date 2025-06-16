@@ -85,9 +85,13 @@ pub struct NodePosition {
 #[serde(tag = "type")]
 pub enum WorkflowNodeType {
     Trigger(TriggerNodeConfig),
-    Action(ActionNodeConfig),
     Condition(ConditionNodeConfig),
-    Transform(TransformNodeConfig),
+    ErrorHandler(ErrorHandlerNodeConfig),
+    LLMCall(LLMCallNodeConfig),
+    Switch(SwitchNodeConfig),
+    ToolCall(ToolCallNodeConfig),
+    StoreContext(StoreContextNodeConfig),
+    FetchContext(FetchContextNodeConfig),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -125,93 +129,65 @@ pub enum ConditionType {
 // Node-specific configurations
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TriggerNodeConfig {
-    pub trigger_type: TriggerType,
-    pub scheduled_at: Option<DateTime<Utc>>, // Future date for scheduled triggers
-    pub webhook_config: Option<WebhookConfig>,
-    pub event_config: Option<EventConfig>,
+    pub condition: String, // Text condition for automated trigger
+}
+
+
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ErrorHandlerNodeConfig {
+    pub enable_retry: bool,
+    pub max_retries: u32,
+    pub retry_delay_seconds: u32,
+    pub log_errors: bool,
+    pub custom_error_message: Option<String>,
+    pub contained_nodes: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum TriggerType {
-    Manual,
-    Scheduled,
-    Webhook,
-    Event,
-    ApiCall,
+pub struct LLMCallNodeConfig {
+    pub prompt_template: String,
+    pub response_format: ResponseFormat,
+    pub json_schema: Vec<SchemaField>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct WebhookConfig {
-    pub endpoint: String,
-    pub method: String,
-    pub headers: HashMap<String, String>,
-    pub authentication: Option<WebhookAuth>,
+pub enum ResponseFormat {
+    Text,
+    Json,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct WebhookAuth {
-    pub auth_type: String,
-    pub token: Option<String>,
-    pub username: Option<String>,
-    pub password: Option<String>,
+pub struct SchemaField {
+    pub name: String,
+    pub field_type: String,
+    pub required: bool,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EventConfig {
-    pub event_type: String,
-    pub filters: HashMap<String, String>,
+pub struct SwitchNodeConfig {
+    pub switch_variable: String,
+    pub comparison_type: ComparisonType,
+    pub cases: Vec<SwitchCase>,
+    pub default_case: bool,
+    pub case_sensitive: bool,
+    pub number_of_cases: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ActionNodeConfig {
-    pub action_type: ActionType,
-    pub tool_id: Option<i64>,
-    pub api_config: Option<ApiActionConfig>,
-    pub knowledge_base_config: Option<KnowledgeBaseActionConfig>,
-    pub trigger_workflow_config: Option<TriggerWorkflowActionConfig>,
-    pub platform_event_config: Option<PlatformEventActionConfig>,
+pub enum ComparisonType {
+    Equals,
+    Contains,
+    StartsWith,
+    EndsWith,
+    Regex,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum ActionType {
-    ApiCall,
-    KnowledgeBaseSearch,
-    TriggerWorkflow,
-    PlatformEvent,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ApiActionConfig {
-    pub endpoint: String,
-    pub method: String,
-    pub headers: HashMap<String, String>,
-    pub body: Option<String>,
-    pub timeout_seconds: Option<u32>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct KnowledgeBaseActionConfig {
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub knowledge_base_id: i64,
-    pub query: String,
-    pub max_results: Option<u32>,
-    pub similarity_threshold: Option<f32>,
-    pub sort_by_relevance: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TriggerWorkflowActionConfig {
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub target_workflow_id: i64,
-    pub input_mapping: HashMap<String, String>,
-    pub wait_for_completion: bool,
-    pub timeout_seconds: Option<u32>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PlatformEventActionConfig {
-    pub event_label: String,
-    pub event_data: Option<serde_json::Value>,
+pub struct SwitchCase {
+    pub case_value: String,
+    pub case_label: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -229,19 +205,25 @@ pub enum ConditionEvaluationType {
     Simple,
 }
 
+
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TransformNodeConfig {
-    pub transform_type: TransformType,
-    pub script: String,
-    pub input_mapping: HashMap<String, String>,
-    pub output_mapping: HashMap<String, String>,
+pub struct ToolCallNodeConfig {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub tool_id: i64,
+    pub input_parameters: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum TransformType {
-    JavaScript,
-    JsonTransform,
-    DataMapping,
+pub struct StoreContextNodeConfig {
+    pub context_data: String, // Textarea content for context to store
+    pub use_llm: bool, // Toggle for using LLM instead of static data
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FetchContextNodeConfig {
+    pub context_data: String, // Textarea content for context to fetch
+    pub use_llm: bool, // Toggle for using LLM instead of static data
 }
 
 // Workflow execution models

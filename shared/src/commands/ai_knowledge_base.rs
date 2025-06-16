@@ -226,6 +226,31 @@ impl Command for DeleteAiKnowledgeBaseCommand {
             )));
         }
 
+        let dependent_agents = sqlx::query!(
+            r#"
+            SELECT a.id, a.name
+            FROM ai_agents a
+            WHERE a.deployment_id = $1
+            AND a.configuration->'knowledge_base_ids' ? $2::text
+            "#,
+            self.deployment_id,
+            self.knowledge_base_id.to_string()
+        )
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        if !dependent_agents.is_empty() {
+            let agent_names: Vec<String> = dependent_agents.iter()
+                .map(|agent| agent.name.clone())
+                .collect();
+
+            return Err(AppError::BadRequest(format!(
+                "Cannot delete knowledge base. The following agents depend on it: {}. Please remove this knowledge base from these agents first.",
+                agent_names.join(", ")
+            )));
+        }
+
         let mut tx = app_state
             .db_pool
             .begin()

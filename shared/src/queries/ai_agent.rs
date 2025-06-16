@@ -47,25 +47,10 @@ impl Query for GetAiAgentsQuery {
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
                 a.configuration, a.deployment_id,
-                COALESCE(t.tools_count, 0) as tools_count,
-                COALESCE(w.workflows_count, 0) as workflows_count,
-                COALESCE(k.knowledge_bases_count, 0) as knowledge_bases_count
+                COALESCE(jsonb_array_length(a.configuration->'tool_ids'), 0) as tools_count,
+                COALESCE(jsonb_array_length(a.configuration->'workflow_ids'), 0) as workflows_count,
+                COALESCE(jsonb_array_length(a.configuration->'knowledge_base_ids'), 0) as knowledge_bases_count
             FROM ai_agents a
-            LEFT JOIN (
-                SELECT agent_id, COUNT(*) as tools_count
-                FROM ai_agent_tools
-                GROUP BY agent_id
-            ) t ON a.id = t.agent_id
-            LEFT JOIN (
-                SELECT agent_id, COUNT(*) as workflows_count
-                FROM ai_agent_workflows
-                GROUP BY agent_id
-            ) w ON a.id = w.agent_id
-            LEFT JOIN (
-                SELECT agent_id, COUNT(*) as knowledge_bases_count
-                FROM ai_agent_knowledge_bases
-                GROUP BY agent_id
-            ) k ON a.id = k.agent_id
             WHERE a.deployment_id = $1"#;
 
         let agents = if let Some(search) = &self.search {
@@ -98,11 +83,11 @@ impl Query for GetAiAgentsQuery {
                 description: row.get("description"),
                 configuration: row.get("configuration"),
                 deployment_id: row.get("deployment_id"),
-                tools_count: row.get::<Option<i64>, _>("tools_count").unwrap_or(0),
-                workflows_count: row.get::<Option<i64>, _>("workflows_count").unwrap_or(0),
+                tools_count: row.get::<Option<i32>, _>("tools_count").unwrap_or(0) as i64,
+                workflows_count: row.get::<Option<i32>, _>("workflows_count").unwrap_or(0) as i64,
                 knowledge_bases_count: row
-                    .get::<Option<i64>, _>("knowledge_bases_count")
-                    .unwrap_or(0),
+                    .get::<Option<i32>, _>("knowledge_bases_count")
+                    .unwrap_or(0) as i64,
             })
             .collect())
     }
@@ -131,25 +116,10 @@ impl Query for GetAiAgentByIdQuery {
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
                 a.configuration, a.deployment_id,
-                COALESCE(t.tools_count, 0) as tools_count,
-                COALESCE(w.workflows_count, 0) as workflows_count,
-                COALESCE(k.knowledge_bases_count, 0) as knowledge_bases_count
+                COALESCE(jsonb_array_length(a.configuration->'tool_ids'), 0) as tools_count,
+                COALESCE(jsonb_array_length(a.configuration->'workflow_ids'), 0) as workflows_count,
+                COALESCE(jsonb_array_length(a.configuration->'knowledge_base_ids'), 0) as knowledge_bases_count
             FROM ai_agents a
-            LEFT JOIN (
-                SELECT agent_id, COUNT(*) as tools_count 
-                FROM ai_agent_tools 
-                GROUP BY agent_id
-            ) t ON a.id = t.agent_id
-            LEFT JOIN (
-                SELECT agent_id, COUNT(*) as workflows_count 
-                FROM ai_agent_workflows 
-                GROUP BY agent_id
-            ) w ON a.id = w.agent_id
-            LEFT JOIN (
-                SELECT agent_id, COUNT(*) as knowledge_bases_count 
-                FROM ai_agent_knowledge_bases 
-                GROUP BY agent_id
-            ) k ON a.id = k.agent_id
             WHERE a.id = $1 AND a.deployment_id = $2
             "#,
             self.agent_id,
@@ -167,9 +137,9 @@ impl Query for GetAiAgentByIdQuery {
             description: agent.description,
             configuration: agent.configuration,
             deployment_id: agent.deployment_id,
-            tools_count: agent.tools_count.unwrap_or(0),
-            workflows_count: agent.workflows_count.unwrap_or(0),
-            knowledge_bases_count: agent.knowledge_bases_count.unwrap_or(0),
+            tools_count: agent.tools_count.unwrap_or(0) as i64,
+            workflows_count: agent.workflows_count.unwrap_or(0) as i64,
+            knowledge_bases_count: agent.knowledge_bases_count.unwrap_or(0) as i64,
         })
     }
 }

@@ -228,21 +228,39 @@ impl Command for DeleteAiWorkflowCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Check if any agents depend on this workflow
+        let dependent_agents = sqlx::query!(
+            r#"
+            SELECT a.id, a.name
+            FROM ai_agents a
+            WHERE a.deployment_id = $1
+            AND a.configuration->'workflow_ids' ? $2::text
+            "#,
+            self.deployment_id,
+            self.workflow_id.to_string()
+        )
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        if !dependent_agents.is_empty() {
+            let agent_names: Vec<String> = dependent_agents.iter()
+                .map(|agent| agent.name.clone())
+                .collect();
+
+            return Err(AppError::BadRequest(format!(
+                "Cannot delete workflow. The following agents depend on it: {}. Please remove this workflow from these agents first.",
+                agent_names.join(", ")
+            )));
+        }
+
         let mut tx = app_state
             .db_pool
             .begin()
             .await
             .map_err(|e| AppError::Database(e))?;
 
-        // Delete all workflow relationships and executions first
-        sqlx::query!(
-            "DELETE FROM ai_agent_workflows WHERE workflow_id = $1",
-            self.workflow_id
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
+        // Delete workflow executions first
         sqlx::query!(
             "DELETE FROM ai_workflow_executions WHERE workflow_id = $1",
             self.workflow_id
