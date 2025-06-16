@@ -167,12 +167,9 @@ pub struct SchemaField {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SwitchNodeConfig {
-    pub switch_variable: String,
-    pub comparison_type: ComparisonType,
+    pub switch_condition: String,
     pub cases: Vec<SwitchCase>,
     pub default_case: bool,
-    pub case_sensitive: bool,
-    pub number_of_cases: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -186,7 +183,7 @@ pub enum ComparisonType {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SwitchCase {
-    pub case_value: String,
+    pub case_condition: String,
     pub case_label: Option<String>,
 }
 
