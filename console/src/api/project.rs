@@ -77,12 +77,9 @@ pub async fn create_staging_deployment(
     Path(project_id): Path<i64>,
     Json(request): Json<CreateStagingDeploymentRequest>,
 ) -> ApiResult<Deployment> {
-    let command = CreateStagingDeploymentCommand::new(
-        project_id,
-        request.auth_methods,
-    )
-    .execute(&app_state)
-    .await?;
+    let command = CreateStagingDeploymentCommand::new(project_id, request.auth_methods)
+        .execute(&app_state)
+        .await?;
 
     Ok(command.into())
 }

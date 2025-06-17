@@ -382,9 +382,9 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
                 create_organization_url, user_profile_url, after_signup_redirect_url, after_signin_redirect_url,
                 after_create_organization_redirect_url, use_initials_for_user_profile_image,
                 use_initials_for_organization_profile_image, default_user_profile_image_url,
-                default_organization_profile_image_url, waitlist_page_url, created_at, updated_at
+                default_organization_profile_image_url, waitlist_page_url, support_page_url, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
             "#
         );
 
@@ -422,6 +422,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             .bind(&ui_settings.default_user_profile_image_url)
             .bind(&ui_settings.default_organization_profile_image_url)
             .bind(format!("https://{}.wacht.tech/waitlist", hostname))
+            .bind("")
             .bind(chrono::Utc::now())
             .bind(chrono::Utc::now())
             .execute(&mut *tx)
@@ -929,22 +930,20 @@ impl CreateStagingDeploymentCommand {
         })
     }
 
-    fn create_ui_settings(
-        &self,
-        deployment_id: i64,
-        app_name: String,
-    ) -> DeploymentUISettings {
+    fn create_ui_settings(&self, deployment_id: i64, app_name: String) -> DeploymentUISettings {
         DeploymentUISettings {
             deployment_id,
             app_name,
             after_sign_out_all_page_url: "https://staging.wacht.services/sign-in".to_string(),
-            after_sign_out_one_page_url: "https://staging.wacht.services/account-picker".to_string(),
+            after_sign_out_one_page_url: "https://staging.wacht.services/account-picker"
+                .to_string(),
             sign_in_page_url: "https://staging.wacht.services/sign-in".to_string(),
             sign_up_page_url: "https://staging.wacht.services/sign-up".to_string(),
             dark_mode_settings: DarkModeSettings::default(),
             light_mode_settings: LightModeSettings::default(),
             organization_profile_url: "https://staging.wacht.services/organization".to_string(),
-            create_organization_url: "https://staging.wacht.services/create-organization".to_string(),
+            create_organization_url: "https://staging.wacht.services/create-organization"
+                .to_string(),
             user_profile_url: "https://staging.wacht.services/me".to_string(),
             use_initials_for_organization_profile_image: true,
             use_initials_for_user_profile_image: true,
@@ -1162,172 +1161,56 @@ impl CreateProductionDeploymentCommand {
         }
     }
 
-    async fn cleanup_deployment_on_failure(
-        &self,
-        app_state: &AppState,
-        deployment_id: i64,
-    ) -> Result<(), AppError> {
-        tracing::warn!(
-            "Cleaning up deployment {} due to external service failure",
-            deployment_id
-        );
-        let mut tx = app_state.db_pool.begin().await?;
-
-        let now = chrono::Utc::now();
-        sqlx::query!(
-            "UPDATE deployments SET deleted_at = $1, updated_at = $1 WHERE id = $2",
-            now,
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "UPDATE deployment_auth_settings SET deleted_at = $1, updated_at = $1 WHERE deployment_id = $2",
-            now,
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "UPDATE deployment_ui_settings SET deleted_at = $1, updated_at = $1 WHERE deployment_id = $2",
-            now,
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "UPDATE deployment_b2b_settings SET deleted_at = $1, updated_at = $1 WHERE deployment_id = $2",
-            now,
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "UPDATE deployment_restrictions SET deleted_at = $1, updated_at = $1 WHERE deployment_id = $2",
-            now,
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "UPDATE deployment_email_templates SET deleted_at = $1, updated_at = $1 WHERE deployment_id = $2",
-            now,
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "UPDATE deployment_sms_templates SET deleted_at = $1, updated_at = $1 WHERE deployment_id = $2",
-            now,
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "UPDATE deployment_social_connections SET deleted_at = $1, updated_at = $1 WHERE deployment_id = $2",
-            now,
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "UPDATE deployment_key_pairs SET deleted_at = $1, updated_at = $1 WHERE deployment_id = $2",
-            now,
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM workspace_roles WHERE deployment_id = $1",
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM organization_roles WHERE deployment_id = $1",
-            deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        tx.commit().await?;
-
-        tracing::info!(
-            "Successfully cleaned up deployment {} and related records",
-            deployment_id
-        );
-        Ok(())
-    }
-
     async fn cleanup_external_resources_on_failure(
         &self,
         app_state: &AppState,
         frontend_hostname: &str,
         backend_hostname: &str,
         domain: &str,
-        cleanup_frontend: bool,
-        cleanup_backend: bool,
-        cleanup_postmark: bool,
         postmark_domain_id: Option<i64>,
     ) {
         tracing::warn!("Cleaning up external resources for domain: {}", domain);
 
-        if cleanup_frontend {
-            if let Err(e) = app_state
-                .cloudflare_service
-                .delete_custom_hostname(frontend_hostname)
-            {
-                tracing::error!(
-                    "Failed to cleanup frontend hostname {}: {}",
-                    frontend_hostname,
-                    e
-                );
-            } else {
-                tracing::info!(
-                    "Successfully cleaned up frontend hostname: {}",
-                    frontend_hostname
-                );
-            }
+        if let Err(e) = app_state
+            .cloudflare_service
+            .delete_custom_hostname(frontend_hostname)
+        {
+            tracing::error!(
+                "Failed to cleanup frontend hostname {}: {}",
+                frontend_hostname,
+                e
+            );
+        } else {
+            tracing::info!(
+                "Successfully cleaned up frontend hostname: {}",
+                frontend_hostname
+            );
         }
 
-        if cleanup_backend {
-            if let Err(e) = app_state
-                .cloudflare_service
-                .delete_custom_hostname(backend_hostname)
-            {
-                tracing::error!(
-                    "Failed to cleanup backend hostname {}: {}",
-                    backend_hostname,
-                    e
-                );
-            } else {
-                tracing::info!(
-                    "Successfully cleaned up backend hostname: {}",
-                    backend_hostname
-                );
-            }
+        if let Err(e) = app_state
+            .cloudflare_service
+            .delete_custom_hostname(backend_hostname)
+        {
+            tracing::error!(
+                "Failed to cleanup backend hostname {}: {}",
+                backend_hostname,
+                e
+            );
+        } else {
+            tracing::info!(
+                "Successfully cleaned up backend hostname: {}",
+                backend_hostname
+            );
         }
 
-        if cleanup_postmark {
-            if let Some(domain_id) = postmark_domain_id {
-                if let Err(e) = app_state.postmark_service.delete_domain(domain_id) {
-                    tracing::error!("Failed to cleanup Postmark domain {}: {}", domain_id, e);
-                } else {
-                    tracing::info!("Successfully cleaned up Postmark domain: {}", domain_id);
-                }
+        if let Some(domain_id) = postmark_domain_id {
+            if let Err(e) = app_state.postmark_service.delete_domain(domain_id) {
+                tracing::error!("Failed to cleanup Postmark domain {}: {}", domain_id, e);
             } else {
-                tracing::info!("No Postmark domain to cleanup for: {}", domain);
+                tracing::info!("Successfully cleaned up Postmark domain: {}", domain_id);
             }
+        } else {
+            tracing::info!("No Postmark domain to cleanup for: {}", domain);
         }
     }
 }
@@ -1988,9 +1871,9 @@ impl Command for CreateProductionDeploymentCommand {
                 create_organization_url, user_profile_url, after_signup_redirect_url, after_signin_redirect_url,
                 after_create_organization_redirect_url, use_initials_for_user_profile_image,
                 use_initials_for_organization_profile_image, default_user_profile_image_url,
-                default_organization_profile_image_url, waitlist_page_url, created_at, updated_at
+                default_organization_profile_image_url, waitlist_page_url, support_page_url, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
             "#
         );
 
@@ -2028,6 +1911,7 @@ impl Command for CreateProductionDeploymentCommand {
             .bind(&ui_settings.default_user_profile_image_url)
             .bind(&ui_settings.default_organization_profile_image_url)
             .bind(format!("{}/waitlist", frontend_host))
+            .bind("")
             .bind(chrono::Utc::now())
             .bind(chrono::Utc::now())
             .execute(&mut *tx)
@@ -2403,17 +2287,12 @@ impl Command for CreateProductionDeploymentCommand {
         let frontend_hostname = format!("accounts.{}", self.custom_domain);
         let backend_hostname = format!("frontend.{}", self.custom_domain);
 
-        let mut created_frontend_hostname = false;
-        let mut created_backend_hostname = false;
-        let created_postmark_domain = true;
-
         let frontend_hostname_result = app_state
             .cloudflare_service
             .create_custom_hostname(&frontend_hostname, "accounts.wacht.services");
 
         let frontend_hostname_id = match frontend_hostname_result {
             Ok(custom_hostname) => {
-                created_frontend_hostname = true;
                 tracing::info!(
                     "Successfully created frontend custom hostname: {}",
                     frontend_hostname
@@ -2423,9 +2302,6 @@ impl Command for CreateProductionDeploymentCommand {
             Err(e) => {
                 tracing::error!("Failed to create frontend custom hostname: {}", e);
 
-                let _ = self
-                    .cleanup_deployment_on_failure(app_state, deployment_row.id)
-                    .await;
                 return Err(AppError::External(format!(
                     "Failed to create frontend custom hostname: {}. Deployment has been cleaned up.",
                     e
@@ -2433,14 +2309,12 @@ impl Command for CreateProductionDeploymentCommand {
             }
         };
 
-        // Create backend custom hostname
         let backend_hostname_result = app_state
             .cloudflare_service
             .create_custom_hostname(&backend_hostname, "frontend.wacht.services");
 
         let backend_hostname_id = match backend_hostname_result {
             Ok(custom_hostname) => {
-                created_backend_hostname = true;
                 tracing::info!(
                     "Successfully created backend custom hostname: {}",
                     backend_hostname
@@ -2454,15 +2328,10 @@ impl Command for CreateProductionDeploymentCommand {
                     &frontend_hostname,
                     &backend_hostname,
                     &self.custom_domain,
-                    created_frontend_hostname,
-                    false,
-                    created_postmark_domain,
                     Some(postmark_domain_id),
                 )
                 .await;
-                let _ = self
-                    .cleanup_deployment_on_failure(app_state, deployment_row.id)
-                    .await;
+
                 return Err(AppError::External(format!(
                     "Failed to create backend custom hostname: {}. Resources have been cleaned up.",
                     e
