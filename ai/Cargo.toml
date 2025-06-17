@@ -1,0 +1,17 @@
+[package]
+name = "ai"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+shared = { path = "../shared"}
+llm = { version = "1.2.9", features = ["google"] }
+ureq = { version = "3.0.11", features = ["json"] }
+anyhow = "1.0"
+dotenvy = "0.15.7"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rustls = { version = "0.23.27", features = ["ring"] }
+tokio = { version = "1.35", features = ["full"] }
+axum = { version = "0.8", features = ["macros", "multipart"] }
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+fastwebsockets = { version = "0.10.0", features = ["upgrade", "with_axum"] }

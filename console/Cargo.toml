@@ -13,7 +13,6 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15.7"
-uuid = { version = "1.6", features = ["v4", "serde"] }
 bigdecimal = { version = "0.4", features = ["serde"] }
 pdf-extract = "0.7.9"
 lopdf = "0.34.0"

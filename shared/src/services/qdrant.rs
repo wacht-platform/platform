@@ -210,9 +210,6 @@ impl QdrantService {
                     .map(|point_id| {
                         match point_id {
                             qdrant_client::qdrant::PointId { point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Num(num)) } => num as i64,
-                            qdrant_client::qdrant::PointId { point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(uuid)) } => {
-                                uuid.parse::<i64>().unwrap_or(0)
-                            },
                             _ => 0,
                         }
                     })
