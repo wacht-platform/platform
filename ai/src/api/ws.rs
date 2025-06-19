@@ -15,6 +15,19 @@ pub async fn handler(ws: upgrade::IncomingUpgrade) -> impl IntoResponse {
     response
 }
 
+pub enum WebsocketMessageType {
+    RequestContext(Option<u64>),
+    RequestContextResponse(u64),
+    ExecutionUpdate(u64),
+    ExecutionComplete(u64),
+    ExecutionInput(u64),
+    ExecutionInterrupt(u64),
+}
+
+pub struct WebsocketMessage {
+    pub message_type: WebsocketMessageType,
+}
+
 async fn handle_client(fut: upgrade::UpgradeFut) -> Result<(), WebSocketError> {
     let mut ws = fastwebsockets::FragmentCollector::new(fut.await?);
 
