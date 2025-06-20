@@ -1,6 +1,6 @@
 use sqlx::Row;
 
-use crate::{error::AppError, models::AiAgentWithDetails, queries::Query, state::AppState};
+use crate::{error::AppError, models::{AiAgentWithDetails, AiAgent}, queries::Query, state::AppState};
 
 pub struct GetAiAgentsQuery {
     pub deployment_id: i64,
@@ -140,6 +140,49 @@ impl Query for GetAiAgentByIdQuery {
             tools_count: agent.tools_count.unwrap_or(0) as i64,
             workflows_count: agent.workflows_count.unwrap_or(0) as i64,
             knowledge_bases_count: agent.knowledge_bases_count.unwrap_or(0) as i64,
+        })
+    }
+}
+
+pub struct GetAiAgentByNameQuery {
+    pub deployment_id: i64,
+    pub agent_name: String,
+}
+
+impl GetAiAgentByNameQuery {
+    pub fn new(deployment_id: i64, agent_name: String) -> Self {
+        Self {
+            deployment_id,
+            agent_name,
+        }
+    }
+}
+
+impl Query for GetAiAgentByNameQuery {
+    type Output = AiAgent;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let agent = sqlx::query!(
+            r#"
+            SELECT id, created_at, updated_at, name, description, configuration, deployment_id
+            FROM ai_agents
+            WHERE name = $1 AND deployment_id = $2
+            "#,
+            self.agent_name,
+            self.deployment_id
+        )
+        .fetch_one(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        Ok(AiAgent {
+            id: agent.id,
+            created_at: agent.created_at,
+            updated_at: agent.updated_at,
+            name: agent.name,
+            description: agent.description,
+            configuration: agent.configuration,
+            deployment_id: agent.deployment_id,
         })
     }
 }

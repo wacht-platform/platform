@@ -2,7 +2,7 @@ use sqlx::Row;
 
 use crate::{
     error::AppError,
-    models::{AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetails},
+    models::{AiKnowledgeBase, AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetails},
     queries::Query,
     state::AppState,
 };
@@ -194,6 +194,67 @@ impl Query for GetKnowledgeBaseDocumentsQuery {
                 file_url: row.file_url,
                 knowledge_base_id: row.knowledge_base_id,
                 processing_metadata: row.processing_metadata,
+            })
+            .collect())
+    }
+}
+
+pub struct GetAiKnowledgeBasesByIdsQuery {
+    pub deployment_id: i64,
+    pub knowledge_base_ids: Vec<i64>,
+}
+
+impl GetAiKnowledgeBasesByIdsQuery {
+    pub fn new(deployment_id: i64, knowledge_base_ids: Vec<i64>) -> Self {
+        Self {
+            deployment_id,
+            knowledge_base_ids,
+        }
+    }
+}
+
+impl Query for GetAiKnowledgeBasesByIdsQuery {
+    type Output = Vec<AiKnowledgeBase>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        if self.knowledge_base_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = (1..=self.knowledge_base_ids.len())
+            .map(|i| format!("${}", i + 1))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT id, created_at, updated_at, name, description, deployment_id, configuration
+             FROM ai_knowledge_bases
+             WHERE deployment_id = $1 AND id IN ({})",
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        query_builder = query_builder.bind(self.deployment_id);
+
+        for kb_id in &self.knowledge_base_ids {
+            query_builder = query_builder.bind(kb_id);
+        }
+
+        let knowledge_bases = query_builder
+            .fetch_all(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
+
+        Ok(knowledge_bases
+            .into_iter()
+            .map(|row| AiKnowledgeBase {
+                id: row.get("id"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+                name: row.get("name"),
+                description: row.get("description"),
+                deployment_id: row.get("deployment_id"),
+                configuration: row.get("configuration"),
             })
             .collect())
     }

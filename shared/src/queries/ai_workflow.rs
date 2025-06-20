@@ -2,7 +2,7 @@ use sqlx::Row;
 
 use crate::{
     error::AppError,
-    models::{AiWorkflowWithDetails, WorkflowConfiguration, WorkflowDefinition},
+    models::{AiWorkflow, AiWorkflowWithDetails, WorkflowConfiguration, WorkflowDefinition},
     queries::Query,
     state::AppState,
 };
@@ -188,5 +188,74 @@ impl Query for GetAiWorkflowByIdQuery {
             agents_count: workflow.agents_count.unwrap_or(0),
             last_execution_at: workflow.last_execution_at,
         })
+    }
+}
+
+pub struct GetAiWorkflowsByIdsQuery {
+    pub deployment_id: i64,
+    pub workflow_ids: Vec<i64>,
+}
+
+impl GetAiWorkflowsByIdsQuery {
+    pub fn new(deployment_id: i64, workflow_ids: Vec<i64>) -> Self {
+        Self {
+            deployment_id,
+            workflow_ids,
+        }
+    }
+}
+
+impl Query for GetAiWorkflowsByIdsQuery {
+    type Output = Vec<AiWorkflow>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        if self.workflow_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = (1..=self.workflow_ids.len())
+            .map(|i| format!("${}", i + 1))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT id, created_at, updated_at, name, description, deployment_id, configuration, workflow_definition
+             FROM ai_workflows
+             WHERE deployment_id = $1 AND id IN ({})",
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        query_builder = query_builder.bind(self.deployment_id);
+
+        for workflow_id in &self.workflow_ids {
+            query_builder = query_builder.bind(workflow_id);
+        }
+
+        let workflows = query_builder
+            .fetch_all(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
+
+        Ok(workflows
+            .into_iter()
+            .map(|row| {
+                let configuration: WorkflowConfiguration =
+                    serde_json::from_value(row.get("configuration")).unwrap_or_default();
+                let workflow_definition: WorkflowDefinition =
+                    serde_json::from_value(row.get("workflow_definition")).unwrap_or_default();
+
+                AiWorkflow {
+                    id: row.get("id"),
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                    name: row.get("name"),
+                    description: row.get("description"),
+                    deployment_id: row.get("deployment_id"),
+                    configuration,
+                    workflow_definition,
+                }
+            })
+            .collect())
     }
 }

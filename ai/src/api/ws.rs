@@ -58,14 +58,16 @@ pub struct SessionState {
     pub authenticated: bool,
     pub agent: Option<AiAgent>,
     pub sender: kanal::AsyncSender<WebsocketMessage>,
+    pub deployment_id: i64,
 }
 
 impl SessionState {
-    pub fn new(sender: kanal::AsyncSender<WebsocketMessage>) -> Self {
+    pub fn new(sender: kanal::AsyncSender<WebsocketMessage>, deployment_id: i64) -> Self {
         Self {
             authenticated: false,
             agent: None,
             sender,
+            deployment_id,
         }
     }
 }
@@ -76,7 +78,7 @@ async fn handle_client(
 ) -> Result<(), WebSocketError> {
     let mut ws = FragmentCollector::new(fut.await?);
     let (sender, receiver) = kanal::bounded_async::<WebsocketMessage>(8);
-    let session_state = Arc::new(Mutex::new(SessionState::new(sender)));
+    let session_state = Arc::new(Mutex::new(SessionState::new(sender, 0)));
 
     loop {
         tokio::select! {
@@ -123,7 +125,7 @@ pub enum AgenticExecutionState {
 pub struct AgenticExecutionContext {
     messages: Vec<AgenticExecutionMessage>,
     lstm: Vec<String>,
-    goal: String,
+    current_goal: String,
     state: AgenticExecutionState,
     title: String,
     deployment_id: i64,
@@ -158,21 +160,68 @@ async fn handle_execution_message(
     app_state: AppState,
     session_state: Arc<Mutex<SessionState>>,
 ) {
-    let llm = LLMBuilder::new()
-        .backend(LLMBackend::Google)
-        .api_key(std::env::var("OPENAI_API_KEY").unwrap())
-        .model("gemini-2.5-pro")
-        .max_tokens(200_000)
-        .build()
-        .unwrap();
+    use crate::agentic::AgentExecutor;
 
     match message.message_type {
-        WebsocketMessageType::RequestContext(Some(id), agent_name) => {}
-        WebsocketMessageType::ExecutionComplete(id) => {}
-        WebsocketMessageType::ExecutionInput(id) => {}
-        WebsocketMessageType::ExecutionInterrupt(id) => {}
-        WebsocketMessageType::ExecutionUpdate(id) => {}
-        WebsocketMessageType::RequestContextResponse(id) => {}
+        WebsocketMessageType::RequestContext(Some(_id), agent_name) => {
+            let deployment_id = {
+                let state = session_state.lock().await;
+                state.deployment_id
+            };
+
+            // Parse the message data to get the user input
+            let user_input = match String::from_utf8(message.data) {
+                Ok(input) => input,
+                Err(_) => {
+                    eprintln!("Failed to parse user input");
+                    return;
+                }
+            };
+
+            // Create agent executor
+            match AgentExecutor::new(&agent_name, deployment_id, &app_state).await {
+                Ok(agent_executor) => {
+                    let sender = {
+                        let state = session_state.lock().await;
+                        state.sender.clone()
+                    };
+
+                    // Execute with streaming
+                    let _ = agent_executor.execute_with_streaming(&user_input, |chunk| {
+                        let response_message = WebsocketMessage {
+                            message_type: WebsocketMessageType::ExecutionUpdate(0),
+                            data: chunk.as_bytes().to_vec(),
+                        };
+
+                        // Send chunk to client
+                        let _ = sender.try_send(response_message);
+                    }).await;
+
+                    // Send completion message
+                    let completion_message = WebsocketMessage {
+                        message_type: WebsocketMessageType::ExecutionComplete(0),
+                        data: Vec::new(),
+                    };
+                    let _ = sender.try_send(completion_message);
+                }
+                Err(e) => {
+                    eprintln!("Failed to create agent executor: {}", e);
+
+                    let error_message = WebsocketMessage {
+                        message_type: WebsocketMessageType::ExecutionComplete(0),
+                        data: format!("Error: {}", e).as_bytes().to_vec(),
+                    };
+
+                    let state = session_state.lock().await;
+                    let _ = state.sender.try_send(error_message);
+                }
+            }
+        }
+        WebsocketMessageType::ExecutionComplete(_id) => {}
+        WebsocketMessageType::ExecutionInput(_id) => {}
+        WebsocketMessageType::ExecutionInterrupt(_id) => {}
+        WebsocketMessageType::ExecutionUpdate(_id) => {}
+        WebsocketMessageType::RequestContextResponse(_id) => {}
         _ => {}
     };
 }

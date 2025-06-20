@@ -1,5 +1,6 @@
 mod api;
 mod application;
+mod agentic;
 pub use shared as core;
 
 use anyhow::Result;

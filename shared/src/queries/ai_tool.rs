@@ -2,7 +2,7 @@ use sqlx::Row;
 
 use crate::{
     error::AppError,
-    models::{AiToolConfiguration, AiToolType, AiToolWithDetails},
+    models::{AiTool, AiToolConfiguration, AiToolType, AiToolWithDetails},
     queries::Query,
     state::AppState,
 };
@@ -170,5 +170,73 @@ impl Query for GetAiToolByIdQuery {
             deployment_id: tool.deployment_id,
             configuration,
         })
+    }
+}
+
+pub struct GetAiToolsByIdsQuery {
+    pub deployment_id: i64,
+    pub tool_ids: Vec<i64>,
+}
+
+impl GetAiToolsByIdsQuery {
+    pub fn new(deployment_id: i64, tool_ids: Vec<i64>) -> Self {
+        Self {
+            deployment_id,
+            tool_ids,
+        }
+    }
+}
+
+impl Query for GetAiToolsByIdsQuery {
+    type Output = Vec<AiTool>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        if self.tool_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders = (1..=self.tool_ids.len())
+            .map(|i| format!("${}", i + 1))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let query = format!(
+            "SELECT id, created_at, updated_at, name, description, tool_type, deployment_id, configuration
+             FROM ai_tools
+             WHERE deployment_id = $1 AND id IN ({})",
+            placeholders
+        );
+
+        let mut query_builder = sqlx::query(&query);
+        query_builder = query_builder.bind(self.deployment_id);
+
+        for tool_id in &self.tool_ids {
+            query_builder = query_builder.bind(tool_id);
+        }
+
+        let tools = query_builder
+            .fetch_all(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
+
+        Ok(tools
+            .into_iter()
+            .map(|row| {
+                let tool_type = AiToolType::from(row.get::<String, _>("tool_type"));
+                let configuration: AiToolConfiguration =
+                    serde_json::from_value(row.get("configuration")).unwrap_or_default();
+
+                AiTool {
+                    id: row.get("id"),
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                    name: row.get("name"),
+                    description: row.get("description"),
+                    tool_type,
+                    deployment_id: row.get("deployment_id"),
+                    configuration,
+                }
+            })
+            .collect())
     }
 }

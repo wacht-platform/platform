@@ -65,10 +65,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.8.1",
+ "chrono",
  "dotenvy",
  "fastwebsockets",
+ "futures-util",
  "kanal",
  "llm",
+ "quick-xml",
  "rustls 0.23.27",
  "serde",
  "serde_json",
@@ -77,6 +80,7 @@ dependencies = [
  "tower-http",
  "tracing-subscriber",
  "ureq",
+ "uuid",
 ]
 
 [[package]]
@@ -4013,6 +4017,15 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tonic",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.36.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

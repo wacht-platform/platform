@@ -18,3 +18,7 @@ fastwebsockets = { version = "0.10.0", features = ["upgrade", "with_axum"] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 kanal = "0.1"
+uuid = { version = "1.0", features = ["v4"] }
+quick-xml = "0.36"
+chrono = { version = "0.4", features = ["serde"] }
+futures-util = "0.3"
