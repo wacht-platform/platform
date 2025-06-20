@@ -12,6 +12,7 @@ COPY .sqlx/ ./.sqlx/
 COPY console/ ./console/
 COPY shared/ ./shared/
 COPY worker/ ./worker/
+COPY ai/ ./ai/
 
 # Build the console application
 RUN cargo build --release --bin console
