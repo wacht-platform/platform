@@ -1,22 +1,18 @@
 use celery::prelude::*;
-use serde::{Deserialize, Serialize};
-use tracing::error;
-use std::collections::HashMap;
 use chrono;
+use serde::{Deserialize, Serialize};
 use shared::{
-    commands::{email::SendEmailCommand, Command},
-    state::AppState,
+    commands::{Command, email::SendEmailCommand},
+    models::{DeploymentInvitation, DeploymentWithSettings, SignIn, UserDetails},
     queries::{
-        user::GetUserDetailsQuery,
-        deployment::GetDeploymentWithSettingsQuery,
-        invitation::GetDeploymentInvitationQuery,
-        organization::GetOrganizationNameQuery,
-        workspace::GetWorkspaceNameQuery,
-        signin::GetSignInQuery,
-        Query,
+        Query, deployment::GetDeploymentWithSettingsQuery,
+        invitation::GetDeploymentInvitationQuery, organization::GetOrganizationNameQuery,
+        signin::GetSignInQuery, user::GetUserDetailsQuery, workspace::GetWorkspaceNameQuery,
     },
-    models::{UserDetails, DeploymentWithSettings, SignIn, DeploymentInvitation},
+    state::AppState,
 };
+use std::collections::HashMap;
+use tracing::error;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VerificationEmailTask {
@@ -106,7 +102,14 @@ pub struct WaitlistApprovalTask {
 
 #[celery::task(name = "email.send_verification")]
 pub async fn send_verification_email(task: VerificationEmailTask) -> TaskResult<String> {
-    match send_verification_email_impl(task.deployment_id, &task.recipient, task.user_id, &task.verification_code).await {
+    match send_verification_email_impl(
+        task.deployment_id,
+        &task.recipient,
+        task.user_id,
+        &task.verification_code,
+    )
+    .await
+    {
         Ok(message_id) => Ok(message_id),
         Err(e) => {
             error!("Verification email failed: {}", e);
@@ -117,7 +120,14 @@ pub async fn send_verification_email(task: VerificationEmailTask) -> TaskResult<
 
 #[celery::task(name = "email.send_password_reset")]
 pub async fn send_password_reset_email(task: PasswordResetEmailTask) -> TaskResult<String> {
-    match send_password_reset_email_impl(task.deployment_id, &task.recipient, task.user_id, &task.reset_code).await {
+    match send_password_reset_email_impl(
+        task.deployment_id,
+        &task.recipient,
+        task.user_id,
+        &task.reset_code,
+    )
+    .await
+    {
         Ok(message_id) => Ok(message_id),
         Err(e) => {
             error!("Password reset email failed: {}", e);
@@ -128,7 +138,14 @@ pub async fn send_password_reset_email(task: PasswordResetEmailTask) -> TaskResu
 
 #[celery::task(name = "email.send_magic_link")]
 pub async fn send_magic_link_email(task: MagicLinkEmailTask) -> TaskResult<String> {
-    match send_magic_link_email_impl(task.deployment_id, &task.recipient, task.user_id, &task.magic_link).await {
+    match send_magic_link_email_impl(
+        task.deployment_id,
+        &task.recipient,
+        task.user_id,
+        &task.magic_link,
+    )
+    .await
+    {
         Ok(message_id) => Ok(message_id),
         Err(e) => {
             error!("Magic link email failed: {}", e);
@@ -139,7 +156,14 @@ pub async fn send_magic_link_email(task: MagicLinkEmailTask) -> TaskResult<Strin
 
 #[celery::task(name = "email.send_signin_notification")]
 pub async fn send_signin_notification_email(task: SignInNotificationTask) -> TaskResult<String> {
-    match send_signin_notification_email_impl(task.deployment_id, &task.recipient, task.user_id, task.signin_id).await {
+    match send_signin_notification_email_impl(
+        task.deployment_id,
+        &task.recipient,
+        task.user_id,
+        task.signin_id,
+    )
+    .await
+    {
         Ok(message_id) => Ok(message_id),
         Err(e) => {
             error!("SignIn notification email failed: {}", e);
@@ -149,8 +173,18 @@ pub async fn send_signin_notification_email(task: SignInNotificationTask) -> Tas
 }
 
 #[celery::task(name = "email.send_email_change_notification")]
-pub async fn send_email_change_notification(task: EmailChangeNotificationTask) -> TaskResult<String> {
-    match send_email_change_notification_impl(task.deployment_id, &task.recipient, task.user_id, &task.old_email, &task.new_email).await {
+pub async fn send_email_change_notification(
+    task: EmailChangeNotificationTask,
+) -> TaskResult<String> {
+    match send_email_change_notification_impl(
+        task.deployment_id,
+        &task.recipient,
+        task.user_id,
+        &task.old_email,
+        &task.new_email,
+    )
+    .await
+    {
         Ok(message_id) => Ok(message_id),
         Err(e) => {
             error!("Email change notification failed: {}", e);
@@ -160,8 +194,12 @@ pub async fn send_email_change_notification(task: EmailChangeNotificationTask) -
 }
 
 #[celery::task(name = "email.send_password_change_notification")]
-pub async fn send_password_change_notification(task: PasswordChangeNotificationTask) -> TaskResult<String> {
-    match send_password_change_notification_impl(task.deployment_id, &task.recipient, task.user_id).await {
+pub async fn send_password_change_notification(
+    task: PasswordChangeNotificationTask,
+) -> TaskResult<String> {
+    match send_password_change_notification_impl(task.deployment_id, &task.recipient, task.user_id)
+        .await
+    {
         Ok(message_id) => Ok(message_id),
         Err(e) => {
             error!("Password change notification failed: {}", e);
@@ -171,8 +209,12 @@ pub async fn send_password_change_notification(task: PasswordChangeNotificationT
 }
 
 #[celery::task(name = "email.send_password_remove_notification")]
-pub async fn send_password_remove_notification(task: PasswordRemoveNotificationTask) -> TaskResult<String> {
-    match send_password_remove_notification_impl(task.deployment_id, &task.recipient, task.user_id).await {
+pub async fn send_password_remove_notification(
+    task: PasswordRemoveNotificationTask,
+) -> TaskResult<String> {
+    match send_password_remove_notification_impl(task.deployment_id, &task.recipient, task.user_id)
+        .await
+    {
         Ok(message_id) => Ok(message_id),
         Err(e) => {
             error!("Password remove notification failed: {}", e);
@@ -193,8 +235,17 @@ pub async fn send_waitlist_signup_email(task: WaitlistSignupTask) -> TaskResult<
 }
 
 #[celery::task(name = "email.send_organization_membership_invite")]
-pub async fn send_organization_membership_invite(task: OrganizationMembershipInviteTask) -> TaskResult<String> {
-    match send_organization_membership_invite_impl(task.deployment_id, &task.recipient, task.inviter_user_id, task.organization_id).await {
+pub async fn send_organization_membership_invite(
+    task: OrganizationMembershipInviteTask,
+) -> TaskResult<String> {
+    match send_organization_membership_invite_impl(
+        task.deployment_id,
+        &task.recipient,
+        task.inviter_user_id,
+        task.organization_id,
+    )
+    .await
+    {
         Ok(message_id) => Ok(message_id),
         Err(e) => {
             error!("Organization membership invite failed: {}", e);
@@ -205,7 +256,15 @@ pub async fn send_organization_membership_invite(task: OrganizationMembershipInv
 
 #[celery::task(name = "email.send_deployment_invite")]
 pub async fn send_deployment_invite(task: DeploymentInviteTask) -> TaskResult<String> {
-    match send_deployment_invite_impl(task.deployment_id, &task.recipient, task.inviter_user_id, task.deployment_invitation_id, task.workspace_id).await {
+    match send_deployment_invite_impl(
+        task.deployment_id,
+        &task.recipient,
+        task.inviter_user_id,
+        task.deployment_invitation_id,
+        task.workspace_id,
+    )
+    .await
+    {
         Ok(message_id) => Ok(message_id),
         Err(e) => {
             error!("Deployment invite failed: {}", e);
@@ -216,7 +275,13 @@ pub async fn send_deployment_invite(task: DeploymentInviteTask) -> TaskResult<St
 
 #[celery::task(name = "email.send_waitlist_approval")]
 pub async fn send_waitlist_approval(task: WaitlistApprovalTask) -> TaskResult<String> {
-    match send_waitlist_approval_impl(task.deployment_id, &task.recipient, task.deployment_invitation_id).await {
+    match send_waitlist_approval_impl(
+        task.deployment_id,
+        &task.recipient,
+        task.deployment_invitation_id,
+    )
+    .await
+    {
         Ok(message_id) => Ok(message_id),
         Err(e) => {
             error!("Waitlist approval failed: {}", e);
@@ -225,8 +290,15 @@ pub async fn send_waitlist_approval(task: WaitlistApprovalTask) -> TaskResult<St
     }
 }
 
-async fn send_verification_email_impl(deployment_id: u64, recipient: &str, user_id: u64, verification_code: &str) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_verification_email_impl(
+    deployment_id: u64,
+    recipient: &str,
+    user_id: u64,
+    verification_code: &str,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -238,7 +310,8 @@ async fn send_verification_email_impl(deployment_id: u64, recipient: &str, user_
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let variables = create_verification_variables(&user_details, &deployment_settings, verification_code);
+    let variables =
+        create_verification_variables(&user_details, &deployment_settings, verification_code);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -247,14 +320,23 @@ async fn send_verification_email_impl(deployment_id: u64, recipient: &str, user_
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send verification email: {}", e))?;
 
     Ok(format!("verification_email_sent_{}", deployment_id))
 }
 
-async fn send_password_reset_email_impl(deployment_id: u64, recipient: &str, user_id: u64, reset_code: &str) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_password_reset_email_impl(
+    deployment_id: u64,
+    recipient: &str,
+    user_id: u64,
+    reset_code: &str,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -266,7 +348,8 @@ async fn send_password_reset_email_impl(deployment_id: u64, recipient: &str, use
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let variables = create_password_reset_variables(&user_details, &deployment_settings, reset_code);
+    let variables =
+        create_password_reset_variables(&user_details, &deployment_settings, reset_code);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -275,14 +358,23 @@ async fn send_password_reset_email_impl(deployment_id: u64, recipient: &str, use
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send password reset email: {}", e))?;
 
     Ok(format!("password_reset_email_sent_{}", deployment_id))
 }
 
-async fn send_magic_link_email_impl(deployment_id: u64, recipient: &str, user_id: u64, magic_link: &str) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_magic_link_email_impl(
+    deployment_id: u64,
+    recipient: &str,
+    user_id: u64,
+    magic_link: &str,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -303,14 +395,23 @@ async fn send_magic_link_email_impl(deployment_id: u64, recipient: &str, user_id
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send magic link email: {}", e))?;
 
     Ok(format!("magic_link_email_sent_{}", deployment_id))
 }
 
-async fn send_signin_notification_email_impl(deployment_id: u64, recipient: &str, user_id: u64, signin_id: u64) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_signin_notification_email_impl(
+    deployment_id: u64,
+    recipient: &str,
+    user_id: u64,
+    signin_id: u64,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -324,7 +425,11 @@ async fn send_signin_notification_email_impl(deployment_id: u64, recipient: &str
 
     let signin_details = fetch_signin_details(&app_state, signin_id).await.ok();
 
-    let variables = create_signin_notification_variables(&user_details, &deployment_settings, signin_details.as_ref());
+    let variables = create_signin_notification_variables(
+        &user_details,
+        &deployment_settings,
+        signin_details.as_ref(),
+    );
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -333,14 +438,24 @@ async fn send_signin_notification_email_impl(deployment_id: u64, recipient: &str
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send signin notification email: {}", e))?;
 
     Ok(format!("signin_notification_email_sent_{}", deployment_id))
 }
 
-async fn send_email_change_notification_impl(deployment_id: u64, recipient: &str, user_id: u64, old_email: &str, new_email: &str) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_email_change_notification_impl(
+    deployment_id: u64,
+    recipient: &str,
+    user_id: u64,
+    old_email: &str,
+    new_email: &str,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -352,7 +467,8 @@ async fn send_email_change_notification_impl(deployment_id: u64, recipient: &str
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let variables = create_email_change_variables(&user_details, &deployment_settings, old_email, new_email);
+    let variables =
+        create_email_change_variables(&user_details, &deployment_settings, old_email, new_email);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -361,14 +477,22 @@ async fn send_email_change_notification_impl(deployment_id: u64, recipient: &str
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send email change notification: {}", e))?;
 
     Ok(format!("email_change_notification_sent_{}", deployment_id))
 }
 
-async fn send_password_change_notification_impl(deployment_id: u64, recipient: &str, user_id: u64) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_password_change_notification_impl(
+    deployment_id: u64,
+    recipient: &str,
+    user_id: u64,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -389,14 +513,25 @@ async fn send_password_change_notification_impl(deployment_id: u64, recipient: &
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send password change notification: {}", e))?;
 
-    Ok(format!("password_change_notification_sent_{}", deployment_id))
+    Ok(format!(
+        "password_change_notification_sent_{}",
+        deployment_id
+    ))
 }
 
-async fn send_password_remove_notification_impl(deployment_id: u64, recipient: &str, user_id: u64) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_password_remove_notification_impl(
+    deployment_id: u64,
+    recipient: &str,
+    user_id: u64,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -417,14 +552,25 @@ async fn send_password_remove_notification_impl(deployment_id: u64, recipient: &
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send password remove notification: {}", e))?;
 
-    Ok(format!("password_remove_notification_sent_{}", deployment_id))
+    Ok(format!(
+        "password_remove_notification_sent_{}",
+        deployment_id
+    ))
 }
 
-async fn send_waitlist_signup_email_impl(deployment_id: u64, recipient: &str, user_id: u64) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_waitlist_signup_email_impl(
+    deployment_id: u64,
+    recipient: &str,
+    user_id: u64,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -445,14 +591,23 @@ async fn send_waitlist_signup_email_impl(deployment_id: u64, recipient: &str, us
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send waitlist signup email: {}", e))?;
 
     Ok(format!("waitlist_signup_email_sent_{}", deployment_id))
 }
 
-async fn send_organization_membership_invite_impl(deployment_id: u64, recipient: &str, inviter_user_id: u64, organization_id: u64) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_organization_membership_invite_impl(
+    deployment_id: u64,
+    recipient: &str,
+    inviter_user_id: u64,
+    organization_id: u64,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     // Fetch inviter user details
     let inviter_details = GetUserDetailsQuery::new(deployment_id as i64, inviter_user_id as i64)
@@ -467,10 +622,15 @@ async fn send_organization_membership_invite_impl(deployment_id: u64, recipient:
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
     // Fetch organization name
-    let organization_name = fetch_organization_name(&app_state, organization_id).await
+    let organization_name = fetch_organization_name(&app_state, organization_id)
+        .await
         .unwrap_or_else(|_| "Organization".to_string());
 
-    let variables = create_organization_invite_variables(&inviter_details, &deployment_settings, &organization_name);
+    let variables = create_organization_invite_variables(
+        &inviter_details,
+        &deployment_settings,
+        &organization_name,
+    );
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -479,14 +639,27 @@ async fn send_organization_membership_invite_impl(deployment_id: u64, recipient:
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send organization invite email: {}", e))?;
 
-    Ok(format!("organization_membership_invite_sent_{}", deployment_id))
+    Ok(format!(
+        "organization_membership_invite_sent_{}",
+        deployment_id
+    ))
 }
 
-async fn send_deployment_invite_impl(deployment_id: u64, recipient: &str, inviter_user_id: u64, invitation_id: u64, workspace_id: Option<u64>) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_deployment_invite_impl(
+    deployment_id: u64,
+    recipient: &str,
+    inviter_user_id: u64,
+    invitation_id: u64,
+    workspace_id: Option<u64>,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     // Fetch inviter user details
     let inviter_details = GetUserDetailsQuery::new(deployment_id as i64, inviter_user_id as i64)
@@ -502,17 +675,24 @@ async fn send_deployment_invite_impl(deployment_id: u64, recipient: &str, invite
 
     // Fetch workspace name if workspace_id is provided
     let workspace_name = if let Some(ws_id) = workspace_id {
-        fetch_workspace_name(&app_state, ws_id).await
+        fetch_workspace_name(&app_state, ws_id)
+            .await
             .unwrap_or_else(|_| "Workspace".to_string())
     } else {
         "Workspace".to_string()
     };
 
     // Fetch invitation details
-    let invitation = fetch_deployment_invitation(&app_state, invitation_id).await
+    let invitation = fetch_deployment_invitation(&app_state, invitation_id)
+        .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
 
-    let variables = create_workspace_invite_variables(&inviter_details, &deployment_settings, &workspace_name, Some(&invitation));
+    let variables = create_workspace_invite_variables(
+        &inviter_details,
+        &deployment_settings,
+        &workspace_name,
+        Some(&invitation),
+    );
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -521,17 +701,26 @@ async fn send_deployment_invite_impl(deployment_id: u64, recipient: &str, invite
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send workspace invite email: {}", e))?;
 
     Ok(format!("deployment_invite_sent_{}", deployment_id))
 }
 
-async fn send_waitlist_approval_impl(deployment_id: u64, recipient: &str, invitation_id: u64) -> Result<String, String> {
-    let app_state = get_app_state().await.map_err(|e| format!("Failed to get app state: {}", e))?;
+async fn send_waitlist_approval_impl(
+    deployment_id: u64,
+    recipient: &str,
+    invitation_id: u64,
+) -> Result<String, String> {
+    let app_state = get_app_state()
+        .await
+        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     // Fetch invitation details (which contains user info)
-    let invitation = fetch_deployment_invitation(&app_state, invitation_id).await
+    let invitation = fetch_deployment_invitation(&app_state, invitation_id)
+        .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
 
     // Fetch deployment settings
@@ -567,7 +756,8 @@ async fn send_waitlist_approval_impl(deployment_id: u64, recipient: &str, invita
         has_backup_codes: false,
     };
 
-    let variables = create_waitlist_invite_variables(&user_details, &deployment_settings, Some(&invitation));
+    let variables =
+        create_waitlist_invite_variables(&user_details, &deployment_settings, Some(&invitation));
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -576,14 +766,16 @@ async fn send_waitlist_approval_impl(deployment_id: u64, recipient: &str, invita
         variables,
     );
 
-    command.execute(&app_state).await
+    command
+        .execute(&app_state)
+        .await
         .map_err(|e| format!("Failed to send waitlist invite email: {}", e))?;
 
     Ok(format!("waitlist_approval_sent_{}", deployment_id))
 }
 
 async fn get_app_state() -> Result<AppState, String> {
-    Ok(AppState::new_from_env().await)
+    Ok(AppState::new_from_env().await.unwrap())
 }
 
 async fn fetch_signin_details(app_state: &AppState, signin_id: u64) -> Result<SignIn, String> {
@@ -593,14 +785,20 @@ async fn fetch_signin_details(app_state: &AppState, signin_id: u64) -> Result<Si
         .map_err(|e| format!("Failed to fetch signin details: {}", e))
 }
 
-async fn fetch_deployment_invitation(app_state: &AppState, invitation_id: u64) -> Result<DeploymentInvitation, String> {
+async fn fetch_deployment_invitation(
+    app_state: &AppState,
+    invitation_id: u64,
+) -> Result<DeploymentInvitation, String> {
     GetDeploymentInvitationQuery::new(invitation_id as i64)
         .execute(app_state)
         .await
         .map_err(|e| format!("Failed to fetch deployment invitation: {}", e))
 }
 
-async fn fetch_organization_name(app_state: &AppState, organization_id: u64) -> Result<String, String> {
+async fn fetch_organization_name(
+    app_state: &AppState,
+    organization_id: u64,
+) -> Result<String, String> {
     GetOrganizationNameQuery::new(organization_id as i64)
         .execute(app_state)
         .await
@@ -614,34 +812,54 @@ async fn fetch_workspace_name(app_state: &AppState, workspace_id: u64) -> Result
         .map_err(|e| format!("Failed to fetch workspace name: {}", e))
 }
 
-
-
-fn create_verification_variables(user: &UserDetails, deployment: &DeploymentWithSettings, verification_code: &str) -> HashMap<String, String> {
+fn create_verification_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+    verification_code: &str,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("verification_code".to_string(), verification_code.to_string());
-    variables.insert("verification_code.expires_in_minutes".to_string(), "15".to_string());
+    variables.insert(
+        "verification_code".to_string(),
+        verification_code.to_string(),
+    );
+    variables.insert(
+        "verification_code.expires_in_minutes".to_string(),
+        "15".to_string(),
+    );
 
     variables
 }
 
-fn create_password_reset_variables(user: &UserDetails, deployment: &DeploymentWithSettings, reset_code: &str) -> HashMap<String, String> {
+fn create_password_reset_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+    reset_code: &str,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
@@ -649,18 +867,29 @@ fn create_password_reset_variables(user: &UserDetails, deployment: &DeploymentWi
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("reset_code".to_string(), reset_code.to_string());
-    variables.insert("reset_code.expires_in_minutes".to_string(), "15".to_string());
+    variables.insert(
+        "reset_code.expires_in_minutes".to_string(),
+        "15".to_string(),
+    );
 
     variables
 }
 
-fn create_signin_notification_variables(user: &UserDetails, deployment: &DeploymentWithSettings, signin: Option<&SignIn>) -> HashMap<String, String> {
+fn create_signin_notification_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+    signin: Option<&SignIn>,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
@@ -669,8 +898,21 @@ fn create_signin_notification_variables(user: &UserDetails, deployment: &Deploym
     variables.insert("first_name".to_string(), user.first_name.clone());
 
     if let Some(signin) = signin {
-        variables.insert("signin_time".to_string(), signin.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string());
-        variables.insert("device_name".to_string(), if signin.device.is_empty() { "Unknown Device".to_string() } else { signin.device.clone() });
+        variables.insert(
+            "signin_time".to_string(),
+            signin
+                .created_at
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string(),
+        );
+        variables.insert(
+            "device_name".to_string(),
+            if signin.device.is_empty() {
+                "Unknown Device".to_string()
+            } else {
+                signin.device.clone()
+            },
+        );
         variables.insert("browser".to_string(), signin.browser.clone());
         variables.insert("ip_address".to_string(), signin.ip_address.clone());
 
@@ -694,13 +936,22 @@ fn create_signin_notification_variables(user: &UserDetails, deployment: &Deploym
     variables
 }
 
-fn create_email_change_variables(user: &UserDetails, deployment: &DeploymentWithSettings, old_email: &str, new_email: &str) -> HashMap<String, String> {
+fn create_email_change_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+    old_email: &str,
+    new_email: &str,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
@@ -713,49 +964,80 @@ fn create_email_change_variables(user: &UserDetails, deployment: &DeploymentWith
     variables
 }
 
-fn create_password_change_variables(user: &UserDetails, deployment: &DeploymentWithSettings) -> HashMap<String, String> {
+fn create_password_change_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("change_time".to_string(), chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string());
+    variables.insert(
+        "change_time".to_string(),
+        chrono::Utc::now()
+            .format("%Y-%m-%d %H:%M:%S UTC")
+            .to_string(),
+    );
 
     variables
 }
 
-fn create_password_remove_variables(user: &UserDetails, deployment: &DeploymentWithSettings) -> HashMap<String, String> {
+fn create_password_remove_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("removal_time".to_string(), chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string());
+    variables.insert(
+        "removal_time".to_string(),
+        chrono::Utc::now()
+            .format("%Y-%m-%d %H:%M:%S UTC")
+            .to_string(),
+    );
 
     variables
 }
 
-fn create_waitlist_signup_variables(user: &UserDetails, deployment: &DeploymentWithSettings) -> HashMap<String, String> {
+fn create_waitlist_signup_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
@@ -763,18 +1045,29 @@ fn create_waitlist_signup_variables(user: &UserDetails, deployment: &DeploymentW
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("last_name".to_string(), user.last_name.clone());
-    variables.insert("email_address".to_string(), user.primary_email_address.clone().unwrap_or_default());
+    variables.insert(
+        "email_address".to_string(),
+        user.primary_email_address.clone().unwrap_or_default(),
+    );
 
     variables
 }
 
-fn create_waitlist_invite_variables(user: &UserDetails, deployment: &DeploymentWithSettings, invitation: Option<&DeploymentInvitation>) -> HashMap<String, String> {
+fn create_waitlist_invite_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+    invitation: Option<&DeploymentInvitation>,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
@@ -782,12 +1075,21 @@ fn create_waitlist_invite_variables(user: &UserDetails, deployment: &DeploymentW
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("last_name".to_string(), user.last_name.clone());
-    variables.insert("email_address".to_string(), user.primary_email_address.clone().unwrap_or_default());
+    variables.insert(
+        "email_address".to_string(),
+        user.primary_email_address.clone().unwrap_or_default(),
+    );
 
     if let Some(invitation) = invitation {
         let days_until_expiry = (invitation.expiry - chrono::Utc::now()).num_days();
-        variables.insert("invitation.expires_in_days".to_string(), days_until_expiry.max(0).to_string());
-        variables.insert("invitation_expiry".to_string(), invitation.expiry.format("%Y-%m-%d").to_string());
+        variables.insert(
+            "invitation.expires_in_days".to_string(),
+            days_until_expiry.max(0).to_string(),
+        );
+        variables.insert(
+            "invitation_expiry".to_string(),
+            invitation.expiry.format("%Y-%m-%d").to_string(),
+        );
     } else {
         variables.insert("invitation.expires_in_days".to_string(), "7".to_string());
     }
@@ -795,32 +1097,55 @@ fn create_waitlist_invite_variables(user: &UserDetails, deployment: &DeploymentW
     variables
 }
 
-fn create_organization_invite_variables(user: &UserDetails, deployment: &DeploymentWithSettings, organization_name: &str) -> HashMap<String, String> {
+fn create_organization_invite_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+    organization_name: &str,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("organization_name".to_string(), organization_name.to_string());
-    variables.insert("inviter_name".to_string(), format!("{} {}", user.first_name, user.last_name));
+    variables.insert(
+        "organization_name".to_string(),
+        organization_name.to_string(),
+    );
+    variables.insert(
+        "inviter_name".to_string(),
+        format!("{} {}", user.first_name, user.last_name),
+    );
 
     variables
 }
 
-fn create_workspace_invite_variables(user: &UserDetails, deployment: &DeploymentWithSettings, workspace_name: &str, invitation: Option<&DeploymentInvitation>) -> HashMap<String, String> {
+fn create_workspace_invite_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+    workspace_name: &str,
+    invitation: Option<&DeploymentInvitation>,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
@@ -828,24 +1153,41 @@ fn create_workspace_invite_variables(user: &UserDetails, deployment: &Deployment
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("workspace_name".to_string(), workspace_name.to_string());
-    variables.insert("inviter_name".to_string(), format!("{} {}", user.first_name, user.last_name));
+    variables.insert(
+        "inviter_name".to_string(),
+        format!("{} {}", user.first_name, user.last_name),
+    );
 
     if let Some(invitation) = invitation {
         let days_until_expiry = (invitation.expiry - chrono::Utc::now()).num_days();
-        variables.insert("invitation.expires_in_days".to_string(), days_until_expiry.max(0).to_string());
-        variables.insert("invitation_expiry".to_string(), invitation.expiry.format("%Y-%m-%d").to_string());
+        variables.insert(
+            "invitation.expires_in_days".to_string(),
+            days_until_expiry.max(0).to_string(),
+        );
+        variables.insert(
+            "invitation_expiry".to_string(),
+            invitation.expiry.format("%Y-%m-%d").to_string(),
+        );
     }
 
     variables
 }
 
-fn create_magic_link_variables(user: &UserDetails, deployment: &DeploymentWithSettings, magic_link: &str) -> HashMap<String, String> {
+fn create_magic_link_variables(
+    user: &UserDetails,
+    deployment: &DeploymentWithSettings,
+    magic_link: &str,
+) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
-    let app_name = deployment.ui_settings.as_ref()
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment.ui_settings.as_ref()
+    let app_logo = deployment
+        .ui_settings
+        .as_ref()
         .map(|ui| ui.logo_image_url.clone())
         .unwrap_or_else(|| "".to_string());
 
@@ -853,7 +1195,10 @@ fn create_magic_link_variables(user: &UserDetails, deployment: &DeploymentWithSe
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("magic_link".to_string(), magic_link.to_string());
-    variables.insert("magic_link.expires_in_minutes".to_string(), "15".to_string());
+    variables.insert(
+        "magic_link.expires_in_minutes".to_string(),
+        "15".to_string(),
+    );
 
     variables
 }

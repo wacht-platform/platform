@@ -4,9 +4,7 @@ use crate::{
     models::{AiKnowledgeBase, AiKnowledgeBaseDocument},
     queries::{GetAiKnowledgeBaseByIdQuery, Query},
     services::{
-        embedding::EmbeddingService,
-        qdrant::{DocumentChunk, QdrantService},
-        text_processing::TextProcessingService,
+        qdrant::DocumentChunk,
     },
     state::AppState,
 };
@@ -281,7 +279,8 @@ impl Command for DeleteAiKnowledgeBaseCommand {
         // Delete Qdrant collection in background
         let kb_id = self.knowledge_base_id;
 
-        if let Err(e) = QdrantService::delete_knowledge_base(kb_id).await {
+        // Use QdrantService from app_state
+        if let Err(e) = app_state.qdrant_service.delete_knowledge_base(kb_id).await {
             eprintln!(
                 "Failed to delete Qdrant vectors for knowledge base {}: {}",
                 kb_id, e
@@ -389,18 +388,13 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
         let title_clone = self.title.clone();
         let kb_id = self.knowledge_base_id;
 
-        // Clone services from app_state for background processing
-        let embedding_service = app_state.embedding_service.clone();
-        let text_processing_service = app_state.text_processing_service.clone();
-
         if let Err(e) = Self::process_document_embeddings(
             doc_id,
             kb_id,
             file_content_for_processing,
             file_type_clone,
             title_clone,
-            embedding_service,
-            text_processing_service,
+            app_state,
         )
         .await
         {
@@ -430,21 +424,18 @@ impl UploadKnowledgeBaseDocumentCommand {
         file_content: Vec<u8>,
         file_type: String,
         title: String,
-        embedding_service: EmbeddingService,
-        text_processing_service: TextProcessingService,
+        app_state: &AppState,
     ) -> Result<(), AppError> {
-        // Create a snowflake generator for chunk IDs
-        let sf = sonyflake::Sonyflake::new().map_err(|e| AppError::Internal(e.to_string()))?;
-        // Extract text from file
-        let text = text_processing_service.extract_text_from_file(&file_content, &file_type)?;
-        let cleaned_text = text_processing_service.clean_text(&text);
+        // Extract text from file using app_state services
+        let text = app_state.text_processing_service.extract_text_from_file(&file_content, &file_type)?;
+        let cleaned_text = app_state.text_processing_service.clean_text(&text);
 
         // Chunk the text
-        let chunks = text_processing_service.chunk_text(&cleaned_text, 1000, 200)?;
+        let chunks = app_state.text_processing_service.chunk_text(&cleaned_text, 1000, 200)?;
 
-        // Generate embeddings for chunks
+        // Generate embeddings for chunks using app_state service
         let chunk_texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
-        let embeddings = embedding_service.generate_embeddings(chunk_texts).await?;
+        let embeddings = app_state.embedding_service.generate_embeddings(chunk_texts).await?;
 
         // Create document chunks for Qdrant
         let document_chunks: Vec<DocumentChunk> = chunks
@@ -462,8 +453,8 @@ impl UploadKnowledgeBaseDocumentCommand {
                 metadata.insert("title".to_string(), json!(title.clone()));
                 metadata.insert("file_type".to_string(), json!(file_type.clone()));
 
-                // Generate consistent chunk ID using snowflake
-                let chunk_id = sf.next_id().unwrap_or(0) as i64;
+                // Generate chunk ID using document_id and chunk index for consistency
+                let chunk_id = (document_id * 10000) + chunk.chunk_index as i64;
 
                 DocumentChunk {
                     id: chunk_id, // Use snowflake ID as i64
@@ -474,8 +465,8 @@ impl UploadKnowledgeBaseDocumentCommand {
             })
             .collect();
 
-        // Store in Qdrant with knowledge base as tenant
-        QdrantService::upsert_documents(document_chunks, knowledge_base_id).await?;
+        // Store in Qdrant with knowledge base as tenant using app_state service
+        app_state.qdrant_service.upsert_documents(document_chunks, knowledge_base_id).await?;
 
         Ok(())
     }
@@ -525,7 +516,7 @@ impl Command for DeleteKnowledgeBaseDocumentCommand {
         let doc_id = self.document_id;
         let kb_id = self.knowledge_base_id;
 
-        if let Err(e) = Self::delete_document_embeddings(doc_id, kb_id).await {
+        if let Err(e) = Self::delete_document_embeddings(doc_id, kb_id, app_state).await {
             eprintln!("Failed to delete document embeddings: {}", e);
         }
 
@@ -537,11 +528,13 @@ impl DeleteKnowledgeBaseDocumentCommand {
     async fn delete_document_embeddings(
         document_id: i64,
         knowledge_base_id: i64,
+        app_state: &AppState,
     ) -> Result<(), AppError> {
         let mut metadata_filter = HashMap::new();
         metadata_filter.insert("document_id".to_string(), json!(document_id.to_string()));
 
-        QdrantService::delete_by_metadata(knowledge_base_id, metadata_filter).await?;
+        // Use QdrantService from app_state to delete document embeddings
+        app_state.qdrant_service.delete_by_metadata(knowledge_base_id, metadata_filter).await?;
 
         Ok(())
     }

@@ -14,11 +14,6 @@ struct DnsResponse {
 
 #[derive(Debug, Deserialize)]
 struct DnsAnswer {
-    name: String,
-    #[serde(rename = "type")]
-    record_type: u16,
-    #[serde(rename = "TTL")]
-    ttl: u32,
     data: String,
 }
 
@@ -78,9 +73,7 @@ impl DnsVerificationService {
                 let actual_unquoted = actual.trim_matches('"');
                 actual_unquoted == expected
             }
-            "A" => {
-                actual == expected
-            }
+            "A" => actual == expected,
             "MX" => {
                 if let Some(hostname) = actual.split_whitespace().nth(1) {
                     let hostname_normalized = hostname.trim_end_matches('.');
@@ -101,7 +94,10 @@ impl DnsVerificationService {
     ) -> Result<(), AppError> {
         // For Cloudflare verification records, first try custom hostname API, then DNS records
         for record in &mut records.cloudflare_verification {
-            tracing::info!("Starting verification for Cloudflare record: {}", record.name);
+            tracing::info!(
+                "Starting verification for Cloudflare record: {}",
+                record.name
+            );
             record.verification_attempted_at = Some(Utc::now());
 
             // First try checking as a custom hostname (for domains like accounts.wacht.dev)
@@ -112,10 +108,18 @@ impl DnsVerificationService {
                     if verified {
                         record.last_verified_at = Some(Utc::now());
                     }
-                    tracing::info!("Cloudflare custom hostname verification for {}: {} ✅", record.name, verified);
+                    tracing::info!(
+                        "Cloudflare custom hostname verification for {}: {} ✅",
+                        record.name,
+                        verified
+                    );
                 }
                 Err(e) => {
-                    tracing::info!("Custom hostname check failed for {}, trying DNS records: {}", record.name, e);
+                    tracing::info!(
+                        "Custom hostname check failed for {}, trying DNS records: {}",
+                        record.name,
+                        e
+                    );
 
                     // Fallback to checking DNS records
                     match cloudflare_service.check_domain_verification_status(&record.name) {
@@ -124,10 +128,18 @@ impl DnsVerificationService {
                             if verified {
                                 record.last_verified_at = Some(Utc::now());
                             }
-                            tracing::info!("Cloudflare DNS verification for {}: {} ✅", record.name, verified);
+                            tracing::info!(
+                                "Cloudflare DNS verification for {}: {} ✅",
+                                record.name,
+                                verified
+                            );
                         }
                         Err(dns_e) => {
-                            tracing::warn!("Cloudflare DNS check failed for {}, trying manual DNS: {}", record.name, dns_e);
+                            tracing::warn!(
+                                "Cloudflare DNS check failed for {}, trying manual DNS: {}",
+                                record.name,
+                                dns_e
+                            );
                             // Final fallback to manual DNS lookup
                             match self.verify_dns_record(record) {
                                 Ok(verified) => {
@@ -135,10 +147,18 @@ impl DnsVerificationService {
                                     if verified {
                                         record.last_verified_at = Some(Utc::now());
                                     }
-                                    tracing::info!("Manual DNS verification for {}: {} ✅", record.name, verified);
+                                    tracing::info!(
+                                        "Manual DNS verification for {}: {} ✅",
+                                        record.name,
+                                        verified
+                                    );
                                 }
                                 Err(manual_e) => {
-                                    tracing::warn!("Manual DNS fallback also failed for {}: {} ❌", record.name, manual_e);
+                                    tracing::warn!(
+                                        "Manual DNS fallback also failed for {}: {} ❌",
+                                        record.name,
+                                        manual_e
+                                    );
                                     record.verified = false;
                                 }
                             }
@@ -147,7 +167,11 @@ impl DnsVerificationService {
                 }
             }
 
-            tracing::info!("Final verification result for {}: {}", record.name, record.verified);
+            tracing::info!(
+                "Final verification result for {}: {}",
+                record.name,
+                record.verified
+            );
         }
 
         // For custom hostname verification, use Cloudflare API to check hostname status
@@ -161,10 +185,18 @@ impl DnsVerificationService {
                     if verified {
                         record.last_verified_at = Some(Utc::now());
                     }
-                    tracing::info!("Cloudflare custom hostname verification for {}: {}", record.name, verified);
+                    tracing::info!(
+                        "Cloudflare custom hostname verification for {}: {}",
+                        record.name,
+                        verified
+                    );
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to check Cloudflare custom hostname for {}: {}", record.name, e);
+                    tracing::warn!(
+                        "Failed to check Cloudflare custom hostname for {}: {}",
+                        record.name,
+                        e
+                    );
                     // Fallback to DNS lookup if Cloudflare API fails
                     match self.verify_dns_record(record) {
                         Ok(verified) => {
@@ -174,7 +206,11 @@ impl DnsVerificationService {
                             }
                         }
                         Err(dns_e) => {
-                            tracing::warn!("DNS fallback also failed for {}: {}", record.name, dns_e);
+                            tracing::warn!(
+                                "DNS fallback also failed for {}: {}",
+                                record.name,
+                                dns_e
+                            );
                             record.verified = false;
                         }
                     }
@@ -212,8 +248,6 @@ impl DnsVerificationService {
                 }
             }
         }
-
-
 
         Ok(())
     }

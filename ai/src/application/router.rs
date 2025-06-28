@@ -1,11 +1,11 @@
 use crate::api::ws;
+use crate::application::HttpState;
 use axum::Router;
 use axum::routing::get;
-use shared::state::AppState;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-fn router() -> Router<AppState> {
+fn router() -> Router<HttpState> {
     Router::new().route("/", get(ws::handler))
 }
 
@@ -16,7 +16,7 @@ fn configure_cors() -> CorsLayer {
         .allow_headers(Any)
 }
 
-pub fn create_router(state: AppState) -> Router {
+pub fn create_router(state: HttpState) -> Router {
     let cors = configure_cors();
     let router = router();
 

@@ -2,12 +2,11 @@ mod api;
 mod application;
 pub use shared as core;
 
-use anyhow::Result;
 use dotenvy::dotenv;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -19,7 +18,7 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app_state = shared::state::AppState::new_from_env().await;
+    let app_state = shared::state::AppState::new_from_env().await?;
 
     let app = application::new(app_state);
 

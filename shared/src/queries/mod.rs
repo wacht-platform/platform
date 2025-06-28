@@ -37,6 +37,7 @@ pub mod workspace;
 
 // AI-related queries
 pub mod ai_agent;
+pub mod ai_execution_context;
 pub mod ai_knowledge_base;
 pub mod ai_tool;
 pub mod ai_workflow;
@@ -52,6 +53,7 @@ pub use workspace::*;
 
 // AI-related exports
 pub use ai_agent::*;
+pub use ai_execution_context::*;
 pub use ai_knowledge_base::*;
 pub use ai_tool::*;
 pub use ai_workflow::*;

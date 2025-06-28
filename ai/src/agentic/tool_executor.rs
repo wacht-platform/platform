@@ -1,5 +1,5 @@
 use super::{ToolCall, ToolResult, AgentContext};
-use shared::models::{AiTool, AiToolType, AiToolConfiguration, ApiToolConfiguration, HttpMethod};
+use shared::models::{AiToolConfiguration, ApiToolConfiguration, HttpMethod};
 use shared::error::AppError;
 use shared::state::AppState;
 use serde_json::{json, Value};
@@ -7,11 +7,14 @@ use std::collections::HashMap;
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
 
+
 pub struct ToolExecutor {
     pub context: AgentContext,
     pub app_state: AppState,
     pub conversation_history: Vec<ChatMessage>,
 }
+
+
 
 impl ToolExecutor {
     pub fn new(context: AgentContext, app_state: AppState, conversation_history: Vec<ChatMessage>) -> Self {
@@ -22,10 +25,34 @@ impl ToolExecutor {
         }
     }
 
+
+
+
+
+
+
+
+
+
+
     pub async fn execute_tool_call(&self, tool_call: &ToolCall) -> Result<ToolResult, AppError> {
         // Handle special context engine tool
         if tool_call.name == "context_engine" {
             return self.execute_context_engine(tool_call).await;
+        }
+
+        // Handle special memory tool
+        if tool_call.name == "memory" {
+            return self.execute_memory_tool(tool_call).await;
+        }
+
+        // Handle workflow execution
+        if tool_call.name.starts_with("workflow_") {
+            let workflow_name = &tool_call.name[9..]; // Remove "workflow_" prefix
+            let workflow = self.context.workflows.iter()
+                .find(|w| w.name == workflow_name)
+                .ok_or_else(|| AppError::BadRequest(format!("Workflow '{}' not found", workflow_name)))?;
+            return self.execute_workflow(tool_call, workflow).await;
         }
 
         // Handle prefixed tool names
@@ -55,7 +82,7 @@ impl ToolExecutor {
         self.execute_regular_tool(tool_call, tool).await
     }
 
-    async fn execute_regular_tool(&self, tool_call: &ToolCall, tool: &shared::models::AiTool) -> Result<ToolResult, AppError> {
+    pub async fn execute_regular_tool(&self, tool_call: &ToolCall, tool: &shared::models::AiTool) -> Result<ToolResult, AppError> {
 
         match &tool.configuration {
             AiToolConfiguration::Api(config) => {
@@ -97,54 +124,144 @@ impl ToolExecutor {
     }
 
     async fn execute_context_engine(&self, tool_call: &ToolCall) -> Result<ToolResult, AppError> {
-        let query = tool_call.arguments.get("query")
+        use super::context_engine::ContextEngine;
+
+        // Check for different context engine operations
+        let operation = tool_call.arguments.get("operation")
             .and_then(|v| v.as_str())
-            .unwrap_or("");
+            .unwrap_or("search");
 
-        if query.is_empty() {
-            return Ok(ToolResult {
-                tool_call_id: tool_call.id.clone(),
-                result: json!({"error": "Query parameter is required"}),
-                error: Some("Query parameter is required".to_string()),
-            });
+        let context_engine = ContextEngine::new(self.context.clone(), self.app_state.clone())?;
+
+        match operation {
+            "search" => {
+                let query = tool_call.arguments.get("query")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                if query.is_empty() {
+                    return Ok(ToolResult {
+                        tool_call_id: tool_call.id.clone(),
+                        result: json!({"error": "Query parameter is required for search operation"}),
+                        error: Some("Query parameter is required".to_string()),
+                    });
+                }
+
+                let search_result = context_engine.search(query).await?;
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: search_result,
+                    error: None,
+                })
+            }
+            "store" => {
+                let key = tool_call.arguments.get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let default_data = json!({});
+                let data = tool_call.arguments.get("data")
+                    .unwrap_or(&default_data);
+
+                if key.is_empty() {
+                    return Ok(ToolResult {
+                        tool_call_id: tool_call.id.clone(),
+                        result: json!({"error": "Key parameter is required for store operation"}),
+                        error: Some("Key parameter is required".to_string()),
+                    });
+                }
+
+                let store_result = context_engine.store_context(key, data).await?;
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: store_result,
+                    error: None,
+                })
+            }
+            "fetch" => {
+                let key = tool_call.arguments.get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                if key.is_empty() {
+                    return Ok(ToolResult {
+                        tool_call_id: tool_call.id.clone(),
+                        result: json!({"error": "Key parameter is required for fetch operation"}),
+                        error: Some("Key parameter is required".to_string()),
+                    });
+                }
+
+                let fetch_result = context_engine.fetch_context(key).await?;
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: fetch_result,
+                    error: None,
+                })
+            }
+            "list_keys" => {
+                let list_result = context_engine.list_context_keys().await?;
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: list_result,
+                    error: None,
+                })
+            }
+            "delete" => {
+                let key = tool_call.arguments.get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                if key.is_empty() {
+                    return Ok(ToolResult {
+                        tool_call_id: tool_call.id.clone(),
+                        result: json!({"error": "Key parameter is required for delete operation"}),
+                        error: Some("Key parameter is required".to_string()),
+                    });
+                }
+
+                let delete_result = context_engine.delete_context(key).await?;
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: delete_result,
+                    error: None,
+                })
+            }
+            "get_detailed_info" => {
+                let resource_type = tool_call.arguments.get("resource_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let resource_id = tool_call.arguments.get("resource_id")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+
+                if resource_type.is_empty() || resource_id == 0 {
+                    return Ok(ToolResult {
+                        tool_call_id: tool_call.id.clone(),
+                        result: json!({"error": "resource_type and resource_id parameters are required"}),
+                        error: Some("Missing required parameters".to_string()),
+                    });
+                }
+
+                let detailed_info = context_engine.get_detailed_info(resource_type, resource_id).await?;
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: detailed_info,
+                    error: None,
+                })
+            }
+            _ => {
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: json!({"error": format!("Unknown context engine operation: {}. Available: search, store, fetch, delete, list, get_detailed_info", operation)}),
+                    error: Some(format!("Unknown operation: {}", operation)),
+                })
+            }
         }
-
-        let max_results = tool_call.arguments.get("max_results")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(20) as usize;
-
-        let mut all_results = Vec::new();
-
-        // Search tools and workflows (combined)
-        let tool_results = self.search_tools(&query, max_results, false);
-        all_results.extend(tool_results);
-
-        let workflow_results = self.search_workflows(&query, max_results, false);
-        all_results.extend(workflow_results);
-
-        // Search knowledge base documents across ALL available knowledge bases
-        let doc_results = self.search_all_knowledge_base_documents(&query, max_results).await?;
-        all_results.extend(doc_results);
-
-        // Sort by relevance
-        all_results.sort_by(|a, b| {
-            let score_a = a.get("relevance_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let score_b = b.get("relevance_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        // Limit results
-        all_results.truncate(max_results);
-
-        Ok(ToolResult {
-            tool_call_id: tool_call.id.clone(),
-            result: json!({
-                "query": query,
-                "results": all_results,
-                "total_found": all_results.len()
-            }),
-            error: None,
-        })
     }
 
     async fn execute_api_tool(&self, tool_call: &ToolCall, config: &ApiToolConfiguration) -> Result<ToolResult, AppError> {
@@ -311,101 +428,32 @@ impl ToolExecutor {
         })
     }
 
-    async fn search_qdrant_knowledge_base(&self, kb_id: i64, query: &str, max_results: u32, similarity_threshold: f32, include_metadata: bool) -> Result<Value, AppError> {
-        // For now, we'll use a placeholder URL since qdrant_client might not be in AppState
-        let qdrant_url = std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:6333".to_string());
+    async fn search_qdrant_knowledge_base(&self, kb_id: i64, query: &str, max_results: u32, _similarity_threshold: f32, _include_metadata: bool) -> Result<Value, AppError> {
+        // Generate embedding using the app state embedding service
+        let query_embedding = self.app_state.embedding_service.generate_embedding(query.to_string()).await?;
 
-        // Create search payload for Qdrant
-        let search_request = json!({
-            "vector": {
-                "name": "content",
-                "vector": self.generate_query_embedding(query).await?
-            },
-            "filter": {
-                "must": [
-                    {
-                        "key": "knowledge_base_id",
-                        "match": {
-                            "value": kb_id
-                        }
-                    }
-                ]
-            },
-            "limit": max_results,
-            "with_payload": true,
-            "with_vector": false
-        });
+        // Use QdrantService from app_state to search
+        let search_results = self.app_state.qdrant_service.search_similar(
+            query_embedding,
+            max_results as u64,
+            kb_id,
+        ).await?;
 
-        // Make request to Qdrant
-        let collection_name = format!("deployment_{}", self.context.deployment_id);
-        let url = format!("{}/collections/{}/points/search",
-            qdrant_url, collection_name);
+        // Convert search results to the expected format
+        let results: Vec<Value> = search_results.into_iter().map(|result| {
+            json!({
+                "id": result.id,
+                "score": result.score,
+                "content": result.content,
+                "metadata": result.metadata,
+                "knowledge_base_id": kb_id
+            })
+        }).collect();
 
-        let response = ureq::post(&url)
-            .header("Content-Type", "application/json")
-            .send_json(&search_request);
-
-        match response {
-            Ok(mut resp) => {
-                let body = resp.body_mut().read_to_string()
-                    .unwrap_or_else(|_| "{}".to_string());
-
-                let qdrant_response: Value = serde_json::from_str(&body)
-                    .unwrap_or_else(|_| json!({"result": []}));
-
-                // Extract and format results
-                let results = qdrant_response
-                    .get("result")
-                    .and_then(|r| r.as_array())
-                    .map(|arr| {
-                        arr.iter().map(|item| {
-                            let empty_payload = json!({});
-                            let payload = item.get("payload").unwrap_or(&empty_payload);
-                            let score = item.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
-
-                            let empty_metadata = json!({});
-                            let metadata = payload.get("metadata").unwrap_or(&empty_metadata);
-
-                            json!({
-                                "content": payload.get("content").and_then(|c| c.as_str()).unwrap_or(""),
-                                "metadata": metadata,
-                                "knowledge_base_id": payload.get("knowledge_base_id").and_then(|id| id.as_i64()).unwrap_or(0),
-                                "score": score
-                            })
-                        }).collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-
-                Ok(json!(results))
-            }
-            Err(e) => {
-                Err(AppError::Internal(format!("Qdrant search failed: {}", e)))
-            }
-        }
+        Ok(json!(results))
     }
 
-    async fn generate_query_embedding(&self, query: &str) -> Result<Vec<f32>, AppError> {
-        // For now, return a dummy embedding vector
-        // In production, you'd use an embedding model like OpenAI's text-embedding-ada-002
-        // or a local embedding model
 
-        // Generate a simple hash-based embedding for demonstration
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        query.hash(&mut hasher);
-        let hash = hasher.finish();
-
-        // Convert hash to a 384-dimensional vector (common embedding size)
-        let mut embedding = Vec::with_capacity(384);
-        for i in 0..384 {
-            let value = ((hash.wrapping_mul(i as u64 + 1)) % 1000) as f32 / 1000.0;
-            embedding.push(value);
-        }
-
-        Ok(embedding)
-    }
 
     async fn execute_platform_event_tool(&self, tool_call: &ToolCall, _config: &shared::models::PlatformEventToolConfiguration) -> Result<ToolResult, AppError> {
         // Placeholder for platform events
@@ -583,156 +631,210 @@ Otherwise, respond with just the parameter value."#,
     }
 
     async fn execute_context_engine_search(&self, query: &str) -> Result<Value, AppError> {
-        // Execute context engine search
-        let mut results = Vec::new();
+        use super::context_engine::ContextEngine;
 
-        // Search tools
-        for tool in &self.context.tools {
-            if tool.name.to_lowercase().contains(&query.to_lowercase()) ||
-               tool.description.as_ref().map_or(false, |d| d.to_lowercase().contains(&query.to_lowercase())) {
-                results.push(json!({
-                    "type": "tool",
-                    "name": tool.name,
-                    "description": tool.description
-                }));
-            }
-        }
-
-        // Search workflows
-        for workflow in &self.context.workflows {
-            if workflow.name.to_lowercase().contains(&query.to_lowercase()) ||
-               workflow.description.as_ref().map_or(false, |d| d.to_lowercase().contains(&query.to_lowercase())) {
-                results.push(json!({
-                    "type": "workflow",
-                    "name": workflow.name,
-                    "description": workflow.description
-                }));
-            }
-        }
-
-        // Search knowledge bases
-        for kb in &self.context.knowledge_bases {
-            if kb.name.to_lowercase().contains(&query.to_lowercase()) ||
-               kb.description.as_ref().map_or(false, |d| d.to_lowercase().contains(&query.to_lowercase())) {
-                results.push(json!({
-                    "type": "knowledge_base",
-                    "name": kb.name,
-                    "description": kb.description
-                }));
-            }
-        }
-
-        Ok(json!({
-            "query": query,
-            "results": results,
-            "total_found": results.len()
-        }))
+        // Use the enhanced context engine for search
+        let context_engine = ContextEngine::new(self.context.clone(), self.app_state.clone())?;
+        context_engine.search(query).await
     }
 
-    fn search_tools(&self, query: &str, max_results: usize, include_details: bool) -> Vec<Value> {
-        let query_lower = query.to_lowercase();
-        let mut results = Vec::new();
 
-        for tool in &self.context.tools {
-            let relevance = self.calculate_relevance(&tool.name, &tool.description, query);
-            if relevance > 0.0 {
-                let mut result = json!({
-                    "type": "tool",
-                    "id": tool.id,
-                    "name": tool.name,
-                    "description": tool.description,
-                    "tool_type": tool.tool_type,
-                    "relevance_score": relevance
-                });
 
-                if include_details {
-                    result["configuration"] = json!(tool.configuration);
-                    result["created_at"] = json!(tool.created_at);
-                    result["updated_at"] = json!(tool.updated_at);
+    async fn execute_memory_tool(&self, tool_call: &ToolCall) -> Result<ToolResult, AppError> {
+        use super::memory_manager::{MemoryManager, MemoryType, MemoryQuery};
+        use std::collections::HashMap;
+
+        let memory_manager = MemoryManager::new(self.context.clone(), self.app_state.clone())?;
+
+        let operation = tool_call.arguments.get("operation")
+            .and_then(|v| v.as_str())
+            .unwrap_or("search");
+
+        match operation {
+            "store" => {
+                let content = tool_call.arguments.get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let memory_type_str = tool_call.arguments.get("memory_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("working");
+                let importance = tool_call.arguments.get("importance")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.5) as f32;
+
+                if content.is_empty() {
+                    return Ok(ToolResult {
+                        tool_call_id: tool_call.id.clone(),
+                        result: json!({"error": "Content parameter is required for store operation"}),
+                        error: Some("Content parameter is required".to_string()),
+                    });
                 }
 
-                results.push(result);
-            }
-        }
+                let memory_type = MemoryType::from_str(memory_type_str).unwrap_or(MemoryType::Working);
+                let mut metadata = HashMap::new();
 
-        results.sort_by(|a, b| {
-            let score_a = a.get("relevance_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let score_b = b.get("relevance_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        results.truncate(max_results);
-        results
-    }
-
-    fn search_workflows(&self, query: &str, max_results: usize, include_details: bool) -> Vec<Value> {
-        let mut results = Vec::new();
-
-        for workflow in &self.context.workflows {
-            let relevance = self.calculate_relevance(&workflow.name, &workflow.description, query);
-            if relevance > 0.0 {
-                let mut result = json!({
-                    "type": "workflow",
-                    "id": workflow.id,
-                    "name": workflow.name,
-                    "description": workflow.description,
-                    "relevance_score": relevance
-                });
-
-                if include_details {
-                    result["configuration"] = json!(workflow.configuration);
-                    result["workflow_definition"] = json!(workflow.workflow_definition);
-                    result["created_at"] = json!(workflow.created_at);
-                    result["updated_at"] = json!(workflow.updated_at);
+                // Add any additional metadata from the tool call
+                if let Some(meta) = tool_call.arguments.get("metadata") {
+                    if let Some(meta_obj) = meta.as_object() {
+                        for (key, value) in meta_obj {
+                            metadata.insert(key.clone(), value.clone());
+                        }
+                    }
                 }
 
-                results.push(result);
+                let memory_id = memory_manager.store_memory(memory_type, content, metadata, importance).await?;
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: json!({
+                        "operation": "store",
+                        "memory_id": memory_id,
+                        "content": content,
+                        "memory_type": memory_type_str,
+                        "importance": importance,
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    }),
+                    error: None,
+                })
             }
-        }
+            "search" => {
+                let query_text = tool_call.arguments.get("query")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let max_results = tool_call.arguments.get("max_results")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(10) as usize;
+                let min_importance = tool_call.arguments.get("min_importance")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32;
 
-        results.sort_by(|a, b| {
-            let score_a = a.get("relevance_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let score_b = b.get("relevance_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        results.truncate(max_results);
-        results
-    }
-
-    fn search_knowledge_bases(&self, query: &str, max_results: usize, include_details: bool) -> Vec<Value> {
-        let mut results = Vec::new();
-
-        for kb in &self.context.knowledge_bases {
-            let relevance = self.calculate_relevance(&kb.name, &kb.description, query);
-            if relevance > 0.0 {
-                let mut result = json!({
-                    "type": "knowledge_base",
-                    "id": kb.id,
-                    "name": kb.name,
-                    "description": kb.description,
-                    "relevance_score": relevance
-                });
-
-                if include_details {
-                    result["configuration"] = json!(kb.configuration);
-                    result["created_at"] = json!(kb.created_at);
-                    result["updated_at"] = json!(kb.updated_at);
+                if query_text.is_empty() {
+                    return Ok(ToolResult {
+                        tool_call_id: tool_call.id.clone(),
+                        result: json!({"error": "Query parameter is required for search operation"}),
+                        error: Some("Query parameter is required".to_string()),
+                    });
                 }
 
-                results.push(result);
+                // Parse memory types filter
+                let memory_types = if let Some(types_array) = tool_call.arguments.get("memory_types") {
+                    if let Some(types) = types_array.as_array() {
+                        types.iter()
+                            .filter_map(|v| v.as_str())
+                            .filter_map(|s| MemoryType::from_str(s))
+                            .collect()
+                    } else {
+                        vec![MemoryType::Working, MemoryType::Episodic, MemoryType::Semantic, MemoryType::Procedural]
+                    }
+                } else {
+                    vec![MemoryType::Working, MemoryType::Episodic, MemoryType::Semantic, MemoryType::Procedural]
+                };
+
+                let query = MemoryQuery {
+                    query: query_text.to_string(),
+                    memory_types,
+                    max_results,
+                    min_importance,
+                    time_range: None, // TODO: Parse time range from arguments if needed
+                };
+
+                let search_results = memory_manager.search_memories(&query).await?;
+
+                let results: Vec<serde_json::Value> = search_results.into_iter().map(|result| {
+                    json!({
+                        "memory_id": result.entry.id,
+                        "content": result.entry.content,
+                        "memory_type": result.entry.memory_type.as_str(),
+                        "importance": result.entry.importance,
+                        "relevance_score": result.relevance_score,
+                        "similarity_score": result.similarity_score,
+                        "created_at": result.entry.created_at.to_rfc3339(),
+                        "last_accessed": result.entry.last_accessed.to_rfc3339(),
+                        "access_count": result.entry.access_count,
+                        "metadata": result.entry.metadata
+                    })
+                }).collect();
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: json!({
+                        "operation": "search",
+                        "query": query_text,
+                        "results": results,
+                        "total_found": results.len(),
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    }),
+                    error: None,
+                })
+            }
+            "stats" => {
+                let stats = memory_manager.get_memory_stats().await?;
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: json!({
+                        "operation": "stats",
+                        "stats": stats,
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    }),
+                    error: None,
+                })
+            }
+            "consolidate" => {
+                let similarity_threshold = tool_call.arguments.get("similarity_threshold")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.8) as f32;
+
+                let merged_count = memory_manager.consolidate_memories(similarity_threshold).await?;
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: json!({
+                        "operation": "consolidate",
+                        "merged_count": merged_count,
+                        "similarity_threshold": similarity_threshold,
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    }),
+                    error: None,
+                })
+            }
+            "forget" => {
+                let max_memories = tool_call.arguments.get("max_memories")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(1000) as usize;
+                let min_importance = tool_call.arguments.get("min_importance")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.1) as f32;
+
+                let forgotten_count = memory_manager.forget_memories(max_memories, min_importance).await?;
+
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: json!({
+                        "operation": "forget",
+                        "forgotten_count": forgotten_count,
+                        "max_memories": max_memories,
+                        "min_importance": min_importance,
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    }),
+                    error: None,
+                })
+            }
+            _ => {
+                Ok(ToolResult {
+                    tool_call_id: tool_call.id.clone(),
+                    result: json!({"error": format!("Unknown memory operation: {}", operation)}),
+                    error: Some(format!("Unknown operation: {}", operation)),
+                })
             }
         }
-
-        results.sort_by(|a, b| {
-            let score_a = a.get("relevance_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let score_b = b.get("relevance_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        results.truncate(max_results);
-        results
     }
+
+
+
+
+
+
 
     async fn search_all_knowledge_base_documents(&self, query: &str, max_results: usize) -> Result<Vec<Value>, AppError> {
         let mut all_results = Vec::new();
@@ -773,40 +875,5 @@ Otherwise, respond with just the parameter value."#,
         Ok(all_results)
     }
 
-    fn calculate_relevance(&self, name: &str, description: &Option<String>, query: &str) -> f64 {
-        let query_lower = query.to_lowercase();
-        let name_lower = name.to_lowercase();
-        let mut score = 0.0;
 
-        // Exact name match gets highest score
-        if name_lower == query_lower {
-            score += 100.0;
-        } else if name_lower.contains(&query_lower) {
-            score += 50.0;
-        }
-
-        // Description matches get lower scores
-        if let Some(desc) = description {
-            let desc_lower = desc.to_lowercase();
-            if desc_lower.contains(&query_lower) {
-                score += 25.0;
-            }
-        }
-
-        // Word-level matching
-        let query_words: Vec<&str> = query_lower.split_whitespace().collect();
-        let name_words: Vec<&str> = name_lower.split_whitespace().collect();
-
-        for query_word in &query_words {
-            for name_word in &name_words {
-                if name_word == query_word {
-                    score += 10.0;
-                } else if name_word.contains(query_word) || query_word.contains(name_word) {
-                    score += 5.0;
-                }
-            }
-        }
-
-        score
-    }
 }

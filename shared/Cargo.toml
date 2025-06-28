@@ -26,3 +26,4 @@ qdrant-client = "1.14.0"
 pulldown-cmark = "0.12.2"
 base64 = "0.22.1"
 rcgen = { version = "0.13.2", features = ["crypto"] }
+surrealdb = "2.3.6"

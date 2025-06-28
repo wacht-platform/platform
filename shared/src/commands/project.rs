@@ -2538,6 +2538,7 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
     }
 }
 
+#[allow(dead_code)]
 pub struct DeleteProjectCommand {
     id: i64,
     created_by: i64,

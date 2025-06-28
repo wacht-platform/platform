@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::models::SchemaField;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AiWorkflow {
     #[serde(with = "crate::utils::serde::i64_as_string")]
@@ -132,8 +134,6 @@ pub struct TriggerNodeConfig {
     pub condition: String, // Text condition for automated trigger
 }
 
-
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ErrorHandlerNodeConfig {
     pub enable_retry: bool,
@@ -155,14 +155,6 @@ pub struct LLMCallNodeConfig {
 pub enum ResponseFormat {
     Text,
     Json,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SchemaField {
-    pub name: String,
-    pub field_type: String,
-    pub required: bool,
-    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -202,8 +194,6 @@ pub enum ConditionEvaluationType {
     Simple,
 }
 
-
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ToolCallNodeConfig {
     #[serde(with = "crate::utils::serde::i64_as_string")]
@@ -213,14 +203,14 @@ pub struct ToolCallNodeConfig {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StoreContextNodeConfig {
-    pub context_data: String, // Textarea content for context to store
-    pub use_llm: bool, // Toggle for using LLM instead of static data
+    pub context_data: String,
+    pub use_llm: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FetchContextNodeConfig {
-    pub context_data: String, // Textarea content for context to fetch
-    pub use_llm: bool, // Toggle for using LLM instead of static data
+    pub context_data: String,
+    pub use_llm: bool,
 }
 
 // Workflow execution models
@@ -317,5 +307,3 @@ impl Default for ExecutionContext {
         }
     }
 }
-
-

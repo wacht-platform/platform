@@ -10,6 +10,7 @@ use crate::{
 
 use super::Query;
 
+#[allow(dead_code)]
 pub struct GetProjectsWithDeploymentQuery {
     oid: i64,
 }

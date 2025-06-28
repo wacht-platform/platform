@@ -3,10 +3,19 @@ pub mod agent_executor;
 pub mod tool_executor;
 pub mod context_engine;
 
+pub mod memory_manager;
+pub mod workflow_engine;
+pub mod task_manager;
+
 pub use xml_parser::*;
 pub use agent_executor::*;
 pub use tool_executor::*;
-pub use context_engine::*;
+// ContextEngine is used locally in tool_executor, no need to re-export
+
+pub use memory_manager::*;
+pub use task_manager::*;
+pub use workflow_engine::*;
+
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

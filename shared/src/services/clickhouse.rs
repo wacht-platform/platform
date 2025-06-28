@@ -42,7 +42,7 @@ struct RecentSignupRow {
 }
 
 impl ClickHouseService {
-    pub fn new(url: &str, password: &str) -> Result<Self, AppError> {
+    pub fn new(url: String, password: String) -> Result<Self, AppError> {
         let client = Client::default()
             .with_url(url)
             .with_user("default")
@@ -204,6 +204,4 @@ impl ClickHouseService {
             })
             .collect())
     }
-
-
 }

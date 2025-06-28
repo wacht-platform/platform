@@ -34,6 +34,7 @@ mod workspace_role;
 
 // AI-related models
 mod ai_agent;
+mod ai_execution_context;
 mod ai_workflow;
 mod ai_tool;
 mod ai_knowledge_base;
@@ -65,12 +66,14 @@ pub use user::*;
 pub use user_details::*;
 pub use user_phone_number::*;
 pub use workspace::*;
+pub use workspace_details::*;
+pub use workspace_membership::*;
+pub use workspace_permission::*;
+pub use workspace_role::*;
 
 // AI-related exports
 pub use ai_agent::*;
+pub use ai_execution_context::*;
 pub use ai_workflow::*;
 pub use ai_tool::*;
 pub use ai_knowledge_base::*;
-pub use workspace_details::*;
-pub use workspace_permission::*;
-pub use workspace_role::*;

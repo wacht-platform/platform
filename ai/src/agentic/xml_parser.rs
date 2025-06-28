@@ -1,6 +1,6 @@
 use super::ToolCall;
 use serde_json::{Value, json};
-use quick_xml::events::{Event, BytesStart, BytesEnd, BytesText};
+use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::collections::HashMap;
 
@@ -115,7 +115,7 @@ impl XmlParser {
         }
 
         if id.is_empty() {
-            id = format!("tool_{}", uuid::Uuid::new_v4());
+            id = format!("tool_{}", shared::utils::snowflake::generate_id());
         }
 
         // Convert HashMap to JSON Value
@@ -136,7 +136,5 @@ impl XmlParser {
         })
     }
 
-    pub fn reset(&mut self) {
-        self.buffer.clear();
-    }
+
 }
