@@ -31,14 +31,14 @@ impl TextProcessingService {
             "pdf" | "application/pdf" => self.extract_text_from_pdf(file_content),
             "txt" | "text" | "plain" | "text/plain" => self.extract_text_from_txt(file_content),
             "md" | "markdown" | "text/markdown" => self.extract_text_from_markdown(file_content),
-            "html" | "htm" | "text/html" => self.extract_text_from_html(file_content),
             "json" | "application/json" => self.extract_text_from_json(file_content),
             _ => self.extract_text_from_txt(file_content),
         }
     }
 
-    fn extract_text_from_pdf(&self, _content: &[u8]) -> Result<String, AppError> {
-        Ok("PDF content extraction not yet implemented".to_string())
+    fn extract_text_from_pdf(&self, content: &[u8]) -> Result<String, AppError> {
+        pdf_extract::extract_text_from_mem(content)
+            .map_err(|e| AppError::Internal(format!("Failed to extract text from PDF: {}", e)))
     }
 
     fn extract_text_from_txt(&self, content: &[u8]) -> Result<String, AppError> {

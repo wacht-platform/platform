@@ -495,7 +495,7 @@ impl Command for DeleteDocumentEmbeddingsCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         app_state
             .clickhouse_service
-            .delete_document_embeddings(self.knowledge_base_id, self.document_id)
+            .delete_document_embeddings(self.document_id)
             .await
     }
 }

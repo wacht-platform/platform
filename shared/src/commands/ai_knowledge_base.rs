@@ -1,5 +1,5 @@
 use crate::{
-    commands::{Command, UploadToKnowledgeBaseBucketCommand},
+    commands::{Command, StoreKnowledgeBaseEmbeddingCommand, UploadToKnowledgeBaseBucketCommand},
     error::AppError,
     models::{AiKnowledgeBase, AiKnowledgeBaseDocument},
     queries::{GetAiKnowledgeBaseByIdQuery, Query},
@@ -131,7 +131,7 @@ impl Command for UpdateAiKnowledgeBaseCommand {
 
         let query = format!(
             r#"
-            UPDATE ai_knowledge_bases 
+            UPDATE ai_knowledge_bases
             SET {}
             WHERE id = ${} AND deployment_id = ${}
             RETURNING id, created_at, updated_at, name, description, deployment_id, configuration
@@ -254,7 +254,6 @@ impl Command for DeleteAiKnowledgeBaseCommand {
             .await
             .map_err(|e| AppError::Database(e))?;
 
-        // Delete all documents first
         sqlx::query!(
             "DELETE FROM ai_knowledge_base_documents WHERE knowledge_base_id = $1",
             self.knowledge_base_id
@@ -263,7 +262,6 @@ impl Command for DeleteAiKnowledgeBaseCommand {
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        // Delete the knowledge base
         sqlx::query!(
             "DELETE FROM ai_knowledge_bases WHERE id = $1 AND deployment_id = $2",
             self.knowledge_base_id,
@@ -275,16 +273,21 @@ impl Command for DeleteAiKnowledgeBaseCommand {
 
         tx.commit().await.map_err(|e| AppError::Database(e))?;
 
-        // Delete ClickHouse embeddings for this knowledge base
         let kb_id = self.knowledge_base_id;
         if let Err(e) = app_state
             .clickhouse_service
             .delete_knowledge_base_embeddings(kb_id)
             .await
         {
-            eprintln!("Failed to delete ClickHouse embeddings for knowledge base {}: {}", kb_id, e);
+            eprintln!(
+                "Failed to delete ClickHouse embeddings for knowledge base {}: {}",
+                kb_id, e
+            );
         } else {
-            println!("Successfully deleted ClickHouse embeddings for knowledge base {}", kb_id);
+            println!(
+                "Successfully deleted ClickHouse embeddings for knowledge base {}",
+                kb_id
+            );
         }
 
         Ok(())
@@ -298,13 +301,6 @@ pub struct UploadKnowledgeBaseDocumentCommand {
     pub file_name: String,
     pub file_content: Vec<u8>,
     pub file_type: String,
-}
-
-pub struct UploadKnowledgeBaseUrlCommand {
-    pub knowledge_base_id: i64,
-    pub title: String,
-    pub description: Option<String>,
-    pub url: String,
 }
 
 impl UploadKnowledgeBaseDocumentCommand {
@@ -323,22 +319,6 @@ impl UploadKnowledgeBaseDocumentCommand {
             file_name,
             file_content,
             file_type,
-        }
-    }
-}
-
-impl UploadKnowledgeBaseUrlCommand {
-    pub fn new(
-        knowledge_base_id: i64,
-        title: String,
-        description: Option<String>,
-        url: String,
-    ) -> Self {
-        Self {
-            knowledge_base_id,
-            title,
-            description,
-            url,
         }
     }
 }
@@ -388,7 +368,6 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
         let title_clone = self.title.clone();
         let kb_id = self.knowledge_base_id;
 
-        // Get deployment_id from knowledge base
         let kb_query = sqlx::query!(
             "SELECT deployment_id FROM ai_knowledge_bases WHERE id = $1",
             kb_id
@@ -437,47 +416,42 @@ impl UploadKnowledgeBaseDocumentCommand {
         title: String,
         app_state: &AppState,
     ) -> Result<(), AppError> {
-        // Extract text from file using app_state services
         let text = app_state
             .text_processing_service
             .extract_text_from_file(&file_content, &file_type)?;
         let cleaned_text = app_state.text_processing_service.clean_text(&text);
 
-        // Chunk the text
         let chunks = app_state
             .text_processing_service
             .chunk_text(&cleaned_text, 1000, 200)?;
 
-        // Generate embeddings for chunks using command pattern
         let chunk_texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
         let embeddings_command = crate::commands::GenerateEmbeddingsCommand::new(chunk_texts);
         let embeddings = embeddings_command.execute(app_state).await?;
 
-        // Store embeddings in ClickHouse using command pattern
-        for (chunk, embedding) in chunks.into_iter().zip(embeddings.into_iter()) {
+        for (chunk_index, (chunk, embedding)) in
+            chunks.into_iter().zip(embeddings.into_iter()).enumerate()
+        {
             let mut metadata = HashMap::new();
             metadata.insert("document_id".to_string(), json!(document_id.to_string()));
             metadata.insert(
                 "knowledge_base_id".to_string(),
                 json!(knowledge_base_id.to_string()),
             );
-            metadata.insert("chunk_index".to_string(), json!(chunk.chunk_index));
+            metadata.insert("chunk_index".to_string(), json!(chunk_index));
             metadata.insert("title".to_string(), json!(title.clone()));
             metadata.insert("file_type".to_string(), json!(file_type.clone()));
 
-            // Generate chunk ID using document_id and chunk index for consistency
-            let chunk_id = (document_id * 10000) + chunk.chunk_index as i64;
-
-            let store_command = crate::commands::StoreKnowledgeBaseEmbeddingCommand::new(
-                chunk_id,
+            StoreKnowledgeBaseEmbeddingCommand::new(
+                document_id,
                 deployment_id,
                 knowledge_base_id,
-                chunk.chunk_index as i32,
+                chunk_index as i32,
                 chunk.content,
                 embedding,
-            );
-
-            store_command.execute(app_state).await?;
+            )
+            .execute(app_state)
+            .await?;
         }
 
         Ok(())
@@ -504,7 +478,6 @@ impl Command for DeleteKnowledgeBaseDocumentCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Verify the knowledge base exists and belongs to the deployment
         let _kb = GetAiKnowledgeBaseByIdQuery::new(self.deployment_id, self.knowledge_base_id)
             .execute(app_state)
             .await
@@ -524,7 +497,6 @@ impl Command for DeleteKnowledgeBaseDocumentCommand {
             return Err(AppError::NotFound("Document not found".to_string()));
         }
 
-        // Delete embeddings from Qdrant in background
         let doc_id = self.document_id;
         let kb_id = self.knowledge_base_id;
 
@@ -542,10 +514,9 @@ impl DeleteKnowledgeBaseDocumentCommand {
         knowledge_base_id: i64,
         app_state: &AppState,
     ) -> Result<(), AppError> {
-        // Delete ClickHouse embeddings for this document
         if let Err(e) = app_state
             .clickhouse_service
-            .delete_document_embeddings(knowledge_base_id, document_id)
+            .delete_document_embeddings(document_id)
             .await
         {
             eprintln!(
@@ -560,58 +531,5 @@ impl DeleteKnowledgeBaseDocumentCommand {
         }
 
         Ok(())
-    }
-}
-
-impl Command for UploadKnowledgeBaseUrlCommand {
-    type Output = AiKnowledgeBaseDocument;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Fetch content from URL using ureq
-        let mut response = ureq::get(&self.url)
-            .call()
-            .map_err(|e| AppError::Internal(format!("Failed to fetch URL: {}", e)))?;
-
-        if response.status() != 200 {
-            return Err(AppError::Internal(format!(
-                "Failed to fetch URL: HTTP {}",
-                response.status()
-            )));
-        }
-
-        // For now, we'll determine content type from URL extension or default to text/html
-        let content_type = if self.url.ends_with(".pdf") {
-            "application/pdf"
-        } else if self.url.ends_with(".json") {
-            "application/json"
-        } else if self.url.ends_with(".xml") {
-            "application/xml"
-        } else {
-            "text/html"
-        }
-        .to_string();
-
-        // Read the response body as string and convert to bytes
-        let text = response
-            .body_mut()
-            .read_to_string()
-            .map_err(|e| AppError::Internal(format!("Failed to read URL content: {}", e)))?;
-
-        let content = text.into_bytes();
-
-        // Extract filename from URL
-        let file_name = self.url.split('/').last().unwrap_or("webpage").to_string();
-
-        // Create document upload command with fetched content
-        let upload_command = UploadKnowledgeBaseDocumentCommand::new(
-            self.knowledge_base_id,
-            self.title,
-            self.description,
-            file_name,
-            content.to_vec(),
-            content_type,
-        );
-
-        upload_command.execute(app_state).await
     }
 }

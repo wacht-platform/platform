@@ -12,12 +12,12 @@ use crate::{
         commands::{
             Command, CreateAiKnowledgeBaseCommand, DeleteAiKnowledgeBaseCommand,
             DeleteKnowledgeBaseDocumentCommand, UpdateAiKnowledgeBaseCommand,
-            UploadKnowledgeBaseDocumentCommand, UploadKnowledgeBaseUrlCommand,
+            UploadKnowledgeBaseDocumentCommand,
         },
         dto::{
             json::ai_knowledge_base::{
                 CreateKnowledgeBaseRequest, GetDocumentsQuery, KnowledgeBaseResponse,
-                UpdateKnowledgeBaseRequest, UploadUrlRequest,
+                UpdateKnowledgeBaseRequest,
             },
             query::deployment::GetKnowledgeBasesQuery,
         },
@@ -177,21 +177,25 @@ pub async fn upload_knowledge_base_document(
                     })?
                     .to_vec();
             }
-            _ => {
-                // Skip unknown fields
-            }
+            _ => {}
         }
     }
 
-    let title = title.ok_or((StatusCode::BAD_REQUEST, "Title is required".to_string()))?;
     let file_name = file_name.ok_or((StatusCode::BAD_REQUEST, "File is required".to_string()))?;
     let file_type = file_type.unwrap_or("application/octet-stream".to_string());
+
+    let title = title.unwrap_or_else(|| {
+        file_name
+            .split('.')
+            .next()
+            .unwrap_or(&file_name)
+            .to_string()
+    });
 
     if file_content.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "File content is empty".to_string()).into());
     }
 
-    // Verify the knowledge base exists and belongs to the deployment
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
         .execute(&app_state)
         .await
@@ -216,35 +220,11 @@ pub async fn upload_knowledge_base_document(
     .map_err(Into::into)
 }
 
-pub async fn upload_knowledge_base_url(
-    State(app_state): State<HttpState>,
-    Path((deployment_id, kb_id)): Path<(i64, i64)>,
-    Json(request): Json<UploadUrlRequest>,
-) -> ApiResult<AiKnowledgeBaseDocument> {
-    // Verify the knowledge base exists and belongs to the deployment
-    GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
-        .execute(&app_state)
-        .await
-        .map_err(|_| {
-            (
-                StatusCode::NOT_FOUND,
-                "Knowledge base not found".to_string(),
-            )
-        })?;
-
-    UploadKnowledgeBaseUrlCommand::new(kb_id, request.title, request.description, request.url)
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
-}
-
 pub async fn get_knowledge_base_documents(
     State(app_state): State<HttpState>,
     Path((deployment_id, kb_id)): Path<(i64, i64)>,
     Query(query): Query<GetDocumentsQuery>,
 ) -> ApiResult<PaginatedResponse<AiKnowledgeBaseDocument>> {
-    // Verify the knowledge base exists and belongs to the deployment
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
         .execute(&app_state)
         .await

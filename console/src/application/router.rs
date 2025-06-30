@@ -264,10 +264,7 @@ fn ai_routes() -> Router<HttpState> {
             get(api::deployment::ai_knowledge_base::get_knowledge_base_documents)
                 .post(api::deployment::ai_knowledge_base::upload_knowledge_base_document),
         )
-        .route(
-            "/deployment/{deployment_id}/ai-knowledge-bases/{kb_id}/documents/url",
-            post(api::deployment::ai_knowledge_base::upload_knowledge_base_url),
-        )
+
         .route(
             "/deployment/{deployment_id}/ai-knowledge-bases/{kb_id}/documents/{document_id}",
             delete(api::deployment::ai_knowledge_base::delete_knowledge_base_document),

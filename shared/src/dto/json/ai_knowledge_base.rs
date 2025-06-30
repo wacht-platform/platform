@@ -17,13 +17,6 @@ pub struct UpdateKnowledgeBaseRequest {
     pub configuration: Option<serde_json::Value>,
 }
 
-// Document Upload Models
-#[derive(Debug, Deserialize)]
-pub struct UploadUrlRequest {
-    pub title: String,
-    pub description: Option<String>,
-    pub url: String,
-}
 
 // Knowledge Base Response Models
 #[derive(Debug, Serialize)]
@@ -60,7 +53,6 @@ pub struct KnowledgeBaseSearchResult {
     pub id: String,
     pub content: String,
     pub score: f32,
-    pub document_id: Option<String>,
     pub knowledge_base_id: Option<String>,
     pub title: Option<String>,
     pub file_type: Option<String>,
@@ -73,9 +65,8 @@ impl From<DocumentSearchResult> for KnowledgeBaseSearchResult {
             id: result.id.to_string(),
             content: result.content,
             score: result.score,
-            document_id: Some(result.document_id.to_string()),
             knowledge_base_id: Some(result.knowledge_base_id.to_string()),
-            title: None, // Not available in DocumentSearchResult
+            title: None,     // Not available in DocumentSearchResult
             file_type: None, // Not available in DocumentSearchResult
             chunk_index: Some(result.chunk_index as i64),
         }

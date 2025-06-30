@@ -50,7 +50,9 @@ pub struct KnowledgeBaseDocument {
     pub chunk_index: i32,
     pub content: String,
     pub embedding: Vec<f32>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub created_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -98,7 +100,6 @@ pub struct DocumentSearchResult {
     pub content: String,
     pub score: f32,
     pub knowledge_base_id: i64,
-    pub document_id: i64,
     pub chunk_index: i32,
 }
 
@@ -170,7 +171,6 @@ impl ClickHouseService {
                 id Int64,
                 deployment_id Int64,
                 knowledge_base_id Int64,
-                document_id Int64,
                 chunk_index Int32,
                 content String,
                 embedding Array(Float32) CODEC(NONE),
@@ -178,7 +178,7 @@ impl ClickHouseService {
                 updated_at DateTime64(3, 'UTC'),
                 INDEX idx_kb_embedding embedding TYPE vector_similarity('hnsw', 'L2Distance', 768) GRANULARITY 100000000
             ) ENGINE = MergeTree()
-            ORDER BY (knowledge_base_id, document_id, chunk_index, id)
+            ORDER BY (knowledge_base_id, chunk_index, id)
             PARTITION BY knowledge_base_id
         "#;
 
@@ -379,6 +379,8 @@ impl ClickHouseService {
             updated_at: now,
         };
 
+        println!("storing knowledegbase {:?}", doc);
+
         let mut insert = self.client.insert("knowledge_base_documents")?;
         insert.write(&doc).await?;
         insert.end().await?;
@@ -457,7 +459,7 @@ impl ClickHouseService {
         let query = format!(
             "WITH {} AS reference_vector
              SELECT id, content, L2Distance(embedding, reference_vector) as score,
-                    knowledge_base_id, document_id, chunk_index
+                    knowledge_base_id, chunk_index
              FROM knowledge_base_documents
              WHERE knowledge_base_id = {}
              ORDER BY score ASC LIMIT {}",
@@ -479,7 +481,6 @@ impl ClickHouseService {
             content: String,
             score: f32,
             knowledge_base_id: i64,
-            document_id: i64,
             chunk_index: i32,
         }
 
@@ -496,7 +497,6 @@ impl ClickHouseService {
                 content: row.content,
                 score: row.score,
                 knowledge_base_id: row.knowledge_base_id,
-                document_id: row.document_id,
                 chunk_index: row.chunk_index,
             })
             .collect();
@@ -641,26 +641,14 @@ impl ClickHouseService {
         Ok(())
     }
 
-    /// Delete knowledge base document embeddings for a specific document
-    pub async fn delete_document_embeddings(
-        &self,
-        knowledge_base_id: i64,
-        document_id: i64,
-    ) -> Result<(), AppError> {
-        let query =
-            "DELETE FROM knowledge_base_documents WHERE knowledge_base_id = ? AND document_id = ?";
+    pub async fn delete_document_embeddings(&self, document_id: i64) -> Result<(), AppError> {
+        let query = "DELETE FROM knowledge_base_documents WHERE id = ?";
 
-        self.client
-            .query(query)
-            .bind(knowledge_base_id)
-            .bind(document_id)
-            .execute()
-            .await?;
+        self.client.query(query).bind(document_id).execute().await?;
 
         Ok(())
     }
 
-    /// Delete execution message embeddings for a specific execution context
     pub async fn delete_execution_context_embeddings(
         &self,
         execution_context_id: i64,
