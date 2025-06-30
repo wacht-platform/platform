@@ -28,6 +28,7 @@ pub mod ai_agents;
 pub mod ai_workflows;
 pub mod ai_tools;
 pub mod ai_knowledge_base;
+pub mod embedding;
 
 
 
@@ -53,5 +54,6 @@ pub use ai_agents::*;
 pub use ai_workflows::*;
 pub use ai_tools::*;
 pub use ai_knowledge_base::*;
+pub use embedding::*;
 
 

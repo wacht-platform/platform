@@ -7,14 +7,11 @@ use redis::Client as RedisClient;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::env::var as env;
 use std::error::Error;
-use surrealdb::Surreal;
-use surrealdb::engine::remote::ws::{Client as SurrealClient, Ws};
-use surrealdb::opt::auth::Root;
 
 use crate::{
     services::{
-        ClickHouseService, CloudflareService, DnsVerificationService, EmbeddingService,
-        PostmarkService, QdrantService, TextProcessingService,
+        ClickHouseService, CloudflareService, DnsVerificationService, PostmarkService,
+        TextProcessingService,
     },
     utils::handlebars_helpers,
 };
@@ -29,11 +26,8 @@ pub struct AppState {
     pub cloudflare_service: CloudflareService,
     pub postmark_service: PostmarkService,
     pub dns_verification_service: DnsVerificationService,
-    pub embedding_service: EmbeddingService,
     pub text_processing_service: TextProcessingService,
     pub clickhouse_service: ClickHouseService,
-    pub qdrant_service: QdrantService,
-    pub surrealdb_client: Surreal<SurrealClient>,
 }
 
 impl AppState {
@@ -80,22 +74,11 @@ impl AppState {
 
         let text_processing_service = TextProcessingService::new();
 
-        let embedding_service =
-            EmbeddingService::new().expect("Failed to initialize embedding service");
-
         let clickhouse_service =
-            ClickHouseService::new(env("CLICKHOUSE_URL")?, env("CLICKHOUSE_PASSWORD")?)?;
+            ClickHouseService::new(env("CLICKHOUSE_HOST")?, env("CLICKHOUSE_PASSWORD")?)?;
 
-        let qdrant_service = QdrantService::new()
-            .expect("Failed to initialize Qdrant service");
-
-        let surrealdb_client = Surreal::new::<Ws>(env("SURREALDB_URL")?.as_str()).await?;
-        surrealdb_client
-            .signin(Root {
-                username: &env("SURREALDB_USERNAME")?,
-                password: &env("SURREALDB_PASSWORD")?,
-            })
-            .await?;
+        // Initialize ClickHouse tables
+        clickhouse_service.init_tables().await?;
 
         Ok(Self {
             db_pool: pool,
@@ -106,11 +89,8 @@ impl AppState {
             cloudflare_service,
             postmark_service,
             dns_verification_service,
-            embedding_service,
             text_processing_service,
             clickhouse_service,
-            qdrant_service,
-            surrealdb_client,
         })
     }
 }

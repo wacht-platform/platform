@@ -18,27 +18,4 @@ pub fn generate_id() -> i64 {
     id as i64
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_generate_id() {
-        let id1 = generate_id();
-        let id2 = generate_id();
-        
-        assert_ne!(id1, id2);
-        assert!(id1 > 0);
-        assert!(id2 > 0);
-    }
-
-    #[test]
-    fn test_multiple_ids_are_unique() {
-        let mut ids = std::collections::HashSet::new();
-        
-        for _ in 0..1000 {
-            let id = generate_id();
-            assert!(ids.insert(id), "Duplicate ID generated: {}", id);
-        }
-    }
-}

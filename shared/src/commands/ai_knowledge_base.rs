@@ -3,9 +3,6 @@ use crate::{
     error::AppError,
     models::{AiKnowledgeBase, AiKnowledgeBaseDocument},
     queries::{GetAiKnowledgeBaseByIdQuery, Query},
-    services::{
-        qdrant::DocumentChunk,
-    },
     state::AppState,
 };
 use chrono::Utc;
@@ -214,7 +211,8 @@ impl Command for DeleteAiKnowledgeBaseCommand {
         .map_err(|e| AppError::Database(e))?;
 
         if !dependent_tools.is_empty() {
-            let tool_names: Vec<String> = dependent_tools.iter()
+            let tool_names: Vec<String> = dependent_tools
+                .iter()
                 .map(|tool| tool.name.clone())
                 .collect();
 
@@ -239,7 +237,8 @@ impl Command for DeleteAiKnowledgeBaseCommand {
         .map_err(|e| AppError::Database(e))?;
 
         if !dependent_agents.is_empty() {
-            let agent_names: Vec<String> = dependent_agents.iter()
+            let agent_names: Vec<String> = dependent_agents
+                .iter()
                 .map(|agent| agent.name.clone())
                 .collect();
 
@@ -276,15 +275,16 @@ impl Command for DeleteAiKnowledgeBaseCommand {
 
         tx.commit().await.map_err(|e| AppError::Database(e))?;
 
-        // Delete Qdrant collection in background
+        // Delete ClickHouse embeddings for this knowledge base
         let kb_id = self.knowledge_base_id;
-
-        // Use QdrantService from app_state
-        if let Err(e) = app_state.qdrant_service.delete_knowledge_base(kb_id).await {
-            eprintln!(
-                "Failed to delete Qdrant vectors for knowledge base {}: {}",
-                kb_id, e
-            );
+        if let Err(e) = app_state
+            .clickhouse_service
+            .delete_knowledge_base_embeddings(kb_id)
+            .await
+        {
+            eprintln!("Failed to delete ClickHouse embeddings for knowledge base {}: {}", kb_id, e);
+        } else {
+            println!("Successfully deleted ClickHouse embeddings for knowledge base {}", kb_id);
         }
 
         Ok(())
@@ -388,9 +388,19 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
         let title_clone = self.title.clone();
         let kb_id = self.knowledge_base_id;
 
+        // Get deployment_id from knowledge base
+        let kb_query = sqlx::query!(
+            "SELECT deployment_id FROM ai_knowledge_bases WHERE id = $1",
+            kb_id
+        )
+        .fetch_one(&app_state.db_pool)
+        .await?;
+        let deployment_id = kb_query.deployment_id;
+
         if let Err(e) = Self::process_document_embeddings(
             doc_id,
             kb_id,
+            deployment_id,
             file_content_for_processing,
             file_type_clone,
             title_clone,
@@ -421,52 +431,54 @@ impl UploadKnowledgeBaseDocumentCommand {
     async fn process_document_embeddings(
         document_id: i64,
         knowledge_base_id: i64,
+        deployment_id: i64,
         file_content: Vec<u8>,
         file_type: String,
         title: String,
         app_state: &AppState,
     ) -> Result<(), AppError> {
         // Extract text from file using app_state services
-        let text = app_state.text_processing_service.extract_text_from_file(&file_content, &file_type)?;
+        let text = app_state
+            .text_processing_service
+            .extract_text_from_file(&file_content, &file_type)?;
         let cleaned_text = app_state.text_processing_service.clean_text(&text);
 
         // Chunk the text
-        let chunks = app_state.text_processing_service.chunk_text(&cleaned_text, 1000, 200)?;
+        let chunks = app_state
+            .text_processing_service
+            .chunk_text(&cleaned_text, 1000, 200)?;
 
-        // Generate embeddings for chunks using app_state service
+        // Generate embeddings for chunks using command pattern
         let chunk_texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
-        let embeddings = app_state.embedding_service.generate_embeddings(chunk_texts).await?;
+        let embeddings_command = crate::commands::GenerateEmbeddingsCommand::new(chunk_texts);
+        let embeddings = embeddings_command.execute(app_state).await?;
 
-        // Create document chunks for Qdrant
-        let document_chunks: Vec<DocumentChunk> = chunks
-            .into_iter()
-            .zip(embeddings.into_iter())
-            .enumerate()
-            .map(|(_i, (chunk, embedding))| {
-                let mut metadata = HashMap::new();
-                metadata.insert("document_id".to_string(), json!(document_id.to_string()));
-                metadata.insert(
-                    "knowledge_base_id".to_string(),
-                    json!(knowledge_base_id.to_string()),
-                );
-                metadata.insert("chunk_index".to_string(), json!(chunk.chunk_index));
-                metadata.insert("title".to_string(), json!(title.clone()));
-                metadata.insert("file_type".to_string(), json!(file_type.clone()));
+        // Store embeddings in ClickHouse using command pattern
+        for (chunk, embedding) in chunks.into_iter().zip(embeddings.into_iter()) {
+            let mut metadata = HashMap::new();
+            metadata.insert("document_id".to_string(), json!(document_id.to_string()));
+            metadata.insert(
+                "knowledge_base_id".to_string(),
+                json!(knowledge_base_id.to_string()),
+            );
+            metadata.insert("chunk_index".to_string(), json!(chunk.chunk_index));
+            metadata.insert("title".to_string(), json!(title.clone()));
+            metadata.insert("file_type".to_string(), json!(file_type.clone()));
 
-                // Generate chunk ID using document_id and chunk index for consistency
-                let chunk_id = (document_id * 10000) + chunk.chunk_index as i64;
+            // Generate chunk ID using document_id and chunk index for consistency
+            let chunk_id = (document_id * 10000) + chunk.chunk_index as i64;
 
-                DocumentChunk {
-                    id: chunk_id, // Use snowflake ID as i64
-                    content: chunk.content,
-                    metadata,
-                    embedding,
-                }
-            })
-            .collect();
+            let store_command = crate::commands::StoreKnowledgeBaseEmbeddingCommand::new(
+                chunk_id,
+                deployment_id,
+                knowledge_base_id,
+                chunk.chunk_index as i32,
+                chunk.content,
+                embedding,
+            );
 
-        // Store in Qdrant with knowledge base as tenant using app_state service
-        app_state.qdrant_service.upsert_documents(document_chunks, knowledge_base_id).await?;
+            store_command.execute(app_state).await?;
+        }
 
         Ok(())
     }
@@ -530,11 +542,22 @@ impl DeleteKnowledgeBaseDocumentCommand {
         knowledge_base_id: i64,
         app_state: &AppState,
     ) -> Result<(), AppError> {
-        let mut metadata_filter = HashMap::new();
-        metadata_filter.insert("document_id".to_string(), json!(document_id.to_string()));
-
-        // Use QdrantService from app_state to delete document embeddings
-        app_state.qdrant_service.delete_by_metadata(knowledge_base_id, metadata_filter).await?;
+        // Delete ClickHouse embeddings for this document
+        if let Err(e) = app_state
+            .clickhouse_service
+            .delete_document_embeddings(knowledge_base_id, document_id)
+            .await
+        {
+            eprintln!(
+                "Failed to delete ClickHouse embeddings for document {} in knowledge base {}: {}",
+                document_id, knowledge_base_id, e
+            );
+        } else {
+            println!(
+                "Successfully deleted ClickHouse embeddings for document {} in knowledge base {}",
+                document_id, knowledge_base_id
+            );
+        }
 
         Ok(())
     }

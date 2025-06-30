@@ -1,20 +1,17 @@
 use super::{
     AgentContext, MemoryManager, MemoryQuery, MemoryType, TaskManager, ToolCall, ToolResult,
-    WorkflowEngine, XmlParser,
+    WorkflowEngine,
 };
-use chrono::Utc;
-use futures_util::stream::StreamExt;
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
 use serde_json::{Value, json};
+use shared::commands::{Command, SearchConversationEmbeddingsCommand};
 use shared::error::AppError;
 use shared::models::{
-    AiAgent, AiExecutionContext, ExecutionContextStatus, ExecutionMessageSender,
-    ExecutionMessageType,
+    AgentExecutionContext, AiAgent, ExecutionMessageSender, ExecutionMessageType,
 };
 use shared::queries::{
-    GetAiAgentByNameQuery, GetAiKnowledgeBasesByIdsQuery, GetAiToolsByIdsQuery,
-    GetAiWorkflowsByIdsQuery, Query,
+    GetAiKnowledgeBasesByIdsQuery, GetAiToolsByIdsQuery, GetAiWorkflowsByIdsQuery, Query,
 };
 use shared::state::AppState;
 
@@ -22,7 +19,7 @@ pub struct AgentExecutor {
     pub agent: AiAgent,
     pub context: AgentContext,
     pub app_state: AppState,
-    pub execution_context: Option<AiExecutionContext>,
+    pub execution_context: Option<AgentExecutionContext>,
     pub task_manager: Option<TaskManager>,
     pub workflow_engine: Option<WorkflowEngine>,
     pub memory_manager: MemoryManager,
@@ -30,16 +27,11 @@ pub struct AgentExecutor {
 
 impl AgentExecutor {
     pub async fn new(
-        agent_name: &str,
+        agent: AiAgent,
         deployment_id: i64,
+        context_id: i64,
         app_state: &AppState,
     ) -> Result<Self, AppError> {
-        // Fetch agent by name
-        let agent = GetAiAgentByNameQuery::new(deployment_id, agent_name.to_string())
-            .execute(app_state)
-            .await?;
-
-        // Extract IDs from agent configuration
         let tool_ids = agent
             .configuration
             .get("tool_ids")
@@ -73,7 +65,6 @@ impl AgentExecutor {
             })
             .unwrap_or_default();
 
-        // Fetch tools, workflows, and knowledge bases
         let tools = if !tool_ids.is_empty() {
             GetAiToolsByIdsQuery::new(deployment_id, tool_ids)
                 .execute(app_state)
@@ -100,14 +91,14 @@ impl AgentExecutor {
 
         let context = AgentContext {
             agent_id: agent.id,
+            execution_context_id: context_id,
             deployment_id,
             tools,
             workflows,
             knowledge_bases,
         };
 
-        // Initialize memory manager - essential for agentic operations
-        let memory_manager = MemoryManager::new(context.clone(), app_state.clone())?;
+        let memory_manager = MemoryManager::new(context.clone(), app_state.clone(), context_id)?;
 
         Ok(Self {
             agent,
@@ -118,52 +109,6 @@ impl AgentExecutor {
             workflow_engine: None,
             memory_manager,
         })
-    }
-
-    pub async fn create_or_get_execution_context(
-        &mut self,
-        session_id: &str,
-        user_input: &str,
-    ) -> Result<&AiExecutionContext, AppError> {
-        if self.execution_context.is_none() {
-            let context_id = self.app_state.sf.next_id()? as i64;
-            let now = Utc::now();
-
-            let execution_context = AiExecutionContext {
-                id: context_id,
-                created_at: now,
-                updated_at: now,
-                agent_id: self.agent.id,
-                deployment_id: self.context.deployment_id,
-                session_id: session_id.to_string(),
-                title: self.extract_title_from_input(user_input),
-                current_goal: user_input.to_string(),
-                status: ExecutionContextStatus::Running,
-                memory: json!({}),
-                tasks: Vec::new(),
-                last_activity_at: now,
-                completed_at: None,
-            };
-
-            // Store in database
-            self.store_execution_context(&execution_context).await?;
-            self.execution_context = Some(execution_context);
-        }
-
-        Ok(self.execution_context.as_ref().unwrap())
-    }
-
-    async fn store_execution_context(&self, context: &AiExecutionContext) -> Result<(), AppError> {
-        use shared::queries::{Query, UpdateExecutionContextQuery};
-
-        UpdateExecutionContextQuery::new(context.id, context.deployment_id)
-            .with_memory(context.memory.clone())
-            .with_tasks(context.tasks.clone())
-            .with_status(context.status.clone())
-            .execute(&self.app_state)
-            .await?;
-
-        Ok(())
     }
 
     fn extract_title_from_input(&self, input: &str) -> String {
@@ -261,45 +206,32 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
     }
 
     async fn load_conversation_history(&self) -> Result<Vec<ChatMessage>, AppError> {
-        // Use Qdrant to load recent conversation messages
-        let search_results = self
-            .app_state
-            .qdrant_service
-            .search_conversation_history(
-                self.agent.id,
-                self.agent.deployment_id,
-                self.execution_context
-                    .as_ref()
-                    .map(|ctx| ctx.id)
-                    .unwrap_or(0),
-                None, // No specific query embedding
-                None, // All message types
-                20,   // Last 20 messages
-            )
-            .await?;
+        // Use ClickHouse to load recent conversation messages
+        let execution_context_id = self
+            .execution_context
+            .as_ref()
+            .map(|ctx| ctx.id)
+            .unwrap_or(0);
+
+        let search_results = SearchConversationEmbeddingsCommand::new(
+            self.agent.deployment_id,
+            execution_context_id,
+            vec![0.0; 768], // Dummy embedding for now - we just want recent messages
+            20,             // Last 20 messages
+        )
+        .execute(&self.app_state)
+        .await?;
 
         let mut messages = Vec::new();
         for result in search_results {
-            let message_type = result
-                .metadata
-                .get("message_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("user");
-
-            let sender = result
-                .metadata
-                .get("sender")
-                .and_then(|v| v.as_str())
-                .unwrap_or("user");
-
-            match (message_type, sender) {
-                ("user_input", "user") => {
+            match result.message_type.as_str() {
+                "user" => {
                     messages.push(ChatMessage::user().content(&result.content).build());
                 }
-                ("agent_response", "agent") => {
+                "assistant" => {
                     messages.push(ChatMessage::assistant().content(&result.content).build());
                 }
-                ("system_message", "system") => {
+                "system" => {
                     // Use user message for system content since ChatMessage doesn't have system()
                     messages.push(
                         ChatMessage::user()
@@ -322,123 +254,12 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
     pub async fn execute_with_streaming<F>(
         &mut self,
         user_message: &str,
-        session_id: &str,
         on_chunk: F,
     ) -> Result<(), AppError>
     where
         F: FnMut(&str) + Send,
     {
-        // Use the full agentic flow
-        self.execute_with_agentic_flow(user_message, session_id, on_chunk)
-            .await
-    }
-
-    /// Direct LLM execution without agentic flow (fallback)
-    pub async fn execute_direct_llm_response<F>(
-        &mut self,
-        user_message: &str,
-        session_id: &str,
-        mut on_chunk: F,
-    ) -> Result<(), AppError>
-    where
-        F: FnMut(&str) + Send,
-    {
-        // Create or get execution context
-        let _context = self
-            .create_or_get_execution_context(session_id, user_message)
-            .await?;
-
-        // Store user message
-        self.store_execution_message(
-            ExecutionMessageType::UserInput,
-            ExecutionMessageSender::User,
-            user_message,
-            json!({}),
-            None,
-            None,
-        )
-        .await?;
-
-        // Create LLM for this execution
-        let api_key = std::env::var("GEMINI_API_KEY")
-            .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
-
-        let llm = LLMBuilder::new()
-            .backend(LLMBackend::Google)
-            .api_key(&api_key)
-            .model("gemini-2.0-flash")
-            .max_tokens(8000)
-            .temperature(0.7)
-            .stream(true)
-            .build()
-            .map_err(|e| AppError::Internal(format!("Failed to build LLM: {}", e)))?;
-
-        // Get enhanced system prompt with task management capabilities
-        let system_prompt = self.get_enhanced_system_prompt();
-
-        // Load conversation history from execution context
-        let mut conversation = self.load_conversation_history().await?;
-
-        // Add current user message
-        conversation.push(
-            ChatMessage::user()
-                .content(&format!("{}\n\nUser: {}", system_prompt, user_message))
-                .build(),
-        );
-
-        let mut stream = llm
-            .chat_stream(&conversation)
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to start chat stream: {}", e)))?;
-
-        let mut xml_parser = XmlParser::new();
-
-        while let Some(chunk_result) = stream.next().await {
-            match chunk_result {
-                Ok(chunk) => {
-                    let (text_content, tool_calls) = xml_parser.parse_chunk(&chunk);
-
-                    // Send text content to user
-                    if let Some(content) = text_content {
-                        on_chunk(&content);
-                    }
-
-                    // Process tool calls if any
-                    if !tool_calls.is_empty() {
-                        for tool_call in &tool_calls {
-                            on_chunk(&format!("\n[Executing tool: {}]\n", tool_call.name));
-
-                            // Execute the tool call with conversation history
-                            let result = self
-                                .execute_tool_call_with_history(tool_call, &conversation)
-                                .await;
-                            match result {
-                                Ok(tool_result) => {
-                                    on_chunk(&format!(
-                                        "[Tool result: {}]\n",
-                                        serde_json::to_string_pretty(&tool_result.result)
-                                            .unwrap_or_default()
-                                    ));
-                                }
-                                Err(e) => {
-                                    on_chunk(&format!("[Tool error: {}]\n", e));
-                                }
-                            }
-                        }
-
-                        // Continue conversation with tool results
-                        // This would require implementing tool result handling in the conversation
-                        // For now, we'll just acknowledge the tool execution
-                        break;
-                    }
-                }
-                Err(e) => {
-                    return Err(AppError::Internal(format!("Stream error: {}", e)));
-                }
-            }
-        }
-
-        Ok(())
+        self.execute_with_agentic_flow(user_message, on_chunk).await
     }
 
     async fn execute_tool_call_with_history(
@@ -467,28 +288,28 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
     ) -> Result<(), AppError> {
         use shared::queries::{CreateExecutionMessageQuery, Query};
 
-        if let Some(context) = &self.execution_context {
-            let mut query = CreateExecutionMessageQuery::new(
-                context.id,
-                message_type,
-                sender,
-                content.to_string(),
-            );
-
-            if metadata != serde_json::json!({}) {
-                query = query.with_metadata(metadata);
-            }
-
-            if let Some(calls) = tool_calls {
-                query = query.with_tool_calls(calls);
-            }
-
-            if let Some(results) = tool_results {
-                query = query.with_tool_results(results);
-            }
-
-            query.execute(&self.app_state).await?;
+        if let None = &self.execution_context {
+            return Err(AppError::Validation("Missing context".into()));
         }
+
+        let context = self.execution_context.unwrap();
+
+        let mut query =
+            CreateExecutionMessageQuery::new(context.id, message_type, sender, content.to_string());
+
+        if metadata != serde_json::json!({}) {
+            query = query.with_metadata(metadata);
+        }
+
+        if let Some(calls) = tool_calls {
+            query = query.with_tool_calls(calls);
+        }
+
+        if let Some(results) = tool_results {
+            query = query.with_tool_results(results);
+        }
+
+        query.execute(&self.app_state).await?;
 
         Ok(())
     }
@@ -497,23 +318,15 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
     pub async fn execute_with_agentic_flow<F>(
         &mut self,
         user_message: &str,
-        session_id: &str,
         mut on_chunk: F,
     ) -> Result<(), AppError>
     where
         F: FnMut(&str) + Send,
     {
-        // Phase 1: Acknowledgment
         on_chunk(
             "🔍 **Analyzing your request...**\n\nI'll break this down into manageable tasks and create a comprehensive execution plan.\n\n",
         );
 
-        // Create or get execution context
-        let _context = self
-            .create_or_get_execution_context(session_id, user_message)
-            .await?;
-
-        // Store user message
         self.store_execution_message(
             ExecutionMessageType::UserInput,
             ExecutionMessageSender::User,
@@ -524,7 +337,6 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
         )
         .await?;
 
-        // Store user input in memory for context
         self.memory_manager
             .store_memory(
                 MemoryType::Episodic,
@@ -613,9 +425,6 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
                     "❌ **Failed to create task plan:** {}\n\nFalling back to direct execution...\n\n",
                     e
                 ));
-                return self
-                    .execute_direct_llm_response(user_message, session_id, on_chunk)
-                    .await;
             }
         }
 
@@ -904,10 +713,7 @@ Respond with a brief analysis and any recommended adjustments.",
         importance: f32,
     ) -> Result<(), AppError> {
         let mut metadata = std::collections::HashMap::new();
-        metadata.insert(
-            "agent_id".to_string(),
-            serde_json::Value::Number(self.context.agent_id.into()),
-        );
+
         metadata.insert(
             "deployment_id".to_string(),
             serde_json::Value::Number(self.context.deployment_id.into()),
@@ -917,10 +723,6 @@ Respond with a brief analysis and any recommended adjustments.",
             metadata.insert(
                 "execution_context_id".to_string(),
                 serde_json::Value::Number(exec_ctx.id.into()),
-            );
-            metadata.insert(
-                "session_id".to_string(),
-                serde_json::Value::String(exec_ctx.session_id.clone()),
             );
         }
 

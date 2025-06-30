@@ -1,29 +1,23 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AiExecutionContext {
+pub struct AgentExecutionContext {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub agent_id: i64,
-    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    pub session_id: String,
     pub title: String,
     pub current_goal: String,
-    pub status: ExecutionContextStatus,
-    pub memory: serde_json::Value,
     pub tasks: Vec<String>,
     pub last_activity_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AiExecutionMessage {
+pub struct AgentExecutionContextMessage {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
     pub created_at: DateTime<Utc>,
@@ -156,7 +150,10 @@ impl ExecutionMessageType {
     }
 
     pub fn is_system(&self) -> bool {
-        matches!(self, Self::ToolCall | Self::ToolResult | Self::SystemMessage)
+        matches!(
+            self,
+            Self::ToolCall | Self::ToolResult | Self::SystemMessage
+        )
     }
 }
 

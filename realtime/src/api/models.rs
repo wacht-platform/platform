@@ -1,14 +1,15 @@
+use std::fmt::Debug;
+
 use serde::{Deserialize, Serialize};
 
-/// WebSocket message types for AI agent communication
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum WebsocketMessageType {
-    #[serde(rename = "request_context")]
-    RequestContext(String), // Just agent_name, returns current execution context
+    #[serde(rename = "fetch_context_messages")]
+    FetchContextMessages,
     #[serde(rename = "request_context_response")]
     RequestContextResponse(u64),
     #[serde(rename = "message_input")]
-    MessageInput(u64, String), // execution_id, user_message
+    MessageInput(String),
     #[serde(rename = "execution_update")]
     ExecutionUpdate(u64),
     #[serde(rename = "execution_complete")]
@@ -27,22 +28,23 @@ pub enum WebsocketMessageType {
     ToolExecution(u64),
     #[serde(rename = "workflow_execution")]
     WorkflowExecution(u64),
-    #[serde(rename = "session_reconnect")]
-    SessionReconnect(String),
+    #[serde(rename = "session_connect")]
+    SessionConnect(i64, String),
+    #[serde(rename = "session_connected")]
+    SessionConnected,
     #[serde(rename = "session_status")]
     SessionStatus(String),
     #[serde(rename = "close_connection")]
     CloseConnection,
 }
 
-/// WebSocket message structure
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct WebsocketMessage {
+pub struct WebsocketMessage<T> {
+    pub message_id: u64,
     pub message_type: WebsocketMessageType,
-    pub data: Vec<u8>,
+    pub data: T,
 }
 
-/// Execution status for agent operations
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ExecutionStatus {
     Starting,
@@ -53,7 +55,6 @@ pub enum ExecutionStatus {
     Interrupted,
 }
 
-/// Information about an active execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionInfo {
     pub execution_id: u64,

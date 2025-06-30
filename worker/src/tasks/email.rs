@@ -1,4 +1,4 @@
-use celery::prelude::*;
+use anyhow::Result;
 use chrono;
 use serde::{Deserialize, Serialize};
 use shared::{
@@ -12,7 +12,6 @@ use shared::{
     state::AppState,
 };
 use std::collections::HashMap;
-use tracing::error;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VerificationEmailTask {
@@ -100,197 +99,7 @@ pub struct WaitlistApprovalTask {
     pub deployment_invitation_id: u64,
 }
 
-#[celery::task(name = "email.send_verification")]
-pub async fn send_verification_email(task: VerificationEmailTask) -> TaskResult<String> {
-    match send_verification_email_impl(
-        task.deployment_id,
-        &task.recipient,
-        task.user_id,
-        &task.verification_code,
-    )
-    .await
-    {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("Verification email failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-#[celery::task(name = "email.send_password_reset")]
-pub async fn send_password_reset_email(task: PasswordResetEmailTask) -> TaskResult<String> {
-    match send_password_reset_email_impl(
-        task.deployment_id,
-        &task.recipient,
-        task.user_id,
-        &task.reset_code,
-    )
-    .await
-    {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("Password reset email failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-#[celery::task(name = "email.send_magic_link")]
-pub async fn send_magic_link_email(task: MagicLinkEmailTask) -> TaskResult<String> {
-    match send_magic_link_email_impl(
-        task.deployment_id,
-        &task.recipient,
-        task.user_id,
-        &task.magic_link,
-    )
-    .await
-    {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("Magic link email failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-#[celery::task(name = "email.send_signin_notification")]
-pub async fn send_signin_notification_email(task: SignInNotificationTask) -> TaskResult<String> {
-    match send_signin_notification_email_impl(
-        task.deployment_id,
-        &task.recipient,
-        task.user_id,
-        task.signin_id,
-    )
-    .await
-    {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("SignIn notification email failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-#[celery::task(name = "email.send_email_change_notification")]
-pub async fn send_email_change_notification(
-    task: EmailChangeNotificationTask,
-) -> TaskResult<String> {
-    match send_email_change_notification_impl(
-        task.deployment_id,
-        &task.recipient,
-        task.user_id,
-        &task.old_email,
-        &task.new_email,
-    )
-    .await
-    {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("Email change notification failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-#[celery::task(name = "email.send_password_change_notification")]
-pub async fn send_password_change_notification(
-    task: PasswordChangeNotificationTask,
-) -> TaskResult<String> {
-    match send_password_change_notification_impl(task.deployment_id, &task.recipient, task.user_id)
-        .await
-    {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("Password change notification failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-#[celery::task(name = "email.send_password_remove_notification")]
-pub async fn send_password_remove_notification(
-    task: PasswordRemoveNotificationTask,
-) -> TaskResult<String> {
-    match send_password_remove_notification_impl(task.deployment_id, &task.recipient, task.user_id)
-        .await
-    {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("Password remove notification failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-#[celery::task(name = "email.send_waitlist_signup")]
-pub async fn send_waitlist_signup_email(task: WaitlistSignupTask) -> TaskResult<String> {
-    match send_waitlist_signup_email_impl(task.deployment_id, &task.recipient, task.user_id).await {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("Waitlist signup email failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-#[celery::task(name = "email.send_organization_membership_invite")]
-pub async fn send_organization_membership_invite(
-    task: OrganizationMembershipInviteTask,
-) -> TaskResult<String> {
-    match send_organization_membership_invite_impl(
-        task.deployment_id,
-        &task.recipient,
-        task.inviter_user_id,
-        task.organization_id,
-    )
-    .await
-    {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("Organization membership invite failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-#[celery::task(name = "email.send_deployment_invite")]
-pub async fn send_deployment_invite(task: DeploymentInviteTask) -> TaskResult<String> {
-    match send_deployment_invite_impl(
-        task.deployment_id,
-        &task.recipient,
-        task.inviter_user_id,
-        task.deployment_invitation_id,
-        task.workspace_id,
-    )
-    .await
-    {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("Deployment invite failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-#[celery::task(name = "email.send_waitlist_approval")]
-pub async fn send_waitlist_approval(task: WaitlistApprovalTask) -> TaskResult<String> {
-    match send_waitlist_approval_impl(
-        task.deployment_id,
-        &task.recipient,
-        task.deployment_invitation_id,
-    )
-    .await
-    {
-        Ok(message_id) => Ok(message_id),
-        Err(e) => {
-            error!("Waitlist approval failed: {}", e);
-            Err(TaskError::UnexpectedError(e))
-        }
-    }
-}
-
-async fn send_verification_email_impl(
+pub async fn send_verification_email_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
@@ -328,7 +137,7 @@ async fn send_verification_email_impl(
     Ok(format!("verification_email_sent_{}", deployment_id))
 }
 
-async fn send_password_reset_email_impl(
+pub async fn send_password_reset_email_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
@@ -366,7 +175,7 @@ async fn send_password_reset_email_impl(
     Ok(format!("password_reset_email_sent_{}", deployment_id))
 }
 
-async fn send_magic_link_email_impl(
+pub async fn send_magic_link_email_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
@@ -403,7 +212,7 @@ async fn send_magic_link_email_impl(
     Ok(format!("magic_link_email_sent_{}", deployment_id))
 }
 
-async fn send_signin_notification_email_impl(
+pub async fn send_signin_notification_email_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
@@ -446,7 +255,7 @@ async fn send_signin_notification_email_impl(
     Ok(format!("signin_notification_email_sent_{}", deployment_id))
 }
 
-async fn send_email_change_notification_impl(
+pub async fn send_email_change_notification_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
@@ -485,7 +294,7 @@ async fn send_email_change_notification_impl(
     Ok(format!("email_change_notification_sent_{}", deployment_id))
 }
 
-async fn send_password_change_notification_impl(
+pub async fn send_password_change_notification_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
@@ -524,7 +333,7 @@ async fn send_password_change_notification_impl(
     ))
 }
 
-async fn send_password_remove_notification_impl(
+pub async fn send_password_remove_notification_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
@@ -563,7 +372,7 @@ async fn send_password_remove_notification_impl(
     ))
 }
 
-async fn send_waitlist_signup_email_impl(
+pub async fn send_waitlist_signup_email_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
@@ -599,7 +408,7 @@ async fn send_waitlist_signup_email_impl(
     Ok(format!("waitlist_signup_email_sent_{}", deployment_id))
 }
 
-async fn send_organization_membership_invite_impl(
+pub async fn send_organization_membership_invite_impl(
     deployment_id: u64,
     recipient: &str,
     inviter_user_id: u64,
@@ -650,7 +459,7 @@ async fn send_organization_membership_invite_impl(
     ))
 }
 
-async fn send_deployment_invite_impl(
+pub async fn send_deployment_invite_impl(
     deployment_id: u64,
     recipient: &str,
     inviter_user_id: u64,
@@ -709,7 +518,7 @@ async fn send_deployment_invite_impl(
     Ok(format!("deployment_invite_sent_{}", deployment_id))
 }
 
-async fn send_waitlist_approval_impl(
+pub async fn send_waitlist_approval_impl(
     deployment_id: u64,
     recipient: &str,
     invitation_id: u64,

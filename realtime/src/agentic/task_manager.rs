@@ -5,6 +5,7 @@ use llm::chat::ChatMessage;
 use serde_json::{Value, json};
 use shared::error::AppError;
 use shared::state::AppState;
+use shared::commands::{Command, GenerateEmbeddingCommand, StoreConversationEmbeddingCommand};
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -873,37 +874,26 @@ Core Capabilities:
         let content = serde_json::to_string(data)
             .map_err(|e| AppError::Internal(format!("Failed to serialize data: {}", e)))?;
 
-        // Generate embedding for the content using app_state embedding service
-        let embedding = self
-            .app_state
-            .embedding_service
-            .generate_embedding(content.clone())
-            .await?;
+        let embedding = GenerateEmbeddingCommand::new(content.clone()).execute(&self.app_state).await?;
 
-        // Get execution context ID
         let execution_context_id = self.get_execution_context_id().await?;
 
-        // Store in Qdrant
         let context_id = shared::utils::snowflake::generate_id();
         let mut metadata = std::collections::HashMap::new();
         metadata.insert("action_id".to_string(), json!(action.id));
         metadata.insert("task_type".to_string(), json!("context_store"));
+        metadata.insert("key".to_string(), json!(key));
+        metadata.insert("context_type".to_string(), json!("task_context"));
 
-        // Use QdrantService from app_state
-        self.app_state
-            .qdrant_service
-            .store_context(
-                context_id,
-                self.get_agent_id().await?,
-                self.get_deployment_id().await?,
-                execution_context_id,
-                "task_context",
-                key,
-                &content,
-                embedding,
-                metadata,
-            )
-            .await?;
+        StoreConversationEmbeddingCommand::new(
+            context_id,
+            self.get_deployment_id().await?,
+            execution_context_id,
+            self.get_agent_id().await?,
+            "context".to_string(),
+            content,
+            embedding,
+        ).execute(&self.app_state).await?;
 
         Ok(json!({
             "key": key,

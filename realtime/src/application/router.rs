@@ -6,7 +6,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 fn router() -> Router<HttpState> {
-    Router::new().route("/", get(ws::handler))
+    Router::new().route("/agent", get(ws::realtime_agent_handler))
 }
 
 fn configure_cors() -> CorsLayer {

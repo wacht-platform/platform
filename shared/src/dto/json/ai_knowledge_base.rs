@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{models::AiKnowledgeBaseWithDetails, services::qdrant::SearchResult};
+use crate::{models::AiKnowledgeBaseWithDetails, services::clickhouse::DocumentSearchResult};
 
 // Knowledge Base CRUD Models
 #[derive(Debug, Deserialize)]
@@ -67,33 +67,17 @@ pub struct KnowledgeBaseSearchResult {
     pub chunk_index: Option<i64>,
 }
 
-impl From<SearchResult> for KnowledgeBaseSearchResult {
-    fn from(result: SearchResult) -> Self {
+impl From<DocumentSearchResult> for KnowledgeBaseSearchResult {
+    fn from(result: DocumentSearchResult) -> Self {
         Self {
             id: result.id.to_string(),
             content: result.content,
             score: result.score,
-            document_id: result
-                .metadata
-                .get("document_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            knowledge_base_id: result
-                .metadata
-                .get("knowledge_base_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            title: result
-                .metadata
-                .get("title")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            file_type: result
-                .metadata
-                .get("file_type")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            chunk_index: result.metadata.get("chunk_index").and_then(|v| v.as_i64()),
+            document_id: Some(result.document_id.to_string()),
+            knowledge_base_id: Some(result.knowledge_base_id.to_string()),
+            title: None, // Not available in DocumentSearchResult
+            file_type: None, // Not available in DocumentSearchResult
+            chunk_index: Some(result.chunk_index as i64),
         }
     }
 }

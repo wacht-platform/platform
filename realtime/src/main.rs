@@ -4,6 +4,7 @@ mod application;
 pub use shared as core;
 
 use dotenvy::dotenv;
+use shared::state::AppState;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -19,9 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app_state = shared::state::AppState::new_from_env().await?;
-
-    let app = application::new(app_state);
+    let app = application::new(AppState::new_from_env().await?);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3002").await?;
     axum::serve(listener, app).await?;

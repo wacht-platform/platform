@@ -1,9 +1,9 @@
 use super::AgentContext;
+use shared::commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use shared::error::AppError;
 use shared::state::AppState;
 
-use serde_json::{json, Value};
-
+use serde_json::{Value, json};
 
 pub struct ContextEngine {
     pub context: AgentContext,
@@ -12,25 +12,18 @@ pub struct ContextEngine {
 
 impl ContextEngine {
     pub fn new(context: AgentContext, app_state: AppState) -> Result<Self, AppError> {
-        Ok(Self {
-            context,
-            app_state,
-        })
+        Ok(Self { context, app_state })
     }
 
     pub async fn search(&self, query: &str) -> Result<Value, AppError> {
-        use tokio::try_join;
         use std::time::Instant;
+        use tokio::try_join;
 
         let start_time = Instant::now();
 
-        // Execute all searches in parallel for optimal performance
         let search_results = try_join!(
-            // LLM-based searches
             self.search_tools_with_llm(query),
             self.search_workflows_with_llm(query),
-
-            // Vector-based searches
             self.search_knowledge_base_metadata_vector(query),
             self.search_knowledge_base_documents(query),
             self.search_memory(query),
@@ -39,34 +32,44 @@ impl ContextEngine {
 
         let search_duration = start_time.elapsed();
 
-        // Combine all results
         let mut all_results = Vec::new();
-        all_results.extend(search_results.0); // tools
-        all_results.extend(search_results.1); // workflows
-        all_results.extend(search_results.2); // kb metadata
-        all_results.extend(search_results.3); // kb documents
-        all_results.extend(search_results.4); // memory
-        all_results.extend(search_results.5); // conversation history
+        all_results.extend(search_results.0);
+        all_results.extend(search_results.1);
+        all_results.extend(search_results.2);
+        all_results.extend(search_results.3);
+        all_results.extend(search_results.4);
+        all_results.extend(search_results.5);
 
-        // Sort by relevance score (highest first)
         all_results.sort_by(|a, b| {
-            let score_a = a.get("relevance_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let score_b = b.get("relevance_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            let score_a = a
+                .get("relevance_score")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let score_b = b
+                .get("relevance_score")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // Limit results to top 50 for performance
         all_results.truncate(50);
 
-        // Count executed tools and workflows
-        let executed_tools = all_results.iter()
-            .filter(|r| r.get("type").and_then(|t| t.as_str()) == Some("tool") &&
-                       r.get("executed").and_then(|e| e.as_bool()).unwrap_or(false))
+        let executed_tools = all_results
+            .iter()
+            .filter(|r| {
+                r.get("type").and_then(|t| t.as_str()) == Some("tool")
+                    && r.get("executed").and_then(|e| e.as_bool()).unwrap_or(false)
+            })
             .count();
 
-        let executed_workflows = all_results.iter()
-            .filter(|r| r.get("type").and_then(|t| t.as_str()) == Some("workflow") &&
-                       r.get("executed").and_then(|e| e.as_bool()).unwrap_or(false))
+        let executed_workflows = all_results
+            .iter()
+            .filter(|r| {
+                r.get("type").and_then(|t| t.as_str()) == Some("workflow")
+                    && r.get("executed").and_then(|e| e.as_bool()).unwrap_or(false)
+            })
             .count();
 
         Ok(json!({
@@ -91,7 +94,11 @@ impl ContextEngine {
         }))
     }
 
-    pub async fn get_detailed_info(&self, resource_type: &str, resource_id: i64) -> Result<Value, AppError> {
+    pub async fn get_detailed_info(
+        &self,
+        resource_type: &str,
+        resource_id: i64,
+    ) -> Result<Value, AppError> {
         match resource_type {
             "tool" => {
                 if let Some(tool) = self.context.tools.iter().find(|t| t.id == resource_id) {
@@ -110,7 +117,8 @@ impl ContextEngine {
                 }
             }
             "workflow" => {
-                if let Some(workflow) = self.context.workflows.iter().find(|w| w.id == resource_id) {
+                if let Some(workflow) = self.context.workflows.iter().find(|w| w.id == resource_id)
+                {
                     Ok(json!({
                         "type": "workflow",
                         "id": workflow.id,
@@ -126,7 +134,12 @@ impl ContextEngine {
                 }
             }
             "knowledge_base" => {
-                if let Some(kb) = self.context.knowledge_bases.iter().find(|k| k.id == resource_id) {
+                if let Some(kb) = self
+                    .context
+                    .knowledge_bases
+                    .iter()
+                    .find(|k| k.id == resource_id)
+                {
                     Ok(json!({
                         "type": "knowledge_base",
                         "id": kb.id,
@@ -140,11 +153,12 @@ impl ContextEngine {
                     Err(AppError::NotFound("Knowledge base not found".to_string()))
                 }
             }
-            _ => Err(AppError::BadRequest(format!("Unknown resource type: {}", resource_type)))
+            _ => Err(AppError::BadRequest(format!(
+                "Unknown resource type: {}",
+                resource_type
+            ))),
         }
     }
-
-
 
     async fn search_tools_with_llm(&self, query: &str) -> Result<Vec<Value>, AppError> {
         use llm::builder::{LLMBackend, LLMBuilder};
@@ -162,10 +176,13 @@ impl ContextEngine {
             .build()
             .map_err(|e| AppError::Internal(format!("Failed to build LLM: {}", e)))?;
 
-        // Create detailed tool descriptions for LLM analysis
-        let tools_info = self.context.tools.iter()
+        let tools_info = self
+            .context
+            .tools
+            .iter()
             .map(|tool| {
-                format!("Tool ID: {}\nName: {}\nDescription: {}\nType: {:?}\nConfiguration: {}\n---",
+                format!(
+                    "Tool ID: {}\nName: {}\nDescription: {}\nType: {:?}\nConfiguration: {}\n---",
                     tool.id,
                     tool.name,
                     tool.description.as_deref().unwrap_or("No description"),
@@ -200,7 +217,9 @@ Only include tools that are actually relevant to the query. If no tools match, r
 
         // Extract response text immediately to avoid Send issues
         let response_text = {
-            let response = llm.chat(&messages).await
+            let response = llm
+                .chat(&messages)
+                .await
                 .map_err(|e| AppError::Internal(format!("LLM tool analysis failed: {}", e)))?;
             response.to_string()
         };
@@ -209,11 +228,16 @@ Only include tools that are actually relevant to the query. If no tools match, r
 
         if let Ok(llm_results) = serde_json::from_str::<Vec<serde_json::Value>>(&response_text) {
             for result in llm_results {
-                if let (Some(tool_id), Some(relevance_score), Some(confidence_score), Some(should_execute)) = (
+                if let (
+                    Some(tool_id),
+                    Some(relevance_score),
+                    Some(confidence_score),
+                    Some(should_execute),
+                ) = (
                     result.get("tool_id").and_then(|v| v.as_i64()),
                     result.get("relevance_score").and_then(|v| v.as_f64()),
                     result.get("confidence_score").and_then(|v| v.as_f64()),
-                    result.get("should_execute").and_then(|v| v.as_bool())
+                    result.get("should_execute").and_then(|v| v.as_bool()),
                 ) {
                     if let Some(tool) = self.context.tools.iter().find(|t| t.id == tool_id) {
                         let mut tool_result = json!({
@@ -231,7 +255,10 @@ Only include tools that are actually relevant to the query. If no tools match, r
 
                         // If high confidence, execute the tool
                         if should_execute && confidence_score >= 80.0 {
-                            let execution_params = result.get("execution_parameters").cloned().unwrap_or(json!({}));
+                            let execution_params = result
+                                .get("execution_parameters")
+                                .cloned()
+                                .unwrap_or(json!({}));
                             match self.execute_tool_immediately(tool, execution_params).await {
                                 Ok(execution_result) => {
                                     tool_result["execution_result"] = execution_result;
@@ -315,7 +342,9 @@ Only include workflows that are actually relevant to the query. If no workflows 
 
         // Extract response text immediately to avoid Send issues
         let response_text = {
-            let response = llm.chat(&messages).await
+            let response = llm
+                .chat(&messages)
+                .await
                 .map_err(|e| AppError::Internal(format!("LLM workflow analysis failed: {}", e)))?;
             response.to_string()
         };
@@ -324,14 +353,24 @@ Only include workflows that are actually relevant to the query. If no workflows 
 
         if let Ok(llm_results) = serde_json::from_str::<Vec<serde_json::Value>>(&response_text) {
             for result in llm_results {
-                if let (Some(workflow_id), Some(relevance_score), Some(trigger_met), Some(confidence_score), Some(should_execute)) = (
+                if let (
+                    Some(workflow_id),
+                    Some(relevance_score),
+                    Some(trigger_met),
+                    Some(confidence_score),
+                    Some(should_execute),
+                ) = (
                     result.get("workflow_id").and_then(|v| v.as_i64()),
                     result.get("relevance_score").and_then(|v| v.as_f64()),
-                    result.get("trigger_condition_met").and_then(|v| v.as_bool()),
+                    result
+                        .get("trigger_condition_met")
+                        .and_then(|v| v.as_bool()),
                     result.get("confidence_score").and_then(|v| v.as_f64()),
-                    result.get("should_execute").and_then(|v| v.as_bool())
+                    result.get("should_execute").and_then(|v| v.as_bool()),
                 ) {
-                    if let Some(workflow) = self.context.workflows.iter().find(|w| w.id == workflow_id) {
+                    if let Some(workflow) =
+                        self.context.workflows.iter().find(|w| w.id == workflow_id)
+                    {
                         let mut workflow_result = json!({
                             "type": "workflow",
                             "id": workflow.id,
@@ -349,8 +388,12 @@ Only include workflows that are actually relevant to the query. If no workflows 
 
                         // If trigger conditions are met and high confidence, execute the workflow
                         if should_execute && trigger_met && confidence_score >= 80.0 {
-                            let execution_input = result.get("execution_input").cloned().unwrap_or(json!({}));
-                            match self.execute_workflow_immediately(workflow, execution_input).await {
+                            let execution_input =
+                                result.get("execution_input").cloned().unwrap_or(json!({}));
+                            match self
+                                .execute_workflow_immediately(workflow, execution_input)
+                                .await
+                            {
                                 Ok(execution_result) => {
                                     workflow_result["execution_result"] = execution_result;
                                     workflow_result["executed"] = json!(true);
@@ -371,31 +414,36 @@ Only include workflows that are actually relevant to the query. If no workflows 
         Ok(results)
     }
 
-    async fn search_knowledge_base_metadata_vector(&self, query: &str) -> Result<Vec<Value>, AppError> {
-        // Generate embedding for the query once
-        let query_embedding = self.app_state.embedding_service.generate_embedding(query.to_string()).await?;
+    async fn search_knowledge_base_metadata_vector(
+        &self,
+        query: &str,
+    ) -> Result<Vec<Value>, AppError> {
+        let query_embedding = GenerateEmbeddingCommand::new(query.to_string())
+            .execute(&self.app_state)
+            .await?;
 
-        // Process all knowledge bases in parallel
-        let kb_futures: Vec<_> = self.context.knowledge_bases.iter()
+        let kb_futures: Vec<_> = self
+            .context
+            .knowledge_bases
+            .iter()
             .map(|kb| {
                 let query_embedding = query_embedding.clone();
                 let kb_clone = kb.clone();
-                let embedding_service = &self.app_state.embedding_service;
+                let app_state = self.app_state.clone();
                 async move {
-                    // Create searchable text from KB metadata
-                    let kb_text = format!("{} {} {}",
+                    let kb_text = format!(
+                        "{} {} {}",
                         kb_clone.name,
                         kb_clone.description.as_deref().unwrap_or(""),
                         serde_json::to_string(&kb_clone.configuration).unwrap_or_default()
                     );
 
-                    // Generate embedding for KB metadata
-                    let kb_embedding = embedding_service.generate_embedding(kb_text).await?;
+                    let kb_embedding = GenerateEmbeddingCommand::new(kb_text)
+                        .execute(&app_state)
+                        .await?;
+                    let similarity_score =
+                        Self::calculate_cosine_similarity_static(&query_embedding, &kb_embedding);
 
-                    // Calculate semantic similarity
-                    let similarity_score = self.calculate_cosine_similarity(&query_embedding, &kb_embedding);
-
-                    // Return result if similarity is above threshold
                     if similarity_score > 0.3 {
                         Ok::<Option<serde_json::Value>, AppError>(Some(json!({
                             "type": "knowledge_base_metadata",
@@ -413,31 +461,35 @@ Only include workflows that are actually relevant to the query. If no workflows 
             })
             .collect();
 
-        // Execute all KB metadata searches in parallel
         let results = futures::future::try_join_all(kb_futures).await?;
-
-        // Filter out None results and collect
         let filtered_results = results.into_iter().filter_map(|r| r).collect();
 
         Ok(filtered_results)
     }
 
     async fn search_knowledge_base_documents(&self, query: &str) -> Result<Vec<Value>, AppError> {
-        // Generate embedding for the query once
-        let query_embedding = self.app_state.embedding_service.generate_embedding(query.to_string()).await?;
+        // Generate embedding for the query once using command pattern
+        let query_embedding = GenerateEmbeddingCommand::new(query.to_string())
+            .execute(&self.app_state)
+            .await?;
 
         // Search across all knowledge bases in parallel
-        let search_futures: Vec<_> = self.context.knowledge_bases.iter()
+        let search_futures: Vec<_> = self
+            .context
+            .knowledge_bases
+            .iter()
             .map(|kb| {
                 let query_embedding = query_embedding.clone();
                 let kb_clone = kb.clone();
-                let qdrant_service = &self.app_state.qdrant_service;
+                let app_state = self.app_state.clone();
                 async move {
-                    let search_results = qdrant_service.search_similar(
+                    let search_results = SearchKnowledgeBaseEmbeddingsCommand::new(
+                        kb_clone.id,
                         query_embedding,
                         10, // Limit per knowledge base
-                        kb_clone.id,
-                    ).await?;
+                    )
+                    .execute(&app_state)
+                    .await?;
 
                     let mut kb_results = Vec::new();
                     for result in search_results {
@@ -446,7 +498,9 @@ Only include workflows that are actually relevant to the query. If no workflows 
                             "id": result.id,
                             "content": result.content,
                             "score": result.score,
-                            "metadata": result.metadata,
+                            "knowledge_base_id": result.knowledge_base_id,
+                            "document_id": result.document_id,
+                            "chunk_index": result.chunk_index,
                             "relevance_score": (result.score * 100.0) as f64, // Convert to 0-100 scale
                             "source_knowledge_base": {
                                 "id": kb_clone.id,
@@ -469,9 +523,11 @@ Only include workflows that are actually relevant to the query. If no workflows 
         Ok(all_results)
     }
 
-
-
     fn calculate_cosine_similarity(&self, vec1: &[f32], vec2: &[f32]) -> f32 {
+        Self::calculate_cosine_similarity_static(vec1, vec2)
+    }
+
+    fn calculate_cosine_similarity_static(vec1: &[f32], vec2: &[f32]) -> f32 {
         if vec1.len() != vec2.len() {
             return 0.0;
         }
@@ -490,14 +546,18 @@ Only include workflows that are actually relevant to the query. If no workflows 
     async fn search_memory(&self, query: &str) -> Result<Vec<Value>, AppError> {
         use super::memory_manager::{MemoryManager, MemoryQuery, MemoryType};
 
-        let memory_manager = MemoryManager::new(self.context.clone(), self.app_state.clone())?;
+        let memory_manager = MemoryManager::new(
+            self.context.clone(),
+            self.app_state.clone(),
+            self.context.execution_context_id,
+        )?;
 
         let memory_query = MemoryQuery {
             query: query.to_string(),
             memory_types: vec![
-                MemoryType::Episodic,    // Past conversations
-                MemoryType::Semantic,    // Learned facts
-                MemoryType::Procedural   // Learned processes
+                MemoryType::Episodic,   // Past conversations
+                MemoryType::Semantic,   // Learned facts
+                MemoryType::Procedural, // Learned processes
             ],
             max_results: 10,
             min_importance: 0.3,
@@ -523,59 +583,53 @@ Only include workflows that are actually relevant to the query. If no workflows 
         Ok(results)
     }
 
-    async fn search_conversation_history_vector(&self, query: &str) -> Result<Vec<Value>, AppError> {
-        use shared::queries::{GetExecutionMessagesQuery, Query};
-        use shared::models::ExecutionMessageType;
+    async fn search_conversation_history_vector(
+        &self,
+        _query: &str,
+    ) -> Result<Vec<Value>, AppError> {
+        // use shared::queries::{GetExecutionMessagesQuery, Query};
+        // use shared::models::ExecutionMessageType;
 
-        // Generate embedding for the query
-        let query_embedding = self.app_state.embedding_service.generate_embedding(query.to_string()).await?;
+        // let query_embedding = GenerateEmbeddingCommand::new(query.to_string()).execute(&self.app_state).await?;
+        // let execution_context_id = self.get_current_execution_context_id().await?;
 
-        // Get current execution context ID to search messages
-        let execution_context_id = self.get_current_execution_context_id().await?;
+        // let messages_query = GetExecutionMessagesQuery {
+        //     execution_context_id,
+        //     limit: Some(50),
+        //     offset: Some(0),
+        //     message_types: Some(vec![
+        //         ExecutionMessageType::UserInput,
+        //         ExecutionMessageType::AgentResponse,
+        //         ExecutionMessageType::ToolCall,
+        //         ExecutionMessageType::ToolResult
+        //     ]),
+        // };
 
-        let messages_query = GetExecutionMessagesQuery {
-            execution_context_id,
-            limit: Some(50),
-            offset: Some(0),
-            message_types: Some(vec![
-                ExecutionMessageType::UserInput,
-                ExecutionMessageType::AgentResponse,
-                ExecutionMessageType::ToolCall,
-                ExecutionMessageType::ToolResult
-            ]),
-        };
+        // let messages = messages_query.execute(&self.app_state).await?;
 
-        let messages = messages_query.execute(&self.app_state).await?;
+        // let mut results = Vec::new();
 
-        let mut results = Vec::new();
+        // for message in messages {
+        //     let content = &message.content;
+        //     let message_embedding = GenerateEmbeddingCommand::new(content.clone()).execute(&self.app_state).await?;
+        //     let similarity_score = self.calculate_cosine_similarity(&query_embedding, &message_embedding);
 
-        for message in messages {
-            // Use message content directly as it's already a string
-            let content = &message.content;
+        //     if similarity_score > 0.3 {
+        //         results.push(json!({
+        //             "type": "conversation_message",
+        //             "id": message.id,
+        //             "content": content,
+        //             "sender": message.sender,
+        //             "message_type": message.message_type,
+        //             "created_at": message.created_at,
+        //             "relevance_score": (similarity_score * 100.0) as f64,
+        //             "similarity_score": similarity_score,
+        //             "source": "conversation_history"
+        //         }));
+        //     }
+        // }
 
-            // Generate embedding for message content
-            let message_embedding = self.app_state.embedding_service.generate_embedding(content.clone()).await?;
-
-            // Calculate semantic similarity
-            let similarity_score = self.calculate_cosine_similarity(&query_embedding, &message_embedding);
-
-            // Include if similarity is above threshold
-            if similarity_score > 0.3 {
-                results.push(json!({
-                    "type": "conversation_message",
-                    "id": message.id,
-                    "content": content,
-                    "sender": message.sender,
-                    "message_type": message.message_type,
-                    "created_at": message.created_at,
-                    "relevance_score": (similarity_score * 100.0) as f64,
-                    "similarity_score": similarity_score,
-                    "source": "conversation_history"
-                }));
-            }
-        }
-
-        Ok(results)
+        Ok(vec![])
     }
 
     async fn get_current_execution_context_id(&self) -> Result<i64, AppError> {
@@ -584,8 +638,6 @@ Only include workflows that are actually relevant to the query. If no workflows 
         // In a full implementation, this would be properly tracked
         Ok(1) // This should be properly implemented based on current execution
     }
-
-
 
     pub async fn store_context(&self, key: &str, data: &Value) -> Result<Value, AppError> {
         // Context storage for runtime data - this could be implemented using
@@ -640,7 +692,11 @@ Only include workflows that are actually relevant to the query. If no workflows 
         }))
     }
 
-    async fn execute_tool_immediately(&self, tool: &shared::models::AiTool, execution_params: Value) -> Result<Value, AppError> {
+    async fn execute_tool_immediately(
+        &self,
+        tool: &shared::models::AiTool,
+        execution_params: Value,
+    ) -> Result<Value, AppError> {
         // Prevent recursion: Don't execute context_engine or memory tools to avoid infinite loops
         if tool.name == "context_engine" || tool.name == "memory" {
             return Ok(json!({
@@ -663,7 +719,11 @@ Only include workflows that are actually relevant to the query. If no workflows 
         }))
     }
 
-    async fn execute_workflow_immediately(&self, workflow: &shared::models::AiWorkflow, execution_input: Value) -> Result<Value, AppError> {
+    async fn execute_workflow_immediately(
+        &self,
+        workflow: &shared::models::AiWorkflow,
+        execution_input: Value,
+    ) -> Result<Value, AppError> {
         // Return execution plan instead of immediate execution to prevent potential recursion
         // The agent executor will handle the actual workflow execution
         Ok(json!({

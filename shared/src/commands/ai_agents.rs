@@ -225,6 +225,18 @@ impl Command for DeleteAiAgentCommand {
 
         tx.commit().await.map_err(|e| AppError::Database(e))?;
 
+        // Delete ClickHouse memories for this agent
+        let agent_id = self.agent_id;
+        if let Err(e) = app_state
+            .clickhouse_service
+            .delete_agent_memories(agent_id)
+            .await
+        {
+            eprintln!("Failed to delete ClickHouse memories for agent {}: {}", agent_id, e);
+        } else {
+            println!("Successfully deleted ClickHouse memories for agent {}", agent_id);
+        }
+
         Ok(())
     }
 }

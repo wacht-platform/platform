@@ -7,6 +7,7 @@ use crate::{
             KnowledgeBaseSearchResult, SearchKnowledgeBaseQuery, SearchKnowledgeBaseResponse,
         },
         queries::{Query as QueryTrait, ai_knowledge_base::GetAiKnowledgeBaseByIdQuery},
+        commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand},
     },
 };
 
@@ -18,13 +19,7 @@ pub async fn search_knowledge_base(
 ) -> ApiResult<SearchKnowledgeBaseResponse> {
     let limit = params.limit.unwrap_or(10).min(100);
 
-    let query_embedding = app_state
-        .embedding_service
-        .generate_embeddings(vec![params.query.clone()])
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Failed to generate query embedding".to_string()))?;
+    let query_embedding = GenerateEmbeddingCommand::new(params.query.clone()).execute(&app_state).await?;
 
     let results = if let Some(kb_id) = params.knowledge_base_id {
         let _kb = GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
@@ -32,10 +27,11 @@ pub async fn search_knowledge_base(
             .await
             .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
 
-        app_state
-            .qdrant_service
-            .search_similar(query_embedding, limit, kb_id)
-            .await?
+        SearchKnowledgeBaseEmbeddingsCommand::new(
+            kb_id,
+            query_embedding,
+            limit,
+        ).execute(&app_state).await?
     } else {
         return Err(AppError::BadRequest(
             "Please specify a knowledge_base_id parameter for search".to_string(),
@@ -71,18 +67,13 @@ pub async fn search_specific_knowledge_base(
 
     let limit = params.limit.unwrap_or(10).min(100);
 
-    let query_embedding = app_state
-        .embedding_service
-        .generate_embeddings(vec![params.query.clone()])
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Failed to generate query embedding".to_string()))?;
+    let query_embedding = GenerateEmbeddingCommand::new(params.query.clone()).execute(&app_state).await?;
 
-    let results = app_state
-        .qdrant_service
-        .search_similar(query_embedding, limit, knowledge_base_id)
-        .await?;
+    let results = SearchKnowledgeBaseEmbeddingsCommand::new(
+        knowledge_base_id,
+        query_embedding,
+        limit,
+    ).execute(&app_state).await?;
 
     let search_results: Vec<KnowledgeBaseSearchResult> = results
         .into_iter()

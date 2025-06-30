@@ -1,5 +1,9 @@
+use crate::dto::query::SortOrder;
 use crate::error::AppError;
-use crate::models::{AiExecutionContext, AiExecutionMessage, ExecutionContextStatus, ExecutionMessageType, ExecutionMessageSender};
+use crate::models::{
+    AgentExecutionContext, AgentExecutionContextMessage, ExecutionContextStatus,
+    ExecutionMessageSender, ExecutionMessageType,
+};
 use crate::state::AppState;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -35,7 +39,7 @@ impl CreateExecutionContextQuery {
 }
 
 impl super::Query for CreateExecutionContextQuery {
-    type Output = AiExecutionContext;
+    type Output = AgentExecutionContext;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let context_id = app_state.sf.next_id()? as i64;
@@ -43,7 +47,7 @@ impl super::Query for CreateExecutionContextQuery {
 
         sqlx::query!(
             r#"
-            INSERT INTO ai_execution_contexts 
+            INSERT INTO ai_execution_contexts
             (id, created_at, updated_at, agent_id, deployment_id, session_id, title, current_goal, status, memory, tasks, last_activity_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#,
@@ -64,17 +68,13 @@ impl super::Query for CreateExecutionContextQuery {
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        Ok(AiExecutionContext {
+        Ok(AgentExecutionContext {
             id: context_id,
             created_at: now,
             updated_at: now,
-            agent_id: self.agent_id,
             deployment_id: self.deployment_id,
-            session_id: self.session_id.clone(),
             title: self.title.clone(),
             current_goal: self.current_goal.clone(),
-            status: ExecutionContextStatus::Running,
-            memory: self.memory.clone(),
             tasks: self.tasks.clone(),
             last_activity_at: now,
             completed_at: None,
@@ -97,13 +97,13 @@ impl GetExecutionContextQuery {
 }
 
 impl super::Query for GetExecutionContextQuery {
-    type Output = AiExecutionContext;
+    type Output = AgentExecutionContext;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let context = sqlx::query!(
             r#"
-            SELECT id, created_at, updated_at, agent_id, deployment_id, session_id, 
-                   title, current_goal, status, memory, tasks, last_activity_at, completed_at
+            SELECT id, created_at, updated_at, agent_id, deployment_id, session_id,
+            title, current_goal, status, memory, tasks, last_activity_at, completed_at
             FROM ai_execution_contexts
             WHERE id = $1 AND deployment_id = $2
             "#,
@@ -114,164 +114,17 @@ impl super::Query for GetExecutionContextQuery {
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        let status: ExecutionContextStatus = serde_json::from_str(&context.status)
-            .unwrap_or(ExecutionContextStatus::Idle);
-
-        Ok(AiExecutionContext {
+        Ok(AgentExecutionContext {
             id: context.id,
             created_at: context.created_at,
             updated_at: context.updated_at,
-            agent_id: context.agent_id,
             deployment_id: context.deployment_id,
-            session_id: context.session_id,
             title: context.title,
             current_goal: context.current_goal,
-            status,
-            memory: context.memory,
             tasks: context.tasks.unwrap_or_default(),
             last_activity_at: context.last_activity_at,
             completed_at: context.completed_at,
         })
-    }
-}
-
-pub struct GetExecutionContextsBySessionQuery {
-    pub session_id: String,
-    pub deployment_id: i64,
-    pub limit: Option<i64>,
-}
-
-impl GetExecutionContextsBySessionQuery {
-    pub fn new(session_id: String, deployment_id: i64) -> Self {
-        Self {
-            session_id,
-            deployment_id,
-            limit: Some(10),
-        }
-    }
-
-    pub fn with_limit(mut self, limit: i64) -> Self {
-        self.limit = Some(limit);
-        self
-    }
-}
-
-impl super::Query for GetExecutionContextsBySessionQuery {
-    type Output = Vec<AiExecutionContext>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let limit = self.limit.unwrap_or(10);
-        
-        let contexts = sqlx::query!(
-            r#"
-            SELECT id, created_at, updated_at, agent_id, deployment_id, session_id, 
-                   title, current_goal, status, memory, tasks, last_activity_at, completed_at
-            FROM ai_execution_contexts
-            WHERE session_id = $1 AND deployment_id = $2
-            ORDER BY last_activity_at DESC
-            LIMIT $3
-            "#,
-            self.session_id,
-            self.deployment_id,
-            limit
-        )
-        .fetch_all(&app_state.db_pool)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-        let mut result = Vec::new();
-        for context in contexts {
-            let status: ExecutionContextStatus = serde_json::from_str(&context.status)
-                .unwrap_or(ExecutionContextStatus::Idle);
-
-            result.push(AiExecutionContext {
-                id: context.id,
-                created_at: context.created_at,
-                updated_at: context.updated_at,
-                agent_id: context.agent_id,
-                deployment_id: context.deployment_id,
-                session_id: context.session_id,
-                title: context.title,
-                current_goal: context.current_goal,
-                status,
-                memory: context.memory,
-                tasks: context.tasks.unwrap_or_default(),
-                last_activity_at: context.last_activity_at,
-                completed_at: context.completed_at,
-            });
-        }
-
-        Ok(result)
-    }
-}
-
-pub struct GetExecutionContextsByAgentQuery {
-    pub agent_id: i64,
-    pub deployment_id: i64,
-    pub limit: Option<i64>,
-}
-
-impl GetExecutionContextsByAgentQuery {
-    pub fn new(agent_id: i64, deployment_id: i64) -> Self {
-        Self {
-            agent_id,
-            deployment_id,
-            limit: Some(10),
-        }
-    }
-
-    pub fn with_limit(mut self, limit: i64) -> Self {
-        self.limit = Some(limit);
-        self
-    }
-}
-
-impl super::Query for GetExecutionContextsByAgentQuery {
-    type Output = Vec<AiExecutionContext>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let limit = self.limit.unwrap_or(10);
-
-        let contexts = sqlx::query!(
-            r#"
-            SELECT id, created_at, updated_at, agent_id, deployment_id, session_id,
-                   title, current_goal, status, memory, tasks, last_activity_at, completed_at
-            FROM ai_execution_contexts
-            WHERE agent_id = $1 AND deployment_id = $2
-            ORDER BY last_activity_at DESC
-            LIMIT $3
-            "#,
-            self.agent_id,
-            self.deployment_id,
-            limit
-        )
-        .fetch_all(&app_state.db_pool)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-        let mut result = Vec::new();
-        for context in contexts {
-            let status: ExecutionContextStatus = serde_json::from_str(&context.status)
-                .unwrap_or(ExecutionContextStatus::Idle);
-
-            result.push(AiExecutionContext {
-                id: context.id,
-                created_at: context.created_at,
-                updated_at: context.updated_at,
-                agent_id: context.agent_id,
-                deployment_id: context.deployment_id,
-                session_id: context.session_id,
-                title: context.title,
-                current_goal: context.current_goal,
-                status,
-                memory: context.memory,
-                tasks: context.tasks.unwrap_or_default(),
-                last_activity_at: context.last_activity_at,
-                completed_at: context.completed_at,
-            });
-        }
-
-        Ok(result)
     }
 }
 
@@ -441,7 +294,7 @@ impl CreateExecutionMessageQuery {
 }
 
 impl super::Query for CreateExecutionMessageQuery {
-    type Output = AiExecutionMessage;
+    type Output = AgentExecutionContextMessage;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let message_id = app_state.sf.next_id()? as i64;
@@ -467,7 +320,7 @@ impl super::Query for CreateExecutionMessageQuery {
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        Ok(AiExecutionMessage {
+        Ok(AgentExecutionContextMessage {
             id: message_id,
             created_at: now,
             execution_context_id: self.execution_context_id,
@@ -486,6 +339,7 @@ pub struct GetExecutionMessagesQuery {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
     pub message_types: Option<Vec<ExecutionMessageType>>,
+    pub sort_order: SortOrder,
 }
 
 impl GetExecutionMessagesQuery {
@@ -494,6 +348,7 @@ impl GetExecutionMessagesQuery {
             execution_context_id,
             limit: Some(50),
             offset: Some(0),
+            sort_order: SortOrder::Desc,
             message_types: None,
         }
     }
@@ -515,47 +370,87 @@ impl GetExecutionMessagesQuery {
 }
 
 impl super::Query for GetExecutionMessagesQuery {
-    type Output = Vec<AiExecutionMessage>;
+    type Output = Vec<AgentExecutionContextMessage>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let limit = self.limit.unwrap_or(50);
         let offset = self.offset.unwrap_or(0);
 
-        let messages = sqlx::query!(
-            r#"
-            SELECT id, created_at, execution_context_id, message_type, sender, content, metadata, tool_calls, tool_results
-            FROM ai_execution_messages
-            WHERE execution_context_id = $1
-            ORDER BY created_at ASC
-            LIMIT $2 OFFSET $3
-            "#,
-            self.execution_context_id,
-            limit,
-            offset
-        )
-        .fetch_all(&app_state.db_pool)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
         let mut result = Vec::new();
-        for message in messages {
-            let message_type: ExecutionMessageType = serde_json::from_str(&message.message_type)
-                .unwrap_or(ExecutionMessageType::SystemMessage);
-            let sender: ExecutionMessageSender = serde_json::from_str(&message.sender)
-                .unwrap_or(ExecutionMessageSender::System);
 
-            result.push(AiExecutionMessage {
-                id: message.id,
-                created_at: message.created_at,
-                execution_context_id: message.execution_context_id,
-                message_type,
-                sender,
-                content: message.content,
-                metadata: message.metadata,
-                tool_calls: message.tool_calls,
-                tool_results: message.tool_results,
-            });
-        }
+        if self.sort_order == SortOrder::Asc {
+            let messages = sqlx::query!(
+                r#"
+                SELECT id, created_at, execution_context_id, message_type, sender, content, metadata, tool_calls, tool_results
+                FROM ai_execution_messages
+                WHERE execution_context_id = $1
+                ORDER BY created_at ASC
+                LIMIT $2 OFFSET $3
+                "#,
+                self.execution_context_id,
+                limit,
+                offset
+            )
+            .fetch_all(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
+
+            for message in messages {
+                let message_type: ExecutionMessageType =
+                    serde_json::from_str(&message.message_type)
+                        .unwrap_or(ExecutionMessageType::SystemMessage);
+                let sender: ExecutionMessageSender =
+                    serde_json::from_str(&message.sender).unwrap_or(ExecutionMessageSender::System);
+
+                result.push(AgentExecutionContextMessage {
+                    id: message.id,
+                    created_at: message.created_at,
+                    execution_context_id: message.execution_context_id,
+                    message_type,
+                    sender,
+                    content: message.content,
+                    metadata: message.metadata,
+                    tool_calls: message.tool_calls,
+                    tool_results: message.tool_results,
+                });
+            }
+        } else {
+            let messages = sqlx::query!(
+                r#"
+                SELECT id, created_at, execution_context_id, message_type, sender, content, metadata, tool_calls, tool_results
+                FROM ai_execution_messages
+                WHERE execution_context_id = $1
+                ORDER BY created_at ASC
+                LIMIT $2 OFFSET $3
+                "#,
+                self.execution_context_id,
+                limit,
+                offset
+            )
+            .fetch_all(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
+
+            for message in messages {
+                let message_type: ExecutionMessageType =
+                    serde_json::from_str(&message.message_type)
+                        .unwrap_or(ExecutionMessageType::SystemMessage);
+                let sender: ExecutionMessageSender =
+                    serde_json::from_str(&message.sender).unwrap_or(ExecutionMessageSender::System);
+
+                result.push(AgentExecutionContextMessage {
+                    id: message.id,
+                    created_at: message.created_at,
+                    execution_context_id: message.execution_context_id,
+                    message_type,
+                    sender,
+                    content: message.content,
+                    metadata: message.metadata,
+                    tool_calls: message.tool_calls,
+                    tool_results: message.tool_results,
+                });
+            }
+        };
 
         Ok(result)
     }

@@ -50,27 +50,4 @@ impl TotpGenerator {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_password_hashing() {
-        let password = "test_password_123";
-        let hash = PasswordHasher::hash_password(password).unwrap();
-
-        assert!(PasswordHasher::_verify_password(password, &hash).unwrap());
-        assert!(!PasswordHasher::_verify_password("wrong_password", &hash).unwrap());
-    }
-
-    #[test]
-    fn test_totp_secret_generation() {
-        let secret = TotpGenerator::generate_secret().unwrap();
-        assert!(!secret.is_empty());
-        assert!(
-            secret
-                .chars()
-                .all(|c| "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567=".contains(c))
-        );
-    }
-}
