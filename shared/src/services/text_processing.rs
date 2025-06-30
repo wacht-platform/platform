@@ -75,31 +75,7 @@ impl TextProcessingService {
         Ok(text)
     }
 
-    fn extract_text_from_html(&self, content: &[u8]) -> Result<String, AppError> {
-        let html_content = String::from_utf8(content.to_vec())
-            .map_err(|e| AppError::Internal(format!("Failed to parse HTML file: {}", e)))?;
 
-        let text = html_content
-            .replace("<br>", "\n")
-            .replace("<br/>", "\n")
-            .replace("<br />", "\n")
-            .replace("</p>", "\n\n")
-            .replace("</div>", "\n")
-            .replace("</h1>", "\n\n")
-            .replace("</h2>", "\n\n")
-            .replace("</h3>", "\n\n")
-            .replace("</h4>", "\n\n")
-            .replace("</h5>", "\n\n")
-            .replace("</h6>", "\n\n");
-
-        // Remove HTML tags
-        let text = regex::Regex::new(r"<[^>]*>")
-            .unwrap()
-            .replace_all(&text, "")
-            .to_string();
-
-        Ok(text)
-    }
 
     fn extract_text_from_json(&self, content: &[u8]) -> Result<String, AppError> {
         let json_content = String::from_utf8(content.to_vec())
