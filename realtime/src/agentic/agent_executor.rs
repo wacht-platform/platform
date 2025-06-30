@@ -292,7 +292,7 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
             return Err(AppError::Validation("Missing context".into()));
         }
 
-        let context = self.execution_context.unwrap();
+        let context = self.execution_context.clone().unwrap();
 
         let mut query =
             CreateExecutionMessageQuery::new(context.id, message_type, sender, content.to_string());

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ai_execution_contexts SET updated_at = $1, last_activity_at = $1, memory = $2 WHERE id = $3 AND deployment_id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Jsonb",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5caf2b912073a12a363a27794fb0ab838b9e4287006556a29b57520318890518"
+}
