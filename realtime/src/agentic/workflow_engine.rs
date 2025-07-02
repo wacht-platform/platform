@@ -1,4 +1,4 @@
-use super::{AgentContext, ToolCall, ToolExecutor};
+use super::{AgentContext, ToolCall, ToolExecutor, WorkflowExecution, WorkflowExecutionContext, NodeExecutionResult};
 use chrono::Utc;
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
@@ -18,35 +18,6 @@ pub struct WorkflowEngine {
     pub conversation_history: Vec<ChatMessage>,
 }
 
-#[derive(Debug, Clone)]
-pub struct WorkflowExecution {
-    pub workflow_id: i64,
-    pub execution_id: String,
-    pub status: ExecutionStatus,
-    pub current_node: Option<String>,
-    pub execution_context: WorkflowExecutionContext,
-    pub node_executions: HashMap<String, NodeExecution>,
-    pub completed_at: Option<chrono::DateTime<Utc>>,
-    pub error_message: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct WorkflowExecutionContext {
-    pub variables: HashMap<String, Value>,
-    pub input_data: Value,
-    pub output_data: Option<Value>,
-    pub memory: HashMap<String, Value>,
-    pub tool_results: HashMap<String, Value>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NodeExecutionResult {
-    pub status: ExecutionStatus,
-    pub output_data: Option<Value>,
-    pub error_message: Option<String>,
-    pub next_nodes: Vec<String>,
-    pub execution_time_ms: u64,
-}
 
 impl WorkflowEngine {
     pub fn new(

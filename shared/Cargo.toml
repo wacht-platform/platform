@@ -33,3 +33,4 @@ pulldown-cmark = "0.12.2"
 base64 = "0.22.1"
 rcgen = { version = "0.13.2", features = ["crypto"] }
 pdf-extract = "0.9.0"
+async-nats = "0.42.0"

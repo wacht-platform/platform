@@ -1,4 +1,5 @@
 pub mod ai_agents;
+pub mod ai_execution_context;
 pub mod ai_knowledge_base;
 pub mod ai_knowledge_base_search;
 pub mod ai_tools;

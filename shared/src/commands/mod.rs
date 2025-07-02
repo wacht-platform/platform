@@ -3,9 +3,17 @@ use crate::{error::AppError, state::AppState};
 pub trait Command {
     type Output;
 
-    fn execute(self, app_state: &AppState) -> impl std::future::Future<Output = Result<Self::Output, AppError>> + Send;
+    fn execute(
+        self,
+        app_state: &AppState,
+    ) -> impl std::future::Future<Output = Result<Self::Output, AppError>> + Send;
 }
 
+pub mod agent_execution_context;
+pub mod ai_agents;
+pub mod ai_knowledge_base;
+pub mod ai_tools;
+pub mod ai_workflows;
 pub mod create_organization;
 pub mod create_workspace;
 mod delete_organization;
@@ -13,25 +21,17 @@ mod delete_workspace;
 pub mod deployment;
 pub mod deployment_email_template;
 pub mod email;
+pub mod embedding;
 mod organization_member;
 mod organization_role;
 pub mod project;
-mod workspace_role;
 pub mod s3;
 mod update_organization;
 mod update_workspace;
 pub mod user;
 pub mod user_identifiers;
-
-// AI-related commands
-pub mod ai_agents;
-pub mod ai_workflows;
-pub mod ai_tools;
-pub mod ai_knowledge_base;
-pub mod embedding;
-
-
-
+mod workspace_role;
+pub use agent_execution_context::*;
 pub use create_organization::*;
 pub use create_workspace::*;
 pub use delete_organization::*;
@@ -46,14 +46,11 @@ pub use s3::*;
 pub use update_organization::*;
 pub use update_workspace::*;
 pub use user::*;
-pub use workspace_role::*;
 pub use user_identifiers::*;
+pub use workspace_role::*;
 
-// AI-related exports
 pub use ai_agents::*;
-pub use ai_workflows::*;
-pub use ai_tools::*;
 pub use ai_knowledge_base::*;
+pub use ai_tools::*;
+pub use ai_workflows::*;
 pub use embedding::*;
-
-

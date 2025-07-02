@@ -10,12 +10,10 @@ pub enum WebsocketMessageType {
     RequestContextResponse(u64),
     #[serde(rename = "message_input")]
     MessageInput(String),
-    #[serde(rename = "execution_update")]
-    ExecutionUpdate(u64),
+    #[serde(rename = "new_message_chunk")]
+    NewMessageChunk,
     #[serde(rename = "execution_complete")]
     ExecutionComplete(u64),
-    #[serde(rename = "execution_input")]
-    ExecutionInput(u64),
     #[serde(rename = "execution_interrupt")]
     ExecutionInterrupt(u64),
     #[serde(rename = "execution_error")]
@@ -29,7 +27,7 @@ pub enum WebsocketMessageType {
     #[serde(rename = "workflow_execution")]
     WorkflowExecution(u64),
     #[serde(rename = "session_connect")]
-    SessionConnect(i64, String),
+    SessionConnect(String, String),
     #[serde(rename = "session_connected")]
     SessionConnected,
     #[serde(rename = "session_status")]
@@ -40,7 +38,7 @@ pub enum WebsocketMessageType {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WebsocketMessage<T> {
-    pub message_id: u64,
+    pub message_id: Option<u64>,
     pub message_type: WebsocketMessageType,
     pub data: T,
 }

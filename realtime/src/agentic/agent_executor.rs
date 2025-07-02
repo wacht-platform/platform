@@ -1,15 +1,18 @@
+use std::convert;
+
 use super::{
-    AgentContext, MemoryManager, MemoryQuery, MemoryType, TaskManager, ToolCall, ToolResult,
-    WorkflowEngine,
+    AcknowledgmentEngine, AcknowledgmentRequest, AgentContext, MemoryManager, MemoryQuery,
+    MemoryType, TaskManager, ToolCall, ToolResult, WorkflowEngine,
 };
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
 use serde_json::{Value, json};
-use shared::commands::{Command, SearchConversationEmbeddingsCommand};
-use shared::error::AppError;
-use shared::models::{
-    AgentExecutionContext, AiAgent, ExecutionMessageSender, ExecutionMessageType,
+use shared::commands::{
+    Command, CreateExecutionMessageCommand, SearchConversationEmbeddingsCommand,
 };
+use shared::dto::json::StreamEvent;
+use shared::error::AppError;
+use shared::models::{AiAgent, ExecutionMessageSender, ExecutionMessageType};
 use shared::queries::{
     GetAiKnowledgeBasesByIdsQuery, GetAiToolsByIdsQuery, GetAiWorkflowsByIdsQuery, Query,
 };
@@ -17,9 +20,8 @@ use shared::state::AppState;
 
 pub struct AgentExecutor {
     pub agent: AiAgent,
-    pub context: AgentContext,
+    pub agent_context: AgentContext,
     pub app_state: AppState,
-    pub execution_context: Option<AgentExecutionContext>,
     pub task_manager: Option<TaskManager>,
     pub workflow_engine: Option<WorkflowEngine>,
     pub memory_manager: MemoryManager,
@@ -89,7 +91,7 @@ impl AgentExecutor {
             Vec::new()
         };
 
-        let context = AgentContext {
+        let agent_context = AgentContext {
             agent_id: agent.id,
             execution_context_id: context_id,
             deployment_id,
@@ -98,13 +100,13 @@ impl AgentExecutor {
             knowledge_bases,
         };
 
-        let memory_manager = MemoryManager::new(context.clone(), app_state.clone(), context_id)?;
+        let memory_manager =
+            MemoryManager::new(agent_context.clone(), app_state.clone(), context_id)?;
 
         Ok(Self {
             agent,
-            context,
+            agent_context,
             app_state: app_state.clone(),
-            execution_context: None,
             task_manager: None,
             workflow_engine: None,
             memory_manager,
@@ -124,7 +126,7 @@ impl AgentExecutor {
     fn get_enhanced_system_prompt(&self) -> String {
         let agent_name = &self.agent.name;
         let available_tools: Vec<String> = self
-            .context
+            .agent_context
             .tools
             .iter()
             .map(|t| {
@@ -136,7 +138,7 @@ impl AgentExecutor {
             })
             .collect();
         let available_workflows: Vec<String> = self
-            .context
+            .agent_context
             .workflows
             .iter()
             .map(|w| {
@@ -207,11 +209,7 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
 
     async fn load_conversation_history(&self) -> Result<Vec<ChatMessage>, AppError> {
         // Use ClickHouse to load recent conversation messages
-        let execution_context_id = self
-            .execution_context
-            .as_ref()
-            .map(|ctx| ctx.id)
-            .unwrap_or(0);
+        let execution_context_id = self.agent_context.execution_context_id;
 
         let search_results = SearchConversationEmbeddingsCommand::new(
             self.agent.deployment_id,
@@ -251,102 +249,32 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
         Ok(messages)
     }
 
-    pub async fn execute_with_streaming<F>(
+    pub async fn execute_with_streaming(
         &mut self,
         user_message: &str,
-        on_chunk: F,
-    ) -> Result<(), AppError>
-    where
-        F: FnMut(&str) + Send,
-    {
-        self.execute_with_agentic_flow(user_message, on_chunk).await
-    }
-
-    async fn execute_tool_call_with_history(
-        &self,
-        tool_call: &ToolCall,
-        conversation_history: &[ChatMessage],
-    ) -> Result<ToolResult, AppError> {
-        use super::tool_executor::ToolExecutor;
-
-        let tool_executor = ToolExecutor::new(
-            self.context.clone(),
-            self.app_state.clone(),
-            conversation_history.to_vec(),
-        );
-        tool_executor.execute_tool_call(tool_call).await
-    }
-
-    async fn store_execution_message(
-        &self,
-        message_type: ExecutionMessageType,
-        sender: ExecutionMessageSender,
-        content: &str,
-        metadata: Value,
-        tool_calls: Option<Value>,
-        tool_results: Option<Value>,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
     ) -> Result<(), AppError> {
-        use shared::queries::{CreateExecutionMessageQuery, Query};
+        // self.store_execution_message(
+        //     ExecutionMessageType::UserInput,
+        //     ExecutionMessageSender::User,
+        //     user_message,
+        //     json!({}),
+        //     None,
+        //     None,
+        // )
+        // .await?;
 
-        if let None = &self.execution_context {
-            return Err(AppError::Validation("Missing context".into()));
-        }
+        // self.memory_manager
+        //     .store_memory(
+        //         MemoryType::Episodic,
+        //         &format!("User request: {}", user_message),
+        //         std::collections::HashMap::new(),
+        //         0.8,
+        //     )
+        //     .await?;
 
-        let context = self.execution_context.clone().unwrap();
-
-        let mut query =
-            CreateExecutionMessageQuery::new(context.id, message_type, sender, content.to_string());
-
-        if metadata != serde_json::json!({}) {
-            query = query.with_metadata(metadata);
-        }
-
-        if let Some(calls) = tool_calls {
-            query = query.with_tool_calls(calls);
-        }
-
-        if let Some(results) = tool_results {
-            query = query.with_tool_results(results);
-        }
-
-        query.execute(&self.app_state).await?;
-
-        Ok(())
-    }
-
-    /// Execute the full agentic flow: Request → Acknowledgment → Reasoning/Task Definition → Task Execution Loop → Progress Validation
-    pub async fn execute_with_agentic_flow<F>(
-        &mut self,
-        user_message: &str,
-        mut on_chunk: F,
-    ) -> Result<(), AppError>
-    where
-        F: FnMut(&str) + Send,
-    {
-        on_chunk(
-            "🔍 **Analyzing your request...**\n\nI'll break this down into manageable tasks and create a comprehensive execution plan.\n\n",
-        );
-
-        self.store_execution_message(
-            ExecutionMessageType::UserInput,
-            ExecutionMessageSender::User,
-            user_message,
-            json!({}),
-            None,
-            None,
-        )
-        .await?;
-
-        self.memory_manager
-            .store_memory(
-                MemoryType::Episodic,
-                &format!("User request: {}", user_message),
-                std::collections::HashMap::new(),
-                0.8, // High importance for user requests
-            )
-            .await?;
-
-        // Retrieve relevant memories to inform the response
+        // let conversation_history = self.load_conversation_history().await?;
+        let conversation_history = vec![];
         let memory_query = MemoryQuery {
             query: user_message.to_string(),
             memory_types: vec![
@@ -354,42 +282,58 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
                 MemoryType::Semantic,
                 MemoryType::Procedural,
             ],
-            max_results: 5,
-            min_importance: 0.5,
+            max_results: 10,
+            min_importance: 0.3,
             time_range: None,
         };
         let relevant_memories = self.memory_manager.search_memories(&memory_query).await?;
-        if !relevant_memories.is_empty() {
-            on_chunk("💭 **Recalling relevant context from memory...**\n\n");
 
-            // Display some of the relevant memories
-            for (i, memory) in relevant_memories.iter().take(3).enumerate() {
-                on_chunk(&format!("{}. {}\n", i + 1, memory.entry.content));
-            }
-            on_chunk("\n");
+        let acknowledgment_engine = AcknowledgmentEngine::new(self.app_state.clone());
+        let acknowledgment_request = AcknowledgmentRequest {
+            user_message: user_message.to_string(),
+            conversation_history,
+            memories: relevant_memories.into_iter().map(|m| m.entry).collect(),
+            agent_context: self.agent_context.clone(),
+        };
+
+        let acknowledgment_response = acknowledgment_engine
+            .generate_acknowledgment(acknowledgment_request, channel.clone())
+            .await?;
+
+        self.store_execution_message(
+            ExecutionMessageType::AgentResponse,
+            ExecutionMessageSender::Agent,
+            &acknowledgment_response.acknowledgment_message,
+            json!({
+                "further_action_required": acknowledgment_response.further_action_required,
+                "reasoning": acknowledgment_response.reasoning
+            }),
+            None,
+            None,
+        )
+        .await?;
+
+        if !acknowledgment_response.further_action_required {
+            return Ok(());
         }
 
-        // Phase 2: Reasoning and Task Definition
-        on_chunk("📋 **Creating task breakdown...**\n\n");
-
-        // Initialize task manager for this execution
         let execution_id = format!("exec_{}", self.app_state.sf.next_id()? as i64);
         let task_manager = TaskManager::new(execution_id.clone(), self.app_state.clone());
 
-        // Initialize workflow engine
-        let workflow_engine =
-            WorkflowEngine::new(self.context.clone(), self.app_state.clone(), Vec::new());
+        let workflow_engine = WorkflowEngine::new(
+            self.agent_context.clone(),
+            self.app_state.clone(),
+            Vec::new(),
+        );
 
-        // Store references for later use
         self.task_manager = Some(task_manager);
         self.workflow_engine = Some(workflow_engine);
 
-        // Analyze request and create task plan
         match self
             .task_manager
             .as_mut()
             .unwrap()
-            .analyze_and_create_task_plan(user_message, &self.context, &self.app_state)
+            .analyze_and_create_task_plan(user_message, &self.agent_context, &self.app_state)
             .await
         {
             Ok(_) => {
@@ -402,48 +346,17 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
                     .get("total_tasks")
                     .and_then(|t| t.as_u64())
                     .unwrap_or(0);
-
-                on_chunk(&format!(
-                    "✅ **Task plan created successfully!**\n\nI've identified {} key tasks to accomplish your request:\n\n",
-                    task_count
-                ));
-
-                // Display task overview
-                for (index, task) in self.task_manager.as_ref().unwrap().tasks.iter().enumerate() {
-                    on_chunk(&format!(
-                        "{}. **{}**\n   {}\n   Priority: {:?} | Est. Duration: {} min\n\n",
-                        index + 1,
-                        task.name,
-                        task.description,
-                        task.priority,
-                        task.estimated_duration_minutes.unwrap_or(20)
-                    ));
-                }
             }
-            Err(e) => {
-                on_chunk(&format!(
-                    "❌ **Failed to create task plan:** {}\n\nFalling back to direct execution...\n\n",
-                    e
-                ));
-            }
+            Err(e) => {}
         }
 
-        // Phase 3: Task Execution Loop with Progress Validation
-        on_chunk("🚀 **Beginning task execution...**\n\n");
+        let progress_callback = |message: &str, progress: u8| {};
 
-        let progress_callback = |message: &str, progress: u8| {
-            on_chunk(&format!("{} ({}% complete)\n\n", message, progress));
-        };
-
-        // Execute tasks with progress validation
         match self
             .execute_task_execution_loop(user_message, progress_callback)
             .await
         {
             Ok(_) => {
-                on_chunk("🎉 **All tasks completed successfully!**\n\n");
-
-                // Display final summary
                 let final_summary = self
                     .task_manager
                     .as_ref()
@@ -458,18 +371,6 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
                     .and_then(|t| t.as_u64())
                     .unwrap_or(0);
 
-                on_chunk(&format!(
-                    "📊 **Execution Summary:**\n- Completed: {}/{} tasks\n- Success Rate: {}%\n\n",
-                    completed,
-                    total,
-                    if total > 0 {
-                        (completed * 100) / total
-                    } else {
-                        0
-                    }
-                ));
-
-                // Store successful execution in memory
                 self.memory_manager
                     .store_memory(
                         MemoryType::Procedural,
@@ -483,12 +384,6 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
                     .await?;
             }
             Err(e) => {
-                on_chunk(&format!(
-                    "⚠️ **Task execution encountered issues:** {}\n\n",
-                    e
-                ));
-
-                // Show what was completed
                 let summary = self
                     .task_manager
                     .as_ref()
@@ -503,17 +398,11 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
                     .and_then(|f| f.as_u64())
                     .unwrap_or(0);
 
-                if completed > 0 {
-                    on_chunk(&format!("✅ Successfully completed {} tasks\n", completed));
-                }
-                if failed > 0 {
-                    on_chunk(&format!("❌ {} tasks failed\n", failed));
-                }
-                on_chunk("\n");
+                if completed > 0 {}
+                if failed > 0 {}
             }
         }
 
-        // Store agent response
         self.store_execution_message(
             ExecutionMessageType::AgentResponse,
             ExecutionMessageSender::Agent,
@@ -533,6 +422,54 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
         Ok(())
     }
 
+    async fn execute_tool_call_with_history(
+        &self,
+        tool_call: &ToolCall,
+        conversation_history: &[ChatMessage],
+    ) -> Result<ToolResult, AppError> {
+        use super::tool_executor::ToolExecutor;
+
+        let tool_executor = ToolExecutor::new(
+            self.agent_context.clone(),
+            self.app_state.clone(),
+            conversation_history.to_vec(),
+        );
+        tool_executor.execute_tool_call(tool_call).await
+    }
+
+    async fn store_execution_message(
+        &self,
+        message_type: ExecutionMessageType,
+        sender: ExecutionMessageSender,
+        content: &str,
+        metadata: Value,
+        tool_calls: Option<Value>,
+        tool_results: Option<Value>,
+    ) -> Result<(), AppError> {
+        let mut query = CreateExecutionMessageCommand::new(
+            self.agent_context.execution_context_id,
+            message_type,
+            sender,
+            content.to_string(),
+        );
+
+        if metadata != serde_json::json!({}) {
+            query = query.with_metadata(metadata);
+        }
+
+        if let Some(calls) = tool_calls {
+            query = query.with_tool_calls(calls);
+        }
+
+        if let Some(results) = tool_results {
+            query = query.with_tool_results(results);
+        }
+
+        query.execute(&self.app_state).await?;
+
+        Ok(())
+    }
+
     /// Execute task execution loop with progress validation
     async fn execute_task_execution_loop<F>(
         &mut self,
@@ -546,7 +483,7 @@ Remember: You follow Claude's exact agentic pattern - task definition, reasoning
 
         // Execute task plan with progress validation
         match task_manager
-            .execute_task_plan(&self.context, &self.app_state, progress_callback)
+            .execute_task_plan(&self.agent_context, &self.app_state, progress_callback)
             .await
         {
             Ok(_) => {
@@ -659,7 +596,7 @@ Respond with a brief analysis and any recommended adjustments.",
     {
         // Check if we need to execute any workflows based on current progress
         let workflows_to_execute: Vec<_> = self
-            .context
+            .agent_context
             .workflows
             .iter()
             .filter(|workflow| {
@@ -716,15 +653,13 @@ Respond with a brief analysis and any recommended adjustments.",
 
         metadata.insert(
             "deployment_id".to_string(),
-            serde_json::Value::Number(self.context.deployment_id.into()),
+            serde_json::Value::Number(self.agent_context.deployment_id.into()),
         );
 
-        if let Some(ref exec_ctx) = self.execution_context {
-            metadata.insert(
-                "execution_context_id".to_string(),
-                serde_json::Value::Number(exec_ctx.id.into()),
-            );
-        }
+        metadata.insert(
+            "execution_context_id".to_string(),
+            serde_json::Value::Number(self.agent_context.execution_context_id.into()),
+        );
 
         self.memory_manager
             .store_memory(memory_type, content, metadata, importance)

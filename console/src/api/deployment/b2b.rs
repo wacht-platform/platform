@@ -6,9 +6,10 @@ use crate::core::commands::{
     AddOrganizationMemberCommand, Command, CreateOrganizationCommand,
     CreateOrganizationRoleCommand, CreateWorkspaceCommand, CreateWorkspaceRoleCommand,
     DeleteOrganizationCommand, DeleteOrganizationRoleCommand, DeleteWorkspaceCommand,
-    DeleteWorkspaceRoleCommand, RemoveOrganizationMemberCommand, UpdateDeploymentB2bSettingsCommand,
-    UpdateOrganizationCommand, UpdateOrganizationMemberCommand, UpdateOrganizationRoleCommand,
-    UpdateWorkspaceCommand, UpdateWorkspaceRoleCommand, UploadToCdnCommand,
+    DeleteWorkspaceRoleCommand, RemoveOrganizationMemberCommand,
+    UpdateDeploymentB2bSettingsCommand, UpdateOrganizationCommand, UpdateOrganizationMemberCommand,
+    UpdateOrganizationRoleCommand, UpdateWorkspaceCommand, UpdateWorkspaceRoleCommand,
+    UploadToCdnCommand,
 };
 use crate::core::dto::{
     json::{
@@ -166,37 +167,55 @@ pub async fn create_organization(
 
         match field_name.as_str() {
             "name" => {
-                name = field.text().await
+                name = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
             }
             "description" => {
-                let desc = field.text().await
+                let desc = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !desc.trim().is_empty() {
                     description = Some(desc.trim().to_string());
                 }
             }
             "public_metadata" => {
-                let metadata_str = field.text().await
+                let metadata_str = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !metadata_str.trim().is_empty() {
-                    public_metadata = Some(serde_json::from_str(&metadata_str)
-                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid public metadata JSON: {}", e)))?);
+                    public_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("Invalid public metadata JSON: {}", e),
+                        )
+                    })?);
                 }
             }
             "private_metadata" => {
-                let metadata_str = field.text().await
+                let metadata_str = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !metadata_str.trim().is_empty() {
-                    private_metadata = Some(serde_json::from_str(&metadata_str)
-                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid private metadata JSON: {}", e)))?);
+                    private_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("Invalid private metadata JSON: {}", e),
+                        )
+                    })?);
                 }
             }
             "organization_image" => {
                 let content_type = field.content_type().unwrap_or_default().to_string();
 
                 if content_type.starts_with("image/") {
-                    let file_extension = if content_type == "image/jpeg" || content_type == "image/jpg" {
+                    let file_extension = if content_type == "image/jpeg"
+                        || content_type == "image/jpg"
+                    {
                         "jpg"
                     } else if content_type == "image/png" {
                         "png"
@@ -204,7 +223,9 @@ pub async fn create_organization(
                         "gif"
                     } else if content_type == "image/webp" {
                         "webp"
-                    } else if content_type == "image/x-icon" || content_type == "image/vnd.microsoft.icon" {
+                    } else if content_type == "image/x-icon"
+                        || content_type == "image/vnd.microsoft.icon"
+                    {
                         "ico"
                     } else {
                         return Err((
@@ -213,13 +234,18 @@ pub async fn create_organization(
                         ).into());
                     };
 
-                    let image_buffer = field.bytes().await
+                    let image_buffer = field
+                        .bytes()
+                        .await
                         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
                         .to_vec();
 
                     if !image_buffer.is_empty() {
                         // Generate unique organization ID for file path
-                        let org_id = app_state.sf.next_id().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                        let org_id = app_state
+                            .sf
+                            .next_id()
+                            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
                         let file_path = format!(
                             "deployments/{}/organizations/{}/logo.{}",
                             deployment_id, org_id, file_extension
@@ -242,7 +268,11 @@ pub async fn create_organization(
 
     // Validate required fields
     if name.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Organization name is required".to_string()).into());
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Organization name is required".to_string(),
+        )
+            .into());
     }
 
     CreateOrganizationCommand::new(
@@ -280,37 +310,55 @@ pub async fn create_workspace_for_organization(
 
         match field_name.as_str() {
             "name" => {
-                name = field.text().await
+                name = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
             }
             "description" => {
-                let desc = field.text().await
+                let desc = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !desc.trim().is_empty() {
                     description = Some(desc.trim().to_string());
                 }
             }
             "public_metadata" => {
-                let metadata_str = field.text().await
+                let metadata_str = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !metadata_str.trim().is_empty() {
-                    public_metadata = Some(serde_json::from_str(&metadata_str)
-                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid public metadata JSON: {}", e)))?);
+                    public_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("Invalid public metadata JSON: {}", e),
+                        )
+                    })?);
                 }
             }
             "private_metadata" => {
-                let metadata_str = field.text().await
+                let metadata_str = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !metadata_str.trim().is_empty() {
-                    private_metadata = Some(serde_json::from_str(&metadata_str)
-                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid private metadata JSON: {}", e)))?);
+                    private_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("Invalid private metadata JSON: {}", e),
+                        )
+                    })?);
                 }
             }
             "workspace_image" => {
                 let content_type = field.content_type().unwrap_or_default().to_string();
 
                 if content_type.starts_with("image/") {
-                    let file_extension = if content_type == "image/jpeg" || content_type == "image/jpg" {
+                    let file_extension = if content_type == "image/jpeg"
+                        || content_type == "image/jpg"
+                    {
                         "jpg"
                     } else if content_type == "image/png" {
                         "png"
@@ -318,7 +366,9 @@ pub async fn create_workspace_for_organization(
                         "gif"
                     } else if content_type == "image/webp" {
                         "webp"
-                    } else if content_type == "image/x-icon" || content_type == "image/vnd.microsoft.icon" {
+                    } else if content_type == "image/x-icon"
+                        || content_type == "image/vnd.microsoft.icon"
+                    {
                         "ico"
                     } else {
                         return Err((
@@ -327,13 +377,18 @@ pub async fn create_workspace_for_organization(
                         ).into());
                     };
 
-                    let image_buffer = field.bytes().await
+                    let image_buffer = field
+                        .bytes()
+                        .await
                         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
                         .to_vec();
 
                     if !image_buffer.is_empty() {
                         // Generate unique workspace ID for file path
-                        let workspace_id = app_state.sf.next_id().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                        let workspace_id = app_state
+                            .sf
+                            .next_id()
+                            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
                         let file_path = format!(
                             "deployments/{}/workspaces/{}/logo.{}",
                             deployment_id, workspace_id, file_extension
@@ -356,7 +411,11 @@ pub async fn create_workspace_for_organization(
 
     // Validate required fields
     if name.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Workspace name is required".to_string()).into());
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Workspace name is required".to_string(),
+        )
+            .into());
     }
 
     CreateWorkspaceCommand::new(
@@ -395,40 +454,58 @@ pub async fn update_workspace(
 
         match field_name.as_str() {
             "name" => {
-                let workspace_name = field.text().await
+                let workspace_name = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !workspace_name.trim().is_empty() {
                     name = Some(workspace_name.trim().to_string());
                 }
             }
             "description" => {
-                let desc = field.text().await
+                let desc = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !desc.trim().is_empty() {
                     description = Some(desc.trim().to_string());
                 }
             }
             "public_metadata" => {
-                let metadata_str = field.text().await
+                let metadata_str = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !metadata_str.trim().is_empty() {
-                    public_metadata = Some(serde_json::from_str(&metadata_str)
-                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid public metadata JSON: {}", e)))?);
+                    public_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("Invalid public metadata JSON: {}", e),
+                        )
+                    })?);
                 }
             }
             "private_metadata" => {
-                let metadata_str = field.text().await
+                let metadata_str = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !metadata_str.trim().is_empty() {
-                    private_metadata = Some(serde_json::from_str(&metadata_str)
-                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid private metadata JSON: {}", e)))?);
+                    private_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("Invalid private metadata JSON: {}", e),
+                        )
+                    })?);
                 }
             }
             "workspace_image" => {
                 let content_type = field.content_type().unwrap_or_default().to_string();
 
                 if content_type.starts_with("image/") {
-                    let file_extension = if content_type == "image/jpeg" || content_type == "image/jpg" {
+                    let file_extension = if content_type == "image/jpeg"
+                        || content_type == "image/jpg"
+                    {
                         "jpg"
                     } else if content_type == "image/png" {
                         "png"
@@ -436,7 +513,9 @@ pub async fn update_workspace(
                         "gif"
                     } else if content_type == "image/webp" {
                         "webp"
-                    } else if content_type == "image/x-icon" || content_type == "image/vnd.microsoft.icon" {
+                    } else if content_type == "image/x-icon"
+                        || content_type == "image/vnd.microsoft.icon"
+                    {
                         "ico"
                     } else {
                         return Err((
@@ -445,7 +524,9 @@ pub async fn update_workspace(
                         ).into());
                     };
 
-                    let image_buffer = field.bytes().await
+                    let image_buffer = field
+                        .bytes()
+                        .await
                         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
                         .to_vec();
 
@@ -516,40 +597,58 @@ pub async fn update_organization(
 
         match field_name.as_str() {
             "name" => {
-                let org_name = field.text().await
+                let org_name = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !org_name.trim().is_empty() {
                     name = Some(org_name.trim().to_string());
                 }
             }
             "description" => {
-                let desc = field.text().await
+                let desc = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !desc.trim().is_empty() {
                     description = Some(desc.trim().to_string());
                 }
             }
             "public_metadata" => {
-                let metadata_str = field.text().await
+                let metadata_str = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !metadata_str.trim().is_empty() {
-                    public_metadata = Some(serde_json::from_str(&metadata_str)
-                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid public metadata JSON: {}", e)))?);
+                    public_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("Invalid public metadata JSON: {}", e),
+                        )
+                    })?);
                 }
             }
             "private_metadata" => {
-                let metadata_str = field.text().await
+                let metadata_str = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !metadata_str.trim().is_empty() {
-                    private_metadata = Some(serde_json::from_str(&metadata_str)
-                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid private metadata JSON: {}", e)))?);
+                    private_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("Invalid private metadata JSON: {}", e),
+                        )
+                    })?);
                 }
             }
             "organization_image" => {
                 let content_type = field.content_type().unwrap_or_default().to_string();
 
                 if content_type.starts_with("image/") {
-                    let file_extension = if content_type == "image/jpeg" || content_type == "image/jpg" {
+                    let file_extension = if content_type == "image/jpeg"
+                        || content_type == "image/jpg"
+                    {
                         "jpg"
                     } else if content_type == "image/png" {
                         "png"
@@ -557,7 +656,9 @@ pub async fn update_organization(
                         "gif"
                     } else if content_type == "image/webp" {
                         "webp"
-                    } else if content_type == "image/x-icon" || content_type == "image/vnd.microsoft.icon" {
+                    } else if content_type == "image/x-icon"
+                        || content_type == "image/vnd.microsoft.icon"
+                    {
                         "ico"
                     } else {
                         return Err((
@@ -566,7 +667,9 @@ pub async fn update_organization(
                         ).into());
                     };
 
-                    let image_buffer = field.bytes().await
+                    let image_buffer = field
+                        .bytes()
+                        .await
                         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
                         .to_vec();
 
@@ -674,8 +777,6 @@ pub async fn remove_organization_member(
         .map(Into::into)
         .map_err(Into::into)
 }
-
-// Organization Role Management
 
 pub async fn create_organization_role(
     State(app_state): State<HttpState>,

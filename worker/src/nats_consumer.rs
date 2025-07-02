@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_nats::jetstream::{self, consumer};
 use futures::StreamExt;
 use serde_json;
+use shared::state::AppState;
 use std::collections::HashMap;
 use tracing::{error, info, warn};
 
@@ -11,6 +12,7 @@ use crate::tasks::{email, sms, token};
 pub struct NatsConsumer {
     jetstream: jetstream::Context,
     task_handlers: HashMap<String, TaskHandler>,
+    app_state: AppState,
 }
 
 type TaskHandler = Box<
@@ -23,10 +25,7 @@ type TaskHandler = Box<
 >;
 
 impl NatsConsumer {
-    pub async fn new(nats_url: &str) -> Result<Self> {
-        let client = async_nats::connect(nats_url).await?;
-        let jetstream = jetstream::new(client);
-
+    pub async fn new(app_state: AppState) -> Result<Self> {
         let mut task_handlers: HashMap<String, TaskHandler> = HashMap::new();
 
         task_handlers.insert(
@@ -258,15 +257,16 @@ impl NatsConsumer {
         );
 
         Ok(Self {
-            jetstream,
+            jetstream: app_state.nats_jetstream,
             task_handlers,
+            app_state,
         })
     }
 
     pub async fn start_consuming(&self) -> Result<()> {
         info!("Starting NATS JetStream consumer for worker tasks");
 
-        let stream = self.jetstream.get_stream("WORKER_TASKS").await?;
+        let stream = self.jetstream.get_stream("worker_tasks").await?;
 
         let consumer = match stream
             .create_consumer(consumer::pull::Config {

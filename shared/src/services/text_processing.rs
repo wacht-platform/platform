@@ -75,8 +75,6 @@ impl TextProcessingService {
         Ok(text)
     }
 
-
-
     fn extract_text_from_json(&self, content: &[u8]) -> Result<String, AppError> {
         let json_content = String::from_utf8(content.to_vec())
             .map_err(|e| AppError::Internal(format!("Failed to parse JSON file: {}", e)))?;
@@ -134,13 +132,11 @@ impl TextProcessingService {
     }
 
     pub fn clean_text(&self, text: &str) -> String {
-        // Remove excessive whitespace and normalize line endings
         let cleaned = regex::Regex::new(r"\s+")
             .unwrap()
             .replace_all(text.trim(), " ")
             .to_string();
 
-        // Remove control characters except newlines and tabs
         cleaned
             .chars()
             .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')

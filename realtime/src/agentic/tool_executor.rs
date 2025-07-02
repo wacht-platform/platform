@@ -517,7 +517,6 @@ impl ToolExecutor {
                     "score": result.score,
                     "content": result.content,
                     "knowledge_base_id": result.knowledge_base_id,
-                    "document_id": result.document_id,
                     "chunk_index": result.chunk_index
                 })
             })
@@ -747,7 +746,7 @@ Otherwise, respond with just the parameter value."#,
     }
 
     async fn execute_memory_tool(&self, tool_call: &ToolCall) -> Result<ToolResult, AppError> {
-        use super::memory_manager::{MemoryManager, MemoryQuery, MemoryType};
+        use super::{MemoryManager, MemoryQuery, MemoryType};
         use std::collections::HashMap;
 
         let memory_manager = MemoryManager::new(

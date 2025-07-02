@@ -1,6 +1,7 @@
 mod agentic;
 mod api;
 mod application;
+mod template;
 pub use shared as core;
 
 use dotenvy::dotenv;

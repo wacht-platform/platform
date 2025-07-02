@@ -283,12 +283,7 @@ impl Command for DeleteAiKnowledgeBaseCommand {
                 "Failed to delete ClickHouse embeddings for knowledge base {}: {}",
                 kb_id, e
             );
-        } else {
-            println!(
-                "Successfully deleted ClickHouse embeddings for knowledge base {}",
-                kb_id
-            );
-        }
+        } else {}
 
         Ok(())
     }
@@ -523,12 +518,7 @@ impl DeleteKnowledgeBaseDocumentCommand {
                 "Failed to delete ClickHouse embeddings for document {} in knowledge base {}: {}",
                 document_id, knowledge_base_id, e
             );
-        } else {
-            println!(
-                "Successfully deleted ClickHouse embeddings for document {} in knowledge base {}",
-                document_id, knowledge_base_id
-            );
-        }
+        } else {}
 
         Ok(())
     }

@@ -1,9 +1,10 @@
 use super::AgentContext;
 use shared::commands::{Command, GenerateEmbeddingCommand, StoreMemoryEmbeddingCommand};
 use shared::error::AppError;
+use shared::models::{MemoryEntry, MemoryQuery, MemorySearchResult, MemoryType};
 use shared::state::AppState;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
@@ -12,54 +13,6 @@ pub struct MemoryManager {
     pub context: AgentContext,
     pub app_state: AppState,
     pub execution_context_id: i64,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct MemoryEntry {
-    pub id: String,
-    pub memory_type: MemoryType,
-    pub content: String,
-    pub metadata: HashMap<String, Value>,
-    pub importance: f32,
-    pub created_at: DateTime<Utc>,
-    pub last_accessed: DateTime<Utc>,
-    pub access_count: u32,
-    pub embedding: Option<Vec<f32>>,
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum MemoryType {
-    Working,
-    Episodic,
-    Semantic,
-    Procedural,
-}
-
-impl std::fmt::Display for MemoryType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MemoryType::Working => write!(f, "working"),
-            MemoryType::Episodic => write!(f, "episodic"),
-            MemoryType::Semantic => write!(f, "semantic"),
-            MemoryType::Procedural => write!(f, "procedural"),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MemoryQuery {
-    pub query: String,
-    pub memory_types: Vec<MemoryType>,
-    pub max_results: usize,
-    pub min_importance: f32,
-    pub time_range: Option<(DateTime<Utc>, DateTime<Utc>)>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MemorySearchResult {
-    pub entry: MemoryEntry,
-    pub relevance_score: f32,
-    pub similarity_score: f32,
 }
 
 impl MemoryManager {
@@ -97,8 +50,10 @@ impl MemoryManager {
             created_at: Utc::now(),
             last_accessed: Utc::now(),
             access_count: 0,
-            embedding: Some(embedding),
+            embedding,
         };
+
+        dbg!(&memory_entry);
 
         self.store_memory_entry(&memory_entry).await?;
 
@@ -134,11 +89,8 @@ impl MemoryManager {
             }
 
             let text_relevance = self.calculate_text_relevance(&memory.content, &query.query);
-            let semantic_similarity = if let Some(ref memory_embedding) = memory.embedding {
-                self.calculate_cosine_similarity(&query_embedding, memory_embedding)
-            } else {
-                0.0
-            };
+            let semantic_similarity =
+                self.calculate_cosine_similarity(&query_embedding, &memory.embedding);
 
             let relevance_score = (text_relevance * 0.3) + (semantic_similarity * 0.7);
 
@@ -169,30 +121,25 @@ impl MemoryManager {
             let mut should_merge = false;
 
             for consolidated in &mut consolidated_memories {
-                if let Some(ref memory_embedding) = memory.embedding {
-                    if let Some(ref consolidated_embedding) = consolidated.embedding {
-                        let similarity = self
-                            .calculate_cosine_similarity(memory_embedding, consolidated_embedding);
+                let similarity =
+                    self.calculate_cosine_similarity(&memory.embedding, &consolidated.embedding);
 
-                        if similarity > similarity_threshold
-                            && std::mem::discriminant(&memory.memory_type)
-                                == std::mem::discriminant(&consolidated.memory_type)
-                        {
-                            consolidated.content =
-                                format!("{}\n\n{}", consolidated.content, memory.content);
-                            consolidated.importance =
-                                (consolidated.importance + memory.importance) / 2.0;
-                            consolidated.access_count += memory.access_count;
+                if similarity > similarity_threshold
+                    && std::mem::discriminant(&memory.memory_type)
+                        == std::mem::discriminant(&consolidated.memory_type)
+                {
+                    consolidated.content =
+                        format!("{}\n\n{}", consolidated.content, memory.content);
+                    consolidated.importance = (consolidated.importance + memory.importance) / 2.0;
+                    consolidated.access_count += memory.access_count;
 
-                            for (key, value) in &memory.metadata {
-                                consolidated.metadata.insert(key.clone(), value.clone());
-                            }
-
-                            should_merge = true;
-                            merged_count += 1;
-                            break;
-                        }
+                    for (key, value) in &memory.metadata {
+                        consolidated.metadata.insert(key.clone(), value.clone());
                     }
+
+                    should_merge = true;
+                    merged_count += 1;
+                    break;
                 }
             }
 
@@ -333,21 +280,19 @@ impl MemoryManager {
     // Storage methods
     async fn store_memory_entry(&self, memory: &MemoryEntry) -> Result<(), AppError> {
         // Store in ClickHouse for vector search using command pattern
-        if let Some(embedding) = &memory.embedding {
-            StoreMemoryEmbeddingCommand::new(
-                memory.id.parse::<i64>().unwrap_or(0),
-                self.context.deployment_id,
-                self.context.agent_id,
-                self.execution_context_id,
-                memory.memory_type.to_string(),
-                memory.content.clone(),
-                embedding.clone(),
-                memory.importance,
-                memory.access_count as i32,
-            )
-            .execute(&self.app_state)
-            .await?;
-        }
+        StoreMemoryEmbeddingCommand::new(
+            memory.id.parse::<i64>().unwrap_or(0),
+            self.context.deployment_id,
+            self.context.agent_id,
+            self.execution_context_id,
+            memory.memory_type.to_string(),
+            memory.content.clone(),
+            memory.embedding.clone(),
+            memory.importance,
+            memory.access_count as i32,
+        )
+        .execute(&self.app_state)
+        .await?;
 
         // Also store in database for backup/persistence
         let mut memories = self.get_stored_memories().await?;
@@ -383,7 +328,7 @@ impl MemoryManager {
         Ok(vec![])
     }
 
-    async fn store_all_memories(&self, memories: &[MemoryEntry]) -> Result<(), AppError> {
+    async fn store_all_memories(&self, _memories: &[MemoryEntry]) -> Result<(), AppError> {
         // use shared::queries::{
         //     GetExecutionContextsByAgentQuery, Query, UpdateExecutionContextQuery,
         // };
@@ -426,23 +371,4 @@ impl MemoryManager {
     }
 }
 
-impl MemoryType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            MemoryType::Working => "working",
-            MemoryType::Episodic => "episodic",
-            MemoryType::Semantic => "semantic",
-            MemoryType::Procedural => "procedural",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "working" => Some(MemoryType::Working),
-            "episodic" => Some(MemoryType::Episodic),
-            "semantic" => Some(MemoryType::Semantic),
-            "procedural" => Some(MemoryType::Procedural),
-            _ => None,
-        }
-    }
-}
+// MemoryType methods are now implemented in shared::models

@@ -38,6 +38,8 @@ mod ai_execution_context;
 mod ai_workflow;
 mod ai_tool;
 mod ai_knowledge_base;
+mod ai_memory;
+mod ai_context;
 
 pub use deployment::*;
 pub use deployment_auth_settings::*;
@@ -77,3 +79,5 @@ pub use ai_execution_context::*;
 pub use ai_workflow::*;
 pub use ai_tool::*;
 pub use ai_knowledge_base::*;
+pub use ai_memory::*;
+pub use ai_context::*;

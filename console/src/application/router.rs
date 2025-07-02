@@ -37,6 +37,7 @@ fn project_routes() -> Router<HttpState> {
         )
 }
 
+#[cfg(any(feature = "console-api", feature = "backend-api"))]
 fn deployment_routes() -> Router<HttpState> {
     let routes = Router::new()
         .route("/users", get(api::deployment::user::get_active_user_list))
@@ -208,76 +209,83 @@ fn deployment_routes() -> Router<HttpState> {
             post(api::deployment::upload::upload_image),
         );
 
-    Router::new().nest("/deployments/{deployment_id}", routes)
-}
-
-fn ai_routes() -> Router<HttpState> {
-    Router::new()
-        // AI Agents
+    let routes = routes
         .route(
-            "/deployment/{deployment_id}/ai-agents",
+            "/ai-agents",
             get(api::deployment::ai_agents::get_ai_agents)
                 .post(api::deployment::ai_agents::create_ai_agent),
         )
         .route(
-            "/deployment/{deployment_id}/ai-agents/{agent_id}",
+            "/ai-agents/{agent_id}",
             get(api::deployment::ai_agents::get_ai_agent_by_id)
                 .patch(api::deployment::ai_agents::update_ai_agent)
                 .delete(api::deployment::ai_agents::delete_ai_agent),
         )
-        // AI Workflows
         .route(
-            "/deployment/{deployment_id}/ai-workflows",
+            "/ai-workflows",
             get(api::deployment::ai_workflows::get_ai_workflows)
                 .post(api::deployment::ai_workflows::create_ai_workflow),
         )
         .route(
-            "/deployment/{deployment_id}/ai-workflows/{workflow_id}",
+            "/ai-workflows/{workflow_id}",
             get(api::deployment::ai_workflows::get_ai_workflow_by_id)
                 .patch(api::deployment::ai_workflows::update_ai_workflow)
                 .delete(api::deployment::ai_workflows::delete_ai_workflow),
         )
         .route(
-            "/deployment/{deployment_id}/ai-tools",
+            "/ai-tools",
             get(api::deployment::ai_tools::get_ai_tools)
                 .post(api::deployment::ai_tools::create_ai_tool),
         )
         .route(
-            "/deployment/{deployment_id}/ai-tools/{tool_id}",
+            "/ai-tools/{tool_id}",
             get(api::deployment::ai_tools::get_ai_tool_by_id)
                 .patch(api::deployment::ai_tools::update_ai_tool)
                 .delete(api::deployment::ai_tools::delete_ai_tool),
         )
         .route(
-            "/deployment/{deployment_id}/ai-knowledge-bases",
+            "/ai-knowledge-bases",
             get(api::deployment::ai_knowledge_base::get_ai_knowledge_bases)
                 .post(api::deployment::ai_knowledge_base::create_ai_knowledge_base),
         )
         .route(
-            "/deployment/{deployment_id}/ai-knowledge-bases/{kb_id}",
+            "/ai-knowledge-bases/{kb_id}",
             get(api::deployment::ai_knowledge_base::get_ai_knowledge_base_by_id)
                 .patch(api::deployment::ai_knowledge_base::update_ai_knowledge_base)
                 .delete(api::deployment::ai_knowledge_base::delete_ai_knowledge_base),
         )
         .route(
-            "/deployment/{deployment_id}/ai-knowledge-bases/{kb_id}/documents",
+            "/ai-knowledge-bases/{kb_id}/documents",
             get(api::deployment::ai_knowledge_base::get_knowledge_base_documents)
                 .post(api::deployment::ai_knowledge_base::upload_knowledge_base_document),
         )
-
         .route(
-            "/deployment/{deployment_id}/ai-knowledge-bases/{kb_id}/documents/{document_id}",
+            "/ai-knowledge-bases/{kb_id}/documents/{document_id}",
             delete(api::deployment::ai_knowledge_base::delete_knowledge_base_document),
         )
-        // AI Knowledge Base Search
         .route(
-            "/deployment/{deployment_id}/ai-knowledge-bases/search",
+            "/ai-knowledge-bases/search",
             get(api::deployment::ai_knowledge_base_search::search_knowledge_base),
         )
         .route(
-            "/deployment/{deployment_id}/ai-knowledge-bases/{kb_id}/search",
+            "/ai-knowledge-bases/{kb_id}/search",
             get(api::deployment::ai_knowledge_base_search::search_specific_knowledge_base),
         )
+        .route(
+            "/ai-execution-context",
+            post(api::deployment::ai_execution_context::create_execution_context),
+        )
+        .route("/analytics/stats", get(api::analytics::get_analytics_stats))
+        .route(
+            "/analytics/recent-signups",
+            get(api::analytics::get_recent_signups),
+        );
+
+    #[cfg(feature = "console-api")]
+    return Router::new().nest("/deployments/{deployment_id}", routes);
+
+    #[cfg(feature = "backend-api")]
+    return routes;
 }
 
 fn configure_cors() -> CorsLayer {
@@ -290,12 +298,22 @@ fn configure_cors() -> CorsLayer {
 pub fn create_router(state: HttpState) -> Router {
     let cors = configure_cors();
 
-    Router::new()
-        .merge(health_routes())
-        .merge(project_routes())
-        .merge(deployment_routes())
-        .merge(ai_routes())
-        .merge(api::analytics::analytics_routes())
+    let mut router = Router::new().merge(health_routes());
+
+    #[cfg(feature = "console-api")]
+    {
+        router = router.merge(project_routes()).merge(deployment_routes());
+    }
+
+    #[cfg(feature = "backend-api")]
+    {
+        router = router.merge(deployment_routes());
+    }
+
+    #[cfg(feature = "frontend-api")]
+    {}
+
+    router
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)

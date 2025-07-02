@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-shared = { path = "../shared"}
+shared = { path = "../shared" }
 llm = { version = "1.2.9", features = ["google"] }
 ureq = { version = "3.0.11", features = ["json"] }
 anyhow = "1.0"
@@ -21,3 +21,4 @@ quick-xml = "0.36"
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"
 futures = "0.3"
+async-nats = "0.42.0"

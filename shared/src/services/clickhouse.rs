@@ -2,7 +2,6 @@ use crate::error::AppError;
 use chrono::{DateTime, Utc};
 use clickhouse::{Client, Row};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct ClickHouseService {
@@ -65,23 +64,11 @@ pub struct ExecutionMessage {
     pub message_type: String,
     pub content: String,
     pub embedding: Vec<f32>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Row)]
-pub struct Memory {
-    pub id: i64,
-    pub deployment_id: i64,
-    pub agent_id: i64,
-    pub execution_context_id: i64,
-    pub memory_type: String,
-    pub content: String,
-    pub embedding: Vec<f32>,
-    pub importance: f32,
-    pub access_count: i32,
-    pub created_at: DateTime<Utc>,
-    pub last_accessed_at: DateTime<Utc>,
-}
+pub use crate::models::MemoryRecord as Memory;
 
 #[derive(Debug, Serialize, Deserialize, Row)]
 pub struct AnalyticsEvent {
@@ -378,8 +365,6 @@ impl ClickHouseService {
             created_at: now,
             updated_at: now,
         };
-
-        println!("storing knowledegbase {:?}", doc);
 
         let mut insert = self.client.insert("knowledge_base_documents")?;
         insert.write(&doc).await?;

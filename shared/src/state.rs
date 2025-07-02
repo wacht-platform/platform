@@ -3,6 +3,8 @@ use std::str::FromStr;
 use aws_config::Region;
 use aws_sdk_s3::Client as S3Client;
 
+use async_nats::jetstream::Context as NatsJetStream;
+use async_nats::{Client as NatsClient, jetstream};
 use redis::Client as RedisClient;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::env::var as env;
@@ -28,6 +30,8 @@ pub struct AppState {
     pub dns_verification_service: DnsVerificationService,
     pub text_processing_service: TextProcessingService,
     pub clickhouse_service: ClickHouseService,
+    pub nats_client: NatsClient,
+    pub nats_jetstream: NatsJetStream,
 }
 
 impl AppState {
@@ -71,14 +75,13 @@ impl AppState {
         );
 
         let dns_verification_service = DnsVerificationService::new();
-
         let text_processing_service = TextProcessingService::new();
 
         let clickhouse_service =
             ClickHouseService::new(env("CLICKHOUSE_HOST")?, env("CLICKHOUSE_PASSWORD")?)?;
 
-        // Initialize ClickHouse tables
-        clickhouse_service.init_tables().await?;
+        let nats_client = async_nats::connect(env("NATS_URL")?).await?;
+        let nats_jetstream = jetstream::new(nats_client.clone());
 
         Ok(Self {
             db_pool: pool,
@@ -91,6 +94,8 @@ impl AppState {
             dns_verification_service,
             text_processing_service,
             clickhouse_service,
+            nats_client,
+            nats_jetstream,
         })
     }
 }

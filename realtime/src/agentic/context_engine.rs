@@ -499,7 +499,6 @@ Only include workflows that are actually relevant to the query. If no workflows 
                             "content": result.content,
                             "score": result.score,
                             "knowledge_base_id": result.knowledge_base_id,
-                            "document_id": result.document_id,
                             "chunk_index": result.chunk_index,
                             "relevance_score": (result.score * 100.0) as f64, // Convert to 0-100 scale
                             "source_knowledge_base": {
@@ -544,7 +543,7 @@ Only include workflows that are actually relevant to the query. If no workflows 
     }
 
     async fn search_memory(&self, query: &str) -> Result<Vec<Value>, AppError> {
-        use super::memory_manager::{MemoryManager, MemoryQuery, MemoryType};
+        use super::{MemoryManager, MemoryQuery, MemoryType};
 
         let memory_manager = MemoryManager::new(
             self.context.clone(),

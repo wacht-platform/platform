@@ -59,6 +59,12 @@ pub struct ExecuteWorkflowRequest {
     pub variables: Option<HashMap<String, serde_json::Value>>,
 }
 
+// AI Execution Context models
+#[derive(Debug, Deserialize)]
+pub struct CreateExecutionContextRequest {
+    // Empty struct - deployment_id comes from path
+}
+
 #[derive(Debug, Serialize)]
 pub struct UploadResult {
     pub url: String,
