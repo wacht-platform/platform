@@ -1,11 +1,8 @@
-use crate::{
-    error::AppError, state::AppState,
-    commands::Command, models::WorkspaceRole,
-};
+use crate::{commands::Command, error::AppError, models::WorkspaceRole, state::AppState};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CreateWorkspaceRoleCommand {
     pub deployment_id: i64,
     pub workspace_id: i64,
@@ -77,7 +74,7 @@ impl Command for CreateWorkspaceRoleCommand {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct UpdateWorkspaceRoleCommand {
     pub deployment_id: i64,
     pub workspace_id: i64,
@@ -118,9 +115,7 @@ impl Command for UpdateWorkspaceRoleCommand {
         .await?;
 
         if role_exists.is_none() {
-            return Err(AppError::NotFound(
-                "Workspace role not found".to_string(),
-            ));
+            return Err(AppError::NotFound("Workspace role not found".to_string()));
         }
 
         // Build update query dynamically
@@ -174,7 +169,7 @@ impl Command for UpdateWorkspaceRoleCommand {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DeleteWorkspaceRoleCommand {
     pub deployment_id: i64,
     pub workspace_id: i64,
@@ -205,9 +200,7 @@ impl Command for DeleteWorkspaceRoleCommand {
         .await?;
 
         if role_exists.is_none() {
-            return Err(AppError::NotFound(
-                "Workspace role not found".to_string(),
-            ));
+            return Err(AppError::NotFound("Workspace role not found".to_string()));
         }
 
         // Delete role (this should cascade to permissions and role assignments)

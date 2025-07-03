@@ -3,37 +3,36 @@ use serde::{Deserialize, Serialize};
 use crate::{models::AiKnowledgeBaseWithDetails, services::clickhouse::DocumentSearchResult};
 
 // Knowledge Base CRUD Models
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct CreateKnowledgeBaseRequest {
     pub name: String,
     pub description: Option<String>,
     pub configuration: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct UpdateKnowledgeBaseRequest {
     pub name: Option<String>,
     pub description: Option<String>,
     pub configuration: Option<serde_json::Value>,
 }
 
-
 // Knowledge Base Response Models
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct KnowledgeBaseResponse {
     pub data: Vec<AiKnowledgeBaseWithDetails>,
     pub has_more: bool,
 }
 
 // Document Query Models
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct GetDocumentsQuery {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
 }
 
 // Search Models
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct SearchKnowledgeBaseQuery {
     pub query: String,
     pub limit: Option<u64>,
@@ -41,14 +40,14 @@ pub struct SearchKnowledgeBaseQuery {
     pub sort_by_relevance: Option<bool>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct SearchKnowledgeBaseResponse {
     pub results: Vec<KnowledgeBaseSearchResult>,
     pub total_results: usize,
     pub query: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct KnowledgeBaseSearchResult {
     pub id: String,
     pub content: String,

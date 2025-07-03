@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NatsTaskMessage {
     pub task_type: String,
     pub task_id: String,
@@ -9,7 +9,7 @@ pub struct NatsTaskMessage {
     pub max_retries: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TaskResult {
     pub task_id: String,
     pub success: bool,

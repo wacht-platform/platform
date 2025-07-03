@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Clone)]
 pub enum WebsocketMessageType {
     #[serde(rename = "fetch_context_messages")]
     FetchContextMessages,
@@ -36,14 +36,14 @@ pub enum WebsocketMessageType {
     CloseConnection,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct WebsocketMessage<T> {
     pub message_id: Option<u64>,
     pub message_type: WebsocketMessageType,
     pub data: T,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum ExecutionStatus {
     Starting,
     Running,
@@ -53,7 +53,7 @@ pub enum ExecutionStatus {
     Interrupted,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ExecutionInfo {
     pub execution_id: u64,
     pub agent_name: String,

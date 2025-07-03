@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::{AiKnowledgeBase, AiTool, AiWorkflow};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AiAgent {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -16,7 +16,7 @@ pub struct AiAgent {
     pub configuration: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AiAgentWithDetails {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -32,7 +32,7 @@ pub struct AiAgentWithDetails {
     pub knowledge_bases_count: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AiAgentWithFeatures {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

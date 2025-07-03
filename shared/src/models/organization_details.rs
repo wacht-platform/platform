@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use super::{OrganizationRole, Workspace};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct OrganizationDetails {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -21,7 +21,7 @@ pub struct OrganizationDetails {
     pub workspaces: Vec<Workspace>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct OrganizationMemberDetails {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

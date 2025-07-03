@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::SignInAttemptStep;
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SignInMethod {
     PlainEmail,
@@ -15,13 +15,13 @@ pub enum SignInMethod {
     Passkey,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Error {
     pub code: String,
     pub message: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SignInAttempt {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

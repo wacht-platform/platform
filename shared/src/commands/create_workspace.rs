@@ -1,11 +1,8 @@
-use crate::{
-    error::AppError, state::AppState,
-    commands::Command, models::Workspace,
-};
+use crate::{commands::Command, error::AppError, models::Workspace, state::AppState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CreateWorkspaceCommand {
     pub deployment_id: i64,
     pub organization_id: i64,

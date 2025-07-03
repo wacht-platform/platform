@@ -1,13 +1,13 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct ApiError {
     pub message: String,
     pub code: u16,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct ApiErrorResponse {
     #[serde(skip_serializing)]
     pub staus_code: StatusCode,
@@ -15,7 +15,7 @@ pub struct ApiErrorResponse {
     pub errors: Vec<ApiError>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct ApiSuccess<T> {
     #[serde(flatten)]
     pub data: T,
@@ -95,9 +95,7 @@ impl From<(StatusCode, &str)> for ApiErrorResponse {
     }
 }
 
-
-
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct PaginatedResponse<T>
 where
     T: Serialize,
@@ -107,7 +105,7 @@ where
 }
 
 // Upload responses
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct UploadResponse {
     pub url: String,
 }

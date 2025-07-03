@@ -1,10 +1,7 @@
-use crate::{
-    error::AppError, state::AppState,
-    commands::Command,
-};
+use crate::{commands::Command, error::AppError, state::AppState};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DeleteWorkspaceCommand {
     pub deployment_id: i64,
     pub workspace_id: i64,
@@ -23,7 +20,10 @@ impl Command for DeleteWorkspaceCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_pool.begin().await
+        let mut tx = app_state
+            .db_pool
+            .begin()
+            .await
             .map_err(|e| AppError::Database(e))?;
 
         // First check if workspace exists and belongs to deployment
@@ -59,16 +59,12 @@ impl Command for DeleteWorkspaceCommand {
         .map_err(|e| AppError::Database(e))?;
 
         // Finally delete the workspace
-        sqlx::query!(
-            "DELETE FROM workspaces WHERE id = $1",
-            self.workspace_id
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-        tx.commit().await
+        sqlx::query!("DELETE FROM workspaces WHERE id = $1", self.workspace_id)
+            .execute(&mut *tx)
+            .await
             .map_err(|e| AppError::Database(e))?;
+
+        tx.commit().await.map_err(|e| AppError::Database(e))?;
 
         Ok(())
     }

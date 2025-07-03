@@ -8,18 +8,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::{application::HttpState, core::services::clickhouse::RecentSignup};
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct AnalyticsQuery {
     pub from: DateTime<Utc>,
     pub to: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct RecentSignupsQuery {
     pub limit: Option<i32>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct AnalyticsStatsResponse {
     pub unique_signins: i64,
     pub signups: i64,
@@ -32,7 +32,7 @@ pub struct AnalyticsStatsResponse {
     pub workspaces_created_change: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct RecentSignupsResponse {
     pub signups: Vec<RecentSignup>,
 }

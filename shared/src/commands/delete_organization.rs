@@ -1,10 +1,7 @@
-use crate::{
-    error::AppError, state::AppState,
-    commands::Command,
-};
+use crate::{commands::Command, error::AppError, state::AppState};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DeleteOrganizationCommand {
     pub deployment_id: i64,
     pub organization_id: i64,
@@ -23,7 +20,10 @@ impl Command for DeleteOrganizationCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_pool.begin().await
+        let mut tx = app_state
+            .db_pool
+            .begin()
+            .await
             .map_err(|e| AppError::Database(e))?;
 
         // First check if organization exists and belongs to deployment
@@ -104,8 +104,7 @@ impl Command for DeleteOrganizationCommand {
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        tx.commit().await
-            .map_err(|e| AppError::Database(e))?;
+        tx.commit().await.map_err(|e| AppError::Database(e))?;
 
         Ok(())
     }

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::SocialConnectionProvider;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SocialConnection {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

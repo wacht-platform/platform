@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AiTool {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -15,7 +15,7 @@ pub struct AiTool {
     pub configuration: AiToolConfiguration,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AiToolWithDetails {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -29,7 +29,7 @@ pub struct AiToolWithDetails {
     pub configuration: AiToolConfiguration,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum AiToolType {
     Api,
@@ -38,7 +38,7 @@ pub enum AiToolType {
     PlatformFunction,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(tag = "type")]
 pub enum AiToolConfiguration {
     Api(ApiToolConfiguration),
@@ -47,7 +47,7 @@ pub enum AiToolConfiguration {
     PlatformFunction(PlatformFunctionToolConfiguration),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ApiToolConfiguration {
     pub endpoint: String,
     pub method: HttpMethod,
@@ -61,14 +61,14 @@ pub struct ApiToolConfiguration {
     pub timeout_seconds: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct KnowledgeBaseToolConfiguration {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub knowledge_base_id: i64,
     pub search_settings: KnowledgeBaseSearchSettings,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct KnowledgeBaseSearchSettings {
     pub max_results: Option<u32>,
     pub similarity_threshold: Option<f32>,
@@ -76,13 +76,13 @@ pub struct KnowledgeBaseSearchSettings {
     pub sort_by_relevance: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct PlatformEventToolConfiguration {
     pub event_label: String,
     pub event_data: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct PlatformFunctionToolConfiguration {
     pub function_name: String,
     pub function_description: Option<String>,
@@ -91,7 +91,7 @@ pub struct PlatformFunctionToolConfiguration {
     pub is_overridable: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct HttpParameter {
     pub name: String,
     pub value_type: ParameterValueType,
@@ -99,7 +99,7 @@ pub struct HttpParameter {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SchemaField {
     pub name: String,
     pub field_type: String,
@@ -107,21 +107,21 @@ pub struct SchemaField {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(tag = "type")]
 pub enum ParameterValueType {
     Hardcoded { value: String },
     FromChat { lookup_key: String },
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AuthorizationConfiguration {
     pub authorize_as_user: bool,
     pub jwt_template_id: Option<i64>,
     pub custom_headers: Vec<HttpParameter>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -205,8 +205,6 @@ impl Default for AiToolConfiguration {
         })
     }
 }
-
-
 
 impl Default for ApiToolConfiguration {
     fn default() -> Self {

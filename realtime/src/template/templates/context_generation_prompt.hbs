@@ -1,0 +1,50 @@
+Generate context data for key '{{context_key}}' based on the current workflow execution state:
+
+## Execution Context:
+{{context_info}}
+
+## Instructions:
+
+Based on the current workflow execution state, generate relevant context data that would be useful for the specified context key.
+
+Consider:
+- Current variables and their values
+- Workflow progress and state
+- User inputs and preferences
+- System state and configuration
+- Historical data and patterns
+- Derived insights and calculations
+
+## Guidelines:
+
+1. **Relevance**: Generate data that's directly relevant to the context key
+2. **Usefulness**: Focus on information that would be valuable for downstream tasks
+3. **Accuracy**: Base generation on actual data from the execution context
+4. **Completeness**: Provide comprehensive but focused information
+5. **Format**: Structure the data in a clear, usable format
+
+## Output Format:
+
+Generate the context data as a JSON object or string that can be easily consumed by other workflow nodes. The format should match the expected usage pattern for the context key.
+
+## Examples:
+
+For context_key "user_profile":
+```json
+{
+  "user_id": "12345",
+  "preferences": {...},
+  "activity_level": "high",
+  "last_interaction": "2024-01-15"
+}
+```
+
+For context_key "summary_report":
+```
+Based on the current data, here are the key findings:
+- Metric A: 85% improvement
+- Metric B: Stable performance
+- Recommendations: Focus on area X
+```
+
+Generate the context data now:

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct LightModeSettings {
     pub primary_color: Option<String>,
     pub background_color: Option<String>,
@@ -18,7 +18,7 @@ impl Default for LightModeSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DarkModeSettings {
     pub primary_color: Option<String>,
     pub background_color: Option<String>,
@@ -35,7 +35,7 @@ impl Default for DarkModeSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DeploymentUISettings {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

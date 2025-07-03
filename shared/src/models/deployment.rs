@@ -6,7 +6,7 @@ use super::{
     DeploymentUISettings,
 };
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum VerificationStatus {
     Pending,
@@ -15,7 +15,7 @@ pub enum VerificationStatus {
     Failed,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DnsRecord {
     pub name: String,
     pub record_type: String,
@@ -25,7 +25,7 @@ pub struct DnsRecord {
     pub last_verified_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct DomainVerificationRecords {
     pub cloudflare_verification: Vec<DnsRecord>,
     pub custom_hostname_verification: Vec<DnsRecord>,
@@ -33,14 +33,14 @@ pub struct DomainVerificationRecords {
     pub backend_hostname_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct EmailVerificationRecords {
     pub dkim_records: Vec<DnsRecord>,
     pub return_path_records: Vec<DnsRecord>,
     pub postmark_domain_id: Option<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum DeploymentMode {
     Production,
@@ -57,7 +57,7 @@ impl From<String> for DeploymentMode {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Deployment {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -76,7 +76,7 @@ pub struct Deployment {
     pub email_verification_records: Option<EmailVerificationRecords>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DeploymentWithSettings {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

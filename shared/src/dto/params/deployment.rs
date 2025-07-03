@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub enum DeploymentNameParams {
     #[serde(rename = "organization-invite-template")]
     OrganizationInviteTemplate,

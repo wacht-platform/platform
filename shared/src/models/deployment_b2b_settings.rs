@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{DeploymentOrganizationRole, DeploymentWorkspaceRole};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DeploymentB2bSettings {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -65,7 +65,7 @@ impl Default for DeploymentB2bSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DeploymentB2bSettingsWithRoles {
     #[serde(flatten)]
     pub settings: DeploymentB2bSettings,

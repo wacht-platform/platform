@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use super::{AiKnowledgeBase, AiTool, AiWorkflow, ExecutionStatus, NodeExecution};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AgentContext {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub agent_id: i64,
@@ -13,26 +13,23 @@ pub struct AgentContext {
     pub deployment_id: i64,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub execution_context_id: i64,
-    pub tools: Vec<AiTool>,
-    pub workflows: Vec<AiWorkflow>,
-    pub knowledge_bases: Vec<AiKnowledgeBase>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ToolResult {
     pub tool_call_id: String,
     pub result: Value,
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RuntimeWorkflowExecution {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub workflow_id: i64,
@@ -45,7 +42,7 @@ pub struct RuntimeWorkflowExecution {
     pub error_message: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct WorkflowExecutionContext {
     pub variables: HashMap<String, Value>,
     pub input_data: Value,
@@ -54,7 +51,7 @@ pub struct WorkflowExecutionContext {
     pub tool_results: HashMap<String, Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NodeExecutionResult {
     pub status: ExecutionStatus,
     pub output_data: Option<Value>,
@@ -63,7 +60,7 @@ pub struct NodeExecutionResult {
     pub execution_time_ms: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ContextRecord {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

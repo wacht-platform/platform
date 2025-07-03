@@ -7,7 +7,7 @@ use crate::models::{
     SocialConnectionProvider,
 };
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct PartialEmailSettings {
     pub enabled: Option<bool>,
     pub required: Option<bool>,
@@ -16,7 +16,7 @@ pub struct PartialEmailSettings {
     pub magic_link_verification_allowed: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct PartialPhoneSettings {
     pub enabled: Option<bool>,
     pub required: Option<bool>,
@@ -25,7 +25,7 @@ pub struct PartialPhoneSettings {
     pub whatsapp_verification_allowed: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct PartialUsernameSettings {
     pub enabled: Option<bool>,
     pub required: Option<bool>,
@@ -33,7 +33,7 @@ pub struct PartialUsernameSettings {
     pub max_length: Option<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct PartialPasswordSettings {
     pub enabled: Option<bool>,
     pub min_length: Option<u8>,
@@ -43,7 +43,7 @@ pub struct PartialPasswordSettings {
     pub require_special: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct PartialNameSettings {
     pub first_name_enabled: Option<bool>,
     pub first_name_required: Option<bool>,
@@ -51,25 +51,25 @@ pub struct PartialNameSettings {
     pub last_name_required: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct PartialEmailLinkSettings {
     pub enabled: Option<bool>,
     pub require_same_device: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct PartialPasskeySettings {
     pub enabled: Option<bool>,
     pub allow_autofill: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct PartialIndividualAuthSettings {
     pub enabled: Option<bool>,
     pub required: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct PartialAuthenticationFactorSettings {
     pub email_password_enabled: Option<bool>,
     pub username_password_enabled: Option<bool>,
@@ -83,14 +83,14 @@ pub struct PartialAuthenticationFactorSettings {
     pub second_factor_backup_code_enabled: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SocialProviderConfig {
     pub enabled: bool,
     pub client_id: String,
     pub client_secret: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct RestrictionSettings {
     pub blocked_country_codes: Vec<String>,
     pub banned_keywords: Vec<String>,
@@ -102,7 +102,7 @@ pub struct RestrictionSettings {
     pub block_special_characters_in_email: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SocialConnectionSettings {
     #[serde(
         default,
@@ -115,7 +115,7 @@ pub struct SocialConnectionSettings {
     pub enabled: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct DeploymentAuthSettingsUpdates {
     pub email: Option<PartialEmailSettings>,
     pub phone: Option<PartialPhoneSettings>,
@@ -132,7 +132,7 @@ pub struct DeploymentAuthSettingsUpdates {
     pub session_inactive_timeout: Option<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DeploymentSocialConnectionUpsert {
     pub provider: Option<SocialConnectionProvider>,
     pub enabled: Option<bool>,
@@ -140,7 +140,7 @@ pub struct DeploymentSocialConnectionUpsert {
     pub credentials: Option<OauthCredentials>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DeploymentRestrictionsUpdates {
     pub allowlist_enabled: Option<bool>,
     pub blocklist_enabled: Option<bool>,
@@ -159,7 +159,7 @@ pub struct DeploymentRestrictionsUpdates {
     pub session_inactive_timeout: Option<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct NewDeploymentJwtTemplate {
     pub name: String,
     pub token_lifetime: i64,
@@ -168,7 +168,7 @@ pub struct NewDeploymentJwtTemplate {
     pub template: Value,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct PartialDeploymentJwtTemplate {
     pub name: Option<String>,
     pub token_lifetime: Option<i64>,
@@ -177,7 +177,7 @@ pub struct PartialDeploymentJwtTemplate {
     pub template: Option<Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DeploymentB2bSettingsUpdates {
     pub organizations_enabled: Option<bool>,
     pub workspaces_enabled: Option<bool>,
@@ -215,7 +215,7 @@ pub struct DeploymentB2bSettingsUpdates {
     pub workspaces_per_org_count: Option<i32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct DeploymentDisplaySettingsUpdates {
     pub app_name: Option<String>,
     pub tos_page_url: Option<String>,

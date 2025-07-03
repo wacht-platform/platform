@@ -6,13 +6,13 @@ use serde::Deserialize;
 #[derive(Clone)]
 pub struct DnsVerificationService {}
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct DnsResponse {
     #[serde(rename = "Answer")]
     answer: Option<Vec<DnsAnswer>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct DnsAnswer {
     data: String,
 }

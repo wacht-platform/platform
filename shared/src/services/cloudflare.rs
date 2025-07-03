@@ -2,13 +2,13 @@ use crate::error::AppError;
 use crate::models::{DnsRecord, DomainVerificationRecords};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct CreateCustomHostnameRequest {
     pub hostname: String,
     pub custom_origin_server: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct CloudflareResponse<T> {
     pub success: bool,
     pub errors: Vec<CloudflareError>,
@@ -16,13 +16,13 @@ pub struct CloudflareResponse<T> {
     pub result: Option<T>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct CloudflareError {
     pub code: u32,
     pub message: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct CustomHostname {
     pub id: String,
     pub hostname: String,
@@ -150,10 +150,10 @@ impl CloudflareService {
             .call()
             .map_err(|e| AppError::External(format!("Cloudflare API error: {}", e)))?;
 
-        let cloudflare_response: CloudflareResponse<Vec<serde_json::Value>> = response
-            .body_mut()
-            .read_json()
-            .map_err(|e| AppError::External(format!("Failed to parse Cloudflare response: {}", e)))?;
+        let cloudflare_response: CloudflareResponse<Vec<serde_json::Value>> =
+            response.body_mut().read_json().map_err(|e| {
+                AppError::External(format!("Failed to parse Cloudflare response: {}", e))
+            })?;
 
         if !cloudflare_response.success {
             let error_messages: Vec<String> = cloudflare_response
@@ -175,9 +175,16 @@ impl CloudflareService {
                     if name == domain {
                         // If the record exists in Cloudflare's zone, it's verified
                         if let Some(content) = record.get("content").and_then(|c| c.as_str()) {
-                            tracing::info!("Domain verification found for {}: CNAME -> {}", domain, content);
+                            tracing::info!(
+                                "Domain verification found for {}: CNAME -> {}",
+                                domain,
+                                content
+                            );
                         } else {
-                            tracing::info!("Domain verification found for {}: record exists", domain);
+                            tracing::info!(
+                                "Domain verification found for {}: record exists",
+                                domain
+                            );
                         }
                         return Ok(true);
                     }
@@ -208,15 +215,16 @@ impl CloudflareService {
                 AppError::External(format!("Cloudflare API error: {}", e))
             })?;
 
-        let list_cloudflare_response: CloudflareResponse<Vec<CustomHostname>> = list_response
-            .body_mut()
-            .read_json()
-            .map_err(|e| {
+        let list_cloudflare_response: CloudflareResponse<Vec<CustomHostname>> =
+            list_response.body_mut().read_json().map_err(|e| {
                 tracing::error!("Failed to parse Cloudflare response: {}", e);
                 AppError::External(format!("Failed to parse Cloudflare response: {}", e))
             })?;
 
-        tracing::info!("Cloudflare API response success: {}", list_cloudflare_response.success);
+        tracing::info!(
+            "Cloudflare API response success: {}",
+            list_cloudflare_response.success
+        );
 
         if !list_cloudflare_response.success {
             let error_messages: Vec<String> = list_cloudflare_response
@@ -274,15 +282,16 @@ impl CloudflareService {
                 AppError::External(format!("Cloudflare API error: {}", e))
             })?;
 
-        let detail_cloudflare_response: CloudflareResponse<serde_json::Value> = detail_response
-            .body_mut()
-            .read_json()
-            .map_err(|e| {
+        let detail_cloudflare_response: CloudflareResponse<serde_json::Value> =
+            detail_response.body_mut().read_json().map_err(|e| {
                 tracing::error!("Failed to parse Cloudflare detail response: {}", e);
                 AppError::External(format!("Failed to parse Cloudflare response: {}", e))
             })?;
 
-        tracing::info!("Cloudflare detail API response success: {}", detail_cloudflare_response.success);
+        tracing::info!(
+            "Cloudflare detail API response success: {}",
+            detail_cloudflare_response.success
+        );
 
         if !detail_cloudflare_response.success {
             let error_messages: Vec<String> = detail_cloudflare_response
@@ -290,7 +299,10 @@ impl CloudflareService {
                 .iter()
                 .map(|e| format!("{}: {}", e.code, e.message))
                 .collect();
-            tracing::error!("Cloudflare detail API errors: {}", error_messages.join(", "));
+            tracing::error!(
+                "Cloudflare detail API errors: {}",
+                error_messages.join(", ")
+            );
             return Err(AppError::External(format!(
                 "Cloudflare API errors: {}",
                 error_messages.join(", ")
@@ -299,7 +311,10 @@ impl CloudflareService {
 
         // Check the status field
         if let Some(result) = detail_cloudflare_response.result {
-            tracing::info!("Custom hostname detail result: {}", serde_json::to_string_pretty(&result).unwrap_or_default());
+            tracing::info!(
+                "Custom hostname detail result: {}",
+                serde_json::to_string_pretty(&result).unwrap_or_default()
+            );
 
             if let Some(status) = result.get("status").and_then(|s| s.as_str()) {
                 tracing::info!("Custom hostname {} status: {}", hostname, status);

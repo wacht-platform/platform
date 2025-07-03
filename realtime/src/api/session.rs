@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use super::models::WebsocketMessage;
 use serde_json::Value;
-use shared::{models::AiAgent, state::AppState};
-use tokio::sync::{mpsc, Notify};
+use shared::{models::AiAgentWithFeatures, state::AppState};
+use tokio::sync::{Notify, mpsc};
 
 #[derive(Clone)]
 pub struct SessionState {
     pub sender: mpsc::UnboundedSender<WebsocketMessage<Value>>,
     pub deployment_id: i64,
     pub context_id: Option<i64>,
-    pub agent: Option<AiAgent>,
+    pub agent: Option<AiAgentWithFeatures>,
     pub app_state: AppState,
     pub ready: Arc<Notify>,
     pub close: Arc<Notify>,

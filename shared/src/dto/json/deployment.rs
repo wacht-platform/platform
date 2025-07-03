@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use crate::models::{AiToolConfiguration, WorkflowConfiguration, WorkflowDefinition};
 
 // AI Agent models
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct CreateAgentRequest {
     pub name: String,
     pub description: Option<String>,
     pub configuration: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct UpdateAgentRequest {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -20,7 +20,7 @@ pub struct UpdateAgentRequest {
 }
 
 // AI Tool models
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct CreateToolRequest {
     pub name: String,
     pub description: Option<String>,
@@ -28,7 +28,7 @@ pub struct CreateToolRequest {
     pub configuration: AiToolConfiguration,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct UpdateToolRequest {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -37,7 +37,7 @@ pub struct UpdateToolRequest {
 }
 
 // AI Workflow models
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct CreateWorkflowRequest {
     pub name: String,
     pub description: Option<String>,
@@ -45,7 +45,7 @@ pub struct CreateWorkflowRequest {
     pub workflow_definition: Option<WorkflowDefinition>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct UpdateWorkflowRequest {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -53,19 +53,19 @@ pub struct UpdateWorkflowRequest {
     pub workflow_definition: Option<WorkflowDefinition>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct ExecuteWorkflowRequest {
     pub trigger_data: Option<serde_json::Value>,
     pub variables: Option<HashMap<String, serde_json::Value>>,
 }
 
 // AI Execution Context models
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct CreateExecutionContextRequest {
     // Empty struct - deployment_id comes from path
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct UploadResult {
     pub url: String,
 }

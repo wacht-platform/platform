@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgTypeInfo;
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SocialConnectionProvider {
     XOauth,
@@ -67,7 +67,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for SocialConnectionProvider {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct OauthCredentials {
     pub client_id: String,
     pub client_secret: String,
@@ -75,7 +75,7 @@ pub struct OauthCredentials {
     pub scopes: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DeploymentSocialConnection {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

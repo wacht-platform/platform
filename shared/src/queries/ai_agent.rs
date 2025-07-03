@@ -192,12 +192,12 @@ impl Query for GetAiAgentByNameQuery {
     }
 }
 
-pub struct GetAiAgentWithFeatures {
+pub struct GetAiAgentByNameWithFeatures {
     pub deployment_id: i64,
     pub agent_name: String,
 }
 
-impl GetAiAgentWithFeatures {
+impl GetAiAgentByNameWithFeatures {
     pub fn new(deployment_id: i64, agent_name: String) -> Self {
         Self {
             deployment_id,
@@ -206,7 +206,7 @@ impl GetAiAgentWithFeatures {
     }
 }
 
-impl Query for GetAiAgentWithFeatures {
+impl Query for GetAiAgentByNameWithFeatures {
     type Output = AiAgentWithFeatures;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
@@ -259,10 +259,9 @@ impl Query for GetAiAgentWithFeatures {
             .map_err(|e| AppError::Internal(format!("Failed to deserialize tools: {}", e)))?;
         let workflows = serde_json::from_value(row.get("workflows"))
             .map_err(|e| AppError::Internal(format!("Failed to deserialize workflows: {}", e)))?;
-        let knowledge_bases = serde_json::from_value(row.get("knowledge_bases"))
-            .map_err(|e| {
-                AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
-            })?;
+        let knowledge_bases = serde_json::from_value(row.get("knowledge_bases")).map_err(|e| {
+            AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
+        })?;
 
         Ok(AiAgentWithFeatures {
             id: row.get("id"),

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SignInAttemptStep {
     VerifyEmail,
@@ -13,7 +13,7 @@ pub enum SignInAttemptStep {
     PasswordResetCompletion,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Session {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

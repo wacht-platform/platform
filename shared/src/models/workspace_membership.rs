@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::WorkspaceRole;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct WorkspaceMembership {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

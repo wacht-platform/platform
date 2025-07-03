@@ -3,7 +3,7 @@ use crate::models::{
 };
 use regex::Regex;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ValidationError {
     pub field: String,
     pub message: String,

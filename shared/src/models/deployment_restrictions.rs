@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct DeploymentRestrictions {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -25,13 +25,13 @@ pub struct DeploymentRestrictions {
     pub waitlist_collect_names: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct CountryRestrictions {
     pub enabled: bool,
     pub country_codes: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub enum DeploymentRestrictionsSignUpMode {
     #[serde(rename = "public")]
     #[default]

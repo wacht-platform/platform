@@ -2,9 +2,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{SecondFactorPolicy, SchemaVersion, SocialConnection, UserEmailAddress, UserPhoneNumber};
+use super::{
+    SchemaVersion, SecondFactorPolicy, SocialConnection, UserEmailAddress, UserPhoneNumber,
+};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct UserDetails {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

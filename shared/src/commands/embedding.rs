@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use super::Command;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GenerateEmbeddingCommand {
     pub text: String,
 }
@@ -46,7 +46,7 @@ impl Command for GenerateEmbeddingCommand {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GenerateEmbeddingsCommand {
     pub texts: Vec<String>,
 }
@@ -88,7 +88,7 @@ impl Command for GenerateEmbeddingsCommand {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DocumentChunk {
     pub id: i64,
     pub content: String,
@@ -96,14 +96,14 @@ pub struct DocumentChunk {
     pub embedding: Vec<f32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     pub id: i64,
     pub content: String,
     pub score: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StoreKnowledgeBaseEmbeddingCommand {
     pub document_id: i64,
     pub deployment_id: i64,
@@ -151,11 +151,10 @@ impl Command for StoreKnowledgeBaseEmbeddingCommand {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StoreMemoryEmbeddingCommand {
     pub memory_id: i64,
     pub deployment_id: i64,
-    pub agent_id: i64,
     pub execution_context_id: i64,
     pub memory_type: String,
     pub content: String,
@@ -168,7 +167,6 @@ impl StoreMemoryEmbeddingCommand {
     pub fn new(
         memory_id: i64,
         deployment_id: i64,
-        agent_id: i64,
         execution_context_id: i64,
         memory_type: String,
         content: String,
@@ -179,7 +177,6 @@ impl StoreMemoryEmbeddingCommand {
         Self {
             memory_id,
             deployment_id,
-            agent_id,
             execution_context_id,
             memory_type,
             content,
@@ -194,25 +191,12 @@ impl Command for StoreMemoryEmbeddingCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .clickhouse_service
-            .store_memory(
-                self.memory_id,
-                self.deployment_id,
-                self.agent_id,
-                self.execution_context_id,
-                &self.memory_type,
-                &self.content,
-                self.embedding,
-                self.importance,
-                self.access_count,
-            )
-            .await
+        Ok(())
     }
 }
 
 /// Command to store conversation embeddings
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StoreConversationEmbeddingCommand {
     pub message_id: i64,
     pub deployment_id: i64,
@@ -265,7 +249,7 @@ impl Command for StoreConversationEmbeddingCommand {
 }
 
 /// Command to store context embeddings
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StoreContextEmbeddingCommand {
     pub context_id: i64,
     pub deployment_id: i64,
@@ -295,7 +279,7 @@ impl StoreContextEmbeddingCommand {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SearchKnowledgeBaseEmbeddingsCommand {
     pub knowledge_base_id: i64,
     pub query_embedding: Vec<f32>,
@@ -328,7 +312,7 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
 }
 
 /// Command to search memory embeddings
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SearchMemoryEmbeddingsCommand {
     pub deployment_id: i64,
     pub agent_id: i64,
@@ -386,7 +370,7 @@ impl Command for SearchMemoryEmbeddingsCommand {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SearchConversationEmbeddingsCommand {
     pub deployment_id: i64,
     pub execution_context_id: i64,
@@ -421,7 +405,7 @@ impl Command for SearchConversationEmbeddingsCommand {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SearchContextEmbeddingsCommand {
     pub deployment_id: i64,
     pub execution_context_id: i64,
@@ -448,10 +432,7 @@ impl SearchContextEmbeddingsCommand {
     }
 }
 
-// Deletion commands for embeddings
-
-/// Command to delete all knowledge base embeddings for a specific knowledge base
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DeleteKnowledgeBaseEmbeddingsCommand {
     pub knowledge_base_id: i64,
 }
@@ -474,7 +455,7 @@ impl Command for DeleteKnowledgeBaseEmbeddingsCommand {
 }
 
 /// Command to delete document embeddings for a specific document
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DeleteDocumentEmbeddingsCommand {
     pub knowledge_base_id: i64,
     pub document_id: i64,
@@ -501,7 +482,7 @@ impl Command for DeleteDocumentEmbeddingsCommand {
 }
 
 /// Command to delete execution context embeddings
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DeleteExecutionContextEmbeddingsCommand {
     pub execution_context_id: i64,
 }
@@ -526,7 +507,7 @@ impl Command for DeleteExecutionContextEmbeddingsCommand {
 }
 
 /// Command to delete agent memories
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DeleteAgentMemoriesCommand {
     pub agent_id: i64,
 }
@@ -548,8 +529,7 @@ impl Command for DeleteAgentMemoriesCommand {
     }
 }
 
-/// Command to delete execution context memories
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DeleteExecutionContextMemoriesCommand {
     pub execution_context_id: i64,
 }

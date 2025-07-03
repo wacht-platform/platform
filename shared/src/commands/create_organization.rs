@@ -1,11 +1,8 @@
-use crate::{
-    error::AppError, state::AppState,
-    commands::Command, models::Organization,
-};
+use crate::{commands::Command, error::AppError, models::Organization, state::AppState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CreateOrganizationCommand {
     pub deployment_id: i64,
     pub name: String,

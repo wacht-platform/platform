@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AiKnowledgeBase {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -14,7 +14,7 @@ pub struct AiKnowledgeBase {
     pub configuration: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AiKnowledgeBaseWithDetails {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -29,7 +29,7 @@ pub struct AiKnowledgeBaseWithDetails {
     pub total_size: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AiKnowledgeBaseDocument {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -45,5 +45,3 @@ pub struct AiKnowledgeBaseDocument {
     pub knowledge_base_id: i64,
     pub processing_metadata: Option<serde_json::Value>,
 }
-
-

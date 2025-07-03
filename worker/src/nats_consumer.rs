@@ -257,7 +257,7 @@ impl NatsConsumer {
         );
 
         Ok(Self {
-            jetstream: app_state.nats_jetstream,
+            jetstream: app_state.nats_jetstream.clone(),
             task_handlers,
             app_state,
         })

@@ -1,6 +1,6 @@
 use crate::models::AgentExecutionContextMessage;
 
 pub enum StreamEvent {
-    Token(String),
+    Token(String, String),
     Message(AgentExecutionContextMessage),
 }

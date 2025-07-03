@@ -6,7 +6,7 @@ use sqlx::postgres::PgTypeInfo;
 
 use crate::error::AppError;
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum FirstFactor {
     EmailPassword,
@@ -43,7 +43,7 @@ impl ToString for FirstFactor {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SecondFactor {
     None,
@@ -77,7 +77,7 @@ impl ToString for SecondFactor {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SecondFactorPolicy {
     None,
@@ -125,7 +125,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for SecondFactorPolicy {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum FirstFactorPolicy {
     None,
@@ -146,7 +146,7 @@ impl FromStr for FirstFactorPolicy {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct IndividualAuthSettings {
     pub enabled: bool,
     pub required: Option<bool>,
@@ -161,7 +161,7 @@ impl Default for IndividualAuthSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct PasswordSettings {
     pub enabled: bool,
     pub min_length: Option<u8>,
@@ -184,7 +184,7 @@ impl Default for PasswordSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct VerificationPolicy {
     pub phone_number: bool,
     pub email: bool,
@@ -199,7 +199,7 @@ impl Default for VerificationPolicy {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct AuthFactorsEnabled {
     pub sso: bool,
     pub email_password: bool,
@@ -213,7 +213,7 @@ pub struct AuthFactorsEnabled {
     pub passkey: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct EmailSettings {
     pub enabled: bool,
     pub required: bool,
@@ -234,7 +234,7 @@ impl Default for EmailSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct PhoneSettings {
     pub enabled: bool,
     pub required: bool,
@@ -255,7 +255,7 @@ impl Default for PhoneSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct UsernameSettings {
     pub enabled: bool,
     pub required: bool,
@@ -274,7 +274,7 @@ impl Default for UsernameSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct EmailLinkSettings {
     pub enabled: bool,
     pub require_same_device: bool,
@@ -289,7 +289,7 @@ impl Default for EmailLinkSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct PasskeySettings {
     pub enabled: bool,
     pub allow_autofill: bool,
@@ -304,7 +304,7 @@ impl Default for PasskeySettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct MultiSessionSupport {
     pub enabled: bool,
     pub max_accounts_per_session: i64,
@@ -321,7 +321,7 @@ impl Default for MultiSessionSupport {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DeploymentAuthSettings {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

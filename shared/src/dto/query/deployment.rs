@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use super::SortOrder;
 
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(PartialEq, Deserialize)]
 pub enum ActiveUserListSortKey {
     CreatedAt,
     Username,
@@ -35,7 +35,7 @@ impl FromStr for ActiveUserListSortKey {
     }
 }
 
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(PartialEq, Deserialize)]
 pub enum InvitationsWaitlistSortKey {
     CreatedAt,
     Email,
@@ -79,7 +79,7 @@ impl Display for InvitationsWaitlistSortKey {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct ActiveUserListQueryParams {
     pub offset: Option<i64>,
     #[serde(
@@ -106,7 +106,7 @@ impl Default for ActiveUserListQueryParams {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct InvitationsWaitlistQueryParams {
     pub offset: Option<i64>,
     #[serde(
@@ -122,7 +122,7 @@ pub struct InvitationsWaitlistQueryParams {
     pub limit: Option<usize>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct OrganizationListQueryParams {
     pub offset: Option<i64>,
     pub sort_key: Option<String>,
@@ -142,28 +142,28 @@ impl Default for OrganizationListQueryParams {
 }
 
 // AI-related query parameters
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct GetAgentsQuery {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub search: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct GetToolsQuery {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub search: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct GetWorkflowsQuery {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub search: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct GetKnowledgeBasesQuery {
     pub limit: Option<usize>,
     pub offset: Option<usize>,

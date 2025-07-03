@@ -8,7 +8,7 @@ pub struct ClickHouseService {
     client: Client,
 }
 
-#[derive(Debug, Serialize, Deserialize, Row)]
+#[derive(Serialize, Deserialize, Row)]
 pub struct UserEvent {
     pub deployment_id: i64,
     pub user_id: Option<i64>,
@@ -20,12 +20,12 @@ pub struct UserEvent {
     pub ip_address: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Row)]
+#[derive(Serialize, Deserialize, Row)]
 struct CountResult {
     count: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct RecentSignup {
     pub name: Option<String>,
     pub email: Option<String>,
@@ -33,7 +33,7 @@ pub struct RecentSignup {
     pub date: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Row)]
+#[derive(Serialize, Deserialize, Row)]
 struct RecentSignupRow {
     user_name: Option<String>,
     user_email: Option<String>,
@@ -41,7 +41,7 @@ struct RecentSignupRow {
     timestamp: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Row)]
+#[derive(Serialize, Deserialize, Row)]
 pub struct KnowledgeBaseDocument {
     pub id: i64,
     pub deployment_id: i64,
@@ -55,7 +55,7 @@ pub struct KnowledgeBaseDocument {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Row)]
+#[derive(Serialize, Deserialize, Row)]
 pub struct ExecutionMessage {
     pub id: i64,
     pub deployment_id: i64,
@@ -70,7 +70,7 @@ pub struct ExecutionMessage {
 
 pub use crate::models::MemoryRecord as Memory;
 
-#[derive(Debug, Serialize, Deserialize, Row)]
+#[derive(Serialize, Deserialize, Row)]
 pub struct AnalyticsEvent {
     pub id: i64,
     pub deployment_id: i64,
@@ -81,7 +81,7 @@ pub struct AnalyticsEvent {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DocumentSearchResult {
     pub id: i64,
     pub content: String,
@@ -90,7 +90,7 @@ pub struct DocumentSearchResult {
     pub chunk_index: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MessageSearchResult {
     pub id: i64,
     pub content: String,
@@ -100,7 +100,7 @@ pub struct MessageSearchResult {
     pub message_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MemorySearchResult {
     pub id: i64,
     pub content: String,

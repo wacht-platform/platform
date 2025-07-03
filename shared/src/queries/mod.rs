@@ -23,7 +23,10 @@ impl From<QueryError> for AppError {
 pub trait Query {
     type Output;
 
-    fn execute(&self, app_state: &AppState) -> impl std::future::Future<Output = Result<Self::Output, AppError>> + Send;
+    fn execute(
+        &self,
+        app_state: &AppState,
+    ) -> impl std::future::Future<Output = Result<Self::Output, AppError>> + Send;
 }
 
 pub mod b2b;

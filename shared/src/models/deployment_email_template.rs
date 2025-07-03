@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct EmailTemplate {
     pub template_name: String,
     pub template_data: String,
@@ -10,7 +10,7 @@ pub struct EmailTemplate {
     pub template_subject: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DeploymentEmailTemplate {
     pub id: i64,
     pub deployment_id: i64,

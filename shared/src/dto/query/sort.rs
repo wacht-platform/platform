@@ -4,7 +4,7 @@ use std::{
     str::FromStr,
 };
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Deserialize, PartialEq)]
 pub enum SortOrder {
     Asc,
     Desc,

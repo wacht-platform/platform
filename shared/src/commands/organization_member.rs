@@ -3,7 +3,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct AddOrganizationMemberCommand {
     pub deployment_id: i64,
     pub organization_id: i64,
@@ -172,7 +172,7 @@ impl Command for AddOrganizationMemberCommand {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct UpdateOrganizationMemberCommand {
     pub deployment_id: i64,
     pub organization_id: i64,
@@ -242,7 +242,7 @@ impl Command for UpdateOrganizationMemberCommand {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct RemoveOrganizationMemberCommand {
     pub deployment_id: i64,
     pub organization_id: i64,

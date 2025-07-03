@@ -1,10 +1,10 @@
 use crate::error::AppError;
 use pulldown_cmark::{Parser, html};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TextProcessingService;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TextChunk {
     pub content: String,
     pub chunk_index: usize,

@@ -1,15 +1,11 @@
-use std::convert;
-
-use super::{MemoryEntry, MemoryType, ToolCall, ToolResult};
-use crate::agentic::{xml_parser, MessageParser};
-use crate::template::{render_template, AgentTemplates};
+use crate::agentic::{MessageParser, xml_parser};
+use crate::template::{AgentTemplates, render_template};
 use chrono::Utc;
 use futures::StreamExt;
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::collections::HashMap;
+use serde_json::{Value, json};
 use shared::commands::{
     Command, CreateExecutionMessageCommand, GenerateEmbeddingCommand,
     SearchKnowledgeBaseEmbeddingsCommand, StoreMemoryEmbeddingCommand,
@@ -17,12 +13,13 @@ use shared::commands::{
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
 use shared::models::{
-    AgentExecutionContextMessage, AiAgentWithFeatures, ExecutionMessageSender, ExecutionMessageType,
-    MemoryQuery, MemorySearchResult,
+    AgentExecutionContextMessage, AiAgentWithFeatures, ExecutionMessageSender,
+    ExecutionMessageType, MemoryEntry, MemoryQuery, MemorySearchResult, MemoryType, ToolResult,
 };
 use shared::state::AppState;
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename = "response")]
 pub struct AcknowledgmentResponse {
     #[serde(rename = "message")]
@@ -151,7 +148,7 @@ impl AgentExecutor {
     async fn generate_acknowledgment(
         &self,
         user_message: &str,
-        conversation_history: &[ChatMessage],
+        conversation_history: &[AgentExecutionContextMessage],
         memories: &[MemoryEntry],
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
     ) -> Result<AcknowledgmentResponse, AppError> {
@@ -210,7 +207,7 @@ impl AgentExecutor {
 
     fn prepare_conversation_context(
         &self,
-        _conversation_history: &[ChatMessage],
+        _conversation_history: &[AgentExecutionContextMessage],
         current_message: &str,
         _max_tokens: usize,
     ) -> Result<String, AppError> {
@@ -455,32 +452,32 @@ impl AgentExecutor {
         max_memories: usize,
         min_importance: f32,
     ) -> Result<usize, AppError> {
-        let mut memories = self.get_stored_memories().await?;
-        let initial_count = memories.len();
+        // let mut memories = self.get_stored_memories().await?;
+        // let initial_count = memories.len();
 
-        memories.retain(|m| m.importance >= min_importance);
+        // memories.retain(|m| m.importance >= min_importance);
 
-        if memories.len() > max_memories {
-            memories.sort_by(|a, b| {
-                let importance_cmp = b
-                    .importance
-                    .partial_cmp(&a.importance)
-                    .unwrap_or(std::cmp::Ordering::Equal);
-                if importance_cmp == std::cmp::Ordering::Equal {
-                    b.last_accessed.cmp(&a.last_accessed)
-                } else {
-                    importance_cmp
-                }
-            });
+        // if memories.len() > max_memories {
+        //     memories.sort_by(|a, b| {
+        //         let importance_cmp = b
+        //             .importance
+        //             .partial_cmp(&a.importance)
+        //             .unwrap_or(std::cmp::Ordering::Equal);
+        //         if importance_cmp == std::cmp::Ordering::Equal {
+        //             b.last_accessed.cmp(&a.last_accessed)
+        //         } else {
+        //             importance_cmp
+        //         }
+        //     });
 
-            memories.truncate(max_memories);
-        }
+        //     memories.truncate(max_memories);
+        // }
 
-        let forgotten_count = initial_count - memories.len();
+        // let forgotten_count = initial_count - memories.len();
 
-        self.store_all_memories(&memories).await?;
+        // self.store_all_memories(&memories).await?;
 
-        Ok(forgotten_count)
+        Ok(0)
     }
 
     pub async fn get_memory_stats(&self) -> Result<Value, AppError> {
@@ -566,24 +563,26 @@ impl AgentExecutor {
     }
 
     async fn store_memory_entry(&self, memory: &MemoryEntry) -> Result<(), AppError> {
-        StoreMemoryEmbeddingCommand::new(
-            memory.id as i64,
-            self.deployment_id,
-            self.context_id,
-            memory.memory_type.to_string(),
-            memory.content.clone(),
-            memory.embedding.clone(),
-            memory.importance,
-            memory.access_count as i32,
-        )
-        .execute(&self.app_state)
-        .await?;
+        // StoreMemoryEmbeddingCommand::new(
+        //     memory.id as i64,
+        //     self.deployment_id,
+        //     self.context_id,
+        //     memory.memory_type.to_string(),
+        //     memory.content.clone(),
+        //     memory.embedding.clone(),
+        //     memory.importance,
+        //     memory.access_count as i32,
+        // )
+        // .execute(&self.app_state)
+        // .await?;
 
-        // Also store in database for backup/persistence
-        let mut memories = self.get_stored_memories().await?;
-        memories.retain(|m| m.id != memory.id);
-        memories.push(memory.clone());
-        self.store_all_memories(&memories).await
+        // // Also store in database for backup/persistence
+        // let mut memories = self.get_stored_memories().await?;
+        // memories.retain(|m| m.id != memory.id);
+        // memories.push(memory.clone());
+        // self.store_all_memories(&vec![]).await
+
+        Ok(())
     }
 
     async fn get_stored_memories(&self) -> Result<Vec<MemoryEntry>, AppError> {
@@ -759,8 +758,7 @@ impl AgentExecutor {
                 }
             }
             "workflow" => {
-                if let Some(workflow) = self.agent.workflows.iter().find(|w| w.id == resource_id)
-                {
+                if let Some(workflow) = self.agent.workflows.iter().find(|w| w.id == resource_id) {
                     Ok(json!({
                         "type": "workflow",
                         "id": workflow.id,
@@ -821,7 +819,9 @@ impl AgentExecutor {
         });
 
         let prompt = render_template(AgentTemplates::TOOL_ANALYSIS, &tool_analysis_context)
-            .map_err(|e| AppError::Internal(format!("Failed to render tool analysis template: {}", e)))?;
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to render tool analysis template: {}", e))
+            })?;
 
         let messages = vec![ChatMessage::user().content(&prompt).build()];
 
@@ -904,9 +904,14 @@ impl AgentExecutor {
             "user_query": query,
             "workflows": &self.agent.workflows
         });
-        
-        let prompt = render_template(AgentTemplates::WORKFLOW_ANALYSIS, &workflow_analysis_context)
-            .map_err(|e| AppError::Internal(format!("Failed to render workflow analysis template: {}", e)))?;
+
+        let prompt = render_template(AgentTemplates::ACKNOWLEDGMENT, &workflow_analysis_context)
+            .map_err(|e| {
+                AppError::Internal(format!(
+                    "Failed to render workflow analysis template: {}",
+                    e
+                ))
+            })?;
 
         let messages = vec![ChatMessage::user().content(&prompt).build()];
 
@@ -1123,7 +1128,7 @@ impl AgentExecutor {
     ) -> Result<Vec<Value>, AppError> {
         Ok(vec![])
     }
-    
+
     async fn execute_tool_immediately(
         &self,
         tool: &shared::models::AiTool,

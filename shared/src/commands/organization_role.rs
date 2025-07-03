@@ -1,11 +1,8 @@
-use crate::{
-    error::AppError, state::AppState,
-    commands::Command, models::OrganizationRole,
-};
+use crate::{commands::Command, error::AppError, models::OrganizationRole, state::AppState};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CreateOrganizationRoleCommand {
     pub deployment_id: i64,
     pub organization_id: i64,
@@ -90,7 +87,7 @@ impl Command for CreateOrganizationRoleCommand {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct UpdateOrganizationRoleCommand {
     pub deployment_id: i64,
     pub organization_id: i64,
@@ -187,7 +184,7 @@ impl Command for UpdateOrganizationRoleCommand {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DeleteOrganizationRoleCommand {
     pub deployment_id: i64,
     pub organization_id: i64,

@@ -1,17 +1,17 @@
 use crate::agentic::AgentExecutor;
-use async_nats::jetstream;
+use async_nats::{HeaderMap, jetstream};
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
-use shared::models::AiAgent;
+use shared::models::AiAgentWithFeatures;
 use shared::state::AppState;
 
 pub struct AgentHandler {
     pub app_state: AppState,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ExecutionRequest {
-    pub agent: AiAgent,
+    pub agent: AiAgentWithFeatures,
     pub deployment_id: i64,
     pub user_message: String,
     pub context_id: i64,
@@ -27,7 +27,7 @@ impl AgentHandler {
             request.agent,
             request.deployment_id,
             request.context_id,
-            &self.app_state,
+            self.app_state.clone(),
         )
         .await?;
         let execution_id = self.app_state.sf.next_id()? as i64;
@@ -56,10 +56,13 @@ impl AgentHandler {
         tokio::spawn(async move {
             while let Some(message) = receiver.recv().await {
                 match message {
-                    StreamEvent::Token(token) => {
-                        let v = jetstream
-                            .publish(
+                    StreamEvent::Token(token, message_id) => {
+                        let mut headers = HeaderMap::new();
+                        headers.append("message_id", message_id);
+                        let _ = jetstream
+                            .publish_with_headers(
                                 format!("agent_execution_stream.msg:{}", execution_id),
+                                headers,
                                 token.into(),
                             )
                             .await;

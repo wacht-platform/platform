@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AgentExecutionContext {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -16,7 +16,7 @@ pub struct AgentExecutionContext {
     pub completed_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AgentExecutionContextMessage {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -31,7 +31,7 @@ pub struct AgentExecutionContextMessage {
     pub tool_results: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum ExecutionContextStatus {
     #[serde(rename = "idle")]
     Idle,
@@ -47,7 +47,7 @@ pub enum ExecutionContextStatus {
     Failed,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum ExecutionMessageType {
     #[serde(rename = "user_input")]
     UserInput,
@@ -63,7 +63,7 @@ pub enum ExecutionMessageType {
     Error,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum ExecutionMessageSender {
     #[serde(rename = "user")]
     User,
@@ -76,7 +76,7 @@ pub enum ExecutionMessageSender {
 }
 
 // Redis stream message structure
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AgentStreamMessage {
     pub execution_context_id: i64,
     pub message_type: String,
@@ -86,7 +86,7 @@ pub struct AgentStreamMessage {
 }
 
 // WebSocket message types for agent execution
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AgentExecutionUpdate {
     pub execution_context_id: i64,
     pub message_type: ExecutionMessageType,
@@ -95,7 +95,7 @@ pub struct AgentExecutionUpdate {
     pub timestamp: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AgentExecutionRequest {
     pub agent_name: String,
     pub user_input: String,
@@ -104,7 +104,7 @@ pub struct AgentExecutionRequest {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AgentExecutionResponse {
     pub execution_context_id: i64,
     pub status: ExecutionContextStatus,
@@ -113,20 +113,20 @@ pub struct AgentExecutionResponse {
 }
 
 // Context engine operations
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ContextStoreRequest {
     pub key: String,
     pub data: serde_json::Value,
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ContextFetchRequest {
     pub key: String,
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ContextSearchRequest {
     pub query: String,
     pub max_results: Option<usize>,

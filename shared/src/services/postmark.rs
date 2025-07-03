@@ -4,14 +4,14 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PostmarkService {
     account_token: String,
     server_token: String,
     base_url: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct PostmarkDomain {
     #[serde(rename = "ID")]
     pub id: i64,
@@ -51,7 +51,7 @@ pub struct PostmarkDomain {
     pub return_path_domain_cname_value: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct CreateDomainRequest {
     #[serde(rename = "Name")]
     pub name: String,
@@ -59,7 +59,7 @@ pub struct CreateDomainRequest {
     pub return_path_domain: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct SendEmailRequest {
     #[serde(rename = "From")]
     pub from: String,
@@ -75,7 +75,7 @@ pub struct SendEmailRequest {
     pub message_stream: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct SendEmailResponse {
     #[serde(rename = "To")]
     pub to: String,

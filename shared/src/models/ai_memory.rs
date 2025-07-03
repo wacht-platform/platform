@@ -3,10 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// Memory entry for agent memory system
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
-    pub id: String,
+    pub id: i64,
     pub memory_type: MemoryType,
     pub content: String,
     pub metadata: HashMap<String, Value>,
@@ -19,8 +18,7 @@ pub struct MemoryEntry {
     pub embedding: Vec<f32>,
 }
 
-/// Types of memory in the agent memory system
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum MemoryType {
     Working,
     Episodic,
@@ -60,8 +58,7 @@ impl MemoryType {
     }
 }
 
-/// Query structure for searching memories
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MemoryQuery {
     pub query: String,
     pub memory_types: Vec<MemoryType>,
@@ -70,16 +67,14 @@ pub struct MemoryQuery {
     pub time_range: Option<(DateTime<Utc>, DateTime<Utc>)>,
 }
 
-/// Result structure for memory search operations
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MemorySearchResult {
     pub entry: MemoryEntry,
     pub relevance_score: f32,
     pub similarity_score: f32,
 }
 
-/// ClickHouse-compatible memory structure for vector storage
-#[derive(Debug, Serialize, Deserialize, clickhouse::Row)]
+#[derive(Serialize, Deserialize, clickhouse::Row)]
 pub struct MemoryRecord {
     pub id: i64,
     pub deployment_id: i64,
@@ -96,8 +91,7 @@ pub struct MemoryRecord {
     pub last_accessed_at: DateTime<Utc>,
 }
 
-/// Search result from ClickHouse memory queries
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MemorySearchRecord {
     pub id: i64,
     pub content: String,
@@ -111,10 +105,10 @@ pub struct MemorySearchRecord {
 impl From<MemoryEntry> for MemoryRecord {
     fn from(entry: MemoryEntry) -> Self {
         Self {
-            id: entry.id.parse::<i64>().unwrap_or(0),
-            deployment_id: 0,        // Will be set by the caller
-            agent_id: 0,             // Will be set by the caller
-            execution_context_id: 0, // Will be set by the caller
+            id: entry.id,
+            deployment_id: 0,
+            agent_id: 0,
+            execution_context_id: 0,
             memory_type: entry.memory_type.to_string(),
             content: entry.content,
             embedding: entry.embedding,
@@ -137,7 +131,7 @@ impl From<MemoryRecord> for MemoryEntry {
         };
 
         Self {
-            id: record.id.to_string(),
+            id: record.id,
             memory_type,
             content: record.content,
             metadata: HashMap::new(),

@@ -65,7 +65,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for VerificationStrategy {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum SchemaVersion {
     V1,
@@ -107,7 +107,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for SchemaVersion {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct UserEmailAddress {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -122,7 +122,7 @@ pub struct UserEmailAddress {
     pub verification_strategy: VerificationStrategy,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct User {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -147,7 +147,7 @@ pub struct User {
     pub backup_codes: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct UserWithIdentifiers {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

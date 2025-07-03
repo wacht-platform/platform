@@ -10,11 +10,9 @@ use futures::StreamExt;
 use serde_json::Value;
 use serde_json::json;
 use shared::models::AgentExecutionContextMessage;
-use shared::queries::GetAiAgentByNameQuery;
+use shared::queries::GetAiAgentByNameWithFeatures;
 use shared::queries::GetExecutionMessagesQuery;
 use shared::state::AppState;
-use std::fmt::format;
-use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::Notify;
 use tokio::sync::{Mutex, mpsc};
@@ -220,7 +218,7 @@ async fn handle_execution_message(
             return;
         }
 
-        match GetAiAgentByNameQuery::new(deployment_id, agent_name)
+        match GetAiAgentByNameWithFeatures::new(deployment_id, agent_name)
             .execute(&app_state)
             .await
         {
@@ -294,7 +292,7 @@ async fn handle_execution_message(
                 context_id,
             };
 
-            let execution_result = AgentHandler::new(app_state)
+            AgentHandler::new(app_state)
                 .execute_agent_streaming(execution_request)
                 .await;
         }

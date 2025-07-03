@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CreateUserRequest {
     pub first_name: String,
     pub last_name: String,
@@ -11,7 +11,7 @@ pub struct CreateUserRequest {
     pub password: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct InviteUserRequest {
     pub first_name: String,
     pub last_name: String,
@@ -19,7 +19,7 @@ pub struct InviteUserRequest {
     pub expiry_days: Option<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct UpdateUserRequest {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
@@ -29,14 +29,14 @@ pub struct UpdateUserRequest {
 }
 
 // Email management requests
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct AddEmailRequest {
     pub email: String,
     pub verified: Option<bool>,
     pub is_primary: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct UpdateEmailRequest {
     pub email: Option<String>,
     pub verified: Option<bool>,
@@ -44,14 +44,14 @@ pub struct UpdateEmailRequest {
 }
 
 // Phone number management requests
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct AddPhoneRequest {
     pub phone_number: String,
     pub verified: Option<bool>,
     pub is_primary: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct UpdatePhoneRequest {
     pub phone_number: Option<String>,
     pub verified: Option<bool>,
