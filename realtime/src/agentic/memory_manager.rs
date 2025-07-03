@@ -10,21 +10,19 @@ use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct MemoryManager {
-    pub context: AgentContext,
     pub app_state: AppState,
-    pub execution_context_id: i64,
+    pub context_id: i64,
+    pub deployment_id: i64,
+    pub memories: Vec<MemoryEntry>,
 }
 
 impl MemoryManager {
-    pub fn new(
-        context: AgentContext,
-        app_state: AppState,
-        execution_context_id: i64,
-    ) -> Result<Self, AppError> {
+    pub fn new(app_state: AppState, context_id: i64, deployment_id: i64) -> Result<Self, AppError> {
         Ok(Self {
-            context,
             app_state,
-            execution_context_id,
+            context_id,
+            deployment_id,
+            memories: Vec::new(),
         })
     }
 
@@ -34,15 +32,13 @@ impl MemoryManager {
         content: &str,
         metadata: HashMap<String, Value>,
         importance: f32,
-    ) -> Result<String, AppError> {
-        let memory_id = self.generate_memory_id();
-
+    ) -> Result<(), AppError> {
         let embedding = GenerateEmbeddingCommand::new(content.to_string())
             .execute(&self.app_state)
             .await?;
 
         let memory_entry = MemoryEntry {
-            id: memory_id.clone(),
+            id: self.app_state.sf.next_id()? as i64,
             memory_type,
             content: content.to_string(),
             metadata,
@@ -57,7 +53,7 @@ impl MemoryManager {
 
         self.store_memory_entry(&memory_entry).await?;
 
-        Ok(memory_id)
+        Ok(())
     }
 
     pub async fn search_memories(
@@ -212,17 +208,8 @@ impl MemoryManager {
             }),
         );
         stats.insert("total_access_count".to_string(), json!(total_access_count));
-        stats.insert("agent_id".to_string(), json!(self.context.agent_id));
 
         Ok(json!(stats))
-    }
-
-    fn generate_memory_id(&self) -> String {
-        format!(
-            "mem_{}_{}",
-            self.context.agent_id,
-            Utc::now().timestamp_nanos_opt().unwrap_or(0)
-        )
     }
 
     fn memory_type_matches(&self, memory_type: &MemoryType, query_types: &[MemoryType]) -> bool {
@@ -277,14 +264,11 @@ impl MemoryManager {
         }
     }
 
-    // Storage methods
     async fn store_memory_entry(&self, memory: &MemoryEntry) -> Result<(), AppError> {
-        // Store in ClickHouse for vector search using command pattern
         StoreMemoryEmbeddingCommand::new(
-            memory.id.parse::<i64>().unwrap_or(0),
-            self.context.deployment_id,
-            self.context.agent_id,
-            self.execution_context_id,
+            memory.id as i64,
+            self.deployment_id,
+            self.context_id,
             memory.memory_type.to_string(),
             memory.content.clone(),
             memory.embedding.clone(),
