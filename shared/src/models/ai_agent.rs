@@ -32,11 +32,14 @@ pub struct AiAgentWithDetails {
     pub knowledge_bases_count: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AiAgentWithFeatures {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub name: String,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub configuration: serde_json::Value,
     pub tools: Vec<AiTool>,

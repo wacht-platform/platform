@@ -3,9 +3,7 @@ use sqlx::Row;
 use crate::{
     error::AppError,
     models::{AiAgent, AiAgentWithDetails, AiAgentWithFeatures},
-    queries::{
-        GetAiKnowledgeBasesByIdsQuery, GetAiToolsByIdsQuery, GetAiWorkflowsByIdsQuery, Query,
-    },
+    queries::Query,
     state::AppState,
 };
 
@@ -212,77 +210,52 @@ impl Query for GetAiAgentWithFeatures {
     type Output = AiAgentWithFeatures;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let agent = GetAiAgentByNameQuery::new(self.deployment_id, self.agent_name.clone())
-            .execute(app_state)
-            .await?;
+        let agent_with_features = sqlx::query_as!(
+            AiAgentWithFeatures,
+            r#"
+            SELECT
+                a.id,
+                a.created_at,
+                a.updated_at,
+                a.name,
+                a.deployment_id,
+                a.configuration,
+                tools.list as "tools: _",
+                workflows.list as "workflows: _",
+                knowledge_bases.list as "knowledge_bases: _"
+            FROM
+                ai_agents a
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(jsonb_agg(t.*), '[]'::jsonb) as list
+                FROM ai_tools t
+                WHERE t.deployment_id = a.deployment_id
+                    AND jsonb_typeof(a.configuration->'tool_ids') = 'array'
+                    AND t.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'tool_ids'))
+            ) tools ON true
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(jsonb_agg(w.*), '[]'::jsonb) as list
+                FROM ai_workflows w
+                WHERE w.deployment_id = a.deployment_id
+                    AND jsonb_typeof(a.configuration->'workflow_ids') = 'array'
+                    AND w.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'workflow_ids'))
+            ) workflows ON true
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(jsonb_agg(k.*), '[]'::jsonb) as list
+                FROM ai_knowledge_bases k
+                WHERE k.deployment_id = a.deployment_id
+                    AND jsonb_typeof(a.configuration->'knowledge_base_ids') = 'array'
+                    AND k.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'knowledge_base_ids'))
+            ) knowledge_bases ON true
+            WHERE
+                a.name = $1 AND a.deployment_id = $2
+            "#,
+            self.agent_name,
+            self.deployment_id
+        )
+        .fetch_one(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Database(e))?;
 
-        let tool_ids: Vec<i64> = agent
-            .configuration
-            .get("tool_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().and_then(|s| s.parse().ok()))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let workflow_ids: Vec<i64> = agent
-            .configuration
-            .get("workflow_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().and_then(|s| s.parse().ok()))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let knowledge_base_ids: Vec<i64> = agent
-            .configuration
-            .get("knowledge_base_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().and_then(|s| s.parse().ok()))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let tools = if !tool_ids.is_empty() {
-            GetAiToolsByIdsQuery::new(self.deployment_id, tool_ids)
-                .execute(app_state)
-                .await?
-        } else {
-            Vec::new()
-        };
-
-        let workflows = if !workflow_ids.is_empty() {
-            GetAiWorkflowsByIdsQuery::new(self.deployment_id, workflow_ids)
-                .execute(app_state)
-                .await?
-        } else {
-            Vec::new()
-        };
-
-        let knowledge_bases = if !knowledge_base_ids.is_empty() {
-            GetAiKnowledgeBasesByIdsQuery::new(self.deployment_id, knowledge_base_ids)
-                .execute(app_state)
-                .await?
-        } else {
-            Vec::new()
-        };
-
-        Ok(AiAgentWithFeatures {
-            id: agent.id,
-            created_at: agent.created_at,
-            updated_at: agent.updated_at,
-            name: agent.name,
-            deployment_id: agent.deployment_id,
-            configuration: agent.configuration,
-            tools,
-            workflows,
-            knowledge_bases,
-        })
+        Ok(agent_with_features)
     }
 }
