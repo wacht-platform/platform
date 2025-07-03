@@ -1,14 +1,16 @@
 use std::convert;
 
 use super::{
-    AcknowledgmentEngine, AcknowledgmentRequest, AgentContext, MemoryManager, MemoryQuery,
-    MemoryType, TaskManager, ToolCall, ToolResult, WorkflowEngine,
+    AgentContext, MemoryEntry, MemoryManager, MemoryQuery, MemoryType, TaskManager, ToolCall,
+    ToolResult, WorkflowEngine,
 };
-use crate::template::{AgentTemplates, render_template};
+use crate::agentic::MessageParser;
+use crate::template::{render_template, AgentTemplates};
 use futures::StreamExt;
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use shared::commands::{
     Command, CreateExecutionMessageCommand, SearchConversationEmbeddingsCommand,
 };
@@ -19,6 +21,13 @@ use shared::queries::{
     GetAiKnowledgeBasesByIdsQuery, GetAiToolsByIdsQuery, GetAiWorkflowsByIdsQuery, Query,
 };
 use shared::state::AppState;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcknowledgmentResponse {
+    pub acknowledgment_message: String,
+    pub further_action_required: bool,
+    pub reasoning: String,
+}
 
 pub struct AgentExecutor {
     pub agent: AiAgent,
@@ -204,16 +213,11 @@ impl AgentExecutor {
         };
         let relevant_memories = self.memory_manager.search_memories(&memory_query).await?;
 
-        let acknowledgment_engine = AcknowledgmentEngine::new(self.app_state.clone());
-        let acknowledgment_request = AcknowledgmentRequest {
-            user_message: user_message.to_string(),
-            conversation_history,
-            memories: relevant_memories.into_iter().map(|m| m.entry).collect(),
-            agent_context: self.agent_context.clone(),
-        };
+        let memories: Vec<MemoryEntry> =
+            relevant_memories.into_iter().map(|m| m.entry).collect();
 
-        let acknowledgment_response = acknowledgment_engine
-            .generate_acknowledgment(acknowledgment_request, channel.clone())
+        let acknowledgment_response = self
+            .generate_acknowledgment(user_message, &conversation_history, &memories, channel.clone())
             .await?;
 
         self.store_execution_message(
@@ -337,8 +341,11 @@ impl AgentExecutor {
         Ok(())
     }
 
-    pub async fn generate_acknowledgment(
+    async fn generate_acknowledgment(
         &self,
+        user_message: &str,
+        conversation_history: &[ChatMessage],
+        memories: &[MemoryEntry],
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
     ) -> Result<AcknowledgmentResponse, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY")
@@ -353,19 +360,27 @@ impl AgentExecutor {
             .build()
             .map_err(|e| AppError::Internal(format!("Failed to build LLM: {}", e)))?;
 
-        let context = json!({
-            "tools": self.agent_context.tools,
-            "workflows": self.agent_context.workflows,
-            "knowledge_bases": self.agent_context.knowledge_bases,
-            "memories": ""
+        let acknowledgment_context = json!({
+            "tools": &self.agent_context.tools,
+            "workflows": &self.agent_context.workflows,
+            "knowledge_bases": &self.agent_context.knowledge_bases,
+            "memories": memories
         });
 
         let system_prompt =
-            render_template(AgentTemplates::ACKNOWLEDGMENT, &context).map_err(|e| {
-                AppError::Internal(format!("Failed to render acknowledgment template: {}", e))
-            })?;
+            render_template(AgentTemplates::ACKNOWLEDGMENT, &acknowledgment_context).map_err(
+                |e| AppError::Internal(format!("Failed to render acknowledgment template: {}", e)),
+            )?;
 
-        let messages = vec![ChatMessage::user().content(&system_prompt).build()];
+        let conversation_context =
+            self.prepare_conversation_context(conversation_history, user_message, 200_000)?;
+
+        let full_prompt = format!(
+            "{}\n\n{}\n\nCurrent request: {}",
+            system_prompt, conversation_context, user_message
+        );
+
+        let messages = vec![ChatMessage::user().content(&full_prompt).build()];
 
         let response_text = {
             let mut res = String::new();
@@ -384,6 +399,58 @@ impl AgentExecutor {
         };
 
         self.parse_acknowledgment_response(&response_text)
+    }
+
+    fn prepare_conversation_context(
+        &self,
+        _conversation_history: &[ChatMessage],
+        current_message: &str,
+        _max_tokens: usize,
+    ) -> Result<String, AppError> {
+        // For now, we'll just include the current message
+        // TODO: Implement proper conversation history parsing when ChatMessage structure is clarified
+        let context = format!("Current Request: {}\n\n", current_message);
+        Ok(context)
+    }
+
+    fn parse_acknowledgment_response(
+        &self,
+        response: &str,
+    ) -> Result<AcknowledgmentResponse, AppError> {
+        // Simple regex-based XML parsing for acknowledgment response
+        let message = self.extract_xml_content(response, "message")?;
+        let further_action_str = self
+            .extract_xml_content(response, "further_action_required")
+            .unwrap_or_else(|_| "true".to_string());
+        let reasoning = self
+            .extract_xml_content(response, "reasoning")
+            .unwrap_or_else(|_| "No reasoning provided".to_string());
+
+        let further_action_required = further_action_str.to_lowercase() == "true";
+
+        Ok(AcknowledgmentResponse {
+            acknowledgment_message: message,
+            further_action_required,
+            reasoning,
+        })
+    }
+
+    fn extract_xml_content(&self, xml: &str, tag: &str) -> Result<String, AppError> {
+        let start_tag = format!("<{}>", tag);
+        let end_tag = format!("</{}>", tag);
+
+        if let Some(start_pos) = xml.find(&start_tag) {
+            let content_start = start_pos + start_tag.len();
+            if let Some(end_pos) = xml[content_start..].find(&end_tag) {
+                let content = xml[content_start..content_start + end_pos].trim();
+                return Ok(content.to_string());
+            }
+        }
+
+        Err(AppError::Internal(format!(
+            "Could not find {} tag in XML response",
+            tag
+        )))
     }
 
     async fn execute_tool_call_with_history(
