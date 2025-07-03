@@ -4,19 +4,21 @@ use super::{
     AgentContext, MemoryEntry, MemoryManager, MemoryQuery, MemoryType, TaskManager, ToolCall,
     ToolResult, WorkflowEngine,
 };
-use crate::agentic::{xml_parser, MessageParser};
-use crate::template::{render_template, AgentTemplates};
+use crate::agentic::{MessageParser, xml_parser};
+use crate::template::{AgentTemplates, render_template};
 use futures::StreamExt;
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use shared::commands::{
     Command, CreateExecutionMessageCommand, SearchConversationEmbeddingsCommand,
 };
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
-use shared::models::{AiAgent, ExecutionMessageSender, ExecutionMessageType};
+use shared::models::{
+    AgentExecutionContextMessage, AiAgentWithFeatures, ExecutionMessageSender, ExecutionMessageType,
+};
 use shared::queries::{
     GetAiKnowledgeBasesByIdsQuery, GetAiToolsByIdsQuery, GetAiWorkflowsByIdsQuery, Query,
 };
@@ -32,96 +34,33 @@ pub struct AcknowledgmentResponse {
 }
 
 pub struct AgentExecutor {
-    pub agent: AiAgent,
-    pub agent_context: AgentContext,
+    pub agent: AiAgentWithFeatures,
     pub app_state: AppState,
     pub task_manager: Option<TaskManager>,
     pub workflow_engine: Option<WorkflowEngine>,
     pub memory_manager: MemoryManager,
+    pub message_history: Vec<AgentExecutionContextMessage>,
+    pub context_id: i64,
+    pub deployment_id: i64,
 }
 
 impl AgentExecutor {
     pub async fn new(
-        agent: AiAgent,
+        agent: AiAgentWithFeatures,
         deployment_id: i64,
         context_id: i64,
-        app_state: &AppState,
+        app_state: AppState,
     ) -> Result<Self, AppError> {
-        let tool_ids = agent
-            .configuration
-            .get("tool_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().and_then(|s| s.parse::<i64>().ok()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-
-        let workflow_ids = agent
-            .configuration
-            .get("workflow_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().and_then(|s| s.parse::<i64>().ok()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-
-        let knowledge_base_ids = agent
-            .configuration
-            .get("knowledge_base_ids")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().and_then(|s| s.parse::<i64>().ok()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-
-        let tools = if !tool_ids.is_empty() {
-            GetAiToolsByIdsQuery::new(deployment_id, tool_ids)
-                .execute(app_state)
-                .await?
-        } else {
-            Vec::new()
-        };
-
-        let workflows = if !workflow_ids.is_empty() {
-            GetAiWorkflowsByIdsQuery::new(deployment_id, workflow_ids)
-                .execute(app_state)
-                .await?
-        } else {
-            Vec::new()
-        };
-
-        let knowledge_bases = if !knowledge_base_ids.is_empty() {
-            GetAiKnowledgeBasesByIdsQuery::new(deployment_id, knowledge_base_ids)
-                .execute(app_state)
-                .await?
-        } else {
-            Vec::new()
-        };
-
-        let agent_context = AgentContext {
-            agent_id: agent.id,
-            execution_context_id: context_id,
-            deployment_id,
-            tools,
-            workflows,
-            knowledge_bases,
-        };
-
-        let memory_manager =
-            MemoryManager::new(agent_context.clone(), app_state.clone(), context_id)?;
+        let memory_manager = MemoryManager::new(app_state.clone(), context_id, deployment_id)?;
 
         Ok(Self {
             agent,
-            agent_context,
-            app_state: app_state.clone(),
+            app_state,
+            context_id,
+            deployment_id,
             task_manager: None,
             workflow_engine: None,
+            message_history: Vec::new(),
             memory_manager,
         })
     }
@@ -138,9 +77,9 @@ impl AgentExecutor {
     fn get_enhanced_system_prompt(&self) -> String {
         let context = json!({
             "agent_name": &self.agent.name,
-            "tools": &self.agent_context.tools,
-            "workflows": &self.agent_context.workflows,
-            "knowledge_bases": &self.agent_context.knowledge_bases
+            "tools": &self.agent.tools,
+            "workflows": &self.agent.workflows,
+            "knowledge_bases": &self.agent.knowledge_bases
         });
 
         render_template(AgentTemplates::SYSTEM_PROMPT, &context).unwrap_or_else(|e| {
@@ -149,41 +88,12 @@ impl AgentExecutor {
         })
     }
 
-    async fn load_conversation_history(&self) -> Result<Vec<ChatMessage>, AppError> {
-        let execution_context_id = self.agent_context.execution_context_id;
+    async fn load_conversation_history(
+        &self,
+    ) -> Result<Vec<AgentExecutionContextMessage>, AppError> {
+        let execution_context_id = self.context_id;
 
-        let search_results = SearchConversationEmbeddingsCommand::new(
-            self.agent.deployment_id,
-            execution_context_id,
-            vec![0.0; 768],
-            20,
-        )
-        .execute(&self.app_state)
-        .await?;
-
-        let mut messages = Vec::new();
-        for result in search_results {
-            match result.message_type.as_str() {
-                "user" => {
-                    messages.push(ChatMessage::user().content(&result.content).build());
-                }
-                "assistant" => {
-                    messages.push(ChatMessage::assistant().content(&result.content).build());
-                }
-                "system" => {
-                    messages.push(
-                        ChatMessage::user()
-                            .content(&format!("System: {}", result.content))
-                            .build(),
-                    );
-                }
-                _ => {
-                    messages.push(ChatMessage::user().content(&result.content).build());
-                }
-            }
-        }
-
-        Ok(messages)
+        Ok(vec![])
     }
 
     pub async fn execute_with_streaming(
@@ -209,17 +119,21 @@ impl AgentExecutor {
                 MemoryType::Semantic,
                 MemoryType::Procedural,
             ],
-            max_results: 10,
+            max_results: 100,
             min_importance: 0.3,
             time_range: None,
         };
         let relevant_memories = self.memory_manager.search_memories(&memory_query).await?;
 
-        let memories: Vec<MemoryEntry> =
-            relevant_memories.into_iter().map(|m| m.entry).collect();
+        let memories: Vec<MemoryEntry> = relevant_memories.into_iter().map(|m| m.entry).collect();
 
         let acknowledgment_response = self
-            .generate_acknowledgment(user_message, &conversation_history, &memories, channel.clone())
+            .generate_acknowledgment(
+                user_message,
+                &conversation_history,
+                &memories,
+                channel.clone(),
+            )
             .await?;
 
         self.store_execution_message(
@@ -241,104 +155,99 @@ impl AgentExecutor {
 
         let execution_id = format!("exec_{}", self.app_state.sf.next_id()? as i64);
         let task_manager = TaskManager::new(execution_id.clone(), self.app_state.clone());
-
-        let workflow_engine = WorkflowEngine::new(
-            self.agent_context.clone(),
-            self.app_state.clone(),
-            Vec::new(),
-        );
+        let workflow_engine = WorkflowEngine::new(self.app_state.clone(), Vec::new());
 
         self.task_manager = Some(task_manager);
         self.workflow_engine = Some(workflow_engine);
 
-        match self
-            .task_manager
-            .as_mut()
-            .unwrap()
-            .analyze_and_create_task_plan(user_message, &self.agent_context, &self.app_state)
-            .await
-        {
-            Ok(_) => {
-                let task_summary = self
-                    .task_manager
-                    .as_ref()
-                    .unwrap()
-                    .get_task_status_summary();
-                let task_count = task_summary
-                    .get("total_tasks")
-                    .and_then(|t| t.as_u64())
-                    .unwrap_or(0);
-            }
-            Err(e) => {}
-        }
+        // match self
+        //     .task_manager
+        //     .as_mut()
+        //     .unwrap()
+        //     .analyze_and_create_task_plan(user_message, &self.agent_context, &self.app_state)
+        //     .await
+        // {
+        //     Ok(_) => {
+        //         let task_summary = self
+        //             .task_manager
+        //             .as_ref()
+        //             .unwrap()
+        //             .get_task_status_summary();
+        //         let task_count = task_summary
+        //             .get("total_tasks")
+        //             .and_then(|t| t.as_u64())
+        //             .unwrap_or(0);
+        //     }
+        //     Err(e) => {}
+        // }
 
-        let progress_callback = |message: &str, progress: u8| {};
+        // let progress_callback = |message: &str, progress: u8| {};
 
-        match self
-            .execute_task_execution_loop(user_message, progress_callback)
-            .await
-        {
-            Ok(_) => {
-                let final_summary = self
-                    .task_manager
-                    .as_ref()
-                    .unwrap()
-                    .get_task_status_summary();
-                let completed = final_summary
-                    .get("completed_tasks")
-                    .and_then(|c| c.as_u64())
-                    .unwrap_or(0);
-                let total = final_summary
-                    .get("total_tasks")
-                    .and_then(|t| t.as_u64())
-                    .unwrap_or(0);
+        // match self
+        //     .execute_task_execution_loop(user_message, progress_callback)
+        //     .await
+        // {
+        //     Ok(_) => {
+        //         let final_summary = self
+        //             .task_manager
+        //             .as_ref()
+        //             .unwrap()
+        //             .get_task_status_summary();
+        //         let completed = final_summary
+        //             .get("completed_tasks")
+        //             .and_then(|c| c.as_u64())
+        //             .unwrap_or(0);
+        //         let total = final_summary
+        //             .get("total_tasks")
+        //             .and_then(|t| t.as_u64())
+        //             .unwrap_or(0);
 
-                self.memory_manager
-                    .store_memory(
-                        MemoryType::Procedural,
-                        &format!(
-                            "Successfully completed agentic task plan for: {}",
-                            user_message
-                        ),
-                        std::collections::HashMap::new(),
-                        0.7,
-                    )
-                    .await?;
-            }
-            Err(e) => {
-                let summary = self
-                    .task_manager
-                    .as_ref()
-                    .unwrap()
-                    .get_task_status_summary();
-                let completed = summary
-                    .get("completed_tasks")
-                    .and_then(|c| c.as_u64())
-                    .unwrap_or(0);
-                let failed = summary
-                    .get("failed_tasks")
-                    .and_then(|f| f.as_u64())
-                    .unwrap_or(0);
+        //         self.memory_manager
+        //             .store_memory(
+        //                 MemoryType::Procedural,
+        //                 &format!(
+        //                     "Successfully completed agentic task plan for: {}",
+        //                     user_message
+        //                 ),
+        //                 std::collections::HashMap::new(),
+        //                 0.7,
+        //             )
+        //             .await?;
+        //     }
+        //     Err(e) => {
+        //         let summary = self
+        //             .task_manager
+        //             .as_ref()
+        //             .unwrap()
+        //             .get_task_status_summary();
+        //         let completed = summary
+        //             .get("completed_tasks")
+        //             .and_then(|c| c.as_u64())
+        //             .unwrap_or(0);
+        //         let failed = summary
+        //             .get("failed_tasks")
+        //             .and_then(|f| f.as_u64())
+        //             .unwrap_or(0);
 
-                if completed > 0 {}
-                if failed > 0 {}
-            }
-        }
+        //         if completed > 0 {}
+        //         if failed > 0 {}
+        //     }
+        // }
 
-        self.store_execution_message(
-            ExecutionMessageType::AgentResponse,
-            ExecutionMessageSender::Agent,
-            "Task execution completed with agentic flow",
-            json!({}),
-            None,
-            None,
-        )
-        .await?;
+        // self.store_execution_message(
+        //     ExecutionMessageType::AgentResponse,
+        //     ExecutionMessageSender::Agent,
+        //     "Task execution completed with agentic flow",
+        //     json!({}),
+        //     None,
+        //     None,
+        // )
+        // .await?;
 
-        let agent_response =
-            "Task execution completed successfully with integrated agentic capabilities";
-        self.auto_store_conversation_memory(user_message, agent_response, None)
-            .await?;
+        // let agent_response =
+        //     "Task execution completed successfully with integrated agentic capabilities";
+        // self.auto_store_conversation_memory(user_message, agent_response, None)
+        //     .await?;
 
         Ok(())
     }
@@ -363,9 +272,9 @@ impl AgentExecutor {
             .map_err(|e| AppError::Internal(format!("Failed to build LLM: {}", e)))?;
 
         let acknowledgment_context = json!({
-            "tools": &self.agent_context.tools,
-            "workflows": &self.agent_context.workflows,
-            "knowledge_bases": &self.agent_context.knowledge_bases,
+            "tools": &self.agent.tools,
+            "workflows": &self.agent.workflows,
+            "knowledge_bases": &self.agent.knowledge_bases,
             "memories": memories
         });
 
@@ -415,7 +324,6 @@ impl AgentExecutor {
         Ok(context)
     }
 
-
     async fn execute_tool_call_with_history(
         &self,
         tool_call: &ToolCall,
@@ -464,14 +372,11 @@ impl AgentExecutor {
         Ok(())
     }
 
-    async fn execute_task_execution_loop<F>(
+    async fn execute_task_execution_loop(
         &mut self,
         _user_message: &str,
         progress_callback: F,
-    ) -> Result<(), AppError>
-    where
-        F: FnMut(&str, u8) + Send,
-    {
+    ) -> Result<(), AppError> {
         let task_manager = self.task_manager.as_mut().unwrap();
 
         match task_manager
@@ -487,7 +392,7 @@ impl AgentExecutor {
         }
     }
 
-    async fn validate_agentic_progress_and_adjust_tasks<F>(
+    async fn validate_agentic_progress_and_adjust_tasks(
         &mut self,
         completed_tasks: &[String],
         task_results: &[ToolResult],
@@ -558,7 +463,7 @@ impl AgentExecutor {
         Ok(())
     }
 
-    async fn execute_relevant_workflows<F>(
+    async fn execute_relevant_workflows(
         &self,
         response_text: &str,
         completed_tasks: &[String],
@@ -608,12 +513,12 @@ impl AgentExecutor {
 
         metadata.insert(
             "deployment_id".to_string(),
-            serde_json::Value::Number(self.agent_context.deployment_id.into()),
+            serde_json::Value::Number(self.deployment_id.into()),
         );
 
         metadata.insert(
-            "execution_context_id".to_string(),
-            serde_json::Value::Number(self.agent_context.execution_context_id.into()),
+            "context_id".to_string(),
+            serde_json::Value::Number(self.context_id.into()),
         );
 
         self.memory_manager
