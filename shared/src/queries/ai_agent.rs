@@ -210,8 +210,7 @@ impl Query for GetAiAgentWithFeatures {
     type Output = AiAgentWithFeatures;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let agent_with_features = sqlx::query_as!(
-            AiAgentWithFeatures,
+        let row = sqlx::query(
             r#"
             SELECT
                 a.id,
@@ -220,9 +219,9 @@ impl Query for GetAiAgentWithFeatures {
                 a.name,
                 a.deployment_id,
                 a.configuration,
-                tools.list as "tools: _",
-                workflows.list as "workflows: _",
-                knowledge_bases.list as "knowledge_bases: _"
+                tools.list as tools,
+                workflows.list as workflows,
+                knowledge_bases.list as knowledge_bases
             FROM
                 ai_agents a
             LEFT JOIN LATERAL (
@@ -249,13 +248,32 @@ impl Query for GetAiAgentWithFeatures {
             WHERE
                 a.name = $1 AND a.deployment_id = $2
             "#,
-            self.agent_name,
-            self.deployment_id
         )
+        .bind(&self.agent_name)
+        .bind(self.deployment_id)
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        Ok(agent_with_features)
+        let tools = serde_json::from_value(row.get("tools"))
+            .map_err(|e| AppError::Internal(format!("Failed to deserialize tools: {}", e)))?;
+        let workflows = serde_json::from_value(row.get("workflows"))
+            .map_err(|e| AppError::Internal(format!("Failed to deserialize workflows: {}", e)))?;
+        let knowledge_bases = serde_json::from_value(row.get("knowledge_bases"))
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
+            })?;
+
+        Ok(AiAgentWithFeatures {
+            id: row.get("id"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+            name: row.get("name"),
+            deployment_id: row.get("deployment_id"),
+            configuration: row.get("configuration"),
+            tools,
+            workflows,
+            knowledge_bases,
+        })
     }
 }
