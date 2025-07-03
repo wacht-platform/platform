@@ -1,4 +1,7 @@
 use super::AgentContext;
+use crate::template::{render_template, AgentTemplates};
+use llm::builder::{LLMBackend, LLMBuilder};
+use llm::chat::ChatMessage;
 use shared::commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use shared::error::AppError;
 use shared::state::AppState;
@@ -193,25 +196,16 @@ impl ContextEngine {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let prompt = format!(
-            r#"You are an expert tool analyzer. Given a user query and a list of available tools, determine which tools are relevant and if any should be executed immediately.
+        let tool_analysis_context = json!({
+            "user_query": query,
+            "tools": &self.context.tools
+        });
 
-User Query: "{}"
-
-Available Tools:
-{}
-
-For each relevant tool, respond with ONLY a JSON array containing objects with these fields:
-- "tool_id": the tool ID number
-- "relevance_score": a number from 0-100 indicating how relevant this tool is
-- "confidence_score": a number from 0-100 indicating confidence that this tool should be executed
-- "should_execute": boolean indicating if this tool should be executed immediately (confidence >= 80)
-- "reasoning": brief explanation of why this tool matches and execution decision
-- "execution_parameters": if should_execute is true, provide the parameters needed to execute this tool
-
-Only include tools that are actually relevant to the query. If no tools match, return an empty array []."#,
-            query, tools_info
-        );
+        let prompt = render_template(AgentTemplates::TOOL_ANALYSIS, &tool_analysis_context)
+            .unwrap_or_else(|e| {
+                tracing::error!("Failed to render tool analysis template: {}", e);
+                format!("Analyze which tools are relevant for this query: {} with tools: {}", query, tools_info)
+            });
 
         let messages = vec![ChatMessage::user().content(&prompt).build()];
 
