@@ -4,7 +4,7 @@ use super::{
     AgentContext, MemoryEntry, MemoryManager, MemoryQuery, MemoryType, TaskManager, ToolCall,
     ToolResult, WorkflowEngine,
 };
-use crate::agentic::MessageParser;
+use crate::agentic::{xml_parser, MessageParser};
 use crate::template::{render_template, AgentTemplates};
 use futures::StreamExt;
 use llm::builder::{LLMBackend, LLMBuilder};
@@ -23,7 +23,9 @@ use shared::queries::{
 use shared::state::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "response")]
 pub struct AcknowledgmentResponse {
+    #[serde(rename = "message")]
     pub acknowledgment_message: String,
     pub further_action_required: bool,
     pub reasoning: String,
@@ -398,7 +400,7 @@ impl AgentExecutor {
             res
         };
 
-        self.parse_acknowledgment_response(&response_text)
+        xml_parser::from_str(&response_text)
     }
 
     fn prepare_conversation_context(
@@ -413,45 +415,6 @@ impl AgentExecutor {
         Ok(context)
     }
 
-    fn parse_acknowledgment_response(
-        &self,
-        response: &str,
-    ) -> Result<AcknowledgmentResponse, AppError> {
-        // Simple regex-based XML parsing for acknowledgment response
-        let message = self.extract_xml_content(response, "message")?;
-        let further_action_str = self
-            .extract_xml_content(response, "further_action_required")
-            .unwrap_or_else(|_| "true".to_string());
-        let reasoning = self
-            .extract_xml_content(response, "reasoning")
-            .unwrap_or_else(|_| "No reasoning provided".to_string());
-
-        let further_action_required = further_action_str.to_lowercase() == "true";
-
-        Ok(AcknowledgmentResponse {
-            acknowledgment_message: message,
-            further_action_required,
-            reasoning,
-        })
-    }
-
-    fn extract_xml_content(&self, xml: &str, tag: &str) -> Result<String, AppError> {
-        let start_tag = format!("<{}>", tag);
-        let end_tag = format!("</{}>", tag);
-
-        if let Some(start_pos) = xml.find(&start_tag) {
-            let content_start = start_pos + start_tag.len();
-            if let Some(end_pos) = xml[content_start..].find(&end_tag) {
-                let content = xml[content_start..content_start + end_pos].trim();
-                return Ok(content.to_string());
-            }
-        }
-
-        Err(AppError::Internal(format!(
-            "Could not find {} tag in XML response",
-            tag
-        )))
-    }
 
     async fn execute_tool_call_with_history(
         &self,
