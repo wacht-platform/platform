@@ -3,7 +3,9 @@ use sqlx::Row;
 use crate::{
     error::AppError,
     models::{AiAgent, AiAgentWithDetails, AiAgentWithFeatures},
-    queries::Query,
+    queries::{
+        GetAiKnowledgeBasesByIdsQuery, GetAiToolsByIdsQuery, GetAiWorkflowsByIdsQuery, Query,
+    },
     state::AppState,
 };
 
@@ -192,15 +194,95 @@ impl Query for GetAiAgentByNameQuery {
     }
 }
 
-struct GetAiAgentWithFeatures {
+pub struct GetAiAgentWithFeatures {
     pub deployment_id: i64,
     pub agent_name: String,
+}
+
+impl GetAiAgentWithFeatures {
+    pub fn new(deployment_id: i64, agent_name: String) -> Self {
+        Self {
+            deployment_id,
+            agent_name,
+        }
+    }
 }
 
 impl Query for GetAiAgentWithFeatures {
     type Output = AiAgentWithFeatures;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        todo!()
+        let agent = GetAiAgentByNameQuery::new(self.deployment_id, self.agent_name.clone())
+            .execute(app_state)
+            .await?;
+
+        let tool_ids: Vec<i64> = agent
+            .configuration
+            .get("tool_ids")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().and_then(|s| s.parse().ok()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let workflow_ids: Vec<i64> = agent
+            .configuration
+            .get("workflow_ids")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().and_then(|s| s.parse().ok()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let knowledge_base_ids: Vec<i64> = agent
+            .configuration
+            .get("knowledge_base_ids")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().and_then(|s| s.parse().ok()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let tools = if !tool_ids.is_empty() {
+            GetAiToolsByIdsQuery::new(self.deployment_id, tool_ids)
+                .execute(app_state)
+                .await?
+        } else {
+            Vec::new()
+        };
+
+        let workflows = if !workflow_ids.is_empty() {
+            GetAiWorkflowsByIdsQuery::new(self.deployment_id, workflow_ids)
+                .execute(app_state)
+                .await?
+        } else {
+            Vec::new()
+        };
+
+        let knowledge_bases = if !knowledge_base_ids.is_empty() {
+            GetAiKnowledgeBasesByIdsQuery::new(self.deployment_id, knowledge_base_ids)
+                .execute(app_state)
+                .await?
+        } else {
+            Vec::new()
+        };
+
+        Ok(AiAgentWithFeatures {
+            id: agent.id,
+            created_at: agent.created_at,
+            updated_at: agent.updated_at,
+            name: agent.name,
+            deployment_id: agent.deployment_id,
+            configuration: agent.configuration,
+            tools,
+            workflows,
+            knowledge_bases,
+        })
     }
 }
