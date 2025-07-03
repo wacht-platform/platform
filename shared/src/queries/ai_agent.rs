@@ -1,6 +1,11 @@
 use sqlx::Row;
 
-use crate::{error::AppError, models::{AiAgentWithDetails, AiAgent}, queries::Query, state::AppState};
+use crate::{
+    error::AppError,
+    models::{AiAgent, AiAgentWithDetails, AiAgentWithFeatures},
+    queries::Query,
+    state::AppState,
+};
 
 pub struct GetAiAgentsQuery {
     pub deployment_id: i64,
@@ -184,5 +189,18 @@ impl Query for GetAiAgentByNameQuery {
             configuration: agent.configuration,
             deployment_id: agent.deployment_id,
         })
+    }
+}
+
+struct GetAiAgentWithFeatures {
+    pub deployment_id: i64,
+    pub agent_name: String,
+}
+
+impl Query for GetAiAgentWithFeatures {
+    type Output = AiAgentWithFeatures;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        todo!()
     }
 }
