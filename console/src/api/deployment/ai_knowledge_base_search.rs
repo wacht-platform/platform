@@ -41,7 +41,15 @@ pub async fn search_knowledge_base(
 
     let search_results: Vec<KnowledgeBaseSearchResult> = results
         .into_iter()
-        .map(KnowledgeBaseSearchResult::from)
+        .map(|r| KnowledgeBaseSearchResult {
+            id: format!("{}-{}", r.document_id, r.chunk_index),
+            content: r.content,
+            score: r.score as f32,
+            knowledge_base_id: Some(r.knowledge_base_id.to_string()),
+            title: None,
+            file_type: None,
+            chunk_index: Some(r.chunk_index as i64),
+        })
         .collect();
 
     let total_results = search_results.len();
@@ -77,7 +85,15 @@ pub async fn search_specific_knowledge_base(
 
     let search_results: Vec<KnowledgeBaseSearchResult> = results
         .into_iter()
-        .map(KnowledgeBaseSearchResult::from)
+        .map(|r| KnowledgeBaseSearchResult {
+            id: format!("{}-{}", r.document_id, r.chunk_index),
+            content: r.content,
+            score: r.score as f32,
+            knowledge_base_id: Some(r.knowledge_base_id.to_string()),
+            title: None,
+            file_type: None,
+            chunk_index: Some(r.chunk_index as i64),
+        })
         .collect();
 
     let total_results = search_results.len();

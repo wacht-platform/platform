@@ -1,14 +1,13 @@
 use crate::{
-    commands::{Command, StoreKnowledgeBaseEmbeddingCommand, UploadToKnowledgeBaseBucketCommand},
+    commands::{Command, UploadToKnowledgeBaseBucketCommand},
     error::AppError,
     models::{AiKnowledgeBase, AiKnowledgeBaseDocument},
     queries::{GetAiKnowledgeBaseByIdQuery, Query},
     state::AppState,
 };
 use chrono::Utc;
-use serde_json::json;
+use pgvector::Vector;
 use sqlx::Row;
-use std::collections::HashMap;
 
 pub struct CreateAiKnowledgeBaseCommand {
     pub deployment_id: i64,
@@ -273,18 +272,6 @@ impl Command for DeleteAiKnowledgeBaseCommand {
 
         tx.commit().await.map_err(|e| AppError::Database(e))?;
 
-        let kb_id = self.knowledge_base_id;
-        if let Err(e) = app_state
-            .clickhouse_service
-            .delete_knowledge_base_embeddings(kb_id)
-            .await
-        {
-            eprintln!(
-                "Failed to delete ClickHouse embeddings for knowledge base {}: {}",
-                kb_id, e
-            );
-        } else {}
-
         Ok(())
     }
 }
@@ -408,7 +395,7 @@ impl UploadKnowledgeBaseDocumentCommand {
         deployment_id: i64,
         file_content: Vec<u8>,
         file_type: String,
-        title: String,
+        _title: String,
         app_state: &AppState,
     ) -> Result<(), AppError> {
         let text = app_state
@@ -427,25 +414,25 @@ impl UploadKnowledgeBaseDocumentCommand {
         for (chunk_index, (chunk, embedding)) in
             chunks.into_iter().zip(embeddings.into_iter()).enumerate()
         {
-            let mut metadata = HashMap::new();
-            metadata.insert("document_id".to_string(), json!(document_id.to_string()));
-            metadata.insert(
-                "knowledge_base_id".to_string(),
-                json!(knowledge_base_id.to_string()),
-            );
-            metadata.insert("chunk_index".to_string(), json!(chunk_index));
-            metadata.insert("title".to_string(), json!(title.clone()));
-            metadata.insert("file_type".to_string(), json!(file_type.clone()));
+            let now = Utc::now();
+            let embedding_vector = Vector::from(embedding);
 
-            StoreKnowledgeBaseEmbeddingCommand::new(
-                document_id,
-                deployment_id,
-                knowledge_base_id,
-                chunk_index as i32,
-                chunk.content,
-                embedding,
+            sqlx::query(
+                r#"
+                INSERT INTO knowledge_base_document_chunks
+                (document_id, knowledge_base_id, deployment_id, chunk_index, content, embedding, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                "#,
             )
-            .execute(app_state)
+            .bind(document_id)
+            .bind(knowledge_base_id)
+            .bind(deployment_id)
+            .bind(chunk_index as i32)
+            .bind(chunk.content)
+            .bind(embedding_vector)
+            .bind(now)
+            .bind(now)
+            .execute(&app_state.db_pool)
             .await?;
         }
 
@@ -491,34 +478,6 @@ impl Command for DeleteKnowledgeBaseDocumentCommand {
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound("Document not found".to_string()));
         }
-
-        let doc_id = self.document_id;
-        let kb_id = self.knowledge_base_id;
-
-        if let Err(e) = Self::delete_document_embeddings(doc_id, kb_id, app_state).await {
-            eprintln!("Failed to delete document embeddings: {}", e);
-        }
-
-        Ok(())
-    }
-}
-
-impl DeleteKnowledgeBaseDocumentCommand {
-    async fn delete_document_embeddings(
-        document_id: i64,
-        knowledge_base_id: i64,
-        app_state: &AppState,
-    ) -> Result<(), AppError> {
-        if let Err(e) = app_state
-            .clickhouse_service
-            .delete_document_embeddings(document_id)
-            .await
-        {
-            eprintln!(
-                "Failed to delete ClickHouse embeddings for document {} in knowledge base {}: {}",
-                document_id, knowledge_base_id, e
-            );
-        } else {}
 
         Ok(())
     }

@@ -7,14 +7,17 @@ use llm::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use shared::commands::{
-    Command, CreateExecutionMessageCommand, GenerateEmbeddingCommand,
-    SearchKnowledgeBaseEmbeddingsCommand, StoreMemoryEmbeddingCommand,
+    Command, CreateAgentDynamicContextCommand, CreateExecutionMessageCommand, CreateMemoryCommand,
+    GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand,
 };
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
 use shared::models::{
     AgentExecutionContextMessage, AiAgentWithFeatures, ExecutionMessageSender,
     ExecutionMessageType, MemoryEntry, MemoryQuery, MemorySearchResult, MemoryType, ToolResult,
+};
+use shared::queries::{
+    GetExecutionMessagesQuery, Query, SearchAgentDynamicContextQuery, SearchMemoriesQuery,
 };
 use shared::state::AppState;
 use std::collections::HashMap;
@@ -32,7 +35,6 @@ pub struct AgentExecutor {
     pub agent: AiAgentWithFeatures,
     pub app_state: AppState,
     pub memories: Vec<MemoryEntry>,
-    pub message_history: Vec<AgentExecutionContextMessage>,
     pub context_id: i64,
     pub deployment_id: i64,
 }
@@ -48,7 +50,6 @@ impl AgentExecutor {
             agent,
             app_state,
             memories: Vec::new(),
-            message_history: Vec::new(),
             context_id,
             deployment_id,
         })
@@ -80,9 +81,9 @@ impl AgentExecutor {
     async fn load_conversation_history(
         &self,
     ) -> Result<Vec<AgentExecutionContextMessage>, AppError> {
-        let execution_context_id = self.context_id;
-
-        Ok(vec![])
+        GetExecutionMessagesQuery::new(self.context_id)
+            .execute(&self.app_state)
+            .await
     }
 
     pub async fn execute_with_streaming(
@@ -145,6 +146,34 @@ impl AgentExecutor {
         Ok(())
     }
 
+    pub async fn store_dynamic_context(
+        &self,
+        content: &str,
+        source: Option<String>,
+    ) -> Result<(), AppError> {
+        let embedding = if content.len() > 10 {
+            Some(
+                GenerateEmbeddingCommand::new(content.to_string())
+                    .execute(&self.app_state)
+                    .await?,
+            )
+        } else {
+            None
+        };
+
+        CreateAgentDynamicContextCommand {
+            id: self.app_state.sf.next_id()? as i64,
+            execution_context_id: self.context_id,
+            content: content.to_string(),
+            source,
+            embedding,
+        }
+        .execute(&self.app_state)
+        .await?;
+
+        Ok(())
+    }
+
     async fn generate_acknowledgment(
         &self,
         user_message: &str,
@@ -164,11 +193,14 @@ impl AgentExecutor {
             .build()
             .map_err(|e| AppError::Internal(format!("Failed to build LLM: {}", e)))?;
 
+        let dynamic_context_results = self.search_dynamic_context_vector(user_message).await?;
+
         let acknowledgment_context = json!({
             "tools": &self.agent.tools,
             "workflows": &self.agent.workflows,
             "knowledge_bases": &self.agent.knowledge_bases,
-            "memories": memories
+            "memories": memories,
+            "dynamic_context": dynamic_context_results
         });
 
         let system_prompt =
@@ -177,7 +209,7 @@ impl AgentExecutor {
             )?;
 
         let conversation_context =
-            self.prepare_conversation_context(conversation_history, user_message, 200_000)?;
+            self.prepare_conversation_context(conversation_history, 200_000)?;
 
         let full_prompt = format!(
             "{}\n\n{}\n\nCurrent request: {}",
@@ -207,14 +239,34 @@ impl AgentExecutor {
 
     fn prepare_conversation_context(
         &self,
-        _conversation_history: &[AgentExecutionContextMessage],
-        current_message: &str,
+        conversation_history: &[AgentExecutionContextMessage],
         _max_tokens: usize,
     ) -> Result<String, AppError> {
-        // For now, we'll just include the current message
-        // TODO: Implement proper conversation history parsing when ChatMessage structure is clarified
-        let context = format!("Current Request: {}\n\n", current_message);
-        Ok(context)
+        // TODO: Implement token-based truncation
+        let mut context = String::new();
+
+        // History is newest-first. We want to display oldest-first, and exclude the newest message (current user input).
+        if conversation_history.len() <= 1 {
+            return Ok(context);
+        }
+
+        // Skip the first message (newest) and reverse the rest to get chronological order.
+        let mut history_to_format: Vec<_> = conversation_history.iter().skip(1).collect();
+        history_to_format.reverse();
+
+        if !history_to_format.is_empty() {
+            context.push_str("Previous conversation:\n");
+            for message in history_to_format {
+                let sender = match message.sender {
+                    ExecutionMessageSender::User => "User",
+                    ExecutionMessageSender::Agent => "Agent",
+                    ExecutionMessageSender::System => "System",
+                    ExecutionMessageSender::Tool => "Tool",
+                };
+                context.push_str(&format!("{}: {}\n", sender, message.content));
+            }
+        }
+        Ok(context.trim().to_string())
     }
 
     async fn store_execution_message(
@@ -281,37 +333,22 @@ impl AgentExecutor {
         memory_type: MemoryType,
         importance: f32,
     ) -> Result<(), AppError> {
-        let mut metadata = HashMap::new();
-
-        metadata.insert(
-            "deployment_id".to_string(),
-            serde_json::Value::Number(self.deployment_id.into()),
-        );
-
-        metadata.insert(
-            "context_id".to_string(),
-            serde_json::Value::Number(self.context_id.into()),
-        );
-
         let embedding = GenerateEmbeddingCommand::new(content.to_string())
             .execute(&self.app_state)
             .await?;
 
-        let memory_entry = MemoryEntry {
+        CreateMemoryCommand {
             id: self.app_state.sf.next_id()? as i64,
+            deployment_id: self.deployment_id,
+            agent_id: self.agent.id,
+            execution_context_id: Some(self.context_id),
             memory_type,
             content: content.to_string(),
-            metadata,
-            importance,
-            created_at: Utc::now(),
-            last_accessed: Utc::now(),
-            access_count: 0,
             embedding,
-        };
-
-        dbg!(&memory_entry);
-
-        self.store_memory_entry(&memory_entry).await?;
+            importance,
+        }
+        .execute(&self.app_state)
+        .await?;
 
         Ok(())
     }
@@ -361,159 +398,49 @@ impl AgentExecutor {
         let query_embedding = GenerateEmbeddingCommand::new(query.query.clone())
             .execute(&self.app_state)
             .await?;
-        let stored_memories = self.get_stored_memories().await?;
+
+        let memory_type_filter: Vec<String> = query
+            .memory_types
+            .iter()
+            .map(|mt| mt.as_str().to_string())
+            .collect();
+
+        let search_results = SearchMemoriesQuery {
+            agent_id: self.agent.id,
+            query_embedding,
+            limit: query.max_results as i64,
+            memory_type_filter,
+            min_importance: Some(query.min_importance),
+            time_range: query.time_range,
+        }
+        .execute(&self.app_state)
+        .await?;
 
         let mut results = Vec::new();
+        for record in search_results {
+            let entry: MemoryEntry = record.clone().into();
+            let text_relevance = self.calculate_text_relevance(&entry.content, &query.query);
 
-        for memory in stored_memories {
-            if !query.memory_types.is_empty()
-                && !self.memory_type_matches(&memory.memory_type, &query.memory_types)
-            {
-                continue;
-            }
-
-            if memory.importance < query.min_importance {
-                continue;
-            }
-
-            if let Some((start, end)) = query.time_range {
-                if memory.created_at < start || memory.created_at > end {
-                    continue;
-                }
-            }
-
-            let text_relevance = self.calculate_text_relevance(&memory.content, &query.query);
-            let semantic_similarity =
-                self.calculate_cosine_similarity(&query_embedding, &memory.embedding);
-
+            // The score from the DB is L2 distance (0=identical, >0=dissimilar). Convert to similarity (1=identical, 0=dissimilar).
+            // Assuming normalized vectors, L2 distance is in [0, 2].
+            let semantic_similarity = (1.0 - (record.score / 2.0)).max(0.0);
             let relevance_score = (text_relevance * 0.3) + (semantic_similarity * 0.7);
 
             results.push(MemorySearchResult {
-                entry: memory,
+                entry,
                 relevance_score,
                 similarity_score: semantic_similarity,
             });
         }
 
+        // The query already sorts by distance/score, but we re-sort by our combined relevance score.
         results.sort_by(|a, b| {
             b.relevance_score
                 .partial_cmp(&a.relevance_score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        results.truncate(query.max_results);
-
         Ok(results)
-    }
-
-    pub async fn consolidate_memories(&self, similarity_threshold: f32) -> Result<usize, AppError> {
-        let memories = self.get_stored_memories().await?;
-        let mut consolidated_memories: Vec<MemoryEntry> = Vec::new();
-        let mut merged_count = 0;
-
-        for memory in memories.iter() {
-            let mut should_merge = false;
-
-            for consolidated in &mut consolidated_memories {
-                let similarity =
-                    self.calculate_cosine_similarity(&memory.embedding, &consolidated.embedding);
-
-                if similarity > similarity_threshold
-                    && std::mem::discriminant(&memory.memory_type)
-                        == std::mem::discriminant(&consolidated.memory_type)
-                {
-                    consolidated.content =
-                        format!("{}\n\n{}", consolidated.content, memory.content);
-                    consolidated.importance = (consolidated.importance + memory.importance) / 2.0;
-                    consolidated.access_count += memory.access_count;
-
-                    for (key, value) in &memory.metadata {
-                        consolidated.metadata.insert(key.clone(), value.clone());
-                    }
-
-                    should_merge = true;
-                    merged_count += 1;
-                    break;
-                }
-            }
-
-            if !should_merge {
-                consolidated_memories.push(memory.clone());
-            }
-        }
-
-        self.store_all_memories(&consolidated_memories).await?;
-
-        Ok(merged_count)
-    }
-
-    pub async fn forget_memories(
-        &self,
-        max_memories: usize,
-        min_importance: f32,
-    ) -> Result<usize, AppError> {
-        // let mut memories = self.get_stored_memories().await?;
-        // let initial_count = memories.len();
-
-        // memories.retain(|m| m.importance >= min_importance);
-
-        // if memories.len() > max_memories {
-        //     memories.sort_by(|a, b| {
-        //         let importance_cmp = b
-        //             .importance
-        //             .partial_cmp(&a.importance)
-        //             .unwrap_or(std::cmp::Ordering::Equal);
-        //         if importance_cmp == std::cmp::Ordering::Equal {
-        //             b.last_accessed.cmp(&a.last_accessed)
-        //         } else {
-        //             importance_cmp
-        //         }
-        //     });
-
-        //     memories.truncate(max_memories);
-        // }
-
-        // let forgotten_count = initial_count - memories.len();
-
-        // self.store_all_memories(&memories).await?;
-
-        Ok(0)
-    }
-
-    pub async fn get_memory_stats(&self) -> Result<Value, AppError> {
-        let memories = self.get_stored_memories().await?;
-
-        let mut stats = HashMap::new();
-        let mut type_counts = HashMap::new();
-        let mut total_importance = 0.0;
-        let mut total_access_count = 0;
-
-        for memory in &memories {
-            let type_name = format!("{:?}", memory.memory_type);
-            *type_counts.entry(type_name).or_insert(0) += 1;
-            total_importance += memory.importance;
-            total_access_count += memory.access_count;
-        }
-
-        stats.insert("total_memories".to_string(), json!(memories.len()));
-        stats.insert("memory_types".to_string(), json!(type_counts));
-        stats.insert(
-            "average_importance".to_string(),
-            json!(if memories.is_empty() {
-                0.0
-            } else {
-                total_importance / memories.len() as f32
-            }),
-        );
-        stats.insert("total_access_count".to_string(), json!(total_access_count));
-
-        Ok(json!(stats))
-    }
-
-    fn memory_type_matches(&self, memory_type: &MemoryType, query_types: &[MemoryType]) -> bool {
-        query_types
-            .iter()
-            .any(|qt| std::mem::discriminant(memory_type) == std::mem::discriminant(qt))
     }
 
     fn calculate_text_relevance(&self, content: &str, query: &str) -> f32 {
@@ -562,98 +489,6 @@ impl AgentExecutor {
         }
     }
 
-    async fn store_memory_entry(&self, memory: &MemoryEntry) -> Result<(), AppError> {
-        // StoreMemoryEmbeddingCommand::new(
-        //     memory.id as i64,
-        //     self.deployment_id,
-        //     self.context_id,
-        //     memory.memory_type.to_string(),
-        //     memory.content.clone(),
-        //     memory.embedding.clone(),
-        //     memory.importance,
-        //     memory.access_count as i32,
-        // )
-        // .execute(&self.app_state)
-        // .await?;
-
-        // // Also store in database for backup/persistence
-        // let mut memories = self.get_stored_memories().await?;
-        // memories.retain(|m| m.id != memory.id);
-        // memories.push(memory.clone());
-        // self.store_all_memories(&vec![]).await
-
-        Ok(())
-    }
-
-    async fn get_stored_memories(&self) -> Result<Vec<MemoryEntry>, AppError> {
-        // Get the latest execution context for this agent
-        // let contexts = GetExecutionContextsByAgentQuery::new(
-        //     self.context.agent_id,
-        //     self.context.deployment_id,
-        // )
-        // .with_limit(1)
-        // .execute(&self.app_state)
-        // .await?;
-
-        // if let Some(context) = contexts.first() {
-        //     // Deserialize the memory field JSON into Vec<MemoryEntry>
-        //     if let Ok(memories) = serde_json::from_value::<Vec<MemoryEntry>>(context.memory.clone())
-        //     {
-        //         Ok(memories)
-        //     } else {
-        //         // If deserialization fails, return empty vector
-        //         Ok(Vec::new())
-        //     }
-        // } else {
-        //     // No execution context found, return empty vector
-        //     Ok(Vec::new())
-        // }
-
-        Ok(vec![])
-    }
-
-    async fn store_all_memories(&self, _memories: &[MemoryEntry]) -> Result<(), AppError> {
-        // use shared::queries::{
-        //     GetExecutionContextsByAgentQuery, Query, UpdateExecutionContextQuery,
-        // };
-
-        // // Get the latest execution context for this agent
-        // let contexts = GetExecutionContextsByAgentQuery::new(
-        //     self.context.agent_id,
-        //     self.context.deployment_id,
-        // )
-        // .with_limit(1)
-        // .execute(&self.app_state)
-        // .await?;
-
-        // if let Some(context) = contexts.first() {
-        //     // Serialize the memories to JSON
-        //     let memory_json = serde_json::to_value(memories)
-        //         .map_err(|e| AppError::Internal(format!("Failed to serialize memories: {}", e)))?;
-
-        //     // Update the execution context memory field in the database
-        //     UpdateExecutionContextQuery::new(context.id, self.context.deployment_id)
-        //         .with_memory(memory_json)
-        //         .execute(&self.app_state)
-        //         .await?;
-
-        //     println!(
-        //         "Stored {} memories for agent {} in execution context {}",
-        //         memories.len(),
-        //         self.context.agent_id,
-        //         context.id
-        //     );
-        // } else {
-        //     // No execution context found - this shouldn't happen in normal operation
-        //     eprintln!(
-        //         "Warning: No execution context found for agent {} when storing memories",
-        //         self.context.agent_id
-        //     );
-        // }
-
-        Ok(())
-    }
-
     // --- Inlined ContextEngine methods ---
 
     pub async fn search_context(&self, query: &str) -> Result<Value, AppError> {
@@ -668,7 +503,8 @@ impl AgentExecutor {
             self.search_knowledge_base_metadata_vector(query),
             self.search_knowledge_base_documents(query),
             self.search_memory_context(query),
-            self.search_conversation_history_vector(query)
+            self.search_conversation_history_vector(query),
+            self.search_dynamic_context_vector(query)
         )?;
 
         let search_duration = start_time.elapsed();
@@ -680,6 +516,7 @@ impl AgentExecutor {
         all_results.extend(search_results.3);
         all_results.extend(search_results.4);
         all_results.extend(search_results.5);
+        all_results.extend(search_results.6);
 
         all_results.sort_by(|a, b| {
             let score_a = a
@@ -718,12 +555,12 @@ impl AgentExecutor {
             "results": all_results,
             "total_found": all_results.len(),
             "search_timestamp": chrono::Utc::now().to_rfc3339(),
-            "search_types": ["tools_llm", "workflows_llm", "knowledge_bases_vector", "documents_vector", "memory_vector", "conversation_history_vector"],
+            "search_types": ["tools_llm", "workflows_llm", "knowledge_bases_vector", "documents_vector", "memory_vector", "conversation_history_vector", "dynamic_context_vector"],
             "parallel_execution": true,
             "search_duration_ms": search_duration.as_millis(),
             "performance": {
-                "parallel_searches": 6,
-                "estimated_sequential_time_saved": "60-80%"
+                "parallel_searches": 7,
+                "estimated_sequential_time_saved": "60-85%"
             },
             "execution_summary": {
                 "tools_executed": executed_tools,
@@ -905,13 +742,16 @@ impl AgentExecutor {
             "workflows": &self.agent.workflows
         });
 
-        let prompt = render_template(AgentTemplates::ACKNOWLEDGMENT, &workflow_analysis_context)
-            .map_err(|e| {
-                AppError::Internal(format!(
-                    "Failed to render workflow analysis template: {}",
-                    e
-                ))
-            })?;
+        let prompt = render_template(
+            AgentTemplates::TOOL_ANALYSIS,
+            &workflow_analysis_context,
+        )
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to render workflow analysis template: {}",
+                e
+            ))
+        })?;
 
         let messages = vec![ChatMessage::user().content(&prompt).build()];
 
@@ -1063,14 +903,16 @@ impl AgentExecutor {
 
                     let mut kb_results = Vec::new();
                     for result in search_results {
+                        // The score from the DB is L2 distance (0=identical, >0=dissimilar). Convert to similarity (1=identical, 0=dissimilar).
+                        let similarity = (1.0 - (result.score / 2.0)).max(0.0);
                         kb_results.push(json!({
                             "type": "document",
-                            "id": result.id,
+                            "document_id": result.document_id,
                             "content": result.content,
                             "score": result.score,
                             "knowledge_base_id": result.knowledge_base_id,
                             "chunk_index": result.chunk_index,
-                            "relevance_score": (result.score * 100.0) as f64, // Convert to 0-100 scale
+                            "relevance_score": similarity as f64,
                             "source_knowledge_base": {
                                 "id": kb_clone.id,
                                 "name": kb_clone.name,
@@ -1114,7 +956,7 @@ impl AgentExecutor {
                 "memory_type": result.entry.memory_type,
                 "importance": result.entry.importance,
                 "created_at": result.entry.created_at,
-                "relevance_score": result.similarity_score,
+                "relevance_score": result.similarity_score as f64,
                 "source": "agent_memory"
             }));
         }
@@ -1127,6 +969,35 @@ impl AgentExecutor {
         _query: &str,
     ) -> Result<Vec<Value>, AppError> {
         Ok(vec![])
+    }
+
+    async fn search_dynamic_context_vector(&self, query: &str) -> Result<Vec<Value>, AppError> {
+        let query_embedding = GenerateEmbeddingCommand::new(query.to_string())
+            .execute(&self.app_state)
+            .await?;
+
+        let search_results = SearchAgentDynamicContextQuery {
+            execution_context_id: self.context_id,
+            query_embedding,
+            limit: 10,
+        }
+        .execute(&self.app_state)
+        .await?;
+
+        let mut results = Vec::new();
+        for result in search_results {
+            let similarity = (1.0 - (result.score / 2.0)).max(0.0);
+            results.push(json!({
+                "type": "dynamic_context",
+                "id": result.id,
+                "content": result.content,
+                "source": result.source.unwrap_or("dynamic".to_string()),
+                "created_at": result.created_at,
+                "relevance_score": similarity as f64,
+            }));
+        }
+
+        Ok(results)
     }
 
     async fn execute_tool_immediately(

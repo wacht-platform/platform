@@ -225,21 +225,27 @@ impl Query for GetAiAgentByNameWithFeatures {
             FROM
                 ai_agents a
             LEFT JOIN LATERAL (
-                SELECT COALESCE(jsonb_agg(t.*), '[]'::jsonb) as list
+                SELECT COALESCE(jsonb_agg(
+                    to_jsonb(t) || jsonb_build_object('id', t.id::text, 'deployment_id', t.deployment_id::text)
+                ), '[]'::jsonb) as list
                 FROM ai_tools t
                 WHERE t.deployment_id = a.deployment_id
                     AND jsonb_typeof(a.configuration->'tool_ids') = 'array'
                     AND t.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'tool_ids'))
             ) tools ON true
             LEFT JOIN LATERAL (
-                SELECT COALESCE(jsonb_agg(w.*), '[]'::jsonb) as list
+                SELECT COALESCE(jsonb_agg(
+                    to_jsonb(w) || jsonb_build_object('id', w.id::text, 'deployment_id', w.deployment_id::text)
+                ), '[]'::jsonb) as list
                 FROM ai_workflows w
                 WHERE w.deployment_id = a.deployment_id
                     AND jsonb_typeof(a.configuration->'workflow_ids') = 'array'
                     AND w.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'workflow_ids'))
             ) workflows ON true
             LEFT JOIN LATERAL (
-                SELECT COALESCE(jsonb_agg(k.*), '[]'::jsonb) as list
+                SELECT COALESCE(jsonb_agg(
+                    to_jsonb(k) || jsonb_build_object('id', k.id::text, 'deployment_id', k.deployment_id::text)
+                ), '[]'::jsonb) as list
                 FROM ai_knowledge_bases k
                 WHERE k.deployment_id = a.deployment_id
                     AND jsonb_typeof(a.configuration->'knowledge_base_ids') = 'array'

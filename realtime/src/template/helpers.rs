@@ -17,6 +17,10 @@ pub fn register_all_helpers(hb: &mut Handlebars) {
     hb.register_helper("truncate", Box::new(TruncateHelper));
     hb.register_helper("default", Box::new(DefaultHelper));
     hb.register_helper("format_capabilities", Box::new(FormatCapabilitiesHelper));
+    hb.register_helper(
+        "format_dynamic_context",
+        Box::new(FormatDynamicContextHelper),
+    );
 }
 
 pub struct FormatToolsHelper;
@@ -120,6 +124,42 @@ impl handlebars::HelperDef for FormatKnowledgeBasesHelper {
             .collect();
 
         out.write(&formatted_kbs.join("\n"))?;
+        Ok(())
+    }
+}
+
+pub struct FormatDynamicContextHelper;
+
+impl handlebars::HelperDef for FormatDynamicContextHelper {
+    fn call<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper,
+        _: &Handlebars,
+        _: &Context,
+        _: &mut RenderContext,
+        out: &mut dyn Output,
+    ) -> HelperResult {
+        let context_items = h
+            .param(0)
+            .and_then(|v| v.value().as_array())
+            .ok_or_else(|| RenderErrorReason::InvalidParamType("Expected dynamic context array"))?;
+
+        let formatted_items: Vec<String> = context_items
+            .iter()
+            .map(|item| {
+                let content = item
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("No content");
+                let source = item
+                    .get("source")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown source");
+                format!("- [{}] {}", source, content)
+            })
+            .collect();
+
+        out.write(&formatted_items.join("\n"))?;
         Ok(())
     }
 }

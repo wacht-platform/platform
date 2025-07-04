@@ -1,5 +1,28 @@
 use chrono::{DateTime, Utc};
+use pgvector::Vector;
 use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+
+#[derive(FromRow, Serialize, Deserialize, Clone)]
+pub struct KnowledgeBaseDocumentChunk {
+    pub document_id: i64,
+    pub knowledge_base_id: i64,
+    pub deployment_id: i64,
+    pub chunk_index: i32,
+    pub content: String,
+    pub embedding: Vector,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(FromRow, Serialize, Deserialize, Clone, Debug)]
+pub struct DocumentChunkSearchResult {
+    pub document_id: i64,
+    pub knowledge_base_id: i64,
+    pub content: String,
+    pub score: f64,
+    pub chunk_index: i32,
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AiKnowledgeBase {

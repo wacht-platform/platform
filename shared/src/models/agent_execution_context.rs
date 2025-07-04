@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AgentExecutionContext {
@@ -176,79 +178,85 @@ impl Default for ExecutionMessageSender {
 }
 
 // String conversions for database storage
-impl From<ExecutionContextStatus> for String {
-    fn from(status: ExecutionContextStatus) -> Self {
-        match status {
-            ExecutionContextStatus::Idle => "idle".to_string(),
-            ExecutionContextStatus::Running => "running".to_string(),
-            ExecutionContextStatus::WaitingForInput => "waiting_for_input".to_string(),
-            ExecutionContextStatus::Interrupted => "interrupted".to_string(),
-            ExecutionContextStatus::Completed => "completed".to_string(),
-            ExecutionContextStatus::Failed => "failed".to_string(),
+impl Display for ExecutionContextStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecutionContextStatus::Idle => write!(f, "idle"),
+            ExecutionContextStatus::Running => write!(f, "running"),
+            ExecutionContextStatus::WaitingForInput => write!(f, "waiting_for_input"),
+            ExecutionContextStatus::Interrupted => write!(f, "interrupted"),
+            ExecutionContextStatus::Completed => write!(f, "completed"),
+            ExecutionContextStatus::Failed => write!(f, "failed"),
         }
     }
 }
 
-impl From<String> for ExecutionContextStatus {
-    fn from(status: String) -> Self {
-        match status.as_str() {
-            "idle" => ExecutionContextStatus::Idle,
-            "running" => ExecutionContextStatus::Running,
-            "waiting_for_input" => ExecutionContextStatus::WaitingForInput,
-            "interrupted" => ExecutionContextStatus::Interrupted,
-            "completed" => ExecutionContextStatus::Completed,
-            "failed" => ExecutionContextStatus::Failed,
-            _ => ExecutionContextStatus::Idle,
+impl FromStr for ExecutionContextStatus {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "idle" => Ok(ExecutionContextStatus::Idle),
+            "running" => Ok(ExecutionContextStatus::Running),
+            "waiting_for_input" => Ok(ExecutionContextStatus::WaitingForInput),
+            "interrupted" => Ok(ExecutionContextStatus::Interrupted),
+            "completed" => Ok(ExecutionContextStatus::Completed),
+            "failed" => Ok(ExecutionContextStatus::Failed),
+            _ => Err(()),
         }
     }
 }
 
-impl From<ExecutionMessageType> for String {
-    fn from(msg_type: ExecutionMessageType) -> Self {
-        match msg_type {
-            ExecutionMessageType::UserInput => "user_input".to_string(),
-            ExecutionMessageType::AgentResponse => "agent_response".to_string(),
-            ExecutionMessageType::ToolCall => "tool_call".to_string(),
-            ExecutionMessageType::ToolResult => "tool_result".to_string(),
-            ExecutionMessageType::SystemMessage => "system_message".to_string(),
-            ExecutionMessageType::Error => "error".to_string(),
+impl Display for ExecutionMessageType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecutionMessageType::UserInput => write!(f, "user_input"),
+            ExecutionMessageType::AgentResponse => write!(f, "agent_response"),
+            ExecutionMessageType::ToolCall => write!(f, "tool_call"),
+            ExecutionMessageType::ToolResult => write!(f, "tool_result"),
+            ExecutionMessageType::SystemMessage => write!(f, "system_message"),
+            ExecutionMessageType::Error => write!(f, "error"),
         }
     }
 }
 
-impl From<String> for ExecutionMessageType {
-    fn from(msg_type: String) -> Self {
-        match msg_type.as_str() {
-            "user_input" => ExecutionMessageType::UserInput,
-            "agent_response" => ExecutionMessageType::AgentResponse,
-            "tool_call" => ExecutionMessageType::ToolCall,
-            "tool_result" => ExecutionMessageType::ToolResult,
-            "system_message" => ExecutionMessageType::SystemMessage,
-            "error" => ExecutionMessageType::Error,
-            _ => ExecutionMessageType::SystemMessage,
+impl FromStr for ExecutionMessageType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "user_input" => Ok(ExecutionMessageType::UserInput),
+            "agent_response" => Ok(ExecutionMessageType::AgentResponse),
+            "tool_call" => Ok(ExecutionMessageType::ToolCall),
+            "tool_result" => Ok(ExecutionMessageType::ToolResult),
+            "system_message" => Ok(ExecutionMessageType::SystemMessage),
+            "error" => Ok(ExecutionMessageType::Error),
+            _ => Err(()),
         }
     }
 }
 
-impl From<ExecutionMessageSender> for String {
-    fn from(sender: ExecutionMessageSender) -> Self {
-        match sender {
-            ExecutionMessageSender::User => "user".to_string(),
-            ExecutionMessageSender::Agent => "agent".to_string(),
-            ExecutionMessageSender::System => "system".to_string(),
-            ExecutionMessageSender::Tool => "tool".to_string(),
+impl Display for ExecutionMessageSender {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecutionMessageSender::User => write!(f, "user"),
+            ExecutionMessageSender::Agent => write!(f, "agent"),
+            ExecutionMessageSender::System => write!(f, "system"),
+            ExecutionMessageSender::Tool => write!(f, "tool"),
         }
     }
 }
 
-impl From<String> for ExecutionMessageSender {
-    fn from(sender: String) -> Self {
-        match sender.as_str() {
-            "user" => ExecutionMessageSender::User,
-            "agent" => ExecutionMessageSender::Agent,
-            "system" => ExecutionMessageSender::System,
-            "tool" => ExecutionMessageSender::Tool,
-            _ => ExecutionMessageSender::System,
+impl FromStr for ExecutionMessageSender {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "user" => Ok(ExecutionMessageSender::User),
+            "agent" => Ok(ExecutionMessageSender::Agent),
+            "system" => Ok(ExecutionMessageSender::System),
+            "tool" => Ok(ExecutionMessageSender::Tool),
+            _ => Err(()),
         }
     }
 }

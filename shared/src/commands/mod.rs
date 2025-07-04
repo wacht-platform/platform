@@ -9,6 +9,7 @@ pub trait Command {
     ) -> impl std::future::Future<Output = Result<Self::Output, AppError>> + Send;
 }
 
+pub mod agent_dynamic_context;
 pub mod agent_execution_context;
 pub mod ai_agents;
 pub mod ai_knowledge_base;
@@ -31,6 +32,7 @@ mod update_workspace;
 pub mod user;
 pub mod user_identifiers;
 mod workspace_role;
+pub use agent_dynamic_context::*;
 pub use agent_execution_context::*;
 pub use create_organization::*;
 pub use create_workspace::*;
@@ -51,6 +53,8 @@ pub use workspace_role::*;
 
 pub use ai_agents::*;
 pub use ai_knowledge_base::*;
+pub mod ai_memory;
+pub use ai_memory::*;
 pub use ai_tools::*;
 pub use ai_workflows::*;
 pub use embedding::*;

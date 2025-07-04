@@ -39,8 +39,9 @@ pub mod user;
 pub mod workspace;
 
 // AI-related queries
+pub mod agent_dynamic_context;
 pub mod ai_agent;
-pub mod ai_execution_context;
+pub mod agent_execution_context;
 pub mod ai_knowledge_base;
 pub mod ai_tool;
 pub mod ai_workflow;
@@ -55,8 +56,11 @@ pub use user::*;
 pub use workspace::*;
 
 // AI-related exports
+pub use agent_dynamic_context::*;
 pub use ai_agent::*;
-pub use ai_execution_context::*;
+pub use agent_execution_context::*;
 pub use ai_knowledge_base::*;
+pub mod ai_memory;
+pub use ai_memory::*;
 pub use ai_tool::*;
 pub use ai_workflow::*;

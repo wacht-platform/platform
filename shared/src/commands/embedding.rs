@@ -1,9 +1,10 @@
-use crate::{error::AppError, state::AppState};
-use llm::builder::{LLMBackend, LLMBuilder};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-
 use super::Command;
+use crate::{
+    error::AppError, models::ai_knowledge_base::DocumentChunkSearchResult, state::AppState,
+};
+use llm::builder::{LLMBackend, LLMBuilder};
+use pgvector::Vector;
+use sqlx::Row;
 
 #[derive(Clone)]
 pub struct GenerateEmbeddingCommand {
@@ -88,197 +89,6 @@ impl Command for GenerateEmbeddingsCommand {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct DocumentChunk {
-    pub id: i64,
-    pub content: String,
-    pub metadata: HashMap<String, serde_json::Value>,
-    pub embedding: Vec<f32>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub id: i64,
-    pub content: String,
-    pub score: f32,
-}
-
-#[derive(Clone)]
-pub struct StoreKnowledgeBaseEmbeddingCommand {
-    pub document_id: i64,
-    pub deployment_id: i64,
-    pub knowledge_base_id: i64,
-    pub chunk_index: i32,
-    pub content: String,
-    pub embedding: Vec<f32>,
-}
-
-impl StoreKnowledgeBaseEmbeddingCommand {
-    pub fn new(
-        document_id: i64,
-        deployment_id: i64,
-        knowledge_base_id: i64,
-        chunk_index: i32,
-        content: String,
-        embedding: Vec<f32>,
-    ) -> Self {
-        Self {
-            document_id,
-            deployment_id,
-            knowledge_base_id,
-            chunk_index,
-            content,
-            embedding,
-        }
-    }
-}
-
-impl Command for StoreKnowledgeBaseEmbeddingCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .clickhouse_service
-            .store_knowledge_base_document(
-                self.document_id,
-                self.deployment_id,
-                self.knowledge_base_id,
-                self.chunk_index,
-                &self.content,
-                self.embedding,
-            )
-            .await
-    }
-}
-
-#[derive(Clone)]
-pub struct StoreMemoryEmbeddingCommand {
-    pub memory_id: i64,
-    pub deployment_id: i64,
-    pub execution_context_id: i64,
-    pub memory_type: String,
-    pub content: String,
-    pub embedding: Vec<f32>,
-    pub importance: f32,
-    pub access_count: i32,
-}
-
-impl StoreMemoryEmbeddingCommand {
-    pub fn new(
-        memory_id: i64,
-        deployment_id: i64,
-        execution_context_id: i64,
-        memory_type: String,
-        content: String,
-        embedding: Vec<f32>,
-        importance: f32,
-        access_count: i32,
-    ) -> Self {
-        Self {
-            memory_id,
-            deployment_id,
-            execution_context_id,
-            memory_type,
-            content,
-            embedding,
-            importance,
-            access_count,
-        }
-    }
-}
-
-impl Command for StoreMemoryEmbeddingCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        Ok(())
-    }
-}
-
-/// Command to store conversation embeddings
-#[derive(Clone)]
-pub struct StoreConversationEmbeddingCommand {
-    pub message_id: i64,
-    pub deployment_id: i64,
-    pub execution_context_id: i64,
-    pub agent_id: i64,
-    pub message_type: String,
-    pub content: String,
-    pub embedding: Vec<f32>,
-}
-
-impl StoreConversationEmbeddingCommand {
-    pub fn new(
-        message_id: i64,
-        deployment_id: i64,
-        execution_context_id: i64,
-        agent_id: i64,
-        message_type: String,
-        content: String,
-        embedding: Vec<f32>,
-    ) -> Self {
-        Self {
-            message_id,
-            deployment_id,
-            execution_context_id,
-            agent_id,
-            message_type,
-            content,
-            embedding,
-        }
-    }
-}
-
-impl Command for StoreConversationEmbeddingCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .clickhouse_service
-            .store_execution_message(
-                self.message_id,
-                self.deployment_id,
-                self.execution_context_id,
-                self.agent_id,
-                &self.message_type,
-                &self.content,
-                self.embedding,
-            )
-            .await
-    }
-}
-
-/// Command to store context embeddings
-#[derive(Clone)]
-pub struct StoreContextEmbeddingCommand {
-    pub context_id: i64,
-    pub deployment_id: i64,
-    pub execution_context_id: i64,
-    pub content: String,
-    pub embedding: Vec<f32>,
-    pub metadata: HashMap<String, serde_json::Value>,
-}
-
-impl StoreContextEmbeddingCommand {
-    pub fn new(
-        context_id: i64,
-        deployment_id: i64,
-        execution_context_id: i64,
-        content: String,
-        embedding: Vec<f32>,
-        metadata: HashMap<String, serde_json::Value>,
-    ) -> Self {
-        Self {
-            context_id,
-            deployment_id,
-            execution_context_id,
-            content,
-            embedding,
-            metadata,
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct SearchKnowledgeBaseEmbeddingsCommand {
     pub knowledge_base_id: i64,
@@ -297,258 +107,36 @@ impl SearchKnowledgeBaseEmbeddingsCommand {
 }
 
 impl Command for SearchKnowledgeBaseEmbeddingsCommand {
-    type Output = Vec<crate::services::clickhouse::DocumentSearchResult>;
+    type Output = Vec<DocumentChunkSearchResult>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .clickhouse_service
-            .search_knowledge_base_documents(
-                self.knowledge_base_id,
-                self.query_embedding,
-                self.limit,
-            )
-            .await
-    }
-}
+        let query_embedding = Vector::from(self.query_embedding.clone());
+        let rows = sqlx::query(
+            r#"
+            SELECT document_id, knowledge_base_id, content, chunk_index, (embedding <-> $1)::float8 as score
+            FROM knowledge_base_document_chunks
+            WHERE knowledge_base_id = $2
+            ORDER BY score ASC LIMIT $3
+            "#,
+        )
+        .bind(query_embedding)
+        .bind(self.knowledge_base_id)
+        .bind(self.limit as i64)
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(AppError::from)?;
 
-/// Command to search memory embeddings
-#[derive(Clone)]
-pub struct SearchMemoryEmbeddingsCommand {
-    pub deployment_id: i64,
-    pub agent_id: i64,
-    pub query_embedding: Vec<f32>,
-    pub limit: u64,
-    pub filters: Option<HashMap<String, serde_json::Value>>,
-}
-
-impl SearchMemoryEmbeddingsCommand {
-    pub fn new(
-        deployment_id: i64,
-        agent_id: i64,
-        query_embedding: Vec<f32>,
-        limit: u64,
-        filters: Option<HashMap<String, serde_json::Value>>,
-    ) -> Self {
-        Self {
-            deployment_id,
-            agent_id,
-            query_embedding,
-            limit,
-            filters,
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(DocumentChunkSearchResult {
+                document_id: row.try_get("document_id").map_err(AppError::from)?,
+                knowledge_base_id: row.try_get("knowledge_base_id").map_err(AppError::from)?,
+                content: row.try_get("content").map_err(AppError::from)?,
+                score: row.try_get("score").map_err(AppError::from)?,
+                chunk_index: row.try_get("chunk_index").map_err(AppError::from)?,
+            });
         }
-    }
-}
 
-impl Command for SearchMemoryEmbeddingsCommand {
-    type Output = Vec<SearchResult>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let memory_type_filter = self
-            .filters
-            .as_ref()
-            .and_then(|f| f.get("memory_type"))
-            .and_then(|v| v.as_str());
-
-        let results = app_state
-            .clickhouse_service
-            .search_memories(
-                self.agent_id,
-                self.query_embedding,
-                self.limit,
-                memory_type_filter,
-            )
-            .await?;
-
-        Ok(results
-            .into_iter()
-            .map(|r| SearchResult {
-                id: r.id,
-                content: r.content,
-                score: r.score,
-            })
-            .collect())
-    }
-}
-
-#[derive(Clone)]
-pub struct SearchConversationEmbeddingsCommand {
-    pub deployment_id: i64,
-    pub execution_context_id: i64,
-    pub query_embedding: Vec<f32>,
-    pub limit: u64,
-}
-
-impl SearchConversationEmbeddingsCommand {
-    pub fn new(
-        deployment_id: i64,
-        execution_context_id: i64,
-        query_embedding: Vec<f32>,
-        limit: u64,
-    ) -> Self {
-        Self {
-            deployment_id,
-            execution_context_id,
-            query_embedding,
-            limit,
-        }
-    }
-}
-
-impl Command for SearchConversationEmbeddingsCommand {
-    type Output = Vec<crate::services::clickhouse::MessageSearchResult>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .clickhouse_service
-            .search_execution_messages(self.execution_context_id, self.query_embedding, self.limit)
-            .await
-    }
-}
-
-#[derive(Clone)]
-pub struct SearchContextEmbeddingsCommand {
-    pub deployment_id: i64,
-    pub execution_context_id: i64,
-    pub query_embedding: Vec<f32>,
-    pub limit: u64,
-    pub filters: Option<HashMap<String, serde_json::Value>>,
-}
-
-impl SearchContextEmbeddingsCommand {
-    pub fn new(
-        deployment_id: i64,
-        execution_context_id: i64,
-        query_embedding: Vec<f32>,
-        limit: u64,
-        filters: Option<HashMap<String, serde_json::Value>>,
-    ) -> Self {
-        Self {
-            deployment_id,
-            execution_context_id,
-            query_embedding,
-            limit,
-            filters,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct DeleteKnowledgeBaseEmbeddingsCommand {
-    pub knowledge_base_id: i64,
-}
-
-impl DeleteKnowledgeBaseEmbeddingsCommand {
-    pub fn new(knowledge_base_id: i64) -> Self {
-        Self { knowledge_base_id }
-    }
-}
-
-impl Command for DeleteKnowledgeBaseEmbeddingsCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .clickhouse_service
-            .delete_knowledge_base_embeddings(self.knowledge_base_id)
-            .await
-    }
-}
-
-/// Command to delete document embeddings for a specific document
-#[derive(Clone)]
-pub struct DeleteDocumentEmbeddingsCommand {
-    pub knowledge_base_id: i64,
-    pub document_id: i64,
-}
-
-impl DeleteDocumentEmbeddingsCommand {
-    pub fn new(knowledge_base_id: i64, document_id: i64) -> Self {
-        Self {
-            knowledge_base_id,
-            document_id,
-        }
-    }
-}
-
-impl Command for DeleteDocumentEmbeddingsCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .clickhouse_service
-            .delete_document_embeddings(self.document_id)
-            .await
-    }
-}
-
-/// Command to delete execution context embeddings
-#[derive(Clone)]
-pub struct DeleteExecutionContextEmbeddingsCommand {
-    pub execution_context_id: i64,
-}
-
-impl DeleteExecutionContextEmbeddingsCommand {
-    pub fn new(execution_context_id: i64) -> Self {
-        Self {
-            execution_context_id,
-        }
-    }
-}
-
-impl Command for DeleteExecutionContextEmbeddingsCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .clickhouse_service
-            .delete_execution_context_embeddings(self.execution_context_id)
-            .await
-    }
-}
-
-/// Command to delete agent memories
-#[derive(Clone)]
-pub struct DeleteAgentMemoriesCommand {
-    pub agent_id: i64,
-}
-
-impl DeleteAgentMemoriesCommand {
-    pub fn new(agent_id: i64) -> Self {
-        Self { agent_id }
-    }
-}
-
-impl Command for DeleteAgentMemoriesCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .clickhouse_service
-            .delete_agent_memories(self.agent_id)
-            .await
-    }
-}
-
-#[derive(Clone)]
-pub struct DeleteExecutionContextMemoriesCommand {
-    pub execution_context_id: i64,
-}
-
-impl DeleteExecutionContextMemoriesCommand {
-    pub fn new(execution_context_id: i64) -> Self {
-        Self {
-            execution_context_id,
-        }
-    }
-}
-
-impl Command for DeleteExecutionContextMemoriesCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .clickhouse_service
-            .delete_execution_context_memories(self.execution_context_id)
-            .await
+        Ok(results)
     }
 }

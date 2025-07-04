@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{models::AiKnowledgeBaseWithDetails, services::clickhouse::DocumentSearchResult};
+use crate::models::AiKnowledgeBaseWithDetails;
 
 // Knowledge Base CRUD Models
 #[derive(Deserialize)]
@@ -56,18 +56,4 @@ pub struct KnowledgeBaseSearchResult {
     pub title: Option<String>,
     pub file_type: Option<String>,
     pub chunk_index: Option<i64>,
-}
-
-impl From<DocumentSearchResult> for KnowledgeBaseSearchResult {
-    fn from(result: DocumentSearchResult) -> Self {
-        Self {
-            id: result.id.to_string(),
-            content: result.content,
-            score: result.score,
-            knowledge_base_id: Some(result.knowledge_base_id.to_string()),
-            title: None,     // Not available in DocumentSearchResult
-            file_type: None, // Not available in DocumentSearchResult
-            chunk_index: Some(result.chunk_index as i64),
-        }
-    }
 }

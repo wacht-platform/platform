@@ -30,7 +30,7 @@ impl Command for CreateExecutionContextCommand {
 
         sqlx::query!(
             r#"
-            INSERT INTO ai_execution_contexts
+            INSERT INTO agent_execution_contexts
             (id, created_at, updated_at, deployment_id, title, current_goal, tasks, last_activity_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
@@ -45,7 +45,7 @@ impl Command for CreateExecutionContextCommand {
         )
         .execute(&app_state.db_pool)
         .await
-        .map_err(|e| AppError::Database(e)).unwrap();
+        .map_err(|e| AppError::Database(e))?;
 
         Ok(AgentExecutionContext {
             id: context_id,
@@ -105,7 +105,7 @@ impl super::Command for UpdateExecutionContextQuery {
         // Use individual updates for simplicity and to avoid lifetime issues
         if let Some(ref goal) = self.current_goal {
             sqlx::query!(
-                "UPDATE ai_execution_contexts SET updated_at = $1, last_activity_at = $1, current_goal = $2 WHERE id = $3 AND deployment_id = $4",
+                "UPDATE agent_execution_contexts SET updated_at = $1, last_activity_at = $1, current_goal = $2 WHERE id = $3 AND deployment_id = $4",
                 now,
                 goal,
                 self.context_id,
@@ -118,7 +118,7 @@ impl super::Command for UpdateExecutionContextQuery {
 
         if let Some(ref tasks) = self.tasks {
             sqlx::query!(
-                "UPDATE ai_execution_contexts SET updated_at = $1, last_activity_at = $1, tasks = $2 WHERE id = $3 AND deployment_id = $4",
+                "UPDATE agent_execution_contexts SET updated_at = $1, last_activity_at = $1, tasks = $2 WHERE id = $3 AND deployment_id = $4",
                 now,
                 tasks,
                 self.context_id,
@@ -131,7 +131,7 @@ impl super::Command for UpdateExecutionContextQuery {
 
         if let Some(completed_at) = self.completed_at {
             sqlx::query!(
-                "UPDATE ai_execution_contexts SET updated_at = $1, last_activity_at = $1, completed_at = $2 WHERE id = $3 AND deployment_id = $4",
+                "UPDATE agent_execution_contexts SET updated_at = $1, last_activity_at = $1, completed_at = $2 WHERE id = $3 AND deployment_id = $4",
                 now,
                 completed_at,
                 self.context_id,
@@ -199,15 +199,15 @@ impl Command for CreateExecutionMessageCommand {
 
         sqlx::query!(
             r#"
-            INSERT INTO ai_execution_messages
+            INSERT INTO agent_execution_messages
             (id, created_at, execution_context_id, message_type, sender, content, metadata, tool_calls, tool_results)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
             message_id,
             now,
             self.execution_context_id,
-            serde_json::to_string(&self.message_type).unwrap_or_default(),
-            serde_json::to_string(&self.sender).unwrap_or_default(),
+            self.message_type.to_string(),
+            self.sender.to_string(),
             self.content,
             self.metadata,
             self.tool_calls,

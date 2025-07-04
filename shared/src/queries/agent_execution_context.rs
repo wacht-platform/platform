@@ -5,6 +5,7 @@ use crate::models::{
     ExecutionMessageSender, ExecutionMessageType,
 };
 use crate::state::AppState;
+use std::str::FromStr;
 
 pub struct GetExecutionContextQuery {
     pub context_id: i64,
@@ -28,7 +29,7 @@ impl super::Query for GetExecutionContextQuery {
             r#"
             SELECT id, created_at, updated_at, deployment_id,
             title, current_goal, tasks, last_activity_at, completed_at
-            FROM ai_execution_contexts
+            FROM agent_execution_contexts
             WHERE id = $1 AND deployment_id = $2
             "#,
             self.context_id,
@@ -100,7 +101,7 @@ impl super::Query for GetExecutionMessagesQuery {
             let messages = sqlx::query!(
                 r#"
                 SELECT id, created_at, execution_context_id, message_type, sender, content, metadata, tool_calls, tool_results
-                FROM ai_execution_messages
+                FROM agent_execution_messages
                 WHERE execution_context_id = $1
                 ORDER BY created_at ASC
                 LIMIT $2 OFFSET $3
@@ -114,11 +115,9 @@ impl super::Query for GetExecutionMessagesQuery {
             .map_err(|e| AppError::Database(e))?;
 
             for message in messages {
-                let message_type: ExecutionMessageType =
-                    serde_json::from_str(&message.message_type)
-                        .unwrap_or(ExecutionMessageType::SystemMessage);
-                let sender: ExecutionMessageSender =
-                    serde_json::from_str(&message.sender).unwrap_or(ExecutionMessageSender::System);
+                let message_type =
+                    ExecutionMessageType::from_str(&message.message_type).unwrap_or_default();
+                let sender = ExecutionMessageSender::from_str(&message.sender).unwrap_or_default();
 
                 result.push(AgentExecutionContextMessage {
                     id: message.id,
@@ -136,9 +135,9 @@ impl super::Query for GetExecutionMessagesQuery {
             let messages = sqlx::query!(
                 r#"
                 SELECT id, created_at, execution_context_id, message_type, sender, content, metadata, tool_calls, tool_results
-                FROM ai_execution_messages
+                FROM agent_execution_messages
                 WHERE execution_context_id = $1
-                ORDER BY created_at ASC
+                ORDER BY created_at DESC
                 LIMIT $2 OFFSET $3
                 "#,
                 self.execution_context_id,
@@ -150,11 +149,9 @@ impl super::Query for GetExecutionMessagesQuery {
             .map_err(|e| AppError::Database(e))?;
 
             for message in messages {
-                let message_type: ExecutionMessageType =
-                    serde_json::from_str(&message.message_type)
-                        .unwrap_or(ExecutionMessageType::SystemMessage);
-                let sender: ExecutionMessageSender =
-                    serde_json::from_str(&message.sender).unwrap_or(ExecutionMessageSender::System);
+                let message_type =
+                    ExecutionMessageType::from_str(&message.message_type).unwrap_or_default();
+                let sender = ExecutionMessageSender::from_str(&message.sender).unwrap_or_default();
 
                 result.push(AgentExecutionContextMessage {
                     id: message.id,

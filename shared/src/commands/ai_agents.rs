@@ -213,6 +213,15 @@ impl Command for DeleteAiAgentCommand {
         .await
         .map_err(|e| AppError::Database(e))?;
 
+        // Delete agent memories
+        sqlx::query!(
+            "DELETE FROM agent_execution_memories WHERE agent_id = $1",
+            self.agent_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
         // Delete the agent
         sqlx::query!(
             "DELETE FROM ai_agents WHERE id = $1 AND deployment_id = $2",
@@ -224,18 +233,6 @@ impl Command for DeleteAiAgentCommand {
         .map_err(|e| AppError::Database(e))?;
 
         tx.commit().await.map_err(|e| AppError::Database(e))?;
-
-        // Delete ClickHouse memories for this agent
-        let agent_id = self.agent_id;
-        if let Err(e) = app_state
-            .clickhouse_service
-            .delete_agent_memories(agent_id)
-            .await
-        {
-            eprintln!("Failed to delete ClickHouse memories for agent {}: {}", agent_id, e);
-        } else {
-            println!("Successfully deleted ClickHouse memories for agent {}", agent_id);
-        }
 
         Ok(())
     }

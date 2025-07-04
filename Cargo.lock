@@ -3159,6 +3159,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pgvector"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc58e2d255979a31caa7cabfa7aac654af0354220719ab7a68520ae7a91e8c0b"
+dependencies = [
+ "serde",
+ "sqlx",
+]
+
+[[package]]
 name = "pin-project"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4098,6 +4108,7 @@ dependencies = [
  "handlebars",
  "llm",
  "pdf-extract",
+ "pgvector",
  "pulldown-cmark",
  "rand 0.9.0",
  "rcgen",

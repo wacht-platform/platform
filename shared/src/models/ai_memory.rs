@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
+use pgvector::Vector;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sqlx::FromRow;
 use std::collections::HashMap;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -10,9 +12,7 @@ pub struct MemoryEntry {
     pub content: String,
     pub metadata: HashMap<String, Value>,
     pub importance: f32,
-    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub created_at: DateTime<Utc>,
-    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub last_accessed: DateTime<Utc>,
     pub access_count: u32,
     pub embedding: Vec<f32>,
@@ -74,32 +74,53 @@ pub struct MemorySearchResult {
     pub similarity_score: f32,
 }
 
-#[derive(Serialize, Deserialize, clickhouse::Row)]
+#[derive(Serialize, Deserialize, FromRow)]
 pub struct MemoryRecord {
     pub id: i64,
     pub deployment_id: i64,
     pub agent_id: i64,
-    pub execution_context_id: i64,
+    pub execution_context_id: Option<i64>,
     pub memory_type: String,
     pub content: String,
-    pub embedding: Vec<f32>,
+    pub embedding: Vector,
     pub importance: f32,
     pub access_count: i32,
-    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub created_at: DateTime<Utc>,
-    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub last_accessed_at: DateTime<Utc>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, FromRow, Debug, Clone)]
 pub struct MemorySearchRecord {
     pub id: i64,
-    pub content: String,
-    pub score: f32,
+    pub deployment_id: i64,
     pub agent_id: i64,
+    pub execution_context_id: Option<i64>,
     pub memory_type: String,
+    pub content: String,
+    pub embedding: Vector,
     pub importance: f32,
     pub access_count: i32,
+    pub created_at: DateTime<Utc>,
+    pub last_accessed_at: DateTime<Utc>,
+    pub score: f32,
+}
+
+impl From<MemorySearchRecord> for MemoryEntry {
+    fn from(record: MemorySearchRecord) -> Self {
+        let memory_type = MemoryType::from_str(&record.memory_type).unwrap_or(MemoryType::Working);
+
+        Self {
+            id: record.id,
+            memory_type,
+            content: record.content,
+            metadata: HashMap::new(),
+            importance: record.importance,
+            created_at: record.created_at,
+            last_accessed: record.last_accessed_at,
+            access_count: record.access_count as u32,
+            embedding: record.embedding.into(),
+        }
+    }
 }
 
 impl From<MemoryEntry> for MemoryRecord {
@@ -108,10 +129,10 @@ impl From<MemoryEntry> for MemoryRecord {
             id: entry.id,
             deployment_id: 0,
             agent_id: 0,
-            execution_context_id: 0,
+            execution_context_id: None,
             memory_type: entry.memory_type.to_string(),
             content: entry.content,
-            embedding: entry.embedding,
+            embedding: Vector::from(entry.embedding),
             importance: entry.importance,
             access_count: entry.access_count as i32,
             created_at: entry.created_at,
@@ -139,7 +160,7 @@ impl From<MemoryRecord> for MemoryEntry {
             created_at: record.created_at,
             last_accessed: record.last_accessed_at,
             access_count: record.access_count as u32,
-            embedding: record.embedding,
+            embedding: record.embedding.into(),
         }
     }
 }
