@@ -104,10 +104,8 @@ pub async fn send_verification_email_impl(
     recipient: &str,
     user_id: u64,
     verification_code: &str,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -142,10 +140,8 @@ pub async fn send_password_reset_email_impl(
     recipient: &str,
     user_id: u64,
     reset_code: &str,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -180,10 +176,8 @@ pub async fn send_magic_link_email_impl(
     recipient: &str,
     user_id: u64,
     magic_link: &str,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -217,10 +211,8 @@ pub async fn send_signin_notification_email_impl(
     recipient: &str,
     user_id: u64,
     signin_id: u64,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -261,10 +253,8 @@ pub async fn send_email_change_notification_impl(
     user_id: u64,
     old_email: &str,
     new_email: &str,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -298,10 +288,8 @@ pub async fn send_password_change_notification_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -337,10 +325,8 @@ pub async fn send_password_remove_notification_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -376,10 +362,8 @@ pub async fn send_waitlist_signup_email_impl(
     deployment_id: u64,
     recipient: &str,
     user_id: u64,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
@@ -413,10 +397,8 @@ pub async fn send_organization_membership_invite_impl(
     recipient: &str,
     inviter_user_id: u64,
     organization_id: u64,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     // Fetch inviter user details
     let inviter_details = GetUserDetailsQuery::new(deployment_id as i64, inviter_user_id as i64)
@@ -463,12 +445,10 @@ pub async fn send_deployment_invite_impl(
     deployment_id: u64,
     recipient: &str,
     inviter_user_id: u64,
-    invitation_id: u64,
+    deployment_invitation_id: u64,
     workspace_id: Option<u64>,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     // Fetch inviter user details
     let inviter_details = GetUserDetailsQuery::new(deployment_id as i64, inviter_user_id as i64)
@@ -492,7 +472,7 @@ pub async fn send_deployment_invite_impl(
     };
 
     // Fetch invitation details
-    let invitation = fetch_deployment_invitation(&app_state, invitation_id)
+    let invitation = fetch_deployment_invitation(&app_state, deployment_invitation_id)
         .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
 
@@ -521,14 +501,12 @@ pub async fn send_deployment_invite_impl(
 pub async fn send_waitlist_approval_impl(
     deployment_id: u64,
     recipient: &str,
-    invitation_id: u64,
+    deployment_invitation_id: u64,
+    app_state: &AppState,
 ) -> Result<String, String> {
-    let app_state = get_app_state()
-        .await
-        .map_err(|e| format!("Failed to get app state: {}", e))?;
 
     // Fetch invitation details (which contains user info)
-    let invitation = fetch_deployment_invitation(&app_state, invitation_id)
+    let invitation = fetch_deployment_invitation(&app_state, deployment_invitation_id)
         .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
 
@@ -583,9 +561,6 @@ pub async fn send_waitlist_approval_impl(
     Ok(format!("waitlist_approval_sent_{}", deployment_id))
 }
 
-async fn get_app_state() -> Result<AppState, String> {
-    Ok(AppState::new_from_env().await.unwrap())
-}
 
 async fn fetch_signin_details(app_state: &AppState, signin_id: u64) -> Result<SignIn, String> {
     GetSignInQuery::new(signin_id as i64)
@@ -596,9 +571,9 @@ async fn fetch_signin_details(app_state: &AppState, signin_id: u64) -> Result<Si
 
 async fn fetch_deployment_invitation(
     app_state: &AppState,
-    invitation_id: u64,
+    deployment_invitation_id: u64,
 ) -> Result<DeploymentInvitation, String> {
-    GetDeploymentInvitationQuery::new(invitation_id as i64)
+    GetDeploymentInvitationQuery::new(deployment_invitation_id as i64)
         .execute(app_state)
         .await
         .map_err(|e| format!("Failed to fetch deployment invitation: {}", e))

@@ -10,10 +10,13 @@ pub struct SMSTask {
     pub phone_number: String,
 }
 
+use shared::state::AppState;
+
 pub async fn send_sms_by_type(
     sms_type: &str,
     deployment_id: u64,
     _phone_number: &str,
+    _app_state: &AppState,
 ) -> Result<String, String> {
     match sms_type {
         "verification" => Ok(format!("verification_sms_{}", deployment_id)),

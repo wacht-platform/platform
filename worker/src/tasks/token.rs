@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use shared::state::AppState;
 use tracing::{error, info};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -11,6 +12,7 @@ pub struct TokenCleanupTask {
 pub async fn cleanup_rotating_token_and_session(
     rotating_token_id: u64,
     session_id: u64,
+    _app_state: &AppState,
 ) -> Result<String, String> {
     info!(
         "Token cleanup: rotating_token_id={}, session_id={}",

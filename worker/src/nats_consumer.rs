@@ -18,6 +18,7 @@ pub struct NatsConsumer {
 type TaskHandler = Box<
     dyn Fn(
             serde_json::Value,
+            AppState,
         ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = Result<String, anyhow::Error>> + Send>,
         > + Send
@@ -30,7 +31,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_verification".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::VerificationEmailTask = serde_json::from_value(payload)
                         .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
@@ -39,6 +40,7 @@ impl NatsConsumer {
                         &task.recipient,
                         task.user_id,
                         &task.verification_code,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -48,7 +50,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_password_reset".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::PasswordResetEmailTask = serde_json::from_value(payload)
                         .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
@@ -57,6 +59,7 @@ impl NatsConsumer {
                         &task.recipient,
                         task.user_id,
                         &task.reset_code,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -66,7 +69,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_magic_link".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::MagicLinkEmailTask = serde_json::from_value(payload)
                         .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
@@ -75,6 +78,7 @@ impl NatsConsumer {
                         &task.recipient,
                         task.user_id,
                         &task.magic_link,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -84,7 +88,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_signin_notification".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::SignInNotificationTask = serde_json::from_value(payload)
                         .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
@@ -93,6 +97,7 @@ impl NatsConsumer {
                         &task.recipient,
                         task.user_id,
                         task.signin_id,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -102,7 +107,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_email_change_notification".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::EmailChangeNotificationTask = serde_json::from_value(payload)
                         .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
@@ -112,6 +117,7 @@ impl NatsConsumer {
                         task.user_id,
                         &task.old_email,
                         &task.new_email,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -121,7 +127,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_password_change_notification".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::PasswordChangeNotificationTask =
                         serde_json::from_value(payload)
@@ -130,6 +136,7 @@ impl NatsConsumer {
                         task.deployment_id,
                         &task.recipient,
                         task.user_id,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -139,7 +146,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_password_remove_notification".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::PasswordRemoveNotificationTask =
                         serde_json::from_value(payload)
@@ -148,6 +155,7 @@ impl NatsConsumer {
                         task.deployment_id,
                         &task.recipient,
                         task.user_id,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -157,7 +165,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_waitlist_signup".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::WaitlistSignupTask = serde_json::from_value(payload)
                         .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
@@ -165,6 +173,7 @@ impl NatsConsumer {
                         task.deployment_id,
                         &task.recipient,
                         task.user_id,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -174,7 +183,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_organization_membership_invite".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::OrganizationMembershipInviteTask =
                         serde_json::from_value(payload)
@@ -184,6 +193,7 @@ impl NatsConsumer {
                         &task.recipient,
                         task.inviter_user_id,
                         task.organization_id,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -193,7 +203,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_deployment_invite".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::DeploymentInviteTask = serde_json::from_value(payload)
                         .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
@@ -203,6 +213,7 @@ impl NatsConsumer {
                         task.inviter_user_id,
                         task.deployment_invitation_id,
                         task.workspace_id,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -212,7 +223,7 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "email.send_waitlist_approval".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: email::WaitlistApprovalTask = serde_json::from_value(payload)
                         .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
@@ -220,6 +231,7 @@ impl NatsConsumer {
                         task.deployment_id,
                         &task.recipient,
                         task.deployment_invitation_id,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -229,11 +241,11 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "sms.send".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: sms::SMSTask = serde_json::from_value(payload)
                         .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
-                    sms::send_sms_by_type(&task.task_type, task.deployment_id, &task.phone_number)
+                    sms::send_sms_by_type(&task.task_type, task.deployment_id, &task.phone_number, &app_state)
                         .await
                         .map_err(|e| anyhow::anyhow!("{}", e))
                 })
@@ -242,13 +254,14 @@ impl NatsConsumer {
 
         task_handlers.insert(
             "token.clean".to_string(),
-            Box::new(|payload| {
+            Box::new(|payload, app_state| {
                 Box::pin(async move {
                     let task: token::TokenCleanupTask = serde_json::from_value(payload)
                         .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
                     token::cleanup_rotating_token_and_session(
                         task.rotating_token_id,
                         task.session_id,
+                        &app_state,
                     )
                     .await
                     .map_err(|e| anyhow::anyhow!("{}", e))
@@ -310,7 +323,7 @@ impl NatsConsumer {
         );
 
         let result = if let Some(handler) = self.task_handlers.get(&task_message.task_type) {
-            match handler(task_message.payload).await {
+            match handler(task_message.payload, self.app_state.clone()).await {
                 Ok(result) => {
                     info!("Task {} completed successfully", task_message.task_id);
                     TaskResult::success(task_message.task_id.clone(), result)
