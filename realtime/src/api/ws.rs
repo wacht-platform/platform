@@ -14,7 +14,6 @@ use shared::queries::GetAiAgentByNameWithFeatures;
 use shared::queries::GetExecutionMessagesQuery;
 use shared::state::AppState;
 use std::sync::Arc;
-use tokio::sync::Notify;
 use tokio::sync::{Mutex, mpsc};
 
 use super::models::{WebsocketMessage, WebsocketMessageType};
@@ -292,7 +291,7 @@ async fn handle_execution_message(
                 context_id,
             };
 
-            AgentHandler::new(app_state)
+            let _ = AgentHandler::new(app_state)
                 .execute_agent_streaming(execution_request)
                 .await;
         }

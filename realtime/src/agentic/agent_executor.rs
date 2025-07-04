@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use shared::commands::{
     Command, CreateAgentDynamicContextCommand, CreateExecutionMessageCommand, CreateMemoryCommand,
-    GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand,
+    DeleteAgentDynamicContextCommand, GenerateEmbeddingCommand,
+    SearchKnowledgeBaseEmbeddingsCommand,
 };
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
@@ -20,7 +21,8 @@ use shared::queries::{
     GetExecutionMessagesQuery, Query, SearchAgentDynamicContextQuery, SearchMemoriesQuery,
 };
 use shared::state::AppState;
-use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename = "response")]
@@ -31,12 +33,56 @@ pub struct AcknowledgmentResponse {
     pub reasoning: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum TaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+    Blocked,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Task {
+    pub id: String,
+    pub description: String,
+    pub status: TaskStatus,
+    pub dependencies: Vec<String>,
+    pub context: Value,
+    pub result: Option<Value>,
+    pub error: Option<String>,
+    pub created_at: chrono::DateTime<Utc>,
+    pub updated_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename = "task_plan")]
+pub struct TaskPlan {
+    pub tasks: Vec<Task>,
+    pub reasoning: String,
+    pub estimated_steps: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub tool_id: i64,
+    pub tool_name: String,
+    pub parameters: Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WorkflowCall {
+    pub workflow_id: i64,
+    pub workflow_name: String,
+    pub input_data: Value,
+}
+
 pub struct AgentExecutor {
     pub agent: AiAgentWithFeatures,
     pub app_state: AppState,
-    pub memories: Vec<MemoryEntry>,
     pub context_id: i64,
     pub deployment_id: i64,
+    pub current_tasks: Arc<Mutex<Vec<Task>>>,
 }
 
 impl AgentExecutor {
@@ -49,32 +95,9 @@ impl AgentExecutor {
         Ok(Self {
             agent,
             app_state,
-            memories: Vec::new(),
             context_id,
             deployment_id,
-        })
-    }
-
-    fn extract_title_from_input(&self, input: &str) -> String {
-        let title = input.lines().next().unwrap_or(input);
-        if title.len() > 50 {
-            format!("{}...", &title[..47])
-        } else {
-            title.to_string()
-        }
-    }
-
-    fn get_enhanced_system_prompt(&self) -> String {
-        let context = json!({
-            "agent_name": &self.agent.name,
-            "tools": &self.agent.tools,
-            "workflows": &self.agent.workflows,
-            "knowledge_bases": &self.agent.knowledge_bases
-        });
-
-        render_template(AgentTemplates::SYSTEM_PROMPT, &context).unwrap_or_else(|e| {
-            tracing::error!("Failed to render system prompt template: {}", e);
-            format!("You are {}, an intelligent AI agent.", &self.agent.name)
+            current_tasks: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -140,7 +163,13 @@ impl AgentExecutor {
         .await?;
 
         if acknowledgment_response.further_action_required {
-            self.execute_task_execution_loop(user_message).await?;
+            self.execute_task_execution_loop(
+                user_message,
+                &conversation_history,
+                &memories,
+                channel.clone(),
+            )
+            .await?;
         }
 
         Ok(())
@@ -170,6 +199,14 @@ impl AgentExecutor {
         }
         .execute(&self.app_state)
         .await?;
+
+        Ok(())
+    }
+
+    pub async fn delete_dynamic_context(&self, context_id: i64) -> Result<(), AppError> {
+        DeleteAgentDynamicContextCommand { id: context_id }
+            .execute(&self.app_state)
+            .await?;
 
         Ok(())
     }
@@ -302,27 +339,150 @@ impl AgentExecutor {
         Ok(())
     }
 
-    async fn execute_task_execution_loop(&mut self, user_message: &str) -> Result<(), AppError> {
-        // This is where the agentic loop for breaking down and executing tasks would go.
-        // For now, we'll just log a completion message.
-        // Step 1: Analyze user request and create a task plan (not implemented)
-        // Step 2: Execute tasks in the plan (not implemented)
-        // Step 3: Validate progress and adjust plan if necessary (not implemented)
+    async fn execute_task_execution_loop(
+        &mut self,
+        user_message: &str,
+        conversation_history: &[AgentExecutionContextMessage],
+        memories: &[MemoryEntry],
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<(), AppError> {
+        // Step 1: Create task plan
+        let task_plan = self
+            .create_task_plan(
+                user_message,
+                conversation_history,
+                memories,
+                channel.clone(),
+            )
+            .await?;
 
+        // Store the task plan
         self.store_execution_message(
             ExecutionMessageType::AgentResponse,
-            ExecutionMessageSender::Agent,
-            "Task execution completed with agentic flow.",
-            json!({}),
+            ExecutionMessageSender::System,
+            "Task plan created",
+            json!({
+                "task_count": task_plan.tasks.len(),
+                "reasoning": task_plan.reasoning
+            }),
             None,
             None,
         )
         .await?;
 
-        let agent_response =
-            "Task execution completed successfully with integrated agentic capabilities.";
-        self.auto_store_conversation_memory(user_message, agent_response, None)
+        // Initialize tasks
+        {
+            let mut tasks = self.current_tasks.lock().await;
+            *tasks = task_plan.tasks;
+        }
+
+        // Step 2: Execute tasks in loop
+        let max_iterations = 50;
+        let mut iteration = 0;
+
+        while iteration < max_iterations {
+            iteration += 1;
+
+            // Get next executable task
+            let next_task = self.get_next_executable_task().await?;
+
+            if let Some(task_id) = next_task {
+                // Send real-time update
+                let _ = channel
+                    .send(StreamEvent::Token(
+                        format!("\n\nExecuting task: {}", task_id),
+                        "task_update".to_string(),
+                    ))
+                    .await;
+
+                // Execute the task with memories
+                match self
+                    .execute_single_task(&task_id, memories, channel.clone())
+                    .await
+                {
+                    Ok(result) => {
+                        // Update task status
+                        self.update_task_status(
+                            &task_id,
+                            TaskStatus::Completed,
+                            Some(result),
+                            None,
+                        )
+                        .await?;
+                    }
+                    Err(e) => {
+                        // Update task status with error
+                        self.update_task_status(
+                            &task_id,
+                            TaskStatus::Failed,
+                            None,
+                            Some(e.to_string()),
+                        )
+                        .await?;
+
+                        // Attempt to create recovery tasks
+                        self.create_recovery_tasks(&task_id, &e.to_string(), channel.clone())
+                            .await?;
+                    }
+                }
+
+                // Check if all tasks are complete
+                if self.are_all_tasks_complete().await? {
+                    break;
+                }
+
+                // Monitor and update tasks based on progress
+                self.monitor_and_update_tasks(channel.clone()).await?;
+            } else {
+                // No executable tasks, check if we're blocked or done
+                let tasks = self.current_tasks.lock().await;
+                let blocked_count = tasks
+                    .iter()
+                    .filter(|t| matches!(t.status, TaskStatus::Blocked))
+                    .count();
+                let pending_count = tasks
+                    .iter()
+                    .filter(|t| matches!(t.status, TaskStatus::Pending))
+                    .count();
+
+                if blocked_count > 0 && pending_count == 0 {
+                    let _ = channel
+                        .send(StreamEvent::Token(
+                            "\n\nTasks are blocked. Creating resolution tasks...".to_string(),
+                            "status".to_string(),
+                        ))
+                        .await;
+                    drop(tasks);
+                    self.create_unblocking_tasks(channel.clone()).await?;
+                } else if pending_count == 0 {
+                    // All tasks are complete or failed
+                    break;
+                }
+            }
+        }
+
+        // Step 3: Generate final summary
+        let summary = self.generate_execution_summary().await?;
+
+        self.store_execution_message(
+            ExecutionMessageType::AgentResponse,
+            ExecutionMessageSender::Agent,
+            &summary,
+            json!({
+                "execution_complete": true,
+                "iterations": iteration
+            }),
+            None,
+            None,
+        )
+        .await?;
+
+        // Store execution memory
+        self.auto_store_conversation_memory(user_message, &summary, None)
             .await?;
+
+        // Learn from execution
+        self.learn_from_execution(user_message, &summary).await?;
 
         Ok(())
     }
@@ -389,8 +549,6 @@ impl AgentExecutor {
         Ok(())
     }
 
-    // --- Inlined MemoryManager methods ---
-
     pub async fn search_memories(
         &self,
         query: &MemoryQuery,
@@ -421,8 +579,6 @@ impl AgentExecutor {
             let entry: MemoryEntry = record.clone().into();
             let text_relevance = self.calculate_text_relevance(&entry.content, &query.query);
 
-            // The score from the DB is L2 distance (0=identical, >0=dissimilar). Convert to similarity (1=identical, 0=dissimilar).
-            // Assuming normalized vectors, L2 distance is in [0, 2].
             let semantic_similarity = (1.0 - (record.score / 2.0)).max(0.0);
             let relevance_score = (text_relevance * 0.3) + (semantic_similarity * 0.7);
 
@@ -572,71 +728,6 @@ impl AgentExecutor {
         }))
     }
 
-    pub async fn get_detailed_info(
-        &self,
-        resource_type: &str,
-        resource_id: i64,
-    ) -> Result<Value, AppError> {
-        match resource_type {
-            "tool" => {
-                if let Some(tool) = self.agent.tools.iter().find(|t| t.id == resource_id) {
-                    Ok(json!({
-                        "type": "tool",
-                        "id": tool.id,
-                        "name": tool.name,
-                        "description": tool.description,
-                        "tool_type": tool.tool_type,
-                        "configuration": tool.configuration,
-                        "created_at": tool.created_at,
-                        "updated_at": tool.updated_at
-                    }))
-                } else {
-                    Err(AppError::NotFound("Tool not found".to_string()))
-                }
-            }
-            "workflow" => {
-                if let Some(workflow) = self.agent.workflows.iter().find(|w| w.id == resource_id) {
-                    Ok(json!({
-                        "type": "workflow",
-                        "id": workflow.id,
-                        "name": workflow.name,
-                        "description": workflow.description,
-                        "configuration": workflow.configuration,
-                        "workflow_definition": workflow.workflow_definition,
-                        "created_at": workflow.created_at,
-                        "updated_at": workflow.updated_at
-                    }))
-                } else {
-                    Err(AppError::NotFound("Workflow not found".to_string()))
-                }
-            }
-            "knowledge_base" => {
-                if let Some(kb) = self
-                    .agent
-                    .knowledge_bases
-                    .iter()
-                    .find(|k| k.id == resource_id)
-                {
-                    Ok(json!({
-                        "type": "knowledge_base",
-                        "id": kb.id,
-                        "name": kb.name,
-                        "description": kb.description,
-                        "configuration": kb.configuration,
-                        "created_at": kb.created_at,
-                        "updated_at": kb.updated_at
-                    }))
-                } else {
-                    Err(AppError::NotFound("Knowledge base not found".to_string()))
-                }
-            }
-            _ => Err(AppError::BadRequest(format!(
-                "Unknown resource type: {}",
-                resource_type
-            ))),
-        }
-    }
-
     async fn search_tools_with_llm(&self, query: &str) -> Result<Vec<Value>, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY")
             .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
@@ -742,16 +833,13 @@ impl AgentExecutor {
             "workflows": &self.agent.workflows
         });
 
-        let prompt = render_template(
-            AgentTemplates::TOOL_ANALYSIS,
-            &workflow_analysis_context,
-        )
-        .map_err(|e| {
-            AppError::Internal(format!(
-                "Failed to render workflow analysis template: {}",
-                e
-            ))
-        })?;
+        let prompt = render_template(AgentTemplates::TOOL_ANALYSIS, &workflow_analysis_context)
+            .map_err(|e| {
+                AppError::Internal(format!(
+                    "Failed to render workflow analysis template: {}",
+                    e
+                ))
+            })?;
 
         let messages = vec![ChatMessage::user().content(&prompt).build()];
 
@@ -966,9 +1054,63 @@ impl AgentExecutor {
 
     async fn search_conversation_history_vector(
         &self,
-        _query: &str,
+        query: &str,
     ) -> Result<Vec<Value>, AppError> {
-        Ok(vec![])
+        let query_embedding = GenerateEmbeddingCommand::new(query.to_string())
+            .execute(&self.app_state)
+            .await?;
+
+        let conversation_history = self.load_conversation_history().await?;
+
+        let mut results = Vec::new();
+
+        for message in conversation_history.iter().take(50) {
+            // Skip very short messages
+            if message.content.len() < 10 {
+                continue;
+            }
+
+            // Generate embedding for the message
+            let message_embedding = GenerateEmbeddingCommand::new(message.content.clone())
+                .execute(&self.app_state)
+                .await?;
+
+            // Calculate similarity
+            let similarity = self.calculate_cosine_similarity(&query_embedding, &message_embedding);
+
+            if similarity > 0.5 {
+                results.push(json!({
+                    "type": "conversation",
+                    "id": message.id,
+                    "content": message.content,
+                    "sender": message.sender,
+                    "message_type": message.message_type,
+                    "created_at": message.created_at,
+                    "relevance_score": (similarity * 100.0) as f64,
+                    "source": "conversation_history"
+                }));
+            }
+        }
+
+        // Sort by relevance
+        results.sort_by(|a, b| {
+            let score_a = a
+                .get("relevance_score")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let score_b = b
+                .get("relevance_score")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Return top 10 results
+        results.truncate(10);
+
+        Ok(results)
     }
 
     async fn search_dynamic_context_vector(&self, query: &str) -> Result<Vec<Value>, AppError> {
@@ -1039,5 +1181,793 @@ impl AgentExecutor {
             "message": "Workflow execution planned - will be executed by agent executor",
             "execution_timestamp": chrono::Utc::now().to_rfc3339()
         }))
+    }
+
+    // Task management methods
+    async fn create_task_plan(
+        &self,
+        user_message: &str,
+        conversation_history: &[AgentExecutionContextMessage],
+        memories: &[MemoryEntry],
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<TaskPlan, AppError> {
+        let api_key = std::env::var("GEMINI_API_KEY")
+            .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
+
+        let llm = LLMBuilder::new()
+            .backend(LLMBackend::Google)
+            .api_key(&api_key)
+            .model("gemini-2.5-pro")
+            .max_tokens(8000)
+            .temperature(0.3)
+            .build()
+            .map_err(|e| AppError::Internal(format!("Failed to build LLM: {}", e)))?;
+
+        // Search for relevant context
+        let context_results = self.search_context(user_message).await?;
+
+        let task_planning_context = json!({
+            "user_request": user_message,
+            "tools": &self.agent.tools,
+            "workflows": &self.agent.workflows,
+            "knowledge_bases": &self.agent.knowledge_bases,
+            "memories": memories,
+            "context_search_results": context_results
+        });
+
+        let system_prompt = render_template(AgentTemplates::TASK_ANALYSIS, &task_planning_context)
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to render task analysis template: {}", e))
+            })?;
+
+        let conversation_context =
+            self.prepare_conversation_context(conversation_history, 100_000)?;
+
+        let full_prompt = format!(
+            "{}\n\n{}\n\nUser Request: {}\n\nGenerate a detailed task plan as an XML response.",
+            system_prompt, conversation_context, user_message
+        );
+
+        let messages = vec![ChatMessage::user().content(&full_prompt).build()];
+
+        let _ = channel
+            .send(StreamEvent::Token(
+                "\n\nCreating task plan...".to_string(),
+                "status".to_string(),
+            ))
+            .await;
+
+        let response_text = {
+            let mut res = String::new();
+            let mut stream = llm.chat_stream(&messages).await?;
+
+            while let Some(Ok(token)) = stream.next().await {
+                res.push_str(&token);
+            }
+
+            res
+        };
+
+        let task_plan: TaskPlan = xml_parser::from_str(&response_text)?;
+
+        // Store task plan as dynamic context
+        self.store_dynamic_context(
+            &format!("Task Plan: {}", serde_json::to_string(&task_plan)?),
+            Some("task_planning".to_string()),
+        )
+        .await?;
+
+        Ok(task_plan)
+    }
+
+    async fn get_next_executable_task(&self) -> Result<Option<String>, AppError> {
+        let tasks = self.current_tasks.lock().await;
+
+        for task in tasks.iter() {
+            if matches!(task.status, TaskStatus::Pending) {
+                // Check if all dependencies are complete
+                let deps_complete = task.dependencies.iter().all(|dep_id| {
+                    tasks
+                        .iter()
+                        .any(|t| t.id == *dep_id && matches!(t.status, TaskStatus::Completed))
+                });
+
+                if deps_complete {
+                    return Ok(Some(task.id.clone()));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    async fn execute_single_task(
+        &self,
+        task_id: &str,
+        memories: &[MemoryEntry],
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        // Update task status to InProgress
+        self.update_task_status(task_id, TaskStatus::InProgress, None, None)
+            .await?;
+
+        // Get task details
+        let task = {
+            let tasks = self.current_tasks.lock().await;
+            tasks.iter().find(|t| t.id == task_id).cloned()
+        };
+
+        let task = task.ok_or_else(|| AppError::NotFound(format!("Task {} not found", task_id)))?;
+
+        let _ = channel
+            .send(StreamEvent::Token(
+                format!("\nTask: {}", task.description),
+                "task".to_string(),
+            ))
+            .await;
+
+        // Execute based on task context
+        if let Some(tool_call) = task.context.get("tool_call") {
+            // Execute tool
+            let tool_call: ToolCall = serde_json::from_value(tool_call.clone())?;
+            self.execute_tool_task(&tool_call, memories, channel.clone())
+                .await
+        } else if let Some(workflow_call) = task.context.get("workflow_call") {
+            // Execute workflow
+            let workflow_call: WorkflowCall = serde_json::from_value(workflow_call.clone())?;
+            self.execute_workflow_task(&workflow_call, memories, channel.clone())
+                .await
+        } else if task.context.get("search_context").is_some() {
+            // Execute context search
+            let query = task
+                .context
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&task.description);
+
+            // Include memory search in context results
+            let mut context_results = self.search_context(query).await?;
+
+            // Add relevant memories to context
+            if let Some(results_array) = context_results
+                .get_mut("results")
+                .and_then(|v| v.as_array_mut())
+            {
+                // Find highly relevant memories not already included
+                let memory_query = MemoryQuery {
+                    query: query.to_string(),
+                    memory_types: vec![MemoryType::Procedural, MemoryType::Semantic],
+                    max_results: 5,
+                    min_importance: 0.6,
+                    time_range: None,
+                };
+
+                if let Ok(additional_memories) = self.search_memories(&memory_query).await {
+                    for mem_result in additional_memories {
+                        if mem_result.relevance_score > 0.7 {
+                            results_array.push(json!({
+                                "type": "memory",
+                                "id": mem_result.entry.id,
+                                "content": mem_result.entry.content,
+                                "memory_type": mem_result.entry.memory_type,
+                                "importance": mem_result.entry.importance,
+                                "relevance_score": mem_result.relevance_score * 100.0,
+                                "source": "task_execution_memory_search"
+                            }));
+                        }
+                    }
+                }
+            }
+
+            Ok(context_results)
+        } else if task.context.get("store_memory").is_some() {
+            // Store memory
+            self.execute_memory_task(&task.context, channel.clone())
+                .await
+        } else if task.context.get("update_memory").is_some() {
+            // Update memory
+            self.execute_memory_update_task(&task.context, channel.clone())
+                .await
+        } else if task.context.get("store_dynamic_context").is_some() {
+            // Store dynamic context
+            self.execute_dynamic_context_task(&task.context, channel.clone())
+                .await
+        } else if task.context.get("delete_dynamic_context").is_some() {
+            // Delete dynamic context
+            self.execute_delete_dynamic_context_task(&task.context, channel.clone())
+                .await
+        } else {
+            // Generic task execution with LLM
+            self.execute_generic_task(&task, memories, channel.clone())
+                .await
+        }
+    }
+
+    async fn execute_tool_task(
+        &self,
+        tool_call: &ToolCall,
+        memories: &[MemoryEntry],
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        let _ = channel
+            .send(StreamEvent::Token(
+                format!("\nExecuting tool: {}", tool_call.tool_name),
+                "tool".to_string(),
+            ))
+            .await;
+
+        // Find the tool
+        let tool = self
+            .agent
+            .tools
+            .iter()
+            .find(|t| t.id == tool_call.tool_id)
+            .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", tool_call.tool_id)))?;
+
+        // Check memories for relevant tool usage patterns
+        let relevant_memories: Vec<&MemoryEntry> = memories
+            .iter()
+            .filter(|m| {
+                matches!(m.memory_type, MemoryType::Procedural)
+                    && m.content.contains(&tool_call.tool_name)
+            })
+            .collect();
+
+        // If we have relevant procedural memories, extract parameters or patterns
+        let enhanced_parameters = tool_call.parameters.clone();
+        if !relevant_memories.is_empty() {
+            // Log that we're using learned patterns
+            let _ = channel
+                .send(StreamEvent::Token(
+                    format!(
+                        "\nApplying {} learned patterns for tool usage",
+                        relevant_memories.len()
+                    ),
+                    "memory".to_string(),
+                ))
+                .await;
+        }
+
+        // Execute tool with potentially enhanced parameters
+        let result = self
+            .execute_tool_immediately(tool, enhanced_parameters)
+            .await?;
+
+        // Store tool execution in dynamic context
+        self.store_dynamic_context(
+            &format!(
+                "Tool execution: {} - Result: {}",
+                tool_call.tool_name,
+                serde_json::to_string(&result)?
+            ),
+            Some("tool_execution".to_string()),
+        )
+        .await?;
+
+        Ok(result)
+    }
+
+    async fn execute_workflow_task(
+        &self,
+        workflow_call: &WorkflowCall,
+        memories: &[MemoryEntry],
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        let _ = channel
+            .send(StreamEvent::Token(
+                format!("\nExecuting workflow: {}", workflow_call.workflow_name),
+                "workflow".to_string(),
+            ))
+            .await;
+
+        // Find the workflow
+        let workflow = self
+            .agent
+            .workflows
+            .iter()
+            .find(|w| w.id == workflow_call.workflow_id)
+            .ok_or_else(|| {
+                AppError::NotFound(format!("Workflow {} not found", workflow_call.workflow_id))
+            })?;
+
+        // Check memories for relevant workflow execution patterns
+        let relevant_memories: Vec<&MemoryEntry> = memories
+            .iter()
+            .filter(|m| {
+                matches!(m.memory_type, MemoryType::Procedural)
+                    && m.content.contains(&workflow_call.workflow_name)
+            })
+            .collect();
+
+        // Apply learned patterns to workflow input
+        let enhanced_input = workflow_call.input_data.clone();
+        if !relevant_memories.is_empty() {
+            let _ = channel
+                .send(StreamEvent::Token(
+                    format!(
+                        "\nApplying {} learned patterns for workflow execution",
+                        relevant_memories.len()
+                    ),
+                    "memory".to_string(),
+                ))
+                .await;
+        }
+
+        // Execute workflow with potentially enhanced input
+        let result = self
+            .execute_workflow_immediately(workflow, enhanced_input)
+            .await?;
+
+        // Store workflow execution in dynamic context
+        self.store_dynamic_context(
+            &format!(
+                "Workflow execution: {} - Result: {}",
+                workflow_call.workflow_name,
+                serde_json::to_string(&result)?
+            ),
+            Some("workflow_execution".to_string()),
+        )
+        .await?;
+
+        Ok(result)
+    }
+
+    async fn execute_memory_task(
+        &self,
+        context: &Value,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        let content = context
+            .get("content")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::BadRequest("Memory content required".to_string()))?;
+
+        let memory_type_str = context
+            .get("memory_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("semantic");
+
+        let memory_type = match memory_type_str {
+            "episodic" => MemoryType::Episodic,
+            "procedural" => MemoryType::Procedural,
+            _ => MemoryType::Semantic,
+        };
+
+        let importance = context
+            .get("importance")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.5) as f32;
+
+        let _ = channel
+            .send(StreamEvent::Token(
+                format!("\nStoring {} memory", memory_type_str),
+                "memory".to_string(),
+            ))
+            .await;
+
+        self.store_memory(content, memory_type, importance).await?;
+
+        Ok(json!({
+            "action": "memory_stored",
+            "memory_type": memory_type_str,
+            "content": content,
+            "importance": importance
+        }))
+    }
+
+    async fn execute_memory_update_task(
+        &self,
+        context: &Value,
+        _channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        // Memory updates are handled through creating new memories with higher importance
+        // and potentially marking old ones as less important
+        let old_content = context
+            .get("old_content")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::BadRequest("Old content required".to_string()))?;
+
+        let new_content = context
+            .get("new_content")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::BadRequest("New content required".to_string()))?;
+
+        let memory_type = MemoryType::Semantic;
+
+        // Store the update as a new memory with high importance
+        self.store_memory(
+            &format!("Update: {} -> {}", old_content, new_content),
+            memory_type,
+            0.9,
+        )
+        .await?;
+
+        Ok(json!({
+            "action": "memory_updated",
+            "old_content": old_content,
+            "new_content": new_content
+        }))
+    }
+
+    async fn execute_dynamic_context_task(
+        &self,
+        context: &Value,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        let content = context
+            .get("content")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::BadRequest("Context content required".to_string()))?;
+
+        let source = context
+            .get("source")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let _ = channel
+            .send(StreamEvent::Token(
+                "\nStoring dynamic context".to_string(),
+                "context".to_string(),
+            ))
+            .await;
+
+        self.store_dynamic_context(content, source.clone()).await?;
+
+        Ok(json!({
+            "action": "dynamic_context_stored",
+            "content": content,
+            "source": source
+        }))
+    }
+
+    async fn execute_delete_dynamic_context_task(
+        &self,
+        context: &Value,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        let context_id = context
+            .get("context_id")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| AppError::BadRequest("Context ID required".to_string()))?;
+
+        let _ = channel
+            .send(StreamEvent::Token(
+                format!("\nDeleting dynamic context ID: {}", context_id),
+                "context".to_string(),
+            ))
+            .await;
+
+        self.delete_dynamic_context(context_id).await?;
+
+        Ok(json!({
+            "action": "dynamic_context_deleted",
+            "context_id": context_id
+        }))
+    }
+
+    async fn execute_generic_task(
+        &self,
+        task: &Task,
+        memories: &[MemoryEntry],
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        let api_key = std::env::var("GEMINI_API_KEY")
+            .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
+
+        let llm = LLMBuilder::new()
+            .backend(LLMBackend::Google)
+            .api_key(&api_key)
+            .model("gemini-2.5-flash")
+            .max_tokens(4000)
+            .temperature(0.3)
+            .build()
+            .map_err(|e| AppError::Internal(format!("Failed to build LLM: {}", e)))?;
+
+        // Filter relevant memories for this task
+        let relevant_memories: Vec<&MemoryEntry> = memories
+            .iter()
+            .filter(|m| {
+                // Include procedural memories (how to do things)
+                // and semantic memories (what things mean)
+                matches!(m.memory_type, MemoryType::Procedural | MemoryType::Semantic)
+                    && m.importance > 0.5
+            })
+            .collect();
+
+        // Format memories for the prompt
+        let memory_context = if !relevant_memories.is_empty() {
+            let memory_text: Vec<String> = relevant_memories
+                .iter()
+                .map(|m| format!("- [{}] {}", m.memory_type.as_str(), m.content))
+                .collect();
+            format!(
+                "\n\nRelevant learned information:\n{}",
+                memory_text.join("\n")
+            )
+        } else {
+            String::new()
+        };
+
+        let prompt = format!(
+            "Execute the following task: {}\nContext: {}{}\n\nProvide a detailed result. Use any learned patterns or information to ensure the execution is smooth and idiomatic.",
+            task.description,
+            serde_json::to_string_pretty(&task.context)?,
+            memory_context
+        );
+
+        let messages = vec![ChatMessage::user().content(&prompt).build()];
+
+        let response_text = {
+            let mut res = String::new();
+            let mut parser = MessageParser::new();
+            let mut stream = llm.chat_stream(&messages).await?;
+
+            while let Some(Ok(token)) = stream.next().await {
+                res.push_str(&token);
+
+                if let Some(content) = parser.parse(&token) {
+                    let _ = channel.send(StreamEvent::Token(content, "".into())).await;
+                }
+            }
+
+            res
+        };
+
+        Ok(json!({
+            "action": "generic_task_completed",
+            "task": task.description,
+            "result": response_text
+        }))
+    }
+
+    async fn update_task_status(
+        &self,
+        task_id: &str,
+        status: TaskStatus,
+        result: Option<Value>,
+        error: Option<String>,
+    ) -> Result<(), AppError> {
+        let mut tasks = self.current_tasks.lock().await;
+
+        if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
+            task.status = status;
+            task.updated_at = Utc::now();
+
+            if let Some(res) = result {
+                task.result = Some(res);
+            }
+
+            if let Some(err) = error {
+                task.error = Some(err);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn are_all_tasks_complete(&self) -> Result<bool, AppError> {
+        let tasks = self.current_tasks.lock().await;
+
+        Ok(tasks
+            .iter()
+            .all(|t| matches!(t.status, TaskStatus::Completed | TaskStatus::Failed)))
+    }
+
+    async fn monitor_and_update_tasks(
+        &self,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<(), AppError> {
+        let tasks = self.current_tasks.lock().await;
+
+        let total = tasks.len();
+        let completed = tasks
+            .iter()
+            .filter(|t| matches!(t.status, TaskStatus::Completed))
+            .count();
+        let failed = tasks
+            .iter()
+            .filter(|t| matches!(t.status, TaskStatus::Failed))
+            .count();
+        let in_progress = tasks
+            .iter()
+            .filter(|t| matches!(t.status, TaskStatus::InProgress))
+            .count();
+
+        let _ = channel
+            .send(StreamEvent::Token(
+                format!(
+                    "\n\nProgress: {}/{} completed, {} failed, {} in progress",
+                    completed, total, failed, in_progress
+                ),
+                "progress".to_string(),
+            ))
+            .await;
+
+        Ok(())
+    }
+
+    async fn create_recovery_tasks(
+        &self,
+        failed_task_id: &str,
+        error: &str,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<(), AppError> {
+        let _ = channel
+            .send(StreamEvent::Token(
+                format!(
+                    "\n\nTask {} failed: {}. Creating recovery strategy...",
+                    failed_task_id, error
+                ),
+                "error".to_string(),
+            ))
+            .await;
+
+        // Create a recovery task
+        let recovery_task = Task {
+            id: format!("{}_recovery", failed_task_id),
+            description: format!("Recover from error in task {}: {}", failed_task_id, error),
+            status: TaskStatus::Pending,
+            dependencies: vec![],
+            context: json!({
+                "original_task_id": failed_task_id,
+                "error": error,
+                "action": "recovery"
+            }),
+            result: None,
+            error: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let mut tasks = self.current_tasks.lock().await;
+        tasks.push(recovery_task);
+
+        Ok(())
+    }
+
+    async fn create_unblocking_tasks(
+        &self,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<(), AppError> {
+        let tasks = self.current_tasks.lock().await;
+        let blocked_tasks: Vec<_> = tasks
+            .iter()
+            .filter(|t| matches!(t.status, TaskStatus::Blocked))
+            .cloned()
+            .collect();
+        drop(tasks);
+
+        for blocked_task in blocked_tasks {
+            let unblock_task = Task {
+                id: format!("{}_unblock", blocked_task.id),
+                description: format!(
+                    "Resolve blocking issue for task: {}",
+                    blocked_task.description
+                ),
+                status: TaskStatus::Pending,
+                dependencies: vec![],
+                context: json!({
+                    "blocked_task_id": blocked_task.id,
+                    "action": "unblock"
+                }),
+                result: None,
+                error: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            };
+
+            let mut tasks = self.current_tasks.lock().await;
+            tasks.push(unblock_task);
+        }
+
+        let _ = channel
+            .send(StreamEvent::Token(
+                "\nCreated unblocking tasks".to_string(),
+                "status".to_string(),
+            ))
+            .await;
+
+        Ok(())
+    }
+
+    async fn generate_execution_summary(&self) -> Result<String, AppError> {
+        let tasks = self.current_tasks.lock().await;
+
+        let total = tasks.len();
+        let completed = tasks
+            .iter()
+            .filter(|t| matches!(t.status, TaskStatus::Completed))
+            .count();
+        let failed = tasks
+            .iter()
+            .filter(|t| matches!(t.status, TaskStatus::Failed))
+            .count();
+
+        let mut summary = format!(
+            "Task execution completed. {} of {} tasks completed successfully.",
+            completed, total
+        );
+
+        if failed > 0 {
+            summary.push_str(&format!(" {} tasks failed.", failed));
+        }
+
+        // Add key results
+        let key_results: Vec<String> = tasks
+            .iter()
+            .filter(|t| matches!(t.status, TaskStatus::Completed) && t.result.is_some())
+            .take(3)
+            .map(|t| format!("- {}: Completed", t.description))
+            .collect();
+
+        if !key_results.is_empty() {
+            summary.push_str("\n\nKey accomplishments:\n");
+            summary.push_str(&key_results.join("\n"));
+        }
+
+        Ok(summary)
+    }
+
+    async fn learn_from_execution(
+        &self,
+        user_message: &str,
+        summary: &str,
+    ) -> Result<(), AppError> {
+        let tasks = self.current_tasks.lock().await;
+
+        // Learn from successful patterns
+        let successful_patterns: Vec<String> = tasks
+            .iter()
+            .filter(|t| matches!(t.status, TaskStatus::Completed))
+            .filter_map(|t| {
+                if let Some(tool_call) = t.context.get("tool_call") {
+                    Some(format!(
+                        "Successfully used tool: {}",
+                        tool_call
+                            .get("tool_name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown")
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for pattern in successful_patterns {
+            self.store_memory(&pattern, MemoryType::Procedural, 0.7)
+                .await?;
+        }
+
+        // Learn from failures
+        let failure_patterns: Vec<String> = tasks
+            .iter()
+            .filter(|t| matches!(t.status, TaskStatus::Failed))
+            .filter_map(|t| {
+                t.error
+                    .as_ref()
+                    .map(|e| format!("Task failed - {}: {}", t.description, e))
+            })
+            .collect();
+
+        for pattern in failure_patterns {
+            self.store_memory(&pattern, MemoryType::Semantic, 0.8)
+                .await?;
+        }
+
+        // Store overall execution pattern
+        self.store_memory(
+            &format!(
+                "For request '{}', executed {} tasks with result: {}",
+                user_message,
+                tasks.len(),
+                summary
+            ),
+            MemoryType::Episodic,
+            0.6,
+        )
+        .await?;
+
+        Ok(())
     }
 }

@@ -1,7 +1,6 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use dotenvy::dotenv;
 use shared::state::AppState;
-use std::env::var as env;
 use tracing::Level;
 use tracing_subscriber;
 

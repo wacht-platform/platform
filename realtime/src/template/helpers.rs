@@ -21,6 +21,7 @@ pub fn register_all_helpers(hb: &mut Handlebars) {
         "format_dynamic_context",
         Box::new(FormatDynamicContextHelper),
     );
+    hb.register_helper("current_timestamp", Box::new(CurrentTimestampHelper));
 }
 
 pub struct FormatToolsHelper;
@@ -415,6 +416,23 @@ impl handlebars::HelperDef for FormatCapabilitiesHelper {
         }
 
         out.write(&output.trim_end())?;
+        Ok(())
+    }
+}
+
+pub struct CurrentTimestampHelper;
+
+impl handlebars::HelperDef for CurrentTimestampHelper {
+    fn call<'reg: 'rc, 'rc>(
+        &self,
+        _h: &Helper,
+        _: &Handlebars,
+        _: &Context,
+        _: &mut RenderContext,
+        out: &mut dyn Output,
+    ) -> HelperResult {
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        out.write(&timestamp)?;
         Ok(())
     }
 }

@@ -16,7 +16,17 @@ You are an intelligent AI agent greeting system. Your role is to:
 {{format_knowledge_bases knowledge_bases}}
 
 ### Recent Memories:
+{{#if memories}}
+These are learned patterns and information from past interactions:
 {{format_memories memories}}
+
+Consider these memories when deciding if action is needed:
+- If procedural memories exist for similar requests, action is likely needed
+- If past failures are recorded, approach with caution
+- Use semantic memories to better understand the user's intent
+{{else}}
+No relevant memories available.
+{{/if}}
 
 ## Response Format:
 You must respond with XML in this exact format:

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use super::{AiKnowledgeBase, AiTool, AiWorkflow, ExecutionStatus, NodeExecution};
+use super::{ExecutionStatus, NodeExecution};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AgentContext {

@@ -45,7 +45,7 @@ impl AgentHandler {
             Err(err) => return Err(AppError::Internal(err.to_string())),
             Ok(kv) => kv,
         };
-        let mut watch = match kv.watch(context_key.clone()).await {
+        let watch = match kv.watch(context_key.clone()).await {
             Err(err) => return Err(AppError::Internal(err.to_string())),
             Ok(watch) => watch,
         };
@@ -67,15 +67,22 @@ impl AgentHandler {
                             )
                             .await;
                     }
-                    StreamEvent::Message(agent_execution_context_message) => todo!(),
+                    StreamEvent::Message(_) => todo!(),
                 }
             }
         });
 
-        tokio::join!(
-            agent_executor.execute_with_streaming(&request.user_message, sender),
-            kv.put(context_key.clone(), execution_id.to_string().into())
-        );
+        match kv
+            .put(context_key.clone(), execution_id.to_string().into())
+            .await
+        {
+            Ok(_) => {
+                let _ = agent_executor
+                    .execute_with_streaming(&request.user_message, sender)
+                    .await;
+            }
+            Err(_) => (),
+        };
 
         let _ = kv.delete(context_key).await;
 

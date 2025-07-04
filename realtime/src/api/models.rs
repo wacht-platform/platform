@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Clone)]
@@ -62,24 +60,4 @@ pub struct ExecutionInfo {
     pub last_update: chrono::DateTime<chrono::Utc>,
     pub task_count: u32,
     pub completed_tasks: u32,
-}
-
-impl ExecutionInfo {
-    pub fn new(execution_id: u64, agent_name: String) -> Self {
-        let now = chrono::Utc::now();
-        Self {
-            execution_id,
-            agent_name,
-            status: ExecutionStatus::Starting,
-            started_at: now,
-            last_update: now,
-            task_count: 0,
-            completed_tasks: 0,
-        }
-    }
-
-    pub fn update_status(&mut self, status: ExecutionStatus) {
-        self.status = status;
-        self.last_update = chrono::Utc::now();
-    }
 }

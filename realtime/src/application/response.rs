@@ -1,4 +1,4 @@
-use axum::{Json, http::StatusCode, response::IntoResponse};
+use axum::http::StatusCode;
 use serde::Serialize;
 
 #[derive(Clone, Serialize)]
@@ -13,44 +13,6 @@ pub struct ApiErrorResponse {
     pub staus_code: StatusCode,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<ApiError>,
-}
-
-#[derive(Clone, Serialize)]
-pub struct ApiSuccess<T> {
-    #[serde(flatten)]
-    pub data: T,
-    #[serde(skip_serializing)]
-    pub status: StatusCode,
-}
-
-impl IntoResponse for ApiErrorResponse {
-    fn into_response(self) -> axum::response::Response {
-        (self.staus_code, Json(self)).into_response()
-    }
-}
-
-impl<T> IntoResponse for ApiSuccess<T>
-where
-    T: Serialize,
-{
-    fn into_response(self) -> axum::response::Response {
-        (self.status, Json(self)).into_response()
-    }
-}
-
-impl<T> From<T> for ApiSuccess<T> {
-    fn from(data: T) -> Self {
-        ApiSuccess {
-            data,
-            status: StatusCode::OK,
-        }
-    }
-}
-
-impl<T> From<(StatusCode, T)> for ApiSuccess<T> {
-    fn from((status, data): (StatusCode, T)) -> Self {
-        ApiSuccess { data, status }
-    }
 }
 
 impl From<(StatusCode, Vec<ApiError>)> for ApiErrorResponse {
@@ -91,33 +53,6 @@ impl From<(StatusCode, &str)> for ApiErrorResponse {
                 message: value.1.to_string(),
                 code: u16::from(value.0),
             }],
-        }
-    }
-}
-
-#[derive(Clone, Serialize)]
-pub struct PaginatedResponse<T>
-where
-    T: Serialize,
-{
-    pub data: Vec<T>,
-    pub has_more: bool,
-}
-
-// Upload responses
-#[derive(Clone, Serialize)]
-pub struct UploadResponse {
-    pub url: String,
-}
-
-impl<T> From<Vec<T>> for PaginatedResponse<T>
-where
-    T: Serialize,
-{
-    fn from(data: Vec<T>) -> Self {
-        PaginatedResponse {
-            data,
-            has_more: false,
         }
     }
 }

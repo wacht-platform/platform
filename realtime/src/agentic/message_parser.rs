@@ -96,10 +96,6 @@ impl MessageParser {
         self.buffer.rfind("</message>")
     }
 
-    pub fn is_complete(&self) -> bool {
-        self.complete
-    }
-
     fn compact_buffer_if_needed(&mut self) {
         if self.complete && self.buffer.len() > 1024 {
             self.buffer.clear();

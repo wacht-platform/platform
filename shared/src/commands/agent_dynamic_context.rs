@@ -49,3 +49,43 @@ impl Command for CreateAgentDynamicContextCommand {
         Ok(context)
     }
 }
+
+pub struct DeleteAgentDynamicContextCommand {
+    pub id: i64,
+}
+
+impl Command for DeleteAgentDynamicContextCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query!(
+            "DELETE FROM agent_dynamic_context WHERE id = $1",
+            self.id
+        )
+        .execute(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        Ok(())
+    }
+}
+
+pub struct DeleteExecutionContextDynamicContextCommand {
+    pub execution_context_id: i64,
+}
+
+impl Command for DeleteExecutionContextDynamicContextCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query!(
+            "DELETE FROM agent_dynamic_context WHERE execution_context_id = $1",
+            self.execution_context_id
+        )
+        .execute(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        Ok(())
+    }
+}

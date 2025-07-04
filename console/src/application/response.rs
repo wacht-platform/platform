@@ -106,12 +106,6 @@ where
     pub has_more: bool,
 }
 
-// Upload responses
-#[derive(Clone, Serialize)]
-pub struct UploadResponse {
-    pub url: String,
-}
-
 impl<T> From<Vec<T>> for PaginatedResponse<T>
 where
     T: Serialize,
