@@ -51,104 +51,103 @@ For each task, consider:
 3. What information is required from previous tasks
 4. How to verify the task was successful
 
-## Output Format:
-
-Provide your analysis as an XML response in the following format:
+## Response Format:
+You must respond with XML in this exact format:
 
 <task_plan>
   <reasoning>Explain your analysis of the request and overall approach</reasoning>
   <estimated_steps>Number of tasks needed</estimated_steps>
-  <tasks>
-    <task>
-      <id>task_1</id>
-      <description>Clear description of what this task will do</description>
-      <status>Pending</status>
-      <dependencies></dependencies>
-      <context>
-        <tool_call>
-          <tool_id>123</tool_id>
-          <tool_name>ToolName</tool_name>
-          <parameters>
-            <param1>value1</param1>
-          </parameters>
-        </tool_call>
-      </context>
-      <created_at>{{current_timestamp}}</created_at>
-      <updated_at>{{current_timestamp}}</updated_at>
-    </task>
-    <task>
-      <id>task_2</id>
-      <description>Another task description</description>
-      <status>Pending</status>
-      <dependencies>
-        <dependency>task_1</dependency>
-      </dependencies>
-      <context>
-        <workflow_call>
-          <workflow_id>456</workflow_id>
-          <workflow_name>WorkflowName</workflow_name>
-          <input_data>
-            <key>value</key>
-          </input_data>
-        </workflow_call>
-      </context>
-      <created_at>{{current_timestamp}}</created_at>
-      <updated_at>{{current_timestamp}}</updated_at>
-    </task>
-    <task>
-      <id>task_3</id>
-      <description>Search for relevant context</description>
-      <status>Pending</status>
-      <dependencies></dependencies>
-      <context>
-        <search_context>true</search_context>
-        <query>specific search query</query>
-      </context>
-      <created_at>{{current_timestamp}}</created_at>
-      <updated_at>{{current_timestamp}}</updated_at>
-    </task>
-    <task>
-      <id>task_4</id>
-      <description>Store important information in memory</description>
-      <status>Pending</status>
-      <dependencies>
-        <dependency>task_2</dependency>
-      </dependencies>
-      <context>
-        <store_memory>true</store_memory>
-        <content>The information to remember</content>
-        <memory_type>semantic</memory_type>
-        <importance>0.8</importance>
-      </context>
-      <created_at>{{current_timestamp}}</created_at>
-      <updated_at>{{current_timestamp}}</updated_at>
-    </task>
-    <task>
-      <id>task_5</id>
-      <description>Store dynamic context for future reference</description>
-      <status>Pending</status>
-      <dependencies></dependencies>
-      <context>
-        <store_dynamic_context>true</store_dynamic_context>
-        <content>Important context information</content>
-        <source>task_execution</source>
-      </context>
-      <created_at>{{current_timestamp}}</created_at>
-      <updated_at>{{current_timestamp}}</updated_at>
-    </task>
-    <task>
-      <id>task_6</id>
-      <description>Delete outdated dynamic context</description>
-      <status>Pending</status>
-      <dependencies></dependencies>
-      <context>
-        <delete_dynamic_context>true</delete_dynamic_context>
-        <context_id>123456</context_id>
-      </context>
-      <created_at>{{current_timestamp}}</created_at>
-      <updated_at>{{current_timestamp}}</updated_at>
-    </task>
-  </tasks>
+  <citations>
+    <memory_reference id="memory_id" relevance="high|medium|low" usefulness="high|medium|low" confidence="high|medium|low" usage_type="direct_quote|paraphrase|inspiration|background">
+      Brief description of how this memory influenced the plan
+    </memory_reference>
+    <conversation_reference id="conversation_id" relevance="high|medium|low" usefulness="high|medium|low" confidence="high|medium|low" usage_type="direct_quote|paraphrase|inspiration|background">
+      Brief description of how this conversation influenced the plan
+    </conversation_reference>
+  </citations>
+  <task>
+    <id>task_1</id>
+    <description>Clear description of what this task will do</description>
+    <status>Pending</status>
+    <context>
+      <tool_call>
+        <tool_id>123</tool_id>
+        <tool_name>ToolName</tool_name>
+        <parameters>
+          <param1>value1</param1>
+        </parameters>
+      </tool_call>
+    </context>
+    <created_at>{{current_timestamp}}</created_at>
+    <updated_at>{{current_timestamp}}</updated_at>
+  </task>
+  <task>
+    <id>task_2</id>
+    <description>Another task description</description>
+    <status>Pending</status>
+    <dependency>task_1</dependency>
+    <dependency>task_3</dependency>
+    <context>
+      <workflow_call>
+        <workflow_id>456</workflow_id>
+        <workflow_name>WorkflowName</workflow_name>
+        <input_data>
+          <key>value</key>
+        </input_data>
+      </workflow_call>
+    </context>
+    <created_at>{{current_timestamp}}</created_at>
+    <updated_at>{{current_timestamp}}</updated_at>
+  </task>
+  <task>
+    <id>task_3</id>
+    <description>Search for relevant context</description>
+    <status>Pending</status>
+    <dependency>task_1</dependency>
+    <context>
+      <search_context>true</search_context>
+      <query>specific search query</query>
+    </context>
+    <created_at>{{current_timestamp}}</created_at>
+    <updated_at>{{current_timestamp}}</updated_at>
+  </task>
+  <task>
+    <id>task_4</id>
+    <description>Store important information in memory</description>
+    <status>Pending</status>
+    <dependency>task_2</dependency>
+    <context>
+      <store_memory>true</store_memory>
+      <content>The information to remember</content>
+      <memory_type>semantic</memory_type>
+      <importance>0.8</importance>
+    </context>
+    <created_at>{{current_timestamp}}</created_at>
+    <updated_at>{{current_timestamp}}</updated_at>
+  </task>
+  <task>
+    <id>task_5</id>
+    <description>Store dynamic context for future reference</description>
+    <status>Pending</status>
+    <context>
+      <store_dynamic_context>true</store_dynamic_context>
+      <content>Important context information</content>
+      <source>task_execution</source>
+    </context>
+    <created_at>{{current_timestamp}}</created_at>
+    <updated_at>{{current_timestamp}}</updated_at>
+  </task>
+  <task>
+    <id>task_6</id>
+    <description>Delete outdated dynamic context</description>
+    <status>Pending</status>
+    <context>
+      <delete_dynamic_context>true</delete_dynamic_context>
+      <context_id>123456</context_id>
+    </context>
+    <created_at>{{current_timestamp}}</created_at>
+    <updated_at>{{current_timestamp}}</updated_at>
+  </task>
 </task_plan>
 
 Important guidelines:

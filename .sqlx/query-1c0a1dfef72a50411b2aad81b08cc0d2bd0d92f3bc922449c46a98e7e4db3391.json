@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM conversations\n            WHERE id IN (\n                SELECT id\n                FROM conversations\n                WHERE context_id = $1\n                ORDER BY base_temporal_score ASC, created_at ASC\n                OFFSET $2\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c0a1dfef72a50411b2aad81b08cc0d2bd0d92f3bc922449c46a98e7e4db3391"
+}

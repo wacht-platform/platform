@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT id, created_at, execution_context_id, message_type, sender, content, metadata, tool_calls, tool_results\n                FROM ai_execution_messages\n                WHERE execution_context_id = $1\n                ORDER BY created_at ASC\n                LIMIT $2 OFFSET $3\n                ",
+  "query": "\n                SELECT id, created_at, execution_context_id, message_type, sender, content, embedding as \"embedding: Vector\", extracted_data\n                FROM agent_execution_messages\n                WHERE execution_context_id = $1\n                ORDER BY created_at DESC\n                LIMIT $2 OFFSET $3\n                ",
   "describe": {
     "columns": [
       {
@@ -35,17 +35,17 @@
       },
       {
         "ordinal": 6,
-        "name": "metadata",
-        "type_info": "Jsonb"
+        "name": "embedding: Vector",
+        "type_info": {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        }
       },
       {
         "ordinal": 7,
-        "name": "tool_calls",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 8,
-        "name": "tool_results",
+        "name": "extracted_data",
         "type_info": "Jsonb"
       }
     ],
@@ -63,10 +63,9 @@
       false,
       false,
       false,
-      false,
       true,
       true
     ]
   },
-  "hash": "b01ff3225d62e16989bc5bb192b11ee22b9e0abd3ac091374c0fa9ea9a88cac6"
+  "hash": "93a276fc288527314b1b63e6e7d9c31247fb10de392d3a3c630874245e9863ac"
 }

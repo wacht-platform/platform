@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH memory_pairs AS (\n                SELECT \n                    m1.id as id1,\n                    m2.id as id2,\n                    m1.content as content1,\n                    m2.content as content2,\n                    m1.memory_category as category1,\n                    m2.memory_category as category2,\n                    1 - (m1.embedding <=> m2.embedding) as similarity\n                FROM memories m1\n                CROSS JOIN memories m2\n                WHERE m1.id < m2.id\n                  AND 1 - (m1.embedding <=> m2.embedding) > $1\n                  AND m1.memory_category = m2.memory_category\n            )\n            SELECT \n                id1, id2, content1, content2, category1, similarity\n            FROM memory_pairs\n            ORDER BY similarity DESC\n            LIMIT 50\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id1",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "id2",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "content1",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "content2",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "category1",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "similarity",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "d749c9fa62029b67c21f1fa20f3d7e51b3d3b8d01738fdeb9fb0d306022f4e25"
+}

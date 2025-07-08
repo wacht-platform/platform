@@ -173,6 +173,60 @@ impl Query for GetAiToolByIdQuery {
     }
 }
 
+pub struct GetToolByIdQuery {
+    pub tool_id: i64,
+}
+
+impl GetToolByIdQuery {
+    pub fn new(tool_id: i64) -> Self {
+        Self { tool_id }
+    }
+}
+
+impl Query for GetToolByIdQuery {
+    type Output = AiTool;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let tool = sqlx::query!(
+            r#"
+            SELECT 
+                id,
+                created_at,
+                updated_at,
+                name,
+                description,
+                deployment_id,
+                tool_type,
+                configuration
+            FROM ai_tools
+            WHERE id = $1
+            "#,
+            self.tool_id
+        )
+        .fetch_one(&app_state.db_pool)
+        .await
+        .map_err(|e| match e {
+            sqlx::Error::RowNotFound => AppError::NotFound(format!("Tool with id {} not found", self.tool_id)),
+            _ => AppError::Database(e),
+        })?;
+
+        let tool_type = AiToolType::from(tool.tool_type);
+        let configuration: AiToolConfiguration =
+            serde_json::from_value(tool.configuration).unwrap_or_default();
+
+        Ok(AiTool {
+            id: tool.id,
+            created_at: tool.created_at,
+            updated_at: tool.updated_at,
+            name: tool.name,
+            description: tool.description,
+            tool_type,
+            deployment_id: tool.deployment_id,
+            configuration,
+        })
+    }
+}
+
 pub struct GetAiToolsByIdsQuery {
     pub deployment_id: i64,
     pub tool_ids: Vec<i64>,

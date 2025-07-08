@@ -1,6 +1,7 @@
 use async_nats::jetstream;
 use axum::extract::State;
 use axum::response::IntoResponse;
+use chrono::Utc;
 use fastwebsockets::FragmentCollector;
 use fastwebsockets::Frame;
 use fastwebsockets::OpCode;
@@ -14,6 +15,7 @@ use shared::queries::GetAiAgentByNameWithFeatures;
 use shared::queries::GetExecutionMessagesQuery;
 use shared::state::AppState;
 use std::sync::Arc;
+use tokio::sync::Notify;
 use tokio::sync::{Mutex, mpsc};
 
 use super::models::{WebsocketMessage, WebsocketMessageType};
@@ -47,9 +49,12 @@ async fn handle_client(
         app_state.clone(),
         20220525523509059,
     )));
+    let channel_ready = Arc::new(Notify::new());
 
     tokio::spawn({
         let session = session.clone();
+        let channel_ready = channel_ready.clone();
+
         async move {
             let kv = app_state
                 .nats_jetstream
@@ -60,7 +65,7 @@ async fn handle_client(
                 .await
                 .unwrap();
 
-            let ready = {
+            let session_ready = {
                 let session = session.lock().await;
                 Arc::clone(&session.ready)
             };
@@ -70,7 +75,8 @@ async fn handle_client(
                 Arc::clone(&session.close)
             };
 
-            ready.notified().await;
+            channel_ready.notify_waiters();
+            session_ready.notified().await;
 
             let context_id = {
                 let session = session.lock().await;
@@ -123,6 +129,7 @@ async fn handle_client(
                     } => {}
                     Some(Ok(entry)) = watch.next() => {
                         active_msg = String::from_utf8(entry.value.to_vec()).unwrap();
+                        print!("{active_msg}");
                     }
                     _ =  close.notified() => {
                         break;
@@ -131,6 +138,8 @@ async fn handle_client(
             }
         }
     });
+
+    channel_ready.notified().await;
 
     loop {
         tokio::select! {
@@ -222,11 +231,15 @@ async fn handle_execution_message(
             .await
         {
             Ok(agent) => {
+                println!("trying to lock");
                 let mut session = session_state.lock().await;
-                session.agent = Some(agent);
+                println!("locked");
+                session.agent = Some(agent.clone());
                 session.context_id = Some(context_id.parse().unwrap());
 
+                println!("here {}", agent.id);
                 session.ready.notify_waiters();
+                println!("here {}", agent.id);
 
                 let _ = sender.send(message);
             }

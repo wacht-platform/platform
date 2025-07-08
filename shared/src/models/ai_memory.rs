@@ -11,14 +11,14 @@ pub struct MemoryEntry {
     pub memory_type: MemoryType,
     pub content: String,
     pub metadata: HashMap<String, Value>,
-    pub importance: f32,
+    pub importance: f64,
     pub created_at: DateTime<Utc>,
     pub last_accessed: DateTime<Utc>,
     pub access_count: u32,
     pub embedding: Vec<f32>,
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
 pub enum MemoryType {
     Working,
     Episodic,
@@ -63,15 +63,15 @@ pub struct MemoryQuery {
     pub query: String,
     pub memory_types: Vec<MemoryType>,
     pub max_results: usize,
-    pub min_importance: f32,
+    pub min_importance: f64,
     pub time_range: Option<(DateTime<Utc>, DateTime<Utc>)>,
 }
 
 #[derive(Clone)]
 pub struct MemorySearchResult {
     pub entry: MemoryEntry,
-    pub relevance_score: f32,
-    pub similarity_score: f32,
+    pub relevance_score: f64,
+    pub similarity_score: f64,
 }
 
 #[derive(Serialize, Deserialize, FromRow)]
@@ -83,7 +83,7 @@ pub struct MemoryRecord {
     pub memory_type: String,
     pub content: String,
     pub embedding: Vector,
-    pub importance: f32,
+    pub importance: f64,
     pub access_count: i32,
     pub created_at: DateTime<Utc>,
     pub last_accessed_at: DateTime<Utc>,
@@ -98,11 +98,11 @@ pub struct MemorySearchRecord {
     pub memory_type: String,
     pub content: String,
     pub embedding: Vector,
-    pub importance: f32,
+    pub importance: f64,
     pub access_count: i32,
     pub created_at: DateTime<Utc>,
     pub last_accessed_at: DateTime<Utc>,
-    pub score: f32,
+    pub score: f64,
 }
 
 impl From<MemorySearchRecord> for MemoryEntry {

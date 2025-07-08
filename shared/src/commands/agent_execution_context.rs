@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use pgvector::Vector;
 use serde_json::Value;
 
 use crate::{
@@ -102,7 +103,6 @@ impl super::Command for UpdateExecutionContextQuery {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let now = Utc::now();
 
-        // Use individual updates for simplicity and to avoid lifetime issues
         if let Some(ref goal) = self.current_goal {
             sqlx::query!(
                 "UPDATE agent_execution_contexts SET updated_at = $1, last_activity_at = $1, current_goal = $2 WHERE id = $3 AND deployment_id = $4",
@@ -151,9 +151,8 @@ pub struct CreateExecutionMessageCommand {
     pub message_type: ExecutionMessageType,
     pub sender: ExecutionMessageSender,
     pub content: String,
-    pub metadata: Value,
-    pub tool_calls: Option<Value>,
-    pub tool_results: Option<Value>,
+    pub embedding: Option<Vector>,
+    pub extracted_data: Option<Value>,
 }
 
 impl CreateExecutionMessageCommand {
@@ -168,24 +167,18 @@ impl CreateExecutionMessageCommand {
             message_type,
             sender,
             content,
-            metadata: serde_json::json!({}),
-            tool_calls: None,
-            tool_results: None,
+            embedding: None,
+            extracted_data: None,
         }
     }
 
-    pub fn with_metadata(mut self, metadata: Value) -> Self {
-        self.metadata = metadata;
+    pub fn with_embedding(mut self, embedding: Vec<f32>) -> Self {
+        self.embedding = Some(Vector::from(embedding));
         self
     }
 
-    pub fn with_tool_calls(mut self, tool_calls: Value) -> Self {
-        self.tool_calls = Some(tool_calls);
-        self
-    }
-
-    pub fn with_tool_results(mut self, tool_results: Value) -> Self {
-        self.tool_results = Some(tool_results);
+    pub fn with_extracted_data(mut self, extracted_data: Value) -> Self {
+        self.extracted_data = Some(extracted_data);
         self
     }
 }
@@ -200,8 +193,8 @@ impl Command for CreateExecutionMessageCommand {
         sqlx::query!(
             r#"
             INSERT INTO agent_execution_messages
-            (id, created_at, execution_context_id, message_type, sender, content, metadata, tool_calls, tool_results)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            (id, created_at, execution_context_id, message_type, sender, content, embedding, extracted_data)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
             message_id,
             now,
@@ -209,9 +202,8 @@ impl Command for CreateExecutionMessageCommand {
             self.message_type.to_string(),
             self.sender.to_string(),
             self.content,
-            self.metadata,
-            self.tool_calls,
-            self.tool_results
+            self.embedding.clone() as Option<Vector>,
+            self.extracted_data
         )
         .execute(&app_state.db_pool)
         .await
@@ -224,9 +216,8 @@ impl Command for CreateExecutionMessageCommand {
             message_type: self.message_type.clone(),
             sender: self.sender.clone(),
             content: self.content.clone(),
-            metadata: self.metadata.clone(),
-            tool_calls: self.tool_calls.clone(),
-            tool_results: self.tool_results.clone(),
+            embedding: self.embedding.clone(),
+            extracted_data: self.extracted_data.clone(),
         })
     }
 }

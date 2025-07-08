@@ -1,0 +1,102 @@
+You are performing a self-evaluation checkpoint to assess task execution progress and quality.
+
+## Current Task Context
+- Task ID: {{task.id}}
+- Objective: {{task.objective}}
+- Expected Output: {{task.expected_output}}
+{{#if task.requirements}}
+- Requirements:
+{{#each task.requirements}}
+  - {{this}}
+{{/each}}
+{{/if}}
+
+## Execution Progress
+- Actions Performed: {{actions_count}}
+- Current Status: {{execution_status}}
+{{#if last_action_result}}
+- Last Action Result: 
+  - Type: {{last_action_result.type}}
+  - Success: {{last_action_result.success}}
+  {{#if last_action_result.error}}
+  - Error: {{last_action_result.error}}
+  {{/if}}
+{{/if}}
+
+{{#if partial_results}}
+## Partial Results So Far
+{{#each partial_results}}
+- {{this.action}}: {{this.outcome}}
+{{/each}}
+{{/if}}
+
+{{#if working_memory}}
+## Working Memory Context
+{{#each working_memory}}
+- {{@key}}: {{this}}
+{{/each}}
+{{/if}}
+
+## Evaluation Criteria
+1. **Progress Assessment**: Are we making meaningful progress toward the objective?
+2. **Quality Check**: Is the quality of execution meeting expectations?
+3. **Approach Validation**: Is our current approach optimal or should we adjust?
+4. **Error Detection**: Are there any errors or issues that need addressing?
+5. **Completion Readiness**: Are we ready to complete this task or do we need more actions?
+
+## Instructions
+Perform a thorough self-evaluation and provide your assessment in the following format:
+
+```xml
+<self_evaluation>
+  <citations>
+    <memory_reference id="memory_id" relevance="high|medium|low" usefulness="high|medium|low" confidence="high|medium|low" usage_type="direct_quote|paraphrase|inspiration|background">
+      How this memory informed the evaluation
+    </memory_reference>
+    <conversation_reference id="conversation_id" relevance="high|medium|low" usefulness="high|medium|low" confidence="high|medium|low" usage_type="direct_quote|paraphrase|inspiration|background">
+      How this conversation informed the evaluation
+    </conversation_reference>
+  </citations>
+  
+  <progress_assessment>
+    <percentage_complete>0-100</percentage_complete>
+    <on_track>true/false</on_track>
+    <reasoning>Explain your progress assessment</reasoning>
+  </progress_assessment>
+  
+  <quality_assessment>
+    <quality_score>1-10</quality_score>
+    <meets_requirements>true/false</meets_requirements>
+    <issues_found>
+      <issue>Description of any quality issues</issue>
+    </issues_found>
+  </quality_assessment>
+  
+  <approach_evaluation>
+    <current_approach_effective>true/false</current_approach_effective>
+    <suggested_adjustments>
+      <adjustment>Description of any needed adjustments</adjustment>
+    </suggested_adjustments>
+  </approach_evaluation>
+  
+  <next_steps>
+    <recommendation>continue|adjust|retry|complete|abort</recommendation>
+    <reasoning>Explain your recommendation</reasoning>
+    <!-- If recommendation is "adjust" or "retry", include proposed_actions -->
+    <proposed_actions>
+      <action>
+        <type>tool_call|workflow_call|knowledge_search|memory_operation</type>
+        <description>What should be done differently</description>
+      </action>
+    </proposed_actions>
+  </next_steps>
+  
+  <lessons_learned>
+    <insight>Any insights that should be remembered for future similar tasks</insight>
+  </lessons_learned>
+</self_evaluation>
+```
+
+Be honest and critical in your evaluation. The goal is to ensure high-quality task completion and continuous improvement.
+
+Include citations for any memories or conversations that provided insights or influenced your evaluation. Citation attributes should reference actual IDs from available memory/conversation data.

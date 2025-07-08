@@ -1,10 +1,11 @@
 use crate::dto::query::SortOrder;
 use crate::error::AppError;
 use crate::models::{
-    AgentExecutionContext, AgentExecutionContextMessage,
-    ExecutionMessageSender, ExecutionMessageType,
+    AgentExecutionContext, AgentExecutionContextMessage, ExecutionMessageSender,
+    ExecutionMessageType,
 };
 use crate::state::AppState;
+use pgvector::Vector;
 use std::str::FromStr;
 
 pub struct GetExecutionContextQuery {
@@ -100,7 +101,7 @@ impl super::Query for GetExecutionMessagesQuery {
         if self.sort_order == SortOrder::Asc {
             let messages = sqlx::query!(
                 r#"
-                SELECT id, created_at, execution_context_id, message_type, sender, content, metadata, tool_calls, tool_results
+                SELECT id, created_at, execution_context_id, message_type, sender, content, embedding as "embedding: Vector", extracted_data
                 FROM agent_execution_messages
                 WHERE execution_context_id = $1
                 ORDER BY created_at ASC
@@ -126,15 +127,14 @@ impl super::Query for GetExecutionMessagesQuery {
                     message_type,
                     sender,
                     content: message.content,
-                    metadata: message.metadata,
-                    tool_calls: message.tool_calls,
-                    tool_results: message.tool_results,
+                    embedding: message.embedding,
+                    extracted_data: message.extracted_data,
                 });
             }
         } else {
             let messages = sqlx::query!(
                 r#"
-                SELECT id, created_at, execution_context_id, message_type, sender, content, metadata, tool_calls, tool_results
+                SELECT id, created_at, execution_context_id, message_type, sender, content, embedding as "embedding: Vector", extracted_data
                 FROM agent_execution_messages
                 WHERE execution_context_id = $1
                 ORDER BY created_at DESC
@@ -160,9 +160,8 @@ impl super::Query for GetExecutionMessagesQuery {
                     message_type,
                     sender,
                     content: message.content,
-                    metadata: message.metadata,
-                    tool_calls: message.tool_calls,
-                    tool_results: message.tool_results,
+                    embedding: message.embedding,
+                    extracted_data: message.extracted_data,
                 });
             }
         };

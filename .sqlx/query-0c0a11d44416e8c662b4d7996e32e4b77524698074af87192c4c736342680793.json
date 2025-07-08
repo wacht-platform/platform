@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT \n                    m.id, m.created_at, m.execution_context_id, \n                    m.message_type, m.sender, m.content, \n                    m.embedding as \"embedding: Vector\", m.extracted_data,\n                    1 - (m.embedding <=> $2::vector) as similarity\n                FROM agent_execution_messages m\n                WHERE m.execution_context_id = $1\n                AND m.embedding IS NOT NULL\n                AND m.message_type = ANY($3)\n                AND 1 - (m.embedding <=> $2::vector) >= $4\n                ORDER BY similarity DESC\n                LIMIT $5\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "execution_context_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "message_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "sender",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "embedding: Vector",
+        "type_info": {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "extracted_data",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "similarity",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        },
+        "TextArray",
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "0c0a11d44416e8c662b4d7996e32e4b77524698074af87192c4c736342680793"
+}

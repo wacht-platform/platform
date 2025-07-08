@@ -41,6 +41,8 @@ pub mod ai_knowledge_base;
 pub mod ai_memory;
 pub mod ai_tool;
 pub mod ai_workflow;
+pub mod context_engine;
+pub mod memory_v2;
 
 pub use deployment::*;
 pub use deployment_auth_settings::*;
@@ -83,3 +85,5 @@ pub use ai_knowledge_base::*;
 pub use ai_memory::*;
 pub use ai_tool::*;
 pub use ai_workflow::*;
+pub use context_engine::*;
+pub use memory_v2::*;

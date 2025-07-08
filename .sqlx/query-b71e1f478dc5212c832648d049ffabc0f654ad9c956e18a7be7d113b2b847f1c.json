@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM memories\n            WHERE creation_context_id = $1\n              AND base_temporal_score < $2\n              AND created_at < NOW() - INTERVAL '7 days'\n              AND citation_count < 3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b71e1f478dc5212c832648d049ffabc0f654ad9c956e18a7be7d113b2b847f1c"
+}

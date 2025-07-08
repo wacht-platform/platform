@@ -1,6 +1,26 @@
 pub mod agent_executor;
+pub mod citation_extractor;
+pub mod context_aggregator;
+pub mod context_engine_executor;
+pub mod decay_manager;
+pub mod gemini_client;
+pub mod json_parser;
+pub mod memory_boundaries;
+pub mod memory_consolidator;
+pub mod memory_manager;
 pub mod message_parser;
+pub mod tool_executor;
+pub mod workflow_executor;
 pub mod xml_parser;
 
 pub use agent_executor::*;
+pub use citation_extractor::*;
+pub use context_aggregator::*;
+pub use context_engine_executor::*;
+pub use decay_manager::*;
+pub use gemini_client::*;
+pub use memory_boundaries::*;
+pub use memory_consolidator::*;
 pub use message_parser::*;
+pub use tool_executor::*;
+pub use workflow_executor::*;

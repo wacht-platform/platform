@@ -10,7 +10,7 @@ pub struct SearchMemoriesQuery {
     pub query_embedding: Vec<f32>,
     pub limit: i64,
     pub memory_type_filter: Vec<String>,
-    pub min_importance: Option<f32>,
+    pub min_importance: Option<f64>,
     pub time_range: Option<(DateTime<Utc>, DateTime<Utc>)>,
 }
 

@@ -1,5 +1,7 @@
 use crate::agentic::AgentExecutor;
-use async_nats::{HeaderMap, jetstream};
+use async_nats::HeaderMap;
+use llm::chat::ChatRole;
+use shared::commands::{Command, CreateConversationCommand};
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
 use shared::models::AiAgentWithFeatures;
@@ -23,11 +25,14 @@ impl AgentHandler {
     }
 
     pub async fn execute_agent_streaming(&self, request: ExecutionRequest) -> Result<(), AppError> {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel::<StreamEvent>(10);
+
         let mut agent_executor = AgentExecutor::new(
             request.agent,
             request.deployment_id,
             request.context_id,
             self.app_state.clone(),
+            sender.clone(),
         )
         .await?;
         let execution_id = self.app_state.sf.next_id()? as i64;
@@ -36,38 +41,54 @@ impl AgentHandler {
         let kv = match self
             .app_state
             .nats_jetstream
-            .create_key_value(jetstream::kv::Config {
-                bucket: "agent_execution_kv".to_string(),
-                ..Default::default()
-            })
+            .get_key_value("agent_execution_kv".to_string())
             .await
         {
             Err(err) => return Err(AppError::Internal(err.to_string())),
             Ok(kv) => kv,
         };
-        let watch = match kv.watch(context_key.clone()).await {
+        let _watch = match kv.watch(context_key.clone()).await {
             Err(err) => return Err(AppError::Internal(err.to_string())),
             Ok(watch) => watch,
         };
 
-        let (sender, mut receiver) = tokio::sync::mpsc::channel::<StreamEvent>(10);
         let jetstream = self.app_state.nats_jetstream.clone();
 
         tokio::spawn(async move {
             while let Some(message) = receiver.recv().await {
                 match message {
-                    StreamEvent::Token(token, message_id) => {
-                        let mut headers = HeaderMap::new();
-                        headers.append("message_id", message_id);
+                    StreamEvent::Token(token) => {
                         let _ = jetstream
-                            .publish_with_headers(
+                            .publish(
                                 format!("agent_execution_stream.msg:{}", execution_id),
-                                headers,
                                 token.into(),
                             )
                             .await;
                     }
-                    StreamEvent::Message(_) => todo!(),
+                    StreamEvent::PlatformEvent(event_label, event_data) => {
+                        let mut headers = HeaderMap::new();
+                        headers.append("event_type", "platform_event");
+                        headers.append("event_label", event_label);
+                        let _ = jetstream
+                            .publish_with_headers(
+                                format!("agent_execution_stream.event:{}", execution_id),
+                                headers,
+                                serde_json::to_vec(&event_data).unwrap_or_default().into(),
+                            )
+                            .await;
+                    }
+                    StreamEvent::PlatformFunction(function_name, result) => {
+                        let mut headers = HeaderMap::new();
+                        headers.append("event_type", "platform_function");
+                        headers.append("function_name", function_name);
+                        let _ = jetstream
+                            .publish_with_headers(
+                                format!("agent_execution_stream.function:{}", execution_id),
+                                headers,
+                                serde_json::to_vec(&result).unwrap_or_default().into(),
+                            )
+                            .await;
+                    }
                 }
             }
         });
@@ -77,12 +98,37 @@ impl AgentHandler {
             .await
         {
             Ok(_) => {
-                let _ = agent_executor
-                    .execute_with_streaming(&request.user_message, sender)
-                    .await;
+                agent_executor
+                    .execute_with_streaming(&request.user_message)
+                    .await
+                    .unwrap();
             }
             Err(_) => (),
         };
+
+        let message = agent_executor
+            .conversations
+            .iter()
+            .rev()
+            .position(|msg| msg.role == ChatRole::User)
+            .map(|pos| {
+                let start_idx = agent_executor.conversations.len() - pos - 1;
+                agent_executor.conversations[start_idx..]
+                    .iter()
+                    .map(|v| v.content.clone())
+                    .collect()
+            })
+            .unwrap_or_else(Vec::new)
+            .join("\n");
+
+        CreateConversationCommand::new(
+            execution_id,
+            request.context_id,
+            message.clone(),
+            "agent_response".to_string(),
+        )
+        .execute(&self.app_state)
+        .await?;
 
         let _ = kv.delete(context_key).await;
 

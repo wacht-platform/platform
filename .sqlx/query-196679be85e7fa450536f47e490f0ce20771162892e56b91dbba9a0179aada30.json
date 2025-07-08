@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                id, context_id, timestamp, content, embedding as \"embedding: Vector\", message_type,\n                base_temporal_score, access_count,\n                first_accessed_at, last_accessed_at,\n                citation_count, relevance_score, usefulness_score,\n                compression_level, compressed_content,\n                created_at, updated_at,\n                1 - (embedding <=> $1) as similarity_score\n            FROM conversations\n            WHERE context_id = $2 AND base_temporal_score > 0.1\n            ORDER BY (1 - (embedding <=> $1)) * base_temporal_score DESC\n            LIMIT $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "context_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "timestamp",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "embedding: Vector",
+        "type_info": {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "message_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "base_temporal_score",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 7,
+        "name": "access_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "first_accessed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_accessed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "citation_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "relevance_score",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 12,
+        "name": "usefulness_score",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 13,
+        "name": "compression_level",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "compressed_content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "similarity_score",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        },
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "196679be85e7fa450536f47e490f0ce20771162892e56b91dbba9a0179aada30"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM agent_dynamic_context WHERE execution_context_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9f1e225b0adf00008d890ff6c1e86691eaccdafe6b959f1667347955b35c10d2"
+}

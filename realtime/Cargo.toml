@@ -20,4 +20,9 @@ futures = "0.3"
 async-nats = "0.42.0"
 handlebars = "6.2.0"
 tracing = "0.1"
-serde-xml-rs = "0.8.1"
+tiktoken-rs = "0.5"
+quick-xml = { version = "0.38.0", features = ["serialize"] }
+ureq = { version = "3.0.11", features = ["json"] }
+urlencoding = "2.1"
+regex = "1.10"
+eventsource-client = "0.13"

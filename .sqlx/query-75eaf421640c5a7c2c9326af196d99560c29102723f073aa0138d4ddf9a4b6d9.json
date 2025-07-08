@@ -1,0 +1,153 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                id, content, embedding as \"embedding: Vector\", memory_category,\n                base_temporal_score, access_count,\n                first_accessed_at, last_accessed_at,\n                citation_count, cross_context_value, learning_confidence,\n                creation_context_id, last_reinforced_at,\n                semantic_centrality, uniqueness_score,\n                compression_level, compressed_content,\n                context_decay_profile,\n                created_at, updated_at,\n                1 - (embedding <=> $1) as similarity_score\n            FROM memories\n            WHERE base_temporal_score > 0.1\n            ORDER BY (1 - (embedding <=> $1)) * base_temporal_score DESC\n            LIMIT $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "embedding: Vector",
+        "type_info": {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "memory_category",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "base_temporal_score",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "access_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "first_accessed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_accessed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "citation_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "cross_context_value",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 10,
+        "name": "learning_confidence",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 11,
+        "name": "creation_context_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "last_reinforced_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "semantic_centrality",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 14,
+        "name": "uniqueness_score",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 15,
+        "name": "compression_level",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "compressed_content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "context_decay_profile",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 18,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 19,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 20,
+        "name": "similarity_score",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        },
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "75eaf421640c5a7c2c9326af196d99560c29102723f073aa0138d4ddf9a4b6d9"
+}

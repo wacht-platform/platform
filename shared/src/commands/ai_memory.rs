@@ -16,7 +16,7 @@ pub struct CreateMemoryCommand {
     pub memory_type: MemoryType,
     pub content: String,
     pub embedding: Vec<f32>,
-    pub importance: f32,
+    pub importance: f64,
 }
 
 impl Command for CreateMemoryCommand {

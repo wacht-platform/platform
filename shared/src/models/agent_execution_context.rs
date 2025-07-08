@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use pgvector::Vector;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
@@ -18,7 +19,7 @@ pub struct AgentExecutionContext {
     pub completed_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AgentExecutionContextMessage {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -28,9 +29,8 @@ pub struct AgentExecutionContextMessage {
     pub message_type: ExecutionMessageType,
     pub sender: ExecutionMessageSender,
     pub content: String,
-    pub metadata: serde_json::Value,
-    pub tool_calls: Option<serde_json::Value>,
-    pub tool_results: Option<serde_json::Value>,
+    pub embedding: Option<Vector>,
+    pub extracted_data: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -49,7 +49,7 @@ pub enum ExecutionContextStatus {
     Failed,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ExecutionMessageType {
     #[serde(rename = "user_input")]
     UserInput,
@@ -65,7 +65,7 @@ pub enum ExecutionMessageType {
     Error,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ExecutionMessageSender {
     #[serde(rename = "user")]
     User,

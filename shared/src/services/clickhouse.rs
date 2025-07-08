@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use chrono::{DateTime, Utc};
 use clickhouse::{Client, Row};
+use pgvector::Vector;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
@@ -48,7 +49,7 @@ pub struct AnalyticsEvent {
     pub user_id: Option<i64>,
     pub event_type: String,
     pub event_data: String,
-    pub embedding: Option<Vec<f32>>,
+    pub embedding: Vector,
     pub created_at: DateTime<Utc>,
 }
 
@@ -215,5 +216,4 @@ impl ClickHouseService {
             })
             .collect())
     }
-
 }

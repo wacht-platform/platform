@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE conversations\n                SET compression_level = 1,\n                    compressed_content = $2,\n                    updated_at = NOW()\n                WHERE id = $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9b38650a431e33a43fc9b39decf173051d723975963b6e66ac7a008557059d58"
+}

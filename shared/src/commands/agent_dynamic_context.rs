@@ -10,15 +10,13 @@ pub struct CreateAgentDynamicContextCommand {
     pub execution_context_id: i64,
     pub content: String,
     pub source: Option<String>,
-    pub embedding: Option<Vec<f32>>,
+    pub embedding: Vector,
 }
 
 impl Command for CreateAgentDynamicContextCommand {
     type Output = AgentDynamicContext;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let embedding = self.embedding.map(Vector::from);
-
         let row = sqlx::query(
             r#"
             INSERT INTO agent_dynamic_context (id, execution_context_id, content, source, embedding)
@@ -30,7 +28,7 @@ impl Command for CreateAgentDynamicContextCommand {
         .bind(self.execution_context_id)
         .bind(self.content)
         .bind(self.source)
-        .bind(embedding)
+        .bind(self.embedding)
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(AppError::from)?;
@@ -58,13 +56,10 @@ impl Command for DeleteAgentDynamicContextCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        sqlx::query!(
-            "DELETE FROM agent_dynamic_context WHERE id = $1",
-            self.id
-        )
-        .execute(&app_state.db_pool)
-        .await
-        .map_err(|e| AppError::Database(e))?;
+        sqlx::query!("DELETE FROM agent_dynamic_context WHERE id = $1", self.id)
+            .execute(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
 
         Ok(())
     }

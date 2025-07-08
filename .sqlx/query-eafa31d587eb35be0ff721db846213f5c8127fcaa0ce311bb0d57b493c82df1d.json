@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT id, created_at, execution_context_id, message_type, sender, content, embedding as \"embedding: Vector\", extracted_data\n                FROM agent_execution_messages\n                WHERE execution_context_id = $1\n                ORDER BY created_at ASC\n                LIMIT $2 OFFSET $3\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "execution_context_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "message_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "sender",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "embedding: Vector",
+        "type_info": {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "extracted_data",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "eafa31d587eb35be0ff721db846213f5c8127fcaa0ce311bb0d57b493c82df1d"
+}

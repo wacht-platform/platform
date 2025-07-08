@@ -38,7 +38,8 @@ impl AppState {
     pub async fn new_from_env() -> Result<Self, Box<dyn Error>> {
         let database_url = env("DATABASE_URL")?;
         let pool = PgPoolOptions::new()
-            .max_connections(5)
+            .min_connections(2)
+            .max_connections(15)
             .connect(&database_url)
             .await?;
 

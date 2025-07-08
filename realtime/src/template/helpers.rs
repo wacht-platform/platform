@@ -13,6 +13,7 @@ pub fn register_all_helpers(hb: &mut Handlebars) {
     hb.register_helper("format_memories", Box::new(FormatMemoriesHelper));
     hb.register_helper("format_map", Box::new(FormatMapHelper));
     hb.register_helper("join", Box::new(JoinHelper));
+    hb.register_helper("json", Box::new(JsonHelper));
     hb.register_helper("json_pretty", Box::new(JsonPrettyHelper));
     hb.register_helper("truncate", Box::new(TruncateHelper));
     hb.register_helper("default", Box::new(DefaultHelper));
@@ -262,6 +263,30 @@ impl handlebars::HelperDef for JoinHelper {
             .collect();
 
         out.write(&strings.join(separator))?;
+        Ok(())
+    }
+}
+
+pub struct JsonHelper;
+
+impl handlebars::HelperDef for JsonHelper {
+    fn call<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper,
+        _: &Handlebars,
+        _: &Context,
+        _: &mut RenderContext,
+        out: &mut dyn Output,
+    ) -> HelperResult {
+        let value = h
+            .param(0)
+            .ok_or_else(|| RenderErrorReason::InvalidParamType("Expected value"))?
+            .value();
+
+        let json_string = serde_json::to_string(value)
+            .map_err(|_| RenderErrorReason::InvalidParamType("Failed to serialize to JSON"))?;
+
+        out.write(&json_string)?;
         Ok(())
     }
 }
