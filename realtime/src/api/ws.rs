@@ -1,7 +1,6 @@
 use async_nats::jetstream;
 use axum::extract::State;
 use axum::response::IntoResponse;
-use chrono::Utc;
 use fastwebsockets::FragmentCollector;
 use fastwebsockets::Frame;
 use fastwebsockets::OpCode;
@@ -231,15 +230,11 @@ async fn handle_execution_message(
             .await
         {
             Ok(agent) => {
-                println!("trying to lock");
                 let mut session = session_state.lock().await;
-                println!("locked");
                 session.agent = Some(agent.clone());
                 session.context_id = Some(context_id.parse().unwrap());
 
-                println!("here {}", agent.id);
                 session.ready.notify_waiters();
-                println!("here {}", agent.id);
 
                 let _ = sender.send(message);
             }

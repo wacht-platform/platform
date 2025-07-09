@@ -1,7 +1,5 @@
 use crate::agentic::AgentExecutor;
 use async_nats::HeaderMap;
-use llm::chat::ChatRole;
-use shared::commands::{Command, CreateConversationCommand};
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
 use shared::models::AiAgentWithFeatures;
@@ -105,30 +103,6 @@ impl AgentHandler {
             }
             Err(_) => (),
         };
-
-        let message = agent_executor
-            .conversations
-            .iter()
-            .rev()
-            .position(|msg| msg.role == ChatRole::User)
-            .map(|pos| {
-                let start_idx = agent_executor.conversations.len() - pos - 1;
-                agent_executor.conversations[start_idx..]
-                    .iter()
-                    .map(|v| v.content.clone())
-                    .collect()
-            })
-            .unwrap_or_else(Vec::new)
-            .join("\n");
-
-        CreateConversationCommand::new(
-            execution_id,
-            request.context_id,
-            message.clone(),
-            "agent_response".to_string(),
-        )
-        .execute(&self.app_state)
-        .await?;
 
         let _ = kv.delete(context_key).await;
 

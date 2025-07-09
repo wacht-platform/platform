@@ -60,11 +60,7 @@ impl Query for GetRecentConversationsQuery {
         let records = sqlx::query_as::<_, ConversationRecord>(
             r#"
             SELECT 
-                id, context_id, timestamp, content, embedding, message_type,
-                base_temporal_score, access_count,
-                first_accessed_at, last_accessed_at,
-                citation_count, relevance_score, usefulness_score,
-                compression_level, compressed_content,
+                id, context_id, timestamp, content, message_type,
                 created_at, updated_at
             FROM conversations
             WHERE context_id = $1
@@ -116,39 +112,6 @@ impl crate::commands::Command for UpdateMemoryAccessCommand {
     }
 }
 
-/// Update conversation access metrics
-pub struct UpdateConversationAccessCommand {
-    pub conversation_id: i64,
-}
-
-impl crate::commands::Command for UpdateConversationAccessCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        sqlx::query(
-            r#"
-            UPDATE conversations 
-            SET access_count = access_count + 1,
-                last_accessed_at = NOW(),
-                base_temporal_score = calculate_base_decay(
-                    access_count + 1,
-                    citation_count,
-                    first_accessed_at,
-                    NOW(),
-                    relevance_score,
-                    usefulness_score,
-                    compression_level
-                )
-            WHERE id = $1
-            "#
-        )
-        .bind(self.conversation_id)
-        .execute(&app_state.db_pool)
-        .await?;
-
-        Ok(())
-    }
-}
 
 /// Search memories with decay-adjusted scoring
 #[derive(Debug)]
@@ -234,83 +197,35 @@ impl Query for SearchMemoriesWithDecayQuery {
     }
 }
 
-/// Search conversations with decay-adjusted scoring
+/// Search conversations
 #[derive(Debug)]
-pub struct SearchConversationsWithDecayQuery {
-    pub query_embedding: Vec<f32>,
+pub struct SearchConversationsQuery {
     pub context_id: i64,
     pub limit: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationWithScore {
-    pub conversation: ConversationRecord,
-    pub similarity_score: f64,
-    pub decay_adjusted_score: f64,
-}
-
-impl Query for SearchConversationsWithDecayQuery {
-    type Output = Vec<ConversationWithScore>;
+impl Query for SearchConversationsQuery {
+    type Output = Vec<ConversationRecord>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let embedding = Vector::from(self.query_embedding.clone());
-        
-        let results = sqlx::query!(
+        let results = sqlx::query_as::<_, ConversationRecord>(
             r#"
             SELECT 
-                id, context_id, timestamp, content, embedding as "embedding: Vector", message_type,
-                base_temporal_score, access_count,
-                first_accessed_at, last_accessed_at,
-                citation_count, relevance_score, usefulness_score,
-                compression_level, compressed_content,
-                created_at, updated_at,
-                1 - (embedding <=> $1) as similarity_score
+                id, context_id, timestamp, content, message_type,
+                created_at, updated_at
             FROM conversations
-            WHERE context_id = $2 AND base_temporal_score > 0.1
-            ORDER BY (1 - (embedding <=> $1)) * base_temporal_score DESC
-            LIMIT $3
-            "#,
-            &embedding as &Vector,
-            self.context_id,
-            self.limit
+            WHERE context_id = $1
+            ORDER BY updated_at DESC
+            LIMIT $2
+            "#
         )
+        .bind(self.context_id)
+        .bind(self.limit)
         .fetch_all(&app_state.db_pool)
         .await
         .map_err(AppError::from)?;
 
-        let mut conversation_scores = Vec::new();
-        for row in results {
-            let conversation = ConversationRecord {
-                id: row.id,
-                context_id: row.context_id,
-                timestamp: row.timestamp.unwrap_or_else(|| Utc::now()),
-                content: row.content,
-                embedding: row.embedding,
-                message_type: row.message_type,
-                base_temporal_score: row.base_temporal_score.unwrap_or(0.0),
-                access_count: row.access_count.unwrap_or(0),
-                first_accessed_at: row.first_accessed_at.unwrap_or_else(|| Utc::now()),
-                last_accessed_at: row.last_accessed_at.unwrap_or_else(|| Utc::now()),
-                citation_count: row.citation_count.unwrap_or(0),
-                relevance_score: row.relevance_score.unwrap_or(0.0),
-                usefulness_score: row.usefulness_score.unwrap_or(0.0),
-                compression_level: row.compression_level.unwrap_or(0),
-                compressed_content: row.compressed_content,
-                created_at: row.created_at.unwrap_or_else(|| Utc::now()),
-                updated_at: row.updated_at.unwrap_or_else(|| Utc::now()),
-            };
-
-            let similarity_score = row.similarity_score.unwrap_or(0.0);
-            let decay_adjusted_score = similarity_score * conversation.base_temporal_score;
-
-            conversation_scores.push(ConversationWithScore {
-                conversation,
-                similarity_score,
-                decay_adjusted_score,
-            });
-        }
-
-        Ok(conversation_scores)
+        Ok(results)
     }
 }
 

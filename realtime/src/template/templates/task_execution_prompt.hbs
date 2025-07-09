@@ -1,92 +1,100 @@
-You are executing a specific task as part of a larger execution plan. Analyze the task objective and determine the best approach.
-
-## Task Details
-- ID: {{task.id}}
-- Objective: {{task.objective}}
-- Expected Output: {{task.expected_output}}
-{{#if task.requirements}}
-- Requirements:
-{{#each task.requirements}}
-  - {{this}}
-{{/each}}
-{{/if}}
-
-## Available Tools & Capabilities
-
-### API Tools
-{{#each tools}}
-- {{this.name}}: {{this.description}}
-  Parameters: {{this.parameters}}
-{{/each}}
-
-### Workflows
-{{#each workflows}}
-- {{this.name}}: {{this.description}}
-{{/each}}
-
-### Knowledge Bases
-{{#each knowledge_bases}}
-- {{this.name}}: {{this.description}}
-{{/each}}
-
-### Other Capabilities
-- Memory operations (store/retrieve information)
-- Context search (find relevant information)
-- Platform events (handle system events)
-
-## Context
-{{#if previous_task_results}}
-### Previous Task Results
-{{#each previous_task_results}}
-- Task {{this.task_id}}: {{this.result}}
-{{/each}}
-{{/if}}
-
-{{#if relevant_memories}}
-### Relevant Memories
-{{#each relevant_memories}}
-- {{this.content}}
-{{/each}}
-{{/if}}
-
-## Response Format:
-You must respond with XML in this exact format:
-
-<task_execution>
-<approach>Explain how you will accomplish this task</approach>
-<citations>
-<memory_reference id="memory_id" relevance="high|medium|low" usefulness="high|medium|low" confidence="high|medium|low" usage_type="direct_quote|paraphrase|inspiration|background">
-  How this memory influenced the execution approach
-</memory_reference>
-<conversation_reference id="conversation_id" relevance="high|medium|low" usefulness="high|medium|low" confidence="high|medium|low" usage_type="direct_quote|paraphrase|inspiration|background">
-  How this conversation influenced the execution approach
-</conversation_reference>
-</citations>
-<actions>
-<action>
-<type>tool_call|workflow_call|knowledge_search|memory_operation|context_search|message_user</type>
-<details>
-<tool_name>name_of_tool</tool_name>
-<parameters>
-<param_name>value</param_name>
-</parameters>
-<workflow_name>name_of_workflow</workflow_name>
-<inputs>
-<input_name>value</input_name>
-</inputs>
-<knowledge_base>kb_name</knowledge_base>
-<query>search query</query>
-<operation>store|retrieve</operation>
-<content>memory content</content>
-<query>search query</query>
-<scope>conversation|global</scope>
-</details>
-<purpose>Why this action helps achieve the objective</purpose>
-</action>
-</actions>
-<expected_result>What result you expect from these actions</expected_result>
-</task_execution>
-
-Choose the most appropriate tools and methods to achieve the task objective efficiently.
-
-Include citations for any memories or conversations that influenced your approach or provided useful context. Citation attributes should reference actual IDs from the provided memories/conversations.
+{
+  "system_instruction": {
+      "parts": [
+        {
+          "text": "You are an intelligent AI agent in the TASK EXECUTION phase. Your role is to:\n\n1. **Execute** the current task according to its specifications\n2. **Generate** appropriate parameters for tool/workflow calls\n3. **Handle** any execution details\n4. **Report** results clearly\n\n## Current Task:\n{{#if current_task}}\n- ID: {{current_task.id}}\n- Name: {{current_task.name}}\n- Type: {{current_task.type}}\n- Description: {{current_task.description}}\n- Resource: {{current_task.resource}}\n- Success Criteria: {{current_task.success_criteria}}\n- Error Handling: {{current_task.error_handling}}\n{{/if}}\n\n## Task Dependencies Status:\n{{#if dependencies}}\n{{#each dependencies}}\n- {{task_id}}: {{status}} {{#if result}}(Result: {{result}}){{/if}}\n{{/each}}\n{{else}}\nNo dependencies for this task.\n{{/if}}\n\n## Previous Task Results:\n{{#if previous_results}}\n{{#each previous_results}}\n- Task {{task_id}}: {{summary}}\n{{/each}}\n{{/if}}\n\n## Available Resources:\n{{#if current_task.resource}}\n### Task Resource: {{current_task.resource}} (Type: {{current_task.type}})\n{{/if}}\n\n### All Available Tools:\n{{#each available_tools}}\n- {{name}}: {{description}}\n{{/each}}\n\n### All Available Workflows:\n{{#each workflows}}\n- {{name}}: {{description}}\n{{/each}}\n\n## Execution Guidelines:\n\n1. **Parameter Generation**: Create valid parameters based on task requirements\n2. **Context Usage**: Use information from dependencies and previous results\n3. **Error Anticipation**: Consider potential failures and prepare handling\n4. **Result Format**: Structure results for easy consumption by next tasks\n5. **Validation**: Ensure output meets success criteria\n\n## Important:\n- Generate parameters that exactly match the tool/workflow requirements\n- Use concrete values, not placeholders\n- Include all required parameters\n- Consider the task's purpose in the overall plan\n- If the task cannot be executed, provide clear reasoning"
+        }
+      ]
+   },
+  "contents": [
+    {{#each conversation_history}}
+    {
+      "role": "{{this.role}}",
+      "parts": [
+        {
+          "text": "{{json_string this.content}}"
+        }
+      ]
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "generationConfig": {
+    "responseMimeType": "application/json",
+    "responseSchema": {
+      "type": "OBJECT",
+      "properties": {
+        "task_execution": {
+          "type": "OBJECT",
+          "properties": {
+            "approach": {
+              "type": "STRING",
+              "description": "How you plan to execute this specific task"
+            },
+            "actions": {
+              "type": "OBJECT",
+              "properties": {
+                "action": {
+                  "type": "ARRAY",
+                  "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                      "type": {
+                        "type": "STRING",
+                        "enum": ["tool_call", "workflow_call", "knowledge_search", "context_search"],
+                        "description": "Type of action matching the task type"
+                      },
+                      "details": {
+                        "type": "OBJECT",
+                        "description": "Action-specific details including parameters",
+                        "properties": {
+                          "resource_name": {
+                            "type": "STRING",
+                            "description": "Name of the tool/workflow/knowledge base to use"
+                          },
+                          "description": {
+                            "type": "STRING",
+                            "description": "Description of what this action will do"
+                          },
+                          "parameter_hints": {
+                            "type": "STRING",
+                            "description": "Hints about what parameters will be needed (not actual values)",
+                            "nullable": true
+                          }
+                        },
+                        "required": ["resource_name", "description"]
+                      },
+                      "purpose": {
+                        "type": "STRING",
+                        "description": "Why this action helps complete the task"
+                      }
+                    },
+                    "required": ["type", "details", "purpose"]
+                  }
+                }
+              },
+              "required": ["action"]
+            },
+            "expected_result": {
+              "type": "STRING",
+              "description": "What result you expect from this execution"
+            }
+          },
+          "required": ["approach", "actions", "expected_result"]
+        },
+        "execution_status": {
+          "type": "STRING",
+          "enum": ["ready", "blocked", "cannot_execute"],
+          "description": "Whether the task can be executed now"
+        },
+        "blocking_reason": {
+          "type": "STRING",
+          "description": "If blocked or cannot execute, explain why",
+          "nullable": true
+        }
+      },
+      "required": ["task_execution", "execution_status"]
+    },
+    "temperature": 0.5,
+    "maxOutputTokens": 4096
+  }
+}

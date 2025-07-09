@@ -3,13 +3,12 @@ use shared::state::AppState;
 use shared::models::ConsolidationCandidate;
 use shared::commands::{
     FindConsolidationCandidatesCommand, ConsolidateMemoriesCommand,
-    PromoteConversationsToMemoriesCommand, CheckConsolidationNeededQuery,
+    CheckConsolidationNeededQuery,
     Command,
 };
 use shared::queries::Query;
-use tracing::info;
 
-/// Consolidates similar memories and promotes important conversations
+/// Consolidates similar memories
 pub struct MemoryConsolidator {
     app_state: AppState,
 }
@@ -45,19 +44,6 @@ impl MemoryConsolidator {
         .await
     }
 
-    /// Promote highly-cited conversations to memories
-    pub async fn promote_conversations_to_memories(
-        &self,
-        context_id: i64,
-        citation_threshold: i32
-    ) -> Result<Vec<i64>, AppError> {
-        PromoteConversationsToMemoriesCommand {
-            context_id,
-            citation_threshold,
-        }
-        .execute(&self.app_state)
-        .await
-    }
 
     /// Check if consolidation is needed
     pub async fn needs_consolidation(&self, context_id: Option<i64>) -> Result<bool, AppError> {

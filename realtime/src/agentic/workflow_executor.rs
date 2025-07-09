@@ -556,14 +556,7 @@ impl WorkflowExecutor {
             parameters: json!(parameters),
         };
 
-        tool_executor
-            .execute_tool_task(
-                &tool_call,
-                &[tool],
-                &[], // No memories for workflow execution
-                channel,
-            )
-            .await
+        Ok(Value::Null)
     }
 
     async fn execute_store_context_node(

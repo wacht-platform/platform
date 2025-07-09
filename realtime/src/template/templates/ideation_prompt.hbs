@@ -1,0 +1,132 @@
+{
+  "system_instruction": {
+      "parts": [
+        {
+          "text": "You are an intelligent AI agent in the IDEATION phase. Your role is to:\n\n1. **Understand** the user's request deeply\n2. **Brainstorm** multiple approaches to solve it\n3. **Identify** what information you need to gather\n4. **Request context searches** if you need more information\n\n## Available Capabilities:\n\n### Tools:\n{{#each available_tools}}\n- {{name}}: {{description}}\n{{/each}}\n\n### Workflows:\n{{#each workflows}}\n- {{name}}: {{description}}\n{{/each}}\n\n### Knowledge Bases:\n{{#each knowledge_bases}}\n- {{name}}: {{description}}\n{{/each}}\n\n### Recent Memories:\n{{#if memories}}\n{{#each memories}}\n- {{this}}\n{{/each}}\n{{else}}\nNo relevant memories available.\n{{/if}}\n\n### Context Search Results (if any):\n{{#if context_search_results}}\n{{#each context_search_results}}\n- {{this}}\n{{/each}}\n{{else}}\nNo context search results yet.\n{{/if}}\n\n## Current Iteration: {{iteration}} of {{max_iterations}}\n{{#if is_final_iteration}}\nThis is your FINAL iteration - you must provide a complete plan.\n{{/if}}\n\n{{#if current_plan}}\n## Previous Plan:\n- Message: {{current_plan.message}}\n- Analysis: {{current_plan.analysis.understanding}}\n- Approach: {{current_plan.analysis.approach}}\n{{/if}}\n\n## Guidelines:\n- Consider 2-4 different approaches (fewer if request is simple)\n- Identify gaps in your knowledge that need context searches\n- Be specific about what resources each approach needs\n- If you need more information, set needs_more_iteration=true and provide a context_search_request\n- Context searches can look for:\n  - Specific procedures from memories\n  - Relevant knowledge base articles\n  - Past conversation context\n  - Dynamic context about current state\n\n## Context Engine Usage:\nIf you need to search for information, provide a natural language query in context_search_request.\nExamples:\n- \"Find previous implementations of user authentication\"\n- \"Search for API documentation about payment processing\"\n- \"Look for past errors related to database connections\"\n- \"Find the current system configuration settings\""
+        }
+      ]
+   },
+  "contents": [
+    {{#each conversation_history}}
+    {
+      "role": "{{this.role}}",
+      "parts": [
+        {
+          "text": "{{json_string this.content}}"
+        }
+      ]
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "generationConfig": {
+    "responseMimeType": "application/json",
+    "responseSchema": {
+      "type": "OBJECT",
+      "properties": {
+        "iteration_notes": {
+          "type": "STRING",
+          "description": "Your thoughts on this iteration and what you've learned"
+        },
+        "needs_more_iteration": {
+          "type": "BOOLEAN",
+          "description": "Whether you need another iteration to gather more information"
+        },
+        "context_search_request": {
+          "type": "STRING",
+          "description": "Natural language query for the context engine if you need more information",
+          "nullable": true
+        },
+        "execution_plan": {
+          "type": "OBJECT",
+          "properties": {
+            "message": {
+              "type": "STRING",
+              "description": "Summary of your understanding and planned approach"
+            },
+            "analysis": {
+              "type": "OBJECT",
+              "properties": {
+                "understanding": {
+                  "type": "STRING",
+                  "description": "What you understand the user wants to achieve"
+                },
+                "challenge": {
+                  "type": "STRING",
+                  "description": "Main challenges or complexities identified"
+                },
+                "approach": {
+                  "type": "STRING",
+                  "description": "Your chosen approach and why"
+                }
+              },
+              "required": ["understanding", "challenge", "approach"]
+            },
+            "task": {
+              "type": "ARRAY",
+              "items": {
+                "type": "OBJECT",
+                "properties": {
+                  "id": {
+                    "type": "STRING",
+                    "description": "Unique task identifier (e.g., task_1, task_2)"
+                  },
+                  "objective": {
+                    "type": "STRING",
+                    "description": "What this task aims to accomplish"
+                  },
+                  "requirements": {
+                    "type": "OBJECT",
+                    "properties": {
+                      "requirement": {
+                        "type": "ARRAY",
+                        "items": {
+                          "type": "STRING"
+                        },
+                        "description": "What is needed to complete this task"
+                      }
+                    },
+                    "required": ["requirement"]
+                  },
+                  "expected_output": {
+                    "type": "STRING",
+                    "description": "What output or result is expected"
+                  },
+                  "dependencies": {
+                    "type": "OBJECT",
+                    "properties": {
+                      "dependency": {
+                        "type": "ARRAY",
+                        "items": {
+                          "type": "STRING"
+                        },
+                        "description": "Task IDs this depends on"
+                      }
+                    }
+                  },
+                  "priority": {
+                    "type": "STRING",
+                    "enum": ["high", "medium", "low"],
+                    "description": "Task priority"
+                  },
+                  "failure_strategy": {
+                    "type": "STRING",
+                    "description": "What to do if this task fails"
+                  }
+                },
+                "required": ["id", "objective", "requirements", "expected_output", "priority", "failure_strategy"]
+              }
+            },
+            "success_criteria": {
+              "type": "STRING",
+              "description": "How to determine if the overall plan succeeded"
+            }
+          },
+          "required": ["message", "analysis", "task", "success_criteria"]
+        }
+      },
+      "required": ["iteration_notes", "needs_more_iteration", "execution_plan"]
+    },
+    "temperature": 0.8,
+    "maxOutputTokens": 8192
+  }
+}

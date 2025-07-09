@@ -4,18 +4,19 @@ use crate::{
     models::{ConversationRecord, MemoryRecordV2},
     state::AppState,
 };
+use serde_json::Value;
 use chrono::Utc;
 use pgvector::Vector;
 
 pub struct CreateConversationCommand {
     pub id: i64,
     pub context_id: i64,
-    pub content: String,
+    pub content: Value,  // Changed to JSON Value
     pub message_type: String,
 }
 
 impl CreateConversationCommand {
-    pub fn new(id: i64, context_id: i64, content: String, message_type: String) -> Self {
+    pub fn new(id: i64, context_id: i64, content: Value, message_type: String) -> Self {
         Self {
             id,
             context_id,
@@ -30,22 +31,14 @@ impl Command for CreateConversationCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let now = Utc::now();
-        let embedding: Option<Vector> = None;
 
         let record = sqlx::query_as::<_, ConversationRecord>(
             r#"
             INSERT INTO conversations (
-                id, context_id, timestamp, content, embedding, message_type,
-                base_temporal_score, access_count, first_accessed_at, last_accessed_at,
-                citation_count, relevance_score, usefulness_score,
-                compression_level, compressed_content,
+                id, context_id, timestamp, content, message_type,
                 created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6,
-                1.0, 0, $7, $7,
-                0, 0.0, 0.0,
-                0, NULL,
-                $7, $7
+                $1, $2, $3, $4, $5, $6, $6
             )
             RETURNING *
             "#,
@@ -54,7 +47,6 @@ impl Command for CreateConversationCommand {
         .bind(self.context_id)
         .bind(now)
         .bind(self.content)
-        .bind(embedding)
         .bind(self.message_type)
         .bind(now)
         .fetch_one(&app_state.db_pool)
@@ -135,7 +127,6 @@ pub struct UpdateCitationMetricsCommand {
 
 pub enum CitationType {
     Memory,
-    Conversation,
 }
 
 impl Command for UpdateCitationMetricsCommand {
@@ -151,31 +142,6 @@ impl Command for UpdateCitationMetricsCommand {
                         relevance_score = LEAST(relevance_score + $2, 1.0),
                         usefulness_score = LEAST(usefulness_score + $3, 1.0),
                         last_reinforced_at = NOW(),
-                        base_temporal_score = calculate_base_decay(
-                            access_count,
-                            citation_count + 1,
-                            first_accessed_at,
-                            last_accessed_at,
-                            LEAST(relevance_score + $2, 1.0),
-                            LEAST(usefulness_score + $3, 1.0),
-                            compression_level
-                        )
-                    WHERE id = $1
-                    "#,
-                )
-                .bind(self.item_id)
-                .bind(self.relevance_delta)
-                .bind(self.usefulness_delta)
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            CitationType::Conversation => {
-                sqlx::query(
-                    r#"
-                    UPDATE conversations
-                    SET citation_count = citation_count + 1,
-                        relevance_score = LEAST(relevance_score + $2, 1.0),
-                        usefulness_score = LEAST(usefulness_score + $3, 1.0),
                         base_temporal_score = calculate_base_decay(
                             access_count,
                             citation_count + 1,

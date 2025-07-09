@@ -1,0 +1,84 @@
+{
+  "system_instruction": {
+      "parts": [
+        {
+          "text": "You are an intelligent AI agent in the CONTEXT GATHERING phase. Your role is to:\n\n1. **Analyze the context** from searches and available information\n2. **Create an initial plan** based on your understanding\n3. **Define success criteria** for the overall task\n4. **Determine if more context is needed** before proceeding\n\n## User Request:\n{{user_request}}\n\n## Context Search Results:\n{{#each context_results}}\n### Result {{@index}}:\n- Source: {{source_type}} {{#if source_details}}({{source_details}}){{/if}}\n- Relevance: {{relevance_score}}\n- Content: {{content}}\n{{#if metadata}}\n- Metadata: {{metadata}}\n{{/if}}\n{{/each}}\n\n## Available Capabilities:\n{{format_capabilities available_tools workflows knowledge_bases}}\n\n## Relevant Memories:\n{{#if memories}}\n{{format_memories memories}}\n{{else}}\nNo relevant memories found.\n{{/if}}\n\n## Your Task:\n1. **Understand the request** - What is the user trying to achieve?\n2. **Analyze the context** - What relevant information did you find?\n3. **Create a plan** - How will you approach this task?\n4. **Define success** - What would a successful completion look like?\n5. **Assess readiness** - Do you have enough information to proceed?\n\n## Guidelines:\n- The plan should be high-level, focusing on the approach\n- Success criteria should be specific and measurable\n- If critical information is missing, be specific about what you need\n- Consider the user's actual goal, not just the literal request\n- Think about potential challenges or edge cases"
+        }
+      ]
+   },
+  "contents": [
+    {{#each conversation_history}}
+    {
+      "role": "{{this.role}}",
+      "parts": [
+        {
+          "text": "{{json_string this.content}}"
+        }
+      ]
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "generationConfig": {
+    "responseMimeType": "application/json",
+    "responseSchema": {
+      "type": "OBJECT",
+      "properties": {
+        "understanding": {
+          "type": "STRING",
+          "description": "Your understanding of what the user wants to achieve"
+        },
+        "context_findings": {
+          "type": "ARRAY",
+          "items": {
+            "type": "STRING"
+          },
+          "description": "Key information gathered from context search"
+        },
+        "initial_plan": {
+          "type": "OBJECT",
+          "properties": {
+            "approach": {
+              "type": "STRING",
+              "description": "High-level approach to solve the task"
+            },
+            "main_steps": {
+              "type": "ARRAY",
+              "items": {
+                "type": "STRING"
+              },
+              "description": "Major steps in the approach"
+            },
+            "success_criteria": {
+              "type": "STRING",
+              "description": "How to determine if the task is successfully completed"
+            },
+            "potential_challenges": {
+              "type": "ARRAY",
+              "items": {
+                "type": "STRING"
+              },
+              "description": "Possible issues or edge cases to consider"
+            }
+          },
+          "required": ["approach", "main_steps", "success_criteria", "potential_challenges"]
+        },
+        "needs_more_context": {
+          "type": "BOOLEAN",
+          "description": "Whether additional context is needed before proceeding"
+        },
+        "additional_context_request": {
+          "type": "STRING",
+          "description": "Specific query for additional context if needed",
+          "nullable": true
+        },
+        "ready_for_task_breakdown": {
+          "type": "BOOLEAN",
+          "description": "Whether the plan is ready to be broken down into tasks"
+        }
+      },
+      "required": ["understanding", "context_findings", "initial_plan", "needs_more_context", "ready_for_task_breakdown"]
+    },
+    "temperature": 0.6,
+    "maxOutputTokens": 4096
+  }
+}

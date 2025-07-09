@@ -15,40 +15,6 @@ where
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct ActionExecutionXml {
-    pub message: String,
-    pub execution: ExecutionXml,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ExecutionXml {
-    pub tool_call: Option<ToolCallExecution>,
-    pub workflow_call: Option<WorkflowCallExecution>,
-    pub context_search: Option<ContextSearchExecution>,
-    pub memory_operation: Option<MemoryOperationExecution>,
-}
-
-impl From<ActionExecutionXml> for ActionExecution {
-    fn from(xml: ActionExecutionXml) -> Self {
-        let execution = if let Some(tool_call) = xml.execution.tool_call {
-            ActionExecutionDetails::ToolCall(tool_call)
-        } else if let Some(workflow_call) = xml.execution.workflow_call {
-            ActionExecutionDetails::WorkflowCall(workflow_call)
-        } else if let Some(context_search) = xml.execution.context_search {
-            ActionExecutionDetails::ContextSearch(context_search)
-        } else if let Some(memory_operation) = xml.execution.memory_operation {
-            ActionExecutionDetails::MemoryOperation(memory_operation)
-        } else {
-            panic!("No valid execution type found in ActionExecutionXml");
-        };
-
-        ActionExecution {
-            message: xml.message,
-            execution,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskExploration {

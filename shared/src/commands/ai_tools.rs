@@ -1,7 +1,8 @@
 use crate::{
-    state::{AppState}, {error::AppError},
-        commands::Command,
-        models::{AiTool,  AiToolType, AiToolConfiguration},
+    commands::Command,
+    error::AppError,
+    models::{AiTool, AiToolConfiguration, AiToolType},
+    state::AppState,
 };
 use chrono::Utc;
 use sqlx::Row;
@@ -32,24 +33,28 @@ impl CreateAiToolCommand {
     }
 
     async fn validate(&self, app_state: &AppState) -> Result<(), AppError> {
-        // Basic validation
         if self.name.trim().is_empty() {
             return Err(AppError::BadRequest("Tool name is required".to_string()));
         }
 
-        // Type-specific validation
         match &self.configuration {
             AiToolConfiguration::Api(config) => {
                 if config.endpoint.trim().is_empty() {
                     return Err(AppError::BadRequest("API endpoint is required".to_string()));
                 }
-                if !config.endpoint.starts_with("http://") && !config.endpoint.starts_with("https://") {
-                    return Err(AppError::BadRequest("API endpoint must be a valid URL (http:// or https://)".to_string()));
+                if !config.endpoint.starts_with("http://")
+                    && !config.endpoint.starts_with("https://")
+                {
+                    return Err(AppError::BadRequest(
+                        "API endpoint must be a valid URL (http:// or https://)".to_string(),
+                    ));
                 }
             }
             AiToolConfiguration::KnowledgeBase(config) => {
                 if config.knowledge_base_id <= 0 {
-                    return Err(AppError::BadRequest("Knowledge base selection is required".to_string()));
+                    return Err(AppError::BadRequest(
+                        "Knowledge base selection is required".to_string(),
+                    ));
                 }
 
                 // Check if knowledge base exists and belongs to the same deployment
@@ -73,7 +78,9 @@ impl CreateAiToolCommand {
             }
             AiToolConfiguration::PlatformFunction(config) => {
                 if config.function_name.trim().is_empty() {
-                    return Err(AppError::BadRequest("Function name is required".to_string()));
+                    return Err(AppError::BadRequest(
+                        "Function name is required".to_string(),
+                    ));
                 }
             }
         }
@@ -187,13 +194,19 @@ impl UpdateAiToolCommand {
                     if config.endpoint.trim().is_empty() {
                         return Err(AppError::BadRequest("API endpoint is required".to_string()));
                     }
-                    if !config.endpoint.starts_with("http://") && !config.endpoint.starts_with("https://") {
-                        return Err(AppError::BadRequest("API endpoint must be a valid URL (http:// or https://)".to_string()));
+                    if !config.endpoint.starts_with("http://")
+                        && !config.endpoint.starts_with("https://")
+                    {
+                        return Err(AppError::BadRequest(
+                            "API endpoint must be a valid URL (http:// or https://)".to_string(),
+                        ));
                     }
                 }
                 AiToolConfiguration::KnowledgeBase(config) => {
                     if config.knowledge_base_id <= 0 {
-                        return Err(AppError::BadRequest("Knowledge base selection is required".to_string()));
+                        return Err(AppError::BadRequest(
+                            "Knowledge base selection is required".to_string(),
+                        ));
                     }
 
                     // Check if knowledge base exists and belongs to the same deployment
@@ -217,7 +230,9 @@ impl UpdateAiToolCommand {
                 }
                 AiToolConfiguration::PlatformFunction(config) => {
                     if config.function_name.trim().is_empty() {
-                        return Err(AppError::BadRequest("Function name is required".to_string()));
+                        return Err(AppError::BadRequest(
+                            "Function name is required".to_string(),
+                        ));
                     }
                 }
             }
@@ -345,7 +360,8 @@ impl Command for DeleteAiToolCommand {
         .map_err(|e| AppError::Database(e))?;
 
         if !dependent_agents.is_empty() {
-            let agent_names: Vec<String> = dependent_agents.iter()
+            let agent_names: Vec<String> = dependent_agents
+                .iter()
                 .map(|agent| agent.name.clone())
                 .collect();
 

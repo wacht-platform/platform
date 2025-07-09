@@ -1,14 +1,14 @@
 use shared::error::AppError;
 use shared::models::{
     ConversationRecord, MemoryRecordV2, ImmediateContext, RefinedContext,
-    EnhancedCitation, MemoryWithScore, ConversationWithScore,
+    EnhancedCitation, MemoryWithScore,
 };
 use shared::state::AppState;
 use shared::commands::{UpdateCitationMetricsCommand, CitationType, Command};
 use shared::queries::{
     GetMRUMemoriesQuery, GetRecentConversationsQuery, Query,
-    SearchMemoriesWithDecayQuery, SearchConversationsWithDecayQuery,
-    UpdateConversationAccessCommand, UpdateMemoryAccessCommand,
+    SearchMemoriesWithDecayQuery, SearchConversationsQuery,
+    UpdateMemoryAccessCommand,
 };
 
 /// Manages decay-based memory retrieval with 2-phase approach
@@ -80,18 +80,6 @@ impl DecayManager {
         });
     }
 
-    /// Update access metrics when a conversation is accessed (fire-and-forget)
-    pub fn record_conversation_access_async(&self, conversation_id: i64) {
-        let app_state = self.app_state.clone();
-        
-        tokio::spawn(async move {
-            let _ = UpdateConversationAccessCommand {
-                conversation_id,
-            }
-            .execute(&app_state)
-            .await;
-        });
-    }
 
     /// Phase 2: Refine context based on reasoning embedding
     pub async fn refine_context_from_reasoning(
@@ -108,9 +96,8 @@ impl DecayManager {
         .execute(&self.app_state)
         .await?;
         
-        // Search conversations with embedding similarity and decay scores
-        let conversation_results = SearchConversationsWithDecayQuery {
-            query_embedding: reasoning_embedding.to_vec(),
+        // Search conversations without decay scores
+        let conversation_results = SearchConversationsQuery {
             context_id,
             limit: max_results as i64,
         }
@@ -125,13 +112,7 @@ impl DecayManager {
                     decay_adjusted_score: m.decay_adjusted_score,
                 })
                 .collect(),
-            relevant_conversations: conversation_results.into_iter()
-                .map(|c| ConversationWithScore {
-                    conversation: c.conversation,
-                    similarity_score: c.similarity_score,
-                    decay_adjusted_score: c.decay_adjusted_score,
-                })
-                .collect(),
+            relevant_conversations: conversation_results,
         })
     }
 
@@ -146,8 +127,7 @@ impl DecayManager {
 
             let citation_type = match citation.item_type {
                 shared::models::CitationType::Memory => CitationType::Memory,
-                shared::models::CitationType::Conversation => CitationType::Conversation,
-                _ => continue, // Skip other types for now
+                _ => continue, // Skip other types
             };
 
             UpdateCitationMetricsCommand {

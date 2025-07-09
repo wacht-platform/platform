@@ -1,8 +1,7 @@
 use serde_json::{Value, json};
 use shared::commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
-use shared::dto::json::StreamEvent;
 use shared::error::AppError;
-use shared::models::{AiTool, AiToolConfiguration, MemoryEntry, MemoryType};
+use shared::models::{AiTool, AiToolConfiguration};
 use shared::models::{
     ApiToolConfiguration, KnowledgeBaseToolConfiguration, PlatformEventToolConfiguration,
     PlatformFunctionToolConfiguration,
@@ -10,7 +9,6 @@ use shared::models::{
 use shared::models::{HttpMethod, ParameterValueType};
 use shared::state::AppState;
 use std::collections::HashMap;
-use tokio::sync::mpsc::Sender;
 
 pub struct ToolExecutor {
     app_state: AppState,
@@ -26,11 +24,6 @@ impl ToolExecutor {
         tool: &AiTool,
         execution_params: Value,
     ) -> Result<Value, AppError> {
-        tracing::debug!(
-            tool_name = %tool.name,
-            "ToolExecutor: execute_tool_immediately called"
-        );
-
         match &tool.configuration {
             AiToolConfiguration::Api(config) => {
                 tracing::info!(
@@ -68,119 +61,6 @@ impl ToolExecutor {
                     .await
             }
         }
-    }
-
-    pub async fn execute_tool_task(
-        &self,
-        tool_call: &shared::dto::json::ToolCall,
-        tools: &[AiTool],
-        memories: &[MemoryEntry],
-        channel: Sender<StreamEvent>,
-    ) -> Result<Value, AppError> {
-        tracing::info!(
-            tool_name = %tool_call.tool_name,
-            "ToolExecutor: Starting tool execution"
-        );
-        tracing::debug!(
-            tool_name = %tool_call.tool_name,
-            parameters = %serde_json::to_string_pretty(&tool_call.parameters).unwrap_or_default(),
-            "ToolExecutor: Tool parameters"
-        );
-
-        let tool = tools
-            .iter()
-            .find(|t| t.name == tool_call.tool_name)
-            .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", tool_call.tool_name)))?;
-
-        tracing::debug!(
-            tool_id = %tool.id,
-            tool_name = %tool.name,
-            "ToolExecutor: Found tool configuration"
-        );
-
-        let relevant_memories: Vec<&MemoryEntry> = memories
-            .iter()
-            .filter(|m| {
-                matches!(m.memory_type, MemoryType::Procedural)
-                    && m.content.contains(&tool_call.tool_name)
-            })
-            .collect();
-
-        if !relevant_memories.is_empty() {}
-
-        let enhanced_parameters = tool_call.parameters.clone();
-
-        tracing::debug!(
-            tool_name = %tool.name,
-            enhanced_params = %serde_json::to_string_pretty(&enhanced_parameters).unwrap_or_default(),
-            "ToolExecutor: Executing tool with enhanced parameters"
-        );
-
-        // Execute the tool
-        let result = self
-            .execute_tool_immediately(tool, enhanced_parameters)
-            .await;
-
-        match &result {
-            Ok(res) => {
-                tracing::info!(
-                    tool_name = %tool.name,
-                    "ToolExecutor: Tool execution completed successfully"
-                );
-                tracing::debug!(
-                    tool_name = %tool.name,
-                    result = %serde_json::to_string_pretty(res).unwrap_or_default(),
-                    "ToolExecutor: Tool execution result"
-                );
-            }
-            Err(e) => {
-                tracing::error!(
-                    tool_name = %tool.name,
-                    error = %e,
-                    "ToolExecutor: Tool execution failed"
-                );
-            }
-        }
-
-        let result = result?;
-
-        // Handle platform events and functions by sending them through the channel
-        match &tool.configuration {
-            AiToolConfiguration::PlatformEvent(config) => {
-                // Extract event data from result
-                if let Some(event_data) = result.get("event_data") {
-                    let _ = channel
-                        .send(StreamEvent::PlatformEvent(
-                            config.event_label.clone(),
-                            event_data.clone(),
-                        ))
-                        .await;
-                }
-            }
-            AiToolConfiguration::PlatformFunction(config) => {
-                // Send platform function result through channel
-                if let Some(function_result) = result.get("result") {
-                    let _ = channel
-                        .send(StreamEvent::PlatformFunction(
-                            config.function_name.clone(),
-                            function_result.clone(),
-                        ))
-                        .await;
-                }
-            }
-            _ => {
-                // For API and KnowledgeBase tools, send results as tokens
-                // Don't send internal tool execution messages to user
-                // let _ = channel
-                //     .send(StreamEvent::Token(
-                //         format!("\nTool execution completed: {}", tool.name),
-                //         "tool_result".to_string(),
-                //     ))
-                //     .await;
-            }
-        }
-
-        Ok(result)
     }
 
     async fn execute_api_tool(
@@ -543,13 +423,8 @@ impl ToolExecutor {
             }
         }
 
-        // Execute the platform function
         let result = match config.function_name.as_str() {
-            "send_email" => self.execute_send_email_function(inputs).await?,
-            "create_task" => self.execute_create_task_function(inputs).await?,
-            "update_context" => self.execute_update_context_function(inputs).await?,
             _ => {
-                // Placeholder for custom functions
                 json!({
                     "status": "function_not_implemented",
                     "function_name": config.function_name,
@@ -581,35 +456,5 @@ impl ToolExecutor {
         Err(AppError::Internal(
             "Authentication token retrieval not yet implemented".to_string(),
         ))
-    }
-
-    // Platform function implementations
-    async fn execute_send_email_function(&self, inputs: &Value) -> Result<Value, AppError> {
-        // Placeholder implementation
-        Ok(json!({
-            "status": "email_queued",
-            "to": inputs.get("to").and_then(|v| v.as_str()).unwrap_or(""),
-            "subject": inputs.get("subject").and_then(|v| v.as_str()).unwrap_or(""),
-            "message": "Email functionality not yet implemented"
-        }))
-    }
-
-    async fn execute_create_task_function(&self, inputs: &Value) -> Result<Value, AppError> {
-        // Placeholder implementation
-        Ok(json!({
-            "status": "task_created",
-            "task_id": "placeholder_task_id",
-            "title": inputs.get("title").and_then(|v| v.as_str()).unwrap_or(""),
-            "message": "Task creation functionality not yet implemented"
-        }))
-    }
-
-    async fn execute_update_context_function(&self, inputs: &Value) -> Result<Value, AppError> {
-        // Placeholder implementation
-        Ok(json!({
-            "status": "context_updated",
-            "key": inputs.get("key").and_then(|v| v.as_str()).unwrap_or(""),
-            "message": "Context update functionality not yet implemented"
-        }))
     }
 }

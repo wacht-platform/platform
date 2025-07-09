@@ -4,7 +4,7 @@ use crate::{
     models::MemoryBoundaries,
     state::AppState,
 };
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use serde_json::json;
 use sqlx::Row;
 
@@ -72,60 +72,6 @@ impl Command for CreateMemoryBoundariesCommand {
     }
 }
 
-/// Compress old conversations
-pub struct CompressOldConversationsCommand {
-    pub context_id: i64,
-    pub threshold_days: i32,
-}
-
-impl Command for CompressOldConversationsCommand {
-    type Output = i64;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let threshold_date = Utc::now() - Duration::days(self.threshold_days as i64);
-        
-        // Get conversations to compress
-        let conversations = sqlx::query!(
-            r#"
-            SELECT id, content
-            FROM conversations
-            WHERE context_id = $1
-              AND created_at < $2
-              AND compression_level = 0
-            LIMIT 100
-            "#,
-            self.context_id,
-            threshold_date
-        )
-        .fetch_all(&app_state.db_pool)
-        .await
-        .map_err(AppError::from)?;
-        
-        let mut compressed_count = 0;
-        
-        for conv in conversations {
-            let compressed = compress_content(&conv.content);
-            
-            sqlx::query!(
-                r#"
-                UPDATE conversations
-                SET compression_level = 1,
-                    compressed_content = $2,
-                    updated_at = NOW()
-                WHERE id = $1
-                "#,
-                conv.id,
-                compressed
-            )
-            .execute(&app_state.db_pool)
-            .await?;
-            
-            compressed_count += 1;
-        }
-        
-        Ok(compressed_count)
-    }
-}
 
 /// Evict low-score items
 pub struct EvictLowScoreItemsCommand {
@@ -137,21 +83,7 @@ impl Command for EvictLowScoreItemsCommand {
     type Output = i64;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Delete low-score conversations
-        let conv_result = sqlx::query!(
-            r#"
-            DELETE FROM conversations
-            WHERE context_id = $1
-              AND base_temporal_score < $2
-              AND created_at < NOW() - INTERVAL '7 days'
-            "#,
-            self.context_id,
-            self.threshold as f64
-        )
-        .execute(&app_state.db_pool)
-        .await?;
-        
-        // Delete low-score memories
+        // Only delete low-score memories, not conversations
         let mem_result = sqlx::query!(
             r#"
             DELETE FROM memories
@@ -166,7 +98,7 @@ impl Command for EvictLowScoreItemsCommand {
         .execute(&app_state.db_pool)
         .await?;
         
-        Ok((conv_result.rows_affected() + mem_result.rows_affected()) as i64)
+        Ok(mem_result.rows_affected() as i64)
     }
 }
 
@@ -187,7 +119,7 @@ impl Command for EnforceConversationLimitCommand {
                 SELECT id
                 FROM conversations
                 WHERE context_id = $1
-                ORDER BY base_temporal_score ASC, created_at ASC
+                ORDER BY created_at ASC
                 OFFSET $2
             )
             "#,
@@ -285,37 +217,8 @@ impl crate::queries::Query for CheckCleanupNeededQuery {
             return Ok(true);
         }
         
-        // Check for old uncompressed conversations
-        let threshold_date = Utc::now() - Duration::days(boundaries.compression_threshold_days as i64);
-        let old_conv_count = sqlx::query_scalar!(
-            r#"
-            SELECT COUNT(*) as "count!"
-            FROM conversations
-            WHERE context_id = $1
-              AND created_at < $2
-              AND compression_level = 0
-            "#,
-            self.context_id,
-            threshold_date
-        )
-        .fetch_one(&app_state.db_pool)
-        .await?;
-        
-        Ok(old_conv_count > 0)
+        // No longer need to check for compression since conversations don't have compression_level
+        Ok(false)
     }
 }
 
-/// Simple content compression
-fn compress_content(content: &str) -> String {
-    // For now, simple truncation + key extraction
-    // In production, this could use LLM summarization
-    if content.len() <= 200 {
-        return content.to_string();
-    }
-    
-    // Extract first and last parts
-    let start = &content[..100];
-    let end = &content[content.len()-100..];
-    
-    format!("{} [...] {}", start, end)
-}

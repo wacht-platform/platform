@@ -1,7 +1,6 @@
 use handlebars::Handlebars;
 
 pub fn register_all_templates(hb: &mut Handlebars) {
-    // Templates for initial interaction
     hb.register_template_string(
         "acknowledgment_prompt",
         include_str!("templates/acknowledgment_prompt.hbs"),
@@ -9,52 +8,38 @@ pub fn register_all_templates(hb: &mut Handlebars) {
     .expect("Failed to register acknowledgment_prompt template");
 
     hb.register_template_string(
-        "tool_analysis_prompt",
-        include_str!("templates/tool_analysis_prompt.hbs"),
+        "ideation_prompt",
+        include_str!("templates/ideation_prompt.hbs"),
     )
-    .expect("Failed to register tool_analysis_prompt template");
+    .expect("Failed to register ideation_prompt template");
 
     hb.register_template_string(
-        "tool_parameter_extraction_prompt",
-        include_str!("templates/tool_parameter_extraction_prompt.hbs"),
+        "context_gathering_prompt",
+        include_str!("templates/context_gathering_prompt.hbs"),
     )
-    .expect("Failed to register tool_parameter_extraction_prompt template");
+    .expect("Failed to register context_gathering_prompt template");
 
     hb.register_template_string(
-        "task_planning_prompt",
-        include_str!("templates/task_planning_prompt.hbs"),
+        "task_breakdown_prompt",
+        include_str!("templates/task_breakdown_prompt.hbs"),
     )
-    .expect("Failed to register task_planning_prompt template");
-
-    // Templates for stage-based task execution
-    hb.register_template_string(
-        "task_exploration_prompt",
-        include_str!("templates/task_exploration_prompt.hbs"),
-    )
-    .expect("Failed to register task_exploration_prompt template");
+    .expect("Failed to register task_breakdown_prompt template");
 
     hb.register_template_string(
-        "task_action_prompt",
-        include_str!("templates/task_action_prompt.hbs"),
+        "task_execution_prompt",
+        include_str!("templates/task_execution_prompt.hbs"),
     )
-    .expect("Failed to register task_action_prompt template");
+    .expect("Failed to register task_execution_prompt template");
 
     hb.register_template_string(
-        "task_correction_prompt",
-        include_str!("templates/task_correction_prompt.hbs"),
+        "validation_prompt",
+        include_str!("templates/validation_prompt.hbs"),
     )
-    .expect("Failed to register task_correction_prompt template");
+    .expect("Failed to register validation_prompt template");
 
     hb.register_template_string(
-        "task_verification_prompt",
-        include_str!("templates/task_verification_prompt.hbs"),
+        "parameter_generation_prompt",
+        include_str!("templates/parameter_generation_prompt.hbs"),
     )
-    .expect("Failed to register task_verification_prompt template");
-
-    // Memory evaluation template (still used)
-    hb.register_template_string(
-        "memory_evaluation_prompt",
-        include_str!("templates/memory_evaluation_prompt.hbs"),
-    )
-    .expect("Failed to register memory_evaluation_prompt template");
+    .expect("Failed to register parameter_generation_prompt template");
 }

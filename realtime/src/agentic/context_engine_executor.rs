@@ -1,12 +1,11 @@
+use serde_json::json;
 use shared::commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use shared::error::AppError;
 use shared::models::{
     ContextAction, ContextEngineParams, ContextFilters, ContextSearchResult, ContextSource,
-    ConversationRecord, ImmediateContext, MemoryRecordV2, MemoryWithScore, ConversationWithScore,
 };
 use shared::queries::{Query, SearchMemoriesQuery};
 use shared::state::AppState;
-use serde_json::{json, Value};
 
 pub struct ContextEngineExecutor {
     app_state: AppState,
@@ -23,7 +22,10 @@ impl ContextEngineExecutor {
         }
     }
 
-    pub async fn execute(&self, params: ContextEngineParams) -> Result<Vec<ContextSearchResult>, AppError> {
+    pub async fn execute(
+        &self,
+        params: ContextEngineParams,
+    ) -> Result<Vec<ContextSearchResult>, AppError> {
         // Generate embedding for the query
         let query_embedding = GenerateEmbeddingCommand::new(params.query.clone())
             .execute(&self.app_state)
@@ -33,34 +35,44 @@ impl ContextEngineExecutor {
 
         match params.action {
             ContextAction::SearchKnowledgeBase { kb_id } => {
-                self.search_knowledge_base(&params.query, &query_embedding, kb_id, &filters).await
+                self.search_knowledge_base(&params.query, &query_embedding, kb_id, &filters)
+                    .await
             }
             ContextAction::SearchDynamicContext { context_type } => {
-                self.search_dynamic_context(&params.query, &query_embedding, context_type, &filters).await
+                self.search_dynamic_context(&params.query, &query_embedding, context_type, &filters)
+                    .await
             }
             ContextAction::SearchMemories { category } => {
-                self.search_memories(&params.query, &query_embedding, category, &filters).await
+                self.search_memories(&params.query, &query_embedding, category, &filters)
+                    .await
             }
             ContextAction::SearchConversations { context_id } => {
                 let search_context_id = context_id.unwrap_or(self.context_id);
-                self.search_conversations(&params.query, &query_embedding, search_context_id, &filters).await
+                self.search_conversations(
+                    &params.query,
+                    &query_embedding,
+                    search_context_id,
+                    &filters,
+                )
+                .await
             }
             ContextAction::SearchAll => {
-                self.search_all(&params.query, &query_embedding, &filters).await
+                self.search_all(&params.query, &query_embedding, &filters)
+                    .await
             }
         }
     }
 
     async fn search_knowledge_base(
         &self,
-        query: &str,
+        _query: &str,
         query_embedding: &[f32],
         kb_id: Option<i64>,
         filters: &ContextFilters,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
         // If kb_id is provided, search specific KB, otherwise search all
         let mut results = Vec::new();
-        
+
         if let Some(kb_id) = kb_id {
             let search_results = SearchKnowledgeBaseEmbeddingsCommand::new(
                 kb_id,
@@ -106,7 +118,7 @@ impl ContextEngineExecutor {
 
     async fn search_memories(
         &self,
-        query: &str,
+        _query: &str,
         query_embedding: &[f32],
         category: Option<String>,
         filters: &ContextFilters,
@@ -114,7 +126,11 @@ impl ContextEngineExecutor {
         let memory_type_filter = if let Some(cat) = category {
             vec![cat]
         } else {
-            vec!["procedural".to_string(), "semantic".to_string(), "episodic".to_string()]
+            vec![
+                "procedural".to_string(),
+                "semantic".to_string(),
+                "episodic".to_string(),
+            ]
         };
 
         let search_results = SearchMemoriesQuery {
@@ -168,16 +184,24 @@ impl ContextEngineExecutor {
         query_embedding: &[f32],
         filters: &ContextFilters,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
-        // Search all sources and combine results
+        // Search all sources and combine results (excluding conversations)
         let mut all_results = Vec::new();
 
         // Search memories
-        let memory_results = self.search_memories(query, query_embedding, None, filters).await?;
+        let memory_results = self
+            .search_memories(query, query_embedding, None, filters)
+            .await?;
         all_results.extend(memory_results);
 
-        // Search conversations
-        let conversation_results = self.search_conversations(query, query_embedding, self.context_id, filters).await?;
-        all_results.extend(conversation_results);
+        // Search knowledge bases if available
+        // Note: This would search all KBs associated with the agent
+        // You might want to implement a method to get all KB IDs for the agent
+        
+        // Search dynamic context
+        let dynamic_results = self
+            .search_dynamic_context(query, query_embedding, None, filters)
+            .await?;
+        all_results.extend(dynamic_results);
 
         // Sort by relevance
         all_results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap());

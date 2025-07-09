@@ -20,7 +20,6 @@ pub struct EnhancedCitation {
 #[serde(rename_all = "snake_case")]
 pub enum CitationType {
     Memory,
-    Conversation,
     KnowledgeBase,
     DynamicContext,
 }
@@ -34,31 +33,14 @@ pub enum UsageType {
     Background,
 }
 
-/// Conversation record with compression support
+/// Conversation record
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ConversationRecord {
     pub id: i64,
     pub context_id: i64,
     pub timestamp: DateTime<Utc>,
-    pub content: String,
-    pub embedding: Option<Vector>,
+    pub content: Value,  // JSONB type
     pub message_type: String,
-    
-    // Decay components
-    pub base_temporal_score: f64,
-    pub access_count: i32,
-    pub first_accessed_at: DateTime<Utc>,
-    pub last_accessed_at: DateTime<Utc>,
-    
-    // Learning metrics
-    pub citation_count: i32,
-    pub relevance_score: f64,
-    pub usefulness_score: f64,
-    
-    // Compression
-    pub compression_level: i32,
-    pub compressed_content: Option<String>,
-    
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -124,19 +106,12 @@ pub struct ImmediateContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefinedContext {
     pub relevant_memories: Vec<MemoryWithScore>,
-    pub relevant_conversations: Vec<ConversationWithScore>,
+    pub relevant_conversations: Vec<ConversationRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryWithScore {
     pub memory: MemoryRecordV2,
-    pub similarity_score: f64,
-    pub decay_adjusted_score: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationWithScore {
-    pub conversation: ConversationRecord,
     pub similarity_score: f64,
     pub decay_adjusted_score: f64,
 }
@@ -179,21 +154,6 @@ pub struct ConsolidationCandidate {
     pub suggested_category: String,
 }
 
-impl ConversationRecord {
-    /// Get effective content based on compression level
-    pub fn effective_content(&self) -> &str {
-        match self.compression_level {
-            0 => &self.content,
-            _ => self.compressed_content.as_deref().unwrap_or(&self.content),
-        }
-    }
-    
-    /// Check if conversation should be compressed
-    pub fn should_compress(&self, threshold_days: i32) -> bool {
-        let days_old = (Utc::now() - self.created_at).num_days();
-        days_old > threshold_days as i64 && self.compression_level == 0
-    }
-}
 
 impl MemoryRecordV2 {
     /// Get effective content based on compression level

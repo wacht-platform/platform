@@ -1,162 +1,109 @@
 use shared::error::AppError;
 use shared::models::{EnhancedCitation, CitationType as ModelCitationType, UsageType};
-use crate::agentic::xml_parser;
+use crate::agentic::json_parser;
+use serde_json::Value;
 
 /// Extracts citations from LLM responses
 pub struct CitationExtractor;
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct ResponseWithCitations {
-    #[serde(default)]
-    pub message: String,
-    #[serde(default)]
-    pub reasoning: String,
-    #[serde(default)]
-    pub citations: Citations,
-    #[serde(default)]
-    pub response: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct Citations {
-    #[serde(default)]
-    pub memory_reference: Vec<MemoryReference>,
-    #[serde(default)]
-    pub conversation_reference: Vec<ConversationReference>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct MemoryReference {
-    pub id: String,
-    pub relevance: String,
-    pub usefulness: String,
-    pub confidence: String,
-    pub usage_type: String,
-    #[serde(default)]
-    pub description: String,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct ConversationReference {
-    pub id: String,
-    pub relevance: String,
-    pub usefulness: String,
-    pub confidence: String,
-    pub usage_type: String,
-    #[serde(default)]
-    pub description: String,
-}
-
 impl CitationExtractor {
-    /// Extract citations from an XML response
-    pub fn extract_citations(xml_response: &str) -> Result<Vec<EnhancedCitation>, AppError> {
-        // Try to parse the full response
-        let response: ResponseWithCitations = match xml_parser::from_str(xml_response) {
-            Ok(r) => r,
-            Err(_) => {
-                // If full parsing fails, try to extract just citations section
-                if let Some(citations_xml) = Self::extract_citations_section(xml_response) {
-                    match xml_parser::from_str::<Citations>(&citations_xml) {
-                        Ok(citations) => ResponseWithCitations {
-                            citations,
-                            ..Default::default()
-                        },
-                        Err(_) => return Ok(Vec::new()), // No citations found
+    /// Extract citations from JSON response
+    pub fn extract_citations(json_response: &str) -> Result<Vec<EnhancedCitation>, AppError> {
+        let value: Value = json_parser::from_str(json_response)?;
+        let mut citations = Vec::new();
+        
+        // Look for citations in various possible locations
+        let citations_value = value.get("citations")
+            .or_else(|| value.get("execution_plan").and_then(|ep| ep.get("citations")))
+            .or_else(|| value.get("acknowledgment").and_then(|ack| ack.get("citations")))
+            .or_else(|| value.get("task_exploration").and_then(|te| te.get("citations")))
+            .or_else(|| value.get("task_verification").and_then(|tv| tv.get("citations")))
+            .or_else(|| value.get("task_correction").and_then(|tc| tc.get("citations")));
+            
+        if let Some(citations_obj) = citations_value {
+            // Process memory references
+            if let Some(mem_refs) = citations_obj.get("memory_references") {
+                if let Some(refs_array) = mem_refs.as_array() {
+                    for mem_ref in refs_array {
+                        if let Some(id_str) = mem_ref.get("id").and_then(|v| v.as_str()) {
+                            if let Ok(id) = id_str.parse::<i64>() {
+                                citations.push(EnhancedCitation {
+                                    item_id: id,
+                                    item_type: ModelCitationType::Memory,
+                                    relevance_score: Self::parse_level(
+                                        mem_ref.get("relevance").and_then(|v| v.as_str()).unwrap_or("medium")
+                                    ),
+                                    usefulness_score: Self::parse_level(
+                                        mem_ref.get("usefulness").and_then(|v| v.as_str()).unwrap_or("medium")
+                                    ),
+                                    confidence: Self::parse_level(
+                                        mem_ref.get("confidence").and_then(|v| v.as_str()).unwrap_or("medium")
+                                    ),
+                                    usage_type: Self::parse_usage_type(
+                                        mem_ref.get("usage_type").and_then(|v| v.as_str()).unwrap_or("background")
+                                    ),
+                                    description: mem_ref.get("description")
+                                        .or_else(|| mem_ref.get("content"))
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string()),
+                                });
+                            }
+                        }
                     }
-                } else {
-                    return Ok(Vec::new()); // No citations section
                 }
             }
-        };
-
-        let mut citations = Vec::new();
-
-        // Convert memory references
-        for mem_ref in response.citations.memory_reference {
-            if let Ok(id) = mem_ref.id.parse::<i64>() {
-                citations.push(EnhancedCitation {
-                    item_id: id,
-                    item_type: ModelCitationType::Memory,
-                    relevance_score: Self::parse_level(&mem_ref.relevance),
-                    usefulness_score: Self::parse_level(&mem_ref.usefulness),
-                    confidence: Self::parse_level(&mem_ref.confidence),
-                    usage_type: Self::parse_usage_type(&mem_ref.usage_type),
-                    description: Some(mem_ref.description),
-                });
-            }
+            
+            // Conversations no longer support citations
         }
-
-        // Convert conversation references
-        for conv_ref in response.citations.conversation_reference {
-            if let Ok(id) = conv_ref.id.parse::<i64>() {
-                citations.push(EnhancedCitation {
-                    item_id: id,
-                    item_type: ModelCitationType::Conversation,
-                    relevance_score: Self::parse_level(&conv_ref.relevance),
-                    usefulness_score: Self::parse_level(&conv_ref.usefulness),
-                    confidence: Self::parse_level(&conv_ref.confidence),
-                    usage_type: Self::parse_usage_type(&conv_ref.usage_type),
-                    description: Some(conv_ref.description),
-                });
-            }
-        }
-
+        
         Ok(citations)
     }
 
-    /// Extract reasoning from response
-    pub fn extract_reasoning(xml_response: &str) -> Option<String> {
-        // Try full parse first
-        if let Ok(response) = xml_parser::from_str::<ResponseWithCitations>(xml_response) {
-            if !response.reasoning.is_empty() {
-                return Some(response.reasoning);
-            }
-        }
-
-        // Fallback: extract reasoning tag manually
-        if let Some(start) = xml_response.find("<reasoning>") {
-            if let Some(end) = xml_response.find("</reasoning>") {
-                let reasoning = xml_response[start + 11..end].trim().to_string();
-                if !reasoning.is_empty() {
-                    return Some(reasoning);
+    /// Extract reasoning from JSON response
+    pub fn extract_reasoning(response: &str) -> Option<String> {
+        if let Ok(value) = json_parser::from_str::<Value>(response) {
+            // Check various possible reasoning locations
+            let reasoning_checks = [
+                value.get("reasoning"),
+                value.get("acknowledgment").and_then(|ack| ack.get("reasoning")),
+                value.get("task_exploration").and_then(|te| te.get("analysis")),
+                value.get("task_verification").and_then(|tv| tv.get("results_summary")),
+            ];
+            
+            for check in &reasoning_checks {
+                if let Some(reasoning) = check.and_then(|v| v.as_str()) {
+                    if !reasoning.is_empty() {
+                        return Some(reasoning.to_string());
+                    }
                 }
             }
         }
-
         None
     }
 
-    /// Extract the main response content
-    pub fn extract_response_content(xml_response: &str) -> String {
-        // Try full parse first
-        if let Ok(response) = xml_parser::from_str::<ResponseWithCitations>(xml_response) {
-            if !response.message.is_empty() {
-                return response.message;
-            }
-            if let Some(resp) = response.response {
-                if !resp.is_empty() {
-                    return resp;
+    /// Extract the main response content from JSON
+    pub fn extract_response_content(response: &str) -> String {
+        if let Ok(value) = json_parser::from_str::<Value>(response) {
+            // Check various possible message locations
+            let message_checks = [
+                value.get("message"),
+                value.get("execution_plan").and_then(|ep| ep.get("message")),
+                value.get("acknowledgment").and_then(|ack| ack.get("message")),
+                value.get("task_exploration").and_then(|te| te.get("message")),
+                value.get("task_verification").and_then(|tv| tv.get("message")),
+                value.get("task_correction").and_then(|tc| tc.get("message")),
+            ];
+            
+            for check in &message_checks {
+                if let Some(msg) = check.and_then(|v| v.as_str()) {
+                    if !msg.is_empty() {
+                        return msg.to_string();
+                    }
                 }
             }
         }
-
-        // Fallback: extract message tag
-        if let Some(start) = xml_response.find("<message>") {
-            if let Some(end) = xml_response.find("</message>") {
-                return xml_response[start + 9..end].trim().to_string();
-            }
-        }
-
-        xml_response.to_string()
-    }
-
-    fn extract_citations_section(xml: &str) -> Option<String> {
-        if let Some(start) = xml.find("<citations>") {
-            if let Some(end) = xml.find("</citations>") {
-                return Some(xml[start..end + 12].to_string());
-            }
-        }
-        None
+        
+        response.to_string()
     }
 
     fn parse_level(level: &str) -> f64 {

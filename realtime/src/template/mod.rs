@@ -17,13 +17,12 @@ pub struct AgentTemplates;
 
 impl AgentTemplates {
     pub const ACKNOWLEDGMENT: &'static str = "acknowledgment_prompt";
-    pub const TOOL_PARAMETER_EXTRACTION: &'static str = "tool_parameter_extraction_prompt";
-    pub const TASK_PLANNING: &'static str = "task_planning_prompt";
-    pub const TASK_EXPLORATION: &'static str = "task_exploration_prompt";
-    pub const TASK_ACTION: &'static str = "task_action_prompt";
-    pub const TASK_CORRECTION: &'static str = "task_correction_prompt";
-    pub const TASK_VERIFICATION: &'static str = "task_verification_prompt";
-    pub const MEMORY_EVALUATION: &'static str = "memory_evaluation_prompt";
+    pub const IDEATION: &'static str = "ideation_prompt";
+    pub const CONTEXT_GATHERING: &'static str = "context_gathering_prompt";
+    pub const TASK_BREAKDOWN: &'static str = "task_breakdown_prompt";
+    pub const TASK_EXECUTION: &'static str = "task_execution_prompt";
+    pub const VALIDATION: &'static str = "validation_prompt";
+    pub const PARAMETER_GENERATION: &'static str = "parameter_generation_prompt";
 }
 
 pub fn render_template(

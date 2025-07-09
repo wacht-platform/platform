@@ -1,7 +1,8 @@
-use eventsource_client::{self as es, Client};
-use futures::{Stream, TryStreamExt};
+use std::time::Duration;
+
+use eventsource_client::{self as es, Client, ReconnectOptions};
+use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use shared::error::AppError;
 use tracing::{debug, error};
 
@@ -66,20 +67,16 @@ impl GeminiClient {
     pub async fn generate_structured_content<T>(
         &self,
         request_body: String,
-    ) -> Result<T, AppError>
+    ) -> Result<(String, T), AppError>
     where
-        T: for<'de> Deserialize<'de>,
+        T: for<'de> Deserialize<'de> + Serialize,
     {
         let url = format!(
             "{}/{}:streamGenerateContent?alt=sse",
             GEMINI_API_BASE_URL, self.model
         );
 
-        // The request_body is already a JSON string from the template
         let body = request_body;
-
-        debug!("Sending request to Gemini API: {}", url);
-        debug!("Request body: {}", body);
 
         let client = es::ClientBuilder::for_url(&url)
             .map_err(|e| AppError::Internal(format!("Failed to build client: {}", e)))?
@@ -88,21 +85,19 @@ impl GeminiClient {
             .header("Content-Type", "application/json")
             .map_err(|e| AppError::Internal(format!("Failed to set Content-Type header: {}", e)))?
             .method("POST".to_string())
+            .reconnect(ReconnectOptions::reconnect(false).build())
+            .read_timeout(Duration::from_secs(12000000))
             .body(body)
             .build();
 
-        let mut stream = client.stream();
         let mut accumulated_text = String::new();
 
-        while let Some(event) = stream
-            .try_next()
-            .await
-            .map_err(|e| AppError::Internal(format!("Error streaming events: {}", e)))?
-        {
-            match event {
+        let mut stream = client
+            .stream()
+            .map_ok(|event| match event {
                 es::SSE::Event(ev) => {
                     if ev.data.trim().is_empty() {
-                        continue;
+                        return;
                     }
 
                     match serde_json::from_str::<GeminiStreamResponse>(&ev.data) {
@@ -128,8 +123,13 @@ impl GeminiClient {
                 es::SSE::Connected(_) => {
                     debug!("Connected to Gemini API");
                 }
-            }
-        }
+            })
+            .map_err(|err| {
+                tracing::error!("Gemini API streaming error: {:?}", err);
+                eprintln!("error streaming events: {:?}", err)
+            });
+
+        while let Ok(Some(_)) = stream.try_next().await {}
 
         if accumulated_text.is_empty() {
             return Err(AppError::Internal(
@@ -137,134 +137,11 @@ impl GeminiClient {
             ));
         }
 
-        debug!("Accumulated response: {}", accumulated_text);
+        let parsed_response = serde_json::from_str::<T>(&accumulated_text).map_err(|e| {
+            tracing::error!("Failed to parse response: {}, Raw: {}", e, accumulated_text);
+            AppError::Internal(format!("Failed to parse structured response: {}", e))
+        })?;
 
-        // Parse the accumulated JSON
-        serde_json::from_str::<T>(&accumulated_text)
-            .map_err(|e| AppError::Internal(format!("Failed to parse structured response: {}", e)))
-    }
-
-    pub fn generate_structured_content_stream(
-        &self,
-        request_body: String,
-    ) -> impl Stream<Item = Result<String, es::Error>> + '_ {
-        let url = format!(
-            "{}/{}:streamGenerateContent?alt=sse",
-            GEMINI_API_BASE_URL, self.model
-        );
-
-        // The request_body is already a JSON string from the template
-        let body = request_body;
-
-        let client = es::ClientBuilder::for_url(&url)
-            .unwrap()
-            .header("x-goog-api-key", &self.api_key)
-            .unwrap()
-            .header("Content-Type", "application/json")
-            .unwrap()
-            .method("POST".to_string())
-            .body(body)
-            .build();
-
-        client.stream().try_filter_map(move |event| async move {
-            match event {
-                es::SSE::Event(ev) => {
-                    if ev.data.trim().is_empty() {
-                        return Ok(None);
-                    }
-
-                    match serde_json::from_str::<GeminiStreamResponse>(&ev.data) {
-                        Ok(response) => {
-                            let mut chunk = String::new();
-                            for candidate in &response.candidates {
-                                for part in &candidate.content.parts {
-                                    chunk.push_str(&part.text);
-                                }
-                            }
-
-                            if !chunk.is_empty() {
-                                Ok(Some(chunk))
-                            } else {
-                                Ok(None)
-                            }
-                        }
-                        Err(e) => {
-                            error!("Failed to parse SSE data: {}, data: {}", e, ev.data);
-                            Ok(None)
-                        }
-                    }
-                }
-                _ => Ok(None),
-            }
-        })
-    }
-}
-
-// Helper function to create schema for common types
-pub mod schema {
-    use serde_json::{Value, json};
-
-    pub fn string(description: Option<&str>) -> Value {
-        let mut schema = json!({
-            "type": "STRING"
-        });
-        if let Some(desc) = description {
-            schema["description"] = json!(desc);
-        }
-        schema
-    }
-
-    pub fn number(description: Option<&str>) -> Value {
-        let mut schema = json!({
-            "type": "NUMBER"
-        });
-        if let Some(desc) = description {
-            schema["description"] = json!(desc);
-        }
-        schema
-    }
-
-    pub fn boolean(description: Option<&str>) -> Value {
-        let mut schema = json!({
-            "type": "BOOLEAN"
-        });
-        if let Some(desc) = description {
-            schema["description"] = json!(desc);
-        }
-        schema
-    }
-
-    pub fn array(items: Value, description: Option<&str>) -> Value {
-        let mut schema = json!({
-            "type": "ARRAY",
-            "items": items
-        });
-        if let Some(desc) = description {
-            schema["description"] = json!(desc);
-        }
-        schema
-    }
-
-    pub fn object(properties: Value, required: Vec<&str>, description: Option<&str>) -> Value {
-        let mut schema = json!({
-            "type": "OBJECT",
-            "properties": properties,
-            "required": required
-        });
-        if let Some(desc) = description {
-            schema["description"] = json!(desc);
-        }
-        schema
-    }
-
-    pub fn enum_string(values: Vec<&str>, description: Option<&str>) -> Value {
-        let mut schema = json!({
-            "type": "STRING",
-            "enum": values
-        });
-        if let Some(desc) = description {
-            schema["description"] = json!(desc);
-        }
-        schema
+        Ok((accumulated_text, parsed_response))
     }
 }

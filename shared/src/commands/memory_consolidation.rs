@@ -1,7 +1,7 @@
 use crate::{
     commands::{Command, GenerateEmbeddingCommand},
     error::AppError,
-    models::{ConversationRecord, ConsolidationCandidate},
+    models::ConsolidationCandidate,
     state::AppState,
 };
 use pgvector::Vector;
@@ -196,94 +196,6 @@ impl Command for ConsolidateMemoriesCommand {
     }
 }
 
-/// Promote highly-cited conversations to memories
-pub struct PromoteConversationsToMemoriesCommand {
-    pub context_id: i64,
-    pub citation_threshold: i32,
-}
-
-impl Command for PromoteConversationsToMemoriesCommand {
-    type Output = Vec<i64>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Find conversations worth promoting
-        let conversations = sqlx::query_as::<_, ConversationRecord>(
-            r#"
-            SELECT *
-            FROM conversations
-            WHERE context_id = $1
-              AND citation_count >= $2
-              AND message_type = 'agent_response'
-              AND NOT EXISTS (
-                  SELECT 1 FROM memories 
-                  WHERE content = conversations.content
-              )
-            ORDER BY citation_count DESC
-            LIMIT 10
-            "#
-        )
-        .bind(self.context_id)
-        .bind(self.citation_threshold)
-        .fetch_all(&app_state.db_pool)
-        .await?;
-
-        let mut promoted_ids = Vec::new();
-
-        for conv in conversations {
-            // Create memory from conversation
-            let memory_id = app_state.sf.next_id()? as i64;
-            
-            sqlx::query(
-                r#"
-                INSERT INTO memories (
-                    id, content, embedding, memory_category,
-                    base_temporal_score, access_count,
-                    first_accessed_at, last_accessed_at,
-                    citation_count, cross_context_value, learning_confidence,
-                    relevance_score, usefulness_score,
-                    creation_context_id, last_reinforced_at,
-                    semantic_centrality, uniqueness_score,
-                    compression_level, compressed_content,
-                    context_decay_profile
-                ) VALUES (
-                    $1, $2, $3, 'episodic',
-                    $4, $5,
-                    $6, $7,
-                    $8, $9, 0.8,
-                    $10, $11,
-                    $12, NOW(),
-                    0.5, 0.7,
-                    0, NULL,
-                    '{}'::jsonb
-                )
-                "#
-            )
-            .bind(memory_id)
-            .bind(&conv.content)
-            .bind(conv.embedding.clone())
-            .bind(conv.base_temporal_score)
-            .bind(conv.access_count)
-            .bind(conv.first_accessed_at)
-            .bind(conv.last_accessed_at)
-            .bind(conv.citation_count)
-            .bind(conv.usefulness_score)
-            .bind(conv.relevance_score)
-            .bind(conv.usefulness_score)
-            .bind(self.context_id)
-            .execute(&app_state.db_pool)
-            .await?;
-
-            promoted_ids.push(memory_id);
-            
-            tracing::info!(
-                "Promoted conversation {} to memory {} (citations: {})",
-                conv.id, memory_id, conv.citation_count
-            );
-        }
-
-        Ok(promoted_ids)
-    }
-}
 
 /// Check if consolidation is needed
 pub struct CheckConsolidationNeededQuery {

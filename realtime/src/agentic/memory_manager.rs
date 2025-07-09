@@ -128,7 +128,10 @@ impl MemoryManager {
     /// Search memories with learning feedback
 
     /// Create a weak LLM for memory evaluation
-    fn create_weak_llm(&self, system_prompt: Option<&str>) -> Result<Box<dyn LLMProvider>, AppError> {
+    fn create_weak_llm(
+        &self,
+        system_prompt: Option<&str>,
+    ) -> Result<Box<dyn LLMProvider>, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY")
             .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
 
@@ -138,12 +141,13 @@ impl MemoryManager {
             .model("gemini-2.5-flash")
             .max_tokens(1000)
             .temperature(0.2); // Lower temperature for more consistent evaluation
-            
+
         if let Some(system) = system_prompt {
             builder = builder.system(system);
         }
-        
-        builder.build()
+
+        builder
+            .build()
             .map_err(|e| AppError::Internal(format!("Failed to create LLM: {}", e)))
     }
 
@@ -167,7 +171,7 @@ impl MemoryManager {
             "conversation_topic": conversation_topic,
         });
 
-        let system_prompt = render_template(AgentTemplates::MEMORY_EVALUATION, &evaluation_context)
+        let system_prompt = render_template(AgentTemplates::ACKNOWLEDGMENT, &evaluation_context)
             .map_err(|e| {
                 AppError::Internal(format!(
                     "Failed to render memory evaluation template: {}",
@@ -179,15 +183,12 @@ impl MemoryManager {
         let llm = self.create_weak_llm(Some(&system_prompt))?;
 
         // Simple user prompt
-        let user_prompt = format!("Content: {}\nMemory Type: {:?}\nConversation Topic: {}\nPlease evaluate if this content should be stored.",
-            content,
-            memory_type,
-            conversation_topic
+        let user_prompt = format!(
+            "Content: {}\nMemory Type: {:?}\nConversation Topic: {}\nPlease evaluate if this content should be stored.",
+            content, memory_type, conversation_topic
         );
 
-        let messages = vec![
-            ChatMessage::user().content(&user_prompt).build()
-        ];
+        let messages = vec![ChatMessage::user().content(&user_prompt).build()];
         let response_text = {
             let response = llm
                 .chat(&messages)

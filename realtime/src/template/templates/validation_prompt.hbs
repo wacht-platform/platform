@@ -1,0 +1,88 @@
+{
+  "system_instruction": {
+      "parts": [
+        {
+          "text": "You are an intelligent AI agent in the VALIDATION phase. Your role is to:\n\n1. **Evaluate** task execution results against success criteria\n2. **Identify** any issues or incomplete outcomes\n3. **Determine** if the loop should continue or complete\n4. **Synthesize** final results if complete\n\n## Original User Request:\n{{user_request}}\n\n## Execution Plan Success Criteria:\n{{execution_plan.success_criteria}}\n\n## Task Execution Summary:\n{{#each executed_tasks}}\n### Task: {{name}} ({{id}})\n- Status: {{status}}\n- Type: {{type}}\n- Success Criteria: {{success_criteria}}\n{{#if result}}\n- Result: {{result}}\n{{/if}}\n{{#if error}}\n- Error: {{error}}\n{{/if}}\n{{/each}}\n\n## Current Loop Iteration: {{current_iteration}} of {{max_iterations}}\n\n## Validation Criteria:\n\n1. **Completeness**: Have all required tasks been executed?\n2. **Success**: Did tasks meet their individual success criteria?\n3. **Integration**: Do the results work together cohesively?\n4. **User Needs**: Does the outcome satisfy the original request?\n5. **Quality**: Is the solution robust and well-implemented?\n\n## Decision Points:\n\n### Continue Loop If:\n- Critical tasks failed and need retry\n- Results are incomplete or unsatisfactory\n- New requirements emerged during execution\n- Quality improvements are needed\n- Not at max iterations yet\n\n### Complete Loop If:\n- All success criteria are met\n- User request is fully satisfied\n- Maximum iterations reached\n- No meaningful improvements possible\n\n## Important:\n- Be honest about shortcomings\n- Consider partial success scenarios\n- Provide clear reasoning for your decision\n- If continuing, specify what needs improvement\n- If completing, summarize the achievement"
+        }
+      ]
+   },
+  "contents": [
+    {{#each conversation_history}}
+    {
+      "role": "{{this.role}}",
+      "parts": [
+        {
+          "text": "{{json_string this.content}}"
+        }
+      ]
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "generationConfig": {
+    "responseMimeType": "application/json",
+    "responseSchema": {
+      "type": "OBJECT",
+      "properties": {
+        "validation_result": {
+          "type": "OBJECT",
+          "properties": {
+            "overall_success": {
+              "type": "BOOLEAN",
+              "description": "Whether the execution met success criteria"
+            },
+            "completeness_score": {
+              "type": "NUMBER",
+              "description": "Percentage of completion (0-100)"
+            },
+            "quality_assessment": {
+              "type": "STRING",
+              "enum": ["excellent", "good", "acceptable", "needs_improvement", "poor"],
+              "description": "Quality of the solution"
+            },
+            "issues_found": {
+              "type": "ARRAY",
+              "items": {
+                "type": "STRING"
+              },
+              "description": "List of issues or gaps identified"
+            },
+            "achievements": {
+              "type": "ARRAY",
+              "items": {
+                "type": "STRING"
+              },
+              "description": "What was successfully accomplished"
+            }
+          },
+          "required": ["overall_success", "completeness_score", "quality_assessment", "issues_found", "achievements"]
+        },
+        "loop_decision": {
+          "type": "STRING",
+          "enum": ["continue", "complete"],
+          "description": "Whether to continue the loop or complete"
+        },
+        "decision_reasoning": {
+          "type": "STRING",
+          "description": "Detailed explanation for the loop decision"
+        },
+        "next_iteration_focus": {
+          "type": "STRING",
+          "description": "If continuing, what to focus on next",
+          "nullable": true
+        },
+        "final_summary": {
+          "type": "STRING",
+          "description": "If completing, summary of what was accomplished",
+          "nullable": true
+        },
+        "user_message": {
+          "type": "STRING",
+          "description": "Message to present to the user about the results"
+        }
+      },
+      "required": ["validation_result", "loop_decision", "decision_reasoning", "user_message"]
+    },
+    "temperature": 0.6,
+    "maxOutputTokens": 4096
+  }
+}

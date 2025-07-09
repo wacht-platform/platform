@@ -2,7 +2,7 @@ use shared::error::AppError;
 use shared::state::AppState;
 use shared::models::MemoryBoundaries;
 use shared::commands::{
-    CreateMemoryBoundariesCommand, CompressOldConversationsCommand,
+    CreateMemoryBoundariesCommand,
     EvictLowScoreItemsCommand, EnforceConversationLimitCommand,
     EnforceMemoryLimitsCommand, CheckCleanupNeededQuery, Command,
 };
@@ -55,19 +55,7 @@ impl MemoryBoundaryManager {
 
     /// Cleanup a specific context based on its boundaries
     async fn cleanup_context(&self, boundary: MemoryBoundaries) -> Result<(), AppError> {
-        // 1. Compress old conversations
-        let compressed = CompressOldConversationsCommand {
-            context_id: boundary.context_id,
-            threshold_days: boundary.compression_threshold_days,
-        }
-        .execute(&self.app_state)
-        .await?;
-        
-        if compressed > 0 {
-            info!("Compressed {} conversations for context {}", compressed, boundary.context_id);
-        }
-        
-        // 2. Evict low-score memories
+        // 1. Evict low-score memories
         let evicted = EvictLowScoreItemsCommand {
             context_id: boundary.context_id,
             threshold: boundary.eviction_threshold_score,
