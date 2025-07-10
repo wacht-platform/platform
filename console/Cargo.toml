@@ -11,6 +11,7 @@ frontend-api = []
 
 [dependencies]
 shared = { path = "../shared" }
+wacht-rs = { path = "../../wacht-rs", features = ["axum"] }
 axum = { version = "0.8", features = ["macros", "multipart"] }
 tokio = { version = "1.35", features = ["full"] }
 tower-http = { version = "0.5", features = ["trace", "cors"] }

@@ -7,5 +7,6 @@ pub mod ai_workflows;
 pub mod b2b;
 pub mod connection;
 pub mod settings;
+pub mod token;
 pub mod upload;
 pub mod user;

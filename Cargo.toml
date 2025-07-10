@@ -1,6 +1,3 @@
 [workspace]
 resolver = "3"
-members = ["realtime", "console", "shared", "worker"]
-
-[profile.dev]
-split-debuginfo = "unpacked"
+members = ["realtime", "console", "shared", "worker", "rate-limiter"]

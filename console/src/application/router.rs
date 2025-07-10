@@ -207,9 +207,7 @@ fn deployment_routes() -> Router<HttpState> {
         .route(
             "/upload/{image_type}",
             post(api::deployment::upload::upload_image),
-        );
-
-    let routes = routes
+        )
         .route(
             "/ai-agents",
             get(api::deployment::ai_agents::get_ai_agents)
@@ -279,6 +277,10 @@ fn deployment_routes() -> Router<HttpState> {
         .route(
             "/analytics/recent-signups",
             get(api::analytics::get_recent_signups),
+        )
+        .route(
+            "/token",
+            post(api::deployment::token::generate_token),
         );
 
     #[cfg(feature = "console-api")]
@@ -295,14 +297,21 @@ fn configure_cors() -> CorsLayer {
         .allow_headers(Any)
 }
 
-pub fn create_router(state: HttpState) -> Router {
+pub async fn create_router(state: HttpState) -> Router {
     let cors = configure_cors();
 
     let mut router = Router::new().merge(health_routes());
 
     #[cfg(feature = "console-api")]
     {
-        router = router.merge(project_routes()).merge(deployment_routes());
+        router = router.merge(project_routes());
+        wacht_rs::init_from_env().await.unwrap();
+
+        use wacht_rs::middleware::AuthLayer;
+        let auth_layer = AuthLayer::new();
+        let authenticated_deployment_routes = deployment_routes().layer(auth_layer);
+
+        router = router.merge(authenticated_deployment_routes);
     }
 
     #[cfg(feature = "backend-api")]

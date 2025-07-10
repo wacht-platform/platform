@@ -2,37 +2,49 @@ FROM rust:1.85.1 as build
 
 WORKDIR /app
 
-# Copy workspace configuration
 COPY Cargo.toml Cargo.lock ./
-
-# Copy SQLx metadata for compile-time verification
 COPY .sqlx/ ./.sqlx/
-
-# Copy source code for all workspace members
 COPY console/ ./console/
 COPY shared/ ./shared/
 COPY worker/ ./worker/
-COPY ai/ ./ai/
+COPY realtime/ ./realtime/
+COPY rate-limiter/ ./rate-limiter/
 
-# Build the console application
-RUN cargo build --release --bin console
+RUN cargo build --release --bin realtime
+RUN cargo build --release --bin worker
+RUN cargo build --release --bin rate-limiter
 
-# Use a smaller runtime image
+RUN cargo build --release --bin console --features console-api
+RUN cp target/release/console target/release/console-temp
+
+RUN cargo build --release --bin console --features backend-api --no-default-features
+RUN cp target/release/console target/release/backend
+
+RUN cargo build --release --bin console --features frontend-api --no-default-features
+RUN cp target/release/console target/release/frontend
+
+RUN cp target/release/console-temp target/release/console
+
 FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the console binary from the build stage
+COPY entrypoint.sh /app/entrypoint.sh
 COPY --from=build /app/target/release/console /app/console
+COPY --from=build /app/target/release/backend /app/backend
+COPY --from=build /app/target/release/frontend /app/frontend
+COPY --from=build /app/target/release/realtime /app/realtime
+COPY --from=build /app/target/release/worker /app/worker
+COPY --from=build /app/target/release/rate-limiter /app/rate-limiter
 
-# Expose the port the application will run on
-EXPOSE 3001
+RUN chmod +x /app/entrypoint.sh /app/console /app/backend /app/frontend /app/realtime /app/worker /app/rate-limiter
 
-# Run the console application
-CMD ["./console"]
+EXPOSE 8973
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["console"]

@@ -1,5 +1,7 @@
 mod api;
 mod application;
+#[cfg(feature = "backend-api")]
+mod middleware;
 pub use shared as core;
 
 use dotenvy::dotenv;
@@ -18,13 +20,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app_state = shared::state::AppState::new_from_env().await?;
-
-    let app = application::new(app_state);
-
-    let port = "0.0.0.0:3001";
-
-    let listener = tokio::net::TcpListener::bind(port).await?;
+    let app = application::new(shared::state::AppState::new_from_env().await?).await;
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await?;
     axum::serve(listener, app).await?;
 
     Ok(())

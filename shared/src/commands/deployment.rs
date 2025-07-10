@@ -1,5 +1,6 @@
 use sqlx::Row;
 use std::str::FromStr;
+use std::collections::HashMap;
 
 use super::Command;
 use crate::{
@@ -11,9 +12,12 @@ use crate::{
     error::AppError,
     models::{DeploymentJwtTemplate, DeploymentSocialConnection, SocialConnectionProvider},
     state::AppState,
+    utils::jwt::sign_token,
+    queries::{Query, user::GetUserDetailsQuery},
 };
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use redis::AsyncCommands;
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 pub struct ClearDeploymentCacheCommand {
@@ -896,5 +900,349 @@ impl Command for UpdateDeploymentDisplaySettingsCommand {
             .await?;
 
         Ok(().into())
+    }
+}
+
+
+#[derive(Debug, Serialize)]
+pub struct GenerateTokenResponse {
+    pub token: String,
+    pub expires: i64,
+}
+
+pub struct GenerateTokenCommand {
+    pub deployment_id: i64,
+    pub session_id: i64,
+    pub template_name: String,
+}
+
+impl GenerateTokenCommand {
+    pub fn new(deployment_id: i64, session_id: i64, template_name: String) -> Self {
+        Self {
+            deployment_id,
+            session_id,
+            template_name,
+        }
+    }
+}
+
+impl Command for GenerateTokenCommand {
+    type Output = GenerateTokenResponse;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Get deployment with keypair
+        let deployment = sqlx::query!(
+            r#"
+            SELECT d.id, d.backend_host, dk.private_key
+            FROM deployments d
+            JOIN deployment_key_pairs dk ON d.id = dk.deployment_id
+            WHERE d.id = $1
+            "#,
+            self.deployment_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
+
+        // Get session with active sign-in data
+        let session_data = sqlx::query!(
+            r#"
+            SELECT 
+                s.id as session_id,
+                si.user_id,
+                si.active_organization_membership_id,
+                si.active_workspace_membership_id
+            FROM sessions s
+            JOIN signins si ON s.active_signin_id = si.id
+            WHERE s.id = $1
+            "#,
+            self.session_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Session not found or no active sign-in".to_string()))?;
+        
+        // Ensure user_id exists
+        let user_id = session_data.user_id
+            .ok_or_else(|| AppError::BadRequest("Sign-in has no associated user".to_string()))?;
+
+        // Get user details
+        let user_details = GetUserDetailsQuery::new(self.deployment_id, user_id)
+            .execute(app_state)
+            .await?;
+
+        // Get organization permissions and roles if active organization membership exists
+        let (organization_id, organization_permissions, organization_details, organization_roles) = if let Some(org_membership_id) = session_data.active_organization_membership_id {
+            let org_data = sqlx::query!(
+                r#"
+                SELECT 
+                    om.organization_id,
+                    o.name as organization_name,
+                    array(
+                        SELECT DISTINCT perm
+                        FROM organization_memberships om2
+                        JOIN organization_membership_roles omr2 ON om2.id = omr2.organization_membership_id
+                        JOIN organization_roles orr2 ON omr2.organization_role_id = orr2.id
+                        CROSS JOIN LATERAL unnest(orr2.permissions) AS perm
+                        WHERE om2.id = $1
+                    ) as permissions,
+                    array(
+                        SELECT json_build_object(
+                            'id', orr.id::text,
+                            'name', orr.name,
+                            'permissions', orr.permissions
+                        )
+                        FROM organization_membership_roles omr
+                        JOIN organization_roles orr ON omr.organization_role_id = orr.id
+                        WHERE omr.organization_membership_id = $1
+                    ) as roles
+                FROM organization_memberships om
+                JOIN organizations o ON om.organization_id = o.id
+                WHERE om.id = $1
+                "#,
+                org_membership_id
+            )
+            .fetch_optional(&app_state.db_pool)
+            .await?;
+
+            if let Some(data) = org_data {
+                let details = json!({
+                    "id": data.organization_id.to_string(),
+                    "name": data.organization_name,
+                });
+                let roles: Vec<Value> = data.roles.unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|r| serde_json::from_value(r).ok())
+                    .collect();
+                (Some(data.organization_id), data.permissions, Some(details), roles)
+            } else {
+                (None, None, None, vec![])
+            }
+        } else {
+            (None, None, None, vec![])
+        };
+
+        // Get workspace permissions and roles if active workspace membership exists
+        let (workspace_id, workspace_permissions, workspace_details, workspace_roles) = if let Some(workspace_membership_id) = session_data.active_workspace_membership_id {
+            let workspace_data = sqlx::query!(
+                r#"
+                SELECT 
+                    wm.workspace_id,
+                    w.name as workspace_name,
+                    array(
+                        SELECT DISTINCT perm
+                        FROM workspace_memberships wm2
+                        JOIN workspace_membership_roles wmr2 ON wm2.id = wmr2.workspace_membership_id
+                        JOIN workspace_roles wr2 ON wmr2.workspace_role_id = wr2.id
+                        CROSS JOIN LATERAL unnest(wr2.permissions) AS perm
+                        WHERE wm2.id = $1
+                    ) as permissions,
+                    array(
+                        SELECT json_build_object(
+                            'id', wr.id::text,
+                            'name', wr.name,
+                            'permissions', wr.permissions
+                        )
+                        FROM workspace_membership_roles wmr
+                        JOIN workspace_roles wr ON wmr.workspace_role_id = wr.id
+                        WHERE wmr.workspace_membership_id = $1
+                    ) as roles
+                FROM workspace_memberships wm
+                JOIN workspaces w ON wm.workspace_id = w.id
+                WHERE wm.id = $1
+                "#,
+                workspace_membership_id
+            )
+            .fetch_optional(&app_state.db_pool)
+            .await?;
+
+            if let Some(data) = workspace_data {
+                let details = json!({
+                    "id": data.workspace_id.to_string(),
+                    "name": data.workspace_name,
+                });
+                let roles: Vec<Value> = data.roles.unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|r| serde_json::from_value(r).ok())
+                    .collect();
+                (Some(data.workspace_id), data.permissions, Some(details), roles)
+            } else {
+                (None, None, None, vec![])
+            }
+        } else {
+            (None, None, None, vec![])
+        };
+
+        // Get JWT template
+        let template = if self.template_name == "default" {
+            // Use default template settings
+            DeploymentJwtTemplate {
+                id: 0,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                deployment_id: self.deployment_id,
+                name: "default".to_string(),
+                token_lifetime: 30,
+                allowed_clock_skew: 5,
+                custom_signing_key: None,
+                template: json!({}),
+            }
+        } else {
+            let row = sqlx::query!(
+                r#"
+                SELECT id, created_at, updated_at, deployment_id, name, 
+                       token_lifetime, allowed_clock_skew, 
+                       custom_signing_key, 
+                       template
+                FROM deployment_jwt_templates
+                WHERE deployment_id = $1 AND name = $2
+                "#,
+                self.deployment_id,
+                self.template_name
+            )
+            .fetch_optional(&app_state.db_pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Template not found".to_string()))?;
+            
+            DeploymentJwtTemplate {
+                id: row.id,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                deployment_id: row.deployment_id,
+                name: row.name,
+                token_lifetime: row.token_lifetime,
+                allowed_clock_skew: row.allowed_clock_skew,
+                custom_signing_key: row.custom_signing_key
+                    .and_then(|v| serde_json::from_value(v).ok()),
+                template: row.template,
+            }
+        };
+
+        let now = Utc::now();
+        let exp = now + Duration::seconds(template.token_lifetime as i64 + template.allowed_clock_skew as i64);
+
+        // Build handlebars context - matching Go implementation which passes ActiveSignin data
+        let handlebars_context = json!({
+            // Top level signin fields
+            "id": self.session_id.to_string(),
+            "user_id": user_id,
+            "active_organization_membership_id": session_data.active_organization_membership_id,
+            "active_workspace_membership_id": session_data.active_workspace_membership_id,
+            
+            // User object embedded in signin
+            "user": {
+                "id": user_details.id,
+                "created_at": user_details.created_at.to_rfc3339(),
+                "updated_at": user_details.updated_at.to_rfc3339(),
+                "first_name": user_details.first_name,
+                "last_name": user_details.last_name,
+                "username": user_details.username,
+                "profile_picture_url": user_details.profile_picture_url,
+                "disabled": user_details.disabled,
+                "primary_email_address": user_details.primary_email_address,
+                "primary_phone_number": user_details.primary_phone_number,
+                "public_metadata": user_details.public_metadata,
+                "private_metadata": user_details.private_metadata,
+                "email_addresses": user_details.email_addresses,
+                "phone_numbers": user_details.phone_numbers,
+            },
+            
+            // Active organization membership with roles
+            "active_organization_membership": if session_data.active_organization_membership_id.is_some() {
+                json!({
+                    "id": session_data.active_organization_membership_id,
+                    "organization_id": organization_id,
+                    "organization": organization_details,
+                    "roles": organization_roles,
+                })
+            } else {
+                json!(null)
+            },
+            
+            // Active workspace membership with roles
+            "active_workspace_membership": if session_data.active_workspace_membership_id.is_some() {
+                json!({
+                    "id": session_data.active_workspace_membership_id,
+                    "workspace_id": workspace_id,
+                    "workspace": workspace_details,
+                    "roles": workspace_roles,
+                })
+            } else {
+                json!(null)
+            },
+        });
+
+        // Build token claims
+        let mut custom_claims = HashMap::new();
+
+        // Parse and apply custom template if provided
+        if !template.template.is_null() {
+            // Check if template is a string (handlebars template)
+            if let Some(template_str) = template.template.as_str() {
+                // Render handlebars template
+                let rendered = app_state.handlebars
+                    .render_template(template_str, &handlebars_context)
+                    .map_err(|e| AppError::BadRequest(format!("Failed to render template: {}", e)))?;
+                
+                // Parse rendered JSON into custom claims
+                let parsed: Value = serde_json::from_str(&rendered)
+                    .map_err(|e| AppError::BadRequest(format!("Template must render valid JSON: {}", e)))?;
+                
+                if let Some(obj) = parsed.as_object() {
+                    custom_claims = obj.iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                }
+            } else if template.template.is_object() {
+                // Legacy: direct JSON object
+                if let Some(obj) = template.template.as_object() {
+                    custom_claims = obj.iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                }
+            }
+        }
+
+        // Merge standard claims with custom claims
+        let mut all_claims = custom_claims;
+        all_claims.insert("iss".to_string(), json!(format!("https://{}", deployment.backend_host)));
+        all_claims.insert("sub".to_string(), json!(user_id.to_string()));
+        all_claims.insert("iat".to_string(), json!(now.timestamp()));
+        all_claims.insert("exp".to_string(), json!(exp.timestamp()));
+        all_claims.insert("session_id".to_string(), json!(self.session_id.to_string()));
+        
+        if let Some(org_id) = organization_id {
+            all_claims.insert("organization".to_string(), json!(org_id.to_string()));
+        }
+        if let Some(perms) = organization_permissions {
+            all_claims.insert("organization_permissions".to_string(), json!(perms));
+        }
+        if let Some(ws_id) = workspace_id {
+            all_claims.insert("workspace".to_string(), json!(ws_id.to_string()));
+        }
+        if let Some(perms) = workspace_permissions {
+            all_claims.insert("workspace_permissions".to_string(), json!(perms));
+        }
+
+        // Determine signing algorithm and key
+        let (algorithm, signing_key) = if let Some(custom_key) = &template.custom_signing_key {
+            // Use custom signing key
+            if custom_key.enabled && !custom_key.key.is_empty() {
+                (custom_key.algorithm.as_str(), custom_key.key.clone())
+            } else {
+                ("ES256", deployment.private_key.clone())
+            }
+        } else {
+            // Use deployment's default key
+            ("ES256", deployment.private_key)
+        };
+
+        // Sign the token with all claims
+        let token = sign_token(all_claims, &algorithm, &signing_key)?;
+
+        Ok(GenerateTokenResponse {
+            token,
+            expires: (now + Duration::seconds(template.token_lifetime as i64)).timestamp_millis(),
+        })
     }
 }

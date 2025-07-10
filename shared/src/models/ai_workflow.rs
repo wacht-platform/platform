@@ -54,6 +54,7 @@ pub struct WorkflowVariable {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
 pub enum VariableType {
     String,
     Number,
@@ -152,6 +153,7 @@ pub struct LLMCallNodeConfig {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
 pub enum ResponseFormat {
     Text,
     Json,
@@ -188,6 +190,7 @@ pub struct ConditionNodeConfig {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum ConditionEvaluationType {
     JavaScript,
     JsonPath,
@@ -232,6 +235,7 @@ pub struct WorkflowExecution {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
 pub enum ExecutionStatus {
     Pending,
     Running,
