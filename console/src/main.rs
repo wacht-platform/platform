@@ -1,7 +1,5 @@
 mod api;
 mod application;
-#[cfg(feature = "backend-api")]
-mod middleware;
 pub use shared as core;
 
 use dotenvy::dotenv;
