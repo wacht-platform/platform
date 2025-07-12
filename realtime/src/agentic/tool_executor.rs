@@ -26,37 +26,21 @@ impl ToolExecutor {
     ) -> Result<Value, AppError> {
         match &tool.configuration {
             AiToolConfiguration::Api(config) => {
-                tracing::info!(
-                    tool_name = %tool.name,
-                    endpoint = %config.endpoint,
-                    "ToolExecutor: Executing API tool"
-                );
+                // tracing removed
                 self.execute_api_tool(tool, config, &execution_params).await
             }
             AiToolConfiguration::KnowledgeBase(config) => {
-                tracing::info!(
-                    tool_name = %tool.name,
-                    knowledge_base_id = %config.knowledge_base_id,
-                    "ToolExecutor: Executing Knowledge Base tool"
-                );
+                // tracing removed
                 self.execute_knowledge_base_tool(tool, config, &execution_params)
                     .await
             }
             AiToolConfiguration::PlatformEvent(config) => {
-                tracing::info!(
-                    tool_name = %tool.name,
-                    event_label = %config.event_label,
-                    "ToolExecutor: Executing Platform Event tool"
-                );
+                // tracing removed
                 self.execute_platform_event_tool(tool, config, &execution_params)
                     .await
             }
             AiToolConfiguration::PlatformFunction(config) => {
-                tracing::info!(
-                    tool_name = %tool.name,
-                    function_name = %config.function_name,
-                    "ToolExecutor: Executing Platform Function tool"
-                );
+                // tracing removed
                 self.execute_platform_function_tool(tool, config, &execution_params)
                     .await
             }

@@ -27,7 +27,6 @@ impl AgentHandler {
 
         let mut agent_executor = AgentExecutor::new(
             request.agent,
-            request.deployment_id,
             request.context_id,
             self.app_state.clone(),
             sender.clone(),

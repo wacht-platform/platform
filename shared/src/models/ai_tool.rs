@@ -8,6 +8,7 @@ pub struct AiTool {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub name: String,
+    #[serde(default)]
     pub description: Option<String>,
     pub tool_type: AiToolType,
     #[serde(with = "crate::utils::serde::i64_as_string")]
@@ -22,6 +23,7 @@ pub struct AiToolWithDetails {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub name: String,
+    #[serde(default)]
     pub description: Option<String>,
     pub tool_type: AiToolType,
     #[serde(with = "crate::utils::serde::i64_as_string")]

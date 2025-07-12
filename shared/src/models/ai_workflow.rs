@@ -11,6 +11,7 @@ pub struct AiWorkflow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub name: String,
+    #[serde(default)]
     pub description: Option<String>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
@@ -25,6 +26,7 @@ pub struct AiWorkflowWithDetails {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub name: String,
+    #[serde(default)]
     pub description: Option<String>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
@@ -36,31 +38,12 @@ pub struct AiWorkflowWithDetails {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct WorkflowConfiguration {
+    #[serde(default)]
     pub timeout_seconds: Option<u32>,
+    #[serde(default)]
     pub max_retries: Option<u32>,
+    #[serde(default)]
     pub retry_delay_seconds: Option<u32>,
-    pub enable_logging: bool,
-    pub enable_metrics: bool,
-    pub variables: HashMap<String, WorkflowVariable>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct WorkflowVariable {
-    pub name: String,
-    pub value_type: VariableType,
-    pub default_value: Option<String>,
-    pub description: Option<String>,
-    pub required: bool,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "lowercase")]
-pub enum VariableType {
-    String,
-    Number,
-    Boolean,
-    Object,
-    Array,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -132,7 +115,8 @@ pub enum ConditionType {
 // Node-specific configurations
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TriggerNodeConfig {
-    pub condition: String, // Text condition for automated trigger
+    pub description: String, // Natural language description of what data/conditions are needed for this workflow to run
+    pub trigger_condition: String, // Natural language condition that describes when this trigger should activate
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -271,9 +255,6 @@ impl Default for WorkflowConfiguration {
             timeout_seconds: Some(300), // 5 minutes
             max_retries: Some(3),
             retry_delay_seconds: Some(5),
-            enable_logging: true,
-            enable_metrics: true,
-            variables: HashMap::new(),
         }
     }
 }

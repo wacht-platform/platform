@@ -3,12 +3,11 @@ use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
 use regex::Regex;
 use serde_json::{Value, json};
-use shared::dto::json::{StreamEvent, ToolCall};
+use shared::dto::json::StreamEvent;
 use shared::error::AppError;
 use shared::models::{
     AiWorkflow, ConditionEvaluationType, ConditionType, ExecutionContext, ExecutionStatus,
-    MemoryEntry, MemoryType, NodeExecution, ResponseFormat, WorkflowEdge, WorkflowNode,
-    WorkflowNodeType,
+    MemoryEntry, NodeExecution, ResponseFormat, WorkflowEdge, WorkflowNode, WorkflowNodeType,
 };
 use shared::queries::Query;
 use shared::state::AppState;
@@ -30,18 +29,9 @@ impl WorkflowExecutor {
         &self,
         workflow_call: &shared::dto::json::WorkflowCall,
         workflows: &[AiWorkflow],
-        memories: &[MemoryEntry],
+        _memories: &[MemoryEntry],
         channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
-        tracing::info!(
-            workflow_name = %workflow_call.workflow_name,
-            "WorkflowExecutor: Starting workflow execution"
-        );
-        tracing::debug!(
-            workflow_name = %workflow_call.workflow_name,
-            inputs = %serde_json::to_string_pretty(&workflow_call.inputs).unwrap_or_default(),
-            "WorkflowExecutor: Workflow inputs"
-        );
 
         let workflow = workflows
             .iter()
@@ -53,47 +43,15 @@ impl WorkflowExecutor {
                 ))
             })?;
 
-        tracing::debug!(
-            workflow_id = %workflow.id,
-            workflow_description = ?workflow.description,
-            "WorkflowExecutor: Found workflow"
-        );
-
-        let relevant_memories: Vec<&MemoryEntry> = memories
-            .iter()
-            .filter(|m| {
-                matches!(m.memory_type, MemoryType::Procedural)
-                    && m.content.contains(&workflow_call.workflow_name)
-            })
-            .collect();
-
-        let enhanced_input = workflow_call.inputs.clone();
-        if !relevant_memories.is_empty() {}
 
         // Execute the full workflow
         let result = self
-            .execute_workflow(workflow, enhanced_input, channel)
+            .execute_workflow(workflow, workflow_call.inputs.clone(), channel)
             .await;
 
         match &result {
-            Ok(res) => {
-                tracing::info!(
-                    workflow_name = %workflow_call.workflow_name,
-                    "WorkflowExecutor: Workflow execution completed successfully"
-                );
-                tracing::debug!(
-                    workflow_name = %workflow_call.workflow_name,
-                    result = %serde_json::to_string_pretty(res).unwrap_or_default(),
-                    "WorkflowExecutor: Workflow execution result"
-                );
-            }
-            Err(e) => {
-                tracing::error!(
-                    workflow_name = %workflow_call.workflow_name,
-                    error = %e,
-                    "WorkflowExecutor: Workflow execution failed"
-                );
-            }
+            Ok(_res) => {}
+            Err(_e) => {}
         }
 
         result
@@ -105,31 +63,18 @@ impl WorkflowExecutor {
         input_data: Value,
         channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
-        tracing::debug!(
-            workflow_id = %workflow.id,
-            workflow_name = %workflow.name,
-            input_data = %serde_json::to_string_pretty(&input_data).unwrap_or_default(),
-            "WorkflowExecutor: execute_workflow called"
-        );
 
         let mut execution_context = ExecutionContext::default();
 
-        // Initialize variables from workflow configuration and input
-        for (key, var) in &workflow.configuration.variables {
-            let value = input_data
-                .get(key)
-                .cloned()
-                .or_else(|| var.default_value.as_ref().map(|v| json!(v)));
-
-            if let Some(val) = value {
-                execution_context.variables.insert(key.clone(), val);
-            } else if var.required {
-                return Err(AppError::BadRequest(format!(
-                    "Required variable '{}' not provided",
-                    key
-                )));
+        // Initialize variables with input data
+        if let Some(input_obj) = input_data.as_object() {
+            for (key, value) in input_obj {
+                execution_context.variables.insert(key.clone(), value.clone());
             }
         }
+
+        // Note: Workflow validation and context gathering is now handled in agent executor
+        // This allows workflows to execute directly with provided context
 
         // Find the trigger node to start execution
         let trigger_node = workflow
@@ -178,12 +123,6 @@ impl WorkflowExecutor {
                 ));
             }
 
-            tracing::debug!(
-                node_id = %node.id,
-                node_label = %node.data.label,
-                depth = %depth,
-                "WorkflowExecutor: Executing workflow node"
-            );
 
             // Record node execution start
             let mut node_execution = NodeExecution {
@@ -202,11 +141,11 @@ impl WorkflowExecutor {
             // Execute the node based on its type
             let result = match &node.node_type {
                 WorkflowNodeType::Trigger(config) => {
-                    self.execute_trigger_node(config, context, channel.clone())
+                    self.execute_trigger_node(config, context)
                         .await
                 }
                 WorkflowNodeType::Condition(config) => {
-                    self.execute_condition_node(config, context, channel.clone())
+                    self.execute_condition_node(config, context)
                         .await
                 }
                 WorkflowNodeType::ErrorHandler(config) => {
@@ -221,11 +160,11 @@ impl WorkflowExecutor {
                     .await
                 }
                 WorkflowNodeType::LLMCall(config) => {
-                    self.execute_llm_call_node(config, context, channel.clone())
+                    self.execute_llm_call_node(config, context)
                         .await
                 }
                 WorkflowNodeType::Switch(config) => {
-                    self.execute_switch_node(config, context, channel.clone())
+                    self.execute_switch_node(config, context)
                         .await
                 }
                 WorkflowNodeType::ToolCall(config) => {
@@ -233,11 +172,11 @@ impl WorkflowExecutor {
                         .await
                 }
                 WorkflowNodeType::StoreContext(config) => {
-                    self.execute_store_context_node(config, context, channel.clone())
+                    self.execute_store_context_node(config, context)
                         .await
                 }
                 WorkflowNodeType::FetchContext(config) => {
-                    self.execute_fetch_context_node(config, context, channel.clone())
+                    self.execute_fetch_context_node(config, context)
                         .await
                 }
             };
@@ -336,12 +275,12 @@ impl WorkflowExecutor {
         &self,
         config: &shared::models::TriggerNodeConfig,
         context: &ExecutionContext,
-        channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
         Ok(json!({
             "type": "trigger",
             "triggered": true,
-            "condition": config.condition,
+            "description": config.description,
+            "trigger_condition": config.trigger_condition,
             "context": context.variables,
         }))
     }
@@ -350,7 +289,6 @@ impl WorkflowExecutor {
         &self,
         config: &shared::models::ConditionNodeConfig,
         context: &ExecutionContext,
-        channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
         let result = match config.condition_type {
             ConditionEvaluationType::JavaScript => {
@@ -407,7 +345,16 @@ impl WorkflowExecutor {
                     {
                         Ok(result) => last_result = Ok(result),
                         Err(e) => {
-                            if config.log_errors {}
+                            if config.log_errors {
+                                // Send error information through channel for real-time feedback
+                                let error_message = format!(
+                                    "Workflow node '{}' failed on attempt {}: {}",
+                                    &node.id,
+                                    retry_count + 1,
+                                    e
+                                );
+                                let _ = channel.send(StreamEvent::Token(error_message)).await;
+                            }
 
                             if retry_count < max_retries {
                                 retry_count += 1;
@@ -436,7 +383,6 @@ impl WorkflowExecutor {
         &self,
         config: &shared::models::LLMCallNodeConfig,
         context: &ExecutionContext,
-        channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
         // Render the prompt template with context variables
         let prompt = self.render_template_string(&config.prompt_template, context)?;
@@ -484,7 +430,6 @@ impl WorkflowExecutor {
         &self,
         config: &shared::models::SwitchNodeConfig,
         context: &ExecutionContext,
-        channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
         let switch_value = self
             .get_context_value(&config.switch_condition, context)
@@ -551,19 +496,24 @@ impl WorkflowExecutor {
 
         // Create tool executor and execute
         let tool_executor = super::tool_executor::ToolExecutor::new(self.app_state.clone());
-        let tool_call = ToolCall {
-            tool_name: tool.name.clone(),
-            parameters: json!(parameters),
-        };
 
-        Ok(Value::Null)
+        // Execute the tool immediately and return the result
+        let result = tool_executor
+            .execute_tool_immediately(&tool, json!(parameters))
+            .await?;
+
+        // Send result through channel if needed
+        if let Ok(result_str) = serde_json::to_string(&result) {
+            let _ = channel.send(StreamEvent::Token(result_str)).await;
+        }
+
+        Ok(result)
     }
 
     async fn execute_store_context_node(
         &self,
         config: &shared::models::StoreContextNodeConfig,
         context: &mut ExecutionContext,
-        channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
         let data = if config.use_llm {
             // Use LLM to process the data first
@@ -607,7 +557,6 @@ impl WorkflowExecutor {
         &self,
         config: &shared::models::FetchContextNodeConfig,
         context: &ExecutionContext,
-        channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
         let key = config.context_data.trim();
         let data = context
@@ -683,6 +632,44 @@ impl WorkflowExecutor {
             return Ok(left_val != right_val);
         }
 
+        // Handle numeric comparisons
+        if let Some((left, right)) = expr.split_once(">=") {
+            let left_val = self.get_numeric_value(left.trim(), context)?;
+            let right_val = self.get_numeric_value(right.trim(), context)?;
+            return Ok(left_val >= right_val);
+        }
+
+        if let Some((left, right)) = expr.split_once("<=") {
+            let left_val = self.get_numeric_value(left.trim(), context)?;
+            let right_val = self.get_numeric_value(right.trim(), context)?;
+            return Ok(left_val <= right_val);
+        }
+
+        if let Some((left, right)) = expr.split_once(">") {
+            let left_val = self.get_numeric_value(left.trim(), context)?;
+            let right_val = self.get_numeric_value(right.trim(), context)?;
+            return Ok(left_val > right_val);
+        }
+
+        if let Some((left, right)) = expr.split_once("<") {
+            let left_val = self.get_numeric_value(left.trim(), context)?;
+            let right_val = self.get_numeric_value(right.trim(), context)?;
+            return Ok(left_val < right_val);
+        }
+
+        // Handle logical operators
+        if let Some((left, right)) = expr.split_once("&&") {
+            let left_result = self.evaluate_expression(left.trim(), context)?;
+            let right_result = self.evaluate_expression(right.trim(), context)?;
+            return Ok(left_result && right_result);
+        }
+
+        if let Some((left, right)) = expr.split_once("||") {
+            let left_result = self.evaluate_expression(left.trim(), context)?;
+            let right_result = self.evaluate_expression(right.trim(), context)?;
+            return Ok(left_result || right_result);
+        }
+
         // Default to false for unsupported expressions
         Ok(false)
     }
@@ -750,6 +737,23 @@ impl WorkflowExecutor {
         Ok(json!(null))
     }
 
+    fn get_numeric_value(&self, path: &str, context: &ExecutionContext) -> Result<f64, AppError> {
+        let value = self.get_context_value(path, context)?;
+
+        match &value {
+            Value::Number(n) => n
+                .as_f64()
+                .ok_or_else(|| AppError::Internal(format!("Could not convert {} to f64", value))),
+            Value::String(s) => s
+                .parse::<f64>()
+                .map_err(|_| AppError::Internal(format!("Could not parse '{}' as number", s))),
+            _ => Err(AppError::Internal(format!(
+                "Value '{}' is not a number",
+                value
+            ))),
+        }
+    }
+
     fn render_template_string(
         &self,
         template: &str,
@@ -797,4 +801,7 @@ impl WorkflowExecutor {
 
         Ok(false)
     }
+
+
 }
+

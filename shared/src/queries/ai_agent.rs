@@ -226,7 +226,16 @@ impl Query for GetAiAgentByNameWithFeatures {
                 ai_agents a
             LEFT JOIN LATERAL (
                 SELECT COALESCE(jsonb_agg(
-                    to_jsonb(t) || jsonb_build_object('id', t.id::text, 'deployment_id', t.deployment_id::text)
+                    jsonb_build_object(
+                        'id', t.id::text,
+                        'created_at', t.created_at,
+                        'updated_at', t.updated_at,
+                        'name', t.name,
+                        'description', t.description,
+                        'tool_type', t.tool_type,
+                        'deployment_id', t.deployment_id::text,
+                        'configuration', t.configuration
+                    )
                 ), '[]'::jsonb) as list
                 FROM ai_tools t
                 WHERE t.deployment_id = a.deployment_id
@@ -235,7 +244,16 @@ impl Query for GetAiAgentByNameWithFeatures {
             ) tools ON true
             LEFT JOIN LATERAL (
                 SELECT COALESCE(jsonb_agg(
-                    to_jsonb(w) || jsonb_build_object('id', w.id::text, 'deployment_id', w.deployment_id::text)
+                    jsonb_build_object(
+                        'id', w.id::text,
+                        'created_at', w.created_at,
+                        'updated_at', w.updated_at,
+                        'name', w.name,
+                        'description', w.description,
+                        'deployment_id', w.deployment_id::text,
+                        'configuration', w.configuration,
+                        'workflow_definition', w.workflow_definition
+                    )
                 ), '[]'::jsonb) as list
                 FROM ai_workflows w
                 WHERE w.deployment_id = a.deployment_id
@@ -244,7 +262,14 @@ impl Query for GetAiAgentByNameWithFeatures {
             ) workflows ON true
             LEFT JOIN LATERAL (
                 SELECT COALESCE(jsonb_agg(
-                    to_jsonb(k) || jsonb_build_object('id', k.id::text, 'deployment_id', k.deployment_id::text)
+                    jsonb_build_object(
+                        'id', k.id::text,
+                        'created_at', k.created_at,
+                        'updated_at', k.updated_at,
+                        'name', k.name,
+                        'description', k.description,
+                        'deployment_id', k.deployment_id::text
+                    )
                 ), '[]'::jsonb) as list
                 FROM ai_knowledge_bases k
                 WHERE k.deployment_id = a.deployment_id

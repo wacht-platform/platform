@@ -31,6 +31,7 @@ pub struct AiKnowledgeBase {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub name: String,
+    #[serde(default)]
     pub description: Option<String>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
@@ -44,6 +45,7 @@ pub struct AiKnowledgeBaseWithDetails {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub name: String,
+    #[serde(default)]
     pub description: Option<String>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
@@ -59,6 +61,7 @@ pub struct AiKnowledgeBaseDocument {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub title: String,
+    #[serde(default)]
     pub description: Option<String>,
     pub file_name: String,
     pub file_size: i64,

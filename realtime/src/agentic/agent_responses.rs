@@ -3,16 +3,19 @@ use serde_json::Value;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct IdeationResponse {
-    pub iteration_notes: String,
+    pub reasoning_summary: String,
     pub needs_more_iteration: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_search_request: Option<String>,
+    pub requires_user_input: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_input_request: Option<String>,
     pub execution_plan: ExecutionPlan,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ExecutionPlan {
-    pub message: String,
+    pub strategic_guidance: String,
     pub analysis: PlanAnalysis,
     #[serde(rename = "task")]
     pub tasks: Vec<PlannedTask>,
@@ -21,9 +24,9 @@ pub struct ExecutionPlan {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct PlanAnalysis {
-    pub understanding: String,
-    pub challenge: String,
-    pub approach: String,
+    pub problem_analysis: String,
+    pub complexity_assessment: String,
+    pub strategic_rationale: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -60,21 +63,24 @@ pub enum TaskPriority {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ContextGatheringResponse {
-    pub understanding: String,
-    pub context_findings: Vec<String>,
-    pub initial_plan: InitialPlan,
+    pub strategic_synthesis: String,
+    pub context_insights: Vec<String>,
+    pub refined_strategy: RefinedStrategy,
     pub needs_more_context: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub additional_context_request: Option<String>,
-    pub ready_for_task_breakdown: bool,
+    pub strategic_context_request: Option<String>,
+    pub requires_user_input: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_input_request: Option<String>,
+    pub strategic_readiness: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct InitialPlan {
-    pub approach: String,
-    pub main_steps: Vec<String>,
-    pub success_criteria: String,
-    pub potential_challenges: Vec<String>,
+pub struct RefinedStrategy {
+    pub enhanced_approach: String,
+    pub strategic_priorities: Vec<String>,
+    pub success_framework: String,
+    pub risk_considerations: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -166,6 +172,9 @@ pub struct ValidationResponse {
     pub next_iteration_focus: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub final_summary: Option<String>,
+    pub has_unresolvable_errors: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unresolvable_error_details: Option<String>,
     pub user_message: String,
 }
 
@@ -193,6 +202,7 @@ pub enum QualityLevel {
 pub enum LoopDecision {
     Continue,
     Complete,
+    AbortUnresolvable,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

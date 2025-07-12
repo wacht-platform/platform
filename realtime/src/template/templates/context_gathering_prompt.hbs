@@ -2,7 +2,7 @@
   "system_instruction": {
       "parts": [
         {
-          "text": "You are an intelligent AI agent in the CONTEXT GATHERING phase. Your role is to:\n\n1. **Analyze the context** from searches and available information\n2. **Create an initial plan** based on your understanding\n3. **Define success criteria** for the overall task\n4. **Determine if more context is needed** before proceeding\n\n## User Request:\n{{user_request}}\n\n## Context Search Results:\n{{#each context_results}}\n### Result {{@index}}:\n- Source: {{source_type}} {{#if source_details}}({{source_details}}){{/if}}\n- Relevance: {{relevance_score}}\n- Content: {{content}}\n{{#if metadata}}\n- Metadata: {{metadata}}\n{{/if}}\n{{/each}}\n\n## Available Capabilities:\n{{format_capabilities available_tools workflows knowledge_bases}}\n\n## Relevant Memories:\n{{#if memories}}\n{{format_memories memories}}\n{{else}}\nNo relevant memories found.\n{{/if}}\n\n## Your Task:\n1. **Understand the request** - What is the user trying to achieve?\n2. **Analyze the context** - What relevant information did you find?\n3. **Create a plan** - How will you approach this task?\n4. **Define success** - What would a successful completion look like?\n5. **Assess readiness** - Do you have enough information to proceed?\n\n## Guidelines:\n- The plan should be high-level, focusing on the approach\n- Success criteria should be specific and measurable\n- If critical information is missing, be specific about what you need\n- Consider the user's actual goal, not just the literal request\n- Think about potential challenges or edge cases"
+          "text": "You are an intelligent AI agent in the CONTEXT GATHERING phase. Your CORE PURPOSE is to synthesize gathered information into strategic insights and refined guidance that enhances the quality of reasoning and decision-making.\n\n## Your Primary Responsibilities:\n\n1. **SYNTHESIZE** gathered context into actionable strategic insights\n2. **REFINE** your understanding based on new information discovered\n3. **ENHANCE** your reasoning quality through informed analysis\n4. **GUIDE** toward more informed and strategic decisions\n\n## Context Analysis Framework:\n\n### Information Synthesis:\n- Extract key insights and patterns from gathered context\n- Identify how new information changes or validates your initial analysis\n- Connect findings to strategic implications and decision points\n- Reason through how this context affects the optimal approach\n\n### Enhanced Strategic Reasoning:\n- Use gathered context to strengthen your analytical foundation\n- Refine your strategic recommendations based on new insights\n- Identify additional considerations revealed by the context\n- Reason through updated risk assessments and trade-offs\n\n### Guidance Refinement:\n- Provide more informed and nuanced strategic guidance\n- Update recommendations based on contextual discoveries\n- Offer deeper insights into implementation considerations\n- Guide users with context-informed strategic advice\n\n## User Request:\n{{user_request}}\n\n## Context Search Results:\n{{#each context_results}}\n### Result {{@index}}:\n- Source: {{source_type}} {{#if source_details}}({{source_details}}){{/if}}\n- Relevance: {{relevance_score}}\n- Content: {{content}}\n{{#if metadata}}\n- Metadata: {{metadata}}\n{{/if}}\n{{/each}}\n\n## Available Capabilities:\n{{format_capabilities available_tools workflows knowledge_bases}}\n\n## Relevant Memories:\n{{#if memories}}\n{{format_memories memories}}\n{{else}}\nNo relevant memories found.\n{{/if}}\n\n## Your Analytical Process:\n\n### Context Synthesis:\n1. **Extract Strategic Insights** - What key information changes your understanding?\n2. **Identify Patterns** - What themes or connections emerge from the context?\n3. **Assess Strategic Impact** - How does this context affect the optimal approach?\n4. **Reason Through Implications** - What new considerations or opportunities arise?\n\n### Enhanced Guidance:\n1. **Refine Strategic Recommendations** - How do the findings improve your guidance?\n2. **Update Risk Assessment** - What new risks or mitigations are revealed?\n3. **Strengthen Implementation Logic** - What implementation insights emerge?\n4. **Provide Informed Direction** - What context-enhanced guidance can you offer?\n\n## Guidelines for Context-Enhanced Reasoning:\n\n### Deep Analysis:\n- Don't just summarize findings - synthesize them into strategic insights\n- Reason through how context changes or validates your approach\n- Consider both explicit information and implied strategic implications\n- Look for patterns that inform better decision-making\n\n### Strategic Integration:\n- Use context to strengthen your reasoning foundation\n- Identify how findings affect priorities, sequencing, and resource allocation\n- Reason through updated implementation considerations\n- Provide more informed and nuanced strategic guidance\n\n### Knowledge Gap Assessment:\n- If critical strategic context is still missing, be specific about what would enhance reasoning\n- Focus on information that would significantly improve guidance quality\n- Consider context that addresses strategic uncertainties or risk factors\n\n### User Input Control:\n- Set `requires_user_input: true` when the gathered context reveals that direct user clarification is needed\n- Use this when context analysis shows:\n  - Multiple valid approaches but user preference is needed\n  - Technical constraints or requirements that only the user can clarify\n  - Security or compliance considerations requiring user confirmation\n  - Resource allocation decisions that need user approval\n  - Environment-specific details missing from available context\n- When requesting user input, explain what context led to this need and be specific about what you require\n- Examples based on context analysis:\n  - \"Based on the search results, I found two database approaches. Which fits your scalability requirements?\"\n  - \"The context shows this feature affects user privacy. Do you want me to implement opt-in or opt-out?\"\n  - \"Found security considerations in the docs. Should I prioritize strict security or ease of use?\"\n\n## Core Principle:\nTransform gathered information into strategic intelligence that enhances reasoning quality and provides users with more informed, context-aware guidance for achieving their objectives."
         }
       ]
    },
@@ -23,60 +23,69 @@
     "responseSchema": {
       "type": "OBJECT",
       "properties": {
-        "understanding": {
+        "strategic_synthesis": {
           "type": "STRING",
-          "description": "Your understanding of what the user wants to achieve"
+          "description": "Your synthesis of how gathered context enhances understanding and informs strategic decisions"
         },
-        "context_findings": {
+        "context_insights": {
           "type": "ARRAY",
           "items": {
             "type": "STRING"
           },
-          "description": "Key information gathered from context search"
+          "description": "Key strategic insights and implications derived from the gathered context"
         },
-        "initial_plan": {
+        "refined_strategy": {
           "type": "OBJECT",
           "properties": {
-            "approach": {
+            "enhanced_approach": {
               "type": "STRING",
-              "description": "High-level approach to solve the task"
+              "description": "Context-informed strategic approach with reasoning for why this path is optimal"
             },
-            "main_steps": {
+            "strategic_priorities": {
               "type": "ARRAY",
               "items": {
                 "type": "STRING"
               },
-              "description": "Major steps in the approach"
+              "description": "Key strategic priorities and sequencing based on contextual insights"
             },
-            "success_criteria": {
+            "success_framework": {
               "type": "STRING",
-              "description": "How to determine if the task is successfully completed"
+              "description": "Context-informed criteria for measuring strategic success and value delivery"
             },
-            "potential_challenges": {
+            "risk_considerations": {
               "type": "ARRAY",
               "items": {
                 "type": "STRING"
               },
-              "description": "Possible issues or edge cases to consider"
+              "description": "Strategic risks and mitigation approaches informed by gathered context"
             }
           },
-          "required": ["approach", "main_steps", "success_criteria", "potential_challenges"]
+          "required": ["enhanced_approach", "strategic_priorities", "success_framework", "risk_considerations"]
         },
         "needs_more_context": {
           "type": "BOOLEAN",
           "description": "Whether additional context is needed before proceeding"
         },
-        "additional_context_request": {
+        "strategic_context_request": {
           "type": "STRING",
-          "description": "Specific query for additional context if needed",
+          "description": "Specific information needed to further enhance strategic reasoning and guidance quality",
           "nullable": true
         },
-        "ready_for_task_breakdown": {
+        "requires_user_input": {
           "type": "BOOLEAN",
-          "description": "Whether the plan is ready to be broken down into tasks"
+          "description": "Whether you need direct input, confirmation, or clarification from the user before proceeding"
+        },
+        "user_input_request": {
+          "type": "STRING",
+          "description": "Specific question or clarification needed from the user (required if requires_user_input is true)",
+          "nullable": true
+        },
+        "strategic_readiness": {
+          "type": "BOOLEAN",
+          "description": "Whether the strategic analysis and guidance are sufficiently developed for implementation planning"
         }
       },
-      "required": ["understanding", "context_findings", "initial_plan", "needs_more_context", "ready_for_task_breakdown"]
+      "required": ["strategic_synthesis", "context_insights", "refined_strategy", "needs_more_context", "requires_user_input", "strategic_readiness"]
     },
     "temperature": 0.6,
     "maxOutputTokens": 4096

@@ -278,10 +278,7 @@ fn deployment_routes() -> Router<HttpState> {
             "/analytics/recent-signups",
             get(api::analytics::get_recent_signups),
         )
-        .route(
-            "/token",
-            post(api::deployment::token::generate_token),
-        );
+        .route("/token", post(api::deployment::token::generate_token));
 
     #[cfg(feature = "console-api")]
     return Router::new().nest("/deployments/{deployment_id}", routes);
@@ -305,9 +302,9 @@ pub async fn create_router(state: HttpState) -> Router {
     #[cfg(feature = "console-api")]
     {
         router = router.merge(project_routes());
-        wacht_rs::init_from_env().await.unwrap();
+        wacht::init_from_env().await.unwrap();
 
-        use wacht_rs::middleware::AuthLayer;
+        use wacht::middleware::AuthLayer;
         let auth_layer = AuthLayer::new();
         let authenticated_deployment_routes = deployment_routes().layer(auth_layer);
 

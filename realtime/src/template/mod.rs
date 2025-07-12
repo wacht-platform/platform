@@ -23,6 +23,7 @@ impl AgentTemplates {
     pub const TASK_EXECUTION: &'static str = "task_execution_prompt";
     pub const VALIDATION: &'static str = "validation_prompt";
     pub const PARAMETER_GENERATION: &'static str = "parameter_generation_prompt";
+    pub const WORKFLOW_VALIDATION: &'static str = "workflow_validation_prompt";
 }
 
 pub fn render_template(

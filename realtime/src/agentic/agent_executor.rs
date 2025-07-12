@@ -2,7 +2,7 @@ use crate::agentic::{
     ContextEngineExecutor, ContextGatheringResponse, DecayManager, ExecutableTask, ExecutionAction,
     ExecutionStatus, IdeationResponse, LoopDecision, ParameterGenerationResponse,
     TaskBreakdownResponse, TaskExecutionResponse, TaskType, ToolExecutor, ValidationResponse,
-    WorkflowExecutor, gemini_client::GeminiClient, memory_manager::MemoryManager,
+    WorkflowExecutor, gemini_client::GeminiClient,
 };
 use crate::template::{AgentTemplates, render_template};
 use llm::chat::{ChatMessage, ChatRole, MessageType};
@@ -39,16 +39,21 @@ pub struct TaskExecutionResult {
     pub error: Option<String>,
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct WorkflowValidationResponse {
+    pub ready_to_execute: bool,
+    pub missing_requirements: Vec<String>,
+    pub validation_message: String,
+}
+
 pub struct AgentExecutor {
     pub agent: AiAgentWithFeatures,
     pub app_state: AppState,
     pub context_id: i64,
-    pub deployment_id: i64,
     pub current_tasks: Arc<Mutex<Vec<Task>>>,
     pub conversations: Vec<ChatMessage>,
     tool_executor: ToolExecutor,
     workflow_executor: WorkflowExecutor,
-    memory_manager: Arc<Mutex<MemoryManager>>,
     decay_manager: DecayManager,
     context_engine_executor: ContextEngineExecutor,
     channel: tokio::sync::mpsc::Sender<StreamEvent>,
@@ -58,32 +63,77 @@ pub struct AgentExecutor {
 impl AgentExecutor {
     pub async fn new(
         agent: AiAgentWithFeatures,
-        deployment_id: i64,
         context_id: i64,
         app_state: AppState,
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
     ) -> Result<Self, AppError> {
         let tool_executor = ToolExecutor::new(app_state.clone());
         let workflow_executor = WorkflowExecutor::new(app_state.clone());
-        let memory_manager = Arc::new(Mutex::new(MemoryManager::new(
-            context_id,
-            agent.id,
-            deployment_id,
-            app_state.clone(),
-        )));
         let decay_manager = DecayManager::new(app_state.clone());
         let context_engine_executor =
             ContextEngineExecutor::new(app_state.clone(), context_id, agent.id);
+
+        // Log agent capabilities
+        tracing::info!("🤖 Agent Executor initialized for agent: {} (ID: {})", agent.name, agent.id);
+        
+        // Log all tools
+        tracing::info!("🔧 Agent tools ({} total):", agent.tools.len());
+        for (idx, tool) in agent.tools.iter().enumerate() {
+            tracing::info!("  {}. {} - {}", idx + 1, tool.name, tool.description.as_deref().unwrap_or("No description"));
+            match &tool.configuration {
+                shared::models::AiToolConfiguration::Api(config) => {
+                    let method_str = match config.method {
+                        shared::models::HttpMethod::GET => "GET",
+                        shared::models::HttpMethod::POST => "POST",
+                        shared::models::HttpMethod::PUT => "PUT",
+                        shared::models::HttpMethod::DELETE => "DELETE",
+                        shared::models::HttpMethod::PATCH => "PATCH",
+                    };
+                    tracing::info!("     Type: API | Endpoint: {} | Method: {}", config.endpoint, method_str);
+                }
+                shared::models::AiToolConfiguration::KnowledgeBase(config) => {
+                    tracing::info!("     Type: Knowledge Base | KB ID: {}", config.knowledge_base_id);
+                }
+                shared::models::AiToolConfiguration::PlatformEvent(config) => {
+                    tracing::info!("     Type: Platform Event | Event: {}", config.event_label);
+                }
+                shared::models::AiToolConfiguration::PlatformFunction(config) => {
+                    tracing::info!("     Type: Platform Function | Function: {}", config.function_name);
+                }
+            }
+        }
+        
+        // Log all workflows
+        tracing::info!("⚡ Agent workflows ({} total):", agent.workflows.len());
+        for (idx, workflow) in agent.workflows.iter().enumerate() {
+            tracing::info!("  {}. {} - {}", 
+                idx + 1, 
+                workflow.name, 
+                workflow.description.as_deref().unwrap_or("No description")
+            );
+            tracing::info!("     Nodes: {} | Version: {}", 
+                workflow.workflow_definition.nodes.len(),
+                workflow.workflow_definition.version
+            );
+        }
+        
+        // Log knowledge bases
+        tracing::info!("📚 Agent knowledge bases ({} total):", agent.knowledge_bases.len());
+        for (idx, kb) in agent.knowledge_bases.iter().enumerate() {
+            tracing::info!("  {}. {} - {}", 
+                idx + 1, 
+                kb.name, 
+                kb.description.as_deref().unwrap_or("No description")
+            );
+        }
 
         Ok(Self {
             agent,
             app_state,
             context_id,
-            deployment_id,
             current_tasks: Arc::new(Mutex::new(Vec::new())),
             tool_executor,
             workflow_executor,
-            memory_manager,
             decay_manager,
             context_engine_executor,
             channel,
@@ -255,6 +305,8 @@ impl AgentExecutor {
     async fn execute_task_execution_loop(&mut self) -> Result<(), AppError> {
         const MAX_LOOP_ITERATIONS: usize = 5;
         let mut loop_iteration = 0;
+        let mut final_validation_response: Option<ValidationResponse> = None;
+        let mut previous_errors: Vec<String> = Vec::new();
         let user_request = self
             .conversations
             .last()
@@ -272,6 +324,36 @@ impl AgentExecutor {
 
             let ideation_response = self.execute_ideation_step(&user_request).await?;
 
+            // Check if user input is required during ideation
+            if ideation_response.requires_user_input {
+                if let Some(user_request_message) = &ideation_response.user_input_request {
+                    // Send user input request and wait for response
+                    let _ = self
+                        .channel
+                        .send(StreamEvent::Token(format!("❓ **User Input Required:** {}", user_request_message)))
+                        .await;
+                    
+                    // Store user input request in conversation
+                    let user_input_json = json!({
+                        "role": "assistant",
+                        "content": user_request_message,
+                        "message_type": "user_input_request",
+                        "timestamp": chrono::Utc::now()
+                    });
+
+                    self.store_conversation(
+                        ChatRole::Assistant,
+                        user_request_message,
+                        user_input_json,
+                        "assistant_task_execution",
+                    )
+                    .await?;
+
+                    // Return early - execution will continue when user responds
+                    return Ok(());
+                }
+            }
+
             let mut context_findings = Vec::new();
             if ideation_response.needs_more_iteration
                 && ideation_response.context_search_request.is_some()
@@ -281,14 +363,44 @@ impl AgentExecutor {
                     .execute_context_gathering_step(search_query, &ideation_response.execution_plan)
                     .await?;
 
-                context_findings = context_response.context_findings.clone();
+                // Check if user input is required during context gathering
+                if context_response.requires_user_input {
+                    if let Some(user_request_message) = &context_response.user_input_request {
+                        // Send user input request and wait for response
+                        let _ = self
+                            .channel
+                            .send(StreamEvent::Token(format!("❓ **User Input Required:** {}", user_request_message)))
+                            .await;
+                        
+                        // Store user input request in conversation
+                        let user_input_json = json!({
+                            "role": "assistant",
+                            "content": user_request_message,
+                            "message_type": "user_input_request",
+                            "timestamp": chrono::Utc::now()
+                        });
+
+                        self.store_conversation(
+                            ChatRole::Assistant,
+                            user_request_message,
+                            user_input_json,
+                            "assistant_task_execution",
+                        )
+                        .await?;
+
+                        // Return early - execution will continue when user responds
+                        return Ok(());
+                    }
+                }
+
+                context_findings = context_response.context_insights.clone();
 
                 let mut additional_iterations = 0;
                 let mut current_context_response = context_response;
                 while current_context_response.needs_more_context && additional_iterations < 2 {
                     additional_iterations += 1;
                     if let Some(additional_query) =
-                        &current_context_response.additional_context_request
+                        &current_context_response.strategic_context_request
                     {
                         current_context_response = self
                             .execute_context_gathering_step(
@@ -296,7 +408,38 @@ impl AgentExecutor {
                                 &ideation_response.execution_plan,
                             )
                             .await?;
-                        context_findings.extend(current_context_response.context_findings);
+
+                        // Check if user input is required during additional context gathering
+                        if current_context_response.requires_user_input {
+                            if let Some(user_request_message) = &current_context_response.user_input_request {
+                                // Send user input request and wait for response
+                                let _ = self
+                                    .channel
+                                    .send(StreamEvent::Token(format!("❓ **User Input Required:** {}", user_request_message)))
+                                    .await;
+                                
+                                // Store user input request in conversation
+                                let user_input_json = json!({
+                                    "role": "assistant",
+                                    "content": user_request_message,
+                                    "message_type": "user_input_request",
+                                    "timestamp": chrono::Utc::now()
+                                });
+
+                                self.store_conversation(
+                                    ChatRole::Assistant,
+                                    user_request_message,
+                                    user_input_json,
+                                    "assistant_task_execution",
+                                )
+                                .await?;
+
+                                // Return early - execution will continue when user responds
+                                return Ok(());
+                            }
+                        }
+
+                        context_findings.extend(current_context_response.context_insights);
                     }
                 }
             }
@@ -306,8 +449,25 @@ impl AgentExecutor {
                 .await?;
 
             let execution_results = self.execute_tasks(&task_breakdown.tasks).await?;
-
-            println!("{execution_results:?}");
+            
+            // Collect current errors
+            let current_errors: Vec<String> = execution_results
+                .iter()
+                .filter_map(|result| result.error.clone())
+                .collect();
+            
+            // Check for repeated identical errors (sign of unresolvable issues)
+            if !current_errors.is_empty() {
+                let error_signature = current_errors.join("|");
+                if previous_errors.contains(&error_signature) {
+                    // Same errors appearing again - likely unresolvable
+                    let _ = self
+                        .channel
+                        .send(StreamEvent::Token("⚠️ **Detected repeated identical errors - checking if resolvable...**".to_string()))
+                        .await;
+                }
+                previous_errors.push(error_signature);
+            }
 
             let validation_response = self
                 .execute_validation_step(
@@ -319,8 +479,6 @@ impl AgentExecutor {
                 )
                 .await?;
 
-            println!("{validation_response:?}");
-
             self.channel
                 .send(StreamEvent::Token(validation_response.user_message.clone()))
                 .await
@@ -328,10 +486,44 @@ impl AgentExecutor {
 
             match validation_response.loop_decision {
                 LoopDecision::Complete => {
+                    final_validation_response = Some(validation_response);
                     break;
+                }
+                LoopDecision::AbortUnresolvable => {
+                    // Send unresolvable error message immediately
+                    if let Some(error_details) = &validation_response.unresolvable_error_details {
+                        let _ = self
+                            .channel
+                            .send(StreamEvent::Token(format!("\n\n❌ **Execution Aborted - Unresolvable Errors**\n\n{}", error_details)))
+                            .await;
+                    } else {
+                        let _ = self
+                            .channel
+                            .send(StreamEvent::Token("\n\n❌ **Execution aborted due to unresolvable errors.**".to_string()))
+                            .await;
+                    }
+                    return Ok(());
                 }
                 LoopDecision::Continue => (),
             }
+        }
+
+        // Send final summary without success message
+        if let Some(final_response) = final_validation_response {
+            if let Some(final_summary) = &final_response.final_summary {
+                // Just send the summary without any success header
+                let _ = self
+                    .channel
+                    .send(StreamEvent::Token(format!("\n\n{}", final_summary)))
+                    .await;
+            }
+            // Don't send any completion message if no final_summary
+        } else {
+            // Loop ended without completion decision (max iterations reached)
+            let _ = self
+                .channel
+                .send(StreamEvent::Token("\n\n⚠️ **Task execution completed** (maximum iterations reached)".to_string()))
+                .await;
         }
 
         Ok(())
@@ -516,7 +708,7 @@ impl AgentExecutor {
             ChatRole::Assistant,
             &raw,
             breakdown_json,
-            "assistant_task_breakdown",
+            "assistant_task_execution",
         )
         .await?;
 
@@ -630,7 +822,7 @@ impl AgentExecutor {
                             ChatRole::Assistant,
                             &serde_json::to_string(&action_result).unwrap(),
                             action_result_json,
-                            "assistant_action_result",
+                            "assistant_task_execution",
                         )
                         .await?;
                         task_results.push(action_result);
@@ -792,20 +984,28 @@ impl AgentExecutor {
                         AppError::Internal("Workflow name not found in action details".to_string())
                     })?;
 
-                let _workflow = self
+                // Verify the workflow exists and clone it
+                let workflow = self
                     .agent
                     .workflows
                     .iter()
                     .find(|w| w.name == workflow_name)
                     .ok_or_else(|| {
                         AppError::NotFound(format!("Workflow {} not found", workflow_name))
-                    })?;
+                    })?
+                    .clone();
 
-                Ok(json!({
-                    "workflow_name": workflow_name,
-                    "status": "workflow_execution_not_implemented",
-                    "message": "Workflow execution is not yet implemented"
-                }))
+                // Prepare workflow call inputs from action details
+                let inputs = action.details.get("inputs").cloned().unwrap_or(json!({}));
+
+                let workflow_call = shared::dto::json::WorkflowCall {
+                    workflow_name: workflow_name.to_string(),
+                    inputs,
+                };
+
+                // Execute workflow with context gathering loop (following acknowledgment flow pattern)
+                self.execute_workflow_with_context_gathering(workflow_call, &workflow)
+                    .await
             }
             TaskType::KnowledgeSearch => {
                 let query = action
@@ -842,6 +1042,155 @@ impl AgentExecutor {
                 }))
             }
         }
+    }
+
+    async fn execute_workflow_with_context_gathering(
+        &mut self,
+        workflow_call: shared::dto::json::WorkflowCall,
+        workflow: &shared::models::AiWorkflow,
+    ) -> Result<Value, AppError> {
+        // Step 1: Validate workflow conditions
+        let validation_response = self
+            .validate_workflow_conditions(&workflow_call, workflow)
+            .await?;
+
+        if validation_response.ready_to_execute {
+            // Workflow is ready - execute directly
+            let result = self
+                .workflow_executor
+                .execute_workflow_task(
+                    &workflow_call,
+                    &self.agent.workflows,
+                    &[],
+                    self.channel.clone(),
+                )
+                .await?;
+
+            return Ok(json!({
+                "workflow_name": workflow_call.workflow_name,
+                "status": "completed",
+                "result": result
+            }));
+        }
+
+        // Step 2: Single-pass context gathering for missing requirements
+        if validation_response.missing_requirements.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "Workflow validation failed but no specific requirements identified: {}",
+                validation_response.validation_message
+            )));
+        }
+
+        // Gather context for each missing requirement
+        let mut gathered_context = json!({});
+        let mut context_found = false;
+
+        for requirement in &validation_response.missing_requirements {
+            match self.search_context(requirement).await {
+                Ok(search_results) => {
+                    if !search_results.is_empty() {
+                        let relevant_data = search_results
+                            .into_iter()
+                            .map(|r| r.content)
+                            .collect::<Vec<_>>()
+                            .join(" ");
+
+                        let context_key = requirement
+                            .to_lowercase()
+                            .replace(" ", "_")
+                            .replace("-", "_");
+                        gathered_context[context_key] = json!(relevant_data);
+                        context_found = true;
+                    }
+                }
+                Err(_) => {
+                    // Continue with other requirements even if one fails
+                }
+            }
+        }
+
+        // Step 3: Execute workflow with enhanced context or fail if no context found
+        if context_found {
+            let mut enhanced_inputs = workflow_call.inputs.clone();
+            if let Some(enhanced_obj) = enhanced_inputs.as_object_mut() {
+                for (key, value) in gathered_context.as_object().unwrap() {
+                    enhanced_obj.insert(key.clone(), value.clone());
+                }
+            }
+
+            let enhanced_workflow_call = shared::dto::json::WorkflowCall {
+                workflow_name: workflow_call.workflow_name.clone(),
+                inputs: enhanced_inputs,
+            };
+
+            let result = self
+                .workflow_executor
+                .execute_workflow_task(
+                    &enhanced_workflow_call,
+                    &self.agent.workflows,
+                    &[],
+                    self.channel.clone(),
+                )
+                .await?;
+
+            Ok(json!({
+                "workflow_name": workflow_call.workflow_name,
+                "status": "completed_with_context_gathering",
+                "result": result,
+                "gathered_context": gathered_context
+            }))
+        } else {
+            Err(AppError::BadRequest(format!(
+                "Unable to gather required context for workflow. Missing: {}",
+                validation_response.missing_requirements.join(", ")
+            )))
+        }
+    }
+
+    async fn validate_workflow_conditions(
+        &self,
+        workflow_call: &shared::dto::json::WorkflowCall,
+        workflow: &shared::models::AiWorkflow,
+    ) -> Result<WorkflowValidationResponse, AppError> {
+        // Find the trigger node to analyze its conditions
+        let trigger_node = workflow
+            .workflow_definition
+            .nodes
+            .iter()
+            .find(|node| matches!(node.node_type, shared::models::WorkflowNodeType::Trigger(_)))
+            .ok_or_else(|| AppError::BadRequest("No trigger node found in workflow".to_string()))?;
+
+        let trigger_config =
+            if let shared::models::WorkflowNodeType::Trigger(config) = &trigger_node.node_type {
+                config
+            } else {
+                return Err(AppError::Internal("Invalid trigger node type".to_string()));
+            };
+
+        // Create validation context
+        let validation_context = json!({
+            "workflow_name": workflow.name,
+            "workflow_description": workflow.description,
+            "trigger_description": trigger_config.description,
+            "trigger_condition": trigger_config.trigger_condition,
+            "current_inputs": workflow_call.inputs,
+            "available_data": workflow_call.inputs.as_object().map(|obj| obj.keys().collect::<Vec<_>>()).unwrap_or_default(),
+        });
+
+        // Use template system for validation prompt
+        let request_body = render_template(
+            crate::template::AgentTemplates::WORKFLOW_VALIDATION,
+            &validation_context,
+        )
+        .map_err(|e| AppError::Internal(format!("Template rendering failed: {}", e)))?;
+
+        // Use LLM for intelligent validation with structured generation
+        let (_, validation_result) = self
+            .create_weak_llm()?
+            .generate_structured_content::<WorkflowValidationResponse>(request_body)
+            .await?;
+
+        Ok(validation_result)
     }
 
     fn schema_fields_to_properties(fields: &[shared::models::SchemaField]) -> (Value, Vec<String>) {

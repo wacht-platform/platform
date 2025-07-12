@@ -42,4 +42,10 @@ pub fn register_all_templates(hb: &mut Handlebars) {
         include_str!("templates/parameter_generation_prompt.hbs"),
     )
     .expect("Failed to register parameter_generation_prompt template");
+
+    hb.register_template_string(
+        "workflow_validation_prompt",
+        include_str!("templates/workflow_validation_prompt.hbs"),
+    )
+    .expect("Failed to register workflow_validation_prompt template");
 }

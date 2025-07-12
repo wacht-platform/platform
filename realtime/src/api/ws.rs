@@ -104,17 +104,18 @@ async fn handle_client(
             loop {
                 tokio::select! {
                     _ = async {
-                        let consumer = consumer_stream
+                        // Message consumer
+                        let msg_consumer = consumer_stream
                             .create_consumer(jetstream::consumer::pull::Config {
-                                durable_name: Some(format!("{}", app_state.sf.next_id().unwrap())),
+                                durable_name: Some(format!("msg-{}", app_state.sf.next_id().unwrap())),
                                 filter_subject: format!("agent_execution_stream.msg:{}", active_msg),
                                 ..Default::default()
                             })
                             .await
                             .unwrap();
 
-                       let mut stream = consumer.messages().await.unwrap().take(100);
-                        while let Some(Ok(message)) = stream.next().await {
+                        let mut msg_stream = msg_consumer.messages().await.unwrap().take(100);
+                        while let Some(Ok(message)) = msg_stream.next().await {
                             let chunk = String::from_utf8(message.payload.to_vec()).unwrap();
                             let _ = sender.send(WebsocketMessage {
                                 message_id: None,
@@ -123,6 +124,60 @@ async fn handle_client(
                                     "chunk": chunk
                                 }),
                             });
+                            let _ = message.ack().await;
+                        }
+                    } => {}
+                    _ = async {
+                        // Platform event consumer
+                        let event_consumer = consumer_stream
+                            .create_consumer(jetstream::consumer::pull::Config {
+                                durable_name: Some(format!("event-{}", app_state.sf.next_id().unwrap())),
+                                filter_subject: format!("agent_execution_stream.event:{}", active_msg),
+                                ..Default::default()
+                            })
+                            .await
+                            .unwrap();
+
+                        let mut event_stream = event_consumer.messages().await.unwrap().take(100);
+                        while let Some(Ok(message)) = event_stream.next().await {
+                            if let Some(event_label) = message.headers.as_ref().and_then(|h| h.get("event_label")) {
+                                let event_data: serde_json::Value = serde_json::from_slice(&message.payload).unwrap_or(json!({}));
+                                let _ = sender.send(WebsocketMessage {
+                                    message_id: None,
+                                    message_type: WebsocketMessageType::PlatformEvent,
+                                    data: json!({
+                                        "event_label": event_label,
+                                        "event_data": event_data
+                                    }),
+                                });
+                            }
+                            let _ = message.ack().await;
+                        }
+                    } => {}
+                    _ = async {
+                        // Platform function consumer
+                        let func_consumer = consumer_stream
+                            .create_consumer(jetstream::consumer::pull::Config {
+                                durable_name: Some(format!("func-{}", app_state.sf.next_id().unwrap())),
+                                filter_subject: format!("agent_execution_stream.function:{}", active_msg),
+                                ..Default::default()
+                            })
+                            .await
+                            .unwrap();
+
+                        let mut func_stream = func_consumer.messages().await.unwrap().take(100);
+                        while let Some(Ok(message)) = func_stream.next().await {
+                            if let Some(function_name) = message.headers.as_ref().and_then(|h| h.get("function_name")) {
+                                let result: serde_json::Value = serde_json::from_slice(&message.payload).unwrap_or(json!({}));
+                                let _ = sender.send(WebsocketMessage {
+                                    message_id: None,
+                                    message_type: WebsocketMessageType::PlatformFunction,
+                                    data: json!({
+                                        "function_name": function_name,
+                                        "result": result
+                                    }),
+                                });
+                            }
                             let _ = message.ack().await;
                         }
                     } => {}
@@ -302,6 +357,17 @@ async fn handle_execution_message(
             let _ = AgentHandler::new(app_state)
                 .execute_agent_streaming(execution_request)
                 .await;
+        }
+        WebsocketMessageType::PlatformFunctionResult(execution_id, result) => {
+            // Send the function result back to the agent through NATS
+            let kv = app_state
+                .nats_jetstream
+                .get_key_value("agent_execution_kv".to_string())
+                .await
+                .unwrap();
+            
+            let result_key = format!("function_result:{}", execution_id);
+            let _ = kv.put(result_key, serde_json::to_vec(&result).unwrap().into()).await;
         }
         _ => {}
     };

@@ -32,6 +32,12 @@ pub enum WebsocketMessageType {
     SessionStatus(String),
     #[serde(rename = "close_connection")]
     CloseConnection,
+    #[serde(rename = "platform_event")]
+    PlatformEvent,
+    #[serde(rename = "platform_function")]
+    PlatformFunction,
+    #[serde(rename = "platform_function_result")]
+    PlatformFunctionResult(u64, serde_json::Value),
 }
 
 #[derive(Serialize, Deserialize, Clone)]
