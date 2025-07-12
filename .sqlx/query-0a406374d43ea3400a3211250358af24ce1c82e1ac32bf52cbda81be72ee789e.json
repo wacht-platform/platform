@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT d.id, d.backend_host, dk.private_key\n            FROM deployments d\n            JOIN deployment_key_pairs dk ON d.id = dk.deployment_id\n            WHERE d.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "backend_host",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "private_key",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0a406374d43ea3400a3211250358af24ce1c82e1ac32bf52cbda81be72ee789e"
+}
