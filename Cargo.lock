@@ -1673,22 +1673,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "eventsource-client"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43ddc25e1ad2cc0106d5e2d967397b4fb2068a66677ee9b0eea4600e5cfe8fb4"
-dependencies = [
- "futures",
- "hyper 0.14.32",
- "hyper-rustls 0.24.2",
- "hyper-timeout",
- "log",
- "pin-project",
- "rand 0.8.5",
- "tokio",
-]
-
-[[package]]
 name = "fancy-regex"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2251,18 +2235,6 @@ dependencies = [
  "tokio-rustls 0.26.2",
  "tower-service",
  "webpki-roots",
-]
-
-[[package]]
-name = "hyper-timeout"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbb958482e8c7be4bc3cf272a766a2b0bf1a6755e7a6ae777f017a31d11b13b1"
-dependencies = [
- "hyper 0.14.32",
- "pin-project-lite",
- "tokio",
- "tokio-io-timeout",
 ]
 
 [[package]]
@@ -3608,7 +3580,6 @@ dependencies = [
  "axum 0.8.1",
  "chrono",
  "dotenvy",
- "eventsource-client",
  "fastwebsockets",
  "futures",
  "handlebars",
@@ -4876,16 +4847,6 @@ dependencies = [
  "socket2",
  "tokio-macros",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "tokio-io-timeout"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30b74022ada614a1b4834de765f9bb43877f910cc8ce4be40e89042c9223a8bf"
-dependencies = [
- "pin-project-lite",
- "tokio",
 ]
 
 [[package]]

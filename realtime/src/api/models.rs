@@ -8,8 +8,8 @@ pub enum WebsocketMessageType {
     RequestContextResponse(u64),
     #[serde(rename = "message_input")]
     MessageInput(String),
-    #[serde(rename = "new_message_chunk")]
-    NewMessageChunk,
+    #[serde(rename = "conversation_message")]
+    ConversationMessage,
     #[serde(rename = "execution_complete")]
     ExecutionComplete(u64),
     #[serde(rename = "execution_interrupt")]

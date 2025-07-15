@@ -1,22 +1,21 @@
 use crate::{
     commands::Command,
     error::AppError,
-    models::{ConversationRecord, MemoryRecordV2},
+    models::{ConversationRecord, MemoryRecordV2, ConversationContent, ConversationMessageType},
     state::AppState,
 };
-use serde_json::Value;
 use chrono::Utc;
 use pgvector::Vector;
 
 pub struct CreateConversationCommand {
     pub id: i64,
     pub context_id: i64,
-    pub content: Value,  // Changed to JSON Value
-    pub message_type: String,
+    pub content: ConversationContent,  // Changed to typed content
+    pub message_type: ConversationMessageType,
 }
 
 impl CreateConversationCommand {
-    pub fn new(id: i64, context_id: i64, content: Value, message_type: String) -> Self {
+    pub fn new(id: i64, context_id: i64, content: ConversationContent, message_type: ConversationMessageType) -> Self {
         Self {
             id,
             context_id,
@@ -32,6 +31,20 @@ impl Command for CreateConversationCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let now = Utc::now();
 
+        // Convert typed content to JSON for database storage
+        let content_json = serde_json::to_value(&self.content)
+            .map_err(|e| AppError::Internal(format!("Failed to serialize content: {}", e)))?;
+        
+        // Convert enum to string for database storage  
+        let message_type_str = match self.message_type {
+            ConversationMessageType::UserMessage => "user_message",
+            ConversationMessageType::AgentResponse => "agent_response", 
+            ConversationMessageType::AssistantAcknowledgment => "assistant_acknowledgment",
+            ConversationMessageType::AssistantIdeation => "assistant_ideation",
+            ConversationMessageType::AssistantTaskExecution => "assistant_task_execution",
+            ConversationMessageType::AssistantValidation => "assistant_validation",
+        };
+
         let record = sqlx::query_as::<_, ConversationRecord>(
             r#"
             INSERT INTO conversations (
@@ -46,8 +59,8 @@ impl Command for CreateConversationCommand {
         .bind(self.id)
         .bind(self.context_id)
         .bind(now)
-        .bind(self.content)
-        .bind(self.message_type)
+        .bind(content_json)
+        .bind(message_type_str)
         .bind(now)
         .fetch_one(&app_state.db_pool)
         .await

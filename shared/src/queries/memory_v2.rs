@@ -1,6 +1,6 @@
 use crate::{
     error::AppError,
-    models::{ConversationRecord, MemoryRecordV2, MemoryBoundaries},
+    models::{ConversationRecord, MemoryBoundaries, MemoryRecordV2},
     queries::Query,
     state::AppState,
 };
@@ -21,9 +21,9 @@ impl Query for GetMRUMemoriesQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let records = sqlx::query_as::<_, MemoryRecordV2>(
             r#"
-            SELECT 
+            SELECT
                 id, content, embedding, memory_category,
-                base_temporal_score, access_count, 
+                base_temporal_score, access_count,
                 first_accessed_at, last_accessed_at,
                 citation_count, cross_context_value, learning_confidence,
                 relevance_score, usefulness_score,
@@ -35,7 +35,7 @@ impl Query for GetMRUMemoriesQuery {
             FROM memories
             ORDER BY last_accessed_at DESC
             LIMIT $1
-            "#
+            "#,
         )
         .bind(self.limit)
         .fetch_all(&app_state.db_pool)
@@ -53,20 +53,26 @@ pub struct GetRecentConversationsQuery {
     pub limit: i64,
 }
 
+impl GetRecentConversationsQuery {
+    pub fn new(context_id: i64, limit: i64) -> Self {
+        Self { context_id, limit }
+    }
+}
+
 impl Query for GetRecentConversationsQuery {
     type Output = Vec<ConversationRecord>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let records = sqlx::query_as::<_, ConversationRecord>(
             r#"
-            SELECT 
+            SELECT
                 id, context_id, timestamp, content, message_type,
                 created_at, updated_at
             FROM conversations
             WHERE context_id = $1
-            ORDER BY timestamp DESC
+            ORDER BY id DESC
             LIMIT $2
-            "#
+            "#,
         )
         .bind(self.context_id)
         .bind(self.limit)
@@ -89,7 +95,7 @@ impl crate::commands::Command for UpdateMemoryAccessCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         sqlx::query(
             r#"
-            UPDATE memories 
+            UPDATE memories
             SET access_count = access_count + 1,
                 last_accessed_at = NOW(),
                 base_temporal_score = calculate_base_decay(
@@ -102,7 +108,7 @@ impl crate::commands::Command for UpdateMemoryAccessCommand {
                     compression_level
                 )
             WHERE id = $1
-            "#
+            "#,
         )
         .bind(self.memory_id)
         .execute(&app_state.db_pool)
@@ -111,7 +117,6 @@ impl crate::commands::Command for UpdateMemoryAccessCommand {
         Ok(())
     }
 }
-
 
 /// Search memories with decay-adjusted scoring
 #[derive(Debug)]
@@ -132,10 +137,10 @@ impl Query for SearchMemoriesWithDecayQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let embedding = Vector::from(self.query_embedding.clone());
-        
+
         let results = sqlx::query!(
             r#"
-            SELECT 
+            SELECT
                 id, content, embedding as "embedding: Vector", memory_category,
                 base_temporal_score, access_count,
                 first_accessed_at, last_accessed_at,
@@ -210,14 +215,14 @@ impl Query for SearchConversationsQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let results = sqlx::query_as::<_, ConversationRecord>(
             r#"
-            SELECT 
+            SELECT
                 id, context_id, timestamp, content, message_type,
                 created_at, updated_at
             FROM conversations
             WHERE context_id = $1
             ORDER BY updated_at DESC
             LIMIT $2
-            "#
+            "#,
         )
         .bind(self.context_id)
         .bind(self.limit)
@@ -238,7 +243,7 @@ impl Query for GetAllMemoryBoundariesQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rows = sqlx::query(
             r#"
-            SELECT 
+            SELECT
                 context_id,
                 max_conversations,
                 max_memories_per_category,
@@ -247,12 +252,12 @@ impl Query for GetAllMemoryBoundariesQuery {
                 created_at,
                 updated_at
             FROM memory_boundaries
-            "#
+            "#,
         )
         .fetch_all(&app_state.db_pool)
         .await
         .map_err(AppError::from)?;
-        
+
         let mut boundaries = Vec::new();
         for row in rows {
             boundaries.push(MemoryBoundaries {
@@ -265,7 +270,7 @@ impl Query for GetAllMemoryBoundariesQuery {
                 updated_at: row.try_get("updated_at")?,
             });
         }
-        
+
         Ok(boundaries)
     }
 }
@@ -281,7 +286,7 @@ impl Query for GetMemoryBoundariesQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let row = sqlx::query(
             r#"
-            SELECT 
+            SELECT
                 context_id,
                 max_conversations,
                 max_memories_per_category,
@@ -291,13 +296,13 @@ impl Query for GetMemoryBoundariesQuery {
                 updated_at
             FROM memory_boundaries
             WHERE context_id = $1
-            "#
+            "#,
         )
         .bind(self.context_id)
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(AppError::from)?;
-        
+
         let boundaries = MemoryBoundaries {
             context_id: row.try_get("context_id")?,
             max_conversations: row.try_get("max_conversations")?,
@@ -307,7 +312,7 @@ impl Query for GetMemoryBoundariesQuery {
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
         };
-        
+
         Ok(boundaries)
     }
 }

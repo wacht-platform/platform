@@ -115,12 +115,15 @@ pub enum ConditionType {
 // Node-specific configurations
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TriggerNodeConfig {
-    pub description: String, // Natural language description of what data/conditions are needed for this workflow to run
-    pub trigger_condition: String, // Natural language condition that describes when this trigger should activate
+    #[serde(default)]
+    pub description: Option<String>, // Natural language description of what data/conditions are needed for this workflow to run
+    pub condition: String, // Natural language condition that describes when this trigger should activate
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ErrorHandlerNodeConfig {
+    #[serde(default)]
+    pub description: Option<String>,
     pub enable_retry: bool,
     pub max_retries: u32,
     pub retry_delay_seconds: u32,
@@ -131,6 +134,8 @@ pub struct ErrorHandlerNodeConfig {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LLMCallNodeConfig {
+    #[serde(default)]
+    pub description: Option<String>,
     pub prompt_template: String,
     pub response_format: ResponseFormat,
     pub json_schema: Vec<SchemaField>,
@@ -145,6 +150,8 @@ pub enum ResponseFormat {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SwitchNodeConfig {
+    #[serde(default)]
+    pub description: Option<String>,
     pub switch_condition: String,
     pub cases: Vec<SwitchCase>,
     pub default_case: bool,
@@ -167,6 +174,8 @@ pub struct SwitchCase {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ConditionNodeConfig {
+    #[serde(default)]
+    pub description: Option<String>,
     pub condition_type: ConditionEvaluationType,
     pub expression: String,
     pub true_path: Option<String>,
@@ -183,6 +192,8 @@ pub enum ConditionEvaluationType {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ToolCallNodeConfig {
+    #[serde(default)]
+    pub description: Option<String>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub tool_id: i64,
     pub input_parameters: HashMap<String, serde_json::Value>,
@@ -190,12 +201,16 @@ pub struct ToolCallNodeConfig {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct StoreContextNodeConfig {
+    #[serde(default)]
+    pub description: Option<String>,
     pub context_data: String,
     pub use_llm: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct FetchContextNodeConfig {
+    #[serde(default)]
+    pub description: Option<String>,
     pub context_data: String,
     pub use_llm: bool,
 }

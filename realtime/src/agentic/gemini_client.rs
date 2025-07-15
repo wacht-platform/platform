@@ -1,10 +1,6 @@
-use std::time::Duration;
-
-use eventsource_client::{self as es, Client, ReconnectOptions};
-use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
 use shared::error::AppError;
-use tracing::{debug, error};
+use tracing::error;
 
 const GEMINI_API_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -17,14 +13,12 @@ pub struct GeminiClient {
 // Request structures are now defined in templates as JSON
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct GeminiStreamResponse {
+pub struct GeminiResponse {
     pub candidates: Vec<Candidate>,
     #[serde(rename = "usageMetadata")]
     pub usage_metadata: Option<UsageMetadata>,
     #[serde(rename = "modelVersion")]
     pub model_version: Option<String>,
-    #[serde(rename = "responseId")]
-    pub response_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -71,65 +65,35 @@ impl GeminiClient {
     where
         T: for<'de> Deserialize<'de> + Serialize,
     {
-        let url = format!(
-            "{}/{}:streamGenerateContent?alt=sse",
-            GEMINI_API_BASE_URL, self.model
-        );
+        let url = format!("{}/{}:generateContent", GEMINI_API_BASE_URL, self.model);
 
-        let body = request_body;
-
-        let client = es::ClientBuilder::for_url(&url)
-            .map_err(|e| AppError::Internal(format!("Failed to build client: {}", e)))?
+        let mut response = match ureq::post(&url)
             .header("x-goog-api-key", &self.api_key)
-            .map_err(|e| AppError::Internal(format!("Failed to set API key header: {}", e)))?
             .header("Content-Type", "application/json")
-            .map_err(|e| AppError::Internal(format!("Failed to set Content-Type header: {}", e)))?
-            .method("POST".to_string())
-            .reconnect(ReconnectOptions::reconnect(false).build())
-            .read_timeout(Duration::from_secs(12000000))
-            .body(body)
-            .build();
+            .send(request_body.as_bytes())
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                error!("Failed to make Gemini API request: {}", e);
+                return Err(AppError::Internal(format!(
+                    "Gemini API request failed: {}",
+                    e
+                )));
+            }
+        };
 
+        let gemini_response: GeminiResponse = response.body_mut().read_json().map_err(|e| {
+            error!("Failed to read Gemini API response: {}", e);
+            AppError::Internal(format!("Failed to read response: {}", e))
+        })?;
+
+        // Extract text from all candidates
         let mut accumulated_text = String::new();
-
-        let mut stream = client
-            .stream()
-            .map_ok(|event| match event {
-                es::SSE::Event(ev) => {
-                    if ev.data.trim().is_empty() {
-                        return;
-                    }
-
-                    match serde_json::from_str::<GeminiStreamResponse>(&ev.data) {
-                        Ok(response) => {
-                            for candidate in &response.candidates {
-                                for part in &candidate.content.parts {
-                                    accumulated_text.push_str(&part.text);
-                                }
-                            }
-
-                            if response
-                                .candidates
-                                .iter()
-                                .any(|c| c.finish_reason.is_some())
-                            {}
-                        }
-                        Err(e) => {
-                            error!("Failed to parse SSE data: {}, data: {}", e, ev.data);
-                        }
-                    }
-                }
-                es::SSE::Comment(_) => {}
-                es::SSE::Connected(_) => {
-                    debug!("Connected to Gemini API");
-                }
-            })
-            .map_err(|err| {
-                tracing::error!("Gemini API streaming error: {:?}", err);
-                eprintln!("error streaming events: {:?}", err)
-            });
-
-        while let Ok(Some(_)) = stream.try_next().await {}
+        for candidate in &gemini_response.candidates {
+            for part in &candidate.content.parts {
+                accumulated_text.push_str(&part.text);
+            }
+        }
 
         if accumulated_text.is_empty() {
             return Err(AppError::Internal(
@@ -137,8 +101,12 @@ impl GeminiClient {
             ));
         }
 
+        // Parse the accumulated text as the expected type
         let parsed_response = serde_json::from_str::<T>(&accumulated_text).map_err(|e| {
-            tracing::error!("Failed to parse response: {}, Raw: {}", e, accumulated_text);
+            error!(
+                "Failed to parse structured response: {}, Raw: {}",
+                e, accumulated_text
+            );
             AppError::Internal(format!("Failed to parse structured response: {}", e))
         })?;
 

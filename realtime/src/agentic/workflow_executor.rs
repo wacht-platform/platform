@@ -6,8 +6,9 @@ use serde_json::{Value, json};
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
 use shared::models::{
-    AiWorkflow, ConditionEvaluationType, ConditionType, ExecutionContext, ExecutionStatus,
-    MemoryEntry, NodeExecution, ResponseFormat, WorkflowEdge, WorkflowNode, WorkflowNodeType,
+    AiWorkflow, ConditionEvaluationType, ConditionType, ConversationContent, ExecutionContext,
+    ExecutionStatus, MemoryEntry, NodeExecution, ResponseFormat, WorkflowEdge, WorkflowNode,
+    WorkflowNodeType,
 };
 use shared::queries::Query;
 use shared::state::AppState;
@@ -32,7 +33,6 @@ impl WorkflowExecutor {
         _memories: &[MemoryEntry],
         channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
-
         let workflow = workflows
             .iter()
             .find(|w| w.name == workflow_call.workflow_name)
@@ -42,7 +42,6 @@ impl WorkflowExecutor {
                     workflow_call.workflow_name
                 ))
             })?;
-
 
         // Execute the full workflow
         let result = self
@@ -63,13 +62,14 @@ impl WorkflowExecutor {
         input_data: Value,
         channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
-
         let mut execution_context = ExecutionContext::default();
 
         // Initialize variables with input data
         if let Some(input_obj) = input_data.as_object() {
             for (key, value) in input_obj {
-                execution_context.variables.insert(key.clone(), value.clone());
+                execution_context
+                    .variables
+                    .insert(key.clone(), value.clone());
             }
         }
 
@@ -123,7 +123,6 @@ impl WorkflowExecutor {
                 ));
             }
 
-
             // Record node execution start
             let mut node_execution = NodeExecution {
                 node_id: node.id.clone(),
@@ -141,12 +140,10 @@ impl WorkflowExecutor {
             // Execute the node based on its type
             let result = match &node.node_type {
                 WorkflowNodeType::Trigger(config) => {
-                    self.execute_trigger_node(config, context)
-                        .await
+                    self.execute_trigger_node(config, context).await
                 }
                 WorkflowNodeType::Condition(config) => {
-                    self.execute_condition_node(config, context)
-                        .await
+                    self.execute_condition_node(config, context).await
                 }
                 WorkflowNodeType::ErrorHandler(config) => {
                     self.execute_error_handler_node(
@@ -160,24 +157,18 @@ impl WorkflowExecutor {
                     .await
                 }
                 WorkflowNodeType::LLMCall(config) => {
-                    self.execute_llm_call_node(config, context)
-                        .await
+                    self.execute_llm_call_node(config, context).await
                 }
-                WorkflowNodeType::Switch(config) => {
-                    self.execute_switch_node(config, context)
-                        .await
-                }
+                WorkflowNodeType::Switch(config) => self.execute_switch_node(config, context).await,
                 WorkflowNodeType::ToolCall(config) => {
                     self.execute_tool_call_node(config, context, channel.clone())
                         .await
                 }
                 WorkflowNodeType::StoreContext(config) => {
-                    self.execute_store_context_node(config, context)
-                        .await
+                    self.execute_store_context_node(config, context).await
                 }
                 WorkflowNodeType::FetchContext(config) => {
-                    self.execute_fetch_context_node(config, context)
-                        .await
+                    self.execute_fetch_context_node(config, context).await
                 }
             };
 
@@ -280,7 +271,7 @@ impl WorkflowExecutor {
             "type": "trigger",
             "triggered": true,
             "description": config.description,
-            "trigger_condition": config.trigger_condition,
+            "trigger_condition": config.condition,
             "context": context.variables,
         }))
     }
@@ -353,7 +344,6 @@ impl WorkflowExecutor {
                                     retry_count + 1,
                                     e
                                 );
-                                let _ = channel.send(StreamEvent::Token(error_message)).await;
                             }
 
                             if retry_count < max_retries {
@@ -501,11 +491,6 @@ impl WorkflowExecutor {
         let result = tool_executor
             .execute_tool_immediately(&tool, json!(parameters))
             .await?;
-
-        // Send result through channel if needed
-        if let Ok(result_str) = serde_json::to_string(&result) {
-            let _ = channel.send(StreamEvent::Token(result_str)).await;
-        }
 
         Ok(result)
     }
@@ -801,7 +786,4 @@ impl WorkflowExecutor {
 
         Ok(false)
     }
-
-
 }
-

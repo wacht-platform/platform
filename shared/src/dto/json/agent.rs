@@ -1,12 +1,13 @@
+use crate::models::ConversationRecord;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StreamEvent {
-    Token(String),
     PlatformEvent(String, serde_json::Value),
     PlatformFunction(String, serde_json::Value),
+    ConversationMessage(ConversationRecord),
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]

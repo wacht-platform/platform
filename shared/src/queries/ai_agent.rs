@@ -268,7 +268,8 @@ impl Query for GetAiAgentByNameWithFeatures {
                         'updated_at', k.updated_at,
                         'name', k.name,
                         'description', k.description,
-                        'deployment_id', k.deployment_id::text
+                        'deployment_id', k.deployment_id::text,
+                        'configuration', k.configuration
                     )
                 ), '[]'::jsonb) as list
                 FROM ai_knowledge_bases k

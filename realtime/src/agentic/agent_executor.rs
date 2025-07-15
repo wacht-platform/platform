@@ -5,7 +5,6 @@ use crate::agentic::{
     WorkflowExecutor, gemini_client::GeminiClient,
 };
 use crate::template::{AgentTemplates, render_template};
-use llm::chat::{ChatMessage, ChatRole, MessageType};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use shared::commands::{Command, CreateConversationCommand};
@@ -13,7 +12,8 @@ use shared::dto::json::{StreamEvent, Task};
 use shared::error::AppError;
 use shared::models::{
     AiAgentWithFeatures, AiTool, AiToolConfiguration, ContextAction, ContextEngineParams,
-    ContextFilters, ContextSearchResult, MemoryRecordV2,
+    ContextFilters, ContextSearchResult, ConversationContent, ConversationMessageType,
+    ConversationRecord, MemoryRecordV2,
 };
 use shared::state::AppState;
 use std::sync::Arc;
@@ -51,13 +51,14 @@ pub struct AgentExecutor {
     pub app_state: AppState,
     pub context_id: i64,
     pub current_tasks: Arc<Mutex<Vec<Task>>>,
-    pub conversations: Vec<ChatMessage>,
+    pub conversations: Vec<ConversationRecord>,
     tool_executor: ToolExecutor,
     workflow_executor: WorkflowExecutor,
     decay_manager: DecayManager,
     context_engine_executor: ContextEngineExecutor,
     channel: tokio::sync::mpsc::Sender<StreamEvent>,
     memories: Vec<MemoryRecordV2>,
+    user_request: String,
 }
 
 impl AgentExecutor {
@@ -73,60 +74,6 @@ impl AgentExecutor {
         let context_engine_executor =
             ContextEngineExecutor::new(app_state.clone(), context_id, agent.id);
 
-        // Log agent capabilities
-        tracing::info!("🤖 Agent Executor initialized for agent: {} (ID: {})", agent.name, agent.id);
-        
-        // Log all tools
-        tracing::info!("🔧 Agent tools ({} total):", agent.tools.len());
-        for (idx, tool) in agent.tools.iter().enumerate() {
-            tracing::info!("  {}. {} - {}", idx + 1, tool.name, tool.description.as_deref().unwrap_or("No description"));
-            match &tool.configuration {
-                shared::models::AiToolConfiguration::Api(config) => {
-                    let method_str = match config.method {
-                        shared::models::HttpMethod::GET => "GET",
-                        shared::models::HttpMethod::POST => "POST",
-                        shared::models::HttpMethod::PUT => "PUT",
-                        shared::models::HttpMethod::DELETE => "DELETE",
-                        shared::models::HttpMethod::PATCH => "PATCH",
-                    };
-                    tracing::info!("     Type: API | Endpoint: {} | Method: {}", config.endpoint, method_str);
-                }
-                shared::models::AiToolConfiguration::KnowledgeBase(config) => {
-                    tracing::info!("     Type: Knowledge Base | KB ID: {}", config.knowledge_base_id);
-                }
-                shared::models::AiToolConfiguration::PlatformEvent(config) => {
-                    tracing::info!("     Type: Platform Event | Event: {}", config.event_label);
-                }
-                shared::models::AiToolConfiguration::PlatformFunction(config) => {
-                    tracing::info!("     Type: Platform Function | Function: {}", config.function_name);
-                }
-            }
-        }
-        
-        // Log all workflows
-        tracing::info!("⚡ Agent workflows ({} total):", agent.workflows.len());
-        for (idx, workflow) in agent.workflows.iter().enumerate() {
-            tracing::info!("  {}. {} - {}", 
-                idx + 1, 
-                workflow.name, 
-                workflow.description.as_deref().unwrap_or("No description")
-            );
-            tracing::info!("     Nodes: {} | Version: {}", 
-                workflow.workflow_definition.nodes.len(),
-                workflow.workflow_definition.version
-            );
-        }
-        
-        // Log knowledge bases
-        tracing::info!("📚 Agent knowledge bases ({} total):", agent.knowledge_bases.len());
-        for (idx, kb) in agent.knowledge_bases.iter().enumerate() {
-            tracing::info!("  {}. {} - {}", 
-                idx + 1, 
-                kb.name, 
-                kb.description.as_deref().unwrap_or("No description")
-            );
-        }
-
         Ok(Self {
             agent,
             app_state,
@@ -134,6 +81,7 @@ impl AgentExecutor {
             current_tasks: Arc::new(Mutex::new(Vec::new())),
             tool_executor,
             workflow_executor,
+            user_request: "".to_string(),
             decay_manager,
             context_engine_executor,
             channel,
@@ -148,7 +96,7 @@ impl AgentExecutor {
 
         Ok(GeminiClient::new(
             api_key,
-            Some("gemini-2.5-flash".to_string()),
+            Some("gemini-2.5-pro".to_string()),
         ))
     }
 
@@ -158,33 +106,38 @@ impl AgentExecutor {
 
         Ok(GeminiClient::new(
             api_key,
-            Some("gemini-2.5-flash-lite-preview-06-17".to_string()),
+            Some("gemini-2.5-flash".to_string()),
         ))
+    }
+
+    fn create_agent_response_content(&self, message: String) -> ConversationContent {
+        ConversationContent::AgentResponse {
+            response: message,
+            citations: Vec::new(),
+            context_used: Vec::new(),
+            timestamp: chrono::Utc::now(),
+        }
     }
 
     async fn store_conversation(
         &mut self,
-        role: ChatRole,
-        content: &str,
-        conversation_json: Value,
-        message_type: &str,
+        typed_content: shared::models::ConversationContent,
+        message_type: shared::models::ConversationMessageType,
     ) -> Result<(), AppError> {
-        // Add to local conversations array
-        self.conversations.push(ChatMessage {
-            content: content.to_string(),
-            role: role,
-            message_type: MessageType::Text,
-        });
-
-        // Store in database
-        CreateConversationCommand::new(
+        let message = CreateConversationCommand::new(
             self.app_state.sf.next_id()? as i64,
             self.context_id,
-            conversation_json,
-            message_type.to_string(),
+            typed_content.clone(),
+            message_type.clone(),
         )
         .execute(&self.app_state)
         .await?;
+        self.conversations.push(message.clone());
+
+        let _ = self
+            .channel
+            .send(StreamEvent::ConversationMessage(message))
+            .await;
 
         Ok(())
     }
@@ -193,62 +146,41 @@ impl AgentExecutor {
         self.conversations
             .iter()
             .map(|msg| {
-                let role = match msg.role {
-                    ChatRole::User => "user",
-                    ChatRole::Assistant => "model",
+                let role = match msg.message_type {
+                    ConversationMessageType::UserMessage => "user",
+                    _ => "model",
                 };
                 json!({
                     "role": role,
-                    "content": msg.content.clone()
+                    "content": serde_json::to_string(&msg.content).unwrap()
                 })
             })
             .collect()
     }
 
     pub async fn execute_with_streaming(&mut self, user_message: &str) -> Result<(), AppError> {
-        let user_message_json = json!({
-            "role": "user",
-            "content": user_message,
-            "timestamp": chrono::Utc::now()
-        });
-
-        self.store_conversation(
-            ChatRole::User,
-            user_message,
-            user_message_json,
-            "user_message",
-        )
-        .await?;
-
         let immediate_context = self
             .decay_manager
             .get_immediate_context(self.context_id)
             .await?;
 
         self.memories = immediate_context.memories;
-        self.conversations = immediate_context
-            .conversations
-            .iter()
-            .map(|v| {
-                let content = v
-                    .content
-                    .get("content")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("")
-                    .to_string();
+        self.conversations = immediate_context.conversations;
 
-                if v.message_type == "user_message" {
-                    ChatMessage::user().content(content).build()
-                } else {
-                    ChatMessage::assistant().content(content).build()
-                }
-            })
-            .collect::<Vec<_>>();
+        let user_content = ConversationContent::UserMessage {
+            message: user_message.to_string(),
+            timestamp: chrono::Utc::now(),
+        };
+
+        self.store_conversation(user_content, ConversationMessageType::UserMessage)
+            .await?;
 
         let acknowledgment_response = self.generate_acknowledgment().await?;
 
+        println!("{acknowledgment_response:?}");
+
         if acknowledgment_response.further_action_required {
-            self.execute_task_execution_loop().await?;
+            self.execute_task_execution_loop().await.unwrap();
         }
 
         Ok(())
@@ -267,36 +199,24 @@ impl AgentExecutor {
                 AppError::Internal(format!("Failed to render acknowledgment template: {}", e))
             })?;
 
-        let (raw, parsed) = self
+        let (_, parsed) = self
             .create_weak_llm()?
             .generate_structured_content::<AcknowledgmentResponse>(request_body)
             .await?;
 
-        let _ = self
-            .channel
-            .send(StreamEvent::Token(parsed.acknowledgment_message.clone()))
-            .await;
+        println!("{}", parsed.further_action_required);
 
-        self.conversations
-            .push(ChatMessage::assistant().content(raw.clone()).build());
+        let acknowledgment_content = ConversationContent::AssistantAcknowledgment {
+            acknowledgment_message: parsed.acknowledgment_message.clone(),
+            further_action_required: parsed.further_action_required,
+            reasoning: parsed.reasoning.clone(),
+            timestamp: chrono::Utc::now(),
+        };
 
-        // Store acknowledgment as JSON
-        let acknowledgment_json = json!({
-            "role": "assistant",
-            "content": parsed.acknowledgment_message.clone(),
-            "raw_response": raw,
-            "further_action_required": parsed.further_action_required,
-            "reasoning": parsed.reasoning,
-            "timestamp": chrono::Utc::now()
-        });
-
-        CreateConversationCommand::new(
-            self.app_state.sf.next_id()? as i64,
-            self.context_id,
-            acknowledgment_json,
-            "assistant_acknowledgment".to_string(),
+        self.store_conversation(
+            acknowledgment_content,
+            ConversationMessageType::AssistantAcknowledgment,
         )
-        .execute(&self.app_state)
         .await?;
 
         Ok(parsed)
@@ -307,45 +227,37 @@ impl AgentExecutor {
         let mut loop_iteration = 0;
         let mut final_validation_response: Option<ValidationResponse> = None;
         let mut previous_errors: Vec<String> = Vec::new();
-        let user_request = self
-            .conversations
-            .last()
-            .and_then(|msg| {
-                if msg.role == ChatRole::User {
-                    Some(msg.content.clone())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        println!("here hh");
 
         while loop_iteration < MAX_LOOP_ITERATIONS {
             loop_iteration += 1;
 
-            let ideation_response = self.execute_ideation_step(&user_request).await?;
+            println!("here h1");
 
-            // Check if user input is required during ideation
+            let ideation_response = self.execute_ideation_step().await.unwrap();
+
+            println!("here566768787");
+
             if ideation_response.requires_user_input {
                 if let Some(user_request_message) = &ideation_response.user_input_request {
                     // Send user input request and wait for response
-                    let _ = self
-                        .channel
-                        .send(StreamEvent::Token(format!("❓ **User Input Required:** {}", user_request_message)))
-                        .await;
-                    
+                    // TODO: Store user input request messages using store_conversation
+
                     // Store user input request in conversation
-                    let user_input_json = json!({
-                        "role": "assistant",
-                        "content": user_request_message,
-                        "message_type": "user_input_request",
-                        "timestamp": chrono::Utc::now()
-                    });
+                    let ideation_content = ConversationContent::AssistantIdeation {
+                        reasoning_summary: ideation_response.reasoning_summary.clone(),
+                        needs_more_iteration: ideation_response.needs_more_iteration,
+                        context_search_request: ideation_response.context_search_request.clone(),
+                        requires_user_input: ideation_response.requires_user_input,
+                        user_input_request: ideation_response.user_input_request.clone(),
+                        execution_plan: serde_json::to_value(&ideation_response.execution_plan)
+                            .unwrap_or_default(),
+                        timestamp: chrono::Utc::now(),
+                    };
 
                     self.store_conversation(
-                        ChatRole::Assistant,
-                        user_request_message,
-                        user_input_json,
-                        "assistant_task_execution",
+                        ideation_content,
+                        ConversationMessageType::AssistantIdeation,
                     )
                     .await?;
 
@@ -367,24 +279,24 @@ impl AgentExecutor {
                 if context_response.requires_user_input {
                     if let Some(user_request_message) = &context_response.user_input_request {
                         // Send user input request and wait for response
-                        let _ = self
-                            .channel
-                            .send(StreamEvent::Token(format!("❓ **User Input Required:** {}", user_request_message)))
-                            .await;
-                        
-                        // Store user input request in conversation
-                        let user_input_json = json!({
-                            "role": "assistant",
-                            "content": user_request_message,
-                            "message_type": "user_input_request",
-                            "timestamp": chrono::Utc::now()
-                        });
+                        // TODO: Store user input request messages using store_conversation
+
+                        // Store user input request during task execution
+                        // Since this is a request for user input during task execution, we'll use TaskExecution content
+                        let task_content = ConversationContent::AssistantTaskExecution {
+                            task_execution: json!({
+                                "approach": "Requesting user input",
+                                "actions": { "action": [] },
+                                "expected_result": user_request_message
+                            }),
+                            execution_status: "blocked".to_string(),
+                            blocking_reason: Some("Waiting for user input".to_string()),
+                            timestamp: chrono::Utc::now(),
+                        };
 
                         self.store_conversation(
-                            ChatRole::Assistant,
-                            user_request_message,
-                            user_input_json,
-                            "assistant_task_execution",
+                            task_content,
+                            ConversationMessageType::AssistantTaskExecution,
                         )
                         .await?;
 
@@ -411,26 +323,27 @@ impl AgentExecutor {
 
                         // Check if user input is required during additional context gathering
                         if current_context_response.requires_user_input {
-                            if let Some(user_request_message) = &current_context_response.user_input_request {
+                            if let Some(user_request_message) =
+                                &current_context_response.user_input_request
+                            {
                                 // Send user input request and wait for response
-                                let _ = self
-                                    .channel
-                                    .send(StreamEvent::Token(format!("❓ **User Input Required:** {}", user_request_message)))
-                                    .await;
-                                
-                                // Store user input request in conversation
-                                let user_input_json = json!({
-                                    "role": "assistant",
-                                    "content": user_request_message,
-                                    "message_type": "user_input_request",
-                                    "timestamp": chrono::Utc::now()
-                                });
+                                // TODO: Store user input request messages using store_conversation
+
+                                // Store user input request during task execution
+                                let task_content = ConversationContent::AssistantTaskExecution {
+                                    task_execution: json!({
+                                        "approach": "Requesting user input during workflow execution",
+                                        "actions": { "action": [] },
+                                        "expected_result": user_request_message
+                                    }),
+                                    execution_status: "blocked".to_string(),
+                                    blocking_reason: Some("Waiting for user input".to_string()),
+                                    timestamp: chrono::Utc::now(),
+                                };
 
                                 self.store_conversation(
-                                    ChatRole::Assistant,
-                                    user_request_message,
-                                    user_input_json,
-                                    "assistant_task_execution",
+                                    task_content,
+                                    ConversationMessageType::AssistantTaskExecution,
                                 )
                                 .await?;
 
@@ -449,29 +362,25 @@ impl AgentExecutor {
                 .await?;
 
             let execution_results = self.execute_tasks(&task_breakdown.tasks).await?;
-            
+
             // Collect current errors
             let current_errors: Vec<String> = execution_results
                 .iter()
                 .filter_map(|result| result.error.clone())
                 .collect();
-            
+
             // Check for repeated identical errors (sign of unresolvable issues)
             if !current_errors.is_empty() {
                 let error_signature = current_errors.join("|");
                 if previous_errors.contains(&error_signature) {
                     // Same errors appearing again - likely unresolvable
-                    let _ = self
-                        .channel
-                        .send(StreamEvent::Token("⚠️ **Detected repeated identical errors - checking if resolvable...**".to_string()))
-                        .await;
+                    // TODO: Consider storing error detection messages using store_conversation
                 }
                 previous_errors.push(error_signature);
             }
 
             let validation_response = self
                 .execute_validation_step(
-                    &user_request,
                     &ideation_response.execution_plan,
                     &execution_results,
                     loop_iteration,
@@ -479,10 +388,14 @@ impl AgentExecutor {
                 )
                 .await?;
 
-            self.channel
-                .send(StreamEvent::Token(validation_response.user_message.clone()))
-                .await
-                .map_err(|_| AppError::Internal("Failed to send message".to_string()))?;
+            // Send validation user message using store_conversation
+            if !validation_response.user_message.is_empty() {
+                self.store_conversation(
+                    self.create_agent_response_content(validation_response.user_message.clone()),
+                    ConversationMessageType::AgentResponse,
+                )
+                .await?;
+            }
 
             match validation_response.loop_decision {
                 LoopDecision::Complete => {
@@ -492,15 +405,7 @@ impl AgentExecutor {
                 LoopDecision::AbortUnresolvable => {
                     // Send unresolvable error message immediately
                     if let Some(error_details) = &validation_response.unresolvable_error_details {
-                        let _ = self
-                            .channel
-                            .send(StreamEvent::Token(format!("\n\n❌ **Execution Aborted - Unresolvable Errors**\n\n{}", error_details)))
-                            .await;
                     } else {
-                        let _ = self
-                            .channel
-                            .send(StreamEvent::Token("\n\n❌ **Execution aborted due to unresolvable errors.**".to_string()))
-                            .await;
                     }
                     return Ok(());
                 }
@@ -512,27 +417,22 @@ impl AgentExecutor {
         if let Some(final_response) = final_validation_response {
             if let Some(final_summary) = &final_response.final_summary {
                 // Just send the summary without any success header
-                let _ = self
-                    .channel
-                    .send(StreamEvent::Token(format!("\n\n{}", final_summary)))
-                    .await;
+                let summary_message = format!("\n\n{}", final_summary);
+                self.store_conversation(
+                    self.create_agent_response_content(summary_message.clone()),
+                    ConversationMessageType::AgentResponse,
+                )
+                .await?;
             }
             // Don't send any completion message if no final_summary
         } else {
             // Loop ended without completion decision (max iterations reached)
-            let _ = self
-                .channel
-                .send(StreamEvent::Token("\n\n⚠️ **Task execution completed** (maximum iterations reached)".to_string()))
-                .await;
         }
 
         Ok(())
     }
 
-    async fn execute_ideation_step(
-        &mut self,
-        _user_request: &str,
-    ) -> Result<IdeationResponse, AppError> {
+    async fn execute_ideation_step(&mut self) -> Result<IdeationResponse, AppError> {
         const MAX_ITERATIONS: usize = 3;
         let mut iteration = 0;
         let mut context_search_results: Vec<String> = Vec::new();
@@ -559,28 +459,26 @@ impl AgentExecutor {
                     AppError::Internal(format!("Failed to render ideation template: {}", e))
                 })?;
 
-            let (raw, parsed) = self
+            let (_, parsed) = self
                 .create_strong_llm()?
                 .generate_structured_content::<IdeationResponse>(request_body)
-                .await?;
+                .await
+                .unwrap();
 
-            let ideation_json = json!({
-                "role": "assistant",
-                "content": raw.clone(),
-                "ideation_response": parsed,
-                "iteration": iteration,
-                "timestamp": chrono::Utc::now()
-            });
+            let ideation_content = ConversationContent::AssistantIdeation {
+                reasoning_summary: parsed.reasoning_summary.clone(),
+                needs_more_iteration: parsed.needs_more_iteration,
+                context_search_request: parsed.context_search_request.clone(),
+                requires_user_input: parsed.requires_user_input,
+                user_input_request: parsed.user_input_request.clone(),
+                execution_plan: serde_json::to_value(&parsed.execution_plan).unwrap_or_default(),
+                timestamp: chrono::Utc::now(),
+            };
 
-            self.store_conversation(
-                ChatRole::Assistant,
-                &raw,
-                ideation_json,
-                "assistant_ideation",
-            )
-            .await?;
+            self.store_conversation(ideation_content, ConversationMessageType::AssistantIdeation)
+                .await
+                .unwrap();
 
-            // Handle context search if requested
             if parsed.needs_more_iteration && parsed.context_search_request.is_some() {
                 let search_query = parsed.context_search_request.as_ref().unwrap();
                 let search_results = self.search_context(search_query).await?;
@@ -645,30 +543,23 @@ impl AgentExecutor {
             ))
         })?;
 
-        let (raw, parsed) = self
+        let (_, parsed) = self
             .create_weak_llm()?
             .generate_structured_content::<ContextGatheringResponse>(request_body)
             .await?;
 
-        self.conversations
-            .push(ChatMessage::assistant().content(&raw).build());
+        let ideation_content = ConversationContent::AssistantIdeation {
+            reasoning_summary: format!("Context gathering for: {}", search_query),
+            needs_more_iteration: false,
+            context_search_request: Some(search_query.to_string()),
+            requires_user_input: false,
+            user_input_request: None,
+            execution_plan: serde_json::to_value(execution_plan).unwrap_or_default(),
+            timestamp: chrono::Utc::now(),
+        };
 
-        // Store context gathering response as JSON
-        let context_json = json!({
-            "role": "assistant",
-            "content": raw.clone(),
-            "context_gathering_response": parsed,
-            "timestamp": chrono::Utc::now()
-        });
-
-        CreateConversationCommand::new(
-            self.app_state.sf.next_id()? as i64,
-            self.context_id,
-            context_json,
-            "assistant_ideation".to_string(),
-        )
-        .execute(&self.app_state)
-        .await?;
+        self.store_conversation(ideation_content, ConversationMessageType::AssistantIdeation)
+            .await?;
 
         Ok(parsed)
     }
@@ -692,23 +583,32 @@ impl AgentExecutor {
                 AppError::Internal(format!("Failed to render task breakdown template: {}", e))
             })?;
 
-        let (raw, parsed) = self
+        let (_, parsed) = self
             .create_strong_llm()?
             .generate_structured_content::<TaskBreakdownResponse>(request_body)
             .await?;
 
-        let breakdown_json = json!({
-            "role": "assistant",
-            "content": raw.clone(),
-            "task_breakdown_response": parsed,
-            "timestamp": chrono::Utc::now()
-        });
+        // Store task breakdown as a task execution
+        let task_content = ConversationContent::AssistantTaskExecution {
+            task_execution: json!({
+                "approach": "Breaking down tasks for execution",
+                "actions": {
+                    "action": parsed.tasks.iter().map(|task| json!({
+                        "type": "tool_call",
+                        "details": task,
+                        "purpose": task.description.clone()
+                    })).collect::<Vec<_>>()
+                },
+                "expected_result": "Task breakdown completed"
+            }),
+            execution_status: "ready".to_string(),
+            blocking_reason: None,
+            timestamp: chrono::Utc::now(),
+        };
 
         self.store_conversation(
-            ChatRole::Assistant,
-            &raw,
-            breakdown_json,
-            "assistant_task_execution",
+            task_content,
+            ConversationMessageType::AssistantTaskExecution,
         )
         .await?;
 
@@ -782,25 +682,27 @@ impl AgentExecutor {
                 AppError::Internal(format!("Failed to render task execution template: {}", e))
             })?;
 
-        let (raw, parsed) = self
+        let (_, parsed) = self
             .create_weak_llm()?
             .generate_structured_content::<TaskExecutionResponse>(request_body)
             .await?;
 
-        let task_exec_json = json!({
-            "role": "assistant",
-            "content": raw.clone(),
-            "task_execution_response": parsed,
-            "task_id": task.id,
-            "task_name": task.name,
-            "timestamp": chrono::Utc::now()
-        });
+        // Store task execution response with typed content
+        let task_content = ConversationContent::AssistantTaskExecution {
+            task_execution: serde_json::to_value(&parsed.task_execution).unwrap_or_default(),
+            execution_status: match &parsed.execution_status {
+                ExecutionStatus::Ready => "ready",
+                ExecutionStatus::Blocked => "blocked",
+                ExecutionStatus::CannotExecute => "cannot_execute",
+            }
+            .to_string(),
+            blocking_reason: parsed.blocking_reason.clone(),
+            timestamp: chrono::Utc::now(),
+        };
 
         self.store_conversation(
-            ChatRole::Assistant,
-            &raw,
-            task_exec_json,
-            "assistant_task_execution",
+            task_content,
+            ConversationMessageType::AssistantTaskExecution,
         )
         .await?;
 
@@ -810,19 +712,20 @@ impl AgentExecutor {
             for action in &parsed.task_execution.actions.actions {
                 match self.execute_action(action, task, &parsed).await {
                     Ok(action_result) => {
-                        let action_result_json = json!({
-                            "role": "assistant",
-                            "content": serde_json::to_string(&action_result).unwrap(),
-                            "action_result": action_result.clone(),
-                            "task_id": task.id.clone(),
-                            "timestamp": chrono::Utc::now()
-                        });
+                        let action_result_content = ConversationContent::AssistantTaskExecution {
+                            task_execution: json!({
+                                "approach": format!("Executed action: {}", action.purpose),
+                                "actions": { "action": [action] },
+                                "expected_result": "Action completed"
+                            }),
+                            execution_status: "ready".to_string(),
+                            blocking_reason: None,
+                            timestamp: chrono::Utc::now(),
+                        };
 
                         self.store_conversation(
-                            ChatRole::Assistant,
-                            &serde_json::to_string(&action_result).unwrap(),
-                            action_result_json,
-                            "assistant_task_execution",
+                            action_result_content,
+                            ConversationMessageType::AssistantTaskExecution,
                         )
                         .await?;
                         task_results.push(action_result);
@@ -867,21 +770,20 @@ impl AgentExecutor {
 
     async fn execute_validation_step(
         &mut self,
-        user_request: &str,
         execution_plan: &crate::agentic::ExecutionPlan,
         execution_results: &[TaskExecutionResult],
         current_iteration: usize,
         max_iterations: usize,
     ) -> Result<ValidationResponse, AppError> {
         let validation_context = json!({
-            "user_request": user_request,
+            "user_request": self.user_request.clone(),
             "execution_plan": execution_plan,
             "executed_tasks": execution_results.iter().map(|r| json!({
                 "id": r.task_id,
                 "name": r.task_name,
                 "type": r.task_type,
                 "status": r.status,
-                "success_criteria": "Task specific criteria", // Would come from the actual task
+                "success_criteria": "Task specific criteria",
                 "result": r.result,
                 "error": r.error,
             })).collect::<Vec<_>>(),
@@ -895,37 +797,34 @@ impl AgentExecutor {
                 AppError::Internal(format!("Failed to render validation template: {}", e))
             })?;
 
-        println!("{request_body} {:?}", self.conversations);
-
-        let (raw, parsed) = self
+        let (_, parsed) = self
             .create_weak_llm()?
             .generate_structured_content::<ValidationResponse>(request_body)
             .await?;
 
-        // Store validation response as JSON
-        let validation_json = json!({
-            "role": "assistant",
-            "content": raw.clone(),
-            "validation_response": parsed,
-            "loop_iteration": current_iteration,
-            "timestamp": chrono::Utc::now()
-        });
+        // Store validation response with typed content
+        let validation_content = ConversationContent::AssistantValidation {
+            validation_result: serde_json::to_value(&parsed.validation_result).unwrap_or_default(),
+            loop_decision: match &parsed.loop_decision {
+                LoopDecision::Continue => "continue",
+                LoopDecision::Complete => "complete",
+                LoopDecision::AbortUnresolvable => "abort_unresolvable",
+            }
+            .to_string(),
+            decision_reasoning: parsed.decision_reasoning.clone(),
+            next_iteration_focus: parsed.next_iteration_focus.clone(),
+            final_summary: parsed.final_summary.clone(),
+            has_unresolvable_errors: parsed.has_unresolvable_errors,
+            unresolvable_error_details: parsed.unresolvable_error_details.clone(),
+            user_message: parsed.user_message.clone(),
+            timestamp: chrono::Utc::now(),
+        };
 
         self.store_conversation(
-            ChatRole::Assistant,
-            &raw,
-            validation_json,
-            "assistant_validation",
+            validation_content,
+            ConversationMessageType::AssistantValidation,
         )
         .await?;
-
-        // Send user message if present
-        if !parsed.user_message.is_empty() {
-            let _ = self
-                .channel
-                .send(StreamEvent::Token(parsed.user_message.clone()))
-                .await;
-        }
 
         Ok(parsed)
     }
@@ -1172,7 +1071,7 @@ impl AgentExecutor {
             "workflow_name": workflow.name,
             "workflow_description": workflow.description,
             "trigger_description": trigger_config.description,
-            "trigger_condition": trigger_config.trigger_condition,
+            "trigger_condition": trigger_config.condition,
             "current_inputs": workflow_call.inputs,
             "available_data": workflow_call.inputs.as_object().map(|obj| obj.keys().collect::<Vec<_>>()).unwrap_or_default(),
         });

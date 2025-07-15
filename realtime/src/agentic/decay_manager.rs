@@ -1,15 +1,14 @@
+use shared::commands::{CitationType, Command, UpdateCitationMetricsCommand};
 use shared::error::AppError;
 use shared::models::{
-    ConversationRecord, MemoryRecordV2, ImmediateContext, RefinedContext,
-    EnhancedCitation, MemoryWithScore,
+    ConversationRecord, EnhancedCitation, ImmediateContext, MemoryRecordV2, MemoryWithScore,
+    RefinedContext,
+};
+use shared::queries::{
+    GetMRUMemoriesQuery, GetRecentConversationsQuery, Query, SearchConversationsQuery,
+    SearchMemoriesWithDecayQuery, UpdateMemoryAccessCommand,
 };
 use shared::state::AppState;
-use shared::commands::{UpdateCitationMetricsCommand, CitationType, Command};
-use shared::queries::{
-    GetMRUMemoriesQuery, GetRecentConversationsQuery, Query,
-    SearchMemoriesWithDecayQuery, SearchConversationsQuery,
-    UpdateMemoryAccessCommand,
-};
 
 /// Manages decay-based memory retrieval with 2-phase approach
 pub struct DecayManager {
@@ -30,7 +29,7 @@ impl DecayManager {
         // Run both queries in parallel for maximum speed
         let (mru_memories, recent_conversations) = tokio::join!(
             self.get_mru_memories(20),
-            self.get_recent_conversations(context_id, 10)
+            self.get_recent_conversations(context_id, 100)
         );
 
         Ok(ImmediateContext {
@@ -61,7 +60,6 @@ impl DecayManager {
         .execute(&self.app_state)
         .await?;
 
-        // Reverse to get chronological order (oldest first)
         records.reverse();
 
         Ok(records)
@@ -70,16 +68,13 @@ impl DecayManager {
     /// Update access metrics when a memory is accessed (fire-and-forget)
     pub fn record_memory_access_async(&self, memory_id: i64) {
         let app_state = self.app_state.clone();
-        
+
         tokio::spawn(async move {
-            let _ = UpdateMemoryAccessCommand {
-                memory_id,
-            }
-            .execute(&app_state)
-            .await;
+            let _ = UpdateMemoryAccessCommand { memory_id }
+                .execute(&app_state)
+                .await;
         });
     }
-
 
     /// Phase 2: Refine context based on reasoning embedding
     pub async fn refine_context_from_reasoning(
@@ -95,7 +90,7 @@ impl DecayManager {
         }
         .execute(&self.app_state)
         .await?;
-        
+
         // Search conversations without decay scores
         let conversation_results = SearchConversationsQuery {
             context_id,
@@ -103,9 +98,10 @@ impl DecayManager {
         }
         .execute(&self.app_state)
         .await?;
-        
+
         Ok(RefinedContext {
-            relevant_memories: memory_results.into_iter()
+            relevant_memories: memory_results
+                .into_iter()
                 .map(|m| MemoryWithScore {
                     memory: m.memory,
                     similarity_score: m.similarity_score,

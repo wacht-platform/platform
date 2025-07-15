@@ -25,4 +25,3 @@ quick-xml = { version = "0.38.0", features = ["serialize"] }
 ureq = { version = "3.0.11", features = ["json"] }
 urlencoding = "2.1"
 regex = "1.10"
-eventsource-client = "0.13"
