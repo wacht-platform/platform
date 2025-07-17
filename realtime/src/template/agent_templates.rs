@@ -48,4 +48,22 @@ pub fn register_all_templates(hb: &mut Handlebars) {
         include_str!("templates/workflow_validation_prompt.hbs"),
     )
     .expect("Failed to register workflow_validation_prompt template");
+
+    hb.register_template_string(
+        "summary_prompt",
+        include_str!("templates/summary_prompt.hbs"),
+    )
+    .expect("Failed to register summary_prompt template");
+
+    hb.register_template_string(
+        "step_decision_prompt",
+        include_str!("templates/step_decision_prompt.hbs"),
+    )
+    .expect("Failed to register step_decision_prompt template");
+
+    hb.register_template_string(
+        "context_search_derivation_prompt",
+        include_str!("templates/context_search_derivation_prompt.hbs"),
+    )
+    .expect("Failed to register context_search_derivation_prompt template");
 }

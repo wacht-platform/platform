@@ -40,8 +40,11 @@ pub enum ConversationMessageType {
     AgentResponse,
     AssistantAcknowledgment,
     AssistantIdeation,
+    AssistantActionPlanning,
     AssistantTaskExecution,
     AssistantValidation,
+    SystemDecision,
+    ContextResults,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,19 +52,16 @@ pub enum ConversationMessageType {
 pub enum ConversationContent {
     UserMessage {
         message: String,
-        timestamp: DateTime<Utc>,
     },
     AgentResponse {
         response: String,
         citations: Vec<EnhancedCitation>,
         context_used: Vec<String>,
-        timestamp: DateTime<Utc>,
     },
     AssistantAcknowledgment {
         acknowledgment_message: String,
         further_action_required: bool,
         reasoning: String,
-        timestamp: DateTime<Utc>,
     },
     AssistantIdeation {
         reasoning_summary: String,
@@ -69,24 +69,35 @@ pub enum ConversationContent {
         context_search_request: Option<String>,
         requires_user_input: bool,
         user_input_request: Option<String>,
-        execution_plan: Value, // Store as JSON to avoid type conflicts
-        timestamp: DateTime<Utc>,
+        execution_plan: Value,
+    },
+    AssistantActionPlanning {
+        task_execution: Value,
+        execution_status: String,
+        blocking_reason: Option<String>,
     },
     AssistantTaskExecution {
-        task_execution: Value,    // Store as JSON to avoid type conflicts
-        execution_status: String, // "ready", "blocked", "cannot_execute"
+        task_execution: Value,
+        execution_status: String,
         blocking_reason: Option<String>,
-        timestamp: DateTime<Utc>,
     },
     AssistantValidation {
-        validation_result: Value, // Store as JSON to avoid type conflicts
-        loop_decision: String,    // "continue", "complete", "abort_unresolvable"
+        validation_result: Value,
+        loop_decision: String,
         decision_reasoning: String,
         next_iteration_focus: Option<String>,
-        final_summary: Option<String>,
         has_unresolvable_errors: bool,
         unresolvable_error_details: Option<String>,
-        user_message: String,
+    },
+    SystemDecision {
+        step: String,
+        reasoning: String,
+        confidence: f32,
+    },
+    ContextResults {
+        query: String,
+        results: Value,
+        result_count: usize,
         timestamp: DateTime<Utc>,
     },
 }
@@ -113,8 +124,11 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             "agent_response" => ConversationMessageType::AgentResponse,
             "assistant_acknowledgment" => ConversationMessageType::AssistantAcknowledgment,
             "assistant_ideation" => ConversationMessageType::AssistantIdeation,
+            "assistant_action_planning" => ConversationMessageType::AssistantActionPlanning,
             "assistant_task_execution" => ConversationMessageType::AssistantTaskExecution,
             "assistant_validation" => ConversationMessageType::AssistantValidation,
+            "system_decision" => ConversationMessageType::SystemDecision,
+            "context_results" => ConversationMessageType::ContextResults,
             _ => {
                 return Err(sqlx::Error::ColumnDecode {
                     index: "message_type".to_string(),

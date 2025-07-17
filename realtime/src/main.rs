@@ -14,12 +14,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
-        ))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    // tracing_subscriber::registry()
+    //     .with(tracing_subscriber::EnvFilter::new(
+    //         std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
+    //     ))
+    //     .with(tracing_subscriber::fmt::layer())
+    //     .init();
 
     let app = application::new(AppState::new_from_env().await?);
 

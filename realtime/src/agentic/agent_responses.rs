@@ -15,18 +15,15 @@ pub struct IdeationResponse {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ExecutionPlan {
-    pub strategic_guidance: String,
     pub analysis: PlanAnalysis,
-    #[serde(rename = "task")]
-    pub tasks: Vec<PlannedTask>,
     pub success_criteria: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct PlanAnalysis {
-    pub problem_analysis: String,
-    pub complexity_assessment: String,
-    pub strategic_rationale: String,
+    pub understanding: String,
+    pub approach: String,
+    pub tradeoffs: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -170,12 +167,19 @@ pub struct ValidationResponse {
     pub decision_reasoning: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_iteration_focus: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub final_summary: Option<String>,
     pub has_unresolvable_errors: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unresolvable_error_details: Option<String>,
-    pub user_message: String,
+    pub detected_error_patterns: Vec<ErrorPattern>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ErrorPattern {
+    pub error_type: String,
+    pub occurrences: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_seen: Option<String>,
+    pub is_recurring: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -216,4 +220,40 @@ pub struct ParameterGeneration {
     pub can_generate: bool,
     pub missing_information: Vec<String>,
     pub parameters: Value,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ContextSearchDerivation {
+    pub search_query: String,
+    pub search_scope: SearchScope,
+    pub search_rationale: String,
+    pub filters: ContextSearchFilters,
+    pub alternative_queries: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchScope {
+    KnowledgeBase,
+    Memory,
+    AllSources,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ContextSearchFilters {
+    pub max_results: i32,
+    pub min_relevance: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boost_keywords: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_range: Option<String>,
+    pub search_mode: SearchModeType,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchModeType {
+    Semantic,
+    Keyword,
+    Hybrid,
 }

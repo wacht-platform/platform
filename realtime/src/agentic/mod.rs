@@ -9,13 +9,13 @@ pub mod json_parser;
 pub mod memory_boundaries;
 pub mod memory_consolidator;
 pub mod memory_manager;
-pub mod message_parser;
+pub mod shared_context;
 pub mod tool_executor;
 pub mod workflow_executor;
 
 pub use agent_executor::*;
 pub use agent_responses::*;
-pub use context_engine_executor::*;
 pub use decay_manager::*;
+pub use shared_context::*;
 pub use tool_executor::*;
 pub use workflow_executor::*;

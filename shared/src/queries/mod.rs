@@ -46,6 +46,8 @@ pub mod agent_message_similarity;
 pub mod ai_knowledge_base;
 pub mod ai_tool;
 pub mod ai_workflow;
+pub mod hybrid_search;
+pub mod debug_kb_search;
 
 pub use b2b::*;
 pub use deployment::*;
@@ -68,3 +70,5 @@ pub use ai_memory::*;
 pub use memory_v2::*;
 pub use ai_tool::*;
 pub use ai_workflow::*;
+pub use hybrid_search::*;
+pub use debug_kb_search::*;

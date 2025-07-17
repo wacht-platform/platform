@@ -1,4 +1,5 @@
 use crate::agentic::AgentExecutor;
+use chrono::Utc;
 use futures::StreamExt;
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
@@ -13,7 +14,6 @@ pub struct AgentHandler {
 #[derive(Clone)]
 pub struct ExecutionRequest {
     pub agent: AiAgentWithFeatures,
-    pub deployment_id: i64,
     pub user_message: String,
     pub context_id: i64,
 }
@@ -24,11 +24,10 @@ impl AgentHandler {
     }
 
     pub async fn execute_agent_streaming(&self, request: ExecutionRequest) -> Result<(), AppError> {
-        let (sender, receiver) = tokio::sync::mpsc::channel::<StreamEvent>(10);
+        let (sender, receiver) = tokio::sync::mpsc::channel::<StreamEvent>(100);
         let execution_id = self.app_state.sf.next_id()? as i64;
         let context_key = request.context_id.to_string();
 
-        // Initialize agent executor
         let agent_executor = AgentExecutor::new(
             request.agent,
             request.context_id,
@@ -37,14 +36,13 @@ impl AgentHandler {
         )
         .await?;
 
-        // Set up NATS key-value store and watcher
         let kv = self.get_key_value_store().await?;
         let watch = self.create_watcher(&kv, &context_key).await?;
-
-        // Spawn message publisher task
         self.spawn_message_publisher(receiver, context_key.clone());
+        
+        // Yield to ensure the spawned task starts running
+        tokio::task::yield_now().await;
 
-        // Store execution ID and run agent
         let execution_result = self
             .run_agent_execution(
                 &kv,
@@ -56,7 +54,6 @@ impl AgentHandler {
             )
             .await;
 
-        // Clean up key-value entry
         if let Err(e) = kv.delete(&context_key).await {
             warn!("Failed to delete execution key: {}", e);
         }
@@ -88,13 +85,29 @@ impl AgentHandler {
         context_key: String,
     ) {
         let jetstream = self.app_state.nats_jetstream.clone();
+        println!("Spawning message publisher task at: {}", Utc::now());
 
         tokio::spawn(async move {
+            println!("Message publisher task started at: {}", Utc::now());
+            let mut message_count = 0;
             while let Some(message) = receiver.recv().await {
+                message_count += 1;
+                let receive_time = Utc::now();
+                println!("Message #{} received from channel at: {}", message_count, receive_time);
+                
+                // Check channel queue size
+                println!("Channel queue size after receive: {}", receiver.len());
+                
                 if let Err(e) = publish_stream_event(&jetstream, &context_key, message).await {
                     error!("Failed to publish message: {}", e);
+                } else {
+                    println!(
+                        "Total channel->NATS time: {}ms",
+                        (Utc::now() - receive_time).num_milliseconds()
+                    );
                 }
             }
+            println!("Channel receiver loop ended");
         });
     }
 
@@ -107,12 +120,10 @@ impl AgentHandler {
         user_message: &str,
         mut watch: async_nats::jetstream::kv::Watch,
     ) -> Result<(), AppError> {
-        // Store the execution ID
         kv.put(context_key, execution_id.to_string().into())
             .await
             .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {}", e)))?;
 
-        // Run the agent execution with cancellation support
         tokio::select! {
             result = agent_executor.execute_with_streaming(user_message) => {
                 result
@@ -131,7 +142,6 @@ async fn publish_stream_event(
     event: StreamEvent,
 ) -> Result<(), AppError> {
     let StreamEvent::ConversationMessage(conversation_content) = event else {
-        // Other event types are not published to NATS
         return Ok(());
     };
 
@@ -139,10 +149,19 @@ async fn publish_stream_event(
     let payload = serde_json::to_vec(&conversation_content)
         .map_err(|e| AppError::Internal(format!("Failed to serialize message: {}", e)))?;
 
+    let start = Utc::now();
+    println!("Publishing to NATS subject: {} at {}", subject, start);
+    
     jetstream
         .publish(subject, payload.into())
         .await
         .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;
+
+    println!(
+        "NATS publish took: {}ms, published at: {}",
+        (Utc::now() - start).num_milliseconds(),
+        Utc::now()
+    );
 
     Ok(())
 }
@@ -151,15 +170,19 @@ async fn watch_for_cancellation(
     watch: &mut async_nats::jetstream::kv::Watch,
     current_execution_id: i64,
 ) {
-    while let Some(Ok(entry)) = watch.next().await {
-        let Ok(stored_id) = String::from_utf8(entry.value.to_vec()) else {
-            error!("Failed to parse execution ID from watch");
-            return;
-        };
+    loop {
+        while let Some(Ok(entry)) = watch.next().await {
+            let Ok(stored_id) = String::from_utf8(entry.value.to_vec()) else {
+                error!("Failed to parse execution ID from watch");
+                return;
+            };
 
-        if stored_id != current_execution_id.to_string() {
-            // Different execution ID means this execution should be cancelled
-            return;
+            println!("stored id {stored_id} current execution id {current_execution_id}");
+
+            if stored_id != current_execution_id.to_string() {
+                println!("cancelling stuff");
+                return;
+            }
         }
     }
 }

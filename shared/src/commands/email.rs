@@ -79,7 +79,9 @@ impl Command for SendEmailCommand {
             &subject,
             &body_html,
             Some(&body_text),
-        ) {
+        )
+        .await
+        {
             Ok(response) => {
                 tracing::info!(
                     "Email sent successfully via Postmark: {} -> {} (Message ID: {})",

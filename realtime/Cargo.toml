@@ -22,6 +22,6 @@ handlebars = "6.2.0"
 tracing = "0.1"
 tiktoken-rs = "0.5"
 quick-xml = { version = "0.38.0", features = ["serialize"] }
-ureq = { version = "3.0.11", features = ["json"] }
+reqwest = { version = "0.12", features = ["json"] }
 urlencoding = "2.1"
 regex = "1.10"

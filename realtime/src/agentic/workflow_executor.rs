@@ -1,3 +1,4 @@
+use crate::agentic::SharedExecutionContext;
 use chrono::Utc;
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
@@ -6,24 +7,23 @@ use serde_json::{Value, json};
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
 use shared::models::{
-    AiWorkflow, ConditionEvaluationType, ConditionType, ConversationContent, ExecutionContext,
+    AiWorkflow, ConditionEvaluationType, ConditionType, ExecutionContext,
     ExecutionStatus, MemoryEntry, NodeExecution, ResponseFormat, WorkflowEdge, WorkflowNode,
-    WorkflowNodeType,
+    WorkflowNodeType, ContextAction, ContextEngineParams, ContextFilters,
 };
 use shared::queries::Query;
-use shared::state::AppState;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use tokio::sync::mpsc::Sender;
 
 pub struct WorkflowExecutor {
-    app_state: AppState,
+    shared_context: SharedExecutionContext,
 }
 
 impl WorkflowExecutor {
-    pub fn new(app_state: AppState) -> Self {
-        Self { app_state }
+    pub fn new(shared_context: SharedExecutionContext) -> Self {
+        Self { shared_context }
     }
 
     pub async fn execute_workflow_task(
@@ -43,7 +43,7 @@ impl WorkflowExecutor {
                 ))
             })?;
 
-        // Execute the full workflow
+        // Execute the full workflow with context support
         let result = self
             .execute_workflow(workflow, workflow_call.inputs.clone(), channel)
             .await;
@@ -54,6 +54,55 @@ impl WorkflowExecutor {
         }
 
         result
+    }
+
+    /// Execute a workflow with context search capability
+    pub async fn execute_workflow_with_context(
+        &self,
+        workflow_call: &shared::dto::json::WorkflowCall,
+        workflow: &AiWorkflow,
+        channel: Sender<StreamEvent>,
+        context_query: Option<String>,
+    ) -> Result<Value, AppError> {
+        let mut inputs = workflow_call.inputs.clone();
+
+        // If context query is provided, search for relevant context first
+        if let Some(query) = context_query {
+            let params = ContextEngineParams {
+                query,
+                action: ContextAction::SearchAll,
+                filters: Some(ContextFilters {
+                    max_results: 10,
+                    min_relevance: 0.7,
+                    time_range: None,
+                    search_mode: shared::models::SearchMode::default(),
+                    boost_keywords: None,
+                }),
+            };
+
+            match self.shared_context.context_engine().execute(params).await {
+                Ok(results) => {
+                    // Add context results to workflow inputs
+                    if let Some(inputs_obj) = inputs.as_object_mut() {
+                        inputs_obj.insert(
+                            "_context".to_string(),
+                            json!(results.into_iter().map(|r| json!({
+                                "content": r.content,
+                                "relevance": r.relevance_score,
+                                "source": format!("{:?}", r.source),
+                                "metadata": r.metadata,
+                            })).collect::<Vec<_>>()),
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Context search failed: {}", e);
+                }
+            }
+        }
+
+        // Execute the workflow with enhanced inputs
+        self.execute_workflow(workflow, inputs, channel).await
     }
 
     pub async fn execute_workflow(
@@ -338,7 +387,7 @@ impl WorkflowExecutor {
                         Err(e) => {
                             if config.log_errors {
                                 // Send error information through channel for real-time feedback
-                                let error_message = format!(
+                                let _error_message = format!(
                                     "Workflow node '{}' failed on attempt {}: {}",
                                     &node.id,
                                     retry_count + 1,
@@ -454,11 +503,11 @@ impl WorkflowExecutor {
         &self,
         config: &shared::models::ToolCallNodeConfig,
         context: &ExecutionContext,
-        channel: Sender<StreamEvent>,
+        _channel: Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
         // Get tool from database
         let tool = shared::queries::GetToolByIdQuery::new(config.tool_id)
-            .execute(&self.app_state)
+            .execute(self.shared_context.app_state())
             .await?;
 
         let mut parameters = HashMap::new();
@@ -485,7 +534,7 @@ impl WorkflowExecutor {
         }
 
         // Create tool executor and execute
-        let tool_executor = super::tool_executor::ToolExecutor::new(self.app_state.clone());
+        let tool_executor = super::tool_executor::ToolExecutor::new(self.shared_context.clone());
 
         // Execute the tool immediately and return the result
         let result = tool_executor

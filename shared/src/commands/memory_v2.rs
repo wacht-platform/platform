@@ -41,8 +41,11 @@ impl Command for CreateConversationCommand {
             ConversationMessageType::AgentResponse => "agent_response", 
             ConversationMessageType::AssistantAcknowledgment => "assistant_acknowledgment",
             ConversationMessageType::AssistantIdeation => "assistant_ideation",
+            ConversationMessageType::AssistantActionPlanning => "assistant_action_planning",
             ConversationMessageType::AssistantTaskExecution => "assistant_task_execution",
             ConversationMessageType::AssistantValidation => "assistant_validation",
+            ConversationMessageType::SystemDecision => "system_decision",
+            ConversationMessageType::ContextResults => "context_results",
         };
 
         let record = sqlx::query_as::<_, ConversationRecord>(

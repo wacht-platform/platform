@@ -4,7 +4,9 @@ use chrono::Utc;
 use serde::Deserialize;
 
 #[derive(Clone)]
-pub struct DnsVerificationService {}
+pub struct DnsVerificationService {
+    client: reqwest::Client,
+}
 
 #[derive(Deserialize)]
 struct DnsResponse {
@@ -19,10 +21,11 @@ struct DnsAnswer {
 
 impl DnsVerificationService {
     pub fn new() -> Self {
-        Self {}
+        let client = reqwest::Client::new();
+        Self { client }
     }
 
-    pub fn verify_dns_record(&self, record: &DnsRecord) -> Result<bool, AppError> {
+    pub async fn verify_dns_record(&self, record: &DnsRecord) -> Result<bool, AppError> {
         let record_type_num = match record.record_type.as_str() {
             "A" => 1,
             "CNAME" => 5,
@@ -41,14 +44,16 @@ impl DnsVerificationService {
             record.name, record_type_num
         );
 
-        let mut response = ureq::get(&url)
+        let response = self.client
+            .get(&url)
             .header("Accept", "application/dns-json")
-            .call()
+            .send()
+            .await
             .map_err(|e| AppError::External(format!("DNS query failed: {}", e)))?;
 
         let dns_response: DnsResponse = response
-            .body_mut()
-            .read_json()
+            .json()
+            .await
             .map_err(|e| AppError::External(format!("Failed to parse DNS response: {}", e)))?;
 
         if let Some(answers) = dns_response.answer {
@@ -87,7 +92,7 @@ impl DnsVerificationService {
         }
     }
 
-    pub fn verify_domain_records(
+    pub async fn verify_domain_records(
         &self,
         records: &mut DomainVerificationRecords,
         cloudflare_service: &crate::services::cloudflare::CloudflareService,
@@ -102,7 +107,7 @@ impl DnsVerificationService {
 
             // First try checking as a custom hostname (for domains like accounts.wacht.dev)
             tracing::info!("Attempting custom hostname check for: {}", record.name);
-            match cloudflare_service.check_custom_hostname_status(&record.name) {
+            match cloudflare_service.check_custom_hostname_status(&record.name).await {
                 Ok(verified) => {
                     record.verified = verified;
                     if verified {
@@ -122,7 +127,7 @@ impl DnsVerificationService {
                     );
 
                     // Fallback to checking DNS records
-                    match cloudflare_service.check_domain_verification_status(&record.name) {
+                    match cloudflare_service.check_domain_verification_status(&record.name).await {
                         Ok(verified) => {
                             record.verified = verified;
                             if verified {
@@ -141,7 +146,7 @@ impl DnsVerificationService {
                                 dns_e
                             );
                             // Final fallback to manual DNS lookup
-                            match self.verify_dns_record(record) {
+                            match self.verify_dns_record(record).await {
                                 Ok(verified) => {
                                     record.verified = verified;
                                     if verified {
@@ -179,7 +184,7 @@ impl DnsVerificationService {
             record.verification_attempted_at = Some(Utc::now());
 
             // Use Cloudflare API to check custom hostname status
-            match cloudflare_service.check_custom_hostname_status(&record.name) {
+            match cloudflare_service.check_custom_hostname_status(&record.name).await {
                 Ok(verified) => {
                     record.verified = verified;
                     if verified {
@@ -198,7 +203,7 @@ impl DnsVerificationService {
                         e
                     );
                     // Fallback to DNS lookup if Cloudflare API fails
-                    match self.verify_dns_record(record) {
+                    match self.verify_dns_record(record).await {
                         Ok(verified) => {
                             record.verified = verified;
                             if verified {
@@ -221,14 +226,14 @@ impl DnsVerificationService {
         Ok(())
     }
 
-    pub fn verify_email_records(
+    pub async fn verify_email_records(
         &self,
         records: &mut EmailVerificationRecords,
     ) -> Result<(), AppError> {
         for record in &mut records.dkim_records {
             if !record.verified {
                 record.verification_attempted_at = Some(chrono::Utc::now());
-                if let Ok(verified) = self.verify_dns_record(record) {
+                if let Ok(verified) = self.verify_dns_record(record).await {
                     record.verified = verified;
                     if verified {
                         record.last_verified_at = Some(chrono::Utc::now());
@@ -240,7 +245,7 @@ impl DnsVerificationService {
         for record in &mut records.return_path_records {
             if !record.verified {
                 record.verification_attempted_at = Some(chrono::Utc::now());
-                if let Ok(verified) = self.verify_dns_record(record) {
+                if let Ok(verified) = self.verify_dns_record(record).await {
                     record.verified = verified;
                     if verified {
                         record.last_verified_at = Some(chrono::Utc::now());

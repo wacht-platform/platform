@@ -9,6 +9,7 @@ pub struct PostmarkService {
     account_token: String,
     server_token: String,
     base_url: String,
+    client: reqwest::Client,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -91,14 +92,16 @@ pub struct SendEmailResponse {
 
 impl PostmarkService {
     pub fn new(account_token: String, server_token: String) -> Self {
+        let client = reqwest::Client::new();
         Self {
             account_token,
             server_token,
             base_url: "https://api.postmarkapp.com".to_string(),
+            client,
         }
     }
 
-    pub fn create_domain(&self, domain_name: &str) -> Result<PostmarkDomain, AppError> {
+    pub async fn create_domain(&self, domain_name: &str) -> Result<PostmarkDomain, AppError> {
         let return_path_domain = format!("rp.{}", domain_name);
 
         let request = CreateDomainRequest {
@@ -106,17 +109,20 @@ impl PostmarkService {
             return_path_domain,
         };
 
-        let mut response = ureq::post(&format!("{}/domains", self.base_url))
+        let response = self.client
+            .post(format!("{}/domains", self.base_url))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .header("X-Postmark-Account-Token", &self.account_token)
-            .send_json(&request)
+            .json(&request)
+            .send()
+            .await
             .map_err(|e| AppError::External(format!("Failed to create Postmark domain: {}", e)))?;
 
-        if response.status() != 200 {
+        if !response.status().is_success() {
             let error_text = response
-                .body_mut()
-                .read_to_string()
+                .text()
+                .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(AppError::External(format!(
                 "Postmark API error: {}",
@@ -125,8 +131,8 @@ impl PostmarkService {
         }
 
         let domain: PostmarkDomain = response
-            .body_mut()
-            .read_json()
+            .json()
+            .await
             .map_err(|e| AppError::External(format!("Failed to parse Postmark response: {}", e)))?;
 
         tracing::info!(
@@ -137,17 +143,19 @@ impl PostmarkService {
         Ok(domain)
     }
 
-    pub fn get_domain(&self, domain_id: i64) -> Result<PostmarkDomain, AppError> {
-        let mut response = ureq::get(&format!("{}/domains/{}", self.base_url, domain_id))
+    pub async fn get_domain(&self, domain_id: i64) -> Result<PostmarkDomain, AppError> {
+        let response = self.client
+            .get(format!("{}/domains/{}", self.base_url, domain_id))
             .header("Accept", "application/json")
             .header("X-Postmark-Account-Token", &self.account_token)
-            .call()
+            .send()
+            .await
             .map_err(|e| AppError::External(format!("Failed to get Postmark domain: {}", e)))?;
 
-        if response.status() != 200 {
+        if !response.status().is_success() {
             let error_text = response
-                .body_mut()
-                .read_to_string()
+                .text()
+                .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(AppError::External(format!(
                 "Postmark API error: {}",
@@ -156,27 +164,29 @@ impl PostmarkService {
         }
 
         let domain: PostmarkDomain = response
-            .body_mut()
-            .read_json()
+            .json()
+            .await
             .map_err(|e| AppError::External(format!("Failed to parse Postmark response: {}", e)))?;
 
         Ok(domain)
     }
 
-    pub fn verify_dkim(&self, domain_id: i64) -> Result<PostmarkDomain, AppError> {
-        let mut response = ureq::put(&format!(
-            "{}/domains/{}/verifyDkim",
-            self.base_url, domain_id
-        ))
-        .header("Accept", "application/json")
-        .header("X-Postmark-Account-Token", &self.account_token)
-        .send("")
-        .map_err(|e| AppError::External(format!("Failed to verify DKIM: {}", e)))?;
+    pub async fn verify_dkim(&self, domain_id: i64) -> Result<PostmarkDomain, AppError> {
+        let response = self.client
+            .put(format!(
+                "{}/domains/{}/verifyDkim",
+                self.base_url, domain_id
+            ))
+            .header("Accept", "application/json")
+            .header("X-Postmark-Account-Token", &self.account_token)
+            .send()
+            .await
+            .map_err(|e| AppError::External(format!("Failed to verify DKIM: {}", e)))?;
 
-        if response.status() != 200 {
+        if !response.status().is_success() {
             let error_text = response
-                .body_mut()
-                .read_to_string()
+                .text()
+                .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(AppError::External(format!(
                 "Postmark DKIM verification error: {}",
@@ -185,27 +195,29 @@ impl PostmarkService {
         }
 
         let domain: PostmarkDomain = response
-            .body_mut()
-            .read_json()
+            .json()
+            .await
             .map_err(|e| AppError::External(format!("Failed to parse Postmark response: {}", e)))?;
 
         Ok(domain)
     }
 
-    pub fn verify_return_path(&self, domain_id: i64) -> Result<PostmarkDomain, AppError> {
-        let mut response = ureq::put(&format!(
-            "{}/domains/{}/verifyReturnPath",
-            self.base_url, domain_id
-        ))
-        .header("Accept", "application/json")
-        .header("X-Postmark-Account-Token", &self.account_token)
-        .send("")
-        .map_err(|e| AppError::External(format!("Failed to verify Return-Path: {}", e)))?;
+    pub async fn verify_return_path(&self, domain_id: i64) -> Result<PostmarkDomain, AppError> {
+        let response = self.client
+            .put(format!(
+                "{}/domains/{}/verifyReturnPath",
+                self.base_url, domain_id
+            ))
+            .header("Accept", "application/json")
+            .header("X-Postmark-Account-Token", &self.account_token)
+            .send()
+            .await
+            .map_err(|e| AppError::External(format!("Failed to verify Return-Path: {}", e)))?;
 
-        if response.status() != 200 {
+        if !response.status().is_success() {
             let error_text = response
-                .body_mut()
-                .read_to_string()
+                .text()
+                .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(AppError::External(format!(
                 "Postmark Return-Path verification error: {}",
@@ -214,14 +226,14 @@ impl PostmarkService {
         }
 
         let domain: PostmarkDomain = response
-            .body_mut()
-            .read_json()
+            .json()
+            .await
             .map_err(|e| AppError::External(format!("Failed to parse Postmark response: {}", e)))?;
 
         Ok(domain)
     }
 
-    pub fn send_email(
+    pub async fn send_email(
         &self,
         from: &str,
         to: &str,
@@ -238,17 +250,20 @@ impl PostmarkService {
             message_stream: Some("outbound".to_string()),
         };
 
-        let mut response = ureq::post(&format!("{}/email", self.base_url))
+        let response = self.client
+            .post(format!("{}/email", self.base_url))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .header("X-Postmark-Server-Token", &self.server_token)
-            .send_json(&request)
+            .json(&request)
+            .send()
+            .await
             .map_err(|e| AppError::External(format!("Failed to send email via Postmark: {}", e)))?;
 
-        if response.status() != 200 {
+        if !response.status().is_success() {
             let error_text = response
-                .body_mut()
-                .read_to_string()
+                .text()
+                .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(AppError::External(format!(
                 "Postmark email sending error: {}",
@@ -257,8 +272,8 @@ impl PostmarkService {
         }
 
         let email_response: SendEmailResponse = response
-            .body_mut()
-            .read_json()
+            .json()
+            .await
             .map_err(|e| AppError::External(format!("Failed to parse Postmark response: {}", e)))?;
 
         if email_response.error_code != 0 {
@@ -272,17 +287,19 @@ impl PostmarkService {
         Ok(email_response)
     }
 
-    pub fn delete_domain(&self, domain_id: i64) -> Result<(), AppError> {
-        let mut response = ureq::delete(&format!("{}/domains/{}", self.base_url, domain_id))
+    pub async fn delete_domain(&self, domain_id: i64) -> Result<(), AppError> {
+        let response = self.client
+            .delete(format!("{}/domains/{}", self.base_url, domain_id))
             .header("Accept", "application/json")
             .header("X-Postmark-Account-Token", &self.account_token)
-            .call()
+            .send()
+            .await
             .map_err(|e| AppError::External(format!("Failed to delete Postmark domain: {}", e)))?;
 
-        if response.status() != 200 {
+        if !response.status().is_success() {
             let error_text = response
-                .body_mut()
-                .read_to_string()
+                .text()
+                .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(AppError::External(format!(
                 "Postmark domain deletion error: {}",

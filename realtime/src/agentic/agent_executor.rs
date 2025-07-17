@@ -1,14 +1,15 @@
 use crate::agentic::{
-    ContextEngineExecutor, ContextGatheringResponse, DecayManager, ExecutableTask, ExecutionAction,
-    ExecutionStatus, IdeationResponse, LoopDecision, ParameterGenerationResponse,
+    ContextSearchDerivation, DecayManager, ExecutableTask, ExecutionAction, ExecutionStatus,
+    LoopDecision, ParameterGenerationResponse, SearchScope, SharedExecutionContext,
     TaskBreakdownResponse, TaskExecutionResponse, TaskType, ToolExecutor, ValidationResponse,
     WorkflowExecutor, gemini_client::GeminiClient,
 };
 use crate::template::{AgentTemplates, render_template};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use shared::commands::{Command, CreateConversationCommand};
-use shared::dto::json::{StreamEvent, Task};
+use shared::dto::json::StreamEvent;
 use shared::error::AppError;
 use shared::models::{
     AiAgentWithFeatures, AiTool, AiToolConfiguration, ContextAction, ContextEngineParams,
@@ -16,8 +17,54 @@ use shared::models::{
     ConversationRecord, MemoryRecordV2,
 };
 use shared::state::AppState;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::collections::HashMap;
+
+const MAX_LOOP_ITERATIONS: usize = 50;
+const DEFAULT_MIN_RELEVANCE: f64 = 0.7;
+const DEFAULT_MAX_RESULTS: usize = 10;
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum NextStep {
+    GatherContext,
+    BreakdownTasks,
+    ExecuteTasks,
+    ValidateProgress,
+    DeliverResponse,
+    HandleError,
+    Complete,
+    DirectExecution,
+}
+
+impl ToString for NextStep {
+    fn to_string(&self) -> String {
+        match self {
+            NextStep::GatherContext => "Gather Context".to_string(),
+            NextStep::BreakdownTasks => "Breakdown Tasks".to_string(),
+            NextStep::ExecuteTasks => "Execute Tasks".to_string(),
+            NextStep::ValidateProgress => "Validate Progress".to_string(),
+            NextStep::DeliverResponse => "Deliver Response".to_string(),
+            NextStep::HandleError => "Handle Error".to_string(),
+            NextStep::Complete => "Complete".to_string(),
+            NextStep::DirectExecution => "Direct Execution".to_string(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StepDecision {
+    pub next_step: NextStep,
+    pub reasoning: String,
+    pub confidence: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direct_exection_params: Option<DirectExecutionParams>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DirectExecutionParams {
+    pub execution_type: String,
+    pub resource_name: String,
+}
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename = "response")]
@@ -26,6 +73,25 @@ pub struct AcknowledgmentResponse {
     pub acknowledgment_message: String,
     pub further_action_required: bool,
     pub reasoning: String,
+    pub objective: ObjectiveDefinition,
+    pub conversation_insights: ConversationInsights,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ObjectiveDefinition {
+    pub primary_goal: String,
+    pub success_criteria: Vec<String>,
+    pub constraints: Vec<String>,
+    pub context_from_history: String,
+    pub inferred_intent: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ConversationInsights {
+    pub is_continuation: bool,
+    pub topic_evolution: String,
+    pub user_preferences: Vec<String>,
+    pub relevant_past_outcomes: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -50,15 +116,71 @@ pub struct AgentExecutor {
     pub agent: AiAgentWithFeatures,
     pub app_state: AppState,
     pub context_id: i64,
-    pub current_tasks: Arc<Mutex<Vec<Task>>>,
     pub conversations: Vec<ConversationRecord>,
+    shared_context: SharedExecutionContext,
     tool_executor: ToolExecutor,
     workflow_executor: WorkflowExecutor,
     decay_manager: DecayManager,
-    context_engine_executor: ContextEngineExecutor,
     channel: tokio::sync::mpsc::Sender<StreamEvent>,
     memories: Vec<MemoryRecordV2>,
     user_request: String,
+    current_objective: Option<ObjectiveDefinition>,
+    conversation_insights: Option<ConversationInsights>,
+    executable_tasks: Vec<ExecutableTask>,
+    task_results: HashMap<String, TaskExecutionResult>,
+}
+
+pub struct AgentExecutorBuilder {
+    agent: AiAgentWithFeatures,
+    app_state: AppState,
+    context_id: i64,
+    channel: tokio::sync::mpsc::Sender<StreamEvent>,
+}
+
+impl AgentExecutorBuilder {
+    pub fn new(
+        agent: AiAgentWithFeatures,
+        context_id: i64,
+        app_state: AppState,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Self {
+        Self {
+            agent,
+            app_state,
+            context_id,
+            channel,
+        }
+    }
+
+    pub async fn build(self) -> Result<AgentExecutor, AppError> {
+        let shared_context = SharedExecutionContext::new(
+            self.app_state.clone(),
+            self.context_id,
+            self.agent.clone(),
+        );
+
+        let tool_executor = ToolExecutor::new(shared_context.clone());
+        let workflow_executor = WorkflowExecutor::new(shared_context.clone());
+        let decay_manager = DecayManager::new(self.app_state.clone());
+
+        Ok(AgentExecutor {
+            agent: self.agent,
+            app_state: self.app_state,
+            context_id: self.context_id,
+            shared_context,
+            tool_executor,
+            workflow_executor,
+            user_request: String::new(),
+            decay_manager,
+            channel: self.channel,
+            memories: Vec::new(),
+            conversations: Vec::new(),
+            current_objective: None,
+            conversation_insights: None,
+            executable_tasks: Vec::new(),
+            task_results: HashMap::new(),
+        })
+    }
 }
 
 impl AgentExecutor {
@@ -68,32 +190,19 @@ impl AgentExecutor {
         app_state: AppState,
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
     ) -> Result<Self, AppError> {
-        let tool_executor = ToolExecutor::new(app_state.clone());
-        let workflow_executor = WorkflowExecutor::new(app_state.clone());
-        let decay_manager = DecayManager::new(app_state.clone());
-        let context_engine_executor =
-            ContextEngineExecutor::new(app_state.clone(), context_id, agent.id);
+        AgentExecutorBuilder::new(agent, context_id, app_state, channel)
+            .build()
+            .await
+    }
 
-        Ok(Self {
-            agent,
-            app_state,
-            context_id,
-            current_tasks: Arc::new(Mutex::new(Vec::new())),
-            tool_executor,
-            workflow_executor,
-            user_request: "".to_string(),
-            decay_manager,
-            context_engine_executor,
-            channel,
-            memories: Vec::new(),
-            conversations: Vec::new(),
-        })
+    // ==================== LLM Management ====================
+    fn get_gemini_api_key() -> Result<String, AppError> {
+        std::env::var("GEMINI_API_KEY")
+            .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))
     }
 
     pub fn create_strong_llm(&self) -> Result<GeminiClient, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY")
-            .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
-
+        let api_key = Self::get_gemini_api_key()?;
         Ok(GeminiClient::new(
             api_key,
             Some("gemini-2.5-pro".to_string()),
@@ -101,9 +210,7 @@ impl AgentExecutor {
     }
 
     pub fn create_weak_llm(&self) -> Result<GeminiClient, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY")
-            .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
-
+        let api_key = Self::get_gemini_api_key()?;
         Ok(GeminiClient::new(
             api_key,
             Some("gemini-2.5-flash".to_string()),
@@ -115,7 +222,6 @@ impl AgentExecutor {
             response: message,
             citations: Vec::new(),
             context_used: Vec::new(),
-            timestamp: chrono::Utc::now(),
         }
     }
 
@@ -124,6 +230,8 @@ impl AgentExecutor {
         typed_content: shared::models::ConversationContent,
         message_type: shared::models::ConversationMessageType,
     ) -> Result<(), AppError> {
+        let start = Utc::now();
+
         let message = CreateConversationCommand::new(
             self.app_state.sf.next_id()? as i64,
             self.context_id,
@@ -134,10 +242,35 @@ impl AgentExecutor {
         .await?;
         self.conversations.push(message.clone());
 
-        let _ = self
+        let db_time = Utc::now();
+        
+        // Add timestamp to the message for tracking
+        let send_timestamp = Utc::now();
+        println!("Sending message to channel at: {}", send_timestamp);
+        
+        println!("Channel state before send - capacity: {}, len: {}", 
+            self.channel.capacity(), 
+            self.channel.max_capacity() - self.channel.capacity()
+        );
+        
+        let send_result = self
             .channel
             .send(StreamEvent::ConversationMessage(message))
             .await;
+            
+        if let Err(e) = send_result {
+            println!("Channel send error: {:?}", e);
+        } else {
+            println!("Message successfully sent to channel");
+        }
+
+        let channel_time = Utc::now();
+        
+        println!("store_conversation timings - DB: {}ms, Channel send: {}ms, Total: {}ms", 
+            (db_time - start).num_milliseconds(),
+            (channel_time - db_time).num_milliseconds(),
+            (channel_time - start).num_milliseconds()
+        );
 
         Ok(())
     }
@@ -145,20 +278,113 @@ impl AgentExecutor {
     fn get_conversation_history_for_llm(&self) -> Vec<Value> {
         self.conversations
             .iter()
-            .map(|msg| {
+            .filter_map(|msg| {
                 let role = match msg.message_type {
                     ConversationMessageType::UserMessage => "user",
                     _ => "model",
                 };
-                json!({
-                    "role": role,
-                    "content": serde_json::to_string(&msg.content).unwrap()
+
+                serde_json::to_string(&msg.content).ok().map(|content| {
+                    json!({
+                        "role": role,
+                        "content": content
+                    })
                 })
             })
             .collect()
     }
 
     pub async fn execute_with_streaming(&mut self, user_message: &str) -> Result<(), AppError> {
+        self.load_immediate_context().await?;
+        self.user_request = user_message.to_string();
+
+        let user_content = ConversationContent::UserMessage {
+            message: user_message.to_string(),
+        };
+        self.store_conversation(user_content, ConversationMessageType::UserMessage)
+            .await?;
+
+        let acknowledgment_response = match self.generate_acknowledgment().await {
+            Ok(response) => response,
+            Err(e) => {
+                let error_content = ConversationContent::AssistantValidation {
+                    validation_result: json!({
+                        "error": e.to_string(),
+                        "error_type": "acknowledgment_generation_failed"
+                    }),
+                    loop_decision: "abort_unresolvable".to_string(),
+                    decision_reasoning: format!("Failed to generate acknowledgment: {}", e),
+                    next_iteration_focus: None,
+                    has_unresolvable_errors: true,
+                    unresolvable_error_details: Some(e.to_string()),
+                };
+                self.store_conversation(
+                    error_content,
+                    ConversationMessageType::AssistantValidation,
+                )
+                .await?;
+                return Err(e);
+            }
+        };
+
+        if !acknowledgment_response.further_action_required {
+            return Ok(());
+        }
+
+        // Main decision loop
+        let mut iteration = 0;
+        loop {
+            iteration += 1;
+            if iteration > MAX_LOOP_ITERATIONS {
+                self.generate_and_send_summary().await?;
+                return Ok(());
+            }
+
+            let decision = self.decide_next_step().await?;
+            match decision.next_step {
+                NextStep::GatherContext => {
+                    self.gather_context().await?;
+                }
+
+                NextStep::BreakdownTasks => {
+                    self.execute_task_breakdown_step().await?;
+                }
+
+                NextStep::ExecuteTasks => {
+                    self.execute_pending_tasks().await?;
+                }
+
+                NextStep::ValidateProgress => {
+                    self.execute_validation_step().await?;
+                }
+
+                NextStep::DeliverResponse => {
+                    self.generate_and_send_summary().await?;
+                    return Ok(());
+                }
+
+                NextStep::HandleError => {
+                    let handled = self.handle_errors().await?;
+                    if !handled {
+                        self.generate_and_send_summary().await?;
+                        return Ok(());
+                    }
+                }
+
+                NextStep::Complete => {
+                    return Ok(());
+                }
+
+                NextStep::DirectExecution => {
+                    if let Some(tool_info) = decision.direct_exection_params {
+                        self.execute_direct_tool_call(tool_info).await?;
+                    }
+                }
+            }
+        }
+    }
+
+    async fn load_immediate_context(&mut self) -> Result<(), AppError> {
         let immediate_context = self
             .decay_manager
             .get_immediate_context(self.context_id)
@@ -166,33 +392,52 @@ impl AgentExecutor {
 
         self.memories = immediate_context.memories;
         self.conversations = immediate_context.conversations;
-
-        let user_content = ConversationContent::UserMessage {
-            message: user_message.to_string(),
-            timestamp: chrono::Utc::now(),
-        };
-
-        self.store_conversation(user_content, ConversationMessageType::UserMessage)
-            .await?;
-
-        let acknowledgment_response = self.generate_acknowledgment().await?;
-
-        println!("{acknowledgment_response:?}");
-
-        if acknowledgment_response.further_action_required {
-            self.execute_task_execution_loop().await.unwrap();
-        }
-
         Ok(())
     }
 
-    async fn generate_acknowledgment(&mut self) -> Result<AcknowledgmentResponse, AppError> {
-        let acknowledgment_context = json!({
-            "tools": &self.agent.tools,
-            "workflows": &self.agent.workflows,
-            "knowledge_bases": &self.agent.knowledge_bases,
+    async fn decide_next_step(&mut self) -> Result<StepDecision, AppError> {
+        let decision_context = json!({
             "conversation_history": self.get_conversation_history_for_llm(),
+            "current_objective": self.current_objective,
+            "conversation_insights": self.conversation_insights,
+            "available_tools": self.agent.tools,
+            "available_workflows": self.agent.workflows,
+            "available_knowledge_bases": self.agent.knowledge_bases,
+            "iteration_info": {
+                "current_iteration": self.get_current_iteration(),
+                "max_iterations": MAX_LOOP_ITERATIONS,
+            }
         });
+
+        let prompt =
+            render_template(AgentTemplates::STEP_DECISION, &decision_context).map_err(|e| {
+                AppError::Internal(format!("Failed to render step decision template: {}", e))
+            })?;
+
+        let (_, decision) = self
+            .create_strong_llm()?
+            .generate_structured_content::<StepDecision>(prompt)
+            .await?;
+
+        self.conversations.push(ConversationRecord {
+            id: self.app_state.sf.next_id()? as i64,
+            context_id: self.context_id,
+            timestamp: Utc::now(),
+            content: ConversationContent::SystemDecision {
+                step: decision.next_step.to_string(),
+                reasoning: decision.reasoning.clone(),
+                confidence: decision.confidence,
+            },
+            message_type: ConversationMessageType::SystemDecision,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+
+        Ok(decision)
+    }
+
+    async fn generate_acknowledgment(&mut self) -> Result<AcknowledgmentResponse, AppError> {
+        let acknowledgment_context = self.build_acknowledgment_context();
 
         let request_body = render_template(AgentTemplates::ACKNOWLEDGMENT, &acknowledgment_context)
             .map_err(|e| {
@@ -204,13 +449,32 @@ impl AgentExecutor {
             .generate_structured_content::<AcknowledgmentResponse>(request_body)
             .await?;
 
-        println!("{}", parsed.further_action_required);
+        self.current_objective = Some(parsed.objective.clone());
+        self.conversation_insights = Some(parsed.conversation_insights.clone());
 
+        self.store_acknowledgment_conversation(&parsed).await?;
+
+        Ok(parsed)
+    }
+
+    fn build_acknowledgment_context(&self) -> Value {
+        json!({
+            "tools": &self.agent.tools,
+            "workflows": &self.agent.workflows,
+            "knowledge_bases": &self.agent.knowledge_bases,
+            "conversation_history": self.get_conversation_history_for_llm(),
+            "memories": self.memories.iter().map(|m| &m.content).collect::<Vec<_>>(),
+        })
+    }
+
+    async fn store_acknowledgment_conversation(
+        &mut self,
+        acknowledgment: &AcknowledgmentResponse,
+    ) -> Result<(), AppError> {
         let acknowledgment_content = ConversationContent::AssistantAcknowledgment {
-            acknowledgment_message: parsed.acknowledgment_message.clone(),
-            further_action_required: parsed.further_action_required,
-            reasoning: parsed.reasoning.clone(),
-            timestamp: chrono::Utc::now(),
+            acknowledgment_message: acknowledgment.acknowledgment_message.clone(),
+            further_action_required: acknowledgment.further_action_required,
+            reasoning: acknowledgment.reasoning.clone(),
         };
 
         self.store_conversation(
@@ -219,363 +483,216 @@ impl AgentExecutor {
         )
         .await?;
 
-        Ok(parsed)
+        Ok(())
     }
 
-    async fn execute_task_execution_loop(&mut self) -> Result<(), AppError> {
-        const MAX_LOOP_ITERATIONS: usize = 5;
-        let mut loop_iteration = 0;
-        let mut final_validation_response: Option<ValidationResponse> = None;
-        let mut previous_errors: Vec<String> = Vec::new();
-        println!("here hh");
+    async fn gather_context(&mut self) -> Result<(), AppError> {
+        let search_params = self.derive_context_search_parameters().await?;
 
-        while loop_iteration < MAX_LOOP_ITERATIONS {
-            loop_iteration += 1;
-
-            println!("here h1");
-
-            let ideation_response = self.execute_ideation_step().await.unwrap();
-
-            println!("here566768787");
-
-            if ideation_response.requires_user_input {
-                if let Some(user_request_message) = &ideation_response.user_input_request {
-                    // Send user input request and wait for response
-                    // TODO: Store user input request messages using store_conversation
-
-                    // Store user input request in conversation
-                    let ideation_content = ConversationContent::AssistantIdeation {
-                        reasoning_summary: ideation_response.reasoning_summary.clone(),
-                        needs_more_iteration: ideation_response.needs_more_iteration,
-                        context_search_request: ideation_response.context_search_request.clone(),
-                        requires_user_input: ideation_response.requires_user_input,
-                        user_input_request: ideation_response.user_input_request.clone(),
-                        execution_plan: serde_json::to_value(&ideation_response.execution_plan)
-                            .unwrap_or_default(),
-                        timestamp: chrono::Utc::now(),
-                    };
-
-                    self.store_conversation(
-                        ideation_content,
-                        ConversationMessageType::AssistantIdeation,
-                    )
-                    .await?;
-
-                    // Return early - execution will continue when user responds
-                    return Ok(());
-                }
+        let context_results = match search_params.search_scope {
+            SearchScope::KnowledgeBase => {
+                self.search_knowledge_bases_with_filters(&search_params)
+                    .await?
             }
-
-            let mut context_findings = Vec::new();
-            if ideation_response.needs_more_iteration
-                && ideation_response.context_search_request.is_some()
-            {
-                let search_query = ideation_response.context_search_request.as_ref().unwrap();
-                let context_response = self
-                    .execute_context_gathering_step(search_query, &ideation_response.execution_plan)
+            SearchScope::Memory => self.search_memories_with_filters(&search_params).await?,
+            SearchScope::AllSources => {
+                let mut results = self
+                    .search_knowledge_bases_with_filters(&search_params)
                     .await?;
+                let memory_results = self.search_memories_with_filters(&search_params).await?;
+                results.extend(memory_results);
+                results
+            }
+        };
 
-                // Check if user input is required during context gathering
-                if context_response.requires_user_input {
-                    if let Some(user_request_message) = &context_response.user_input_request {
-                        // Send user input request and wait for response
-                        // TODO: Store user input request messages using store_conversation
+        let mut final_results = context_results;
+        if final_results.is_empty() && !search_params.alternative_queries.is_empty() {
+            for alt_query in &search_params.alternative_queries {
+                let mut alt_params = search_params.clone();
+                alt_params.search_query = alt_query.clone();
 
-                        // Store user input request during task execution
-                        // Since this is a request for user input during task execution, we'll use TaskExecution content
-                        let task_content = ConversationContent::AssistantTaskExecution {
-                            task_execution: json!({
-                                "approach": "Requesting user input",
-                                "actions": { "action": [] },
-                                "expected_result": user_request_message
-                            }),
-                            execution_status: "blocked".to_string(),
-                            blocking_reason: Some("Waiting for user input".to_string()),
-                            timestamp: chrono::Utc::now(),
-                        };
-
-                        self.store_conversation(
-                            task_content,
-                            ConversationMessageType::AssistantTaskExecution,
-                        )
-                        .await?;
-
-                        // Return early - execution will continue when user responds
-                        return Ok(());
+                let alt_results = match search_params.search_scope {
+                    SearchScope::KnowledgeBase => {
+                        self.search_knowledge_bases_with_filters(&alt_params)
+                            .await?
                     }
-                }
-
-                context_findings = context_response.context_insights.clone();
-
-                let mut additional_iterations = 0;
-                let mut current_context_response = context_response;
-                while current_context_response.needs_more_context && additional_iterations < 2 {
-                    additional_iterations += 1;
-                    if let Some(additional_query) =
-                        &current_context_response.strategic_context_request
-                    {
-                        current_context_response = self
-                            .execute_context_gathering_step(
-                                additional_query,
-                                &ideation_response.execution_plan,
-                            )
+                    SearchScope::Memory => self.search_memories_with_filters(&alt_params).await?,
+                    SearchScope::AllSources => {
+                        let mut results = self
+                            .search_knowledge_bases_with_filters(&alt_params)
                             .await?;
-
-                        // Check if user input is required during additional context gathering
-                        if current_context_response.requires_user_input {
-                            if let Some(user_request_message) =
-                                &current_context_response.user_input_request
-                            {
-                                // Send user input request and wait for response
-                                // TODO: Store user input request messages using store_conversation
-
-                                // Store user input request during task execution
-                                let task_content = ConversationContent::AssistantTaskExecution {
-                                    task_execution: json!({
-                                        "approach": "Requesting user input during workflow execution",
-                                        "actions": { "action": [] },
-                                        "expected_result": user_request_message
-                                    }),
-                                    execution_status: "blocked".to_string(),
-                                    blocking_reason: Some("Waiting for user input".to_string()),
-                                    timestamp: chrono::Utc::now(),
-                                };
-
-                                self.store_conversation(
-                                    task_content,
-                                    ConversationMessageType::AssistantTaskExecution,
-                                )
-                                .await?;
-
-                                // Return early - execution will continue when user responds
-                                return Ok(());
-                            }
-                        }
-
-                        context_findings.extend(current_context_response.context_insights);
+                        let memory_results = self.search_memories_with_filters(&alt_params).await?;
+                        results.extend(memory_results);
+                        results
                     }
-                }
-            }
+                };
 
-            let task_breakdown = self
-                .execute_task_breakdown_step(&ideation_response.execution_plan, &context_findings)
-                .await?;
-
-            let execution_results = self.execute_tasks(&task_breakdown.tasks).await?;
-
-            // Collect current errors
-            let current_errors: Vec<String> = execution_results
-                .iter()
-                .filter_map(|result| result.error.clone())
-                .collect();
-
-            // Check for repeated identical errors (sign of unresolvable issues)
-            if !current_errors.is_empty() {
-                let error_signature = current_errors.join("|");
-                if previous_errors.contains(&error_signature) {
-                    // Same errors appearing again - likely unresolvable
-                    // TODO: Consider storing error detection messages using store_conversation
-                }
-                previous_errors.push(error_signature);
-            }
-
-            let validation_response = self
-                .execute_validation_step(
-                    &ideation_response.execution_plan,
-                    &execution_results,
-                    loop_iteration,
-                    MAX_LOOP_ITERATIONS,
-                )
-                .await?;
-
-            // Send validation user message using store_conversation
-            if !validation_response.user_message.is_empty() {
-                self.store_conversation(
-                    self.create_agent_response_content(validation_response.user_message.clone()),
-                    ConversationMessageType::AgentResponse,
-                )
-                .await?;
-            }
-
-            match validation_response.loop_decision {
-                LoopDecision::Complete => {
-                    final_validation_response = Some(validation_response);
+                if !alt_results.is_empty() {
+                    final_results = alt_results;
                     break;
                 }
-                LoopDecision::AbortUnresolvable => {
-                    // Send unresolvable error message immediately
-                    if let Some(error_details) = &validation_response.unresolvable_error_details {
-                    } else {
-                    }
-                    return Ok(());
-                }
-                LoopDecision::Continue => (),
             }
         }
 
-        // Send final summary without success message
-        if let Some(final_response) = final_validation_response {
-            if let Some(final_summary) = &final_response.final_summary {
-                // Just send the summary without any success header
-                let summary_message = format!("\n\n{}", final_summary);
-                self.store_conversation(
-                    self.create_agent_response_content(summary_message.clone()),
-                    ConversationMessageType::AgentResponse,
-                )
-                .await?;
-            }
-            // Don't send any completion message if no final_summary
-        } else {
-            // Loop ended without completion decision (max iterations reached)
+        self.store_conversation(
+            ConversationContent::ContextResults {
+                query: search_params.search_query.clone(),
+                results: serde_json::to_value(&final_results)?,
+                result_count: final_results.len(),
+                timestamp: chrono::Utc::now(),
+            },
+            ConversationMessageType::ContextResults,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    async fn execute_pending_tasks(&mut self) -> Result<(), AppError> {
+        if self.executable_tasks.is_empty() {
+            self.executable_tasks = self.get_executable_tasks();
+        }
+
+        if self.executable_tasks.is_empty() {
+            return Ok(());
+        }
+
+        let results = self.execute_tasks(&self.executable_tasks.clone()).await?;
+
+        for result in results {
+            self.task_results.insert(result.task_id.clone(), result);
         }
 
         Ok(())
     }
 
-    async fn execute_ideation_step(&mut self) -> Result<IdeationResponse, AppError> {
-        const MAX_ITERATIONS: usize = 3;
-        let mut iteration = 0;
-        let mut context_search_results: Vec<String> = Vec::new();
-        let mut current_plan: Option<crate::agentic::ExecutionPlan> = None;
+    async fn handle_errors(&mut self) -> Result<bool, AppError> {
+        let errors = self.get_recent_errors();
 
-        while iteration < MAX_ITERATIONS {
-            iteration += 1;
-
-            let ideation_context = json!({
-                "available_tools": self.agent.tools,
-                "workflows": self.agent.workflows,
-                "knowledge_bases": self.agent.knowledge_bases,
-                "memories": self.memories.iter().map(|m| m.content.clone()).collect::<Vec<_>>(),
-                "context_search_results": context_search_results,
-                "conversation_history": self.get_conversation_history_for_llm(),
-                "iteration": iteration,
-                "max_iterations": MAX_ITERATIONS,
-                "is_final_iteration": iteration == MAX_ITERATIONS,
-                "current_plan": current_plan,
-            });
-
-            let request_body = render_template(AgentTemplates::IDEATION, &ideation_context)
-                .map_err(|e| {
-                    AppError::Internal(format!("Failed to render ideation template: {}", e))
-                })?;
-
-            let (_, parsed) = self
-                .create_strong_llm()?
-                .generate_structured_content::<IdeationResponse>(request_body)
-                .await
-                .unwrap();
-
-            let ideation_content = ConversationContent::AssistantIdeation {
-                reasoning_summary: parsed.reasoning_summary.clone(),
-                needs_more_iteration: parsed.needs_more_iteration,
-                context_search_request: parsed.context_search_request.clone(),
-                requires_user_input: parsed.requires_user_input,
-                user_input_request: parsed.user_input_request.clone(),
-                execution_plan: serde_json::to_value(&parsed.execution_plan).unwrap_or_default(),
-                timestamp: chrono::Utc::now(),
-            };
-
-            self.store_conversation(ideation_content, ConversationMessageType::AssistantIdeation)
-                .await
-                .unwrap();
-
-            if parsed.needs_more_iteration && parsed.context_search_request.is_some() {
-                let search_query = parsed.context_search_request.as_ref().unwrap();
-                let search_results = self.search_context(search_query).await?;
-                context_search_results.extend(search_results.iter().map(|r| r.content.clone()));
-                current_plan = Some(parsed.execution_plan.clone());
-            } else {
-                return Ok(parsed);
-            }
-
-            if iteration >= MAX_ITERATIONS {
-                return Ok(parsed);
-            }
+        if errors.is_empty() {
+            return Ok(true);
         }
 
-        Err(AppError::Internal(
-            "Failed to complete ideation after max iterations".to_string(),
-        ))
-    }
+        let unresolvable_errors: Vec<_> = errors
+            .iter()
+            .filter(|e| e.contains("unresolvable") || e.contains("cannot_execute"))
+            .collect();
 
-    async fn execute_context_gathering_step(
-        &mut self,
-        search_query: &str,
-        execution_plan: &crate::agentic::ExecutionPlan,
-    ) -> Result<ContextGatheringResponse, AppError> {
-        let context_results = self.search_context(search_query).await?;
-
-        let context_gathering_context = json!({
-            "current_plan": execution_plan,
-            "context_search_query": search_query,
-            "context_results": context_results.iter().map(|r| json!({
-                "source_type": match &r.source {
-                    shared::models::ContextSource::KnowledgeBase { .. } => "knowledge_base",
-                    shared::models::ContextSource::Memory { category, .. } => category,
-                    shared::models::ContextSource::DynamicContext { .. } => "dynamic_context",
-                    shared::models::ContextSource::Conversation { .. } => "conversation",
+        if !unresolvable_errors.is_empty() {
+            self.store_conversation(
+                ConversationContent::AssistantValidation {
+                    validation_result: json!({
+                        "error_summary": unresolvable_errors,
+                        "error_type": "unresolvable_errors"
+                    }),
+                    loop_decision: "abort_unresolvable".to_string(),
+                    decision_reasoning:
+                        "Encountered unresolvable errors that prevent further progress".to_string(),
+                    next_iteration_focus: None,
+                    has_unresolvable_errors: true,
+                    unresolvable_error_details: Some(
+                        unresolvable_errors
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<_>>()
+                            .join("; "),
+                    ),
                 },
-                "source_details": match &r.source {
-                    shared::models::ContextSource::KnowledgeBase { kb_id, .. } => format!("KB {}", kb_id),
-                    shared::models::ContextSource::Memory { memory_id, category } => format!("{} memory {}", category, memory_id),
-                    shared::models::ContextSource::DynamicContext { context_type } => context_type.clone(),
-                    shared::models::ContextSource::Conversation { conversation_id } => format!("Conversation {}", conversation_id),
-                },
-                "relevance_score": r.relevance_score,
-                "content": r.content,
-                "metadata": r.metadata,
-            })).collect::<Vec<_>>(),
-            "available_tools": self.agent.tools.len(),
-            "workflows": self.agent.workflows.len(),
-            "knowledge_bases": self.agent.knowledge_bases.len(),
-            "memories": self.memories.len(),
-            "conversation_history": self.get_conversation_history_for_llm(),
-        });
-
-        let request_body = render_template(
-            AgentTemplates::CONTEXT_GATHERING,
-            &context_gathering_context,
-        )
-        .map_err(|e| {
-            AppError::Internal(format!(
-                "Failed to render context gathering template: {}",
-                e
-            ))
-        })?;
-
-        let (_, parsed) = self
-            .create_weak_llm()?
-            .generate_structured_content::<ContextGatheringResponse>(request_body)
+                ConversationMessageType::AssistantValidation,
+            )
             .await?;
 
-        let ideation_content = ConversationContent::AssistantIdeation {
-            reasoning_summary: format!("Context gathering for: {}", search_query),
-            needs_more_iteration: false,
-            context_search_request: Some(search_query.to_string()),
-            requires_user_input: false,
-            user_input_request: None,
-            execution_plan: serde_json::to_value(execution_plan).unwrap_or_default(),
-            timestamp: chrono::Utc::now(),
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
+    async fn execute_direct_tool_call(
+        &mut self,
+        tool_info: DirectExecutionParams,
+    ) -> Result<(), AppError> {
+        let action = ExecutionAction {
+            action_type: if tool_info.execution_type == "tool" {
+                TaskType::ToolCall
+            } else {
+                TaskType::WorkflowCall
+            },
+            details: json!({
+                "resource_name": tool_info.resource_name
+            }),
+            purpose: "Direct tool execution for simple request".to_string(),
         };
 
-        self.store_conversation(ideation_content, ConversationMessageType::AssistantIdeation)
-            .await?;
+        let task = ExecutableTask {
+            id: "direct_tool_call".to_string(),
+            name: format!("Execute {}", tool_info.resource_name),
+            description: format!("Direct execution of {} tool", tool_info.resource_name),
+            dependencies: vec![],
+            success_criteria: "Tool executes successfully and returns result".to_string(),
+            error_handling: "Report error if tool execution fails".to_string(),
+            can_run_parallel: false,
+        };
 
-        Ok(parsed)
+        let result = self.execute_action(&action, &task).await?;
+
+        let action_result_content = ConversationContent::AssistantTaskExecution {
+            task_execution: json!({
+                "action": action,
+                "result": result
+            }),
+            execution_status: "completed".to_string(),
+            blocking_reason: None,
+        };
+
+        self.store_conversation(
+            action_result_content,
+            ConversationMessageType::AssistantTaskExecution,
+        )
+        .await?;
+
+        Ok(())
     }
 
-    async fn execute_task_breakdown_step(
-        &mut self,
-        execution_plan: &crate::agentic::ExecutionPlan,
-        context_findings: &[String],
-    ) -> Result<TaskBreakdownResponse, AppError> {
-        let task_breakdown_context = json!({
-            "execution_plan": execution_plan,
-            "context_findings": context_findings,
-            "available_tools": self.agent.tools,
-            "workflows": self.agent.workflows,
-            "knowledge_bases": self.agent.knowledge_bases,
+    async fn generate_and_send_summary(&mut self) -> Result<(), AppError> {
+        let summary_context = json!({
             "conversation_history": self.get_conversation_history_for_llm(),
+            "current_objective": self.current_objective,
+            "conversation_insights": self.conversation_insights,
+        });
+
+        let request_body = render_template(AgentTemplates::SUMMARY, &summary_context)
+            .map_err(|e| AppError::Internal(format!("Failed to render summary template: {}", e)))?;
+
+        // Generate the response
+        #[derive(Deserialize, Serialize)]
+        struct SummaryResponse {
+            response: String,
+        }
+
+        let (_, summary) = self
+            .create_weak_llm()?
+            .generate_structured_content::<SummaryResponse>(request_body)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to generate summary: {}", e)))?;
+
+        // Send as agent response
+        self.store_conversation(
+            self.create_agent_response_content(summary.response),
+            ConversationMessageType::AgentResponse,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    // ==================== Task Execution Methods ====================
+
+    async fn execute_task_breakdown_step(&mut self) -> Result<TaskBreakdownResponse, AppError> {
+        let task_breakdown_context = json!({
+            "conversation_history": self.get_conversation_history_for_llm(),
+            "current_objective": self.current_objective,
+            "conversation_insights": self.conversation_insights,
         });
 
         let request_body = render_template(AgentTemplates::TASK_BREAKDOWN, &task_breakdown_context)
@@ -603,7 +720,6 @@ impl AgentExecutor {
             }),
             execution_status: "ready".to_string(),
             blocking_reason: None,
-            timestamp: chrono::Utc::now(),
         };
 
         self.store_conversation(
@@ -611,6 +727,9 @@ impl AgentExecutor {
             ConversationMessageType::AssistantTaskExecution,
         )
         .await?;
+
+        // Store the tasks in the executor
+        self.executable_tasks = parsed.tasks.clone();
 
         Ok(parsed)
     }
@@ -620,29 +739,14 @@ impl AgentExecutor {
         tasks: &[ExecutableTask],
     ) -> Result<Vec<TaskExecutionResult>, AppError> {
         let mut results = Vec::new();
-        let mut completed_tasks = std::collections::HashMap::new();
+        let mut completed_tasks = HashMap::new();
 
         for task in tasks {
-            let dependencies_met = task.dependencies.iter().all(|dep_id| {
-                completed_tasks
-                    .get(dep_id)
-                    .map_or(false, |r: &TaskExecutionResult| r.success)
-            });
-
-            if !dependencies_met {
-                results.push(TaskExecutionResult {
-                    task_id: task.id.clone(),
-                    task_name: task.name.clone(),
-                    task_type: "task".to_string(),
-                    status: "skipped".to_string(),
-                    success: false,
-                    result: None,
-                    error: Some("Dependencies not met".to_string()),
-                });
-                continue;
-            }
-
-            let task_result = self.execute_single_task(task, &completed_tasks).await?;
+            let task_result = if self.are_dependencies_met(task, &completed_tasks) {
+                self.execute_single_task(task).await?
+            } else {
+                self.create_skipped_task_result(task, "Dependencies not met")
+            };
 
             completed_tasks.insert(task.id.clone(), task_result.clone());
             results.push(task_result);
@@ -651,30 +755,43 @@ impl AgentExecutor {
         Ok(results)
     }
 
+    // Helper: Check if task dependencies are met
+    fn are_dependencies_met(
+        &self,
+        task: &ExecutableTask,
+        completed_tasks: &HashMap<String, TaskExecutionResult>,
+    ) -> bool {
+        task.dependencies
+            .iter()
+            .all(|dep_id| completed_tasks.get(dep_id).map_or(false, |r| r.success))
+    }
+
+    // Helper: Create a skipped task result
+    fn create_skipped_task_result(
+        &self,
+        task: &ExecutableTask,
+        reason: &str,
+    ) -> TaskExecutionResult {
+        TaskExecutionResult {
+            task_id: task.id.clone(),
+            task_name: task.name.clone(),
+            task_type: "task".to_string(),
+            status: "skipped".to_string(),
+            success: false,
+            result: None,
+            error: Some(reason.to_string()),
+        }
+    }
+
     async fn execute_single_task(
         &mut self,
         task: &ExecutableTask,
-        previous_results: &std::collections::HashMap<String, TaskExecutionResult>,
     ) -> Result<TaskExecutionResult, AppError> {
         let task_execution_context = json!({
             "current_task": task,
-            "dependencies": task.dependencies.iter().map(|dep_id| {
-                let status = previous_results.get(dep_id)
-                    .map(|r| if r.success { "completed" } else { "failed" })
-                    .unwrap_or("not_found");
-                json!({
-                    "task_id": dep_id,
-                    "status": status,
-                    "result": previous_results.get(dep_id).and_then(|r| r.result.clone()),
-                })
-            }).collect::<Vec<_>>(),
-            "previous_results": previous_results.iter().map(|(id, result)| json!({
-                "task_id": id,
-                "summary": result.result.as_ref().map(|r| r.to_string()).unwrap_or_default(),
-            })).collect::<Vec<_>>(),
-            "available_tools": self.agent.tools,
-            "workflows": self.agent.workflows,
             "conversation_history": self.get_conversation_history_for_llm(),
+            "current_objective": self.current_objective,
+            "conversation_insights": self.conversation_insights,
         });
 
         let request_body = render_template(AgentTemplates::TASK_EXECUTION, &task_execution_context)
@@ -687,8 +804,8 @@ impl AgentExecutor {
             .generate_structured_content::<TaskExecutionResponse>(request_body)
             .await?;
 
-        // Store task execution response with typed content
-        let task_content = ConversationContent::AssistantTaskExecution {
+        // Store action planning response with typed content
+        let task_content = ConversationContent::AssistantActionPlanning {
             task_execution: serde_json::to_value(&parsed.task_execution).unwrap_or_default(),
             execution_status: match &parsed.execution_status {
                 ExecutionStatus::Ready => "ready",
@@ -697,12 +814,11 @@ impl AgentExecutor {
             }
             .to_string(),
             blocking_reason: parsed.blocking_reason.clone(),
-            timestamp: chrono::Utc::now(),
         };
 
         self.store_conversation(
             task_content,
-            ConversationMessageType::AssistantTaskExecution,
+            ConversationMessageType::AssistantActionPlanning,
         )
         .await?;
 
@@ -710,17 +826,15 @@ impl AgentExecutor {
 
         if matches!(parsed.execution_status, ExecutionStatus::Ready) {
             for action in &parsed.task_execution.actions.actions {
-                match self.execute_action(action, task, &parsed).await {
+                match self.execute_action(action, task).await {
                     Ok(action_result) => {
                         let action_result_content = ConversationContent::AssistantTaskExecution {
                             task_execution: json!({
-                                "approach": format!("Executed action: {}", action.purpose),
-                                "actions": { "action": [action] },
-                                "expected_result": "Action completed"
+                                "action": action,
+                                "result": action_result
                             }),
                             execution_status: "ready".to_string(),
                             blocking_reason: None,
-                            timestamp: chrono::Utc::now(),
                         };
 
                         self.store_conversation(
@@ -768,28 +882,15 @@ impl AgentExecutor {
         })
     }
 
-    async fn execute_validation_step(
-        &mut self,
-        execution_plan: &crate::agentic::ExecutionPlan,
-        execution_results: &[TaskExecutionResult],
-        current_iteration: usize,
-        max_iterations: usize,
-    ) -> Result<ValidationResponse, AppError> {
+    // ==================== Validation Methods ====================
+
+    async fn execute_validation_step(&mut self) -> Result<ValidationResponse, AppError> {
         let validation_context = json!({
-            "user_request": self.user_request.clone(),
-            "execution_plan": execution_plan,
-            "executed_tasks": execution_results.iter().map(|r| json!({
-                "id": r.task_id,
-                "name": r.task_name,
-                "type": r.task_type,
-                "status": r.status,
-                "success_criteria": "Task specific criteria",
-                "result": r.result,
-                "error": r.error,
-            })).collect::<Vec<_>>(),
-            "current_iteration": current_iteration,
-            "max_iterations": max_iterations,
             "conversation_history": self.get_conversation_history_for_llm(),
+            "current_objective": self.current_objective,
+            "conversation_insights": self.conversation_insights,
+            "executed_tasks": self.executable_tasks,
+            "task_results": self.task_results,
         });
 
         let request_body = render_template(AgentTemplates::VALIDATION, &validation_context)
@@ -813,11 +914,8 @@ impl AgentExecutor {
             .to_string(),
             decision_reasoning: parsed.decision_reasoning.clone(),
             next_iteration_focus: parsed.next_iteration_focus.clone(),
-            final_summary: parsed.final_summary.clone(),
             has_unresolvable_errors: parsed.has_unresolvable_errors,
             unresolvable_error_details: parsed.unresolvable_error_details.clone(),
-            user_message: parsed.user_message.clone(),
-            timestamp: chrono::Utc::now(),
         };
 
         self.store_conversation(
@@ -829,42 +927,105 @@ impl AgentExecutor {
         Ok(parsed)
     }
 
+    // ==================== Context Search Methods ====================
+
     async fn search_context(&self, query: &str) -> Result<Vec<ContextSearchResult>, AppError> {
         let params = ContextEngineParams {
             query: query.to_string(),
             action: ContextAction::SearchAll,
             filters: Some(ContextFilters {
-                max_results: 10,
-                min_relevance: 0.7,
+                max_results: DEFAULT_MAX_RESULTS,
+                min_relevance: DEFAULT_MIN_RELEVANCE,
                 time_range: None,
+                search_mode: shared::models::SearchMode::default(),
+                boost_keywords: None,
             }),
         };
 
-        self.context_engine_executor.execute(params).await
+        self.shared_context.context_engine().execute(params).await
+    }
+
+    async fn search_knowledge_bases(
+        &self,
+        query: &str,
+    ) -> Result<Vec<ContextSearchResult>, AppError> {
+        let params = ContextEngineParams {
+            query: query.to_string(),
+            action: ContextAction::SearchKnowledgeBase { kb_id: None }, // None means search all agent's KBs
+            filters: Some(ContextFilters {
+                max_results: DEFAULT_MAX_RESULTS,
+                min_relevance: DEFAULT_MIN_RELEVANCE,
+                time_range: None,
+                search_mode: shared::models::SearchMode::default(),
+                boost_keywords: None,
+            }),
+        };
+
+        self.shared_context.context_engine().execute(params).await
+    }
+
+    // ==================== Action Execution Methods ====================
+
+    // Helper: Extract resource name from action details
+    fn extract_resource_name<'a>(
+        &self,
+        action: &'a ExecutionAction,
+        resource_type: &str,
+    ) -> Result<&'a str, AppError> {
+        action
+            .details
+            .get("resource_name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AppError::Internal(format!(
+                    "{} name not found in action details",
+                    resource_type
+                ))
+            })
+    }
+
+    // Helper: Find tool by name
+    fn find_tool_by_name(&self, tool_name: &str) -> Result<&AiTool, AppError> {
+        self.agent
+            .tools
+            .iter()
+            .find(|t| t.name == tool_name)
+            .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", tool_name)))
+    }
+
+    // Helper: Find workflow by name
+    fn find_workflow_by_name(
+        &self,
+        workflow_name: &str,
+    ) -> Result<&shared::models::AiWorkflow, AppError> {
+        self.agent
+            .workflows
+            .iter()
+            .find(|w| w.name == workflow_name)
+            .ok_or_else(|| AppError::NotFound(format!("Workflow {} not found", workflow_name)))
+    }
+
+    // Helper: Extract query from action
+    fn extract_query_from_action<'a>(
+        &self,
+        action: &'a ExecutionAction,
+    ) -> Result<&'a str, AppError> {
+        action
+            .details
+            .get("query")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::Internal("Query not found in action details".to_string()))
     }
 
     async fn execute_action(
         &mut self,
         action: &ExecutionAction,
         task: &ExecutableTask,
-        _execution_response: &TaskExecutionResponse,
     ) -> Result<Value, AppError> {
         match &action.action_type {
             TaskType::ToolCall => {
-                let tool_name = action
-                    .details
-                    .get("resource_name")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        AppError::Internal("Tool name not found in action details".to_string())
-                    })?;
-
-                let tool = self
-                    .agent
-                    .tools
-                    .iter()
-                    .find(|t| t.name == tool_name)
-                    .ok_or_else(|| AppError::NotFound(format!("Tool {} not found", tool_name)))?;
+                let tool_name = self.extract_resource_name(action, "Tool")?;
+                let tool = self.find_tool_by_name(tool_name)?;
 
                 let parameters = self
                     .generate_parameters_for_tool(tool, action, task)
@@ -875,27 +1036,15 @@ impl AgentExecutor {
                     .await
             }
             TaskType::WorkflowCall => {
-                let workflow_name = action
-                    .details
-                    .get("resource_name")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        AppError::Internal("Workflow name not found in action details".to_string())
-                    })?;
-
-                // Verify the workflow exists and clone it
-                let workflow = self
-                    .agent
-                    .workflows
-                    .iter()
-                    .find(|w| w.name == workflow_name)
-                    .ok_or_else(|| {
-                        AppError::NotFound(format!("Workflow {} not found", workflow_name))
-                    })?
-                    .clone();
+                let workflow_name = self.extract_resource_name(action, "Workflow")?;
+                let workflow = self.find_workflow_by_name(workflow_name)?.clone();
 
                 // Prepare workflow call inputs from action details
-                let inputs = action.details.get("inputs").cloned().unwrap_or(json!({}));
+                let inputs = action
+                    .details
+                    .get("inputs")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
 
                 let workflow_call = shared::dto::json::WorkflowCall {
                     workflow_name: workflow_name.to_string(),
@@ -907,41 +1056,17 @@ impl AgentExecutor {
                     .await
             }
             TaskType::KnowledgeSearch => {
-                let query = action
-                    .details
-                    .get("query")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        AppError::Internal("Query not found in action details".to_string())
-                    })?;
-
-                let results = self.search_context(query).await?;
-                Ok(json!({
-                    "search_type": "knowledge",
-                    "query": query,
-                    "results": results,
-                    "result_count": results.len()
-                }))
+                let query = self.extract_query_from_action(action)?;
+                self.execute_search_action(query, "knowledge").await
             }
             TaskType::ContextSearch => {
-                let query = action
-                    .details
-                    .get("query")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| {
-                        AppError::Internal("Query not found in action details".to_string())
-                    })?;
-
-                let results = self.search_context(query).await?;
-                Ok(json!({
-                    "search_type": "context",
-                    "query": query,
-                    "results": results,
-                    "result_count": results.len()
-                }))
+                let query = self.extract_query_from_action(action)?;
+                self.execute_search_action(query, "context").await
             }
         }
     }
+
+    // ==================== Workflow Methods ====================
 
     async fn execute_workflow_with_context_gathering(
         &mut self,
@@ -1091,6 +1216,30 @@ impl AgentExecutor {
 
         Ok(validation_result)
     }
+
+    // Helper: Execute search action
+    async fn execute_search_action(
+        &self,
+        query: &str,
+        search_type: &str,
+    ) -> Result<Value, AppError> {
+        println!("here {:?} {}", query, search_type);
+
+        let results = match search_type {
+            "knowledge" => self.search_knowledge_bases(query).await?,
+            "context" => self.search_context(query).await?,
+            _ => self.search_context(query).await?,
+        };
+
+        Ok(json!({
+            "search_type": search_type,
+            "query": query,
+            "results": results,
+            "result_count": results.len()
+        }))
+    }
+
+    // ==================== Schema and Parameter Methods ====================
 
     fn schema_fields_to_properties(fields: &[shared::models::SchemaField]) -> (Value, Vec<String>) {
         let mut properties = json!({});
@@ -1244,16 +1393,6 @@ impl AgentExecutor {
             "tool_config": tool,
             "task": task,
             "parameter_schema": parameter_schema,
-            "previous_results": self.current_tasks.lock().await.iter()
-                .map(|t| json!({
-                    "task_id": t.id,
-                    "summary": t.status
-                }))
-                .collect::<Vec<_>>(),
-            "context_findings": self.memories.iter()
-                .map(|m| m.content.clone())
-                .take(5)
-                .collect::<Vec<_>>(),
             "conversation_history": self.get_conversation_history_for_llm(),
         });
 
@@ -1280,5 +1419,158 @@ impl AgentExecutor {
         }
 
         Ok(parsed.parameter_generation.parameters)
+    }
+
+    fn get_current_iteration(&self) -> usize {
+        self.conversations
+            .iter()
+            .filter(|msg| matches!(&msg.message_type, ConversationMessageType::SystemDecision))
+            .count()
+    }
+
+    fn get_executable_tasks(&self) -> Vec<ExecutableTask> {
+        self.conversations
+            .iter()
+            .rev()
+            .find_map(|msg| match &msg.content {
+                ConversationContent::AssistantTaskExecution { task_execution, .. } => {
+                    task_execution
+                        .get("actions")
+                        .and_then(|a| a.get("action"))
+                        .and_then(|actions| actions.as_array())
+                        .map(|actions| {
+                            actions
+                                .iter()
+                                .filter_map(|a| serde_json::from_value(a.clone()).ok())
+                                .collect()
+                        })
+                }
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    fn get_recent_errors(&self) -> Vec<String> {
+        self.conversations
+            .iter()
+            .filter_map(|msg| match &msg.content {
+                ConversationContent::AssistantValidation {
+                    unresolvable_error_details,
+                    has_unresolvable_errors,
+                    ..
+                } => {
+                    if *has_unresolvable_errors {
+                        unresolvable_error_details.clone()
+                    } else {
+                        None
+                    }
+                }
+                ConversationContent::AssistantTaskExecution {
+                    blocking_reason,
+                    execution_status,
+                    ..
+                } => {
+                    if execution_status == "blocked" || execution_status == "cannot_execute" {
+                        blocking_reason.clone()
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    async fn derive_context_search_parameters(&self) -> Result<ContextSearchDerivation, AppError> {
+        let search_context = json!({
+            "conversation_history": self.get_conversation_history_for_llm(),
+            "current_objective": self.current_objective,
+            "conversation_insights": self.conversation_insights,
+        });
+
+        let request_body =
+            render_template(AgentTemplates::CONTEXT_SEARCH_DERIVATION, &search_context).map_err(
+                |e| AppError::Internal(format!("Failed to render context search template: {}", e)),
+            )?;
+
+        let (_, search_params) = self
+            .create_weak_llm()?
+            .generate_structured_content::<ContextSearchDerivation>(request_body)
+            .await?;
+
+        Ok(search_params)
+    }
+
+    async fn search_knowledge_bases_with_filters(
+        &self,
+        search_params: &ContextSearchDerivation,
+    ) -> Result<Vec<ContextSearchResult>, AppError> {
+        let params = ContextEngineParams {
+            query: search_params.search_query.clone(),
+            action: ContextAction::SearchKnowledgeBase { kb_id: None },
+            filters: Some(ContextFilters {
+                max_results: search_params.filters.max_results as usize,
+                min_relevance: search_params.filters.min_relevance,
+                time_range: self.parse_time_range(&search_params.filters.time_range),
+                search_mode: match &search_params.filters.search_mode {
+                    crate::agentic::SearchModeType::Semantic => shared::models::SearchMode::Vector,
+                    crate::agentic::SearchModeType::Keyword => shared::models::SearchMode::FullText,
+                    crate::agentic::SearchModeType::Hybrid => shared::models::SearchMode::Hybrid {
+                        vector_weight: 0.5,
+                        text_weight: 0.5,
+                    },
+                },
+                boost_keywords: search_params.filters.boost_keywords.clone(),
+            }),
+        };
+
+        self.shared_context.context_engine().execute(params).await
+    }
+
+    async fn search_memories_with_filters(
+        &self,
+        search_params: &ContextSearchDerivation,
+    ) -> Result<Vec<ContextSearchResult>, AppError> {
+        let params = ContextEngineParams {
+            query: search_params.search_query.clone(),
+            action: ContextAction::SearchMemories { category: None },
+            filters: Some(ContextFilters {
+                max_results: search_params.filters.max_results as usize,
+                min_relevance: search_params.filters.min_relevance,
+                time_range: self.parse_time_range(&search_params.filters.time_range),
+                search_mode: match &search_params.filters.search_mode {
+                    crate::agentic::SearchModeType::Semantic => shared::models::SearchMode::Vector,
+                    crate::agentic::SearchModeType::Keyword => shared::models::SearchMode::FullText,
+                    crate::agentic::SearchModeType::Hybrid => shared::models::SearchMode::Hybrid {
+                        vector_weight: 0.5,
+                        text_weight: 0.5,
+                    },
+                },
+                boost_keywords: search_params.filters.boost_keywords.clone(),
+            }),
+        };
+
+        self.shared_context.context_engine().execute(params).await
+    }
+
+    fn parse_time_range(
+        &self,
+        time_range_str: &Option<String>,
+    ) -> Option<shared::models::TimeRange> {
+        use chrono::{Duration, Utc};
+
+        time_range_str.as_ref().and_then(|range_str| {
+            let now = Utc::now();
+            let start = match range_str.as_str() {
+                "last_hour" => now - Duration::hours(1),
+                "last_day" => now - Duration::days(1),
+                "last_week" => now - Duration::weeks(1),
+                "last_month" => now - Duration::days(30),
+                "last_year" => now - Duration::days(365),
+                _ => return None,
+            };
+
+            Some(shared::models::TimeRange { start, end: now })
+        })
     }
 }

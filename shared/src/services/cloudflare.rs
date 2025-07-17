@@ -35,14 +35,16 @@ pub struct CustomHostname {
 pub struct CloudflareService {
     api_key: String,
     zone_id: String,
+    client: reqwest::Client,
 }
 
 impl CloudflareService {
     pub fn new(api_key: String, zone_id: String) -> Self {
-        Self { api_key, zone_id }
+        let client = reqwest::Client::new();
+        Self { api_key, zone_id, client }
     }
 
-    pub fn create_custom_hostname(
+    pub async fn create_custom_hostname(
         &self,
         hostname: &str,
         origin_server: &str,
@@ -57,16 +59,19 @@ impl CloudflareService {
             custom_origin_server: origin_server.to_string(),
         };
 
-        let mut response = ureq::post(&url)
-            .header("Authorization", &format!("Bearer {}", self.api_key))
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
-            .send_json(&request_body)
+            .json(&request_body)
+            .send()
+            .await
             .map_err(|e| AppError::External(format!("Cloudflare API request failed: {}", e)))?;
 
-        let cloudflare_response: CloudflareResponse<CustomHostname> =
-            response.body_mut().read_json().map_err(|e| {
-                AppError::External(format!("Failed to parse Cloudflare response: {}", e))
-            })?;
+        let cloudflare_response: CloudflareResponse<CustomHostname> = response
+            .json()
+            .await
+            .map_err(|e| AppError::External(format!("Failed to parse Cloudflare response: {}", e)))?;
 
         if !cloudflare_response.success {
             let error_messages: Vec<String> = cloudflare_response
@@ -85,18 +90,20 @@ impl CloudflareService {
         })
     }
 
-    pub fn delete_custom_hostname(&self, hostname_id: &str) -> Result<(), AppError> {
+    pub async fn delete_custom_hostname(&self, hostname_id: &str) -> Result<(), AppError> {
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/custom_hostnames/{}",
             self.zone_id, hostname_id
         );
 
-        let response = ureq::delete(&url)
-            .header("Authorization", &format!("Bearer {}", self.api_key))
-            .call()
+        let response = self.client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await
             .map_err(|e| AppError::External(format!("Cloudflare API request failed: {}", e)))?;
 
-        if response.status() != 200 {
+        if !response.status().is_success() {
             return Err(AppError::External(format!(
                 "Cloudflare API error ({})",
                 response.status()
@@ -138,22 +145,24 @@ impl CloudflareService {
         records
     }
 
-    pub fn check_domain_verification_status(&self, domain: &str) -> Result<bool, AppError> {
+    pub async fn check_domain_verification_status(&self, domain: &str) -> Result<bool, AppError> {
         // For domain verification, we check if the specific CNAME record exists and points to the correct value
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/dns_records?name={}&type=CNAME",
             self.zone_id, domain
         );
 
-        let mut response = ureq::get(&url)
-            .header("Authorization", &format!("Bearer {}", self.api_key))
-            .call()
+        let response = self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await
             .map_err(|e| AppError::External(format!("Cloudflare API error: {}", e)))?;
 
-        let cloudflare_response: CloudflareResponse<Vec<serde_json::Value>> =
-            response.body_mut().read_json().map_err(|e| {
-                AppError::External(format!("Failed to parse Cloudflare response: {}", e))
-            })?;
+        let cloudflare_response: CloudflareResponse<Vec<serde_json::Value>> = response
+            .json()
+            .await
+            .map_err(|e| AppError::External(format!("Failed to parse Cloudflare response: {}", e)))?;
 
         if !cloudflare_response.success {
             let error_messages: Vec<String> = cloudflare_response
@@ -196,7 +205,7 @@ impl CloudflareService {
         Ok(false)
     }
 
-    pub fn check_custom_hostname_status(&self, hostname: &str) -> Result<bool, AppError> {
+    pub async fn check_custom_hostname_status(&self, hostname: &str) -> Result<bool, AppError> {
         tracing::info!("Checking custom hostname status for: {}", hostname);
 
         // First, get all custom hostnames to find the ID for this hostname
@@ -207,16 +216,20 @@ impl CloudflareService {
 
         tracing::info!("Making Cloudflare API call to: {}", list_url);
 
-        let mut list_response = ureq::get(&list_url)
-            .header("Authorization", &format!("Bearer {}", self.api_key))
-            .call()
+        let list_response = self.client
+            .get(&list_url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await
             .map_err(|e| {
                 tracing::error!("Cloudflare API call failed: {}", e);
                 AppError::External(format!("Cloudflare API error: {}", e))
             })?;
 
-        let list_cloudflare_response: CloudflareResponse<Vec<CustomHostname>> =
-            list_response.body_mut().read_json().map_err(|e| {
+        let list_cloudflare_response: CloudflareResponse<Vec<CustomHostname>> = list_response
+            .json()
+            .await
+            .map_err(|e| {
                 tracing::error!("Failed to parse Cloudflare response: {}", e);
                 AppError::External(format!("Failed to parse Cloudflare response: {}", e))
             })?;
@@ -274,16 +287,20 @@ impl CloudflareService {
 
         tracing::info!("Getting detailed status from: {}", detail_url);
 
-        let mut detail_response = ureq::get(&detail_url)
-            .header("Authorization", &format!("Bearer {}", self.api_key))
-            .call()
+        let detail_response = self.client
+            .get(&detail_url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await
             .map_err(|e| {
                 tracing::error!("Cloudflare detail API call failed: {}", e);
                 AppError::External(format!("Cloudflare API error: {}", e))
             })?;
 
-        let detail_cloudflare_response: CloudflareResponse<serde_json::Value> =
-            detail_response.body_mut().read_json().map_err(|e| {
+        let detail_cloudflare_response: CloudflareResponse<serde_json::Value> = detail_response
+            .json()
+            .await
+            .map_err(|e| {
                 tracing::error!("Failed to parse Cloudflare detail response: {}", e);
                 AppError::External(format!("Failed to parse Cloudflare response: {}", e))
             })?;

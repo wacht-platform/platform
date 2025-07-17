@@ -27,7 +27,7 @@ argon2 = "0.5.3"
 totp-rs = "5.4.0"
 tracing = "0.1"
 llm = { version = "1.2.9", features = ["google"] }
-ureq = { version = "3.0.11", features = ["json"] }
+reqwest = { version = "0.12", features = ["json"] }
 pulldown-cmark = "0.12.2"
 base64 = "0.22.1"
 rcgen = { version = "0.13.2", features = ["crypto"] }

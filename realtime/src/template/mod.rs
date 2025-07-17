@@ -24,6 +24,9 @@ impl AgentTemplates {
     pub const VALIDATION: &'static str = "validation_prompt";
     pub const PARAMETER_GENERATION: &'static str = "parameter_generation_prompt";
     pub const WORKFLOW_VALIDATION: &'static str = "workflow_validation_prompt";
+    pub const SUMMARY: &'static str = "summary_prompt";
+    pub const STEP_DECISION: &'static str = "step_decision_prompt";
+    pub const CONTEXT_SEARCH_DERIVATION: &'static str = "context_search_derivation_prompt";
 }
 
 pub fn render_template(

@@ -29,14 +29,18 @@ impl Command for UploadToCdnCommand {
             .await
             .map_err(|e| AppError::S3(e.to_string()))?;
 
-        let _ = ureq::post("https://api.cloudflare.com/client/v4/zones/90930ab39928937ca4d0c4aba3b03126/purge_cache")
+        let client = reqwest::Client::new();
+        let _ = client
+            .post("https://api.cloudflare.com/client/v4/zones/90930ab39928937ca4d0c4aba3b03126/purge_cache")
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", std::env::var("CLOUDFLARE_API_KEY").expect("CLOUDFLARE_API_KEY must be set")))
-            .send_json(json!({
+            .json(&json!({
                 "files": [
                     format!("https://cdn.wacht.services/{}", self.file_path)
                 ]
-            }));
+            }))
+            .send()
+            .await;
 
         Ok(format!("https://cdn.wacht.services/{}", self.file_path))
     }

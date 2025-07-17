@@ -1174,6 +1174,7 @@ impl CreateProductionDeploymentCommand {
         if let Err(e) = app_state
             .cloudflare_service
             .delete_custom_hostname(frontend_hostname)
+            .await
         {
             tracing::error!(
                 "Failed to cleanup frontend hostname {}: {}",
@@ -1190,6 +1191,7 @@ impl CreateProductionDeploymentCommand {
         if let Err(e) = app_state
             .cloudflare_service
             .delete_custom_hostname(backend_hostname)
+            .await
         {
             tracing::error!(
                 "Failed to cleanup backend hostname {}: {}",
@@ -1204,7 +1206,7 @@ impl CreateProductionDeploymentCommand {
         }
 
         if let Some(domain_id) = postmark_domain_id {
-            if let Err(e) = app_state.postmark_service.delete_domain(domain_id) {
+            if let Err(e) = app_state.postmark_service.delete_domain(domain_id).await {
                 tracing::error!("Failed to cleanup Postmark domain {}: {}", domain_id, e);
             } else {
                 tracing::info!("Successfully cleaned up Postmark domain: {}", domain_id);
@@ -2264,7 +2266,7 @@ impl Command for CreateProductionDeploymentCommand {
             }
         }
 
-        let postmark_domain = app_state.postmark_service.create_domain(&mail_from_host)?;
+        let postmark_domain = app_state.postmark_service.create_domain(&mail_from_host).await?;
         let postmark_domain_id = postmark_domain.id;
         let email_verification_records = app_state
             .postmark_service
@@ -2289,7 +2291,8 @@ impl Command for CreateProductionDeploymentCommand {
 
         let frontend_hostname_result = app_state
             .cloudflare_service
-            .create_custom_hostname(&frontend_hostname, "accounts.wacht.services");
+            .create_custom_hostname(&frontend_hostname, "accounts.wacht.services")
+            .await;
 
         let frontend_hostname_id = match frontend_hostname_result {
             Ok(custom_hostname) => {
@@ -2311,7 +2314,8 @@ impl Command for CreateProductionDeploymentCommand {
 
         let backend_hostname_result = app_state
             .cloudflare_service
-            .create_custom_hostname(&backend_hostname, "frontend.wacht.services");
+            .create_custom_hostname(&backend_hostname, "frontend.wacht.services")
+            .await;
 
         let backend_hostname_id = match backend_hostname_result {
             Ok(custom_hostname) => {
@@ -2453,6 +2457,7 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
                 &mut domain_verification_records,
                 &app_state.cloudflare_service,
             )
+            .await
             .map_err(|e| {
                 tracing::warn!("Failed to verify domain records: {}", e);
                 e
@@ -2463,6 +2468,7 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
         app_state
             .dns_verification_service
             .verify_email_records(&mut email_verification_records)
+            .await
             .map_err(|e| {
                 tracing::warn!("Failed to verify email records: {}", e);
                 e
@@ -2682,6 +2688,7 @@ impl DeleteDeploymentCommand {
                     if let Err(e) = app_state
                         .cloudflare_service
                         .delete_custom_hostname(frontend_hostname_id)
+                        .await
                     {
                         tracing::warn!(
                             "Failed to cleanup frontend hostname {}: {}",
@@ -2700,6 +2707,7 @@ impl DeleteDeploymentCommand {
                     if let Err(e) = app_state
                         .cloudflare_service
                         .delete_custom_hostname(backend_hostname_id)
+                        .await
                     {
                         tracing::warn!(
                             "Failed to cleanup backend hostname {}: {}",
@@ -2717,7 +2725,7 @@ impl DeleteDeploymentCommand {
 
             if let Some(email_records) = &deployment.email_verification_records {
                 if let Some(postmark_domain_id) = email_records.postmark_domain_id {
-                    if let Err(e) = app_state.postmark_service.delete_domain(postmark_domain_id) {
+                    if let Err(e) = app_state.postmark_service.delete_domain(postmark_domain_id).await {
                         tracing::warn!(
                             "Failed to cleanup Postmark domain {}: {}",
                             postmark_domain_id,

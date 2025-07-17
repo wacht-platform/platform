@@ -2,6 +2,21 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Search mode for hybrid search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchMode {
+    /// Semantic search only using vector embeddings
+    Vector,
+    /// Full-text search only using PostgreSQL text search
+    FullText,
+    /// Hybrid search combining vector and full-text with weights
+    Hybrid {
+        vector_weight: f32,
+        text_weight: f32,
+    },
+}
+
 /// Context engine tool for intelligent knowledge retrieval
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextEngineTool {
@@ -44,6 +59,8 @@ pub struct ContextFilters {
     pub max_results: usize,
     pub min_relevance: f64,
     pub time_range: Option<TimeRange>,
+    pub search_mode: SearchMode,
+    pub boost_keywords: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +93,20 @@ impl Default for ContextFilters {
             max_results: 10,
             min_relevance: 0.7,
             time_range: None,
+            search_mode: SearchMode::Hybrid {
+                vector_weight: 0.7,
+                text_weight: 0.3,
+            },
+            boost_keywords: None,
+        }
+    }
+}
+
+impl Default for SearchMode {
+    fn default() -> Self {
+        SearchMode::Hybrid {
+            vector_weight: 0.7,
+            text_weight: 0.3,
         }
     }
 }
