@@ -1,0 +1,38 @@
+{{#if system_prompt}}
+<System>
+{{system_prompt}}
+</System>
+{{/if}}
+
+<Request>
+Please analyze the search execution and provide a detailed report.
+
+Return your response as a JSON object with the following structure:
+{
+    "execution_status": "completed|in_progress|needs_refinement|failed",
+    "strategy_used": "Name of the strategy that was executed",
+    "results_found": {{documents_found}},
+    "quality_score": 0.0-1.0,
+    "execution_details": {
+        "documents_scanned": {{documents_found}},
+        "chunks_analyzed": {{chunks_analyzed}},
+        "search_iterations": 1,
+        "time_taken_ms": 0,
+        "challenges_encountered": []
+    },
+    "discovered_patterns": [
+        "Document organization pattern",
+        "Naming convention discovered",
+        "Content structure insight"
+    ],
+    "refinement_suggestions": [
+        {
+            "suggestion_type": "parameter_adjustment|strategy_change|term_refinement",
+            "description": "What to change and why",
+            "suggested_parameters": {
+                "specific parameters to adjust": "values"
+            }
+        }
+    ]
+}
+</Request>

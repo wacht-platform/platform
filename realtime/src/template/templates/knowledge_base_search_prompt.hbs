@@ -1,0 +1,118 @@
+{
+  "system_instruction": {
+      "parts": [
+        {
+          "text": "{{system_prompt}}"
+        }
+      ]
+   },
+  "contents": [
+    {{#each conversation_history}}
+    {
+      "role": "{{this.role}}",
+      "parts": [
+        {
+          "text": "{{this.content}}"
+        }
+      ]
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "generationConfig": {
+    "responseMimeType": "application/json",
+    "responseSchema": {
+      "type": "OBJECT",
+      "properties": {
+        "search_strategy": {
+          "type": "STRING",
+          "enum": ["list_documents", "keyword_document_search", "chunk_search", "multi_step"],
+          "description": "The chosen search strategy based on the request analysis"
+        },
+        "strategy_reasoning": {
+          "type": "STRING",
+          "description": "Explanation of why this search strategy was selected"
+        },
+        "search_steps": {
+          "type": "ARRAY",
+          "items": {
+            "type": "OBJECT",
+            "properties": {
+              "step_type": {
+                "type": "STRING",
+                "enum": ["list_documents", "keyword_document_search", "chunk_search"]
+              },
+              "step_description": {
+                "type": "STRING",
+                "description": "What this step will accomplish"
+              },
+              "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                  "keywords": {
+                    "type": "ARRAY",
+                    "items": {
+                      "type": "STRING"
+                    },
+                    "description": "Keywords for document search",
+                    "nullable": true
+                  },
+                  "match_type": {
+                    "type": "STRING",
+                    "enum": ["all", "any"],
+                    "description": "How to match keywords",
+                    "nullable": true
+                  },
+                  "search_query": {
+                    "type": "STRING",
+                    "description": "Semantic search query for chunks",
+                    "nullable": true
+                  },
+                  "document_ids": {
+                    "type": "ARRAY",
+                    "items": {
+                      "type": "INTEGER"
+                    },
+                    "description": "Specific document IDs to search within",
+                    "nullable": true
+                  },
+                  "similarity_threshold": {
+                    "type": "NUMBER",
+                    "description": "Minimum relevance score (0.0-1.0)",
+                    "nullable": true
+                  },
+                  "max_chunks": {
+                    "type": "INTEGER",
+                    "description": "Maximum number of chunks to return",
+                    "nullable": true
+                  },
+                  "chunk_context": {
+                    "type": "BOOLEAN",
+                    "description": "Include surrounding chunks for context",
+                    "nullable": true
+                  },
+                  "keyword_boost": {
+                    "type": "ARRAY",
+                    "items": {
+                      "type": "STRING"
+                    },
+                    "description": "Keywords to boost in chunk ranking",
+                    "nullable": true
+                  }
+                }
+              }
+            },
+            "required": ["step_type", "step_description", "parameters"]
+          },
+          "description": "Ordered list of search steps to execute"
+        },
+        "expected_results": {
+          "type": "STRING",
+          "description": "What kind of results are expected from this search strategy"
+        }
+      },
+      "required": ["search_strategy", "strategy_reasoning", "search_steps", "expected_results"]
+    },
+    "temperature": 0.3,
+    "maxOutputTokens": 4096
+  }
+}

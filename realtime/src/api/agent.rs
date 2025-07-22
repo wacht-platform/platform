@@ -1,5 +1,4 @@
 use crate::agentic::AgentExecutor;
-use chrono::Utc;
 use futures::StreamExt;
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
@@ -39,9 +38,6 @@ impl AgentHandler {
         let kv = self.get_key_value_store().await?;
         let watch = self.create_watcher(&kv, &context_key).await?;
         self.spawn_message_publisher(receiver, context_key.clone());
-        
-        // Yield to ensure the spawned task starts running
-        tokio::task::yield_now().await;
 
         let execution_result = self
             .run_agent_execution(
@@ -85,29 +81,10 @@ impl AgentHandler {
         context_key: String,
     ) {
         let jetstream = self.app_state.nats_jetstream.clone();
-        println!("Spawning message publisher task at: {}", Utc::now());
-
         tokio::spawn(async move {
-            println!("Message publisher task started at: {}", Utc::now());
-            let mut message_count = 0;
             while let Some(message) = receiver.recv().await {
-                message_count += 1;
-                let receive_time = Utc::now();
-                println!("Message #{} received from channel at: {}", message_count, receive_time);
-                
-                // Check channel queue size
-                println!("Channel queue size after receive: {}", receiver.len());
-                
-                if let Err(e) = publish_stream_event(&jetstream, &context_key, message).await {
-                    error!("Failed to publish message: {}", e);
-                } else {
-                    println!(
-                        "Total channel->NATS time: {}ms",
-                        (Utc::now() - receive_time).num_milliseconds()
-                    );
-                }
+                let _ = publish_stream_event(&jetstream, &context_key, message).await;
             }
-            println!("Channel receiver loop ended");
         });
     }
 
@@ -125,7 +102,7 @@ impl AgentHandler {
             .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {}", e)))?;
 
         tokio::select! {
-            result = agent_executor.execute_with_streaming(user_message) => {
+            result = agent_executor.execute_with_streaming(user_message.to_string()) => {
                 result
             }
             _ = watch_for_cancellation(&mut watch, execution_id) => {
@@ -149,19 +126,10 @@ async fn publish_stream_event(
     let payload = serde_json::to_vec(&conversation_content)
         .map_err(|e| AppError::Internal(format!("Failed to serialize message: {}", e)))?;
 
-    let start = Utc::now();
-    println!("Publishing to NATS subject: {} at {}", subject, start);
-    
     jetstream
         .publish(subject, payload.into())
         .await
         .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;
-
-    println!(
-        "NATS publish took: {}ms, published at: {}",
-        (Utc::now() - start).num_milliseconds(),
-        Utc::now()
-    );
 
     Ok(())
 }
@@ -177,10 +145,7 @@ async fn watch_for_cancellation(
                 return;
             };
 
-            println!("stored id {stored_id} current execution id {current_execution_id}");
-
             if stored_id != current_execution_id.to_string() {
-                println!("cancelling stuff");
                 return;
             }
         }

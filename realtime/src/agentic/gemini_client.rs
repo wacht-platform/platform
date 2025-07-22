@@ -11,8 +11,6 @@ pub struct GeminiClient {
     client: reqwest::Client,
 }
 
-// Request structures are now defined in templates as JSON
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GeminiResponse {
     pub candidates: Vec<Candidate>,
@@ -60,10 +58,7 @@ impl GeminiClient {
         }
     }
 
-    pub async fn generate_structured_content<T>(
-        &self,
-        request_body: String,
-    ) -> Result<(String, T), AppError>
+    pub async fn generate_structured_content<T>(&self, request_body: String) -> Result<T, AppError>
     where
         T: for<'de> Deserialize<'de> + Serialize,
     {
@@ -73,11 +68,11 @@ impl GeminiClient {
         for attempt in 1..=3 {
             if attempt > 1 {
                 tracing::warn!("Retrying Gemini API request (attempt {})", attempt);
-                // Use async sleep instead of blocking thread sleep
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
             }
 
-            let response = self.client
+            let response = self
+                .client
                 .post(&url)
                 .header("x-goog-api-key", &self.api_key)
                 .header("Content-Type", "application/json")
@@ -89,37 +84,37 @@ impl GeminiClient {
                 Ok(resp) => {
                     let body = resp.bytes().await;
                     match body {
-                        Ok(bytes) => {
-                            match serde_json::from_slice::<GeminiResponse>(&bytes) {
-                                Ok(gemini_response) => {
-                                    let mut accumulated_text = String::new();
-                                    for part in &gemini_response.candidates[0].content.parts {
-                                        accumulated_text.push_str(&part.text);
-                                    }
-
-                                    if accumulated_text.is_empty() {
-                                        last_error = Some("No response content from Gemini API".to_string());
-                                        continue;
-                                    }
-
-                                    match serde_json::from_str::<T>(&accumulated_text) {
-                                        Ok(parsed_response) => {
-                                            return Ok((accumulated_text, parsed_response));
-                                        }
-                                        Err(e) => {
-                                            error!("Failed to parse structured response: {}", e);
-                                            error!("Raw response: {}", accumulated_text);
-                                            last_error = Some(format!("Failed to parse response: {}", e));
-                                        }
-                                    }
+                        Ok(bytes) => match serde_json::from_slice::<GeminiResponse>(&bytes) {
+                            Ok(gemini_response) => {
+                                let mut accumulated_text = String::new();
+                                for part in &gemini_response.candidates[0].content.parts {
+                                    accumulated_text.push_str(&part.text);
                                 }
-                                Err(e) => {
-                                    error!("Failed to parse Gemini response: {}", e);
-                                    error!("Raw body: {:?}", String::from_utf8_lossy(&bytes));
-                                    last_error = Some(format!("Invalid API response format: {}", e));
+
+                                if accumulated_text.is_empty() {
+                                    last_error =
+                                        Some("No response content from Gemini API".to_string());
+                                    continue;
+                                }
+
+                                match serde_json::from_str::<T>(&accumulated_text) {
+                                    Ok(parsed_response) => {
+                                        return Ok(parsed_response);
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to parse structured response: {}", e);
+                                        error!("Raw response: {}", accumulated_text);
+                                        last_error =
+                                            Some(format!("Failed to parse response: {}", e));
+                                    }
                                 }
                             }
-                        }
+                            Err(e) => {
+                                error!("Failed to parse Gemini response: {}", e);
+                                error!("Raw body: {:?}", String::from_utf8_lossy(&bytes));
+                                last_error = Some(format!("Invalid API response format: {}", e));
+                            }
+                        },
                         Err(e) => {
                             last_error = Some(format!("Failed to read response body: {}", e));
                         }

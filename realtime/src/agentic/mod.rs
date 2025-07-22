@@ -15,6 +15,7 @@ pub mod workflow_executor;
 
 pub use agent_executor::*;
 pub use agent_responses::*;
+pub use context_engine_executor::ContextGatheringOrchestrator;
 pub use decay_manager::*;
 pub use shared_context::*;
 pub use tool_executor::*;

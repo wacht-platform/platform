@@ -1,4 +1,4 @@
-use crate::template::{AgentTemplates, render_template};
+use crate::template::{AgentTemplates, render_template_with_prompt};
 use llm::LLMProvider;
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
@@ -171,7 +171,7 @@ impl MemoryManager {
             "conversation_topic": conversation_topic,
         });
 
-        let system_prompt = render_template(AgentTemplates::ACKNOWLEDGMENT, &evaluation_context)
+        let system_prompt = render_template_with_prompt(AgentTemplates::ACKNOWLEDGMENT, &evaluation_context)
             .map_err(|e| {
                 AppError::Internal(format!(
                     "Failed to render memory evaluation template: {}",

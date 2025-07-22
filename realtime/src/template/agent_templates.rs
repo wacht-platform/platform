@@ -66,4 +66,28 @@ pub fn register_all_templates(hb: &mut Handlebars) {
         include_str!("templates/context_search_derivation_prompt.hbs"),
     )
     .expect("Failed to register context_search_derivation_prompt template");
+
+    hb.register_template_string(
+        "knowledge_base_search_prompt",
+        include_str!("templates/knowledge_base_search_prompt.hbs"),
+    )
+    .expect("Failed to register knowledge_base_search_prompt template");
+
+    hb.register_template_string(
+        "kb_search_plan_prompt",
+        include_str!("templates/kb_search_plan_prompt.hbs"),
+    )
+    .expect("Failed to register kb_search_plan_prompt template");
+
+    hb.register_template_string(
+        "kb_search_execution_prompt",
+        include_str!("templates/kb_search_execution_prompt.hbs"),
+    )
+    .expect("Failed to register kb_search_execution_prompt template");
+
+    hb.register_template_string(
+        "kb_search_validation_prompt",
+        include_str!("templates/kb_search_validation_prompt.hbs"),
+    )
+    .expect("Failed to register kb_search_validation_prompt template");
 }

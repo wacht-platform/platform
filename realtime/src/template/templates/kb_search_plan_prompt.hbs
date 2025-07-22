@@ -1,0 +1,44 @@
+{{#if system_prompt}}
+<System>
+{{system_prompt}}
+</System>
+{{/if}}
+
+<Request>
+Please create a comprehensive search plan for finding the requested information in the knowledge base.
+
+Return your response as a JSON object with the following structure:
+{
+    "search_approach": "Overall strategy description",
+    "reasoning": "Why this approach will work",
+    "primary_strategy": {
+        "strategy_type": "document_discovery|keyword_search|semantic_search",
+        "description": "What this strategy will do",
+        "parameters": {
+            "knowledge_base_id": null or specific ID,
+            "document_keyword": "single keyword" or null,
+            "keywords": ["array", "of", "terms"] or null,
+            "search_query": "natural language query" or null,
+            "similarity_threshold": 0.7,
+            "max_chunks": 20,
+            "keyword_boost": ["important", "terms"] or null
+        },
+        "priority": 1
+    },
+    "fallback_strategies": [
+        {
+            "strategy_type": "alternative approach",
+            "description": "Backup plan description",
+            "parameters": { ... },
+            "priority": 2
+        }
+    ],
+    "success_criteria": {
+        "minimum_results": 3,
+        "relevance_threshold": 0.7,
+        "content_requirements": ["must explain X", "should include Y"],
+        "validation_checks": ["has examples", "covers theory"]
+    },
+    "expected_challenges": ["ambiguous terms", "scattered information"]
+}
+</Request>

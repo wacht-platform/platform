@@ -1,13 +1,21 @@
-use serde_json::json;
+use crate::agentic::{
+    ContextSearchDerivation, KnowledgeBaseSearchExecution, KnowledgeBaseSearchPlan,
+    KnowledgeBaseSearchValidation, SearchLoopDecision, SearchScope, SearchStrategy,
+    gemini_client::GeminiClient,
+};
+use crate::template::{AgentTemplates, render_template_with_prompt};
+use chrono::Duration;
+use serde_json::{Value, json};
 use shared::commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use shared::error::AppError;
 use shared::models::{
-    AiAgentWithFeatures, ContextAction, ContextEngineParams, ContextFilters, ContextSearchResult,
-    ContextSource, SearchMode,
+    AiAgentWithFeatures, AiKnowledgeBaseDocument, ContextAction, ContextEngineParams,
+    ContextFilters, ContextSearchResult, ContextSource, ConversationContent, ConversationRecord,
+    SearchMode, TimeRange,
 };
 use shared::queries::{
     DebugKnowledgeBaseContentQuery, DebugTextSearchQuery, FullTextSearchKnowledgeBaseQuery,
-    HybridSearchKnowledgeBaseQuery, HybridSearchMemoriesQuery, Query, SearchMemoriesQuery,
+    GetKnowledgeBaseDocumentsQuery, HybridSearchKnowledgeBaseQuery, Query, SearchMemoriesQuery,
 };
 use shared::state::AppState;
 use std::collections::HashSet;
@@ -385,37 +393,6 @@ impl ContextEngineExecutor {
         }
     }
 
-    fn create_enhanced_kb_search_result(
-        &self,
-        kb_id: i64,
-        document_id: i64,
-        chunk_index: i32,
-        content: String,
-        document_title: Option<String>,
-        document_description: Option<String>,
-        relevance: f64,
-        metadata: serde_json::Value,
-    ) -> ContextSearchResult {
-        let mut enhanced_metadata = metadata;
-        if let Some(obj) = enhanced_metadata.as_object_mut() {
-            obj.insert("chunk_index".to_string(), json!(chunk_index));
-            obj.insert("document_id".to_string(), json!(document_id));
-            if let Some(title) = document_title {
-                obj.insert("document_title".to_string(), json!(title));
-            }
-            if let Some(desc) = document_description {
-                obj.insert("document_description".to_string(), json!(desc));
-            }
-        }
-
-        ContextSearchResult {
-            source: ContextSource::KnowledgeBase { kb_id, document_id },
-            content,
-            relevance_score: relevance,
-            metadata: enhanced_metadata,
-        }
-    }
-
     fn calculate_relevance_score(&self, distance: f64) -> f64 {
         (1.0 - (distance / RELEVANCE_SCORE_DIVISOR as f64)).max(0.0)
     }
@@ -647,85 +624,690 @@ impl ContextEngineExecutor {
             })
             .collect())
     }
+}
 
-    async fn search_memories_hybrid(
-        &self,
-        query: &str,
-        query_embedding: &[f32],
-        category: Option<String>,
-        filters: &ContextFilters,
-    ) -> Result<Vec<ContextSearchResult>, AppError> {
-        match &filters.search_mode {
-            SearchMode::Vector => {
-                // Use existing vector search
-                self.search_memories(query, query_embedding, category, filters)
-                    .await
-            }
-            SearchMode::FullText => {
-                // Full-text only not implemented for memories yet
-                tracing::warn!(
-                    "Full-text search for memories not implemented, using vector search"
-                );
-                self.search_memories(query, query_embedding, category, filters)
-                    .await
-            }
-            SearchMode::Hybrid {
-                vector_weight,
-                text_weight,
-            } => {
-                let query = HybridSearchMemoriesQuery {
-                    query_text: query.to_string(),
-                    query_embedding: query_embedding.to_vec(),
-                    agent_id: self.agent.id,
-                    context_id: self.context_id,
-                    max_results: filters.max_results as i32,
-                    min_relevance: filters.min_relevance,
-                    vector_weight: *vector_weight as f64,
-                    text_weight: *text_weight as f64,
-                };
+pub struct ContextGatheringOrchestrator {
+    context_engine: ContextEngineExecutor,
+    app_state: AppState,
+    agent: AiAgentWithFeatures,
+}
 
-                let results = query.execute(&self.app_state).await?;
+impl ContextGatheringOrchestrator {
+    pub fn new(app_state: AppState, context_id: i64, agent: AiAgentWithFeatures) -> Self {
+        let context_engine =
+            ContextEngineExecutor::new(app_state.clone(), context_id, agent.clone());
 
-                Ok(results
-                    .into_iter()
-                    .filter(|result| {
-                        // Filter by category if specified
-                        category
-                            .as_ref()
-                            .map(|cat| &result.memory_type == cat)
-                            .unwrap_or(true)
-                    })
-                    .map(|result| ContextSearchResult {
-                        source: ContextSource::Memory {
-                            memory_id: result.id,
-                            category: result.memory_type.clone(),
-                        },
-                        content: result.content,
-                        relevance_score: result.combined_score,
-                        metadata: json!({
-                            "importance": result.importance,
-                            "created_at": result.created_at,
-                            "vector_similarity": result.vector_similarity,
-                            "text_rank": result.text_rank,
-                            "combined_score": result.combined_score,
-                            "search_mode": "hybrid",
-                        }),
-                    })
-                    .collect())
-            }
+        Self {
+            context_engine,
+            app_state,
+            agent,
         }
     }
 
-    async fn search_dynamic_context_hybrid(
+    pub async fn gather_context(
+        &self,
+        conversation_history: &[ConversationRecord],
+        current_objective: &Option<String>,
+    ) -> Result<Vec<ContextSearchResult>, AppError> {
+        // Derive search parameters using LLM
+        let search_params = self
+            .derive_context_search_parameters(conversation_history, current_objective)
+            .await?;
+
+        // Execute search based on scope
+        let context_results = match search_params.search_scope {
+            SearchScope::KnowledgeBase => {
+                self.iterative_knowledge_base_search(&search_params).await?
+            }
+            SearchScope::Experience => self.search_experience_with_filters(&search_params).await?,
+            SearchScope::Universal => {
+                let mut results = Vec::new();
+
+                // Use iterative search for knowledge base portion
+                let kb_results = self.iterative_knowledge_base_search(&search_params).await?;
+                results.extend(kb_results);
+
+                let exp_results = self.search_experience_with_filters(&search_params).await?;
+                results.extend(exp_results);
+
+                results
+            }
+        };
+
+        Ok(context_results)
+    }
+
+    /// Execute a search action from task execution
+    pub async fn execute_search_action(
+        &self,
+        search_type: &str,
+        query: &str,
+    ) -> Result<Vec<ContextSearchResult>, AppError> {
+        match search_type {
+            "knowledge_base" => self.search_knowledge_bases(query).await,
+            "all_sources" => self.search_context(query).await,
+            _ => Err(AppError::BadRequest(format!(
+                "Unknown search type: {}",
+                search_type
+            ))),
+        }
+    }
+
+    async fn search_context(&self, query: &str) -> Result<Vec<ContextSearchResult>, AppError> {
+        let params = ContextEngineParams {
+            query: query.to_string(),
+            action: ContextAction::SearchAll,
+            filters: None,
+        };
+
+        self.context_engine.execute(params).await
+    }
+
+    async fn search_knowledge_bases(
         &self,
         query: &str,
-        query_embedding: &[f32],
-        context_type: Option<String>,
-        filters: &ContextFilters,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
-        // For now, dynamic context continues to use vector search
-        // This can be extended to support hybrid search similar to KB
-        self.search_dynamic_context(query, query_embedding, context_type, filters)
-            .await
+        let params = ContextEngineParams {
+            query: query.to_string(),
+            action: ContextAction::SearchKnowledgeBase { kb_id: None },
+            filters: None,
+        };
+
+        self.context_engine.execute(params).await
+    }
+
+    async fn derive_context_search_parameters(
+        &self,
+        conversation_history: &[ConversationRecord],
+        current_objective: &Option<String>,
+    ) -> Result<ContextSearchDerivation, AppError> {
+        let context = json!({
+            "conversation_history": self.format_conversation_history(conversation_history),
+            "current_objective": current_objective,
+        });
+
+        let request_body =
+            render_template_with_prompt(AgentTemplates::CONTEXT_SEARCH_DERIVATION, &context)
+                .map_err(|e| {
+                    AppError::Internal(format!(
+                        "Failed to render context search derivation template: {}",
+                        e
+                    ))
+                })?;
+
+        let search_params = self
+            .create_weak_llm()?
+            .generate_structured_content::<ContextSearchDerivation>(request_body)
+            .await?;
+
+        Ok(search_params)
+    }
+
+    fn format_conversation_history(
+        &self,
+        conversation_history: &[ConversationRecord],
+    ) -> Vec<Value> {
+        conversation_history
+            .iter()
+            .map(|conv| {
+                json!({
+                    "role": conv.message_type,
+                    "content": self.extract_conversation_content(&conv.content),
+                    "timestamp": conv.created_at,
+                })
+            })
+            .collect()
+    }
+
+    fn create_weak_llm(&self) -> Result<GeminiClient, AppError> {
+        // TODO: Get API key from configuration
+        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
+        Ok(GeminiClient::new(
+            api_key,
+            Some("gemini-1.5-flash".to_string()),
+        ))
+    }
+
+    async fn iterative_knowledge_base_search(
+        &self,
+        initial_params: &ContextSearchDerivation,
+    ) -> Result<Vec<ContextSearchResult>, AppError> {
+        const MAX_ITERATIONS: usize = 5;
+        let mut all_results = Vec::new();
+        let mut current_params = initial_params.clone();
+        let mut previous_attempts = Vec::new();
+
+        for iteration in 0..MAX_ITERATIONS {
+            // Step 1: Plan the search strategy
+            let search_plan = self
+                .plan_knowledge_base_search(&current_params, &all_results, iteration)
+                .await?;
+
+            // Step 2: Execute the search plan
+            let (execution_report, iteration_results) = self
+                .execute_knowledge_base_search_plan(&search_plan, &current_params, iteration)
+                .await?;
+
+            // Track this attempt
+            previous_attempts.push(execution_report.clone());
+
+            // Add any results found
+            if !iteration_results.is_empty() {
+                all_results.extend(iteration_results);
+            }
+
+            // Step 3: Validate the results and decide next action
+            let validation = self
+                .validate_knowledge_base_search(
+                    &current_params,
+                    &search_plan,
+                    &execution_report,
+                    &all_results,
+                )
+                .await?;
+
+            // Handle the loop decision
+            match validation.loop_decision {
+                SearchLoopDecision::Complete => {
+                    // Success! Return the results
+                    break;
+                }
+                SearchLoopDecision::RefineAndRetry => {
+                    // Refine parameters based on validation feedback
+                    if let Some(guidance) = &validation.next_iteration_guidance {
+                        current_params = self
+                            .refine_params_from_guidance(&current_params, guidance, &validation)
+                            .await?;
+                    }
+                }
+                SearchLoopDecision::TryAlternativeStrategy => {
+                    // Switch to a different approach
+                    if !current_params.alternative_queries.is_empty() {
+                        current_params.search_query = current_params.alternative_queries.remove(0);
+                    } else {
+                        // No alternatives left, use validation guidance
+                        if let Some(guidance) = &validation.next_iteration_guidance {
+                            current_params = self
+                                .refine_params_from_guidance(&current_params, guidance, &validation)
+                                .await?;
+                        }
+                    }
+                }
+                SearchLoopDecision::AbortInsufficient => {
+                    // Knowledge base doesn't have the information
+                    eprintln!("Knowledge base search aborted - insufficient information");
+                    break;
+                }
+            }
+
+            // Prevent infinite loops
+            if iteration >= MAX_ITERATIONS - 1 {
+                eprintln!("Reached maximum search iterations");
+                break;
+            }
+        }
+
+        Ok(all_results)
+    }
+
+    async fn plan_knowledge_base_search(
+        &self,
+        search_params: &ContextSearchDerivation,
+        previous_results: &[ContextSearchResult],
+        iteration: usize,
+    ) -> Result<KnowledgeBaseSearchPlan, AppError> {
+        let context = json!({
+            "search_query": search_params.search_query,
+            "search_scope": format!("{:?}", search_params.search_scope),
+            "available_knowledge_bases": self.agent.knowledge_bases.iter().map(|kb| kb.id).collect::<Vec<i64>>(),
+            "conversation_history": self.format_conversation_history(&[]), // TODO: pass actual history
+            "current_objective": None::<String>, // TODO: pass actual objective
+            "iteration_number": iteration + 1,
+            "previous_results_count": previous_results.len(),
+            "previous_results_summary": self.summarize_results(previous_results),
+        });
+
+        let request_body = render_template_with_prompt(AgentTemplates::KB_SEARCH_PLAN, &context)
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to render KB search plan template: {}", e))
+            })?;
+
+        let plan = self
+            .create_weak_llm()?
+            .generate_structured_content::<KnowledgeBaseSearchPlan>(request_body)
+            .await?;
+
+        Ok(plan)
+    }
+
+    async fn execute_knowledge_base_search_plan(
+        &self,
+        search_plan: &KnowledgeBaseSearchPlan,
+        search_params: &ContextSearchDerivation,
+        iteration: usize,
+    ) -> Result<(KnowledgeBaseSearchExecution, Vec<ContextSearchResult>), AppError> {
+        let start_time = std::time::Instant::now();
+        let mut all_results = Vec::new();
+        let mut documents_scanned = 0;
+        let mut chunks_analyzed = 0;
+        let mut challenges = Vec::new();
+
+        // Try primary strategy first
+        let strategy_result = self
+            .execute_single_strategy(&search_plan.primary_strategy, search_params)
+            .await;
+
+        match strategy_result {
+            Ok((results, doc_count, chunk_count)) => {
+                all_results.extend(results);
+                documents_scanned += doc_count;
+                chunks_analyzed += chunk_count;
+            }
+            Err(e) => {
+                challenges.push(format!("Primary strategy failed: {}", e));
+
+                // Try fallback strategies
+                for fallback in &search_plan.fallback_strategies {
+                    match self.execute_single_strategy(fallback, search_params).await {
+                        Ok((results, doc_count, chunk_count)) => {
+                            all_results.extend(results);
+                            documents_scanned += doc_count;
+                            chunks_analyzed += chunk_count;
+                            break; // Success with fallback
+                        }
+                        Err(e) => {
+                            challenges.push(format!(
+                                "Fallback '{}' failed: {}",
+                                fallback.strategy_type, e
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        let execution_time = start_time.elapsed().as_millis() as i64;
+
+        // Generate execution report using LLM for intelligent analysis
+        let execution_context = json!({
+            "search_plan": search_plan,
+            "current_strategy": &search_plan.primary_strategy,
+            "iteration_number": iteration + 1,
+            "previous_attempts": Vec::<String>::new(), // TODO: pass actual previous attempts
+            "time_budget_ms": 30000,
+            "documents_found": documents_scanned,
+            "chunks_analyzed": chunks_analyzed,
+            "current_results_summary": self.summarize_results(&all_results),
+        });
+
+        let request_body =
+            render_template_with_prompt(AgentTemplates::KB_SEARCH_EXECUTION, &execution_context)
+                .map_err(|e| {
+                    AppError::Internal(format!(
+                        "Failed to render KB search execution template: {}",
+                        e
+                    ))
+                })?;
+
+        let mut execution_report = self
+            .create_weak_llm()?
+            .generate_structured_content::<KnowledgeBaseSearchExecution>(request_body)
+            .await?;
+
+        // Override with actual values
+        execution_report.results_found = all_results.len() as i32;
+        execution_report.execution_details.documents_scanned = documents_scanned;
+        execution_report.execution_details.chunks_analyzed = chunks_analyzed;
+        execution_report.execution_details.time_taken_ms = execution_time;
+        execution_report.execution_details.challenges_encountered = challenges;
+
+        Ok((execution_report, all_results))
+    }
+
+    async fn validate_knowledge_base_search(
+        &self,
+        search_params: &ContextSearchDerivation,
+        search_plan: &KnowledgeBaseSearchPlan,
+        execution_report: &KnowledgeBaseSearchExecution,
+        all_results: &[ContextSearchResult],
+    ) -> Result<KnowledgeBaseSearchValidation, AppError> {
+        let validation_context = json!({
+            "original_query": search_params.search_query,
+            "search_objective": None::<String>, // TODO: pass actual objective
+            "success_criteria": search_plan.success_criteria,
+            "search_plan": search_plan,
+            "execution_report": execution_report,
+            "total_results": all_results.len(),
+            "results_summary": self.summarize_results(all_results),
+            "result_samples": self.sample_results(all_results, 3),
+        });
+
+        let request_body =
+            render_template_with_prompt(AgentTemplates::KB_SEARCH_VALIDATION, &validation_context)
+                .map_err(|e| {
+                    AppError::Internal(format!(
+                        "Failed to render KB search validation template: {}",
+                        e
+                    ))
+                })?;
+
+        let validation = self
+            .create_weak_llm()?
+            .generate_structured_content::<KnowledgeBaseSearchValidation>(request_body)
+            .await?;
+
+        Ok(validation)
+    }
+
+    async fn execute_single_strategy(
+        &self,
+        strategy: &SearchStrategy,
+        search_params: &ContextSearchDerivation,
+    ) -> Result<(Vec<ContextSearchResult>, i32, i32), AppError> {
+        let mut results = Vec::new();
+        let mut docs_scanned = 0;
+        let mut chunks_analyzed = 0;
+
+        match strategy.strategy_type.as_str() {
+            "document_discovery" | "list_documents" => {
+                let documents = self
+                    .list_knowledge_base_documents(
+                        strategy.parameters.knowledge_base_id,
+                        strategy.parameters.document_keyword.as_deref(),
+                    )
+                    .await?;
+
+                docs_scanned = documents.len() as i32;
+
+                for doc in documents {
+                    let content = format!(
+                        "Document: {}\nDescription: {}\nType: {}\nSize: {} bytes",
+                        doc.title,
+                        doc.description.as_deref().unwrap_or("No description"),
+                        doc.file_type,
+                        doc.file_size
+                    );
+
+                    results.push(ContextSearchResult {
+                        content,
+                        source: ContextSource::KnowledgeBase {
+                            kb_id: doc.knowledge_base_id,
+                            document_id: doc.id,
+                        },
+                        relevance_score: 1.0,
+                        metadata: json!({
+                            "document_id": doc.id,
+                            "title": doc.title,
+                            "file_name": doc.file_name,
+                            "file_type": doc.file_type,
+                        }),
+                    });
+                }
+            }
+            "keyword_search" | "keyword_document_search" => {
+                if let Some(keywords) = &strategy.parameters.keywords {
+                    let params = ContextEngineParams {
+                        query: keywords.join(" "),
+                        action: ContextAction::SearchKnowledgeBase {
+                            kb_id: strategy.parameters.knowledge_base_id,
+                        },
+                        filters: Some(ContextFilters {
+                            max_results: strategy.parameters.max_chunks.unwrap_or(20) as usize,
+                            min_relevance: strategy.parameters.similarity_threshold.unwrap_or(0.7),
+                            time_range: None,
+                            search_mode: SearchMode::FullText,
+                            boost_keywords: strategy.parameters.keyword_boost.clone(),
+                        }),
+                    };
+
+                    let search_results = self.context_engine.execute(params).await?;
+
+                    chunks_analyzed = search_results.len() as i32;
+                    results.extend(search_results);
+                }
+            }
+            "semantic_search" | "chunk_search" => {
+                let query = strategy
+                    .parameters
+                    .search_query
+                    .clone()
+                    .unwrap_or_else(|| search_params.search_query.clone());
+
+                let params = ContextEngineParams {
+                    query,
+                    action: ContextAction::SearchKnowledgeBase {
+                        kb_id: strategy.parameters.knowledge_base_id,
+                    },
+                    filters: Some(ContextFilters {
+                        max_results: strategy.parameters.max_chunks.unwrap_or(20) as usize,
+                        min_relevance: strategy.parameters.similarity_threshold.unwrap_or(0.7),
+                        time_range: None,
+                        search_mode: SearchMode::Vector,
+                        boost_keywords: strategy.parameters.keyword_boost.clone(),
+                    }),
+                };
+
+                let search_results = self.context_engine.execute(params).await?;
+
+                chunks_analyzed = search_results.len() as i32;
+                results.extend(search_results);
+            }
+            _ => {
+                return Err(AppError::BadRequest(format!(
+                    "Unknown strategy type: {}",
+                    strategy.strategy_type
+                )));
+            }
+        }
+
+        Ok((results, docs_scanned, chunks_analyzed))
+    }
+
+    async fn list_knowledge_base_documents(
+        &self,
+        kb_id: Option<i64>,
+        keyword_filter: Option<&str>,
+    ) -> Result<Vec<AiKnowledgeBaseDocument>, AppError> {
+        let mut all_documents = Vec::new();
+
+        // Determine which knowledge bases to query
+        let kb_ids_to_query: Vec<i64> = if let Some(specific_kb_id) = kb_id {
+            // Check if agent has access to this knowledge base
+            if self
+                .agent
+                .knowledge_bases
+                .iter()
+                .any(|kb| kb.id == specific_kb_id)
+            {
+                vec![specific_kb_id]
+            } else {
+                return Err(AppError::BadRequest(format!(
+                    "Agent does not have access to knowledge base {}",
+                    specific_kb_id
+                )));
+            }
+        } else {
+            // Query all knowledge bases the agent has access to
+            self.agent.knowledge_bases.iter().map(|kb| kb.id).collect()
+        };
+
+        // List documents for selected knowledge bases
+        for kb_id in kb_ids_to_query {
+            let query = GetKnowledgeBaseDocumentsQuery::new(kb_id, 100, 0);
+            match query.execute(&self.app_state).await {
+                Ok(mut documents) => {
+                    // Apply keyword filter if provided
+                    if let Some(keyword) = keyword_filter {
+                        let keyword_lower = keyword.to_lowercase();
+                        documents.retain(|doc| {
+                            doc.title.to_lowercase().contains(&keyword_lower)
+                                || doc
+                                    .description
+                                    .as_ref()
+                                    .map(|desc| desc.to_lowercase().contains(&keyword_lower))
+                                    .unwrap_or(false)
+                                || doc.file_name.to_lowercase().contains(&keyword_lower)
+                        });
+                    }
+                    all_documents.extend(documents);
+                }
+                Err(e) => {
+                    // Log error but continue with other knowledge bases
+                    eprintln!(
+                        "Failed to list documents for knowledge base {}: {}",
+                        kb_id, e
+                    );
+                }
+            }
+        }
+
+        Ok(all_documents)
+    }
+
+    async fn search_experience_with_filters(
+        &self,
+        search_params: &ContextSearchDerivation,
+    ) -> Result<Vec<ContextSearchResult>, AppError> {
+        // Search memories only for experience scope
+        self.search_memories_with_filters(search_params).await
+    }
+
+    async fn search_memories_with_filters(
+        &self,
+        search_params: &ContextSearchDerivation,
+    ) -> Result<Vec<ContextSearchResult>, AppError> {
+        let params = ContextEngineParams {
+            query: search_params.search_query.clone(),
+            action: ContextAction::SearchMemories { category: None },
+            filters: Some(ContextFilters {
+                max_results: search_params.filters.max_results as usize,
+                min_relevance: search_params.filters.min_relevance,
+                time_range: self.parse_time_range(&search_params.filters.time_range),
+                search_mode: match &search_params.filters.search_mode {
+                    crate::agentic::SearchModeType::Semantic => SearchMode::Vector,
+                    crate::agentic::SearchModeType::Keyword => SearchMode::FullText,
+                    crate::agentic::SearchModeType::Hybrid => SearchMode::Hybrid {
+                        vector_weight: 0.5,
+                        text_weight: 0.5,
+                    },
+                },
+                boost_keywords: search_params.filters.boost_keywords.clone(),
+            }),
+        };
+
+        self.context_engine.execute(params).await
+    }
+
+    fn parse_time_range(&self, time_range: &Option<String>) -> Option<TimeRange> {
+        use chrono::{TimeZone, Utc};
+
+        time_range.as_ref().and_then(|range| {
+            let now = Utc::now();
+            let start = match range.as_str() {
+                "last_hour" => now - Duration::hours(1),
+                "today" => now
+                    .date_naive()
+                    .and_hms_opt(0, 0, 0)
+                    .and_then(|dt| Utc.from_local_datetime(&dt).single())
+                    .unwrap_or(now - Duration::hours(24)),
+                "last_day" => now - Duration::days(1),
+                "last_week" => now - Duration::weeks(1),
+                "last_month" => now - Duration::days(30),
+                "last_year" => now - Duration::days(365),
+                _ => return None,
+            };
+
+            Some(TimeRange { start, end: now })
+        })
+    }
+
+    async fn refine_params_from_guidance(
+        &self,
+        current_params: &ContextSearchDerivation,
+        _guidance: &str,
+        validation: &KnowledgeBaseSearchValidation,
+    ) -> Result<ContextSearchDerivation, AppError> {
+        let mut refined = current_params.clone();
+
+        // Extract suggested search terms from content gaps
+        let mut new_keywords = Vec::new();
+        for gap in &validation.content_gaps {
+            new_keywords.extend(gap.suggested_search_terms.clone());
+        }
+
+        // Update boost keywords
+        if !new_keywords.is_empty() {
+            refined.filters.boost_keywords = Some(new_keywords);
+        }
+
+        // Adjust relevance threshold based on validation
+        if validation.completeness_score < 0.5 {
+            // Lower threshold to get more results
+            refined.filters.min_relevance *= 0.8;
+        }
+
+        // Increase max results if we need more
+        if validation.relevance_assessment.missing_information.len() > 2 {
+            refined.filters.max_results = (refined.filters.max_results as f32 * 1.5) as i32;
+        }
+
+        Ok(refined)
+    }
+
+    fn summarize_results(&self, results: &[ContextSearchResult]) -> String {
+        if results.is_empty() {
+            return "No results found".to_string();
+        }
+
+        let doc_count = results
+            .iter()
+            .filter_map(|r| match &r.source {
+                ContextSource::KnowledgeBase { document_id, .. } => Some(document_id),
+                _ => None,
+            })
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+
+        let titles: Vec<String> = results
+            .iter()
+            .filter_map(|r| r.metadata.get("title").and_then(|t| t.as_str()))
+            .take(3)
+            .map(|s| s.to_string())
+            .collect();
+
+        format!(
+            "Found {} results from {} documents. Sample titles: {}",
+            results.len(),
+            doc_count,
+            if titles.is_empty() {
+                "N/A".to_string()
+            } else {
+                titles.join(", ")
+            }
+        )
+    }
+
+    fn sample_results(&self, results: &[ContextSearchResult], count: usize) -> Vec<String> {
+        results
+            .iter()
+            .take(count)
+            .map(|r| {
+                let title = r
+                    .metadata
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("Untitled");
+                let preview = if r.content.len() > 200 {
+                    format!("{}...", &r.content[..200])
+                } else {
+                    r.content.clone()
+                };
+                format!("[{}] {}", title, preview)
+            })
+            .collect()
+    }
+
+    fn extract_conversation_content(&self, content: &ConversationContent) -> String {
+        serde_json::to_string(content).unwrap()
     }
 }

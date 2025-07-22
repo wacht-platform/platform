@@ -107,29 +107,20 @@ async fn handle_client(
                 .await
                 .unwrap();
 
-            // Create a continuous message stream without batching
             let mut msg_stream = msg_consumer.messages().await.unwrap();
-            println!("WebSocket NATS consumer started for context: {}", context_id);
-            
+
             loop {
                 tokio::select! {
                     msg = msg_stream.next() => {
                         match msg {
                             Some(Ok(message)) => {
-                                let ws_receive_time = chrono::Utc::now();
-                                println!("WebSocket consumer received NATS message at: {}", ws_receive_time);
-                                
-                                // Process message immediately
                                 match serde_json::from_slice::<Value>(&message.payload.to_vec()) {
                                     Ok(chunk) => {
-                                        println!("Sending to WebSocket client");
                                         let _ = sender.send(WebsocketMessage {
                                             message_id: None,
                                             message_type: WebsocketMessageType::ConversationMessage,
                                             data: chunk,
                                         });
-                                        println!("WebSocket send complete, total WS processing: {}ms", 
-                                            (chrono::Utc::now() - ws_receive_time).num_milliseconds());
                                     }
                                     Err(e) => {
                                         error!("Failed to deserialize message: {}", e);
@@ -141,7 +132,6 @@ async fn handle_client(
                                 error!("Error receiving message: {}", e);
                             }
                             None => {
-                                // Stream ended, break the loop
                                 break;
                             }
                         }
@@ -253,7 +243,7 @@ async fn handle_execution_message(
                 // Notify the consumer to start BEFORE sending the connected message
                 // This ensures the consumer is ready to receive messages
                 session.ready.notify_waiters();
-                
+
                 // Small delay to ensure consumer is fully initialized
                 tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 

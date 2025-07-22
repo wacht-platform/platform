@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT \n                id, content, embedding as \"embedding: Vector\", memory_category,\n                base_temporal_score, access_count,\n                first_accessed_at, last_accessed_at,\n                citation_count, cross_context_value, learning_confidence,\n                creation_context_id, last_reinforced_at,\n                semantic_centrality, uniqueness_score,\n                compression_level, compressed_content,\n                context_decay_profile,\n                created_at, updated_at,\n                1 - (embedding <=> $1) as similarity_score\n            FROM memories\n            WHERE base_temporal_score > 0.1\n            ORDER BY (1 - (embedding <=> $1)) * base_temporal_score DESC\n            LIMIT $2\n            ",
+  "query": "\n            SELECT\n                id, content, embedding as \"embedding: Vector\", memory_category,\n                base_temporal_score, access_count,\n                first_accessed_at, last_accessed_at,\n                citation_count, cross_context_value, learning_confidence,\n                creation_context_id, last_reinforced_at,\n                semantic_centrality, uniqueness_score,\n                compression_level, compressed_content,\n                context_decay_profile,\n                created_at, updated_at,\n                1 - (embedding <=> $1) as similarity_score\n            FROM memories\n            WHERE base_temporal_score > 0.1\n            ORDER BY (1 - (embedding <=> $1)) * base_temporal_score DESC\n            LIMIT $2\n            ",
   "describe": {
     "columns": [
       {
@@ -149,5 +149,5 @@
       null
     ]
   },
-  "hash": "75eaf421640c5a7c2c9326af196d99560c29102723f073aa0138d4ddf9a4b6d9"
+  "hash": "f857d3e8d32f5c7ea6f10fc9b5168a8a26fc7776ab7bc6a835cf7455d44f7d7c"
 }
