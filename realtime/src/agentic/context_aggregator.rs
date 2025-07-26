@@ -35,7 +35,6 @@ impl ContextAggregator {
         query: &str,
         conversation_history: &[AgentExecutionContextMessage],
         memories: &[MemoryEntry],
-        dynamic_context: &[Value],
         knowledge_base_results: &[Value],
     ) -> Result<Vec<ContextItem>, AppError> {
         let query_embedding = GenerateEmbeddingCommand::new(query.to_string())
@@ -83,18 +82,6 @@ impl ContextAggregator {
             });
         }
 
-        for (_, ctx) in dynamic_context.iter().enumerate() {
-            if let Some(content) = ctx.get("content").and_then(|c| c.as_str()) {
-                let tokens = count_tokens(content);
-
-                all_items.push(ContextItem {
-                    content: content.to_string(),
-                    source: "dynamic_context".to_string(),
-                    relevance_score: 0.7,
-                    token_count: tokens,
-                });
-            }
-        }
 
         for result in knowledge_base_results {
             if let Some(content) = result.get("content").and_then(|c| c.as_str()) {
@@ -168,12 +155,6 @@ impl ContextAggregator {
             }
         }
 
-        if let Some(dynamic) = sections.get("dynamic_context") {
-            formatted.push_str("## Dynamic Context\n");
-            for item in dynamic {
-                formatted.push_str(&format!("{}\n\n", item.content));
-            }
-        }
 
         if let Some(kb) = sections.get("knowledge_base") {
             formatted.push_str("## Knowledge Base\n");

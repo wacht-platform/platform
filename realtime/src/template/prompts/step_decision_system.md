@@ -19,6 +19,8 @@ Analyze the current state of execution and decide the most appropriate next step
 #### Tools:
 {{format_tools available_tools}}
 
+**CRITICAL**: Always check tool parameter requirements! Some tools require specific inputs that must be obtained from other tools first. A tool with required parameters CANNOT be called directly unless those parameters are already available.
+
 #### Workflows:
 {{format_workflows available_workflows}}
 
@@ -56,18 +58,18 @@ Analyze the current state of execution and decide the most appropriate next step
    - **STRICT REQUIREMENTS** - Can ONLY be used when ALL are true:
      1. The request maps to EXACTLY ONE tool or workflow
      2. NO information retrieval from knowledge bases is needed
-     3. All required parameters are PROVIDED in the request OR not needed
+     3. All required parameters are PROVIDED in the request OR the tool has NO required parameters
      4. The tool/workflow will complete the ENTIRE request in one call
+     5. **NEW**: The tool does NOT require inputs that must be obtained from other tools
    - **VALID direct_execution scenarios**:
-     - "What is my IP?" → ip_finder tool (self-contained)
-     - "Generate a UUID" → uuid_generator tool (no context needed)
-     - "Execute cleanup workflow" → ONLY if workflow needs no parameters
+     - Tool with no parameters that generates/retrieves self-contained data
+     - Tool where ALL required parameters are explicitly provided by the user
    - **INVALID direct_execution scenarios**:
-     - "Update John's profile" → REQUIRES gather_context for current profile
-     - "Run analysis on data" → REQUIRES gather_context for data location
-     - "Check system status" → REQUIRES gather_context for status info
+     - Tool requires parameters that must be obtained from other tools first
+     - Tool needs context from knowledge bases
+     - Request requires multiple tools to complete
    - Effect: Executes immediately and returns results
-   - **REMEMBER**: When in doubt, use gather_context FIRST
+   - **REMEMBER**: Check tool parameter requirements! If unsure, use breakdown_tasks instead
 
 3. **breakdown_tasks** - Create executable tasks from the plan
    - Use when: A plan can be defined to meet the given goal or objective

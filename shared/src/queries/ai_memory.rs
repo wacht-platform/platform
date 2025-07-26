@@ -20,11 +20,29 @@ impl Query for SearchMemoriesQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let query_embedding = Vector::from(self.query_embedding.clone());
 
+        let max_distance = 1.2_f64;
+
+        tracing::info!(
+            "Executing memory search - Agent ID: {}, Limit: {}, Memory types: {:?}, Min importance: {:?}, Time range: {:?}, Max distance: {}",
+            self.agent_id,
+            self.limit,
+            self.memory_type_filter,
+            self.min_importance,
+            self.time_range,
+            max_distance
+        );
+
         let mut query_builder: QueryBuilder<sqlx::Postgres> =
             QueryBuilder::new("SELECT *, embedding <-> ");
         query_builder.push_bind(query_embedding.clone());
         query_builder.push(" as score FROM agent_execution_memories WHERE agent_id = ");
         query_builder.push_bind(self.agent_id);
+
+        // Add similarity threshold to filter out low-relevance results
+        query_builder.push(" AND embedding <-> ");
+        query_builder.push_bind(query_embedding.clone());
+        query_builder.push(" <= ");
+        query_builder.push_bind(max_distance);
 
         if !self.memory_type_filter.is_empty() {
             query_builder.push(" AND memory_type = ANY(");
@@ -47,11 +65,25 @@ impl Query for SearchMemoriesQuery {
         query_builder.push(" ORDER BY score ASC LIMIT ");
         query_builder.push_bind(self.limit);
 
-        let results = query_builder
+        let results: Vec<MemorySearchRecord> = query_builder
             .build_query_as()
             .fetch_all(&app_state.db_pool)
             .await
             .map_err(AppError::from)?;
+
+        tracing::info!("Memory search returned {} results", results.len());
+
+        for (idx, result) in results.iter().enumerate() {
+            tracing::debug!(
+                "Result {}: memory_id={}, type={}, score={:.4}, importance={:.2}, created_at={}",
+                idx,
+                result.id,
+                result.memory_type,
+                result.score,
+                result.importance,
+                result.created_at
+            );
+        }
 
         Ok(results)
     }

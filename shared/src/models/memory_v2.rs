@@ -255,7 +255,6 @@ impl From<i32> for CompressionLevel {
     }
 }
 
-/// Memory consolidation candidate
 #[derive(Debug, Clone)]
 pub struct ConsolidationCandidate {
     pub primary_id: i64,
@@ -266,7 +265,6 @@ pub struct ConsolidationCandidate {
 }
 
 impl MemoryRecordV2 {
-    /// Get effective content based on compression level
     pub fn effective_content(&self) -> &str {
         match self.compression_level {
             0 => &self.content,
@@ -274,37 +272,10 @@ impl MemoryRecordV2 {
         }
     }
 
-    /// Get decay modifier for specific context
     pub fn get_context_decay_modifier(&self, context_id: i64) -> f64 {
         self.context_decay_profile
             .get(&context_id.to_string())
             .and_then(|v| v.as_f64())
             .unwrap_or(1.0)
-    }
-}
-
-// Temporary conversion to support old code
-impl From<MemoryRecordV2> for crate::models::MemoryEntry {
-    fn from(record: MemoryRecordV2) -> Self {
-        use crate::models::MemoryType;
-
-        let memory_type = match record.memory_category.as_str() {
-            "procedural" => MemoryType::Procedural,
-            "semantic" => MemoryType::Semantic,
-            "episodic" => MemoryType::Episodic,
-            _ => MemoryType::Working,
-        };
-
-        Self {
-            id: record.id,
-            memory_type,
-            content: record.effective_content().to_string(),
-            metadata: std::collections::HashMap::new(),
-            importance: record.learning_confidence,
-            created_at: record.created_at,
-            last_accessed: record.last_accessed_at,
-            access_count: record.access_count as u32,
-            embedding: record.embedding.map(|e| e.into()).unwrap_or_default(),
-        }
     }
 }

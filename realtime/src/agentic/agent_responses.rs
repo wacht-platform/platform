@@ -80,13 +80,6 @@ pub struct RefinedStrategy {
     pub risk_considerations: Vec<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(rename_all = "lowercase")]
-pub enum ConfidenceLevel {
-    High,
-    Medium,
-    Low,
-}
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct TaskBreakdownResponse {
@@ -119,8 +112,6 @@ pub struct ExecutableTask {
 pub enum TaskType {
     ToolCall,
     WorkflowCall,
-    KnowledgeSearch,
-    ContextSearch,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -136,6 +127,8 @@ pub struct TaskExecution {
     pub approach: String,
     pub actions: ActionsList,
     pub expected_result: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_result: Option<Value>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -152,7 +145,7 @@ pub struct ExecutionAction {
     pub purpose: String,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionStatus {
     Ready,
@@ -226,9 +219,36 @@ pub struct ParameterGeneration {
 pub struct ContextSearchDerivation {
     pub search_query: String,
     pub search_scope: SearchScope,
-    pub search_rationale: String,
     pub filters: ContextSearchFilters,
-    pub alternative_queries: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub list_documents_params: Option<ListDocumentsParams>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_document_params: Option<ReadDocumentParams>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ListDocumentsParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub knowledge_base_id: Option<i64>, // If None, list from all agent's KBs
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keyword_filter: Option<String>, // Optional keyword to filter document titles
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ReadDocumentParams {
+    pub document_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk_range: Option<ChunkRange>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keywords: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i32>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ChunkRange {
+    pub start: i32,
+    pub end: i32,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -237,12 +257,14 @@ pub enum SearchScope {
     KnowledgeBase,
     Experience,
     Universal,
+    ListKnowledgeBaseDocuments,
+    ReadKnowledgeBaseDocuments,
+    GatheredContext,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ContextSearchFilters {
     pub max_results: i32,
-    pub min_relevance: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub boost_keywords: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -256,21 +278,6 @@ pub enum SearchModeType {
     Semantic,
     Keyword,
     Hybrid,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct KnowledgeBaseSearchStrategy {
-    pub search_strategy: String,
-    pub strategy_reasoning: String,
-    pub search_steps: Vec<KnowledgeBaseSearchStep>,
-    pub expected_results: String,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct KnowledgeBaseSearchStep {
-    pub step_type: String,
-    pub step_description: String,
-    pub parameters: KnowledgeBaseSearchParameters,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -301,26 +308,21 @@ pub struct KnowledgeBaseSearchParameters {
 pub struct KnowledgeBaseSearchPlan {
     pub search_approach: String,
     pub reasoning: String,
-    pub primary_strategy: SearchStrategy,
-    pub fallback_strategies: Vec<SearchStrategy>,
-    pub success_criteria: SearchSuccessCriteria,
-    pub expected_challenges: Vec<String>,
+    pub strategy: SearchStrategy,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum StrategyType {
+    KeywordSearch,
+    SemanticSearch,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct SearchStrategy {
-    pub strategy_type: String,
+    pub strategy_type: StrategyType,
     pub description: String,
     pub parameters: KnowledgeBaseSearchParameters,
-    pub priority: i32,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct SearchSuccessCriteria {
-    pub minimum_results: i32,
-    pub relevance_threshold: f64,
-    pub content_requirements: Vec<String>,
-    pub validation_checks: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -330,65 +332,12 @@ pub struct KnowledgeBaseSearchExecution {
     pub results_found: i32,
     pub quality_score: f64,
     pub execution_details: ExecutionDetails,
-    pub discovered_patterns: Vec<String>,
-    pub refinement_suggestions: Vec<RefinementSuggestion>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ExecutionDetails {
-    pub documents_scanned: i32,
     pub chunks_analyzed: i32,
-    pub search_iterations: i32,
     pub time_taken_ms: i64,
-    pub challenges_encountered: Vec<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct RefinementSuggestion {
-    pub suggestion_type: String,
-    pub description: String,
-    pub suggested_parameters: Option<KnowledgeBaseSearchParameters>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct KnowledgeBaseSearchValidation {
-    pub validation_result: ValidationStatus,
-    pub completeness_score: f64,
-    pub relevance_assessment: RelevanceAssessment,
-    pub content_gaps: Vec<ContentGap>,
-    pub loop_decision: SearchLoopDecision,
-    pub next_iteration_guidance: Option<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum ValidationStatus {
-    Success,
-    PartialSuccess,
-    NeedsRefinement,
-    Failed,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct RelevanceAssessment {
-    pub overall_relevance: f64,
-    pub key_findings: Vec<String>,
-    pub missing_information: Vec<String>,
-    pub confidence_level: ConfidenceLevel,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ContentGap {
-    pub gap_type: String,
-    pub description: String,
-    pub suggested_search_terms: Vec<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum SearchLoopDecision {
-    Complete,
-    RefineAndRetry,
-    TryAlternativeStrategy,
-    AbortInsufficient,
-}
+// Removed unused KB search validation structures

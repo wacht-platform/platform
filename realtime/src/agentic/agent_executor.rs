@@ -1,7 +1,8 @@
 use crate::agentic::{
-    ContextGatheringOrchestrator, DecayManager, ExecutableTask, ExecutionAction,
-    SharedExecutionContext, TaskBreakdownResponse, TaskExecutionResponse, TaskType, ToolExecutor,
-    ValidationResponse, WorkflowExecutor, gemini_client::GeminiClient,
+    ActionsList, DecayManager, ExecutableTask, ExecutionAction, SharedExecutionContext,
+    TaskBreakdownResponse, TaskExecution, TaskExecutionResponse, TaskType, ToolExecutor,
+    ValidationResponse, WorkflowExecutor,
+    context_gathering_orchestrator::ContextGatheringOrchestrator, gemini_client::GeminiClient,
 };
 use crate::template::{AgentTemplates, render_template_with_prompt};
 use serde::{Deserialize, Serialize};
@@ -10,8 +11,8 @@ use shared::commands::{Command, CreateConversationCommand};
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
 use shared::models::{
-    AiAgentWithFeatures, AiTool, AiToolConfiguration, ConversationContent, ConversationMessageType,
-    ConversationRecord, MemoryRecordV2,
+    AiAgentWithFeatures, AiTool, AiToolConfiguration, ApiToolConfiguration, ConversationContent,
+    ConversationMessageType, ConversationRecord, MemoryRecordV2,
 };
 use shared::state::AppState;
 use std::collections::HashMap;
@@ -22,9 +23,8 @@ const MAX_LOOP_ITERATIONS: usize = 50;
 pub struct StepDecision {
     pub next_step: NextStep,
     pub reasoning: String,
-    pub ready_to_proceed: bool,
-    pub blocking_reason: Option<String>,
-    pub progress_assessment: ProgressAssessment,
+    pub confidence: f64,
+    pub direct_execution: Option<ExecutionAction>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -32,30 +32,31 @@ pub struct StepDecision {
 pub enum NextStep {
     Acknowledge,
     GatherContext,
+    DirectExecution,
     BreakdownTasks,
     ExecuteTasks,
-    Validate,
-    GenerateSummary,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ProgressAssessment {
-    pub percentage_complete: u8,
-    pub tasks_completed: u32,
-    pub tasks_total: u32,
-    pub current_phase: String,
+    ValidateProgress,
+    DeliverResponse,
+    RequestUserInput,
+    HandleError,
+    Complete,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ObjectiveDefinition {
-    pub objective: String,
+    pub primary_goal: String,
     pub success_criteria: Vec<String>,
+    pub constraints: Vec<String>,
+    pub context_from_history: String,
+    pub inferred_intent: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConversationInsights {
-    pub key_points: Vec<String>,
-    pub inferred_objective: Option<String>,
+    pub is_continuation: bool,
+    pub topic_evolution: String,
+    pub user_preferences: Vec<String>,
+    pub relevant_past_outcomes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -73,10 +74,11 @@ pub struct ConverseRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AcknowledgmentResponse {
-    pub confirmation: String,
-    pub understood_request: String,
-    pub initial_thoughts: String,
-    pub expected_approach: String,
+    pub message: String,
+    pub further_action_required: bool,
+    pub reasoning: String,
+    pub objective: ObjectiveDefinition,
+    pub conversation_insights: ConversationInsights,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -160,11 +162,8 @@ impl AgentExecutorBuilder {
         let workflow_executor = WorkflowExecutor::new(shared_context.clone());
         let decay_manager = DecayManager::new(self.app_state.clone());
 
-        let context_orchestrator = ContextGatheringOrchestrator::new(
-            self.app_state.clone(),
-            self.context_id,
-            self.agent.clone(),
-        );
+        let context_orchestrator =
+            ContextGatheringOrchestrator::new(self.app_state.clone(), self.agent.clone());
 
         Ok(AgentExecutor {
             agent: self.agent,
@@ -205,6 +204,13 @@ impl AgentExecutor {
 
     pub async fn run(&mut self, request: ConverseRequest) -> Result<(), AppError> {
         self.user_request = request.message.clone();
+        self.store_conversation(
+            ConversationContent::UserMessage {
+                message: request.message,
+            },
+            ConversationMessageType::UserMessage,
+        )
+        .await?;
 
         let context = self
             .decay_manager
@@ -213,7 +219,11 @@ impl AgentExecutor {
         self.conversations = context.conversations;
         self.memories = context.memories;
 
-        self.generate_acknowledgment().await?;
+        let ack = self.generate_acknowledgment().await?;
+        if !ack.further_action_required {
+            return Ok(());
+        }
+
         self.repl().await?;
 
         Ok(())
@@ -231,19 +241,64 @@ impl AgentExecutor {
             let decision = self.decide_next_step().await?;
 
             match decision.next_step {
-                NextStep::GatherContext => {
-                    self.gather_context().await?;
+                NextStep::Acknowledge => {}
+
+                NextStep::GatherContext => match self.gather_context().await {
+                    Ok(_) => println!("Context gathering completed successfully"),
+                    Err(e) => {
+                        eprintln!("ERROR in gather_context: {:?}", e);
+                        eprintln!("Error type: {}", std::any::type_name_of_val(&e));
+                        eprintln!("Stack trace would be here if available");
+                        return Err(e);
+                    }
+                },
+
+                NextStep::DirectExecution => {
+                    if let Some(action) = decision.direct_execution {
+                        let result = self.execute_action(&action).await?;
+
+                        let execution = TaskExecution {
+                            approach: format!("Direct execution: {}", action.purpose),
+                            actions: ActionsList {
+                                actions: vec![action.clone()],
+                            },
+                            expected_result: "Direct execution result".to_string(),
+                            actual_result: Some(result.clone()),
+                        };
+
+                        self.store_conversation(
+                            ConversationContent::AssistantTaskExecution {
+                                task_execution: serde_json::to_value(&execution)?,
+                                execution_status: "completed".to_string(),
+                                blocking_reason: None,
+                            },
+                            ConversationMessageType::AssistantTaskExecution,
+                        )
+                        .await?;
+                    }
                 }
 
                 NextStep::BreakdownTasks => {
-                    self.execute_task_breakdown_step().await?;
+                    self.breakdown_tasks().await?;
                 }
 
                 NextStep::ExecuteTasks => {
-                    self.execute_pending_tasks().await?;
+                    if let Err(e) = self.execute_pending_tasks().await {
+                        eprintln!("Error executing tasks: {}", e);
+                        // Store the error in conversation for visibility
+                        self.store_conversation(
+                            ConversationContent::SystemDecision {
+                                step: "task_execution_error".to_string(),
+                                reasoning: format!("Task execution failed: {}", e),
+                                confidence: 1.0,
+                            },
+                            ConversationMessageType::SystemDecision,
+                        )
+                        .await?;
+                    }
                 }
 
-                NextStep::Validate => {
+                NextStep::ValidateProgress => {
                     let validation_result = self.validate_execution().await?;
                     if validation_result.validation_result.overall_success {
                         self.generate_and_send_summary().await?;
@@ -251,30 +306,48 @@ impl AgentExecutor {
                     }
                 }
 
-                NextStep::GenerateSummary => {
+                NextStep::DeliverResponse => {
                     self.generate_and_send_summary().await?;
                     return Ok(());
                 }
 
-                _ => {}
+                NextStep::RequestUserInput => {
+                    eprintln!("User input request not yet implemented");
+                }
+
+                NextStep::HandleError => {
+                    eprintln!("Error handling not yet implemented");
+                }
+
+                NextStep::Complete => {
+                    return Ok(());
+                }
             }
         }
     }
 
     async fn decide_next_step(&mut self) -> Result<StepDecision, AppError> {
-        let context = json!({
-            "conversation_history": self.get_conversation_history_for_llm(),
-            "user_request": self.user_request,
-            "current_objective": self.current_objective,
-            "conversation_insights": self.conversation_insights,
-            "executable_tasks": self.executable_tasks,
-            "task_results": self.task_results,
-        });
-
-        let request_body = render_template_with_prompt(AgentTemplates::STEP_DECISION, &context)
-            .map_err(|e| {
-                AppError::Internal(format!("Failed to render step decision template: {}", e))
-            })?;
+        let request_body = render_template_with_prompt(
+            AgentTemplates::STEP_DECISION,
+            json!({
+                "conversation_history": self.get_conversation_history_for_llm(),
+                "user_request": self.user_request,
+                "current_objective": self.current_objective,
+                "conversation_insights": self.conversation_insights,
+                "executable_tasks": self.executable_tasks,
+                "task_results": self.task_results,
+                "available_tools": self.agent.tools.clone(),
+                "available_workflows": self.agent.workflows.clone(),
+                "available_knowledge_bases": self.agent.knowledge_bases.clone(),
+                "iteration_info": {
+                    "current_iteration": 1,
+                    "max_iterations": MAX_LOOP_ITERATIONS,
+                },
+            }),
+        )
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to render step decision template: {}", e))
+        })?;
 
         let decision = self
             .create_main_llm()?
@@ -294,19 +367,22 @@ impl AgentExecutor {
         Ok(decision)
     }
 
-    async fn generate_acknowledgment(&mut self) -> Result<(), AppError> {
-        let context = json!({
-            "user_request": self.user_request,
-            "agent_name": self.agent.name,
-            "agent_description": "",
-            "available_tools": self.agent.tools.iter().map(|t| &t.name).collect::<Vec<_>>(),
-            "available_workflows": self.agent.workflows.iter().map(|w| &w.name).collect::<Vec<_>>(),
-        });
-
-        let request_body = render_template_with_prompt(AgentTemplates::ACKNOWLEDGMENT, &context)
-            .map_err(|e| {
-                AppError::Internal(format!("Failed to render acknowledgment template: {}", e))
-            })?;
+    async fn generate_acknowledgment(&mut self) -> Result<AcknowledgmentResponse, AppError> {
+        let request_body = render_template_with_prompt(
+            AgentTemplates::ACKNOWLEDGMENT,
+            json!({
+                "conversation_history": self.get_conversation_history_for_llm(),
+                "agent_name": self.agent.name,
+                "agent_description": self.agent.description.as_ref().unwrap_or(&"".to_string()),
+                "tools": self.agent.tools.clone(),
+                "workflows": self.agent.workflows.clone(),
+                "knowledge_bases": self.agent.knowledge_bases.clone(),
+                "memories": self.memories.clone(),
+            }),
+        )
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to render acknowledgment template: {}", e))
+        })?;
 
         let ack = self
             .create_main_llm()?
@@ -315,31 +391,35 @@ impl AgentExecutor {
 
         self.store_conversation(
             ConversationContent::AssistantAcknowledgment {
-                acknowledgment_message: ack.confirmation.clone(),
-                further_action_required: true,
-                reasoning: ack.understood_request.clone(),
+                acknowledgment_message: ack.message.clone(),
+                further_action_required: ack.further_action_required,
+                reasoning: ack.reasoning.clone(),
             },
             ConversationMessageType::AssistantAcknowledgment,
         )
         .await?;
 
-        self.emit_event(&ack).await?;
+        self.current_objective = Some(ack.objective.clone());
+        self.conversation_insights = Some(ack.conversation_insights.clone());
 
-        Ok(())
+        Ok(ack)
     }
 
-    async fn execute_task_breakdown_step(&mut self) -> Result<(), AppError> {
-        let context = json!({
-            "conversation_history": self.get_conversation_history_for_llm(),
-            "user_request": self.user_request,
-            "current_objective": self.current_objective,
-            "conversation_insights": self.conversation_insights,
-        });
-
-        let request_body = render_template_with_prompt(AgentTemplates::TASK_BREAKDOWN, &context)
-            .map_err(|e| {
-                AppError::Internal(format!("Failed to render task breakdown template: {}", e))
-            })?;
+    async fn breakdown_tasks(&mut self) -> Result<(), AppError> {
+        let request_body = render_template_with_prompt(
+            AgentTemplates::TASK_BREAKDOWN,
+            json!({
+                "conversation_history": self.get_conversation_history_for_llm(),
+                "user_request": self.user_request,
+                "current_objective": self.current_objective,
+                "conversation_insights": self.conversation_insights,
+                "available_tools": self.agent.tools.clone(),
+                "workflows": self.agent.workflows.clone(),
+            }),
+        )
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to render task breakdown template: {}", e))
+        })?;
 
         let breakdown = self
             .create_main_llm()?
@@ -358,26 +438,23 @@ impl AgentExecutor {
         )
         .await?;
 
-        self.emit_event(&breakdown).await?;
-
         self.executable_tasks = breakdown.tasks;
 
         Ok(())
     }
 
     async fn validate_execution(&mut self) -> Result<ValidationResponse, AppError> {
-        let context = json!({
-            "conversation_history": self.get_conversation_history_for_llm(),
-            "user_request": self.user_request,
-            "current_objective": self.current_objective,
-            "task_results": self.task_results,
-            "executable_tasks": self.executable_tasks,
-        });
-
-        let request_body = render_template_with_prompt(AgentTemplates::VALIDATION, &context)
-            .map_err(|e| {
-                AppError::Internal(format!("Failed to render validation template: {}", e))
-            })?;
+        let request_body = render_template_with_prompt(
+            AgentTemplates::VALIDATION,
+            json!({
+                "conversation_history": self.get_conversation_history_for_llm(),
+                "user_request": self.user_request,
+                "current_objective": self.current_objective,
+                "task_results": self.task_results,
+                "executable_tasks": self.executable_tasks,
+            }),
+        )
+        .map_err(|e| AppError::Internal(format!("Failed to render validation template: {}", e)))?;
 
         let validation = self
             .create_main_llm()?
@@ -406,38 +483,54 @@ impl AgentExecutor {
         Ok(validation)
     }
 
-    async fn generate_and_send_summary(&self) -> Result<(), AppError> {
-        let context = json!({
-            "conversation_history": self.get_conversation_history_for_llm(),
-            "user_request": self.user_request,
-            "task_results": self.task_results,
-        });
-
-        let request_body = render_template_with_prompt(AgentTemplates::SUMMARY, &context)
-            .map_err(|e| AppError::Internal(format!("Failed to render summary template: {}", e)))?;
+    async fn generate_and_send_summary(&mut self) -> Result<(), AppError> {
+        let request_body = render_template_with_prompt(
+            AgentTemplates::SUMMARY,
+            json!({
+                "conversation_history": self.get_conversation_history_for_llm(),
+                "user_request": self.user_request,
+                "task_results": self.task_results,
+            }),
+        )
+        .map_err(|e| AppError::Internal(format!("Failed to render summary template: {}", e)))?;
 
         let summary = self
             .create_main_llm()?
             .generate_structured_content::<Value>(request_body)
             .await?;
 
-        self.emit_event(&json!({
-            "type": "summary",
-            "content": summary,
-        }))
+        self.store_conversation(
+            ConversationContent::AgentResponse {
+                response: summary.get("response").unwrap().as_str().unwrap().into(),
+                citations: Default::default(),
+                context_used: Default::default(),
+            },
+            ConversationMessageType::AgentResponse,
+        )
         .await?;
 
         Ok(())
     }
 
     async fn gather_context(&mut self) -> Result<(), AppError> {
-        let context_results = self
+        println!("=== Agent executor gather_context called ===");
+
+        let context_results = match self
             .context_orchestrator
-            .gather_context(
-                &self.conversations,
-                &self.current_objective.as_ref().map(|o| o.objective.clone()),
-            )
-            .await?;
+            .gather_context(&self.conversations, &self.current_objective)
+            .await
+        {
+            Ok(results) => {
+                println!("Context orchestrator returned {} results", results.len());
+                results
+            }
+            Err(e) => {
+                eprintln!("ERROR in context_orchestrator.gather_context: {:?}", e);
+                return Err(e);
+            }
+        };
+
+        println!("Storing context results in conversation...");
 
         self.store_conversation(
             ConversationContent::ContextResults {
@@ -450,14 +543,11 @@ impl AgentExecutor {
         )
         .await?;
 
+        println!("=== Agent executor gather_context completed ===");
         Ok(())
     }
 
     async fn execute_pending_tasks(&mut self) -> Result<(), AppError> {
-        if self.executable_tasks.is_empty() {
-            self.executable_tasks = self.get_executable_tasks();
-        }
-
         let task_to_execute = self
             .executable_tasks
             .iter()
@@ -469,8 +559,11 @@ impl AgentExecutor {
             })
             .cloned();
 
+        println!("here");
+
         if let Some(task) = task_to_execute {
             let result = self.execute_single_task(&task).await;
+            println!("{result:?}");
 
             let task_result = match result {
                 Ok(value) => TaskExecutionResult {
@@ -494,47 +587,83 @@ impl AgentExecutor {
     }
 
     async fn execute_single_task(&mut self, task: &ExecutableTask) -> Result<Value, AppError> {
-        let context = json!({
-            "task": task,
-            "conversation_history": self.get_conversation_history_for_llm(),
-            "task_results": self.task_results,
-        });
-
-        let request_body = render_template_with_prompt(AgentTemplates::TASK_EXECUTION, &context)
-            .map_err(|e| {
-                AppError::Internal(format!("Failed to render task execution template: {}", e))
-            })?;
+        let request_body = render_template_with_prompt(
+            AgentTemplates::TASK_EXECUTION,
+            json!({
+                "task": task,
+                "conversation_history": self.get_conversation_history_for_llm(),
+                "task_results": self.task_results,
+            }),
+        )
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to render task execution template: {}", e))
+        })?;
 
         let execution = self
             .create_main_llm()?
             .generate_structured_content::<TaskExecutionResponse>(request_body)
             .await?;
 
+        let result = if execution.execution_status == crate::agentic::ExecutionStatus::Ready {
+            if let Some(action) = execution.task_execution.actions.actions.first() {
+                match self.execute_action(action).await {
+                    Ok(value) => value,
+                    Err(e) => {
+                        // Store the error in conversation
+                        let error_result = json!({
+                            "error": e.to_string(),
+                            "error_type": "execution_failure"
+                        });
+
+                        // Store the failed execution with error details
+                        let mut task_execution_with_error = execution.task_execution.clone();
+                        task_execution_with_error.actual_result = Some(error_result.clone());
+
+                        // Update the task execution in conversation with the error
+                        self.store_conversation(
+                            ConversationContent::AssistantTaskExecution {
+                                task_execution: serde_json::to_value(&task_execution_with_error)?,
+                                execution_status: "failed".to_string(),
+                                blocking_reason: Some(e.to_string()),
+                            },
+                            ConversationMessageType::AssistantTaskExecution,
+                        )
+                        .await?;
+
+                        return Err(e);
+                    }
+                }
+            } else {
+                json!({"error": "No action to execute"})
+            }
+        } else {
+            json!({
+                "error": "Execution blocked or cannot execute",
+                "reason": execution.blocking_reason
+            })
+        };
+
+        // Store successful result
+        let mut task_execution_with_result = execution.task_execution.clone();
+        task_execution_with_result.actual_result = Some(result.clone());
+
         self.store_conversation(
             ConversationContent::AssistantTaskExecution {
-                task_execution: serde_json::to_value(&execution.task_execution)?,
-                execution_status: match execution.execution_status {
-                    crate::agentic::ExecutionStatus::Ready => "ready".to_string(),
-                    crate::agentic::ExecutionStatus::Blocked => "blocked".to_string(),
-                    crate::agentic::ExecutionStatus::CannotExecute => "cannot_execute".to_string(),
-                },
-                blocking_reason: execution.blocking_reason.clone(),
+                task_execution: serde_json::to_value(&task_execution_with_result)?,
+                execution_status: "completed".to_string(),
+                blocking_reason: None,
             },
             ConversationMessageType::AssistantTaskExecution,
         )
         .await?;
 
-        if let Some(action) = execution.task_execution.actions.actions.first() {
-            self.execute_action(action).await
-        } else {
-            Ok(json!({"error": "No action to execute"}))
-        }
+        Ok(result)
     }
 
     async fn execute_action(&self, action: &ExecutionAction) -> Result<Value, AppError> {
         match &action.action_type {
             TaskType::ToolCall => {
-                let tool_call = self.parse_tool_call(&action.details)?;
+                let tool_call = self.parse_tool_call(&action.details).await?;
                 let tool = self
                     .agent
                     .tools
@@ -564,46 +693,7 @@ impl AgentExecutor {
                     .execute_workflow(workflow, workflow_call.inputs, self.channel.clone())
                     .await
             }
-            TaskType::KnowledgeSearch => {
-                let query = self.extract_query_from_action(action)?;
-                self.execute_search_action(&query, "knowledge").await
-            }
-            TaskType::ContextSearch => {
-                let query = self.extract_query_from_action(action)?;
-                self.execute_search_action(&query, "context").await
-            }
         }
-    }
-
-    async fn execute_search_action(
-        &self,
-        query: &str,
-        search_type: &str,
-    ) -> Result<Value, AppError> {
-        let results = match search_type {
-            "knowledge" => {
-                self.context_orchestrator
-                    .execute_search_action("knowledge_base", query)
-                    .await?
-            }
-            "context" => {
-                self.context_orchestrator
-                    .execute_search_action("all_sources", query)
-                    .await?
-            }
-            _ => {
-                self.context_orchestrator
-                    .execute_search_action("all_sources", query)
-                    .await?
-            }
-        };
-
-        Ok(json!({
-            "search_type": search_type,
-            "query": query,
-            "results": results,
-            "result_count": results.len()
-        }))
     }
 
     fn schema_fields_to_properties(fields: &[shared::models::SchemaField]) -> (Value, Vec<String>) {
@@ -628,7 +718,50 @@ impl AgentExecutor {
         (json!(properties), required_fields)
     }
 
-    fn parse_tool_call(&self, details: &Value) -> Result<shared::dto::json::ToolCall, AppError> {
+    fn organize_api_parameters(
+        &self,
+        flat_params: Value,
+        api_config: &ApiToolConfiguration,
+    ) -> Result<Value, AppError> {
+        let params_obj = flat_params.as_object().ok_or_else(|| {
+            AppError::Internal("Generated parameters must be an object".to_string())
+        })?;
+
+        let mut url_params = serde_json::Map::new();
+        let mut body_params = serde_json::Map::new();
+
+        let field_in_schema =
+            |field_name: &str, schema: &Option<Vec<shared::models::SchemaField>>| {
+                schema
+                    .as_ref()
+                    .map_or(false, |fields| fields.iter().any(|f| f.name == field_name))
+            };
+
+        for (key, value) in params_obj {
+            if field_in_schema(key, &api_config.url_params_schema) {
+                url_params.insert(key.clone(), value.clone());
+            } else if field_in_schema(key, &api_config.request_body_schema) {
+                body_params.insert(key.clone(), value.clone());
+            }
+        }
+
+        let mut result = serde_json::Map::new();
+
+        if !url_params.is_empty() {
+            result.insert("url_params".to_string(), json!(url_params));
+        }
+
+        if !body_params.is_empty() {
+            result.insert("body".to_string(), json!(body_params));
+        }
+
+        Ok(json!(result))
+    }
+
+    async fn parse_tool_call(
+        &self,
+        details: &Value,
+    ) -> Result<shared::dto::json::ToolCall, AppError> {
         let tool_name = details["tool_name"]
             .as_str()
             .ok_or_else(|| AppError::BadRequest("Tool name not specified".to_string()))?;
@@ -640,10 +773,39 @@ impl AgentExecutor {
             .find(|t| t.name == tool_name)
             .ok_or_else(|| AppError::BadRequest(format!("Tool '{}' not found", tool_name)))?;
 
-        let params = if let Some(params_value) = details.get("parameters") {
-            self.validate_and_transform_parameters(params_value, tool)?
+        let needs_llm_params = match &tool.configuration {
+            AiToolConfiguration::Api(api_config) => {
+                api_config.request_body_schema.is_some() || api_config.url_params_schema.is_some()
+            }
+            AiToolConfiguration::PlatformFunction(func_config) => {
+                func_config.input_schema.is_some()
+            }
+            _ => false,
+        };
+
+        let params = if needs_llm_params {
+            let generated_params = self.generate_tool_parameters(tool).await?;
+
+            // For API tools, organize parameters into url_params, query_params, and body
+            if let AiToolConfiguration::Api(api_config) = &tool.configuration {
+                self.organize_api_parameters(generated_params, api_config)?
+            } else {
+                generated_params
+            }
         } else {
-            json!({})
+            match &tool.configuration {
+                AiToolConfiguration::KnowledgeBase(_) => {
+                    json!({
+                        "query": details.get("query")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&self.user_request)
+                    })
+                }
+                AiToolConfiguration::PlatformEvent(event_config) => {
+                    event_config.event_data.clone().unwrap_or(json!({}))
+                }
+                _ => json!({}),
+            }
         };
 
         Ok(shared::dto::json::ToolCall {
@@ -652,96 +814,118 @@ impl AgentExecutor {
         })
     }
 
-    fn validate_and_transform_parameters(
-        &self,
-        params: &Value,
-        tool: &AiTool,
-    ) -> Result<Value, AppError> {
-        match &tool.configuration {
+    async fn generate_tool_parameters(&self, tool: &AiTool) -> Result<Value, AppError> {
+        use crate::agentic::ParameterGenerationResponse;
+
+        let parameter_schema = match &tool.configuration {
             AiToolConfiguration::Api(api_config) => {
+                let mut all_properties = serde_json::Map::new();
+                let mut all_required = Vec::new();
+
                 if let Some(schema) = &api_config.request_body_schema {
                     let (properties, required) = Self::schema_fields_to_properties(schema);
-                    self.validate_against_schema(params, &properties, &required)?;
+                    if let Some(props) = properties.as_object() {
+                        all_properties.extend(props.clone());
+                    }
+                    all_required.extend(required);
+                }
+
+                if let Some(schema) = &api_config.url_params_schema {
+                    let (properties, required) = Self::schema_fields_to_properties(schema);
+                    if let Some(props) = properties.as_object() {
+                        all_properties.extend(props.clone());
+                    }
+                    all_required.extend(required);
+                }
+
+                if all_properties.is_empty() {
+                    println!(
+                        "Tool {} has no parameters defined, returning empty params",
+                        tool.name
+                    );
+                    return Ok(json!({}));
+                }
+
+                json!({
+                    "type": "OBJECT",
+                    "properties": all_properties,
+                    "required": all_required
+                })
+            }
+            AiToolConfiguration::PlatformFunction(func_config) => {
+                if let Some(schema) = &func_config.input_schema {
+                    let (properties, required) = Self::schema_fields_to_properties(schema);
+
+                    let is_empty = properties.as_object().map_or(true, |p| p.is_empty());
+                    if is_empty {
+                        return Ok(json!({}));
+                    }
+
+                    json!({
+                        "type": "OBJECT",
+                        "properties": properties,
+                        "required": required
+                    })
+                } else {
+                    return Ok(json!({}));
                 }
             }
-            _ => {}
-        }
-
-        Ok(params.clone())
-    }
-
-    fn validate_against_schema(
-        &self,
-        params: &Value,
-        properties: &Value,
-        required: &[String],
-    ) -> Result<(), AppError> {
-        let params_obj = params
-            .as_object()
-            .ok_or_else(|| AppError::BadRequest("Parameters must be an object".to_string()))?;
-
-        for field in required {
-            if !params_obj.contains_key(field) {
-                return Err(AppError::BadRequest(format!(
-                    "Missing required parameter: {}",
-                    field
-                )));
+            _ => {
+                return Err(AppError::Internal(
+                    "Parameter generation called for non-API/PlatformFunction tool".to_string(),
+                ));
             }
-        }
-
-        if let Some(props) = properties.as_object() {
-            for (key, value) in params_obj {
-                if let Some(prop_def) = props.get(key) {
-                    let expected_type = prop_def["type"].as_str().unwrap_or("string");
-                    self.validate_parameter_type(value, expected_type, key)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn validate_parameter_type(
-        &self,
-        value: &Value,
-        expected_type: &str,
-        field_name: &str,
-    ) -> Result<(), AppError> {
-        let is_valid = match expected_type {
-            "string" => value.is_string(),
-            "number" => value.is_number(),
-            "integer" => value.is_i64() || value.is_u64(),
-            "boolean" => value.is_boolean(),
-            "array" => value.is_array(),
-            "object" => value.is_object(),
-            _ => true,
         };
 
-        if !is_valid {
+        let request_body = render_template_with_prompt(
+            AgentTemplates::PARAMETER_GENERATION,
+            json!({
+                "conversation_history": self.get_conversation_history_for_llm(),
+                "tool_name": tool.name,
+                "tool_description": tool.description.as_ref().unwrap_or(&"".to_string()),
+                "parameter_schema": parameter_schema,
+                "user_request": self.user_request,
+                "current_objective": self.current_objective,
+                "conversation_insights": self.conversation_insights,
+            }),
+        )
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to render parameter generation template: {}",
+                e
+            ))
+        })?;
+
+        let response = self
+            .create_main_llm()?
+            .generate_structured_content::<ParameterGenerationResponse>(request_body)
+            .await?;
+
+        if !response.parameter_generation.can_generate {
             return Err(AppError::BadRequest(format!(
-                "Parameter '{}' should be of type '{}'",
-                field_name, expected_type
+                "Cannot generate parameters for {}: Missing information - {}",
+                tool.name,
+                response.parameter_generation.missing_information.join(", ")
             )));
         }
 
-        Ok(())
+        Ok(response.parameter_generation.parameters)
     }
 
     fn parse_workflow_call(
         &self,
         details: &Value,
     ) -> Result<shared::dto::json::WorkflowCall, AppError> {
-        serde_json::from_value(details.clone())
-            .map_err(|e| AppError::BadRequest(format!("Invalid workflow call format: {}", e)))
-    }
+        let workflow_name = details["workflow_name"]
+            .as_str()
+            .ok_or_else(|| AppError::BadRequest("Workflow name not specified".to_string()))?;
 
-    fn extract_query_from_action(&self, action: &ExecutionAction) -> Result<String, AppError> {
-        action
-            .details
-            .get("query")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| AppError::BadRequest("Search query not specified".to_string()))
+        let inputs = details.get("inputs").cloned().unwrap_or(json!({}));
+
+        Ok(shared::dto::json::WorkflowCall {
+            workflow_name: workflow_name.to_string(),
+            inputs,
+        })
     }
 
     async fn store_conversation(
@@ -749,20 +933,20 @@ impl AgentExecutor {
         content: ConversationContent,
         message_type: ConversationMessageType,
     ) -> Result<(), AppError> {
-        let command =
-            CreateConversationCommand::new(self.agent.id, self.context_id, content, message_type);
+        let command = CreateConversationCommand::new(
+            self.app_state.sf.next_id()? as i64,
+            self.context_id,
+            content,
+            message_type,
+        );
         let conversation = command.execute(&self.app_state).await?;
-        self.conversations.push(conversation);
-        Ok(())
-    }
+        self.conversations.push(conversation.clone());
 
-    async fn emit_event<T: serde::Serialize>(&self, data: &T) -> Result<(), AppError> {
-        let event =
-            StreamEvent::PlatformEvent("agent_event".to_string(), serde_json::to_value(data)?);
-        self.channel
-            .send(event)
-            .await
-            .map_err(|_| AppError::Internal("Failed to send event".to_string()))?;
+        let _ = self
+            .channel
+            .send(StreamEvent::ConversationMessage(conversation))
+            .await;
+
         Ok(())
     }
 
@@ -783,15 +967,7 @@ impl AgentExecutor {
     fn map_conversation_type_to_role(&self, msg_type: &ConversationMessageType) -> &'static str {
         match msg_type {
             ConversationMessageType::UserMessage => "user",
-            ConversationMessageType::AgentResponse
-            | ConversationMessageType::AssistantAcknowledgment
-            | ConversationMessageType::AssistantIdeation
-            | ConversationMessageType::AssistantActionPlanning
-            | ConversationMessageType::AssistantTaskExecution
-            | ConversationMessageType::AssistantValidation => "assistant",
-            ConversationMessageType::SystemDecision | ConversationMessageType::ContextResults => {
-                "system"
-            }
+            _ => "model",
         }
     }
 
@@ -799,26 +975,11 @@ impl AgentExecutor {
         serde_json::to_string(content).unwrap()
     }
 
-    fn get_executable_tasks(&self) -> Vec<ExecutableTask> {
-        self.conversations
-            .iter()
-            .filter_map(|conv| match &conv.content {
-                ConversationContent::AssistantActionPlanning { task_execution, .. } => {
-                    task_execution.get("tasks").and_then(|tasks| {
-                        serde_json::from_value::<Vec<ExecutableTask>>(tasks.clone()).ok()
-                    })
-                }
-                _ => None,
-            })
-            .flatten()
-            .collect()
-    }
-
     fn create_main_llm(&self) -> Result<GeminiClient, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
         Ok(GeminiClient::new(
             api_key,
-            Some("gemini-2.0-flash-exp".to_string()),
+            Some("gemini-2.5-flash".to_string()),
         ))
     }
 }

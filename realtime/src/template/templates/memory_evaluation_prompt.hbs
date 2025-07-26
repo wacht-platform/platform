@@ -1,0 +1,56 @@
+{
+  "system_instruction": {
+      "parts": [
+        {
+          "text": "{{system_prompt}}"
+        }
+      ]
+   },
+  "contents": [
+    {{#each conversation_history}}
+    {
+      "role": "{{this.role}}",
+      "parts": [
+        {
+          "text": "{{this.content}}"
+        }
+      ]
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "generationConfig": {
+    "responseMimeType": "application/json",
+    "responseSchema": {
+      "type": "OBJECT",
+      "properties": {
+        "worth_storing": {
+          "type": "BOOLEAN",
+          "description": "Whether this content is worth storing in memory"
+        },
+        "confidence": {
+          "type": "NUMBER",
+          "description": "Confidence level in the decision (0.0 to 1.0)"
+        },
+        "reasoning": {
+          "type": "STRING",
+          "description": "Explanation of why this should or should not be stored"
+        },
+        "suggested_tags": {
+          "type": "ARRAY",
+          "items": {
+            "type": "STRING"
+          },
+          "description": "Suggested tags for categorizing this memory"
+        },
+        "retention_priority": {
+          "type": "STRING",
+          "enum": ["high", "medium", "low"],
+          "description": "How important it is to retain this memory long-term"
+        }
+      },
+      "required": ["worth_storing", "confidence", "reasoning", "suggested_tags", "retention_priority"]
+    },
+    "temperature": 0.3,
+    "maxOutputTokens": 1024
+  }
+}

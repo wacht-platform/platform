@@ -22,6 +22,8 @@ pub struct DocumentChunkSearchResult {
     pub content: String,
     pub score: f64,
     pub chunk_index: i32,
+    pub document_title: Option<String>,
+    pub document_description: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

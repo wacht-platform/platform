@@ -259,3 +259,107 @@ impl Query for GetAiKnowledgeBasesByIdsQuery {
             .collect())
     }
 }
+
+pub struct GetDocumentChunksQuery {
+    pub document_id: i64,
+    pub chunk_range: Option<(i32, i32)>,
+    pub keywords: Option<Vec<String>>,
+    pub limit: Option<usize>,
+}
+
+impl GetDocumentChunksQuery {
+    pub fn new(document_id: i64) -> Self {
+        Self {
+            document_id,
+            chunk_range: None,
+            keywords: None,
+            limit: Some(10),
+        }
+    }
+
+    pub fn with_chunk_range(mut self, start: i32, end: i32) -> Self {
+        self.chunk_range = Some((start, end));
+        self
+    }
+
+    pub fn with_keywords(mut self, keywords: Vec<String>) -> Self {
+        self.keywords = Some(keywords);
+        self
+    }
+
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+}
+
+#[derive(Debug)]
+pub struct DocumentChunk {
+    pub content: String,
+    pub chunk_index: i32,
+    pub knowledge_base_id: i64,
+    pub deployment_id: i64,
+}
+
+impl Query for GetDocumentChunksQuery {
+    type Output = Vec<DocumentChunk>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let mut query_str = String::from(
+            "SELECT content, chunk_index, knowledge_base_id, deployment_id
+             FROM knowledge_base_document_chunks
+             WHERE document_id = $1",
+        );
+
+        let mut param_count = 1;
+
+        if let Some((start, end)) = self.chunk_range {
+            param_count += 1;
+            query_str.push_str(&format!(" AND chunk_index >= ${}", start));
+            param_count += 1;
+            query_str.push_str(&format!(" AND chunk_index <= ${}", end));
+        }
+
+        if self.keywords.is_some() {
+            param_count += 1;
+            query_str.push_str(&format!(" AND content ~* ${}", param_count));
+        }
+
+        query_str.push_str(" ORDER BY chunk_index");
+
+        param_count += 1;
+        query_str.push_str(&format!(" LIMIT ${}", param_count));
+
+        let mut query = sqlx::query(&query_str);
+        query = query.bind(self.document_id);
+
+        if let Some((start, end)) = self.chunk_range {
+            query = query.bind(start);
+            query = query.bind(end);
+        }
+
+        if let Some(keywords) = &self.keywords {
+            let keyword_pattern = keywords.join("|");
+            query = query.bind(keyword_pattern);
+        }
+
+        query = query.bind(self.limit.unwrap_or(10) as i64);
+
+        let rows = query
+            .fetch_all(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
+
+        let mut chunks = Vec::new();
+        for row in rows {
+            chunks.push(DocumentChunk {
+                content: sqlx::Row::try_get(&row, "content")?,
+                chunk_index: sqlx::Row::try_get(&row, "chunk_index")?,
+                knowledge_base_id: sqlx::Row::try_get(&row, "knowledge_base_id")?,
+                deployment_id: sqlx::Row::try_get(&row, "deployment_id")?,
+            });
+        }
+
+        Ok(chunks)
+    }
+}

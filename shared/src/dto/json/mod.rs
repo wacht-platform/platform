@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod ai_knowledge_base;
 pub mod b2b;
+pub mod context_search;
 pub mod deployment;
 pub mod deployment_settings;
 pub mod execution_plan;
@@ -11,6 +12,7 @@ pub mod user;
 pub use agent::*;
 pub use ai_knowledge_base::*;
 pub use b2b::*;
+pub use context_search::*;
 pub use deployment::*;
 pub use deployment_settings::*;
 pub use execution_plan::*;

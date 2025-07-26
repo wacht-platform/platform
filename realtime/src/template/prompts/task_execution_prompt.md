@@ -27,6 +27,11 @@ Analyze the conversation history to understand:
 - Available tools and workflows for execution
 - The overall objective and success criteria
 
+**CRITICAL**: Check if the tool you're about to execute requires parameters:
+- If parameters are required, ensure they are available from previous task results
+- Use the actual values from dependent task outputs, not placeholders
+- If required parameters are missing, the task cannot be executed
+
 ## Execution Guidelines:
 
 1. **Parameter Generation**: Create valid parameters based on task requirements

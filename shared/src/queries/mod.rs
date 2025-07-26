@@ -38,17 +38,17 @@ pub mod signin;
 pub mod user;
 pub mod workspace;
 
-// AI-related queries
-pub mod agent_dynamic_context;
-pub mod ai_agent;
 pub mod agent_execution_context;
 pub mod agent_message_similarity;
+pub mod ai_agent;
 pub mod ai_knowledge_base;
 pub mod ai_tool;
 pub mod ai_workflow;
 pub mod hybrid_search;
-pub mod debug_kb_search;
-
+pub use agent_execution_context::*;
+pub use agent_message_similarity::*;
+pub use ai_agent::*;
+pub use ai_knowledge_base::*;
 pub use b2b::*;
 pub use deployment::*;
 pub use invitation::*;
@@ -57,18 +57,10 @@ pub use project::*;
 pub use signin::*;
 pub use user::*;
 pub use workspace::*;
-
-// AI-related exports
-pub use agent_dynamic_context::*;
-pub use ai_agent::*;
-pub use agent_execution_context::*;
-pub use agent_message_similarity::*;
-pub use ai_knowledge_base::*;
 pub mod ai_memory;
 pub mod memory_v2;
 pub use ai_memory::*;
-pub use memory_v2::*;
 pub use ai_tool::*;
 pub use ai_workflow::*;
 pub use hybrid_search::*;
-pub use debug_kb_search::*;
+pub use memory_v2::*;

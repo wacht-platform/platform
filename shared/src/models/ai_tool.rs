@@ -53,13 +53,9 @@ pub enum AiToolConfiguration {
 pub struct ApiToolConfiguration {
     pub endpoint: String,
     pub method: HttpMethod,
-    pub headers: Vec<HttpParameter>,
-    pub query_parameters: Vec<HttpParameter>,
-    pub body_parameters: Vec<HttpParameter>,
     pub authorization: Option<AuthorizationConfiguration>,
     pub request_body_schema: Option<Vec<SchemaField>>,
     pub url_params_schema: Option<Vec<SchemaField>>,
-    pub query_params_schema: Option<Vec<SchemaField>>,
     pub timeout_seconds: Option<u32>,
 }
 
@@ -94,14 +90,6 @@ pub struct PlatformFunctionToolConfiguration {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct HttpParameter {
-    pub name: String,
-    pub value_type: ParameterValueType,
-    pub required: bool,
-    pub description: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
 pub struct SchemaField {
     pub name: String,
     pub field_type: String,
@@ -110,17 +98,10 @@ pub struct SchemaField {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-#[serde(tag = "type")]
-pub enum ParameterValueType {
-    Hardcoded { value: String },
-    FromChat { lookup_key: String },
-}
-
-#[derive(Serialize, Deserialize, Clone)]
 pub struct AuthorizationConfiguration {
     pub authorize_as_user: bool,
     pub jwt_template_id: Option<i64>,
-    pub custom_headers: Vec<HttpParameter>,
+    pub custom_headers: Option<Vec<SchemaField>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
@@ -196,13 +177,9 @@ impl Default for AiToolConfiguration {
         AiToolConfiguration::Api(ApiToolConfiguration {
             endpoint: String::new(),
             method: HttpMethod::GET,
-            headers: Vec::new(),
-            query_parameters: Vec::new(),
-            body_parameters: Vec::new(),
             authorization: None,
             request_body_schema: None,
             url_params_schema: None,
-            query_params_schema: None,
             timeout_seconds: Some(30),
         })
     }
@@ -213,13 +190,9 @@ impl Default for ApiToolConfiguration {
         Self {
             endpoint: "".to_string(),
             method: HttpMethod::GET,
-            headers: Vec::new(),
-            query_parameters: Vec::new(),
-            body_parameters: Vec::new(),
             authorization: None,
             request_body_schema: None,
             url_params_schema: None,
-            query_params_schema: None,
             timeout_seconds: Some(30),
         }
     }

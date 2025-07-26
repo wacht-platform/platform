@@ -19,10 +19,6 @@ pub fn register_all_helpers(hb: &mut Handlebars) {
     hb.register_helper("truncate", Box::new(TruncateHelper));
     hb.register_helper("default", Box::new(DefaultHelper));
     hb.register_helper("format_capabilities", Box::new(FormatCapabilitiesHelper));
-    hb.register_helper(
-        "format_dynamic_context",
-        Box::new(FormatDynamicContextHelper),
-    );
     hb.register_helper("current_timestamp", Box::new(CurrentTimestampHelper));
     hb.register_helper("eq", Box::new(EqHelper));
 }
@@ -54,7 +50,47 @@ impl handlebars::HelperDef for FormatToolsHelper {
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");
-                format!("- {}: {}", name, description)
+                
+                // Extract parameter information from tool configuration
+                let mut param_info = String::new();
+                if let Some(config) = tool.get("configuration") {
+                    match config.get("type").and_then(|t| t.as_str()) {
+                        Some("Api") => {
+                            if let Some(schema) = config.get("url_params_schema").and_then(|s| s.as_array()) {
+                                if !schema.is_empty() {
+                                    let params: Vec<String> = schema.iter()
+                                        .filter_map(|field| {
+                                            let name = field.get("name")?.as_str()?;
+                                            let required = field.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
+                                            Some(if required { format!("{} (required)", name) } else { name.to_string() })
+                                        })
+                                        .collect();
+                                    param_info.push_str(&format!(" | Parameters: {}", params.join(", ")));
+                                }
+                            }
+                        }
+                        Some("PlatformFunction") => {
+                            if let Some(schema) = config.get("input_schema").and_then(|s| s.as_array()) {
+                                if !schema.is_empty() {
+                                    let params: Vec<String> = schema.iter()
+                                        .filter_map(|field| {
+                                            let name = field.get("name")?.as_str()?;
+                                            let required = field.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
+                                            Some(if required { format!("{} (required)", name) } else { name.to_string() })
+                                        })
+                                        .collect();
+                                    param_info.push_str(&format!(" | Inputs: {}", params.join(", ")));
+                                }
+                            }
+                        }
+                        Some("KnowledgeBase") => {
+                            param_info.push_str(" | Requires: query");
+                        }
+                        _ => {}
+                    }
+                }
+                
+                format!("- {}: {}{}", name, description, param_info)
             })
             .collect();
 
@@ -132,41 +168,6 @@ impl handlebars::HelperDef for FormatKnowledgeBasesHelper {
     }
 }
 
-pub struct FormatDynamicContextHelper;
-
-impl handlebars::HelperDef for FormatDynamicContextHelper {
-    fn call<'reg: 'rc, 'rc>(
-        &self,
-        h: &Helper,
-        _: &Handlebars,
-        _: &Context,
-        _: &mut RenderContext,
-        out: &mut dyn Output,
-    ) -> HelperResult {
-        let context_items = h
-            .param(0)
-            .and_then(|v| v.value().as_array())
-            .ok_or_else(|| RenderErrorReason::InvalidParamType("Expected dynamic context array"))?;
-
-        let formatted_items: Vec<String> = context_items
-            .iter()
-            .map(|item| {
-                let content = item
-                    .get("content")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("No content");
-                let source = item
-                    .get("source")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown source");
-                format!("- [{}] {}", source, content)
-            })
-            .collect();
-
-        out.write(&formatted_items.join("\n"))?;
-        Ok(())
-    }
-}
 
 pub struct FormatMemoriesHelper;
 

@@ -25,6 +25,11 @@ Your role is to:
 ## Available Capabilities:
 {{format_capabilities available_tools workflows}}
 
+**CRITICAL**: Pay attention to tool parameter requirements! If a tool requires specific inputs (marked as "required"), you MUST create a task to obtain those inputs FIRST. This often means:
+- Creating a task to call one tool to get data
+- Creating a dependent task that uses that data as input for another tool
+- Setting proper dependencies so tasks execute in the correct order
+
 ## Task Breakdown Guidelines:
 
 1. **Clear Task Definition**: Each task should have a specific, measurable outcome

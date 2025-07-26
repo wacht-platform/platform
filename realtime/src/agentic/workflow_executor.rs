@@ -9,7 +9,7 @@ use shared::error::AppError;
 use shared::models::{
     AiWorkflow, ConditionEvaluationType, ConditionType, ExecutionContext,
     ExecutionStatus, MemoryEntry, NodeExecution, ResponseFormat, WorkflowEdge, WorkflowNode,
-    WorkflowNodeType, ContextAction, ContextEngineParams, ContextFilters,
+    WorkflowNodeType,
 };
 use shared::queries::Query;
 use std::collections::HashMap;
@@ -56,54 +56,6 @@ impl WorkflowExecutor {
         result
     }
 
-    /// Execute a workflow with context search capability
-    pub async fn execute_workflow_with_context(
-        &self,
-        workflow_call: &shared::dto::json::WorkflowCall,
-        workflow: &AiWorkflow,
-        channel: Sender<StreamEvent>,
-        context_query: Option<String>,
-    ) -> Result<Value, AppError> {
-        let mut inputs = workflow_call.inputs.clone();
-
-        // If context query is provided, search for relevant context first
-        if let Some(query) = context_query {
-            let params = ContextEngineParams {
-                query,
-                action: ContextAction::SearchAll,
-                filters: Some(ContextFilters {
-                    max_results: 10,
-                    min_relevance: 0.7,
-                    time_range: None,
-                    search_mode: shared::models::SearchMode::default(),
-                    boost_keywords: None,
-                }),
-            };
-
-            match self.shared_context.context_engine().execute(params).await {
-                Ok(results) => {
-                    // Add context results to workflow inputs
-                    if let Some(inputs_obj) = inputs.as_object_mut() {
-                        inputs_obj.insert(
-                            "_context".to_string(),
-                            json!(results.into_iter().map(|r| json!({
-                                "content": r.content,
-                                "relevance": r.relevance_score,
-                                "source": format!("{:?}", r.source),
-                                "metadata": r.metadata,
-                            })).collect::<Vec<_>>()),
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Context search failed: {}", e);
-                }
-            }
-        }
-
-        // Execute the workflow with enhanced inputs
-        self.execute_workflow(workflow, inputs, channel).await
-    }
 
     pub async fn execute_workflow(
         &self,

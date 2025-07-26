@@ -36,20 +36,35 @@
           "type": "NUMBER",
           "description": "Confidence level in this decision (0.0 to 1.0)"
         },
-        "direct_execution_params": {
+        "direct_execution": {
           "type": "OBJECT",
-          "description": "Information for direct tool/workflows execution (required when next_step is direct_execution)",
+          "description": "Direct execution action (required when next_step is direct_execution)",
           "properties": {
-            "execution_type": {
+            "type": {
               "type": "STRING",
-              "enum": ["tool", "workflow"]
+              "enum": ["tool_call", "workflow_call"],
+              "description": "The type of action to execute"
             },
-            "resource_name": {
+            "details": {
+              "type": "OBJECT",
+              "description": "Action details containing tool/workflow information",
+              "properties": {
+                "tool_name": {
+                  "type": "STRING",
+                  "description": "The name of the tool to execute (required for tool_call)"
+                },
+                "workflow_name": {
+                  "type": "STRING",
+                  "description": "The name of the workflow to execute (required for workflow_call)"
+                }
+              }
+            },
+            "purpose": {
               "type": "STRING",
-              "description": "The exact name of the tool or workflow to execute"
+              "description": "The purpose of this action execution"
             }
           },
-          "required": ["resource_name", "execution_type"]
+          "required": ["type", "details", "purpose"]
         }
       },
       "required": ["next_step", "reasoning", "confidence"]

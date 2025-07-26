@@ -15,70 +15,121 @@
           "text": "{{this.content}}"
         }
       ]
-    }{{#unless @last}},{{/unless}}
+    },
     {{/each}}
+    {
+      "role": "model",
+      "parts": [
+        {
+          "text": "Based on the conversation history and current objective, determine what information you need to search for to build your internal context.\n\nCurrent Objective: {{current_objective}}\n\n{{#if has_previous_searches}}IMPORTANT: You have already performed {{previous_search_count}} search(es). Check if the previous searches have found the information needed. If so, return search_scope: \"gathered_context\" to stop searching and avoid redundant searches.{{/if}}\n\nAnalyze the conversation and decide:\n1. What specific information you need to gather\n2. Which search scope would be most appropriate (including \"gathered_context\" if you already have enough information)\n3. What search parameters would yield the best results\n\nRemember: This search is for YOUR internal context building, not directly shown to the user."
+        }
+      ]
+    }
   ],
   "generationConfig": {
+    "temperature": 0.3,
+    "maxOutputTokens": 2048,
     "responseMimeType": "application/json",
     "responseSchema": {
       "type": "OBJECT",
       "properties": {
         "search_query": {
           "type": "STRING",
-          "description": "The optimized search query derived from conversation context"
+          "description": "The search query to find information you need for context"
         },
         "search_scope": {
           "type": "STRING",
-          "enum": ["knowledge_base", "experience", "universal"],
-          "description": "Where to search for information"
-        },
-        "search_rationale": {
-          "type": "STRING",
-          "description": "Explanation of why this query and scope were chosen"
+          "enum": ["knowledge_base", "experience", "universal", "list_knowledge_base_documents", "read_knowledge_base_documents", "gathered_context"],
+          "description": "The scope of search: knowledge_base (search KB content), experience (search memories), universal (search all), list_knowledge_base_documents (list available docs), read_knowledge_base_documents (read specific docs), gathered_context (stop gathering, sufficient context)"
         },
         "filters": {
           "type": "OBJECT",
           "properties": {
             "max_results": {
               "type": "INTEGER",
-              "description": "Maximum number of results to return (10-50)"
-            },
-            "min_relevance": {
-              "type": "NUMBER",
-              "description": "Minimum relevance score (0.0-1.0)"
+              "description": "Maximum number of results to return"
             },
             "boost_keywords": {
               "type": "ARRAY",
+              "nullable": true,
               "items": {
                 "type": "STRING"
               },
-              "description": "Important keywords to boost in search results",
-              "nullable": true
+              "description": "Important keywords to boost in search results"
             },
             "time_range": {
               "type": "STRING",
-              "description": "Time constraint like 'last_week', 'last_month', 'last_year'",
-              "nullable": true
+              "nullable": true,
+              "description": "Time constraint like 'last_hour', 'today', 'last_week', 'last_month', 'last_year'"
             },
             "search_mode": {
               "type": "STRING",
               "enum": ["semantic", "keyword", "hybrid"],
-              "description": "Search mode to use"
+              "description": "Search mode: semantic (meaning-based), keyword (exact match), hybrid (combined)"
             }
           },
-          "required": ["max_results", "min_relevance", "search_mode"]
+          "required": ["max_results", "search_mode"]
         },
-        "alternative_queries": {
-          "type": "ARRAY",
-          "items": {
-            "type": "STRING"
+        "list_documents_params": {
+          "type": "OBJECT",
+          "nullable": true,
+          "description": "Parameters for listing knowledge base documents (only when search_scope is list_knowledge_base_documents)",
+          "properties": {
+            "knowledge_base_id": {
+              "type": "INTEGER",
+              "nullable": true,
+              "description": "Specific KB ID to list documents from, or null to list from all agent's KBs"
+            },
+            "keyword_filter": {
+              "type": "STRING",
+              "nullable": true,
+              "description": "Optional keyword to filter document titles"
+            }
+          }
+        },
+        "read_document_params": {
+          "type": "OBJECT",
+          "nullable": true,
+          "description": "Parameters for reading document chunks (only when search_scope is read_knowledge_base_documents)",
+          "properties": {
+            "document_id": {
+              "type": "INTEGER",
+              "description": "The ID of the document to read chunks from"
+            },
+            "chunk_range": {
+              "type": "OBJECT",
+              "nullable": true,
+              "description": "Specific range of chunks to read",
+              "properties": {
+                "start": {
+                  "type": "INTEGER",
+                  "description": "Starting chunk index (inclusive)"
+                },
+                "end": {
+                  "type": "INTEGER",
+                  "description": "Ending chunk index (inclusive)"
+                }
+              },
+              "required": ["start", "end"]
+            },
+            "keywords": {
+              "type": "ARRAY",
+              "nullable": true,
+              "description": "Keywords to search for within chunks",
+              "items": {
+                "type": "STRING"
+              }
+            },
+            "limit": {
+              "type": "INTEGER",
+              "nullable": true,
+              "description": "Maximum number of chunks to return (default: 10)"
+            }
           },
-          "description": "Alternative search queries if primary yields no results"
+          "required": ["document_id"]
         }
       },
-      "required": ["search_query", "search_scope", "search_rationale", "filters", "alternative_queries"]
-    },
-    "temperature": 0.3,
-    "maxOutputTokens": 2048
+      "required": ["search_query", "search_scope", "filters"]
+    }
   }
 }

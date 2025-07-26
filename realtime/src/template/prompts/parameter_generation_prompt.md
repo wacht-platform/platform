@@ -53,6 +53,27 @@ Your role is to:
 {{/if}}
 
 ## Available Context:
+### Current Objective:
+{{#if current_objective}}
+- Primary Goal: {{current_objective.primary_goal}}
+- Success Criteria: {{#each current_objective.success_criteria}}
+  - {{this}}
+{{/each}}
+- Constraints: {{#each current_objective.constraints}}
+  - {{this}}
+{{/each}}
+- Inferred Intent: {{current_objective.inferred_intent}}
+{{/if}}
+
+### Conversation Insights:
+{{#if conversation_insights}}
+- Is Continuation: {{conversation_insights.is_continuation}}
+- Topic Evolution: {{conversation_insights.topic_evolution}}
+- User Preferences: {{#each conversation_insights.user_preferences}}
+  - {{this}}
+{{/each}}
+{{/if}}
+
 ### Task Details:
 {{#if task}}
 - Task: {{task.name}}
@@ -81,6 +102,8 @@ Your role is to:
 3. **Complete Coverage**: Include all required parameters
 4. **Type Correctness**: Ensure correct data types (string, number, boolean, object)
 5. **Context Awareness**: Use information from conversation history and previous results
+6. **Objective Alignment**: Ensure parameters align with the current objective and success criteria
+7. **User Preferences**: Consider user preferences and conversation insights when generating parameters
 
 ## Important:
 - Generate ready-to-use parameters, not templates

@@ -39,6 +39,7 @@ pub struct AiAgentWithFeatures {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub name: String,
+    pub description: Option<String>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub configuration: serde_json::Value,

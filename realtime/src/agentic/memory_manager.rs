@@ -1,7 +1,5 @@
 use crate::template::{AgentTemplates, render_template_with_prompt};
-use llm::LLMProvider;
-use llm::builder::{LLMBackend, LLMBuilder};
-use llm::chat::ChatMessage;
+use crate::agentic::gemini_client::GeminiClient;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use shared::commands::{Command, CreateMemoryCommand};
@@ -27,10 +25,11 @@ struct WorkingMemoryItem {
 
 #[derive(Deserialize, Serialize)]
 struct MemoryEvaluationResponse {
-    should_store: bool,
-    reason: String,
-    importance: f64,
-    suggested_content: String,
+    worth_storing: bool,
+    confidence: f64,
+    reasoning: String,
+    suggested_tags: Vec<String>,
+    retention_priority: String,
 }
 
 impl MemoryManager {
@@ -80,15 +79,20 @@ impl MemoryManager {
             .evaluate_memory_worthiness(&content, &memory_type, context)
             .await?;
 
-        if !evaluation.should_store {
+        if !evaluation.worth_storing {
             // Log the reason for debugging
-            tracing::debug!("Memory not stored. Reason: {}", evaluation.reason);
+            tracing::debug!("Memory not stored. Reason: {}", evaluation.reasoning);
             return Ok(0); // Return dummy ID, memory not stored
         }
 
-        // Use the LLM's suggested content and importance
-        let final_content = evaluation.suggested_content;
-        let mut importance = evaluation.importance.max(base_importance); // Use the higher of the two
+        // Use the original content and map retention priority to importance
+        let final_content = content.to_string();
+        let mut importance = match evaluation.retention_priority.as_str() {
+            "high" => 0.9,
+            "medium" => 0.6,
+            "low" => 0.3,
+            _ => base_importance,
+        }.max(base_importance); // Use the higher of the two
 
         // Additional importance adjustments based on context
         if let Some(Value::Bool(true)) = context.get("success") {
@@ -127,29 +131,6 @@ impl MemoryManager {
 
     /// Search memories with learning feedback
 
-    /// Create a weak LLM for memory evaluation
-    fn create_weak_llm(
-        &self,
-        system_prompt: Option<&str>,
-    ) -> Result<Box<dyn LLMProvider>, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY")
-            .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
-
-        let mut builder = LLMBuilder::new()
-            .backend(LLMBackend::Google)
-            .api_key(&api_key)
-            .model("gemini-2.5-flash")
-            .max_tokens(1000)
-            .temperature(0.2); // Lower temperature for more consistent evaluation
-
-        if let Some(system) = system_prompt {
-            builder = builder.system(system);
-        }
-
-        builder
-            .build()
-            .map_err(|e| AppError::Internal(format!("Failed to create LLM: {}", e)))
-    }
 
     /// Evaluate if content is worth storing using LLM
     async fn evaluate_memory_worthiness(
@@ -158,65 +139,36 @@ impl MemoryManager {
         memory_type: &MemoryType,
         context: &HashMap<String, Value>,
     ) -> Result<MemoryEvaluationResponse, AppError> {
-        // Get recent conversation topic if available
         let conversation_topic = context
             .get("conversation_topic")
             .and_then(|v| v.as_str())
             .unwrap_or("general task execution");
 
-        let evaluation_context = json!({
-            "memory_type": format!("{:?}", memory_type),
-            "content": content,
-            "context": serde_json::to_string(&context).unwrap_or_default(),
-            "conversation_topic": conversation_topic,
-        });
-
-        let system_prompt = render_template_with_prompt(AgentTemplates::ACKNOWLEDGMENT, &evaluation_context)
-            .map_err(|e| {
-                AppError::Internal(format!(
-                    "Failed to render memory evaluation template: {}",
-                    e
-                ))
-            })?;
-
-        // Create LLM with system prompt
-        let llm = self.create_weak_llm(Some(&system_prompt))?;
-
-        // Simple user prompt
-        let user_prompt = format!(
-            "Content: {}\nMemory Type: {:?}\nConversation Topic: {}\nPlease evaluate if this content should be stored.",
-            content, memory_type, conversation_topic
-        );
-
-        let messages = vec![ChatMessage::user().content(&user_prompt).build()];
-        let response_text = {
-            let response = llm
-                .chat(&messages)
-                .await
-                .map_err(|e| AppError::Internal(format!("LLM memory evaluation failed: {}", e)))?;
-            response.to_string()
-        };
-
-        // Extract JSON from potential markdown code blocks
-        let json_str = if response_text.contains("```json") {
-            // Extract content between ```json and ```
-            let start = response_text.find("```json").map(|i| i + 7);
-            let end = response_text.rfind("```");
-
-            match (start, end) {
-                (Some(s), Some(e)) if e > s => response_text[s..e].trim(),
-                _ => response_text.trim(),
-            }
-        } else {
-            response_text.trim()
-        };
-
-        // Parse the response
-        serde_json::from_str(json_str).map_err(|e| {
+        let request_body = render_template_with_prompt(
+            AgentTemplates::MEMORY_EVALUATION,
+            json!({
+                "conversation_history": Vec::<Value>::new(), // Empty for memory evaluation
+                "memory_type": format!("{:?}", memory_type),
+                "content": content,
+                "context": serde_json::to_string(&context).unwrap_or_default(),
+                "conversation_topic": conversation_topic,
+            }),
+        )
+        .map_err(|e| {
             AppError::Internal(format!(
-                "Failed to parse memory evaluation response: {}. Response: {}",
-                e, response_text
+                "Failed to render memory evaluation template: {}",
+                e
             ))
-        })
+        })?;
+
+        let api_key = std::env::var("GEMINI_API_KEY")
+            .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
+        
+        let client = GeminiClient::new(api_key, Some("gemini-2.0-flash-exp".to_string()));
+        let evaluation = client
+            .generate_structured_content::<MemoryEvaluationResponse>(request_body)
+            .await?;
+
+        Ok(evaluation)
     }
 }

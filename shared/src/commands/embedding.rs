@@ -91,15 +91,15 @@ impl Command for GenerateEmbeddingsCommand {
 
 #[derive(Clone)]
 pub struct SearchKnowledgeBaseEmbeddingsCommand {
-    pub knowledge_base_id: i64,
+    pub knowledge_base_ids: Vec<i64>,
     pub query_embedding: Vec<f32>,
     pub limit: u64,
 }
 
 impl SearchKnowledgeBaseEmbeddingsCommand {
-    pub fn new(knowledge_base_id: i64, query_embedding: Vec<f32>, limit: u64) -> Self {
+    pub fn new(knowledge_base_ids: Vec<i64>, query_embedding: Vec<f32>, limit: u64) -> Self {
         Self {
-            knowledge_base_id,
+            knowledge_base_ids,
             query_embedding,
             limit,
         }
@@ -111,17 +111,33 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let query_embedding = Vector::from(self.query_embedding.clone());
+        // Set minimum similarity threshold - cosine distance of 1.1-1.2 means ~40-45% similarity
+        // Cosine distance ranges from 0 (identical) to 2 (opposite)
+        // Distance 1.0 = 50% similarity, 1.2 = 40% similarity
+        let max_distance = 1.2_f64;
+        
         let rows = sqlx::query(
             r#"
-            SELECT document_id, knowledge_base_id, content, chunk_index, (embedding <-> $1)::float8 as score
-            FROM knowledge_base_document_chunks
-            WHERE knowledge_base_id = $2
-            ORDER BY score ASC LIMIT $3
+            SELECT 
+                kbc.document_id, 
+                kbc.knowledge_base_id, 
+                kbc.content, 
+                kbc.chunk_index, 
+                (kbc.embedding <-> $1)::float8 as score,
+                d.title as document_title,
+                d.description as document_description
+            FROM knowledge_base_document_chunks kbc
+            LEFT JOIN ai_knowledge_base_documents d ON kbc.document_id = d.id
+            WHERE kbc.knowledge_base_id = ANY($2)
+              AND (kbc.embedding <-> $1) <= $4
+            ORDER BY score ASC 
+            LIMIT $3
             "#,
         )
         .bind(query_embedding)
-        .bind(self.knowledge_base_id)
+        .bind(&self.knowledge_base_ids)
         .bind(self.limit as i64)
+        .bind(max_distance)
         .fetch_all(&app_state.db_pool)
         .await
         .map_err(AppError::from)?;
@@ -134,6 +150,8 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
                 content: row.try_get("content").map_err(AppError::from)?,
                 score: row.try_get("score").map_err(AppError::from)?,
                 chunk_index: row.try_get("chunk_index").map_err(AppError::from)?,
+                document_title: row.try_get("document_title").map_err(AppError::from)?,
+                document_description: row.try_get("document_description").map_err(AppError::from)?,
             });
         }
 

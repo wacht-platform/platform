@@ -50,9 +50,13 @@
                         "type": "OBJECT",
                         "description": "Action-specific details including parameters",
                         "properties": {
-                          "resource_name": {
+                          "tool_name": {
                             "type": "STRING",
-                            "description": "Name of the tool/workflow/knowledge base to use"
+                            "description": "Name of the tool to use (for tool_call type)"
+                          },
+                          "workflow_name": {
+                            "type": "STRING", 
+                            "description": "Name of the workflow to use (for workflow_call type)"
                           },
                           "description": {
                             "type": "STRING",
@@ -64,7 +68,7 @@
                             "nullable": true
                           }
                         },
-                        "required": ["resource_name", "description"]
+                        "required": ["description"]
                       },
                       "purpose": {
                         "type": "STRING",

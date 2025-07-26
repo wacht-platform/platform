@@ -33,7 +33,6 @@ mod workspace_permission;
 mod workspace_role;
 
 // AI-related models
-pub mod agent_dynamic_context;
 pub mod agent_execution_context;
 pub mod ai_agent;
 pub mod ai_context;
@@ -41,7 +40,6 @@ pub mod ai_knowledge_base;
 pub mod ai_memory;
 pub mod ai_tool;
 pub mod ai_workflow;
-pub mod context_engine;
 pub mod memory_v2;
 
 pub use deployment::*;
@@ -77,7 +75,6 @@ pub use workspace_permission::*;
 pub use workspace_role::*;
 
 // AI-related exports
-pub use agent_dynamic_context::*;
 pub use agent_execution_context::*;
 pub use ai_agent::*;
 pub use ai_context::*;
@@ -85,5 +82,4 @@ pub use ai_knowledge_base::*;
 pub use ai_memory::*;
 pub use ai_tool::*;
 pub use ai_workflow::*;
-pub use context_engine::*;
 pub use memory_v2::*;

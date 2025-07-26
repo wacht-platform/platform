@@ -90,4 +90,10 @@ pub fn register_all_templates(hb: &mut Handlebars) {
         include_str!("templates/kb_search_validation_prompt.hbs"),
     )
     .expect("Failed to register kb_search_validation_prompt template");
+
+    hb.register_template_string(
+        "memory_evaluation_prompt",
+        include_str!("templates/memory_evaluation_prompt.hbs"),
+    )
+    .expect("Failed to register memory_evaluation_prompt template");
 }

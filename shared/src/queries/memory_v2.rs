@@ -9,7 +9,6 @@ use pgvector::Vector;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
-/// Get Most Recently Used memories
 #[derive(Debug)]
 pub struct GetMRUMemoriesQuery {
     pub limit: i64,
@@ -202,7 +201,6 @@ impl Query for SearchMemoriesWithDecayQuery {
     }
 }
 
-/// Search conversations
 #[derive(Debug)]
 pub struct SearchConversationsQuery {
     pub context_id: i64,
@@ -234,7 +232,6 @@ impl Query for SearchConversationsQuery {
     }
 }
 
-/// Get all memory boundaries
 pub struct GetAllMemoryBoundariesQuery;
 
 impl Query for GetAllMemoryBoundariesQuery {
@@ -275,7 +272,6 @@ impl Query for GetAllMemoryBoundariesQuery {
     }
 }
 
-/// Get memory boundaries for a specific context
 pub struct GetMemoryBoundariesQuery {
     pub context_id: i64,
 }
