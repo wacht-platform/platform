@@ -1,21 +1,17 @@
-use crate::agentic::SharedExecutionContext;
 use serde_json::{Value, json};
 use shared::error::AppError;
 use shared::models::HttpMethod;
 use shared::models::{AiTool, AiToolConfiguration};
 use shared::models::{
-    ApiToolConfiguration, PlatformEventToolConfiguration,
-    PlatformFunctionToolConfiguration,
+    ApiToolConfiguration, PlatformEventToolConfiguration, PlatformFunctionToolConfiguration,
 };
 use std::collections::HashMap;
 
-pub struct ToolExecutor {
-    shared_context: SharedExecutionContext,
-}
+pub struct ToolExecutor;
 
 impl ToolExecutor {
-    pub fn new(shared_context: SharedExecutionContext) -> Self {
-        Self { shared_context }
+    pub fn new() -> Self {
+        Self {}
     }
 
     pub async fn execute_tool_immediately(
@@ -27,10 +23,9 @@ impl ToolExecutor {
             AiToolConfiguration::Api(config) => {
                 self.execute_api_tool(tool, config, &execution_params).await
             }
-            AiToolConfiguration::KnowledgeBase(_config) => {
-                // TODO: Implement knowledge base tool execution
-                Err(AppError::Internal("Knowledge base tool execution not implemented".to_string()))
-            }
+            AiToolConfiguration::KnowledgeBase(_config) => Err(AppError::Internal(
+                "Knowledge base tool execution not implemented".to_string(),
+            )),
             AiToolConfiguration::PlatformEvent(config) => {
                 self.execute_platform_event_tool(tool, config, &execution_params)
                     .await
@@ -152,7 +147,6 @@ impl ToolExecutor {
             Err(e) => Err(AppError::External(format!("API request failed: {}", e))),
         }
     }
-
 
     async fn execute_platform_event_tool(
         &self,

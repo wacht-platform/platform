@@ -18,7 +18,7 @@
     },
     {{/each}}
     {
-      "role": "user",
+      "role": "model",
       "parts": [
         {
           "text": "Based on the conversation above, I need to search for information to build my internal context.\n\nSearch Context:\n- Search Query: {{search_query}}\n- Search Scope: {{search_scope}}\n- Available Knowledge Bases:\n{{#each available_knowledge_bases}}  - ID: {{this.id}}, Name: \"{{this.name}}\"{{#if this.description}}, Description: \"{{this.description}}\"{{/if}}\n{{/each}}\nSearch Filters:\n- Max Results: {{search_filters.max_results}}\n- Search Mode: {{search_filters.search_mode}}\n{{#if search_filters.boost_keywords}}- Boost Keywords: {{#each search_filters.boost_keywords}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}\n\nPlease create a search plan for finding the relevant information in the knowledge base."
@@ -59,7 +59,7 @@
               "description": "Search parameters for this strategy",
               "properties": {
                 "knowledge_base_id": {
-                  "type": "INTEGER",
+                  "type": "STRING",
                   "nullable": true,
                   "description": "Specific KB ID or null for all"
                 },

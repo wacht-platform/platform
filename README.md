@@ -1,6 +1,6 @@
-# Wacht Console API
+# Wacht Platform API
 
-Backend API for the Wacht console dashboard. Wacht is a development toolkit that helps you build enterprise apps fast - think authentication, user management, organizations, AI tools, and analytics all built-in.
+Backend API for the Wacht platform dashboard. Wacht is a development toolkit that helps you build enterprise apps fast - think authentication, user management, organizations, AI tools, and analytics all built-in.
 
 This API handles all the admin stuff - creating deployments, managing users, setting up organizations, configuring AI agents, and basically everything you need to run your customer-facing applications.
 
@@ -108,7 +108,7 @@ cargo run
 
 # Production
 cargo build --release
-./target/release/console
+./target/release/platform-api
 ```
 
 API runs on `http://localhost:3001`

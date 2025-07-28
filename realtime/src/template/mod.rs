@@ -34,6 +34,8 @@ impl AgentTemplates {
     pub const KB_SEARCH_EXECUTION: &'static str = "kb_search_execution_prompt";
     pub const KB_SEARCH_VALIDATION: &'static str = "kb_search_validation_prompt";
     pub const MEMORY_EVALUATION: &'static str = "memory_evaluation_prompt";
+    pub const SWITCH_CASE_EVALUATION: &'static str = "switch_case_evaluation_prompt";
+    pub const TRIGGER_EVALUATION: &'static str = "trigger_evaluation_prompt";
 }
 
 pub fn render_template_with_prompt(
@@ -69,6 +71,8 @@ pub fn render_template_with_prompt(
             prompt_loader::get_prompt("kb_search_validation_system")
         }
         AgentTemplates::MEMORY_EVALUATION => prompt_loader::get_prompt("memory_evaluation_system"),
+        AgentTemplates::SWITCH_CASE_EVALUATION => prompt_loader::get_prompt("switch_case_evaluation_system"),
+        AgentTemplates::TRIGGER_EVALUATION => prompt_loader::get_prompt("trigger_evaluation_system"),
         _ => None,
     };
 

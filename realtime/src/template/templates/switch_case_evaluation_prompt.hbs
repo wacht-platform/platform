@@ -1,0 +1,52 @@
+{
+  "system_instruction": {
+      "parts": [
+        {
+          "text": "{{system_prompt}}"
+        }
+      ]
+   },
+  "contents": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "text": "I need you to evaluate a switch node in a workflow and determine which case should be executed.\n\n## Current Switch Value\nThe switch node is evaluating the following value:\n{{json switch_value}}\n\n## Available Cases\n{{#each cases}}\nCase {{this.index}}: {{this.label}}\n- Condition: {{this.condition}}\n{{/each}}\n\n{{#if has_default}}A default case is available if none of the above cases match.{{else}}There is no default case configured.{{/if}}\n\n## Workflow Context\nCurrent workflow state:\n{{json workflow_state}}\n\nAnalyze the switch value and determine which case best matches based on semantic meaning and intent, not just literal string matching."
+        }
+      ]
+    }
+  ],
+  "generationConfig": {
+    "responseMimeType": "application/json",
+    "responseSchema": {
+      "type": "OBJECT",
+      "properties": {
+        "reasoning": {
+          "type": "STRING",
+          "description": "Detailed explanation of why you selected this case"
+        },
+        "selected_case_index": {
+          "type": "INTEGER",
+          "description": "The index of the selected case (0-based)",
+          "nullable": true
+        },
+        "selected_case_label": {
+          "type": "STRING",
+          "description": "The label of the selected case",
+          "nullable": true
+        },
+        "confidence": {
+          "type": "NUMBER",
+          "description": "Confidence score between 0.0 and 1.0"
+        },
+        "use_default": {
+          "type": "BOOLEAN",
+          "description": "Whether to use the default case"
+        }
+      },
+      "required": ["reasoning", "confidence", "use_default"]
+    },
+    "temperature": 0.3,
+    "maxOutputTokens": 2048
+  }
+}

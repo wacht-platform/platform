@@ -1,9 +1,9 @@
 use crate::template::{AgentTemplates, render_template_with_prompt};
 use crate::agentic::gemini_client::GeminiClient;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use shared::commands::{Command, CreateMemoryCommand};
 use shared::error::AppError;
+use shared::dto::json::agent_memory::MemoryEvaluationResponse;
 use shared::models::MemoryType;
 use shared::state::AppState;
 use std::collections::HashMap;
@@ -23,14 +23,6 @@ struct WorkingMemoryItem {
     access_count: u32,
 }
 
-#[derive(Deserialize, Serialize)]
-struct MemoryEvaluationResponse {
-    worth_storing: bool,
-    confidence: f64,
-    reasoning: String,
-    suggested_tags: Vec<String>,
-    retention_priority: String,
-}
 
 impl MemoryManager {
     pub fn new(context_id: i64, agent_id: i64, deployment_id: i64, app_state: AppState) -> Self {
@@ -116,13 +108,11 @@ impl MemoryManager {
 
         CreateMemoryCommand {
             id: self.app_state.sf.next_id()? as i64,
-            deployment_id: self.deployment_id,
-            agent_id: self.agent_id,
-            execution_context_id: Some(self.context_id), // Context-specific
-            memory_type,
             content: final_content,
             embedding,
-            importance,
+            memory_category: memory_type.as_str().to_string(),
+            creation_context_id: Some(self.context_id),
+            initial_importance: importance,
         }
         .execute(&self.app_state)
         .await

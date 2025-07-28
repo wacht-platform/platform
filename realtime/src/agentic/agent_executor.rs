@@ -1,127 +1,44 @@
 use crate::agentic::{
-    ActionsList, DecayManager, ExecutableTask, ExecutionAction, SharedExecutionContext,
-    TaskBreakdownResponse, TaskExecution, TaskExecutionResponse, TaskType, ToolExecutor,
-    ValidationResponse, WorkflowExecutor,
-    context_gathering_orchestrator::ContextGatheringOrchestrator, gemini_client::GeminiClient,
+    DecayManager, ToolExecutor, context_orchestrator::ContextOrchestrator,
+    gemini_client::GeminiClient,
 };
 use crate::template::{AgentTemplates, render_template_with_prompt};
-use serde::{Deserialize, Serialize};
+use llm::builder::{LLMBackend, LLMBuilder};
+use llm::chat::ChatMessage;
 use serde_json::{Value, json};
 use shared::commands::{Command, CreateConversationCommand};
 use shared::dto::json::StreamEvent;
+use shared::dto::json::agent_executor::{
+    AcknowledgmentResponse, ConversationInsights, ConverseRequest, NextStep, ObjectiveDefinition,
+    StepDecision, TaskExecutionResult,
+};
+use shared::dto::json::agent_responses::{
+    ActionsList, ExecutableTask, ExecutionAction, ExecutionStatus as TaskExecutionStatus,
+    LoopDecision, ParameterGenerationResponse, SwitchCaseEvaluation, TaskBreakdownResponse,
+    TaskExecution, TaskExecutionResponse, TaskType, TriggerEvaluation, ValidationResponse,
+};
 use shared::error::AppError;
 use shared::models::{
-    AiAgentWithFeatures, AiTool, AiToolConfiguration, ApiToolConfiguration, ConversationContent,
-    ConversationMessageType, ConversationRecord, MemoryRecordV2,
+    AiAgentWithFeatures, AiTool, AiToolConfiguration, AiWorkflow, ApiToolConfiguration,
+    ConversationContent, ConversationMessageType, ConversationRecord, MemoryRecord, NodeExecution,
+    ResponseFormat, WorkflowEdge, WorkflowNode, WorkflowNodeType,
 };
+use shared::queries::Query;
 use shared::state::AppState;
 use std::collections::HashMap;
 
 const MAX_LOOP_ITERATIONS: usize = 50;
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct StepDecision {
-    pub next_step: NextStep,
-    pub reasoning: String,
-    pub confidence: f64,
-    pub direct_execution: Option<ExecutionAction>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum NextStep {
-    Acknowledge,
-    GatherContext,
-    DirectExecution,
-    BreakdownTasks,
-    ExecuteTasks,
-    ValidateProgress,
-    DeliverResponse,
-    RequestUserInput,
-    HandleError,
-    Complete,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ObjectiveDefinition {
-    pub primary_goal: String,
-    pub success_criteria: Vec<String>,
-    pub constraints: Vec<String>,
-    pub context_from_history: String,
-    pub inferred_intent: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ConversationInsights {
-    pub is_continuation: bool,
-    pub topic_evolution: String,
-    pub user_preferences: Vec<String>,
-    pub relevant_past_outcomes: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TaskExecutionResult {
-    pub task_id: String,
-    pub success: bool,
-    pub result: Value,
-    pub error: Option<String>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct ConverseRequest {
-    pub message: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AcknowledgmentResponse {
-    pub message: String,
-    pub further_action_required: bool,
-    pub reasoning: String,
-    pub objective: ObjectiveDefinition,
-    pub conversation_insights: ConversationInsights,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct IdeationResponse {
-    pub reasoning_summary: String,
-    pub needs_more_iteration: bool,
-    pub context_search_request: Option<String>,
-    pub requires_user_input: bool,
-    pub user_input_request: Option<String>,
-    pub execution_plan: ExecutionPlan,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ExecutionPlan {
-    pub analysis: PlanAnalysis,
-    pub success_criteria: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PlanAnalysis {
-    pub understanding: String,
-    pub approach: String,
-    pub tradeoffs: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WorkflowValidationResult {
-    pub is_valid: bool,
-    pub missing_requirements: Vec<String>,
-    pub validation_message: String,
-}
 
 pub struct AgentExecutor {
     pub agent: AiAgentWithFeatures,
     pub app_state: AppState,
     pub context_id: i64,
     pub conversations: Vec<ConversationRecord>,
-    context_orchestrator: ContextGatheringOrchestrator,
+    context_orchestrator: ContextOrchestrator,
     tool_executor: ToolExecutor,
-    workflow_executor: WorkflowExecutor,
     decay_manager: DecayManager,
     channel: tokio::sync::mpsc::Sender<StreamEvent>,
-    memories: Vec<MemoryRecordV2>,
+    memories: Vec<MemoryRecord>,
     user_request: String,
     current_objective: Option<ObjectiveDefinition>,
     conversation_insights: Option<ConversationInsights>,
@@ -152,18 +69,11 @@ impl AgentExecutorBuilder {
     }
 
     pub async fn build(self) -> Result<AgentExecutor, AppError> {
-        let shared_context = SharedExecutionContext::new(
-            self.app_state.clone(),
-            self.context_id,
-            self.agent.clone(),
-        );
-
-        let tool_executor = ToolExecutor::new(shared_context.clone());
-        let workflow_executor = WorkflowExecutor::new(shared_context.clone());
+        let tool_executor = ToolExecutor::new();
         let decay_manager = DecayManager::new(self.app_state.clone());
 
         let context_orchestrator =
-            ContextGatheringOrchestrator::new(self.app_state.clone(), self.agent.clone());
+            ContextOrchestrator::new(self.app_state.clone(), self.agent.clone());
 
         Ok(AgentExecutor {
             agent: self.agent,
@@ -171,7 +81,6 @@ impl AgentExecutorBuilder {
             context_id: self.context_id,
             context_orchestrator,
             tool_executor,
-            workflow_executor,
             user_request: String::new(),
             decay_manager,
             channel: self.channel,
@@ -246,9 +155,6 @@ impl AgentExecutor {
                 NextStep::GatherContext => match self.gather_context().await {
                     Ok(_) => println!("Context gathering completed successfully"),
                     Err(e) => {
-                        eprintln!("ERROR in gather_context: {:?}", e);
-                        eprintln!("Error type: {}", std::any::type_name_of_val(&e));
-                        eprintln!("Stack trace would be here if available");
                         return Err(e);
                     }
                 },
@@ -284,8 +190,6 @@ impl AgentExecutor {
 
                 NextStep::ExecuteTasks => {
                     if let Err(e) = self.execute_pending_tasks().await {
-                        eprintln!("Error executing tasks: {}", e);
-                        // Store the error in conversation for visibility
                         self.store_conversation(
                             ConversationContent::SystemDecision {
                                 step: "task_execution_error".to_string(),
@@ -313,10 +217,6 @@ impl AgentExecutor {
 
                 NextStep::RequestUserInput => {
                     eprintln!("User input request not yet implemented");
-                }
-
-                NextStep::HandleError => {
-                    eprintln!("Error handling not yet implemented");
                 }
 
                 NextStep::Complete => {
@@ -465,11 +365,9 @@ impl AgentExecutor {
             ConversationContent::AssistantValidation {
                 validation_result: serde_json::to_value(&validation.validation_result)?,
                 loop_decision: match validation.loop_decision {
-                    crate::agentic::LoopDecision::Continue => "continue".to_string(),
-                    crate::agentic::LoopDecision::Complete => "complete".to_string(),
-                    crate::agentic::LoopDecision::AbortUnresolvable => {
-                        "abort_unresolvable".to_string()
-                    }
+                    LoopDecision::Continue => "continue".to_string(),
+                    LoopDecision::Complete => "complete".to_string(),
+                    LoopDecision::AbortUnresolvable => "abort_unresolvable".to_string(),
                 },
                 decision_reasoning: validation.decision_reasoning.clone(),
                 next_iteration_focus: validation.next_iteration_focus.clone(),
@@ -513,19 +411,13 @@ impl AgentExecutor {
     }
 
     async fn gather_context(&mut self) -> Result<(), AppError> {
-        println!("=== Agent executor gather_context called ===");
-
         let context_results = match self
             .context_orchestrator
             .gather_context(&self.conversations, &self.current_objective)
             .await
         {
-            Ok(results) => {
-                println!("Context orchestrator returned {} results", results.len());
-                results
-            }
+            Ok(results) => results,
             Err(e) => {
-                eprintln!("ERROR in context_orchestrator.gather_context: {:?}", e);
                 return Err(e);
             }
         };
@@ -548,6 +440,12 @@ impl AgentExecutor {
     }
 
     async fn execute_pending_tasks(&mut self) -> Result<(), AppError> {
+        if self.executable_tasks.is_empty() {
+            return Err(AppError::Internal(
+                "No tasks to execute, did we breakdown the tasks first?".to_string(),
+            ));
+        }
+
         let task_to_execute = self
             .executable_tasks
             .iter()
@@ -559,23 +457,20 @@ impl AgentExecutor {
             })
             .cloned();
 
-        println!("here");
-
         if let Some(task) = task_to_execute {
             let result = self.execute_single_task(&task).await;
-            println!("{result:?}");
 
             let task_result = match result {
                 Ok(value) => TaskExecutionResult {
                     task_id: task.id.clone(),
-                    success: true,
-                    result: value,
+                    status: "completed".to_string(),
+                    output: Some(value),
                     error: None,
                 },
                 Err(e) => TaskExecutionResult {
                     task_id: task.id.clone(),
-                    success: false,
-                    result: json!(null),
+                    status: "failed".to_string(),
+                    output: None,
                     error: Some(e.to_string()),
                 },
             };
@@ -604,22 +499,19 @@ impl AgentExecutor {
             .generate_structured_content::<TaskExecutionResponse>(request_body)
             .await?;
 
-        let result = if execution.execution_status == crate::agentic::ExecutionStatus::Ready {
+        let result = if execution.execution_status == TaskExecutionStatus::Ready {
             if let Some(action) = execution.task_execution.actions.actions.first() {
                 match self.execute_action(action).await {
                     Ok(value) => value,
                     Err(e) => {
-                        // Store the error in conversation
                         let error_result = json!({
                             "error": e.to_string(),
                             "error_type": "execution_failure"
                         });
 
-                        // Store the failed execution with error details
                         let mut task_execution_with_error = execution.task_execution.clone();
                         task_execution_with_error.actual_result = Some(error_result.clone());
 
-                        // Update the task execution in conversation with the error
                         self.store_conversation(
                             ConversationContent::AssistantTaskExecution {
                                 task_execution: serde_json::to_value(&task_execution_with_error)?,
@@ -643,7 +535,6 @@ impl AgentExecutor {
             })
         };
 
-        // Store successful result
         let mut task_execution_with_result = execution.task_execution.clone();
         task_execution_with_result.actual_result = Some(result.clone());
 
@@ -678,20 +569,46 @@ impl AgentExecutor {
             }
             TaskType::WorkflowCall => {
                 let workflow_call = self.parse_workflow_call(&action.details)?;
-                let workflow = self
-                    .agent
-                    .workflows
+
+                let conversation_context: Vec<Value> = self
+                    .conversations
                     .iter()
-                    .find(|w| w.name == workflow_call.workflow_name)
-                    .ok_or_else(|| {
-                        AppError::BadRequest(format!(
-                            "Workflow '{}' not found",
-                            workflow_call.workflow_name
-                        ))
-                    })?;
-                self.workflow_executor
-                    .execute_workflow(workflow, workflow_call.inputs, self.channel.clone())
-                    .await
+                    .map(|conv| {
+                        json!({
+                            "id": conv.id,
+                            "message_type": conv.message_type,
+                            "content": conv.content,
+                            "timestamp": conv.timestamp,
+                            "type": "conversation"
+                        })
+                    })
+                    .collect();
+
+                let memory_context: Vec<Value> = self
+                    .memories
+                    .iter()
+                    .map(|mem| {
+                        json!({
+                            "id": mem.id,
+                            "content": mem.content,
+                            "category": mem.memory_category,
+                            "temporal_score": mem.base_temporal_score,
+                            "learning_confidence": mem.learning_confidence,
+                            "access_count": mem.access_count,
+                            "timestamp": mem.last_accessed_at,
+                            "type": "memory"
+                        })
+                    })
+                    .collect();
+
+                self.execute_workflow_task(
+                    &workflow_call,
+                    &self.agent.workflows,
+                    &conversation_context,
+                    &memory_context,
+                    self.channel.clone(),
+                )
+                .await
             }
         }
     }
@@ -815,7 +732,7 @@ impl AgentExecutor {
     }
 
     async fn generate_tool_parameters(&self, tool: &AiTool) -> Result<Value, AppError> {
-        use crate::agentic::ParameterGenerationResponse;
+        // ParameterGenerationResponse is already imported at the top
 
         let parameter_schema = match &tool.configuration {
             AiToolConfiguration::Api(api_config) => {
@@ -981,5 +898,482 @@ impl AgentExecutor {
             api_key,
             Some("gemini-2.5-flash".to_string()),
         ))
+    }
+
+    pub async fn execute_workflow_task(
+        &self,
+        workflow_call: &shared::dto::json::WorkflowCall,
+        workflows: &[AiWorkflow],
+        conversation_context: &[Value],
+        memory_context: &[Value],
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        let workflow = workflows
+            .iter()
+            .find(|w| w.name == workflow_call.workflow_name)
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "Workflow {} not found",
+                    workflow_call.workflow_name
+                ))
+            })?;
+
+        let mut initial_state = workflow_call.inputs.clone();
+        if let Some(obj) = initial_state.as_object_mut() {
+            obj.insert(
+                "conversation_history".to_string(),
+                json!(conversation_context),
+            );
+            obj.insert("memory_context".to_string(), json!(memory_context));
+            obj.insert(
+                "total_context_items".to_string(),
+                json!(conversation_context.len() + memory_context.len()),
+            );
+        }
+
+        let result = self
+            .execute_workflow(workflow, initial_state, channel)
+            .await;
+
+        match &result {
+            Ok(res) => {
+                tracing::info!("Workflow {} completed successfully", workflow.name);
+                tracing::debug!("Workflow result: {:?}", res);
+            }
+            Err(e) => {
+                tracing::error!("Workflow {} failed: {}", workflow.name, e);
+            }
+        }
+
+        result
+    }
+
+    pub async fn execute_workflow(
+        &self,
+        workflow: &AiWorkflow,
+        input_data: Value,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        let trigger_node = workflow
+            .workflow_definition
+            .nodes
+            .iter()
+            .find(|node| matches!(node.node_type, WorkflowNodeType::Trigger(_)))
+            .ok_or_else(|| AppError::BadRequest("No trigger node found in workflow".to_string()))?;
+
+        let mut workflow_state = HashMap::new();
+        if let Some(input_obj) = input_data.as_object() {
+            for (key, value) in input_obj {
+                workflow_state.insert(key.clone(), value.clone());
+            }
+        }
+
+        let output = self
+            .execute_node_recursive(
+                trigger_node,
+                &workflow.workflow_definition.nodes,
+                &workflow.workflow_definition.edges,
+                workflow_state,
+                channel.clone(),
+                0,
+            )
+            .await?;
+
+        Ok(json!({
+            "workflow_id": workflow.id,
+            "workflow_name": workflow.name,
+            "execution_status": "completed",
+            "output": output,
+        }))
+    }
+
+    fn execute_node_recursive<'a>(
+        &'a self,
+        node: &'a WorkflowNode,
+        all_nodes: &'a [WorkflowNode],
+        all_edges: &'a [WorkflowEdge],
+        mut workflow_state: HashMap<String, Value>,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+        depth: usize,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, AppError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            if depth > 100 {
+                return Err(AppError::Internal(
+                    "Workflow execution depth limit exceeded".to_string(),
+                ));
+            }
+
+            let result = match &node.node_type {
+                WorkflowNodeType::Trigger(config) => {
+                    self.execute_trigger_node(config, &workflow_state).await
+                }
+                WorkflowNodeType::ErrorHandler(config) => {
+                    self.execute_error_handler_node(
+                        config,
+                        all_nodes,
+                        all_edges,
+                        &mut workflow_state,
+                        channel.clone(),
+                        depth,
+                    )
+                    .await
+                }
+                WorkflowNodeType::LLMCall(config) => self.execute_llm_call_node(config).await,
+                WorkflowNodeType::Switch(config) => {
+                    self.execute_switch_node(config, &workflow_state).await
+                }
+                WorkflowNodeType::ToolCall(config) => {
+                    self.execute_tool_call_node(config, channel.clone()).await
+                }
+            };
+
+            match result {
+                Ok(output) => {
+                    // Store node output in workflow state
+                    workflow_state.insert(format!("{}_output", node.id), output.clone());
+
+                    let next_edges: Vec<&WorkflowEdge> = all_edges
+                        .iter()
+                        .filter(|edge| edge.source == node.id)
+                        .collect();
+
+                    // Handle switch nodes specially
+                    if node.node_type.type_name() == "Switch" {
+                        // For switch nodes, find the edge matching the selected case
+                        if let Some(matched_case) = output.get("matched_case") {
+                            let case_handle = if matched_case == "default" {
+                                "default".to_string()
+                            } else if let Some(case_idx) = matched_case.as_u64() {
+                                format!("case-{}", case_idx)
+                            } else {
+                                return Ok(output);
+                            };
+
+                            if let Some(matching_edge) = next_edges
+                                .into_iter()
+                                .find(|e| e.source_handle.as_ref() == Some(&case_handle))
+                            {
+                                if let Some(next_node) =
+                                    all_nodes.iter().find(|n| n.id == matching_edge.target)
+                                {
+                                    return self
+                                        .execute_node_recursive(
+                                            next_node,
+                                            all_nodes,
+                                            all_edges,
+                                            workflow_state.clone(),
+                                            channel.clone(),
+                                            depth + 1,
+                                        )
+                                        .await;
+                                }
+                            }
+                        }
+                        Ok(output)
+                    } else if next_edges.len() == 1 {
+                        // Regular nodes - follow the single edge
+                        let edge = &next_edges[0];
+                        if let Some(next_node) = all_nodes.iter().find(|n| n.id == edge.target) {
+                            self.execute_node_recursive(
+                                next_node,
+                                all_nodes,
+                                all_edges,
+                                workflow_state.clone(),
+                                channel.clone(),
+                                depth + 1,
+                            )
+                            .await
+                        } else {
+                            Ok(output)
+                        }
+                    } else if next_edges.is_empty() {
+                        // No more edges - workflow complete
+                        Ok(output)
+                    } else {
+                        // Multiple edges on non-switch node is an error
+                        Err(AppError::BadRequest(format!(
+                            "Node {} has multiple outgoing edges but is not a switch node",
+                            node.id
+                        )))
+                    }
+                }
+                Err(e) => Err(e),
+            }
+        })
+    }
+
+    async fn execute_trigger_node(
+        &self,
+        config: &shared::models::TriggerNodeConfig,
+        workflow_state: &HashMap<String, Value>,
+    ) -> Result<Value, AppError> {
+        // Extract only the necessary context for trigger evaluation
+        let mut context_summary = json!({
+            "inputs": workflow_state.get("inputs").cloned().unwrap_or(json!({})),
+            "total_context_items": workflow_state.get("total_context_items").cloned().unwrap_or(json!(0)),
+            "has_conversation_history": workflow_state.contains_key("conversation_history"),
+            "has_memory_context": workflow_state.contains_key("memory_context"),
+        });
+
+        // Include node outputs if any
+        for (key, value) in workflow_state {
+            if key.ends_with("_output") {
+                context_summary[key] = value.clone();
+            }
+        }
+
+        // Use LLM to evaluate if trigger condition is met
+        let template_context = json!({
+            "trigger_condition": config.condition,
+            "trigger_description": config.description,
+            "workflow_state": context_summary,
+        });
+
+        let request_body =
+            render_template_with_prompt(AgentTemplates::TRIGGER_EVALUATION, template_context)
+                .map_err(|e| {
+                    AppError::Internal(format!(
+                        "Failed to render trigger evaluation template: {}",
+                        e
+                    ))
+                })?;
+
+        let evaluation = self
+            .create_main_llm()?
+            .generate_structured_content::<TriggerEvaluation>(request_body)
+            .await?;
+
+        if evaluation.should_trigger {
+            Ok(json!({
+                "type": "trigger",
+                "triggered": true,
+                "description": config.description,
+                "trigger_condition": config.condition,
+                "evaluation": {
+                    "reasoning": evaluation.reasoning,
+                    "confidence": evaluation.confidence,
+                },
+                "context": workflow_state,
+            }))
+        } else {
+            Err(AppError::BadRequest(format!(
+                "Trigger condition not met: {}. Missing requirements: {}",
+                evaluation.reasoning,
+                evaluation
+                    .missing_requirements
+                    .unwrap_or_default()
+                    .join(", ")
+            )))
+        }
+    }
+
+    async fn execute_error_handler_node(
+        &self,
+        config: &shared::models::ErrorHandlerNodeConfig,
+        all_nodes: &[WorkflowNode],
+        all_edges: &[WorkflowEdge],
+        workflow_state: &mut HashMap<String, Value>,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+        depth: usize,
+    ) -> Result<Value, AppError> {
+        let max_retries = if config.enable_retry {
+            config.max_retries
+        } else {
+            0
+        };
+
+        for retry_count in 0..=max_retries {
+            let execution_result = self
+                .execute_contained_nodes(
+                    &config.contained_nodes,
+                    all_nodes,
+                    all_edges,
+                    workflow_state,
+                    channel.clone(),
+                    depth,
+                )
+                .await;
+
+            match execution_result {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    if config.log_errors {
+                        eprintln!("Error handler: Attempt {} failed: {}", retry_count + 1, e);
+                    }
+
+                    if retry_count < max_retries {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(
+                            config.retry_delay_seconds as u64,
+                        ))
+                        .await;
+                        continue;
+                    }
+
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(json!({}))
+    }
+
+    async fn execute_contained_nodes(
+        &self,
+        node_ids: &[String],
+        all_nodes: &[WorkflowNode],
+        all_edges: &[WorkflowEdge],
+        workflow_state: &mut HashMap<String, Value>,
+        channel: tokio::sync::mpsc::Sender<StreamEvent>,
+        depth: usize,
+    ) -> Result<Value, AppError> {
+        let mut last_result = json!({});
+
+        for node_id in node_ids {
+            let node = all_nodes
+                .iter()
+                .find(|n| n.id == *node_id)
+                .ok_or_else(|| AppError::Internal(format!("Node {} not found", node_id)))?;
+
+            last_result = self
+                .execute_node_recursive(
+                    node,
+                    all_nodes,
+                    all_edges,
+                    workflow_state.clone(),
+                    channel.clone(),
+                    depth + 1,
+                )
+                .await?;
+        }
+
+        Ok(last_result)
+    }
+
+    async fn execute_llm_call_node(
+        &self,
+        config: &shared::models::LLMCallNodeConfig,
+    ) -> Result<Value, AppError> {
+        let prompt = config.prompt_template.clone();
+
+        let api_key = std::env::var("GEMINI_API_KEY")
+            .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
+
+        let llm = LLMBuilder::new()
+            .backend(LLMBackend::Google)
+            .api_key(&api_key)
+            .model("gemini-2.5-pro")
+            .build()
+            .map_err(|e| AppError::Internal(format!("Failed to create LLM: {}", e)))?;
+
+        let messages = vec![ChatMessage::user().content(&prompt).build()];
+
+        let response = llm
+            .chat(&messages)
+            .await
+            .map_err(|e| AppError::Internal(format!("LLM call failed: {}", e)))?;
+
+        let response_text = response.to_string();
+
+        match config.response_format {
+            ResponseFormat::Text => Ok(json!({
+                "type": "llm_response",
+                "format": "text",
+                "content": response_text,
+            })),
+            ResponseFormat::Json => serde_json::from_str(&response_text).or_else(|_| {
+                Ok(json!({
+                    "type": "llm_response",
+                    "format": "json",
+                    "content": response_text,
+                    "parse_error": "Failed to parse response as JSON"
+                }))
+            }),
+        }
+    }
+
+    async fn execute_switch_node(
+        &self,
+        config: &shared::models::SwitchNodeConfig,
+        workflow_state: &HashMap<String, Value>,
+    ) -> Result<Value, AppError> {
+        // Switch condition is a static description for the LLM to evaluate
+        let switch_value = json!(config.switch_condition);
+
+        // Prepare the case options for the LLM
+        let case_descriptions: Vec<Value> = config
+            .cases
+            .iter()
+            .enumerate()
+            .map(|(index, case)| {
+                json!({
+                    "index": index,
+                    "label": case.case_label,
+                    "condition": case.case_condition,
+                })
+            })
+            .collect();
+
+        let request_body = render_template_with_prompt(
+            AgentTemplates::SWITCH_CASE_EVALUATION,
+            json!({
+                "switch_value": switch_value,
+                "cases": case_descriptions,
+                "has_default": config.default_case,
+                "workflow_state": workflow_state,
+            }),
+        )
+        .map_err(|e| AppError::Internal(format!("Failed to render switch case template: {}", e)))?;
+
+        let evaluation = self
+            .create_main_llm()?
+            .generate_structured_content::<SwitchCaseEvaluation>(request_body)
+            .await?;
+
+        if let Some(case_index) = evaluation.selected_case_index {
+            if case_index < config.cases.len() {
+                return Ok(json!({
+                    "type": "switch",
+                    "matched_case": case_index,
+                    "case_label": evaluation.selected_case_label,
+                    "switch_value": switch_value,
+                    "reasoning": evaluation.reasoning,
+                    "confidence": evaluation.confidence,
+                }));
+            }
+        }
+
+        if evaluation.use_default && config.default_case {
+            Ok(json!({
+                "type": "switch",
+                "matched_case": "default",
+                "switch_value": switch_value,
+                "reasoning": evaluation.reasoning,
+            }))
+        } else {
+            Err(AppError::Internal(format!(
+                "No matching case for switch value: {}. Reasoning: {}",
+                switch_value, evaluation.reasoning
+            )))
+        }
+    }
+
+    async fn execute_tool_call_node(
+        &self,
+        config: &shared::models::ToolCallNodeConfig,
+        _channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<Value, AppError> {
+        let tool = shared::queries::GetToolByIdQuery::new(config.tool_id)
+            .execute(&self.app_state)
+            .await?;
+
+        let parameters = config.input_parameters.clone();
+
+        let result = self
+            .tool_executor
+            .execute_tool_immediately(&tool, json!(parameters))
+            .await?;
+
+        Ok(result)
     }
 }

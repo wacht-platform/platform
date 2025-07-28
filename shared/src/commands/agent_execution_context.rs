@@ -1,14 +1,8 @@
 use chrono::{DateTime, Utc};
-use pgvector::Vector;
-use serde_json::Value;
-
 use crate::{
     commands::Command,
     error::AppError,
-    models::{
-        AgentExecutionContext, AgentExecutionContextMessage, ExecutionMessageSender,
-        ExecutionMessageType,
-    },
+    models::AgentExecutionContext,
     state::AppState,
 };
 
@@ -146,78 +140,3 @@ impl super::Command for UpdateExecutionContextQuery {
     }
 }
 
-pub struct CreateExecutionMessageCommand {
-    pub execution_context_id: i64,
-    pub message_type: ExecutionMessageType,
-    pub sender: ExecutionMessageSender,
-    pub content: String,
-    pub embedding: Option<Vector>,
-    pub extracted_data: Option<Value>,
-}
-
-impl CreateExecutionMessageCommand {
-    pub fn new(
-        execution_context_id: i64,
-        message_type: ExecutionMessageType,
-        sender: ExecutionMessageSender,
-        content: String,
-    ) -> Self {
-        Self {
-            execution_context_id,
-            message_type,
-            sender,
-            content,
-            embedding: None,
-            extracted_data: None,
-        }
-    }
-
-    pub fn with_embedding(mut self, embedding: Vec<f32>) -> Self {
-        self.embedding = Some(Vector::from(embedding));
-        self
-    }
-
-    pub fn with_extracted_data(mut self, extracted_data: Value) -> Self {
-        self.extracted_data = Some(extracted_data);
-        self
-    }
-}
-
-impl Command for CreateExecutionMessageCommand {
-    type Output = AgentExecutionContextMessage;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let message_id = app_state.sf.next_id()? as i64;
-        let now = Utc::now();
-
-        sqlx::query!(
-            r#"
-            INSERT INTO agent_execution_messages
-            (id, created_at, execution_context_id, message_type, sender, content, embedding, extracted_data)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            "#,
-            message_id,
-            now,
-            self.execution_context_id,
-            self.message_type.to_string(),
-            self.sender.to_string(),
-            self.content,
-            self.embedding.clone() as Option<Vector>,
-            self.extracted_data
-        )
-        .execute(&app_state.db_pool)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-        Ok(AgentExecutionContextMessage {
-            id: message_id,
-            created_at: now,
-            execution_context_id: self.execution_context_id,
-            message_type: self.message_type.clone(),
-            sender: self.sender.clone(),
-            content: self.content.clone(),
-            embedding: self.embedding.clone(),
-            extracted_data: self.extracted_data.clone(),
-        })
-    }
-}

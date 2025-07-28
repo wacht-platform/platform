@@ -2,21 +2,16 @@ pub mod agent_executor;
 pub mod agent_responses;
 pub mod citation_extractor;
 pub mod context_aggregator;
-pub mod context_gathering_orchestrator;
+pub mod context_orchestrator;
 pub mod decay_manager;
 pub mod gemini_client;
 pub mod json_parser;
 pub mod memory_boundaries;
 pub mod memory_consolidator;
 pub mod memory_manager;
-pub mod shared_context;
 pub mod tool_executor;
-pub mod workflow_executor;
 
 pub use agent_executor::*;
-pub use agent_responses::*;
-pub use context_gathering_orchestrator::ContextGatheringOrchestrator;
+// agent_responses types are now in shared/src/dto/json/agent_responses.rs
 pub use decay_manager::*;
-pub use shared_context::*;
 pub use tool_executor::*;
-pub use workflow_executor::*;

@@ -43,8 +43,8 @@
                     "properties": {
                       "type": {
                         "type": "STRING",
-                        "enum": ["tool_call", "workflow_call", "knowledge_search", "context_search"],
-                        "description": "Type of action matching the task type"
+                        "enum": ["tool_call", "workflow_call"],
+                        "description": "Type of action - either tool_call for specific tools or workflow_call for complex workflows"
                       },
                       "details": {
                         "type": "OBJECT",

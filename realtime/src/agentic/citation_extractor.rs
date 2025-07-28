@@ -1,5 +1,5 @@
 use shared::error::AppError;
-use shared::models::{EnhancedCitation, CitationType as ModelCitationType, UsageType};
+use shared::models::{EnhancedCitation, CitationType, UsageType};
 use crate::agentic::json_parser;
 use serde_json::Value;
 
@@ -29,7 +29,7 @@ impl CitationExtractor {
                             if let Ok(id) = id_str.parse::<i64>() {
                                 citations.push(EnhancedCitation {
                                     item_id: id,
-                                    item_type: ModelCitationType::Memory,
+                                    item_type: CitationType::Memory,
                                     relevance_score: Self::parse_level(
                                         mem_ref.get("relevance").and_then(|v| v.as_str()).unwrap_or("medium")
                                     ),

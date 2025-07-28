@@ -71,13 +71,22 @@ pub struct NodePosition {
 #[serde(tag = "type")]
 pub enum WorkflowNodeType {
     Trigger(TriggerNodeConfig),
-    Condition(ConditionNodeConfig),
     ErrorHandler(ErrorHandlerNodeConfig),
     LLMCall(LLMCallNodeConfig),
     Switch(SwitchNodeConfig),
     ToolCall(ToolCallNodeConfig),
-    StoreContext(StoreContextNodeConfig),
-    FetchContext(FetchContextNodeConfig),
+}
+
+impl WorkflowNodeType {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            WorkflowNodeType::Trigger(_) => "Trigger",
+            WorkflowNodeType::ErrorHandler(_) => "ErrorHandler",
+            WorkflowNodeType::LLMCall(_) => "LLMCall",
+            WorkflowNodeType::Switch(_) => "Switch",
+            WorkflowNodeType::ToolCall(_) => "ToolCall",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -95,22 +104,8 @@ pub struct WorkflowEdge {
     pub target: String,
     pub source_handle: Option<String>,
     pub target_handle: Option<String>,
-    pub condition: Option<EdgeCondition>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct EdgeCondition {
-    pub expression: String,
-    pub condition_type: ConditionType,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub enum ConditionType {
-    Always,
-    OnSuccess,
-    OnError,
-    OnCondition,
-}
 
 // Node-specific configurations
 #[derive(Serialize, Deserialize, Clone)]
@@ -172,23 +167,6 @@ pub struct SwitchCase {
     pub case_label: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ConditionNodeConfig {
-    #[serde(default)]
-    pub description: Option<String>,
-    pub condition_type: ConditionEvaluationType,
-    pub expression: String,
-    pub true_path: Option<String>,
-    pub false_path: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum ConditionEvaluationType {
-    JavaScript,
-    JsonPath,
-    Simple,
-}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ToolCallNodeConfig {
@@ -199,21 +177,6 @@ pub struct ToolCallNodeConfig {
     pub input_parameters: HashMap<String, serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct StoreContextNodeConfig {
-    #[serde(default)]
-    pub description: Option<String>,
-    pub context_data: String,
-    pub use_llm: bool,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct FetchContextNodeConfig {
-    #[serde(default)]
-    pub description: Option<String>,
-    pub context_data: String,
-    pub use_llm: bool,
-}
 
 // Workflow execution models
 #[derive(Serialize, Deserialize, Clone)]

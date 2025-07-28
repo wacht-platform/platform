@@ -1,8 +1,8 @@
-use shared::commands::{CitationType, Command, UpdateCitationMetricsCommand};
+use shared::commands::{Command, UpdateCitationMetricsCommand};
 use shared::error::AppError;
 use shared::models::{
-    ConversationRecord, EnhancedCitation, ImmediateContext, MemoryRecordV2, MemoryWithScore,
-    RefinedContext,
+    ConversationRecord, EnhancedCitation, ImmediateContext, MemoryRecord, MemoryWithScore,
+    RefinedContext, CitationType,
 };
 use shared::queries::{
     GetMRUMemoriesQuery, GetRecentConversationsQuery, Query, SearchConversationsQuery,
@@ -39,7 +39,7 @@ impl DecayManager {
     }
 
     /// Get Most Recently Used memories (no filtering, just ORDER BY)
-    async fn get_mru_memories(&self, limit: usize) -> Result<Vec<MemoryRecordV2>, AppError> {
+    async fn get_mru_memories(&self, limit: usize) -> Result<Vec<MemoryRecord>, AppError> {
         GetMRUMemoriesQuery {
             limit: limit as i64,
         }
@@ -87,6 +87,7 @@ impl DecayManager {
         let memory_results = SearchMemoriesWithDecayQuery {
             query_embedding: reasoning_embedding.to_vec(),
             limit: max_results as i64,
+            time_range: None, // No time filtering for decay manager
         }
         .execute(&self.app_state)
         .await?;

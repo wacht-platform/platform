@@ -47,6 +47,7 @@ pub enum ContextSource {
     KnowledgeBase { kb_id: i64, document_id: i64 },
     Memory { memory_id: i64, category: String },
     Conversation { conversation_id: i64 },
+    System, // For system-generated messages like pagination info
 }
 
 impl Default for ContextFilters {

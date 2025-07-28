@@ -1,8 +1,6 @@
 use serde_json::Value;
-use shared::commands::{Command, GenerateEmbeddingCommand};
 use shared::error::AppError;
-use shared::models::{AgentExecutionContextMessage, MemoryEntry};
-use shared::queries::{MessageSimilarityResult, Query, SearchMessagesBySimilarityQuery};
+use shared::models::{ConversationRecord, MemoryEntry};
 use shared::state::AppState;
 use tiktoken_rs::cl100k_base;
 
@@ -33,38 +31,27 @@ impl ContextAggregator {
     pub async fn aggregate_context(
         &self,
         query: &str,
-        conversation_history: &[AgentExecutionContextMessage],
+        conversation_history: &[ConversationRecord],
         memories: &[MemoryEntry],
         knowledge_base_results: &[Value],
     ) -> Result<Vec<ContextItem>, AppError> {
-        let query_embedding = GenerateEmbeddingCommand::new(query.to_string())
-            .execute(&self.app_state)
-            .await?;
-
-        let similar_messages = self.search_similar_messages(&query_embedding).await?;
-
         let mut all_items = Vec::new();
-
-        for result in similar_messages {
-            let content = &result.message.content;
-            let tokens = count_tokens(content);
-
-            all_items.push(ContextItem {
-                content: content.clone(),
-                source: "message_history".to_string(),
-                relevance_score: result.similarity,
-                token_count: tokens,
-            });
-        }
 
         let recent_history: Vec<_> = conversation_history.iter().take(10).collect();
 
         for (idx, msg) in recent_history.iter().enumerate() {
-            let tokens = count_tokens(&msg.content);
+            // Extract content based on ConversationContent type
+            let content_text = match &msg.content {
+                shared::models::ConversationContent::UserMessage { message } => message.clone(),
+                shared::models::ConversationContent::AgentResponse { response, .. } => response.clone(),
+                _ => serde_json::to_string(&msg.content).unwrap_or_default(),
+            };
+            
+            let tokens = count_tokens(&content_text);
             let recency_score = 0.8 - (idx as f64 * 0.05);
 
             all_items.push(ContextItem {
-                content: msg.content.clone(),
+                content: content_text,
                 source: "recent_conversation".to_string(),
                 relevance_score: recency_score,
                 token_count: tokens,
@@ -166,16 +153,6 @@ impl ContextAggregator {
         formatted
     }
 
-    async fn search_similar_messages(
-        &self,
-        query_embedding: &[f32],
-    ) -> Result<Vec<MessageSimilarityResult>, AppError> {
-        SearchMessagesBySimilarityQuery::new(self.execution_context_id, query_embedding.to_vec())
-            .with_max_results(20)
-            .with_min_similarity(0.7)
-            .execute(&self.app_state)
-            .await
-    }
 
     fn select_within_token_budget(
         &self,

@@ -1,0 +1,23 @@
+[package]
+name = "platform-api"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["console-api"]
+console-api = []
+backend-api = []
+frontend-api = []
+
+[dependencies]
+shared = { path = "../shared" }
+wacht = { version = "0.0.1-alpha.1", features = ["axum"] }
+axum = { version = "0.8", features = ["macros", "multipart"] }
+tokio = { version = "1.35", features = ["full"] }
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15.7"
+rustls = { version = "0.23.27", features = ["ring"] }
+serde = { version = "1.0", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde_json = "1.0"

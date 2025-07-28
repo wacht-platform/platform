@@ -10,7 +10,7 @@ use fastwebsockets::upgrade;
 use futures::StreamExt;
 use serde_json::Value;
 use serde_json::json;
-use shared::models::AgentExecutionContextMessage;
+use shared::models::ConversationRecord;
 use shared::queries::GetAiAgentByNameWithFeatures;
 use shared::queries::GetRecentConversationsQuery;
 use shared::state::AppState;
@@ -296,7 +296,7 @@ async fn handle_execution_message(
                 Err(_) => WebsocketMessage {
                     message_id: message.message_id.clone(),
                     message_type: WebsocketMessageType::FetchContextMessages,
-                    data: json!(Vec::<AgentExecutionContextMessage>::new()),
+                    data: json!(Vec::<ConversationRecord>::new()),
                 },
             };
 

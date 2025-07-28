@@ -87,19 +87,23 @@ Analyze the current state of execution and decide the most appropriate next step
    - Effect: Will analyze results and determine if more work is needed
 
 6. **deliver_response** - Synthesize and deliver final response to user
-   - Use when: Objectives are met OR no more progress possible
-   - Prerequisites: None (but should have results or any errors to report)
-   - Effect: Will create comprehensive summary and end execution
+   - Use when:
+     - All required executions are completed and results are ready
+     - Objectives are met OR no more progress possible
+     - **CRITICAL**: After gather_context, if the user's request was for information/summary
+     - You have all information needed to answer without executing tools/workflows
+   - Prerequisites: None (but should have results, context, or execution outputs to synthesize)
+   - Effect: Will create comprehensive response from available information and end execution
+   - **Key scenarios**:
+     - After task execution is complete → deliver_response with results
+     - After gathering context for info request → deliver_response with summary
+     - User asked "what/who/tell me about X" and context gathered → deliver_response
+     - No tools needed, just information synthesis → deliver_response
 
 7. **request_user_input** - Ask user for clarification
    - Use when: There's a pending user input request in conversation
    - Prerequisites: User input request must be pending
    - Effect: Will pause execution and wait for user response
-
-8. **handle_error** - Address any errors that occurred
-   - Use when: Errors are present that need resolution
-   - Prerequisites: Errors must be present
-   - Effect: Will attempt to recover or determine if errors are unresolvable
 
 9. **complete** - End execution immediately
    - Use when: Nothing more can be done
@@ -110,7 +114,6 @@ Analyze the current state of execution and decide the most appropriate next step
 
 ### Priority Order:
 1. If there's a pending user input request → **request_user_input**
-2. If there are unresolved errors → **handle_error**
 3. **CRITICAL DECISION POINT**:
    - If request needs ANY information from knowledge bases → **gather_context**
    - If request mentions specific entities/data → **gather_context**
@@ -119,11 +122,14 @@ Analyze the current state of execution and decide the most appropriate next step
    - If need to learn from past experiences or patterns → **gather_context**
    - ONLY if request is completely self-contained AND maps to single tool → **direct_execution**
 4. If no context gathered yet AND might need information → **gather_context**
-5. If context exists but no tasks defined → **breakdown_tasks**
-6. If tasks defined but not executed → **execute_tasks**
-7. If execution complete → **validate_progress**
-8. If validated and objectives met → **deliver_response**
-9. If at max iterations → **deliver_response**
+5. **After gather_context**:
+   - If user request was for information/summary → **deliver_response**
+   - If tools/workflows needed for action → **breakdown_tasks**
+6. If context exists but no tasks defined AND action needed → **breakdown_tasks**
+7. If tasks defined but not executed → **execute_tasks**
+8. If execution complete → **validate_progress**
+9. If validated and objectives met → **deliver_response**
+10. If at max iterations → **deliver_response**
 
 ### GOLDEN RULE:
 **When in doubt, ALWAYS use gather_context before any execution step**
@@ -131,6 +137,11 @@ Analyze the current state of execution and decide the most appropriate next step
 ### Strategic Considerations:
 - Always use **gather_context** when you need to search or retrieve information from knowledge bases
 - Use **gather_context** to understand patterns, learn from past experiences, or understand the reasoning behind previous decisions
+- **CRITICAL**: After gather_context, evaluate if you can answer directly:
+  - Information request? → deliver_response
+  - Summary request? → deliver_response
+  - "Tell me about X" request? → deliver_response
+  - Action request needing tools? → breakdown_tasks
 - Use **direct_execution** for simple, single-tool operations that don't require planning
 - Don't repeat the same step if it just completed successfully
 - Consider the iteration count - don't get stuck in loops
