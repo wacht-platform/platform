@@ -108,4 +108,16 @@ pub fn register_all_templates(hb: &mut Handlebars) {
         include_str!("templates/trigger_evaluation_prompt.hbs"),
     )
     .expect("Failed to register trigger_evaluation_prompt template");
+
+    hb.register_template_string(
+        "user_input_request_prompt",
+        include_str!("templates/user_input_request_prompt.hbs"),
+    )
+    .expect("Failed to register user_input_request_prompt template");
+
+    hb.register_template_string(
+        "execution_summary_prompt",
+        include_str!("templates/execution_summary_prompt.hbs"),
+    )
+    .expect("Failed to register execution_summary_prompt template");
 }

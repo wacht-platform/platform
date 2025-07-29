@@ -14,6 +14,8 @@ pub enum ConversationMessageType {
     AssistantValidation,
     SystemDecision,
     ContextResults,
+    UserInputRequest,
+    ExecutionSummary,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,7 +26,6 @@ pub enum ConversationContent {
     },
     AgentResponse {
         response: String,
-        citations: Vec<EnhancedCitation>,
         context_used: Vec<String>,
     },
     AssistantAcknowledgment {
@@ -69,34 +70,20 @@ pub enum ConversationContent {
         result_count: usize,
         timestamp: DateTime<Utc>,
     },
-}
-
-/// Enhanced citation with rich metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EnhancedCitation {
-    pub item_id: i64,
-    pub item_type: CitationType,
-    pub relevance_score: f64,
-    pub usefulness_score: f64,
-    pub confidence: f64,
-    pub usage_type: UsageType,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CitationType {
-    Memory,
-    KnowledgeBase,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UsageType {
-    DirectQuote,
-    Paraphrase,
-    Inspiration,
-    Background,
+    UserInputRequest {
+        question: String,
+        context: String,
+        suggestions: Option<Vec<String>>,
+        validation_hints: Option<String>,
+    },
+    ExecutionSummary {
+        /// The original user message that triggered this execution
+        user_message: String,
+        /// Concise summary of the agent's execution
+        agent_execution: String,
+        /// Token count for this summary
+        token_count: usize,
+    },
 }
 
 /// Conversation record
@@ -126,6 +113,8 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             "assistant_validation" => ConversationMessageType::AssistantValidation,
             "system_decision" => ConversationMessageType::SystemDecision,
             "context_results" => ConversationMessageType::ContextResults,
+            "user_input_request" => ConversationMessageType::UserInputRequest,
+            "execution_summary" => ConversationMessageType::ExecutionSummary,
             _ => {
                 return Err(sqlx::Error::ColumnDecode {
                     index: "message_type".to_string(),

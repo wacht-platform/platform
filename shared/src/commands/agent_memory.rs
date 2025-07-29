@@ -1,7 +1,7 @@
 use crate::{
     commands::Command,
     error::AppError,
-    models::{ConversationRecord, MemoryRecord, ConversationContent, ConversationMessageType, CitationType},
+    models::{ConversationContent, ConversationMessageType, ConversationRecord, MemoryRecord},
     state::AppState,
 };
 use chrono::Utc;
@@ -10,12 +10,17 @@ use pgvector::Vector;
 pub struct CreateConversationCommand {
     pub id: i64,
     pub context_id: i64,
-    pub content: ConversationContent,  // Changed to typed content
+    pub content: ConversationContent, // Changed to typed content
     pub message_type: ConversationMessageType,
 }
 
 impl CreateConversationCommand {
-    pub fn new(id: i64, context_id: i64, content: ConversationContent, message_type: ConversationMessageType) -> Self {
+    pub fn new(
+        id: i64,
+        context_id: i64,
+        content: ConversationContent,
+        message_type: ConversationMessageType,
+    ) -> Self {
         Self {
             id,
             context_id,
@@ -34,11 +39,11 @@ impl Command for CreateConversationCommand {
         // Convert typed content to JSON for database storage
         let content_json = serde_json::to_value(&self.content)
             .map_err(|e| AppError::Internal(format!("Failed to serialize content: {}", e)))?;
-        
-        // Convert enum to string for database storage  
+
+        // Convert enum to string for database storage
         let message_type_str = match self.message_type {
             ConversationMessageType::UserMessage => "user_message",
-            ConversationMessageType::AgentResponse => "agent_response", 
+            ConversationMessageType::AgentResponse => "agent_response",
             ConversationMessageType::AssistantAcknowledgment => "assistant_acknowledgment",
             ConversationMessageType::AssistantIdeation => "assistant_ideation",
             ConversationMessageType::AssistantActionPlanning => "assistant_action_planning",
@@ -46,6 +51,8 @@ impl Command for CreateConversationCommand {
             ConversationMessageType::AssistantValidation => "assistant_validation",
             ConversationMessageType::SystemDecision => "system_decision",
             ConversationMessageType::ContextResults => "context_results",
+            ConversationMessageType::UserInputRequest => "user_input_request",
+            ConversationMessageType::ExecutionSummary => "execution_summary",
         };
 
         let record = sqlx::query_as::<_, ConversationRecord>(
@@ -131,98 +138,4 @@ impl Command for CreateMemoryCommand {
 
         Ok(record)
     }
-}
-
-/// Command to update citation metrics after LLM usage
-pub struct UpdateCitationMetricsCommand {
-    pub item_id: i64,
-    pub item_type: CitationType,
-    pub relevance_delta: f64,
-    pub usefulness_delta: f64,
-}
-
-
-impl Command for UpdateCitationMetricsCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        match self.item_type {
-            CitationType::Memory => {
-                sqlx::query(
-                    r#"
-                    UPDATE memories
-                    SET citation_count = citation_count + 1,
-                        relevance_score = LEAST(relevance_score + $2, 1.0),
-                        usefulness_score = LEAST(usefulness_score + $3, 1.0),
-                        last_reinforced_at = NOW(),
-                        base_temporal_score = calculate_base_decay(
-                            access_count,
-                            citation_count + 1,
-                            first_accessed_at,
-                            last_accessed_at,
-                            LEAST(relevance_score + $2, 1.0),
-                            LEAST(usefulness_score + $3, 1.0),
-                            compression_level
-                        )
-                    WHERE id = $1
-                    "#,
-                )
-                .bind(self.item_id)
-                .bind(self.relevance_delta)
-                .bind(self.usefulness_delta)
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            CitationType::KnowledgeBase => {
-                // TODO: Implement knowledge base citation updates
-                tracing::debug!("Knowledge base citation updates not yet implemented");
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// Command to batch create multiple conversations (for migration)
-pub struct BatchCreateConversationsCommand {
-    pub conversations: Vec<CreateConversationCommand>,
-}
-
-impl Command for BatchCreateConversationsCommand {
-    type Output = Vec<ConversationRecord>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut results = Vec::new();
-
-        // Use a transaction for consistency
-        let tx = app_state.db_pool.begin().await?;
-
-        for conv in self.conversations {
-            let record = conv.execute(app_state).await?;
-            results.push(record);
-        }
-
-        tx.commit().await?;
-
-        Ok(results)
-    }
-}
-
-/// Store memory asynchronously (fire-and-forget)
-pub fn store_memory_async(
-    _app_state: AppState,
-    _content: String,
-    memory_category: String,
-    context_id: Option<i64>,
-    importance: f64,
-) {
-    // TODO: Implement async processing
-    // The calling code should spawn this task using tokio::spawn
-    // For now, just log that we would store this memory
-    tracing::info!(
-        "TODO: Would store {} memory with importance {} for context {:?}",
-        memory_category,
-        importance,
-        context_id
-    );
 }

@@ -58,8 +58,8 @@ impl ClickHouseService {
         let client = Client::default()
             .with_url(url)
             .with_user("default")
-            .with_password(password)
-            .with_database("wacht_prod");
+            .with_database("wacht")
+            .with_password(password);
 
         Ok(Self { client })
     }
@@ -71,7 +71,37 @@ impl ClickHouseService {
 
     async fn create_user_events_table(&self) -> Result<(), AppError> {
         let query = r#"
-            CREATE TABLE IF NOT EXISTS user_events (
+            -- Create replicated local table on all nodes
+            CREATE TABLE IF NOT EXISTS user_events_local ON CLUSTER 'wacht_prod' (
+                deployment_id Int64,
+                user_id Nullable(Int64),
+                event_type LowCardinality(String),
+                user_name Nullable(String),
+                user_email Nullable(String),
+                auth_method LowCardinality(Nullable(String)),
+                timestamp DateTime64(3, 'UTC'),
+                ip_address Nullable(String),
+
+                -- Optimized indexes for small instance
+                INDEX idx_event_type event_type TYPE bloom_filter(0.01) GRANULARITY 4,
+                INDEX idx_user_id user_id TYPE minmax GRANULARITY 4,
+                INDEX idx_deployment deployment_id TYPE minmax GRANULARITY 1
+            )
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/user_events', '{replica}')
+            PARTITION BY toYYYYMM(timestamp)
+            ORDER BY (deployment_id, event_type, timestamp)
+            TTL timestamp + INTERVAL 90 DAY TO VOLUME 'cold'
+            SETTINGS
+                storage_policy = 'tiered',
+                index_granularity = 8192,
+                min_bytes_for_wide_part = 104857600,
+                ttl_only_drop_parts = 1;
+        "#;
+
+        self.client.query(query).execute().await?;
+
+        let query = r#"
+            CREATE TABLE IF NOT EXISTS user_events ON CLUSTER 'wacht_prod' (
                 deployment_id Int64,
                 user_id Nullable(Int64),
                 event_type String,
@@ -79,12 +109,14 @@ impl ClickHouseService {
                 user_email Nullable(String),
                 auth_method Nullable(String),
                 timestamp DateTime64(3, 'UTC'),
-                ip_address Nullable(String),
-                INDEX idx_event_type event_type TYPE bloom_filter GRANULARITY 1,
-                INDEX idx_user_id user_id TYPE bloom_filter GRANULARITY 1
-            ) ENGINE = MergeTree()
-            ORDER BY (deployment_id, event_type, timestamp)
-            PARTITION BY toYYYYMM(timestamp)
+                ip_address Nullable(String)
+            )
+            ENGINE = Distributed(
+                'wacht_prod',
+                currentDatabase(),
+                user_events_local,
+                cityHash64(deployment_id)
+            );
         "#;
 
         self.client.query(query).execute().await?;

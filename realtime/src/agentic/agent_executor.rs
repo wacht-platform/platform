@@ -1,6 +1,5 @@
 use crate::agentic::{
-    DecayManager, ToolExecutor, context_orchestrator::ContextOrchestrator,
-    gemini_client::GeminiClient,
+    ToolExecutor, context_orchestrator::ContextOrchestrator, gemini_client::GeminiClient,
 };
 use crate::template::{AgentTemplates, render_template_with_prompt};
 use llm::builder::{LLMBackend, LLMBuilder};
@@ -20,23 +19,22 @@ use shared::dto::json::agent_responses::{
 use shared::error::AppError;
 use shared::models::{
     AiAgentWithFeatures, AiTool, AiToolConfiguration, AiWorkflow, ApiToolConfiguration,
-    ConversationContent, ConversationMessageType, ConversationRecord, MemoryRecord, NodeExecution,
-    ResponseFormat, WorkflowEdge, WorkflowNode, WorkflowNodeType,
+    ConversationContent, ConversationMessageType, ConversationRecord, ImmediateContext,
+    MemoryRecord, ResponseFormat, WorkflowEdge, WorkflowNode, WorkflowNodeType,
 };
-use shared::queries::Query;
+use shared::queries::{GetMRUMemoriesQuery, GetLLMConversationHistoryQuery, Query};
 use shared::state::AppState;
 use std::collections::HashMap;
 
 const MAX_LOOP_ITERATIONS: usize = 50;
 
 pub struct AgentExecutor {
-    pub agent: AiAgentWithFeatures,
-    pub app_state: AppState,
-    pub context_id: i64,
-    pub conversations: Vec<ConversationRecord>,
+    agent: AiAgentWithFeatures,
+    app_state: AppState,
+    context_id: i64,
+    conversations: Vec<ConversationRecord>,
     context_orchestrator: ContextOrchestrator,
     tool_executor: ToolExecutor,
-    decay_manager: DecayManager,
     channel: tokio::sync::mpsc::Sender<StreamEvent>,
     memories: Vec<MemoryRecord>,
     user_request: String,
@@ -70,8 +68,6 @@ impl AgentExecutorBuilder {
 
     pub async fn build(self) -> Result<AgentExecutor, AppError> {
         let tool_executor = ToolExecutor::new();
-        let decay_manager = DecayManager::new(self.app_state.clone());
-
         let context_orchestrator =
             ContextOrchestrator::new(self.app_state.clone(), self.agent.clone());
 
@@ -82,7 +78,6 @@ impl AgentExecutorBuilder {
             context_orchestrator,
             tool_executor,
             user_request: String::new(),
-            decay_manager,
             channel: self.channel,
             memories: Vec::new(),
             conversations: Vec::new(),
@@ -121,10 +116,7 @@ impl AgentExecutor {
         )
         .await?;
 
-        let context = self
-            .decay_manager
-            .get_immediate_context(self.context_id)
-            .await?;
+        let context = self.get_immediate_context().await?;
         self.conversations = context.conversations;
         self.memories = context.memories;
 
@@ -216,7 +208,8 @@ impl AgentExecutor {
                 }
 
                 NextStep::RequestUserInput => {
-                    eprintln!("User input request not yet implemented");
+                    self.request_user_input().await?;
+                    return Ok(());
                 }
 
                 NextStep::Complete => {
@@ -400,10 +393,73 @@ impl AgentExecutor {
         self.store_conversation(
             ConversationContent::AgentResponse {
                 response: summary.get("response").unwrap().as_str().unwrap().into(),
-                citations: Default::default(),
                 context_used: Default::default(),
             },
             ConversationMessageType::AgentResponse,
+        )
+        .await?;
+
+        self.generate_execution_summary().await?;
+
+        Ok(())
+    }
+
+    async fn generate_execution_summary(&mut self) -> Result<(), AppError> {
+        use tiktoken_rs::cl100k_base;
+
+        let start_idx = self
+            .conversations
+            .iter()
+            .rposition(|msg| matches!(msg.message_type, ConversationMessageType::UserMessage))
+            .unwrap_or(0);
+
+        let execution_messages: Vec<_> = self.conversations[start_idx..]
+            .iter()
+            .map(|msg| {
+                json!({
+                    "role": self.map_conversation_type_to_role(&msg.message_type),
+                    "content": self.extract_conversation_content(&msg.content),
+                })
+            })
+            .collect();
+
+        let request_body = render_template_with_prompt(
+            AgentTemplates::EXECUTION_SUMMARY,
+            json!({
+                "user_request": self.user_request,
+                "execution_messages": execution_messages,
+            }),
+        )
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to render execution summary template: {}",
+                e
+            ))
+        })?;
+
+        let summary_response = self
+            .create_main_llm()?
+            .generate_structured_content::<serde_json::Value>(request_body)
+            .await?;
+
+        let agent_execution = summary_response
+            .get("agent_execution")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Completed the requested task")
+            .to_string();
+
+        let bpe = cl100k_base()
+            .map_err(|e| AppError::Internal(format!("Failed to init tokenizer: {}", e)))?;
+        let full_summary = format!("User: {}\nAgent: {}", self.user_request, agent_execution);
+        let token_count = bpe.encode_with_special_tokens(&full_summary).len();
+
+        self.store_conversation(
+            ConversationContent::ExecutionSummary {
+                user_message: self.user_request.clone(),
+                agent_execution,
+                token_count,
+            },
+            ConversationMessageType::ExecutionSummary,
         )
         .await?;
 
@@ -436,6 +492,70 @@ impl AgentExecutor {
         .await?;
 
         println!("=== Agent executor gather_context completed ===");
+        Ok(())
+    }
+
+    async fn request_user_input(&mut self) -> Result<(), AppError> {
+        let request_body = render_template_with_prompt(
+            AgentTemplates::USER_INPUT_REQUEST,
+            json!({
+                "conversation_history": self.get_conversation_history_for_llm(),
+                "current_objective": self.current_objective,
+                "working_memory": self.get_working_memory(),
+                "available_tools": self.agent.tools,
+                "available_workflows": self.agent.workflows,
+            }),
+        )
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to render user input request template: {}",
+                e
+            ))
+        })?;
+
+        let input_request = self
+            .create_main_llm()?
+            .generate_structured_content::<serde_json::Value>(request_body)
+            .await?;
+
+        let question = input_request
+            .get("question")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AppError::Internal("Missing question in user input request".to_string())
+            })?;
+
+        let context = input_request
+            .get("context")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Additional information needed");
+
+        let suggestions = input_request
+            .get("suggestions")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect::<Vec<String>>()
+            });
+
+        let validation_hints = input_request
+            .get("validation_hints")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        self.store_conversation(
+            ConversationContent::UserInputRequest {
+                question: question.to_string(),
+                context: context.to_string(),
+                suggestions,
+                validation_hints,
+            },
+            ConversationMessageType::UserInputRequest,
+        )
+        .await?;
+
         Ok(())
     }
 
@@ -703,7 +823,6 @@ impl AgentExecutor {
         let params = if needs_llm_params {
             let generated_params = self.generate_tool_parameters(tool).await?;
 
-            // For API tools, organize parameters into url_params, query_params, and body
             if let AiToolConfiguration::Api(api_config) = &tool.configuration {
                 self.organize_api_parameters(generated_params, api_config)?
             } else {
@@ -732,8 +851,6 @@ impl AgentExecutor {
     }
 
     async fn generate_tool_parameters(&self, tool: &AiTool) -> Result<Value, AppError> {
-        // ParameterGenerationResponse is already imported at the top
-
         let parameter_schema = match &tool.configuration {
             AiToolConfiguration::Api(api_config) => {
                 let mut all_properties = serde_json::Map::new();
@@ -868,17 +985,81 @@ impl AgentExecutor {
     }
 
     fn get_conversation_history_for_llm(&self) -> Vec<Value> {
-        self.conversations
-            .iter()
-            .map(|conv| {
-                json!({
-                    "role": self.map_conversation_type_to_role(&conv.message_type),
-                    "content": self.extract_conversation_content(&conv.content),
-                    "timestamp": conv.created_at,
-                    "type": conv.message_type,
-                })
-            })
-            .collect()
+        let mut history = Vec::new();
+        let mut i = 0;
+
+        while i < self.conversations.len() {
+            let conv = &self.conversations[i];
+
+            match conv.message_type {
+                ConversationMessageType::ExecutionSummary => {
+                    if let ConversationContent::ExecutionSummary {
+                        user_message,
+                        agent_execution,
+                        ..
+                    } = &conv.content
+                    {
+                        history.push(json!({
+                            "role": "user",
+                            "content": user_message,
+                            "timestamp": conv.created_at,
+                            "type": "user_message",
+                        }));
+
+                        history.push(json!({
+                            "role": "assistant",
+                            "content": agent_execution,
+                            "timestamp": conv.created_at,
+                            "type": "execution_summary",
+                        }));
+                    }
+
+                    i += 1;
+                    while i < self.conversations.len()
+                        && !matches!(
+                            self.conversations[i].message_type,
+                            ConversationMessageType::UserMessage
+                                | ConversationMessageType::ExecutionSummary
+                        )
+                    {
+                        i += 1;
+                    }
+                }
+                ConversationMessageType::UserMessage => {
+                    let has_summary = self.conversations[(i + 1)..]
+                        .iter()
+                        .take_while(|c| {
+                            !matches!(c.message_type, ConversationMessageType::UserMessage)
+                        })
+                        .any(|c| {
+                            matches!(c.message_type, ConversationMessageType::ExecutionSummary)
+                        });
+
+                    if has_summary {
+                        i += 1;
+                    } else {
+                        history.push(json!({
+                            "role": self.map_conversation_type_to_role(&conv.message_type),
+                            "content": self.extract_conversation_content(&conv.content),
+                            "timestamp": conv.created_at,
+                            "type": conv.message_type,
+                        }));
+                        i += 1;
+                    }
+                }
+                _ => {
+                    history.push(json!({
+                        "role": self.map_conversation_type_to_role(&conv.message_type),
+                        "content": self.extract_conversation_content(&conv.content),
+                        "timestamp": conv.created_at,
+                        "type": conv.message_type,
+                    }));
+                    i += 1;
+                }
+            }
+        }
+
+        history
     }
 
     fn map_conversation_type_to_role(&self, msg_type: &ConversationMessageType) -> &'static str {
@@ -886,6 +1067,39 @@ impl AgentExecutor {
             ConversationMessageType::UserMessage => "user",
             _ => "model",
         }
+    }
+
+    fn get_working_memory(&self) -> HashMap<String, Value> {
+        let mut memory = HashMap::new();
+
+        if !self.executable_tasks.is_empty() {
+            memory.insert(
+                "pending_tasks".to_string(),
+                json!(self.executable_tasks.len()),
+            );
+            memory.insert(
+                "completed_tasks".to_string(),
+                json!(self.task_results.len()),
+            );
+        }
+
+        memory.insert("user_request".to_string(), json!(self.user_request));
+
+        memory.insert(
+            "current_iteration".to_string(),
+            json!(self.conversations.len()),
+        );
+
+        if !self.task_results.is_empty() {
+            let successful_tasks = self
+                .task_results
+                .values()
+                .filter(|r| r.status == "completed")
+                .count();
+            memory.insert("successful_task_count".to_string(), json!(successful_tasks));
+        }
+
+        memory
     }
 
     fn extract_conversation_content(&self, content: &ConversationContent) -> String {
@@ -1030,7 +1244,6 @@ impl AgentExecutor {
 
             match result {
                 Ok(output) => {
-                    // Store node output in workflow state
                     workflow_state.insert(format!("{}_output", node.id), output.clone());
 
                     let next_edges: Vec<&WorkflowEdge> = all_edges
@@ -1038,9 +1251,7 @@ impl AgentExecutor {
                         .filter(|edge| edge.source == node.id)
                         .collect();
 
-                    // Handle switch nodes specially
                     if node.node_type.type_name() == "Switch" {
-                        // For switch nodes, find the edge matching the selected case
                         if let Some(matched_case) = output.get("matched_case") {
                             let case_handle = if matched_case == "default" {
                                 "default".to_string()
@@ -1072,7 +1283,6 @@ impl AgentExecutor {
                         }
                         Ok(output)
                     } else if next_edges.len() == 1 {
-                        // Regular nodes - follow the single edge
                         let edge = &next_edges[0];
                         if let Some(next_node) = all_nodes.iter().find(|n| n.id == edge.target) {
                             self.execute_node_recursive(
@@ -1088,10 +1298,8 @@ impl AgentExecutor {
                             Ok(output)
                         }
                     } else if next_edges.is_empty() {
-                        // No more edges - workflow complete
                         Ok(output)
                     } else {
-                        // Multiple edges on non-switch node is an error
                         Err(AppError::BadRequest(format!(
                             "Node {} has multiple outgoing edges but is not a switch node",
                             node.id
@@ -1108,7 +1316,6 @@ impl AgentExecutor {
         config: &shared::models::TriggerNodeConfig,
         workflow_state: &HashMap<String, Value>,
     ) -> Result<Value, AppError> {
-        // Extract only the necessary context for trigger evaluation
         let mut context_summary = json!({
             "inputs": workflow_state.get("inputs").cloned().unwrap_or(json!({})),
             "total_context_items": workflow_state.get("total_context_items").cloned().unwrap_or(json!(0)),
@@ -1116,14 +1323,12 @@ impl AgentExecutor {
             "has_memory_context": workflow_state.contains_key("memory_context"),
         });
 
-        // Include node outputs if any
         for (key, value) in workflow_state {
             if key.ends_with("_output") {
                 context_summary[key] = value.clone();
             }
         }
 
-        // Use LLM to evaluate if trigger condition is met
         let template_context = json!({
             "trigger_condition": config.condition,
             "trigger_description": config.description,
@@ -1297,10 +1502,8 @@ impl AgentExecutor {
         config: &shared::models::SwitchNodeConfig,
         workflow_state: &HashMap<String, Value>,
     ) -> Result<Value, AppError> {
-        // Switch condition is a static description for the LLM to evaluate
         let switch_value = json!(config.switch_condition);
 
-        // Prepare the case options for the LLM
         let case_descriptions: Vec<Value> = config
             .cases
             .iter()
@@ -1375,5 +1578,41 @@ impl AgentExecutor {
             .await?;
 
         Ok(result)
+    }
+
+    pub async fn get_immediate_context(&self) -> Result<ImmediateContext, AppError> {
+        let (mru_memories, recent_conversations) = tokio::join!(
+            self.get_mru_memories(20),
+            self.get_recent_conversations(100)
+        );
+
+        Ok(ImmediateContext {
+            memories: mru_memories?,
+            conversations: recent_conversations?,
+        })
+    }
+
+    async fn get_mru_memories(&self, limit: usize) -> Result<Vec<MemoryRecord>, AppError> {
+        GetMRUMemoriesQuery {
+            limit: limit as i64,
+        }
+        .execute(&self.app_state)
+        .await
+    }
+
+    async fn get_recent_conversations(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ConversationRecord>, AppError> {
+        let mut records = GetLLMConversationHistoryQuery {
+            context_id: self.context_id,
+            limit: limit as i64,
+        }
+        .execute(&self.app_state)
+        .await?;
+
+        records.reverse();
+
+        Ok(records)
     }
 }

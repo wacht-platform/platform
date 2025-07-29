@@ -1,0 +1,44 @@
+{
+  "system_instruction": {
+      "parts": [
+        {
+          "text": "{{system_prompt}}"
+        }
+      ]
+   },
+  "contents": [
+    {{#each execution_messages}}
+    {
+      "role": "{{this.role}}",
+      "parts": [
+        {
+          "text": "{{this.content}}"
+        }
+      ]
+    }{{#unless @last}},{{/unless}}
+    {{/each}},
+    {
+      "role": "user",
+      "parts": [
+        {
+          "text": "Generate a line-by-line summary of this execution. Include one line per action/message in chronological order, with tool names, parameters, and key results. Format: Each line should describe what happened including specific details."
+        }
+      ]
+    }
+  ],
+  "generationConfig": {
+    "responseMimeType": "application/json",
+    "responseSchema": {
+      "type": "OBJECT",
+      "properties": {
+        "agent_execution": {
+          "type": "STRING",
+          "description": "A line-by-line chronological summary of the execution, with one line per action including tool names, parameters, and results"
+        }
+      },
+      "required": ["agent_execution"]
+    },
+    "temperature": 0.2,
+    "maxOutputTokens": 2048
+  }
+}

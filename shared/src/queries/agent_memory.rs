@@ -68,6 +68,45 @@ impl Query for GetRecentConversationsQuery {
                 created_at, updated_at
             FROM conversations
             WHERE context_id = $1
+                AND message_type != 'execution_summary'
+            ORDER BY id DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(self.context_id)
+        .bind(self.limit)
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(AppError::from)?;
+
+        Ok(records)
+    }
+}
+
+#[derive(Debug)]
+pub struct GetLLMConversationHistoryQuery {
+    pub context_id: i64,
+    pub limit: i64,
+}
+
+impl GetLLMConversationHistoryQuery {
+    pub fn new(context_id: i64, limit: i64) -> Self {
+        Self { context_id, limit }
+    }
+}
+
+impl Query for GetLLMConversationHistoryQuery {
+    type Output = Vec<ConversationRecord>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let records = sqlx::query_as::<_, ConversationRecord>(
+            r#"
+            SELECT
+                id, context_id, timestamp, content, message_type,
+                created_at, updated_at
+            FROM conversations
+            WHERE context_id = $1
+                AND message_type = 'execution_summary'
             ORDER BY id DESC
             LIMIT $2
             "#,
@@ -223,6 +262,7 @@ impl Query for SearchConversationsQuery {
                 created_at, updated_at
             FROM conversations
             WHERE context_id = $1
+                AND message_type != 'execution_summary'
             ORDER BY updated_at DESC
             LIMIT $2
             "#,

@@ -36,6 +36,8 @@ impl AgentTemplates {
     pub const MEMORY_EVALUATION: &'static str = "memory_evaluation_prompt";
     pub const SWITCH_CASE_EVALUATION: &'static str = "switch_case_evaluation_prompt";
     pub const TRIGGER_EVALUATION: &'static str = "trigger_evaluation_prompt";
+    pub const USER_INPUT_REQUEST: &'static str = "user_input_request_prompt";
+    pub const EXECUTION_SUMMARY: &'static str = "execution_summary_prompt";
 }
 
 pub fn render_template_with_prompt(
@@ -73,6 +75,8 @@ pub fn render_template_with_prompt(
         AgentTemplates::MEMORY_EVALUATION => prompt_loader::get_prompt("memory_evaluation_system"),
         AgentTemplates::SWITCH_CASE_EVALUATION => prompt_loader::get_prompt("switch_case_evaluation_system"),
         AgentTemplates::TRIGGER_EVALUATION => prompt_loader::get_prompt("trigger_evaluation_system"),
+        AgentTemplates::USER_INPUT_REQUEST => prompt_loader::get_prompt("user_input_request_system"),
+        AgentTemplates::EXECUTION_SUMMARY => prompt_loader::get_prompt("execution_summary_system"),
         _ => None,
     };
 

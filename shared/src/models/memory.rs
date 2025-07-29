@@ -11,45 +11,24 @@ pub struct MemoryRecord {
     pub content: String,
     pub embedding: Option<Vector>,
     pub memory_category: String,
-
-    // Decay components
     pub base_temporal_score: f64,
     pub access_count: i32,
     pub first_accessed_at: DateTime<Utc>,
     pub last_accessed_at: DateTime<Utc>,
-
-    // Learning metrics
     pub citation_count: i32,
     pub cross_context_value: f64,
     pub learning_confidence: f64,
-
-    // Origin
     pub creation_context_id: Option<i64>,
     pub last_reinforced_at: DateTime<Utc>,
-
-    // Importance scoring
     pub semantic_centrality: f64,
     pub uniqueness_score: f64,
-
-    // Compression
     pub compression_level: i32,
     pub compressed_content: Option<String>,
-
-    // Flexible decay profile
     pub context_decay_profile: Value, // JSONB
-
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryWithScore {
-    pub memory: MemoryRecord,
-    pub similarity_score: f64,
-    pub decay_adjusted_score: f64,
-}
-
-/// Compression strategies
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CompressionLevel {
     None = 0,

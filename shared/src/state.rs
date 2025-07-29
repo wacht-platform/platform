@@ -80,6 +80,7 @@ impl AppState {
 
         let clickhouse_service =
             ClickHouseService::new(env("CLICKHOUSE_HOST")?, env("CLICKHOUSE_PASSWORD")?)?;
+        clickhouse_service.init_tables().await?;
 
         let nats_client = async_nats::connect(env("NATS_URL")?).await?;
         let nats_jetstream = jetstream::new(nats_client.clone());

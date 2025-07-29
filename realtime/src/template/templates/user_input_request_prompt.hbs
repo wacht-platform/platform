@@ -1,0 +1,49 @@
+{
+  "system_instruction": {
+      "parts": [
+        {
+          "text": "{{system_prompt}}"
+        }
+      ]
+   },
+  "contents": [
+    {{#each conversation_history}}
+    {
+      "role": "{{this.role}}",
+      "parts": [
+        {
+          "text": "{{this.content}}"
+        }
+      ]
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "generationConfig": {
+    "responseMimeType": "application/json",
+    "responseSchema": {
+      "type": "OBJECT",
+      "properties": {
+        "question": {
+          "type": "STRING",
+          "description": "The specific question to ask the user"
+        },
+        "context": {
+          "type": "STRING",
+          "description": "Brief explanation of why this information is needed"
+        },
+        "suggestions": {
+          "type": "ARRAY",
+          "description": "Optional suggested values or examples",
+          "items": {
+            "type": "STRING"
+          }
+        },
+        "validation_hints": {
+          "type": "STRING",
+          "description": "Optional format requirements or constraints"
+        }
+      },
+      "required": ["question", "context"]
+    }
+  }
+}
