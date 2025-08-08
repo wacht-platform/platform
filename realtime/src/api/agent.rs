@@ -2,7 +2,8 @@ use crate::agentic::AgentExecutor;
 use futures::StreamExt;
 use shared::dto::json::StreamEvent;
 use shared::error::AppError;
-use shared::models::AiAgentWithFeatures;
+use shared::models::{AiAgentWithFeatures, ExecutionContextStatus};
+use shared::queries::{GetExecutionContextQuery, Query};
 use shared::state::AppState;
 use tracing::{error, warn};
 
@@ -13,8 +14,9 @@ pub struct AgentHandler {
 #[derive(Clone)]
 pub struct ExecutionRequest {
     pub agent: AiAgentWithFeatures,
-    pub user_message: String,
+    pub user_message: Option<String>,
     pub context_id: i64,
+    pub platform_function_result: Option<(String, serde_json::Value)>,
 }
 
 impl AgentHandler {
@@ -26,8 +28,9 @@ impl AgentHandler {
         let (sender, receiver) = tokio::sync::mpsc::channel::<StreamEvent>(100);
         let execution_id = self.app_state.sf.next_id()? as i64;
         let context_key = request.context_id.to_string();
+        let deployment_id = request.agent.deployment_id;
 
-        let agent_executor = AgentExecutor::new(
+        let mut executor = AgentExecutor::new(
             request.agent,
             request.context_id,
             self.app_state.clone(),
@@ -35,20 +38,62 @@ impl AgentHandler {
         )
         .await?;
 
+        // Platform function result will be passed to run_from_saved_state if needed
+
         let kv = self.get_key_value_store().await?;
         let watch = self.create_watcher(&kv, &context_key).await?;
         self.spawn_message_publisher(receiver, context_key.clone());
 
-        let execution_result = self
-            .run_agent_execution(
-                &kv,
-                &context_key,
-                execution_id,
-                agent_executor,
-                &request.user_message,
-                watch,
-            )
-            .await;
+        // Check if this is a resume scenario
+        let context = GetExecutionContextQuery::new(request.context_id, deployment_id)
+            .execute(&self.app_state)
+            .await?;
+        
+        let execution_result = match (request.user_message, request.platform_function_result, context.status) {
+            // Platform function resume
+            (_, Some((exec_id, result)), _) => {
+                self.resume_agent_execution(
+                    &kv,
+                    &context_key,
+                    execution_id,
+                    &mut executor,
+                    watch,
+                    crate::agentic::agent_executor::ResumeContext::PlatformFunction(exec_id, result),
+                )
+                .await
+            }
+            // User input response
+            (Some(input), None, ExecutionContextStatus::WaitingForInput) => {
+                self.resume_agent_execution(
+                    &kv,
+                    &context_key,
+                    execution_id,
+                    &mut executor,
+                    watch,
+                    crate::agentic::agent_executor::ResumeContext::UserInput(input),
+                )
+                .await
+            }
+            // New message
+            (Some(message), None, _) => {
+                self.run_agent_execution(
+                    &kv,
+                    &context_key,
+                    execution_id,
+                    &mut executor,
+                    &message,
+                    watch,
+                )
+                .await
+            }
+            _ => {
+                Err(AppError::Internal("Invalid execution request".to_string()))
+            }
+        };
+
+        println!("{execution_result:?}");
+
+        executor.post_execution_processing();
 
         if let Err(e) = kv.delete(&context_key).await {
             warn!("Failed to delete execution key: {}", e);
@@ -62,7 +107,7 @@ impl AgentHandler {
             .nats_jetstream
             .get_key_value("agent_execution_kv")
             .await
-            .map_err(|err| AppError::Internal(format!("Failed to get key-value store: {}", err)))
+            .map_err(|err| AppError::Internal(format!("Failed to get key-value store: {err}")))
     }
 
     async fn create_watcher(
@@ -72,7 +117,7 @@ impl AgentHandler {
     ) -> Result<async_nats::jetstream::kv::Watch, AppError> {
         kv.watch(context_key)
             .await
-            .map_err(|err| AppError::Internal(format!("Failed to create watcher: {}", err)))
+            .map_err(|err| AppError::Internal(format!("Failed to create watcher: {err}")))
     }
 
     fn spawn_message_publisher(
@@ -93,16 +138,40 @@ impl AgentHandler {
         kv: &async_nats::jetstream::kv::Store,
         context_key: &str,
         execution_id: i64,
-        mut agent_executor: AgentExecutor,
+        agent_executor: &mut AgentExecutor,
         user_message: &str,
         mut watch: async_nats::jetstream::kv::Watch,
     ) -> Result<(), AppError> {
         kv.put(context_key, execution_id.to_string().into())
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {e}")))?;
 
         tokio::select! {
             result = agent_executor.execute_with_streaming(user_message.to_string()) => {
+                result
+            }
+            _ = watch_for_cancellation(&mut watch, execution_id) => {
+                warn!("Execution cancelled for context {}", context_key);
+                Ok(())
+            }
+        }
+    }
+
+    async fn resume_agent_execution(
+        &self,
+        kv: &async_nats::jetstream::kv::Store,
+        context_key: &str,
+        execution_id: i64,
+        agent_executor: &mut AgentExecutor,
+        mut watch: async_nats::jetstream::kv::Watch,
+        resume_context: crate::agentic::agent_executor::ResumeContext,
+    ) -> Result<(), AppError> {
+        kv.put(context_key, execution_id.to_string().into())
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {e}")))?;
+
+        tokio::select! {
+            result = agent_executor.resume_execution(resume_context) => {
                 result
             }
             _ = watch_for_cancellation(&mut watch, execution_id) => {
@@ -118,18 +187,47 @@ async fn publish_stream_event(
     context_key: &str,
     event: StreamEvent,
 ) -> Result<(), AppError> {
-    let StreamEvent::ConversationMessage(conversation_content) = event else {
-        return Ok(());
+    let subject = format!("agent_execution_stream.context:{context_key}");
+
+    let (message_type, payload) = match event {
+        StreamEvent::ConversationMessage(conversation_content) => {
+            let payload = serde_json::to_vec(&conversation_content)
+                .map_err(|e| AppError::Internal(format!("Failed to serialize message: {e}")))?;
+            ("conversation_message", payload)
+        }
+        StreamEvent::PlatformEvent(event_label, event_data) => {
+            let payload = serde_json::to_vec(&serde_json::json!({
+                "event_label": event_label,
+                "event_data": event_data,
+            }))
+            .map_err(|e| AppError::Internal(format!("Failed to serialize platform event: {e}")))?;
+            ("platform_event", payload)
+        }
+        StreamEvent::PlatformFunction(function_name, function_data) => {
+            let payload = serde_json::to_vec(&serde_json::json!({
+                "function_name": function_name,
+                "function_data": function_data,
+            }))
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to serialize platform function: {e}"))
+            })?;
+            ("platform_function", payload)
+        }
+        StreamEvent::UserInputRequest(user_input_content) => {
+            let payload = serde_json::to_vec(&user_input_content).map_err(|e| {
+                AppError::Internal(format!("Failed to serialize user input request: {e}"))
+            })?;
+            ("user_input_request", payload)
+        }
     };
 
-    let subject = format!("agent_execution_stream.conversation:{}", context_key);
-    let payload = serde_json::to_vec(&conversation_content)
-        .map_err(|e| AppError::Internal(format!("Failed to serialize message: {}", e)))?;
+    let mut headers = async_nats::HeaderMap::new();
+    headers.insert("message_type", message_type);
 
     jetstream
-        .publish(subject, payload.into())
+        .publish_with_headers(subject, headers, payload.into())
         .await
-        .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;
+        .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {e}")))?;
 
     Ok(())
 }

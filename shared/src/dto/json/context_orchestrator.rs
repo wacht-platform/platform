@@ -68,5 +68,6 @@ pub enum SearchScope {
     Universal,
     ListKnowledgeBaseDocuments,
     ReadKnowledgeBaseDocuments,
+    Conversations,
     GatheredContext,
 }

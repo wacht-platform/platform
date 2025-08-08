@@ -1246,3 +1246,73 @@ impl Command for GenerateTokenCommand {
         })
     }
 }
+
+pub struct GenerateAgentContextTokenCommand {
+    deployment_id: i64,
+    user_id: i64,
+    context_subject: Option<String>, // Optional subject requirement for the context
+    validity_hours: u32, // Token validity in hours
+}
+
+impl GenerateAgentContextTokenCommand {
+    pub fn new(deployment_id: i64, user_id: i64, context_subject: Option<String>) -> Self {
+        Self {
+            deployment_id,
+            user_id,
+            context_subject,
+            validity_hours: 24, // Default to 24 hours
+        }
+    }
+    
+    pub fn with_validity_hours(mut self, hours: u32) -> Self {
+        self.validity_hours = hours;
+        self
+    }
+}
+
+impl Command for GenerateAgentContextTokenCommand {
+    type Output = GenerateTokenResponse;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Get deployment key pair
+        let deployment = sqlx::query!(
+            r#"
+            SELECT d.backend_host, kp.private_key as "private_key?"
+            FROM deployments d
+            LEFT JOIN deployment_key_pairs kp ON d.id = kp.deployment_id
+            WHERE d.id = $1 AND d.deleted_at IS NULL
+            "#,
+            self.deployment_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
+        
+        let private_key = deployment.private_key
+            .ok_or_else(|| AppError::NotFound("Deployment key pair not found".to_string()))?;
+
+        let now = Utc::now();
+        let exp = now + Duration::hours(self.validity_hours as i64);
+
+        // Build claims for agent context token
+        let mut claims = HashMap::new();
+        claims.insert("iss".to_string(), json!(format!("https://{}", deployment.backend_host)));
+        claims.insert("sub".to_string(), json!(self.user_id.to_string()));
+        claims.insert("iat".to_string(), json!(now.timestamp()));
+        claims.insert("exp".to_string(), json!(exp.timestamp()));
+        claims.insert("scope".to_string(), json!("agent_context")); // Important: Add the agent_context scope
+        
+        // Add context subject if provided
+        if let Some(subject) = self.context_subject {
+            claims.insert("context_subject".to_string(), json!(subject));
+        }
+
+        // Sign with ES256 (default algorithm)
+        let token = sign_token(claims, "ES256", &private_key)?;
+
+        Ok(GenerateTokenResponse {
+            token,
+            expires: exp.timestamp_millis(),
+        })
+    }
+}

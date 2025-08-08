@@ -16,7 +16,7 @@ use shared::models::{
 };
 use shared::queries::{
     FullTextSearchKnowledgeBaseQuery, GetDocumentChunksQuery, GetKnowledgeBaseDocumentsQuery,
-    HybridSearchKnowledgeBaseQuery, Query,
+    HybridSearchKnowledgeBaseQuery, Query, SearchConversationsQuery,
 };
 use shared::state::AppState;
 use std::collections::HashSet;
@@ -26,11 +26,12 @@ const RELEVANCE_SCORE_DIVISOR: f32 = 2.0;
 pub struct ContextOrchestrator {
     app_state: AppState,
     agent: AiAgentWithFeatures,
+    context_id: i64,
 }
 
 impl ContextOrchestrator {
-    pub fn new(app_state: AppState, agent: AiAgentWithFeatures) -> Self {
-        Self { app_state, agent }
+    pub fn new(app_state: AppState, agent: AiAgentWithFeatures, context_id: i64) -> Self {
+        Self { app_state, agent, context_id }
     }
 
     pub async fn gather_context(
@@ -44,8 +45,8 @@ impl ContextOrchestrator {
         const MAX_ITERATIONS: usize = 5;
 
         for iteration in 1..=MAX_ITERATIONS {
-            eprintln!("\n=== Context Search Iteration {} ===", iteration);
-            eprintln!("Previous searches: {:?}", previous_searches);
+            eprintln!("\n=== Context Search Iteration {iteration} ===");
+            eprintln!("Previous searches: {previous_searches:?}");
 
             let derivation = self
                 .derive_search_strategy(conversations, current_objective, &previous_searches)
@@ -57,7 +58,7 @@ impl ContextOrchestrator {
             eprintln!("  - Search mode: {:?}", derivation.filters.search_mode);
             eprintln!("  - Max results: {}", derivation.filters.max_results);
             if let Some(keywords) = &derivation.filters.boost_keywords {
-                eprintln!("  - Boost keywords: {:?}", keywords);
+                eprintln!("  - Boost keywords: {keywords:?}");
             }
 
             if matches!(derivation.search_scope, SearchScope::GatheredContext) {
@@ -80,7 +81,7 @@ impl ContextOrchestrator {
                 "results_count": results.len(),
             });
 
-            eprintln!("Adding to previous searches: {:?}", search_record);
+            eprintln!("Adding to previous searches: {search_record:?}");
             previous_searches.push(search_record);
 
             // Move results into all_results instead of cloning
@@ -118,7 +119,7 @@ impl ContextOrchestrator {
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
                     let count = s.get("results_count").and_then(|v| v.as_i64()).unwrap_or(0);
-                    format!("{} search in {} scope found {} chunks", mode, scope, count)
+                    format!("{mode} search in {scope} scope found {count} chunks")
                 })
                 .collect();
 
@@ -161,11 +162,11 @@ impl ContextOrchestrator {
             .find(|c| matches!(c.message_type, ConversationMessageType::UserMessage))
         {
             if let ConversationContent::UserMessage { message } = &last_user_msg.content {
-                eprintln!("Last user message: \"{}\"", message);
+                eprintln!("Last user message: \"{message}\"");
             }
         }
 
-        eprintln!("Current objective: {:?}", current_objective);
+        eprintln!("Current objective: {current_objective:?}");
         eprintln!("Has previous searches: {}", !previous_searches.is_empty());
         eprintln!("Previous search count: {}", previous_searches.len());
         if !previous_searches.is_empty() {
@@ -201,7 +202,7 @@ impl ContextOrchestrator {
                 "previous_search_results": previous_searches,
             }),
         )
-        .map_err(|e| AppError::Internal(format!("Failed to render template: {}", e)))?;
+        .map_err(|e| AppError::Internal(format!("Failed to render template: {e}")))?;
 
         let derivation = self
             .create_gemini_client()?
@@ -236,8 +237,7 @@ impl ContextOrchestrator {
                             id.parse::<i64>()
                                 .map_err(|_| {
                                     eprintln!(
-                                        "Warning: Failed to parse knowledge_base_id '{}' as i64",
-                                        id
+                                        "Warning: Failed to parse knowledge_base_id '{id}' as i64"
                                     );
                                 })
                                 .ok()
@@ -259,6 +259,9 @@ impl ContextOrchestrator {
             SearchScope::ReadKnowledgeBaseDocuments => {
                 self.read_knowledge_base_documents(derivation).await
             }
+            SearchScope::Conversations => {
+                self.search_conversations(query, max_results).await
+            }
             SearchScope::GatheredContext => Ok(Vec::new()),
         }
     }
@@ -275,8 +278,7 @@ impl ContextOrchestrator {
                 let weight_sum = vector_weight + text_weight;
                 if (weight_sum - 1.0_f32).abs() > 0.001 {
                     eprintln!(
-                        "Warning: Hybrid search weights don't sum to 1.0: {} + {} = {}",
-                        vector_weight, text_weight, weight_sum
+                        "Warning: Hybrid search weights don't sum to 1.0: {vector_weight} + {text_weight} = {weight_sum}"
                     );
                 }
 
@@ -391,6 +393,7 @@ impl ContextOrchestrator {
 
     async fn generate_embedding(&self, query: &str) -> Result<Vec<f32>, AppError> {
         let embedding_result = GenerateEmbeddingCommand::new(query.to_string())
+            .with_task_type("RETRIEVAL_QUERY".to_string())
             .execute(&self.app_state)
             .await?;
         Ok(embedding_result)
@@ -453,7 +456,7 @@ impl ContextOrchestrator {
                     document_id: r.document_id,
                 },
                 content: r.content,
-                relevance_score: r.score as f64,
+                relevance_score: r.score,
                 metadata: json!({
                     "chunk_index": r.chunk_index,
                     "document_title": r.document_title,
@@ -571,7 +574,7 @@ impl ContextOrchestrator {
                 .filter_map(|id| {
                     id.parse::<i64>()
                         .map_err(|_| {
-                            eprintln!("Warning: Failed to parse knowledge_base_id '{}' as i64", id);
+                            eprintln!("Warning: Failed to parse knowledge_base_id '{id}' as i64");
                         })
                         .ok()
                 })
@@ -621,8 +624,7 @@ impl ContextOrchestrator {
                 .await
                 .map_err(|e| {
                     AppError::Internal(format!(
-                        "Failed to fetch documents from KB {}: {}",
-                        kb_id, e
+                        "Failed to fetch documents from KB {kb_id}: {e}"
                     ))
                 })?;
 
@@ -697,7 +699,7 @@ impl ContextOrchestrator {
                         .find(|kb| kb.id == *kb_id)
                         .map(|kb| kb.name.as_str())
                         .unwrap_or("Unknown");
-                    format!("{}({})", kb_name, kb_id)
+                    format!("{kb_name}({kb_id})")
                 })
                 .collect();
 
@@ -767,15 +769,13 @@ impl ContextOrchestrator {
 
         let chunks = query.execute(&self.app_state).await.map_err(|e| {
             AppError::Internal(format!(
-                "Failed to fetch document chunks for document_id {}: {}",
-                document_id, e
+                "Failed to fetch document chunks for document_id {document_id}: {e}"
             ))
         })?;
 
         if chunks.is_empty() {
             return Err(AppError::NotFound(format!(
-                "No chunks found for document_id {}",
-                document_id
+                "No chunks found for document_id {document_id}"
             )));
         }
 
@@ -822,13 +822,13 @@ impl ContextOrchestrator {
                         .get("chunk_index")
                         .and_then(|v| v.as_i64())
                         .unwrap_or(0);
-                    format!("kb_{}_doc_{}_chunk_{}", kb_id, document_id, chunk_index)
+                    format!("kb_{kb_id}_doc_{document_id}_chunk_{chunk_index}")
                 }
                 ContextSource::Memory { memory_id, .. } => {
-                    format!("memory_{}", memory_id)
+                    format!("memory_{memory_id}")
                 }
                 ContextSource::Conversation { conversation_id } => {
-                    format!("conversation_{}", conversation_id)
+                    format!("conversation_{conversation_id}")
                 }
                 ContextSource::System => {
                     // System messages should not be deduplicated
@@ -883,5 +883,52 @@ impl ContextOrchestrator {
             api_key,
             Some("gemini-2.5-flash".to_string()),
         ))
+    }
+    
+    async fn search_conversations(
+        &self,
+        _query: &str, // Query not used for conversation search currently
+        max_results: usize,
+    ) -> Result<Vec<ContextSearchResult>, AppError> {
+        let conversations = SearchConversationsQuery {
+            context_id: self.context_id,
+            limit: max_results as i64,
+        }
+        .execute(&self.app_state)
+        .await?;
+        
+        Ok(conversations
+            .into_iter()
+            .enumerate()
+            .map(|(idx, conv)| {
+                let content = match &conv.content {
+                    ConversationContent::UserMessage { message } => message.clone(),
+                    ConversationContent::AgentResponse { response, .. } => response.clone(),
+                    ConversationContent::AssistantAcknowledgment { acknowledgment_message, .. } => {
+                        format!("Acknowledgment: {acknowledgment_message}")
+                    }
+                    ConversationContent::AssistantTaskExecution { task_execution, .. } => {
+                        format!("Task execution: {task_execution}")
+                    }
+                    ConversationContent::ContextResults { query, result_count, .. } => {
+                        format!("Context search for '{query}' found {result_count} results")
+                    }
+                    _ => format!("{:?}", conv.message_type),
+                };
+                
+                ContextSearchResult {
+                    source: ContextSource::Conversation {
+                        conversation_id: conv.id,
+                    },
+                    content,
+                    relevance_score: 1.0 - (idx as f64 * 0.01), // Newer conversations have higher relevance
+                    metadata: json!({
+                        "message_type": format!("{:?}", conv.message_type),
+                        "timestamp": conv.timestamp,
+                        "created_at": conv.created_at,
+                    }),
+                }
+            })
+            .collect())
     }
 }

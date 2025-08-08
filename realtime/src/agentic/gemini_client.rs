@@ -105,23 +105,23 @@ impl GeminiClient {
                                         error!("Failed to parse structured response: {}", e);
                                         error!("Raw response: {}", accumulated_text);
                                         last_error =
-                                            Some(format!("Failed to parse response: {}", e));
+                                            Some(format!("Failed to parse response: {e}"));
                                     }
                                 }
                             }
                             Err(e) => {
                                 error!("Failed to parse Gemini response: {}", e);
                                 error!("Raw body: {:?}", String::from_utf8_lossy(&bytes));
-                                last_error = Some(format!("Invalid API response format: {}", e));
+                                last_error = Some(format!("Invalid API response format: {e}"));
                             }
                         },
                         Err(e) => {
-                            last_error = Some(format!("Failed to read response body: {}", e));
+                            last_error = Some(format!("Failed to read response body: {e}"));
                         }
                     }
                 }
                 Err(e) => {
-                    last_error = Some(format!("Request failed: {}", e));
+                    last_error = Some(format!("Request failed: {e}"));
                 }
             }
         }

@@ -21,7 +21,7 @@
       "role": "user",
       "parts": [
         {
-          "text": "Generate a line-by-line summary of this execution. Include one line per action/message in chronological order, with tool names, parameters, and key results. Format: Each line should describe what happened including specific details."
+          "text": "Generate both an execution summary and working memory items from this conversation.\n\n1. Execution Summary: Summarize ONLY what the assistant did or responded with. Do NOT include what the user said (it's already stored). Be extremely concise - use single words for simple interactions (e.g., \"Greeted.\", \"Acknowledged.\", \"Explained X\").\n\n2. Working Memory: Extract important facts, preferences, identifiers, and context that should be remembered for future interactions. Only add NEW information not already captured in existing memories.\n\nProvide both sections clearly separated."
         }
       ]
     }
@@ -33,12 +33,20 @@
       "properties": {
         "agent_execution": {
           "type": "STRING",
-          "description": "A line-by-line chronological summary of the execution, with one line per action including tool names, parameters, and results"
+          "description": "A concise summary of ONLY what the assistant did or said. Never include user messages. Use single words for simple responses like 'Greeted.' or 'Acknowledged.'"
+        },
+        "working_memory": {
+          "type": "ARRAY",
+          "items": {
+            "type": "STRING",
+            "description": "A single working memory item - a fact, preference, identifier, or context detail to remember"
+          },
+          "description": "Important facts, preferences, identifiers, and context extracted from the execution that should be remembered for future interactions"
         }
       },
-      "required": ["agent_execution"]
+      "required": ["agent_execution", "working_memory"]
     },
     "temperature": 0.2,
-    "maxOutputTokens": 2048
+    "maxOutputTokens": 1000
   }
 }

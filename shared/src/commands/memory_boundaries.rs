@@ -90,7 +90,6 @@ impl Command for EvictLowScoreItemsCommand {
             WHERE creation_context_id = $1
               AND base_temporal_score < $2
               AND created_at < NOW() - INTERVAL '7 days'
-              AND citation_count < 3
             "#,
             self.context_id,
             self.threshold as f64

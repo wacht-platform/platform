@@ -1,4 +1,4 @@
-use super::agent_responses::ExecutionAction;
+use super::agent_responses::{ExecutionAction, ExecutableTask};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -10,6 +10,27 @@ pub struct StepDecision {
     pub reasoning: String,
     pub confidence: f64,
     pub direct_execution: Option<ExecutionAction>,
+    pub acknowledgment: Option<AcknowledgmentData>,
+    pub planned_tasks: Option<Vec<ExecutableTask>>,
+    pub examine_tool: Option<ExamineToolData>,
+    pub examine_workflow: Option<ExamineWorkflowData>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ExamineToolData {
+    pub tool_name: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ExamineWorkflowData {
+    pub workflow_name: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct AcknowledgmentData {
+    pub message: String,
+    pub further_action_required: bool,
+    pub objective: ObjectiveDefinition,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -18,12 +39,15 @@ pub enum NextStep {
     Acknowledge,
     GatherContext,
     DirectExecution,
-    BreakdownTasks,
+    TaskPlanning,
+    FinishPlanning,
     ExecuteTasks,
     ValidateProgress,
     DeliverResponse,
     RequestUserInput,
     Complete,
+    ExamineTool,
+    ExamineWorkflow,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

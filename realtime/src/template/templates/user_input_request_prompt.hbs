@@ -41,9 +41,29 @@
         "validation_hints": {
           "type": "STRING",
           "description": "Optional format requirements or constraints"
+        },
+        "input_type": {
+          "type": "STRING",
+          "description": "Type of input: text, number, select, multiselect, boolean, or date",
+          "enum": ["text", "number", "select", "multiselect", "boolean", "date"]
+        },
+        "options": {
+          "type": "ARRAY",
+          "description": "For select/multiselect types, the list of valid options",
+          "items": {
+            "type": "STRING"
+          }
+        },
+        "default_value": {
+          "type": "STRING",
+          "description": "Optional default value for the input"
+        },
+        "placeholder": {
+          "type": "STRING",
+          "description": "Optional placeholder text for text/number inputs"
         }
       },
-      "required": ["question", "context"]
+      "required": ["question", "context", "input_type"]
     }
   }
 }

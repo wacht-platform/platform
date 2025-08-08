@@ -75,6 +75,7 @@ pub enum WorkflowNodeType {
     LLMCall(LLMCallNodeConfig),
     Switch(SwitchNodeConfig),
     ToolCall(ToolCallNodeConfig),
+    UserInput(UserInputNodeConfig),
 }
 
 impl WorkflowNodeType {
@@ -85,6 +86,7 @@ impl WorkflowNodeType {
             WorkflowNodeType::LLMCall(_) => "LLMCall",
             WorkflowNodeType::Switch(_) => "Switch",
             WorkflowNodeType::ToolCall(_) => "ToolCall",
+            WorkflowNodeType::UserInput(_) => "UserInput",
         }
     }
 }
@@ -175,6 +177,28 @@ pub struct ToolCallNodeConfig {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub tool_id: i64,
     pub input_parameters: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct UserInputNodeConfig {
+    #[serde(default)]
+    pub description: Option<String>,
+    pub prompt: String, // The message to show to the user
+    pub input_type: UserInputType,
+    pub default_value: Option<String>,
+    pub placeholder: Option<String>,
+    pub options: Option<Vec<String>>, // For select/multi-select types
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum UserInputType {
+    Text,
+    Number,
+    Select,
+    MultiSelect,
+    Boolean,
+    Date,
 }
 
 

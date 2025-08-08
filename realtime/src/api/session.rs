@@ -9,6 +9,7 @@ use tokio::sync::{Notify, mpsc};
 pub struct SessionState {
     pub sender: mpsc::UnboundedSender<WebsocketMessage<Value>>,
     pub deployment_id: i64,
+    pub user_id: Option<String>,
     pub context_id: Option<i64>,
     pub agent: Option<AiAgentWithFeatures>,
     pub app_state: AppState,
@@ -25,11 +26,17 @@ impl SessionState {
         Self {
             sender,
             deployment_id,
+            user_id: None,
             context_id: None,
             agent: None,
             app_state,
             ready: Arc::new(Notify::new()),
             close: Arc::new(Notify::new()),
         }
+    }
+    
+    pub fn with_user(mut self, user_id: Option<String>) -> Self {
+        self.user_id = user_id;
+        self
     }
 }

@@ -15,6 +15,68 @@ use sqlx::{Row, query};
 
 use super::Query;
 
+pub struct GetDeploymentIdByBackendHostQuery {
+    backend_host: String,
+}
+
+impl GetDeploymentIdByBackendHostQuery {
+    pub fn new(backend_host: String) -> Self {
+        Self { backend_host }
+    }
+}
+
+impl Query for GetDeploymentIdByBackendHostQuery {
+    type Output = i64;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let row = query!(
+            "SELECT id FROM deployments WHERE backend_host = $1 AND deleted_at IS NULL",
+            self.backend_host
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
+        let row = row.ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
+        
+        Ok(row.id)
+    }
+}
+
+pub struct GetDeploymentWithKeyPairQuery {
+    backend_host: String,
+}
+
+impl GetDeploymentWithKeyPairQuery {
+    pub fn new(backend_host: String) -> Self {
+        Self { backend_host }
+    }
+}
+
+impl Query for GetDeploymentWithKeyPairQuery {
+    type Output = (i64, String); // (deployment_id, private_key)
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let row = query!(
+            r#"
+            SELECT d.id, kp.private_key as "private_key?"
+            FROM deployments d
+            LEFT JOIN deployment_key_pairs kp ON d.id = kp.deployment_id
+            WHERE d.backend_host = $1 AND d.deleted_at IS NULL
+            "#,
+            self.backend_host
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
+        let row = row.ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
+        
+        let private_key = row.private_key
+            .ok_or_else(|| AppError::NotFound("Deployment key pair not found".to_string()))?;
+        
+        Ok((row.id, private_key))
+    }
+}
+
 pub struct GetDeploymentWithSettingsQuery {
     deployment_id: i64,
 }

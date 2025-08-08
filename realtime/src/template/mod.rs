@@ -30,7 +30,6 @@ impl AgentTemplates {
     pub const STEP_DECISION: &'static str = "step_decision_prompt";
     pub const CONTEXT_SEARCH_DERIVATION: &'static str = "context_search_derivation_prompt";
     pub const KNOWLEDGE_BASE_SEARCH: &'static str = "knowledge_base_search_prompt";
-    pub const KB_SEARCH_PLAN: &'static str = "kb_search_plan_prompt";
     pub const KB_SEARCH_EXECUTION: &'static str = "kb_search_execution_prompt";
     pub const KB_SEARCH_VALIDATION: &'static str = "kb_search_validation_prompt";
     pub const MEMORY_EVALUATION: &'static str = "memory_evaluation_prompt";
@@ -65,7 +64,6 @@ pub fn render_template_with_prompt(
         AgentTemplates::KNOWLEDGE_BASE_SEARCH => {
             prompt_loader::get_prompt("knowledge_base_search_system")
         }
-        AgentTemplates::KB_SEARCH_PLAN => prompt_loader::get_prompt("kb_search_plan_system"),
         AgentTemplates::KB_SEARCH_EXECUTION => {
             prompt_loader::get_prompt("kb_search_execution_system")
         }

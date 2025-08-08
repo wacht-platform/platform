@@ -12,7 +12,7 @@
       "role": "{{this.role}}",
       "parts": [
         {
-          "text": "{{this.content}}"
+          "text": "[{{relative_time this.timestamp}}] {{this.content}}"
         }
       ]
     }{{#unless @last}},{{/unless}}
@@ -88,18 +88,17 @@
           },
           "required": ["approach", "actions", "expected_result"]
         },
-        "execution_status": {
-          "type": "STRING",
-          "enum": ["ready", "blocked", "cannot_execute"],
+        "can_execute": {
+          "type": "BOOLEAN",
           "description": "Whether the task can be executed now"
         },
         "blocking_reason": {
           "type": "STRING",
-          "description": "If blocked or cannot execute, explain why",
+          "description": "If cannot execute, explain why",
           "nullable": true
         }
       },
-      "required": ["task_execution", "execution_status"]
+      "required": ["task_execution", "can_execute"]
     },
     "temperature": 0.5,
     "maxOutputTokens": 4096

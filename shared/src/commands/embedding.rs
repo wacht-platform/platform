@@ -2,18 +2,77 @@ use super::Command;
 use crate::{
     error::AppError, models::ai_knowledge_base::DocumentChunkSearchResult, state::AppState,
 };
-use llm::builder::{LLMBackend, LLMBuilder};
-use pgvector::Vector;
+use pgvector::HalfVector;
+use serde::{Deserialize, Serialize};
 use sqlx::Row;
+
+#[derive(Serialize)]
+struct EmbedContentRequest {
+    model: String,
+    content: Content,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_dimensionality: Option<i32>,
+}
+
+#[derive(Serialize)]
+struct BatchEmbedContentsRequest {
+    requests: Vec<EmbedContentRequestItem>,
+}
+
+#[derive(Serialize)]
+struct EmbedContentRequestItem {
+    model: String,
+    content: Content,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_dimensionality: Option<i32>,
+}
+
+#[derive(Serialize)]
+struct Content {
+    parts: Vec<Part>,
+}
+
+#[derive(Serialize)]
+struct Part {
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct EmbedContentResponse {
+    embedding: Embedding,
+}
+
+#[derive(Deserialize)]
+struct BatchEmbedContentsResponse {
+    embeddings: Vec<Embedding>,
+}
+
+#[derive(Deserialize)]
+struct Embedding {
+    values: Vec<f32>,
+}
 
 #[derive(Clone)]
 pub struct GenerateEmbeddingCommand {
     pub text: String,
+    pub task_type: Option<String>,
 }
 
 impl GenerateEmbeddingCommand {
     pub fn new(text: String) -> Self {
-        Self { text }
+        Self { 
+            text,
+            task_type: None,
+        }
+    }
+    
+    pub fn with_task_type(mut self, task_type: String) -> Self {
+        self.task_type = Some(task_type);
+        self
     }
 }
 
@@ -26,35 +85,67 @@ impl Command for GenerateEmbeddingCommand {
         })?;
 
         let model = std::env::var("GEMINI_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "text-embedding-004".to_string());
+            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
 
-        let llm = LLMBuilder::new()
-            .backend(LLMBackend::Google)
-            .api_key(&api_key)
-            .model(&model)
-            .build()
-            .map_err(|e| AppError::Internal(format!("Failed to initialize Gemini LLM: {}", e)))?;
+        let client = reqwest::Client::new();
+        
+        let request = EmbedContentRequest {
+            model: model.clone(),
+            content: Content {
+                parts: vec![Part { text: self.text }],
+            },
+            task_type: self.task_type.or(Some("RETRIEVAL_DOCUMENT".to_string())),
+            output_dimensionality: Some(3072),
+        };
 
-        let embeddings = llm
-            .embed(vec![self.text])
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/{}:embedContent",
+            model
+        );
+
+        let response = client
+            .post(&url)
+            .header("x-goog-api-key", api_key)
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to generate embeddings: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("Failed to send embedding request: {}", e)))?;
 
-        embeddings
-            .into_iter()
-            .next()
-            .ok_or_else(|| AppError::Internal("No embedding returned".to_string()))
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::Internal(format!(
+                "Embedding API error: {}",
+                error_text
+            )));
+        }
+
+        let embed_response: EmbedContentResponse = response
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to parse embedding response: {}", e)))?;
+
+        Ok(embed_response.embedding.values)
     }
 }
 
 #[derive(Clone)]
 pub struct GenerateEmbeddingsCommand {
     pub texts: Vec<String>,
+    pub task_type: Option<String>,
 }
 
 impl GenerateEmbeddingsCommand {
     pub fn new(texts: Vec<String>) -> Self {
-        Self { texts }
+        Self {
+            texts,
+            task_type: None,
+        }
+    }
+    
+    pub fn with_task_type(mut self, task_type: String) -> Self {
+        self.task_type = Some(task_type);
+        self
     }
 }
 
@@ -71,21 +162,63 @@ impl Command for GenerateEmbeddingsCommand {
         })?;
 
         let model = std::env::var("GEMINI_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "text-embedding-004".to_string());
+            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
 
-        let llm = LLMBuilder::new()
-            .backend(LLMBackend::Google)
-            .api_key(&api_key)
-            .model(&model)
-            .build()
-            .map_err(|e| AppError::Internal(format!("Failed to initialize Gemini LLM: {}", e)))?;
+        let client = reqwest::Client::new();
+        
+        // Create batch request with all texts
+        let requests: Vec<EmbedContentRequestItem> = self.texts
+            .into_iter()
+            .map(|text| EmbedContentRequestItem {
+                model: model.clone(),
+                content: Content {
+                    parts: vec![Part { text }],
+                },
+                task_type: self.task_type.clone().or(Some("RETRIEVAL_DOCUMENT".to_string())),
+                output_dimensionality: Some(3072),
+            })
+            .collect();
 
-        let embeddings = llm
-            .embed(self.texts)
+        let batch_request = BatchEmbedContentsRequest {
+            requests,
+        };
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/{}:batchEmbedContents",
+            model
+        );
+
+        let response = client
+            .post(&url)
+            .header("x-goog-api-key", api_key)
+            .header("Content-Type", "application/json")
+            .json(&batch_request)
+            .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to generate embeddings: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("Failed to send batch embedding request: {}", e)))?;
 
-        Ok(embeddings)
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            tracing::error!(
+                "Batch embedding API error - Status: {}, URL: {}, Error: {}",
+                status,
+                url,
+                error_text
+            );
+            return Err(AppError::Internal(format!(
+                "Batch embedding API error ({}): {}",
+                status,
+                error_text
+            )));
+        }
+
+        let batch_response: BatchEmbedContentsResponse = response
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to parse batch embedding response: {}", e)))?;
+
+        Ok(batch_response.embeddings.into_iter().map(|e| e.values).collect())
     }
 }
 
@@ -110,7 +243,7 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
     type Output = Vec<DocumentChunkSearchResult>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let query_embedding = Vector::from(self.query_embedding.clone());
+        let query_embedding = HalfVector::from_f32_slice(&self.query_embedding);
         // Set minimum similarity threshold - cosine distance of 1.1-1.2 means ~40-45% similarity
         // Cosine distance ranges from 0 (identical) to 2 (opposite)
         // Distance 1.0 = 50% similarity, 1.2 = 40% similarity
@@ -123,13 +256,13 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
                 kbc.knowledge_base_id, 
                 kbc.content, 
                 kbc.chunk_index, 
-                (kbc.embedding <-> $1)::float8 as score,
+                (kbc.embedding::vector(3072) <-> $1)::float8 as score,
                 d.title as document_title,
                 d.description as document_description
             FROM knowledge_base_document_chunks kbc
             LEFT JOIN ai_knowledge_base_documents d ON kbc.document_id = d.id
             WHERE kbc.knowledge_base_id = ANY($2)
-              AND (kbc.embedding <-> $1) <= $4
+              AND (kbc.embedding::vector(3072) <-> $1) <= $4
             ORDER BY score ASC 
             LIMIT $3
             "#,

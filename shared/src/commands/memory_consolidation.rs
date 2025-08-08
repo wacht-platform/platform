@@ -4,7 +4,7 @@ use crate::{
     models::ConsolidationCandidate,
     state::AppState,
 };
-use pgvector::Vector;
+use pgvector::HalfVector;
 
 /// Find memories that should be consolidated
 pub struct FindConsolidationCandidatesCommand {
@@ -118,9 +118,8 @@ impl Command for ConsolidateMemoriesCommand {
             r#"
             SELECT 
                 SUM(access_count) as total_access_count,
-                SUM(citation_count) as total_citation_count,
-                MAX(learning_confidence) as max_confidence,
-                MAX(cross_context_value) as max_cross_value
+                MAX(semantic_centrality) as max_centrality,
+                MAX(uniqueness_score) as max_uniqueness
             FROM memories
             WHERE id = ANY($1)
             "#,
@@ -136,7 +135,7 @@ impl Command for ConsolidateMemoriesCommand {
 
         // Create new consolidated memory
         let new_memory_id = app_state.sf.next_id()? as i64;
-        let embedding_vector = Vector::from(embedding);
+        let embedding_vector = HalfVector::from_f32_slice(&embedding);
         
         sqlx::query(
             r#"
@@ -144,8 +143,6 @@ impl Command for ConsolidateMemoriesCommand {
                 id, content, embedding, memory_category,
                 base_temporal_score, access_count,
                 first_accessed_at, last_accessed_at,
-                citation_count, cross_context_value, learning_confidence,
-                relevance_score, usefulness_score,
                 creation_context_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
@@ -154,10 +151,8 @@ impl Command for ConsolidateMemoriesCommand {
                 $1, $2, $3, $4,
                 0.9, $5,
                 NOW(), NOW(),
-                $6, $7, $8,
-                0.0, 0.0,
                 NULL, NOW(),
-                0.8, 0.9,
+                $6, $7,
                 0, NULL,
                 '{}'::jsonb
             )
@@ -168,9 +163,8 @@ impl Command for ConsolidateMemoriesCommand {
         .bind(embedding_vector)
         .bind(&self.candidate.suggested_category)
         .bind(metrics.total_access_count.unwrap_or(0) as i32)
-        .bind(metrics.total_citation_count.unwrap_or(0) as i32)
-        .bind(metrics.max_cross_value.unwrap_or(0.5))
-        .bind(metrics.max_confidence.unwrap_or(0.7))
+        .bind(metrics.max_centrality.unwrap_or(0.8))
+        .bind(metrics.max_uniqueness.unwrap_or(0.9))
         .execute(&mut *tx)
         .await?;
 

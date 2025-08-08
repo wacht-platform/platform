@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use chrono::{DateTime, Utc};
 use clickhouse::{Client, Row};
-use pgvector::Vector;
+use pgvector::HalfVector;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
@@ -42,14 +42,14 @@ struct RecentSignupRow {
     timestamp: DateTime<Utc>,
 }
 
-#[derive(Serialize, Deserialize, Row)]
+#[derive(Row)]
 pub struct AnalyticsEvent {
     pub id: i64,
     pub deployment_id: i64,
     pub user_id: Option<i64>,
     pub event_type: String,
     pub event_data: String,
-    pub embedding: Vector,
+    pub embedding: HalfVector,
     pub created_at: DateTime<Utc>,
 }
 

@@ -1,16 +1,16 @@
 use chrono::{DateTime, Utc};
-use pgvector::Vector;
+use pgvector::HalfVector;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-#[derive(FromRow, Serialize, Deserialize, Clone)]
+#[derive(FromRow, Clone)]
 pub struct KnowledgeBaseDocumentChunk {
     pub document_id: i64,
     pub knowledge_base_id: i64,
     pub deployment_id: i64,
     pub chunk_index: i32,
     pub content: String,
-    pub embedding: Vector,
+    pub embedding: HalfVector,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

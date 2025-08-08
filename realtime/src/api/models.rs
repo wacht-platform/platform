@@ -37,7 +37,17 @@ pub enum WebsocketMessageType {
     #[serde(rename = "platform_function")]
     PlatformFunction,
     #[serde(rename = "platform_function_result")]
-    PlatformFunctionResult(u64, serde_json::Value),
+    PlatformFunctionResult(String, serde_json::Value),
+    #[serde(rename = "user_input_request")]
+    UserInputRequest,
+    #[serde(rename = "user_input_response")]
+    UserInputResponse(String),
+    #[serde(rename = "execution_status")]
+    ExecutionStatusUpdate,
+    #[serde(rename = "cancel_execution")]
+    CancelExecution,
+    #[serde(rename = "execution_cancelled")]
+    ExecutionCancelled,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

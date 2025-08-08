@@ -19,6 +19,7 @@ pub async fn search_knowledge_base(
     let limit = params.limit.unwrap_or(10).min(100);
 
     let query_embedding = GenerateEmbeddingCommand::new(params.query.clone())
+        .with_task_type("RETRIEVAL_QUERY".to_string())
         .execute(&app_state)
         .await?;
 
@@ -75,6 +76,7 @@ pub async fn search_specific_knowledge_base(
     let limit = params.limit.unwrap_or(10).min(100);
 
     let query_embedding = GenerateEmbeddingCommand::new(params.query.clone())
+        .with_task_type("RETRIEVAL_QUERY".to_string())
         .execute(&app_state)
         .await?;
 

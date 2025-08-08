@@ -16,6 +16,7 @@ pub enum ConversationMessageType {
     ContextResults,
     UserInputRequest,
     ExecutionSummary,
+    PlatformFunctionResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,8 +74,10 @@ pub enum ConversationContent {
     UserInputRequest {
         question: String,
         context: String,
-        suggestions: Option<Vec<String>>,
-        validation_hints: Option<String>,
+        input_type: String, // "text", "number", "select", "multiselect", "boolean", "date"
+        options: Option<Vec<String>>, // For select/multi-select types
+        default_value: Option<String>,
+        placeholder: Option<String>,
     },
     ExecutionSummary {
         /// The original user message that triggered this execution
@@ -83,6 +86,12 @@ pub enum ConversationContent {
         agent_execution: String,
         /// Token count for this summary
         token_count: usize,
+    },
+    PlatformFunctionResult {
+        /// Unique execution ID for this function call
+        execution_id: String,
+        /// Result returned from the function
+        result: String,
     },
 }
 
@@ -94,6 +103,7 @@ pub struct ConversationRecord {
     pub timestamp: DateTime<Utc>,
     pub content: ConversationContent,
     pub message_type: ConversationMessageType,
+    pub token_count: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -115,6 +125,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             "context_results" => ConversationMessageType::ContextResults,
             "user_input_request" => ConversationMessageType::UserInputRequest,
             "execution_summary" => ConversationMessageType::ExecutionSummary,
+            "platform_function_result" => ConversationMessageType::PlatformFunctionResult,
             _ => {
                 return Err(sqlx::Error::ColumnDecode {
                     index: "message_type".to_string(),
@@ -136,6 +147,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             timestamp: row.try_get("timestamp")?,
             content,
             message_type,
+            token_count: row.try_get("token_count").unwrap_or(0),
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
         })

@@ -12,7 +12,7 @@
       "role": "{{this.role}}",
       "parts": [
         {
-          "text": "{{this.content}}"
+          "text": "[{{relative_time this.timestamp}}] {{this.content}}"
         }
       ]
     }{{#unless @last}},{{/unless}}

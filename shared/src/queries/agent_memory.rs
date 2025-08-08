@@ -5,7 +5,7 @@ use crate::{
     state::AppState,
 };
 use chrono::{DateTime, Utc};
-use pgvector::Vector;
+use pgvector::HalfVector;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
@@ -24,14 +24,13 @@ impl Query for GetMRUMemoriesQuery {
                 id, content, embedding, memory_category,
                 base_temporal_score, access_count,
                 first_accessed_at, last_accessed_at,
-                citation_count, cross_context_value, learning_confidence,
-                relevance_score, usefulness_score,
                 creation_context_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
                 context_decay_profile,
                 created_at, updated_at
             FROM memories
+            WHERE memory_category = 'working'
             ORDER BY last_accessed_at DESC
             LIMIT $1
             "#,
@@ -86,12 +85,11 @@ impl Query for GetRecentConversationsQuery {
 #[derive(Debug)]
 pub struct GetLLMConversationHistoryQuery {
     pub context_id: i64,
-    pub limit: i64,
 }
 
 impl GetLLMConversationHistoryQuery {
-    pub fn new(context_id: i64, limit: i64) -> Self {
-        Self { context_id, limit }
+    pub fn new(context_id: i64) -> Self {
+        Self { context_id }
     }
 }
 
@@ -101,18 +99,55 @@ impl Query for GetLLMConversationHistoryQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let records = sqlx::query_as::<_, ConversationRecord>(
             r#"
-            SELECT
-                id, context_id, timestamp, content, message_type,
-                created_at, updated_at
-            FROM conversations
-            WHERE context_id = $1
-                AND message_type = 'execution_summary'
-            ORDER BY id DESC
-            LIMIT $2
+            WITH last_summary AS (
+                -- Find the most recent execution summary using snowflake ID ordering
+                SELECT id as last_summary_id
+                FROM conversations
+                WHERE context_id = $1
+                  AND message_type = 'execution_summary'
+                ORDER BY id DESC
+                LIMIT 1
+            ),
+            last_summary_with_default AS (
+                -- Ensure we always have a row, even if no summaries exist
+                SELECT COALESCE(last_summary_id, 0) as last_summary_id
+                FROM (SELECT 1) dummy
+                LEFT JOIN last_summary ON TRUE
+            ),
+            recent_unsummarized AS (
+                -- Get ALL conversations after the last summary (unbounded)
+                SELECT c.id, c.context_id, c.timestamp, c.content, c.message_type,
+                       c.token_count, c.created_at, c.updated_at
+                FROM conversations c, last_summary_with_default ls
+                WHERE c.context_id = $1
+                  AND c.id > ls.last_summary_id
+            ),
+            execution_summaries AS (
+                -- Get execution summaries with running totals and limits
+                SELECT c.*,
+                       ROW_NUMBER() OVER (ORDER BY c.id DESC) as execution_count,
+                       SUM(c.token_count) OVER (ORDER BY c.id DESC) as running_tokens
+                FROM conversations c
+                WHERE c.context_id = $1
+                  AND c.message_type = 'execution_summary'
+                ORDER BY c.id DESC
+            ),
+            limited_summaries AS (
+                -- Apply limits only to execution summaries
+                SELECT id, context_id, timestamp, content, message_type,
+                       token_count, created_at, updated_at
+                FROM execution_summaries
+                WHERE execution_count <= 20  -- Max 20 executions
+                  AND running_tokens <= 40000  -- Token limit for summaries only
+            )
+            -- Combine both: all recent unsummarized + limited summaries
+            SELECT * FROM recent_unsummarized
+            UNION ALL
+            SELECT * FROM limited_summaries
+            ORDER BY id ASC  -- Return in chronological order for LLM
             "#,
         )
         .bind(self.context_id)
-        .bind(self.limit)
         .fetch_all(&app_state.db_pool)
         .await
         .map_err(AppError::from)?;
@@ -134,16 +169,7 @@ impl crate::commands::Command for UpdateMemoryAccessCommand {
             r#"
             UPDATE memories
             SET access_count = access_count + 1,
-                last_accessed_at = NOW(),
-                base_temporal_score = calculate_base_decay(
-                    access_count + 1,
-                    citation_count,
-                    first_accessed_at,
-                    NOW(),
-                    relevance_score,
-                    usefulness_score,
-                    compression_level
-                )
+                last_accessed_at = NOW()
             WHERE id = $1
             "#,
         )
@@ -170,20 +196,18 @@ pub struct MemoryWithScore {
     pub decay_adjusted_score: f64,
 }
 
-
 impl Query for SearchMemoriesWithDecayQuery {
     type Output = Vec<MemoryWithScore>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let embedding = Vector::from(self.query_embedding.clone());
+        let embedding = HalfVector::from_f32_slice(&self.query_embedding);
 
         let results = sqlx::query!(
             r#"
             SELECT
-                id, content, embedding as "embedding: Vector", memory_category,
+                id, content, embedding as "embedding: HalfVector", memory_category,
                 base_temporal_score, access_count,
                 first_accessed_at, last_accessed_at,
-                citation_count, cross_context_value, learning_confidence,
                 creation_context_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
@@ -197,7 +221,7 @@ impl Query for SearchMemoriesWithDecayQuery {
             ORDER BY (1 - (embedding <=> $1)) * base_temporal_score DESC
             LIMIT $2
             "#,
-            &embedding as &Vector,
+            &embedding as &HalfVector,
             self.limit,
             self.time_range.as_ref().map(|(start, _)| *start),
             self.time_range.as_ref().map(|(_, end)| *end)
@@ -217,9 +241,6 @@ impl Query for SearchMemoriesWithDecayQuery {
                 access_count: row.access_count.unwrap_or(0),
                 first_accessed_at: row.first_accessed_at.unwrap_or_else(|| Utc::now()),
                 last_accessed_at: row.last_accessed_at.unwrap_or_else(|| Utc::now()),
-                citation_count: row.citation_count.unwrap_or(0),
-                cross_context_value: row.cross_context_value.unwrap_or(0.0),
-                learning_confidence: row.learning_confidence.unwrap_or(0.0),
                 creation_context_id: row.creation_context_id,
                 last_reinforced_at: row.last_reinforced_at.unwrap_or_else(|| Utc::now()),
                 semantic_centrality: row.semantic_centrality.unwrap_or(0.0),

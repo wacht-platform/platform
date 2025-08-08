@@ -93,19 +93,36 @@ Analyze the conversation to determine what information YOU need to search for in
      * limit: Maximum chunks to return (default: 10)
    - **TIP**: After finding relevant chunks in KB search, use this to read surrounding chunks for full context
    - Example read_document_params: { "document_id": "987654321098765432", "chunk_range": { "start": 10, "end": 15 }, "limit": 10 }
-6. **Gathered Context**: When YOU (the AI agent) have gathered sufficient context
+6. **Conversations**: When you need to review recent conversation history (excluding summaries)
+   - Retrieves raw conversation messages that haven't been summarized yet
+   - Use when:
+     * User references something said recently in the conversation
+     * You need detailed context from recent interactions
+     * Looking for specific tool calls or responses from the current session
+   - Returns non-execution summary messages in chronological order
+   - Newer conversations have higher relevance scores
+   - **NOTE**: This searches raw conversations, not summarized ones
+7. **Gathered Context**: When YOU (the AI agent) have gathered sufficient context
    - **CRITICAL**: This stops the context gathering iterations immediately
-   - Use this when:
-     * You've already searched and found relevant information about the topic
-     * Previous searches have returned results that answer the user's question
-     * You have enough context to proceed with the user's request
-     * Additional searches would be redundant or unnecessary
-     * **IMPORTANT**: If you've done 2+ searches finding the same results, STOP
-     * **IMPORTANT**: If searching for "X and Y" separately and found info about both, STOP
-     * **CRITICAL**: After finding docs for X and docs for Y, don't search for more unless specifically needed
-   - Remember: This context gathering is for YOUR internal use, not directly shown to the user
-   - **DEFAULT ACTION**: If you're unsure whether to search more, choose gathered_context to avoid redundant searches
-   - **RULE**: Never do the same search twice - if results are consistent, you have enough
+   
+   **MANDATORY STOP CONDITIONS** - Choose gathered_context when ANY of these are true:
+   - **Minimal Results Pattern**: All previous searches returned ≤1 result each
+   - **Query Repetition**: You've already searched the same query (even with different modes)
+   - **Query Alternation**: You're cycling between 2-3 queries repeatedly
+   - **Consistent Low Yield**: 3+ searches all returning same low result count (0-2)
+   - **Topics Covered**: Found information about all requested entities/topics
+   - **No New Information**: Last 2 searches found same documents/results
+   
+   **DECISION RULE**: 
+   - After 2 iterations: STOP unless you have a SPECIFIC new angle to explore
+   - After 3 iterations: STOP unless results are actively improving
+   - After 4 iterations: STOP - you've exhausted reasonable search strategies
+   
+   **REMEMBER**:
+   - Quality > Quantity: 1 relevant result beats 5 redundant searches
+   - This is internal context gathering, not exhaustive research
+   - Users expect quick responses, not perfect knowledge
+   - If core question is answerable with current results, STOP
 
 ### Query Formulation:
 - **CRITICAL**: Keep queries focused and specific - avoid cramming all keywords into one search
@@ -252,6 +269,20 @@ Iteration 2: Query "deployment process documentation" → Found same 3 results
 Iteration 3: Query "deploy procedures CI/CD" → Found same 3 results
 Iteration 4: Still searching...
 Analysis: ❌ Should have recognized pattern and stopped with gathered_context after 2 iterations
+
+### WORST CASE - Ignoring Stop Conditions:
+User Request: "Tell me about employee performance"
+
+Iteration 1: Query "employee performance" → Found 1 result
+Iteration 2: Query "employee performance review" → Found 1 result
+Iteration 3: Query "employee performance" (Hybrid mode) → Found 1 result
+Iteration 4: Query "employee performance review" (Hybrid) → Found 1 result
+Iteration 5: Still searching the same terms...
+Analysis: ❌ MULTIPLE violations:
+- Minimal results pattern (all ≤1 result)
+- Query repetition (same queries with different modes)
+- No new information after iteration 2
+- Should have chosen gathered_context after iteration 2
 
 ## More Examples:
 

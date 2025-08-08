@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use pgvector::Vector;
+use pgvector::HalfVector;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
@@ -9,15 +9,13 @@ use sqlx::FromRow;
 pub struct MemoryRecord {
     pub id: i64,
     pub content: String,
-    pub embedding: Option<Vector>,
+    #[serde(skip)]
+    pub embedding: Option<HalfVector>,
     pub memory_category: String,
     pub base_temporal_score: f64,
     pub access_count: i32,
     pub first_accessed_at: DateTime<Utc>,
     pub last_accessed_at: DateTime<Utc>,
-    pub citation_count: i32,
-    pub cross_context_value: f64,
-    pub learning_confidence: f64,
     pub creation_context_id: Option<i64>,
     pub last_reinforced_at: DateTime<Utc>,
     pub semantic_centrality: f64,

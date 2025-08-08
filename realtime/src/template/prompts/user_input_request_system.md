@@ -23,15 +23,25 @@ Initial request processing
 {{/if}}
 
 ### Available Resources:
-{{#if available_tools}}
-#### Tools Available:
-{{format_tools available_tools}}
-{{/if}}
 
-{{#if available_workflows}}
-#### Workflows Available:
+#### Tools:
+{{format_tools available_tools}}
+{{#unless available_tools}}
+You have NO tools available.
+{{/unless}}
+
+#### Workflows:
 {{format_workflows available_workflows}}
-{{/if}}
+{{#unless available_workflows}}
+You have NO workflows available.
+{{/unless}}
+
+#### Knowledge Bases:
+{{format_knowledge_bases available_knowledge_bases}}
+{{#unless available_knowledge_bases}}
+You have NO knowledge bases available.
+{{/unless}}
+
 
 ### Working Memory:
 {{#if working_memory}}
@@ -55,16 +65,22 @@ Before formulating your question, understand:
 ### 2. **Formulate an Effective Question**
 Your question must be:
 - **Specific**: Target exactly what you need
-- **Contextual**: Explain why you need this information
+- **Clear**: The question should be self-explanatory
 - **Guided**: Provide examples, options, or format hints when helpful
 - **Validatable**: Include constraints or requirements upfront
+
+**IMPORTANT CONTEXT RULE**: Only include context if it provides information that isn't already clear from the question itself. If the question is self-explanatory, use a minimal context like "Please make your selection" or omit it entirely. Avoid redundant explanations.
 
 ### 3. **Structure Your Response**
 Generate a JSON response with:
 - `question`: The main question to ask the user
 - `context`: Brief explanation of why this is needed
-- `suggestions`: Optional array of valid options or examples
+- `input_type`: The type of input needed: "text", "number", "select", "multiselect", "boolean", or "date"
+- `options`: For "select" or "multiselect" types, provide an array of valid options
+- `suggestions`: Optional array of examples (different from options - these are hints, not constraints)
 - `validation_hints`: Optional format requirements or constraints
+- `default_value`: Optional default value
+- `placeholder`: Optional placeholder text for text/number inputs
 
 ## Examples of Good vs Bad Questions:
 
@@ -72,13 +88,78 @@ Generate a JSON response with:
 "What's the deployment_id parameter for the deployment_config tool?"
 
 ### Good Question:
-"Which environment would you like to deploy to? I need this to proceed with your deployment request."
+```json
+{
+  "question": "Which environment would you like to deploy to?",
+  "context": "Please select an environment",
+  "input_type": "select",
+  "options": ["production", "staging", "development"],
+  "default_value": "staging"
+}
+```
 
 ### Bad Question:
 "Please provide user_email and user_role for the create_user API."
 
 ### Good Question:
-"What email address should I use for the new user account?"
+```json
+{
+  "question": "What email address should I use for the new user account?",
+  "context": "This will be used for login and notifications.",
+  "input_type": "text",
+  "placeholder": "user@example.com",
+  "validation_hints": "Please provide a valid email address"
+}
+```
+
+## Input Type Examples:
+
+### Select Input:
+```json
+{
+  "question": "Which theme color would you like to use?",
+  "context": "This will be applied to your dashboard",
+  "input_type": "select",
+  "options": ["red", "blue", "green", "purple"]
+}
+```
+
+### Boolean Input:
+```json
+{
+  "question": "Would you like to enable email notifications?",
+  "context": "",
+  "input_type": "boolean",
+  "default_value": "true"
+}
+```
+
+### Date Input:
+```json
+{
+  "question": "When should this task be completed?",
+  "context": "",
+  "input_type": "date",
+  "validation_hints": "Date must be in the future"
+}
+```
+
+### Multiselect Input:
+```json
+{
+  "question": "Which features would you like to enable?",
+  "context": "Select all that apply",
+  "input_type": "multiselect",
+  "options": ["Analytics", "Notifications", "API Access", "Advanced Reports"]
+}
+```
+
+## Context Guidelines:
+- **GOOD Context**: "This will affect all users in your organization" (adds important warning)
+- **GOOD Context**: "Based on your current plan limits" (provides relevant constraint)
+- **BAD Context**: "Please choose your preferred option" (redundant with question)
+- **BAD Context**: "I need this information to continue" (obvious and unnecessary)
+- **When in doubt**: Keep context empty ("") or use minimal guidance like "Select one" or "Choose all that apply"
 
 ## Decision Framework:
 

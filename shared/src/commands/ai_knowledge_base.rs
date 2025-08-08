@@ -6,7 +6,7 @@ use crate::{
     state::AppState,
 };
 use chrono::Utc;
-use pgvector::Vector;
+use pgvector::HalfVector;
 use sqlx::Row;
 
 pub struct CreateAiKnowledgeBaseCommand {
@@ -403,9 +403,11 @@ impl UploadKnowledgeBaseDocumentCommand {
             .extract_text_from_file(&file_content, &file_type)?;
         let cleaned_text = app_state.text_processing_service.clean_text(&text);
 
+        // Use larger chunks (2000 chars) with more overlap (400 chars)
+        // This provides better context for embeddings
         let chunks = app_state
             .text_processing_service
-            .chunk_text(&cleaned_text, 1000, 200)?;
+            .chunk_text(&cleaned_text, 2000, 400)?;
 
         let chunk_texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
         let embeddings_command = crate::commands::GenerateEmbeddingsCommand::new(chunk_texts);
@@ -415,7 +417,7 @@ impl UploadKnowledgeBaseDocumentCommand {
             chunks.into_iter().zip(embeddings.into_iter()).enumerate()
         {
             let now = Utc::now();
-            let embedding_vector = Vector::from(embedding);
+            let embedding_vector = HalfVector::from_f32_slice(&embedding);
 
             sqlx::query(
                 r#"

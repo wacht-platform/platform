@@ -1,6 +1,7 @@
 use crate::error::AppError;
-use crate::models::AgentExecutionContext;
+use crate::models::{AgentExecutionContext, ExecutionContextStatus, AgentExecutionState};
 use crate::state::AppState;
+use std::str::FromStr;
 
 pub struct GetExecutionContextQuery {
     pub context_id: i64,
@@ -23,7 +24,8 @@ impl super::Query for GetExecutionContextQuery {
         let context = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, deployment_id,
-            title, current_goal, tasks, last_activity_at, completed_at
+            title, current_goal, tasks, last_activity_at, completed_at,
+            execution_state, status
             FROM agent_execution_contexts
             WHERE id = $1 AND deployment_id = $2
             "#,
@@ -33,6 +35,12 @@ impl super::Query for GetExecutionContextQuery {
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(|e| AppError::Database(e))?;
+
+        let status = ExecutionContextStatus::from_str(&context.status).unwrap_or_default();
+
+        let execution_state = context.execution_state
+            .as_ref()
+            .and_then(|s| serde_json::from_value::<AgentExecutionState>(s.clone()).ok());
 
         Ok(AgentExecutionContext {
             id: context.id,
@@ -44,6 +52,8 @@ impl super::Query for GetExecutionContextQuery {
             tasks: context.tasks.unwrap_or_default(),
             last_activity_at: context.last_activity_at,
             completed_at: context.completed_at,
+            execution_state,
+            status,
         })
     }
 }

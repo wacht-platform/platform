@@ -33,5 +33,7 @@ base64 = "0.22.1"
 rcgen = { version = "0.13.2", features = ["crypto"] }
 pdf-extract = "0.9.0"
 async-nats = "0.42.0"
-pgvector = { version = "0.4.1", features = ["sqlx", "serde"] }
+pgvector = { version = "0.4.1", features = ["sqlx", "serde", "halfvec"] }
+half = "2.4"
 jsonwebtoken = "9.3"
+tiktoken-rs = "0.5"

@@ -16,9 +16,11 @@ pub struct AgentExecutionContext {
     pub tasks: Vec<String>,
     pub last_activity_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    pub execution_state: Option<AgentExecutionState>,
+    pub status: ExecutionContextStatus,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub enum ExecutionContextStatus {
     #[serde(rename = "idle")]
     Idle,
@@ -98,6 +100,39 @@ impl Default for ExecutionContextStatus {
         Self::Idle
     }
 }
+
+// Agent execution state that can be restored
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AgentExecutionState {
+    pub executable_tasks: Vec<serde_json::Value>,
+    pub task_results: HashMap<String, serde_json::Value>,
+    pub is_in_planning_mode: bool,
+    pub current_objective: Option<serde_json::Value>,
+    pub conversation_insights: Option<serde_json::Value>,
+    pub workflow_state: Option<WorkflowExecutionState>,
+    pub pending_input_request: Option<UserInputRequestState>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WorkflowExecutionState {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub workflow_id: i64,
+    pub workflow_state: HashMap<String, serde_json::Value>,
+    pub current_node_id: String,
+    pub execution_path: Vec<String>, // Path of node IDs to reach current position
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UserInputRequestState {
+    pub question: String,
+    pub context: String,
+    pub input_type: String,
+    pub options: Option<Vec<String>>,
+    pub default_value: Option<String>,
+    pub placeholder: Option<String>,
+}
+
+use std::collections::HashMap;
 
 // String conversions for database storage
 impl Display for ExecutionContextStatus {

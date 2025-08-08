@@ -103,7 +103,6 @@ pub struct ExecutableTask {
     pub dependencies: Vec<String>,
     pub success_criteria: String,
     pub error_handling: String,
-    pub can_run_parallel: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -116,7 +115,7 @@ pub enum TaskType {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct TaskExecutionResponse {
     pub task_execution: TaskExecution,
-    pub execution_status: ExecutionStatus,
+    pub can_execute: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocking_reason: Option<String>,
 }
@@ -144,13 +143,6 @@ pub struct ExecutionAction {
     pub purpose: String,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecutionStatus {
-    Ready,
-    Blocked,
-    CannotExecute,
-}
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ValidationResponse {

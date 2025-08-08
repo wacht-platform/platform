@@ -294,7 +294,8 @@ fn deployment_routes() -> Router<HttpState> {
             "/analytics/recent-signups",
             get(api::analytics::get_recent_signups),
         )
-        .route("/token", post(api::deployment::token::generate_token));
+        .route("/token", post(api::deployment::token::generate_token))
+        .route("/token/agent-context", post(api::deployment::token::generate_agent_context_token));
 
     #[cfg(feature = "console-api")]
     return Router::new().nest("/deployments/{deployment_id}", routes);

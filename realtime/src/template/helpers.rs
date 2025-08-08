@@ -2,6 +2,7 @@ use handlebars::{
     Context, Handlebars, Helper, HelperResult, Output, RenderContext, RenderErrorReason,
 };
 use serde_json::Value;
+use chrono::{DateTime, Utc};
 
 pub fn register_all_helpers(hb: &mut Handlebars) {
     hb.register_helper("format_tools", Box::new(FormatToolsHelper));
@@ -21,6 +22,8 @@ pub fn register_all_helpers(hb: &mut Handlebars) {
     hb.register_helper("format_capabilities", Box::new(FormatCapabilitiesHelper));
     hb.register_helper("current_timestamp", Box::new(CurrentTimestampHelper));
     hb.register_helper("eq", Box::new(EqHelper));
+    hb.register_helper("format_timestamp", Box::new(FormatTimestampHelper));
+    hb.register_helper("relative_time", Box::new(RelativeTimeHelper));
 }
 
 pub struct FormatToolsHelper;
@@ -54,43 +57,50 @@ impl handlebars::HelperDef for FormatToolsHelper {
                 // Extract parameter information from tool configuration
                 let mut param_info = String::new();
                 if let Some(config) = tool.get("configuration") {
-                    match config.get("type").and_then(|t| t.as_str()) {
-                        Some("Api") => {
+                    let tool_type = config.get("type").and_then(|t| t.as_str()).unwrap_or("Unknown");
+                    
+                    match tool_type {
+                        "Api" => {
+                            param_info.push_str(" [API Tool]");
                             if let Some(schema) = config.get("url_params_schema").and_then(|s| s.as_array()) {
                                 if !schema.is_empty() {
                                     let params: Vec<String> = schema.iter()
                                         .filter_map(|field| {
                                             let name = field.get("name")?.as_str()?;
                                             let required = field.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
-                                            Some(if required { format!("{} (required)", name) } else { name.to_string() })
+                                            Some(if required { format!("{name} (required)") } else { name.to_string() })
                                         })
                                         .collect();
                                     param_info.push_str(&format!(" | Parameters: {}", params.join(", ")));
                                 }
                             }
                         }
-                        Some("PlatformFunction") => {
+                        "PlatformFunction" => {
+                            param_info.push_str(" [Platform Function]");
                             if let Some(schema) = config.get("input_schema").and_then(|s| s.as_array()) {
                                 if !schema.is_empty() {
                                     let params: Vec<String> = schema.iter()
                                         .filter_map(|field| {
                                             let name = field.get("name")?.as_str()?;
                                             let required = field.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
-                                            Some(if required { format!("{} (required)", name) } else { name.to_string() })
+                                            Some(if required { format!("{name} (required)") } else { name.to_string() })
                                         })
                                         .collect();
                                     param_info.push_str(&format!(" | Inputs: {}", params.join(", ")));
                                 }
                             }
                         }
-                        Some("KnowledgeBase") => {
-                            param_info.push_str(" | Requires: query");
+                        "KnowledgeBase" => {
+                            param_info.push_str(" [Knowledge Base Search]");
+                            param_info.push_str(" | Requires: query (predefined search)");
                         }
-                        _ => {}
+                        _ => {
+                            param_info.push_str(&format!(" [{tool_type}]"));
+                        }
                     }
                 }
                 
-                format!("- {}: {}{}", name, description, param_info)
+                format!("- {name}: {description}{param_info}")
             })
             .collect();
 
@@ -126,7 +136,7 @@ impl handlebars::HelperDef for FormatWorkflowsHelper {
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");
-                format!("- {}: {}", name, description)
+                format!("- {name}: {description}")
             })
             .collect();
 
@@ -159,7 +169,7 @@ impl handlebars::HelperDef for FormatKnowledgeBasesHelper {
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");
-                format!("- {}: {}", name, description)
+                format!("- {name}: {description}")
             })
             .collect();
 
@@ -196,7 +206,7 @@ impl handlebars::HelperDef for FormatMemoriesHelper {
                     .get("importance")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0);
-                format!("- {} (importance: {:.2})", content, importance)
+                format!("- {content} (importance: {importance:.2})")
             })
             .collect();
 
@@ -230,7 +240,7 @@ impl handlebars::HelperDef for FormatMapHelper {
                     Value::String(s) => s.clone(),
                     _ => serde_json::to_string(value).unwrap_or_default(),
                 };
-                format!("{}: {}", key, value_str)
+                format!("{key}: {value_str}")
             })
             .collect();
 
@@ -410,7 +420,7 @@ impl handlebars::HelperDef for FormatCapabilitiesHelper {
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");
-                output.push_str(&format!("- {}: {}\n", name, description));
+                output.push_str(&format!("- {name}: {description}\n"));
             }
             output.push('\n');
         }
@@ -426,7 +436,7 @@ impl handlebars::HelperDef for FormatCapabilitiesHelper {
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");
-                output.push_str(&format!("- {}: {}\n", name, description));
+                output.push_str(&format!("- {name}: {description}\n"));
             }
             output.push('\n');
         }
@@ -439,11 +449,11 @@ impl handlebars::HelperDef for FormatCapabilitiesHelper {
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");
-                output.push_str(&format!("- {}: {}\n", name, description));
+                output.push_str(&format!("- {name}: {description}\n"));
             }
         }
 
-        out.write(&output.trim_end())?;
+        out.write(output.trim_end())?;
         Ok(())
     }
 }
@@ -555,7 +565,7 @@ fn json_to_flat_string(value: &Value, indent_level: usize) -> String {
                 match val {
                     Value::Object(_) | Value::Array(_) => {
                         // For nested objects or arrays, show key with colon
-                        parts.push(format!("{}{}:", indent, key));
+                        parts.push(format!("{indent}{key}:"));
                         parts.push(json_to_flat_string(val, indent_level + 1));
                     }
                     _ => {
@@ -565,9 +575,9 @@ fn json_to_flat_string(value: &Value, indent_level: usize) -> String {
                             Value::Number(n) => n.to_string(),
                             Value::Bool(b) => b.to_string(),
                             Value::Null => "null".to_string(),
-                            _ => format!("{:?}", val),
+                            _ => format!("{val:?}"),
                         };
-                        parts.push(format!("{}{}: {}", indent, key, val_str));
+                        parts.push(format!("{indent}{key}: {val_str}"));
                     }
                 }
             }
@@ -592,9 +602,9 @@ fn json_to_flat_string(value: &Value, indent_level: usize) -> String {
                             Value::Number(n) => n.to_string(),
                             Value::Bool(b) => b.to_string(),
                             Value::Null => "null".to_string(),
-                            _ => format!("{:?}", val),
+                            _ => format!("{val:?}"),
                         };
-                        parts.push(format!("{}{}", indent, val_str));
+                        parts.push(format!("{indent}{val_str}"));
                     }
                 }
             }
@@ -603,12 +613,108 @@ fn json_to_flat_string(value: &Value, indent_level: usize) -> String {
         _ => {
             // For primitive values at root
             match value {
-                Value::String(s) => format!("{}{}", indent, s),
-                Value::Number(n) => format!("{}{}", indent, n),
-                Value::Bool(b) => format!("{}{}", indent, b),
-                Value::Null => format!("{}null", indent),
-                _ => format!("{}{:?}", indent, value),
+                Value::String(s) => format!("{indent}{s}"),
+                Value::Number(n) => format!("{indent}{n}"),
+                Value::Bool(b) => format!("{indent}{b}"),
+                Value::Null => format!("{indent}null"),
+                _ => format!("{indent}{value:?}"),
             }
         }
+    }
+}
+
+pub struct FormatTimestampHelper;
+
+impl handlebars::HelperDef for FormatTimestampHelper {
+    fn call<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper,
+        _: &Handlebars,
+        _: &Context,
+        _: &mut RenderContext,
+        out: &mut dyn Output,
+    ) -> HelperResult {
+        let timestamp = h
+            .param(0)
+            .ok_or_else(|| RenderErrorReason::InvalidParamType("Expected timestamp"))?
+            .value();
+
+        // Handle different timestamp formats
+        let datetime = match timestamp {
+            Value::String(s) => {
+                // Try to parse ISO 8601 format
+                DateTime::parse_from_rfc3339(s)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").map(|dt| dt.with_timezone(&Utc)))
+                    .map_err(|_| RenderErrorReason::InvalidParamType("Invalid timestamp format"))?
+            }
+            Value::Number(n) => {
+                // Assume it's a Unix timestamp
+                let secs = n.as_i64().ok_or_else(|| RenderErrorReason::InvalidParamType("Invalid timestamp number"))?;
+                DateTime::from_timestamp(secs, 0)
+                    .ok_or_else(|| RenderErrorReason::InvalidParamType("Invalid timestamp value"))?
+            }
+            _ => return Err(RenderErrorReason::InvalidParamType("Timestamp must be string or number").into()),
+        };
+
+        // Format as "YYYY-MM-DD HH:MM:SS UTC"
+        let formatted = datetime.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+        out.write(&formatted)?;
+        Ok(())
+    }
+}
+
+pub struct RelativeTimeHelper;
+
+impl handlebars::HelperDef for RelativeTimeHelper {
+    fn call<'reg: 'rc, 'rc>(
+        &self,
+        h: &Helper,
+        _: &Handlebars,
+        _: &Context,
+        _: &mut RenderContext,
+        out: &mut dyn Output,
+    ) -> HelperResult {
+        let timestamp = h
+            .param(0)
+            .ok_or_else(|| RenderErrorReason::InvalidParamType("Expected timestamp"))?
+            .value();
+
+        // Parse timestamp (same as above)
+        let datetime = match timestamp {
+            Value::String(s) => {
+                DateTime::parse_from_rfc3339(s)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").map(|dt| dt.with_timezone(&Utc)))
+                    .map_err(|_| RenderErrorReason::InvalidParamType("Invalid timestamp format"))?
+            }
+            Value::Number(n) => {
+                let secs = n.as_i64().ok_or_else(|| RenderErrorReason::InvalidParamType("Invalid timestamp number"))?;
+                DateTime::from_timestamp(secs, 0)
+                    .ok_or_else(|| RenderErrorReason::InvalidParamType("Invalid timestamp value"))?
+            }
+            _ => return Err(RenderErrorReason::InvalidParamType("Timestamp must be string or number").into()),
+        };
+
+        // Calculate relative time
+        let now = Utc::now();
+        let diff = now.signed_duration_since(datetime);
+        
+        let relative = if diff.num_seconds() < 60 {
+            "just now".to_string()
+        } else if diff.num_minutes() < 60 {
+            format!("{} minute{} ago", diff.num_minutes(), if diff.num_minutes() == 1 { "" } else { "s" })
+        } else if diff.num_hours() < 24 {
+            format!("{} hour{} ago", diff.num_hours(), if diff.num_hours() == 1 { "" } else { "s" })
+        } else if diff.num_days() < 7 {
+            format!("{} day{} ago", diff.num_days(), if diff.num_days() == 1 { "" } else { "s" })
+        } else if diff.num_weeks() < 4 {
+            format!("{} week{} ago", diff.num_weeks(), if diff.num_weeks() == 1 { "" } else { "s" })
+        } else {
+            format!("{} month{} ago", diff.num_days() / 30, if diff.num_days() / 30 == 1 { "" } else { "s" })
+        };
+
+        out.write(&relative)?;
+        Ok(())
     }
 }

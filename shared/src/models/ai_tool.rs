@@ -61,8 +61,8 @@ pub struct ApiToolConfiguration {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct KnowledgeBaseToolConfiguration {
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub knowledge_base_id: i64,
+    #[serde(with = "crate::utils::serde::vec_i64_as_string")]
+    pub knowledge_base_ids: Vec<i64>,
     pub search_settings: KnowledgeBaseSearchSettings,
 }
 
@@ -201,7 +201,7 @@ impl Default for ApiToolConfiguration {
 impl Default for KnowledgeBaseToolConfiguration {
     fn default() -> Self {
         Self {
-            knowledge_base_id: 0,
+            knowledge_base_ids: vec![],
             search_settings: KnowledgeBaseSearchSettings::default(),
         }
     }

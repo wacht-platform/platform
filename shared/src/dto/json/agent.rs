@@ -8,6 +8,7 @@ pub enum StreamEvent {
     PlatformEvent(String, serde_json::Value),
     PlatformFunction(String, serde_json::Value),
     ConversationMessage(ConversationRecord),
+    UserInputRequest(crate::models::ConversationContent),
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]

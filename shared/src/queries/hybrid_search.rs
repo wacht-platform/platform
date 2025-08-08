@@ -65,7 +65,7 @@ impl Query for HybridSearchKnowledgeBaseQuery {
                     kbc.content,
                     d.title as document_title,
                     d.description as document_description,
-                    (kbc.embedding <-> $2::vector(768))::float8 as vector_distance
+                    (kbc.embedding::vector(3072) <-> $2::vector(3072))::float8 as vector_distance
                 FROM knowledge_base_document_chunks kbc
                 LEFT JOIN ai_knowledge_base_documents d ON kbc.document_id = d.id
                 WHERE kbc.knowledge_base_id = ANY($3)
@@ -200,7 +200,7 @@ impl Query for HybridSearchMemoriesQuery {
                 created_at
             FROM hybrid_search_memories(
                 $1::TEXT,                    -- query text
-                $2::vector(768),             -- query embedding
+                $2::vector(3072),            -- query embedding
                 $3::BIGINT,                  -- agent_id
                 $4::BIGINT,                  -- context_id
                 $5::INT,                     -- max_results

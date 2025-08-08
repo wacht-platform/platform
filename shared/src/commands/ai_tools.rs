@@ -51,24 +51,25 @@ impl CreateAiToolCommand {
                 }
             }
             AiToolConfiguration::KnowledgeBase(config) => {
-                if config.knowledge_base_id <= 0 {
+                if config.knowledge_base_ids.is_empty() {
                     return Err(AppError::BadRequest(
-                        "Knowledge base selection is required".to_string(),
+                        "At least one knowledge base selection is required".to_string(),
                     ));
                 }
 
-                // Check if knowledge base exists and belongs to the same deployment
-                let kb_exists = sqlx::query!(
-                    "SELECT id FROM ai_knowledge_bases WHERE id = $1 AND deployment_id = $2",
-                    config.knowledge_base_id,
+                // Check if all knowledge bases exist and belong to the same deployment
+                let kb_count = sqlx::query!(
+                    "SELECT COUNT(*) as count FROM ai_knowledge_bases WHERE id = ANY($1) AND deployment_id = $2",
+                    &config.knowledge_base_ids,
                     self.deployment_id
                 )
-                .fetch_optional(&app_state.db_pool)
+                .fetch_one(&app_state.db_pool)
                 .await
                 .map_err(|e| AppError::Database(e))?;
 
-                if kb_exists.is_none() {
-                    return Err(AppError::BadRequest("Selected knowledge base does not exist or does not belong to this deployment".to_string()));
+                let found_count = kb_count.count.unwrap_or(0) as usize;
+                if found_count != config.knowledge_base_ids.len() {
+                    return Err(AppError::BadRequest("One or more selected knowledge bases do not exist or do not belong to this deployment".to_string()));
                 }
             }
             AiToolConfiguration::PlatformEvent(config) => {
@@ -203,24 +204,25 @@ impl UpdateAiToolCommand {
                     }
                 }
                 AiToolConfiguration::KnowledgeBase(config) => {
-                    if config.knowledge_base_id <= 0 {
+                    if config.knowledge_base_ids.is_empty() {
                         return Err(AppError::BadRequest(
-                            "Knowledge base selection is required".to_string(),
+                            "At least one knowledge base selection is required".to_string(),
                         ));
                     }
 
-                    // Check if knowledge base exists and belongs to the same deployment
-                    let kb_exists = sqlx::query!(
-                        "SELECT id FROM ai_knowledge_bases WHERE id = $1 AND deployment_id = $2",
-                        config.knowledge_base_id,
+                    // Check if all knowledge bases exist and belong to the same deployment
+                    let kb_count = sqlx::query!(
+                        "SELECT COUNT(*) as count FROM ai_knowledge_bases WHERE id = ANY($1) AND deployment_id = $2",
+                        &config.knowledge_base_ids,
                         self.deployment_id
                     )
-                    .fetch_optional(&app_state.db_pool)
+                    .fetch_one(&app_state.db_pool)
                     .await
                     .map_err(|e| AppError::Database(e))?;
 
-                    if kb_exists.is_none() {
-                        return Err(AppError::BadRequest("Selected knowledge base does not exist or does not belong to this deployment".to_string()));
+                    let found_count = kb_count.count.unwrap_or(0) as usize;
+                    if found_count != config.knowledge_base_ids.len() {
+                        return Err(AppError::BadRequest("One or more selected knowledge bases do not exist or do not belong to this deployment".to_string()));
                     }
                 }
                 AiToolConfiguration::PlatformEvent(config) => {

@@ -12,7 +12,7 @@
       "role": "{{this.role}}",
       "parts": [
         {
-          "text": "{{this.content}}"
+          "text": "[{{relative_time this.timestamp}}] {{this.content}}"
         }
       ]
     }{{#unless @last}},{{/unless}}
@@ -25,7 +25,7 @@
       "properties": {
         "next_step": {
           "type": "STRING",
-          "enum": ["gather_context", "breakdown_tasks", "execute_tasks", "validate_progress", "deliver_response", "request_user_input", "complete", "direct_execution"],
+          "enum": ["acknowledge", "gather_context", "task_planning", {{#if is_in_planning_mode}}"finish_planning",{{/if}} "execute_tasks", "validate_progress", "deliver_response", "request_user_input", "complete", "direct_execution", "examine_tool", "examine_workflow"],
           "description": "The next step to execute in the flow"
         },
         "reasoning": {
@@ -35,6 +35,54 @@
         "confidence": {
           "type": "NUMBER",
           "description": "Confidence level in this decision (0.0 to 1.0)"
+        },
+        "acknowledgment": {
+          "type": "OBJECT",
+          "description": "Acknowledgment details (required when next_step is acknowledge)",
+          "properties": {
+            "message": {
+              "type": "STRING",
+              "description": "The acknowledgment message to send to the user"
+            },
+            "further_action_required": {
+              "type": "BOOLEAN",
+              "description": "Whether the request requires further processing beyond acknowledgment. MUST be false for greetings, presence checks, or if your message ends with a question. Only true for explicit action requests."
+            },
+            "objective": {
+              "type": "OBJECT",
+              "description": "The understood objective from the user's request",
+              "properties": {
+                "primary_goal": {
+                  "type": "STRING",
+                  "description": "The main goal to accomplish"
+                },
+                "success_criteria": {
+                  "type": "ARRAY",
+                  "items": {
+                    "type": "STRING"
+                  },
+                  "description": "Measurable criteria for successful completion"
+                },
+                "constraints": {
+                  "type": "ARRAY",
+                  "items": {
+                    "type": "STRING"
+                  },
+                  "description": "Limitations or requirements to respect"
+                },
+                "context_from_history": {
+                  "type": "STRING",
+                  "description": "Relevant context from conversation history that informs this objective"
+                },
+                "inferred_intent": {
+                  "type": "STRING",
+                  "description": "The inferred intent behind the user's request"
+                }
+              },
+              "required": ["primary_goal", "success_criteria", "constraints", "context_from_history", "inferred_intent"]
+            }
+          },
+          "required": ["message", "further_action_required", "objective"]
         },
         "direct_execution": {
           "type": "OBJECT",
@@ -65,7 +113,68 @@
             }
           },
           "required": ["type", "details", "purpose"]
+        },
+        "examine_tool": {
+          "type": "OBJECT",
+          "description": "Tool examination details (required when next_step is examine_tool)",
+          "properties": {
+            "tool_name": {
+              "type": "STRING",
+              "description": "The name of the tool to examine"
+            }
+          },
+          "required": ["tool_name"]
+        },
+        "examine_workflow": {
+          "type": "OBJECT",
+          "description": "Workflow examination details (required when next_step is examine_workflow)",
+          "properties": {
+            "workflow_name": {
+              "type": "STRING",
+              "description": "The name of the workflow to examine"
+            }
+          },
+          "required": ["workflow_name"]
+        },
+        {{#if is_in_planning_mode}}
+        "planned_tasks": {
+          "type": "ARRAY",
+          "description": "List of initial tasks to execute (required when next_step is finish_planning)",
+          "items": {
+            "type": "OBJECT",
+            "properties": {
+              "id": {
+                "type": "STRING",
+                "description": "Unique identifier for this task"
+              },
+              "name": {
+                "type": "STRING",
+                "description": "Short name for the task"
+              },
+              "description": {
+                "type": "STRING",
+                "description": "Detailed description of what this task does"
+              },
+              "dependencies": {
+                "type": "ARRAY",
+                "items": {
+                  "type": "STRING"
+                },
+                "description": "IDs of tasks that must complete before this one"
+              },
+              "success_criteria": {
+                "type": "STRING",
+                "description": "How to determine if this task succeeded"
+              },
+              "error_handling": {
+                "type": "STRING",
+                "description": "What to do if this task fails"
+              }
+            },
+            "required": ["id", "name", "description", "success_criteria", "error_handling"]
+          }
         }
+        {{/if}}
       },
       "required": ["next_step", "reasoning", "confidence"]
     }
