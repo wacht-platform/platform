@@ -468,13 +468,14 @@ impl Command for CreateDeploymentJwtTemplateCommand {
 }
 
 pub struct UpdateDeploymentJwtTemplateCommand {
+    pub deployment_id: i64,
     pub id: i64,
     pub template: PartialDeploymentJwtTemplate,
 }
 
 impl UpdateDeploymentJwtTemplateCommand {
-    pub fn new(id: i64, template: PartialDeploymentJwtTemplate) -> Self {
-        Self { id, template }
+    pub fn new(deployment_id: i64, id: i64, template: PartialDeploymentJwtTemplate) -> Self {
+        Self { deployment_id, id, template }
     }
 }
 
@@ -512,10 +513,18 @@ impl Command for UpdateDeploymentJwtTemplateCommand {
 
         query_builder.push(" WHERE id = ");
         query_builder.push_bind(self.id);
+        query_builder.push(" AND deployment_id = ");
+        query_builder.push_bind(self.deployment_id);
 
         query_builder.push(" RETURNING *");
 
-        let result = query_builder.build().fetch_one(&app_state.db_pool).await?;
+        let result = query_builder.build()
+            .fetch_optional(&app_state.db_pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!(
+                "JWT template {} not found in deployment {}",
+                self.id, self.deployment_id
+            )))?;
 
         let template = DeploymentJwtTemplate {
             id: result.get("id"),
@@ -540,12 +549,13 @@ impl Command for UpdateDeploymentJwtTemplateCommand {
 }
 
 pub struct DeleteDeploymentJwtTemplateCommand {
+    pub deployment_id: i64,
     pub id: i64,
 }
 
 impl DeleteDeploymentJwtTemplateCommand {
-    pub fn new(id: i64) -> Self {
-        Self { id }
+    pub fn new(deployment_id: i64, id: i64) -> Self {
+        Self { deployment_id, id }
     }
 }
 
@@ -553,23 +563,24 @@ impl Command for DeleteDeploymentJwtTemplateCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let deployment_row = sqlx::query!(
-            "SELECT deployment_id FROM deployment_jwt_templates WHERE id = $1",
-            self.id
+        let result = sqlx::query!(
+            "DELETE FROM deployment_jwt_templates WHERE id = $1 AND deployment_id = $2",
+            self.id,
+            self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .execute(&app_state.db_pool)
         .await?;
 
-        sqlx::query("DELETE FROM deployment_jwt_templates WHERE id = $1")
-            .bind(self.id)
-            .execute(&app_state.db_pool)
-            .await?;
-
-        if let Some(row) = deployment_row {
-            ClearDeploymentCacheCommand::new(row.deployment_id)
-                .execute(app_state)
-                .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "JWT template {} not found in deployment {}",
+                self.id, self.deployment_id
+            )));
         }
+
+        ClearDeploymentCacheCommand::new(self.deployment_id)
+            .execute(app_state)
+            .await?;
 
         Ok(().into())
     }

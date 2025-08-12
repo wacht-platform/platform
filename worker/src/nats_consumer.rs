@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use tracing::{error, info, warn};
 
 use crate::nats_types::{NatsTaskMessage, TaskResult};
-use crate::tasks::{email, sms, token};
+use crate::tasks::{email, sms, token, webhook};
 
 pub struct NatsConsumer {
     jetstream: jetstream::Context,
@@ -268,6 +268,43 @@ impl NatsConsumer {
                 })
             }),
         );
+
+        task_handlers.insert(
+            "webhook.deliver".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: webhook::WebhookDeliveryTask = serde_json::from_value(payload)
+                        .map_err(|e| anyhow::anyhow!("Failed to deserialize task: {}", e))?;
+                    webhook::process_webhook_delivery(
+                        task.delivery_id,
+                        task.deployment_id,
+                        &app_state,
+                    )
+                    .await
+                    .map(|result| format!("{:?}", result))
+                    .map_err(|e| anyhow::anyhow!("{}", e))
+                })
+            }),
+        );
+
+        task_handlers.insert(
+            "webhook.batch".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: webhook::WebhookBatchDeliveryTask = serde_json::from_value(payload)
+                        .map_err(|e| anyhow::anyhow!("Failed to deserialize batch task: {}", e))?;
+                    webhook::process_webhook_batch(
+                        task.delivery_ids,
+                        task.deployment_id,
+                        &app_state,
+                    )
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{}", e))
+                })
+            }),
+        );
+
+        // Cleanup should be handled by a cron job, not through NATS
 
         Ok(Self {
             jetstream: app_state.nats_jetstream.clone(),

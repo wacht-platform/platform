@@ -1,0 +1,486 @@
+use axum::{
+    Router,
+    routing::{delete, get, patch, post, put},
+};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    trace::TraceLayer,
+};
+
+use super::HttpState;
+use crate::api;
+#[cfg(feature = "console-api")]
+use crate::middleware::ConsoleDeploymentLayer;
+#[cfg(feature = "backend-api")]
+use crate::middleware::backend_deployment_middleware;
+
+fn health_routes() -> Router<HttpState> {
+    Router::new().route("/health", get(api::health::check))
+}
+
+fn project_routes() -> Router<HttpState> {
+    Router::new()
+        .route("/projects", get(api::project::get_projects))
+        .route("/project", post(api::project::create_project))
+        .route("/project/{id}", delete(api::project::delete_project))
+        .route(
+            "/project/{project_id}/staging-deployment",
+            post(api::project::create_staging_deployment),
+        )
+        .route(
+            "/project/{project_id}/production-deployment",
+            post(api::project::create_production_deployment),
+        )
+        .route(
+            "/project/{project_id}/deployment/{deployment_id}",
+            delete(api::project::delete_deployment),
+        )
+        .route(
+            "/deployment/{deployment_id}/verify-dns",
+            post(api::project::verify_deployment_dns_records),
+        )
+}
+
+#[cfg(any(feature = "console-api", feature = "backend-api"))]
+fn deployment_routes() -> Router<HttpState> {
+    let routes = Router::new()
+        .route("/users", get(api::user::get_active_user_list))
+        .route("/users", post(api::user::create_user))
+        .route("/users/{user_id}/details", get(api::user::get_user_details))
+        .route("/users/{user_id}", patch(api::user::update_user))
+        .route(
+            "/users/{user_id}/password",
+            patch(api::user::update_user_password),
+        )
+        .route("/users/{user_id}/emails", post(api::user::add_user_email))
+        .route(
+            "/users/{user_id}/emails/{email_id}",
+            patch(api::user::update_user_email),
+        )
+        .route(
+            "/users/{user_id}/emails/{email_id}",
+            delete(api::user::delete_user_email),
+        )
+        .route("/users/{user_id}/phones", post(api::user::add_user_phone))
+        .route(
+            "/users/{user_id}/phones/{phone_id}",
+            patch(api::user::update_user_phone),
+        )
+        .route(
+            "/users/{user_id}/phones/{phone_id}",
+            delete(api::user::delete_user_phone),
+        )
+        .route(
+            "/users/{user_id}/social-connections/{connection_id}",
+            delete(api::user::delete_user_social_connection),
+        )
+        .route("/invited-users", get(api::user::get_invited_user_list))
+        .route("/invited-users", post(api::user::invite_user))
+        .route("/user-waitlist", get(api::user::get_user_waitlist))
+        .route(
+            "/user-waitlist/{waitlist_user_id}/approve",
+            post(api::user::approve_waitlist_user),
+        )
+        .route("/", get(api::settings::get_deployment_with_settings))
+        .route(
+            "/jwt-templates",
+            get(api::settings::get_deployment_jwt_templates),
+        )
+        .route(
+            "/jwt-templates",
+            post(api::settings::create_deployment_jwt_template),
+        )
+        .route(
+            "/jwt-templates/{id}",
+            patch(api::settings::update_deployment_jwt_template),
+        )
+        .route(
+            "/jwt-templates/{id}",
+            delete(api::settings::delete_deployment_jwt_template),
+        )
+        .route("/workspaces", get(api::b2b::get_workspace_list))
+        .route(
+            "/workspaces/{workspace_id}",
+            get(api::b2b::get_workspace_details)
+                .patch(api::b2b::update_workspace)
+                .delete(api::b2b::delete_workspace),
+        )
+        .route(
+            "/workspace-roles",
+            get(api::b2b::get_deployment_workspace_roles),
+        )
+        .route(
+            "/organizations",
+            get(api::b2b::get_organization_list).post(api::b2b::create_organization),
+        )
+        .route(
+            "/organizations/{organization_id}",
+            get(api::b2b::get_organization_details)
+                .patch(api::b2b::update_organization)
+                .delete(api::b2b::delete_organization),
+        )
+        .route(
+            "/organizations/{organization_id}/workspaces",
+            post(api::b2b::create_workspace_for_organization),
+        )
+        .route(
+            "/workspaces/{workspace_id}/roles",
+            post(api::b2b::create_workspace_role),
+        )
+        .route(
+            "/workspaces/{workspace_id}/roles/{role_id}",
+            patch(api::b2b::update_workspace_role).delete(api::b2b::delete_workspace_role),
+        )
+        .route(
+            "/organizations/{organization_id}/members",
+            post(api::b2b::add_organization_member),
+        )
+        .route(
+            "/organizations/{organization_id}/members/{membership_id}",
+            patch(api::b2b::update_organization_member)
+                .delete(api::b2b::remove_organization_member),
+        )
+        .route(
+            "/organizations/{organization_id}/roles",
+            post(api::b2b::create_organization_role),
+        )
+        .route(
+            "/organizations/{organization_id}/roles/{role_id}",
+            patch(api::b2b::update_organization_role).delete(api::b2b::delete_organization_role),
+        )
+        .route(
+            "/organization-roles",
+            get(api::b2b::get_deployment_org_roles),
+        )
+        .route(
+            "/settings/auth-settings",
+            patch(api::settings::update_deployment_authetication_settings),
+        )
+        .route(
+            "/settings/display-settings",
+            patch(api::settings::update_deployment_ui_settings),
+        )
+        .route(
+            "/restrictions",
+            patch(api::settings::update_deployment_restrictions),
+        )
+        .route(
+            "/social-connections",
+            get(api::connection::get_deployment_social_connections),
+        )
+        .route(
+            "/social-connections",
+            put(api::connection::upsert_deployment_social_connection),
+        )
+        .route(
+            "/settings/b2b-settings",
+            patch(api::b2b::update_deployment_b2b_settings),
+        )
+        .route(
+            "/email-templates/{template_name}",
+            get(api::settings::get_email_template),
+        )
+        .route(
+            "/email-templates/{template_name}",
+            patch(api::settings::update_email_template),
+        )
+        .route("/upload/{image_type}", post(api::upload::upload_image))
+        .route(
+            "/ai-agents",
+            get(api::ai_agents::get_ai_agents).post(api::ai_agents::create_ai_agent),
+        )
+        .route(
+            "/ai-agents/{agent_id}",
+            get(api::ai_agents::get_ai_agent_by_id)
+                .patch(api::ai_agents::update_ai_agent)
+                .delete(api::ai_agents::delete_ai_agent),
+        )
+        .route(
+            "/ai-workflows",
+            get(api::ai_workflows::get_ai_workflows).post(api::ai_workflows::create_ai_workflow),
+        )
+        .route(
+            "/ai-workflows/{workflow_id}",
+            get(api::ai_workflows::get_ai_workflow_by_id)
+                .patch(api::ai_workflows::update_ai_workflow)
+                .delete(api::ai_workflows::delete_ai_workflow),
+        )
+        .route(
+            "/ai-tools",
+            get(api::ai_tools::get_ai_tools).post(api::ai_tools::create_ai_tool),
+        )
+        .route(
+            "/ai-tools/{tool_id}",
+            get(api::ai_tools::get_ai_tool_by_id)
+                .patch(api::ai_tools::update_ai_tool)
+                .delete(api::ai_tools::delete_ai_tool),
+        )
+        .route(
+            "/ai-knowledge-bases",
+            get(api::ai_knowledge_base::get_ai_knowledge_bases)
+                .post(api::ai_knowledge_base::create_ai_knowledge_base),
+        )
+        .route(
+            "/ai-knowledge-bases/{kb_id}",
+            get(api::ai_knowledge_base::get_ai_knowledge_base_by_id)
+                .patch(api::ai_knowledge_base::update_ai_knowledge_base)
+                .delete(api::ai_knowledge_base::delete_ai_knowledge_base),
+        )
+        .route(
+            "/ai-knowledge-bases/{kb_id}/documents",
+            get(api::ai_knowledge_base::get_knowledge_base_documents)
+                .post(api::ai_knowledge_base::upload_knowledge_base_document),
+        )
+        .route(
+            "/ai-knowledge-bases/{kb_id}/documents/{document_id}",
+            delete(api::ai_knowledge_base::delete_knowledge_base_document),
+        )
+        .route(
+            "/ai-knowledge-bases/search",
+            get(api::ai_knowledge_base_search::search_knowledge_base),
+        )
+        .route(
+            "/ai-knowledge-bases/{kb_id}/search",
+            get(api::ai_knowledge_base_search::search_specific_knowledge_base),
+        )
+        .route(
+            "/ai-execution-context",
+            post(api::ai_execution_context::create_execution_context),
+        )
+        .route("/analytics/stats", get(api::analytics::get_analytics_stats))
+        .route(
+            "/analytics/recent-signups",
+            get(api::analytics::get_recent_signups),
+        )
+        .route("/token", post(api::token::generate_token))
+        .route(
+            "/token/agent-context",
+            post(api::token::generate_agent_context_token),
+        )
+        // Notification routes
+        .route(
+            "/notifications",
+            post(api::notifications::create_notification),
+        );
+
+    #[cfg(feature = "console-api")]
+    {
+        let console_routes = routes
+            // Console webhook routes
+            .route(
+                "/webhooks/status",
+                get(api::webhook_console::get_webhook_status),
+            )
+            .route(
+                "/webhooks/activate",
+                post(api::webhook_console::activate_webhooks),
+            )
+            .route(
+                "/webhooks/deactivate",
+                post(api::webhook_console::deactivate_webhooks),
+            )
+            .route(
+                "/webhooks/rotate-secret",
+                post(api::webhook_console::rotate_webhook_secret),
+            )
+            .route(
+                "/webhooks/endpoints",
+                get(api::webhook_console::list_webhook_endpoints),
+            )
+            .route(
+                "/webhooks/endpoints",
+                post(api::webhook_console::create_webhook_endpoint),
+            )
+            .route(
+                "/webhooks/endpoints/{endpoint_id}",
+                patch(api::webhook_console::update_webhook_endpoint),
+            )
+            .route(
+                "/webhooks/endpoints/{endpoint_id}",
+                delete(api::webhook_console::delete_webhook_endpoint),
+            )
+            .route(
+                "/webhooks/analytics",
+                get(api::webhook_console::get_webhook_analytics),
+            )
+            .route(
+                "/webhooks/analytics/timeseries",
+                get(api::webhook_console::get_webhook_timeseries),
+            )
+            .route(
+                "/webhooks/deliveries",
+                get(api::webhook_console::get_webhook_deliveries),
+            )
+            .route(
+                "/webhooks/deliveries/{delivery_id}",
+                get(api::webhook_console::get_webhook_delivery_details),
+            )
+            .route(
+                "/webhooks/deliveries/{delivery_id}/retry",
+                post(api::webhook_console::retry_webhook_delivery),
+            )
+            .route(
+                "/api-keys/apps",
+                get(api::api_key_console::list_api_key_apps),
+            )
+            .route(
+                "/api-keys/apps",
+                post(api::api_key_console::create_api_key_app),
+            )
+            .route(
+                "/api-keys/apps/{app_id}",
+                patch(api::api_key_console::update_api_key_app),
+            )
+            .route(
+                "/api-keys/apps/{app_id}",
+                delete(api::api_key_console::delete_api_key_app),
+            )
+            .route(
+                "/api-keys/apps/{app_id}/keys",
+                get(api::api_key_console::list_api_keys),
+            )
+            .route(
+                "/api-keys/apps/{app_id}/keys",
+                post(api::api_key_console::create_api_key),
+            )
+            .route(
+                "/api-keys/apps/{app_id}/keys/{key_id}",
+                delete(api::api_key_console::revoke_api_key),
+            )
+            .route(
+                "/api-keys/apps/{app_id}/keys/{key_id}/rotate",
+                post(api::api_key_console::rotate_api_key),
+            )
+            .layer(ConsoleDeploymentLayer::new());
+
+        return Router::new().nest("/deployments/{deployment_id}", console_routes);
+    }
+
+    #[cfg(feature = "backend-api")]
+    {
+        use axum::middleware;
+        let backend_routes = routes
+            .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
+            .route("/webhooks/apps", post(api::webhook::create_webhook_app))
+            .route(
+                "/webhooks/apps/{app_name}",
+                patch(api::webhook::update_webhook_app),
+            )
+            .route(
+                "/webhooks/apps/{app_name}",
+                delete(api::webhook::delete_webhook_app),
+            )
+            .route(
+                "/webhooks/apps/{app_name}/rotate-secret",
+                post(api::webhook::rotate_webhook_secret),
+            )
+            .route(
+                "/webhooks/endpoints",
+                get(api::webhook::list_webhook_endpoints),
+            )
+            .route(
+                "/webhooks/endpoints",
+                post(api::webhook::create_webhook_endpoint),
+            )
+            .route(
+                "/webhooks/endpoints/{endpoint_id}",
+                patch(api::webhook::update_webhook_endpoint),
+            )
+            .route(
+                "/webhooks/endpoints/{endpoint_id}",
+                delete(api::webhook::delete_webhook_endpoint),
+            )
+            .route(
+                "/webhooks/trigger",
+                post(api::webhook::trigger_webhook_event),
+            )
+            .route(
+                "/webhooks/trigger/batch",
+                post(api::webhook::batch_trigger_webhook_events),
+            )
+            .route(
+                "/webhooks/deliveries/status",
+                get(api::webhook::get_webhook_delivery_status),
+            )
+            .route(
+                "/webhooks/deliveries/replay",
+                post(api::webhook::replay_webhook_delivery),
+            )
+            .route(
+                "/webhooks/endpoints/reactivate",
+                post(api::webhook::reactivate_webhook_endpoint),
+            )
+            .route(
+                "/webhooks/endpoints/test",
+                post(api::webhook::test_webhook_endpoint),
+            )
+            .route(
+                "/webhooks/analytics",
+                get(api::webhook::get_webhook_analytics),
+            )
+            .route(
+                "/webhooks/analytics/timeseries",
+                get(api::webhook::get_webhook_timeseries),
+            )
+            .route("/api-keys/apps", get(api::api_key::list_api_key_apps))
+            .route("/api-keys/apps", post(api::api_key::create_api_key_app))
+            .route(
+                "/api-keys/apps/{app_name}",
+                patch(api::api_key::update_api_key_app),
+            )
+            .route(
+                "/api-keys/apps/{app_name}",
+                delete(api::api_key::delete_api_key_app),
+            )
+            .route(
+                "/api-keys/apps/{app_name}/keys",
+                get(api::api_key::list_api_keys),
+            )
+            .route(
+                "/api-keys/apps/{app_name}/keys",
+                post(api::api_key::create_api_key),
+            )
+            .route("/api-keys/revoke", post(api::api_key::revoke_api_key))
+            .route("/api-keys/rotate", post(api::api_key::rotate_api_key));
+
+        return backend_routes.layer(middleware::from_fn(backend_deployment_middleware));
+    }
+}
+
+fn configure_cors() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any)
+}
+
+pub async fn create_router(state: HttpState) -> Router {
+    let cors = configure_cors();
+
+    let mut router = Router::new().merge(health_routes());
+
+    #[cfg(feature = "console-api")]
+    {
+        router = router.merge(project_routes());
+        wacht::init_from_env().await.unwrap();
+
+        use wacht::middleware::AuthLayer;
+        let auth_layer = AuthLayer::new();
+        let authenticated_deployment_routes = deployment_routes().layer(auth_layer);
+
+        router = router.merge(authenticated_deployment_routes);
+    }
+
+    #[cfg(feature = "backend-api")]
+    {
+        router = router.merge(deployment_routes());
+    }
+
+    #[cfg(feature = "frontend-api")]
+    {}
+
+    router
+        .with_state(state)
+        .layer(TraceLayer::new_for_http())
+        .layer(cors)
+}

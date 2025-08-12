@@ -71,7 +71,6 @@ pub struct Deployment {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub project_id: i64,
     pub mode: DeploymentMode,
-    pub verification_status: Option<VerificationStatus>,
     pub domain_verification_records: Option<DomainVerificationRecords>,
     pub email_verification_records: Option<EmailVerificationRecords>,
 }
@@ -88,7 +87,6 @@ pub struct DeploymentWithSettings {
     pub mail_from_host: String,
     pub publishable_key: String,
     pub mode: DeploymentMode,
-    pub verification_status: Option<VerificationStatus>,
     pub auth_settings: Option<DeploymentAuthSettings>,
     pub ui_settings: Option<DeploymentUISettings>,
     pub b2b_settings: Option<DeploymentB2bSettingsWithRoles>,

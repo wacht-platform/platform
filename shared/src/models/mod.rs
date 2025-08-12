@@ -1,23 +1,16 @@
 mod deployment;
 mod deployment_auth_settings;
 mod deployment_b2b_settings;
-mod deployment_billing_event;
-mod deployment_billing_plan;
 mod deployment_custom_roles;
 mod deployment_email_template;
 mod deployment_invitation;
-mod deployment_invoice;
 mod deployment_jwt_template;
 mod deployment_keypair;
 mod deployment_org_settings;
-mod deployment_payment_method;
 mod deployment_restrictions;
 mod deployment_sms_template;
 mod deployment_social_connection;
-mod deployment_stripe_account;
-mod deployment_subscription;
 mod deployment_ui_settings;
-mod deployment_usage_record;
 mod deployment_waitlist_user;
 mod organization;
 mod organization_details;
@@ -52,25 +45,27 @@ pub mod conversation;
 pub mod memory;
 pub mod memory_boundaries;
 
+// Webhook models
+pub mod webhook;
+
+// API Key models
+pub mod api_key;
+
+// Notification models
+pub mod notification;
+
 pub use deployment::*;
 pub use deployment_auth_settings::*;
 pub use deployment_b2b_settings::*;
-pub use deployment_billing_event::*;
-pub use deployment_billing_plan::*;
 pub use deployment_custom_roles::*;
 pub use deployment_email_template::*;
 pub use deployment_invitation::*;
-pub use deployment_invoice::*;
 pub use deployment_jwt_template::*;
 pub use deployment_keypair::*;
-pub use deployment_payment_method::*;
 pub use deployment_restrictions::*;
 pub use deployment_sms_template::*;
 pub use deployment_social_connection::*;
-pub use deployment_stripe_account::*;
-pub use deployment_subscription::*;
 pub use deployment_ui_settings::*;
-pub use deployment_usage_record::*;
 pub use deployment_waitlist_user::*;
 pub use organization::*;
 pub use organization_details::*;
@@ -103,3 +98,5 @@ pub use ai_workflow::*;
 pub use conversation::*;
 pub use memory::*;
 pub use memory_boundaries::*;
+pub use webhook::*;
+pub use notification::*;

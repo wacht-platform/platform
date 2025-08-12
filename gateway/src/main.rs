@@ -1,0 +1,641 @@
+use async_nats::jetstream::{self, kv, stream::StorageType};
+use axum::{
+    Router,
+    extract::{Path, Query, State},
+    http::{HeaderMap, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
+    routing::get,
+};
+use chrono::Utc;
+use dotenvy::dotenv;
+use futures::StreamExt;
+use moka::future::Cache;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, sync::Arc, time::Duration};
+use tokio::sync::RwLock;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct BucketedWindow {
+    buckets: HashMap<i64, u32>, // bucket_id -> request count
+    bucket_size: i64,           // Size of each bucket in seconds
+    window_seconds: i64,        // Total window duration
+    max_requests: u32,          // Maximum requests allowed in window
+}
+
+impl BucketedWindow {
+    fn new(max_requests: u32, window_seconds: i64) -> Self {
+        // Choose bucket size based on window duration
+        let bucket_size = Self::choose_bucket_size(window_seconds);
+
+        Self {
+            buckets: HashMap::new(),
+            bucket_size,
+            window_seconds,
+            max_requests,
+        }
+    }
+
+    fn choose_bucket_size(window_seconds: i64) -> i64 {
+        match window_seconds {
+            0..=60 => 4,       // ≤1 min: 4-second buckets (15 buckets max)
+            61..=300 => 10,    // ≤5 min: 10-second buckets (30 buckets max)
+            301..=3600 => 30,  // ≤1 hour: 30-second buckets (120 buckets max)
+            3601..=7200 => 60, // ≤2 hours: 1-minute buckets (120 buckets max)
+            _ => 300,          // >2 hours: 5-minute buckets
+        }
+    }
+
+    fn try_add_request(&mut self) -> (bool, u32) {
+        let now = Utc::now().timestamp();
+        let current_bucket = now / self.bucket_size;
+
+        // Calculate how many buckets to look back
+        let buckets_in_window = (self.window_seconds / self.bucket_size) + 1; // +1 for partial buckets
+
+        // Count requests in the current window
+        let mut total = 0;
+        let oldest_bucket = current_bucket - buckets_in_window + 1;
+
+        // Clean old buckets while counting
+        self.buckets.retain(|&bucket_id, &mut count| {
+            if bucket_id >= oldest_bucket {
+                if bucket_id <= current_bucket {
+                    total += count;
+                }
+                true // Keep this bucket
+            } else {
+                false // Remove old bucket
+            }
+        });
+
+        // Check if we can add a new request
+        if total < self.max_requests {
+            *self.buckets.entry(current_bucket).or_insert(0) += 1;
+            (true, self.max_requests - total - 1)
+        } else {
+            (false, 0)
+        }
+    }
+
+    fn seconds_until_next_available(&self) -> u32 {
+        let now = Utc::now().timestamp();
+        let current_bucket = now / self.bucket_size;
+        let buckets_in_window = (self.window_seconds / self.bucket_size) + 1;
+
+        // Count current total
+        let mut total = 0;
+        let oldest_bucket = current_bucket - buckets_in_window + 1;
+
+        for (&bucket_id, &count) in &self.buckets {
+            if bucket_id >= oldest_bucket && bucket_id <= current_bucket {
+                total += count;
+            }
+        }
+
+        if total < self.max_requests {
+            return 0;
+        }
+
+        // Find the oldest bucket with requests
+        let mut oldest_with_requests = None;
+        for bucket_id in oldest_bucket..=current_bucket {
+            if let Some(&count) = self.buckets.get(&bucket_id) {
+                if count > 0 {
+                    oldest_with_requests = Some(bucket_id);
+                    break;
+                }
+            }
+        }
+
+        if let Some(oldest) = oldest_with_requests {
+            // Calculate when this bucket will fall out of the window
+            let bucket_expiry = (oldest + buckets_in_window) * self.bucket_size;
+            let wait_seconds = bucket_expiry - now;
+            if wait_seconds > 0 {
+                wait_seconds as u32
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    }
+
+    fn merge_with(&mut self, other: &BucketedWindow) {
+        // Simple merge: add the counts for each bucket
+        for (&bucket_id, &count) in &other.buckets {
+            *self.buckets.entry(bucket_id).or_insert(0) += count;
+        }
+
+        // Clean old buckets
+        let now = Utc::now().timestamp();
+        let current_bucket = now / self.bucket_size;
+        let buckets_in_window = (self.window_seconds / self.bucket_size) + 1;
+        let oldest_bucket = current_bucket - buckets_in_window + 1;
+
+        self.buckets
+            .retain(|&bucket_id, _| bucket_id >= oldest_bucket);
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct DeltaMessage {
+    key: String,
+    bucket_id: i64,
+    increment: u32,
+    node_id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct CacheRequest {
+    key: String,
+    requester_id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct CacheResponse {
+    key: String,
+    window: Option<BucketedWindow>,
+    responder_id: String,
+}
+
+struct NatsKvStorage {
+    bucket: kv::Store,
+    client: async_nats::Client,
+    node_id: String,
+}
+
+impl NatsKvStorage {
+    async fn new(nats_url: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let client = async_nats::connect(nats_url).await?;
+        let jetstream = jetstream::new(client.clone());
+
+        // Create or get the KV bucket for rate limits
+        let bucket = match jetstream
+            .create_key_value(kv::Config {
+                bucket: "rate_limits_bucketed".to_string(),
+                description: "Bucketed rate limiter storage".to_string(),
+                max_age: Duration::from_secs(90000), // 25 hours TTL
+                storage: StorageType::File,
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(bucket) => bucket,
+            Err(_) => jetstream.get_key_value("rate_limits_bucketed").await?,
+        };
+
+        // Generate unique node ID
+        let node_id = format!("node_{}", std::process::id());
+
+        Ok(Self {
+            bucket,
+            client,
+            node_id,
+        })
+    }
+
+    async fn save(
+        &self,
+        key: &str,
+        window: &BucketedWindow,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let json = serde_json::to_vec(window)?;
+        self.bucket.put(key, json.into()).await?;
+        Ok(())
+    }
+
+    async fn load(&self, key: &str) -> Result<Option<BucketedWindow>, Box<dyn std::error::Error>> {
+        match self.bucket.get(key).await {
+            Ok(Some(entry)) => {
+                let window: BucketedWindow = serde_json::from_slice(&entry)?;
+                Ok(Some(window))
+            }
+            Ok(None) => Ok(None),
+            Err(_) => Ok(None),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct RateLimiter {
+    cache: Arc<Cache<String, BucketedWindow>>,
+    storage: Arc<NatsKvStorage>,
+    delta_publisher: Arc<RwLock<Option<async_nats::Client>>>,
+}
+
+impl RateLimiter {
+    async fn new(nats_url: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let storage = Arc::new(NatsKvStorage::new(nats_url).await?);
+        let storage_for_listener = storage.clone();
+
+        // Cache with 1 hour TTL for active entries
+        let cache = Cache::builder()
+            .time_to_idle(Duration::from_secs(3600)) // 1 hour
+            .max_capacity(100_000)
+            .eviction_listener(move |key: Arc<String>, window: BucketedWindow, _cause| {
+                let storage = storage_for_listener.clone();
+                let key = key.to_string();
+
+                // Spawn async task to save to NATS KV
+                tokio::spawn(async move {
+                    if let Err(e) = storage.save(&key, &window).await {
+                        eprintln!("Failed to persist rate limit to NATS KV: {}", e);
+                    }
+                });
+            })
+            .build();
+
+        let limiter = Self {
+            cache: Arc::new(cache),
+            storage: storage.clone(),
+            delta_publisher: Arc::new(RwLock::new(None)),
+        };
+
+        // Start background tasks for distributed sync
+        limiter.start_distributed_sync().await?;
+
+        Ok(limiter)
+    }
+
+    async fn start_distributed_sync(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let client = self.storage.client.clone();
+        let node_id = self.storage.node_id.clone();
+
+        // Store the client for publishing
+        *self.delta_publisher.write().await = Some(client.clone());
+
+        // Subscribe to delta stream for bucket updates
+        let cache = self.cache.clone();
+        let node_id_for_delta = node_id.clone();
+        let delta_sub = client.subscribe("rate_limiter.delta.*").await?;
+        tokio::spawn(async move {
+            let mut sub = delta_sub;
+            while let Some(msg) = sub.next().await {
+                if let Ok(delta) = serde_json::from_slice::<DeltaMessage>(&msg.payload) {
+                    // Ignore our own messages
+                    if delta.node_id != node_id_for_delta {
+                        // Update the specific bucket in our cache
+                        if let Some(mut window) = cache.get(&delta.key).await {
+                            *window.buckets.entry(delta.bucket_id).or_insert(0) += delta.increment;
+                            cache.insert(delta.key, window).await;
+                        }
+                    }
+                }
+            }
+        });
+
+        // Subscribe to cache requests from other nodes
+        let cache = self.cache.clone();
+        let node_id_for_reply = node_id.clone();
+        let request_sub = client.subscribe("rate_limiter.cache_request").await?;
+        let client_clone = client.clone();
+        tokio::spawn(async move {
+            let mut sub = request_sub;
+            while let Some(msg) = sub.next().await {
+                if let Ok(request) = serde_json::from_slice::<CacheRequest>(&msg.payload) {
+                    // Check if we have this key in our cache
+                    if let Some(window) = cache.get(&request.key).await {
+                        let response = CacheResponse {
+                            key: request.key,
+                            window: Some(window.clone()),
+                            responder_id: node_id_for_reply.clone(),
+                        };
+
+                        // Send response back to the requester
+                        let reply_subject =
+                            format!("rate_limiter.cache_reply.{}", request.requester_id);
+                        if let Ok(payload) = serde_json::to_vec(&response) {
+                            let _ = client_clone.publish(reply_subject, payload.into()).await;
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    async fn publish_delta(&self, key: &str, bucket_id: i64, increment: u32) {
+        if let Some(client) = self.delta_publisher.read().await.as_ref() {
+            let delta = DeltaMessage {
+                key: key.to_string(),
+                bucket_id,
+                increment,
+                node_id: self.storage.node_id.clone(),
+            };
+
+            if let Ok(payload) = serde_json::to_vec(&delta) {
+                let subject = format!("rate_limiter.delta.{}", self.storage.node_id);
+                let _ = client.publish(subject, payload.into()).await;
+            }
+        }
+    }
+
+    async fn request_from_peers(&self, key: &str) -> Option<BucketedWindow> {
+        if let Some(client) = self.delta_publisher.read().await.as_ref() {
+            let request = CacheRequest {
+                key: key.to_string(),
+                requester_id: self.storage.node_id.clone(),
+            };
+
+            if let Ok(payload) = serde_json::to_vec(&request) {
+                // Publish request
+                if client
+                    .publish("rate_limiter.cache_request", payload.into())
+                    .await
+                    .is_ok()
+                {
+                    // Subscribe to replies for our node
+                    let reply_subject =
+                        format!("rate_limiter.cache_reply.{}", self.storage.node_id);
+                    if let Ok(mut sub) = client.subscribe(reply_subject).await {
+                        // Wait for reply with 200ms timeout
+                        match tokio::time::timeout(Duration::from_millis(200), sub.next()).await {
+                            Ok(Some(msg)) => {
+                                if let Ok(response) =
+                                    serde_json::from_slice::<CacheResponse>(&msg.payload)
+                                {
+                                    return response.window;
+                                }
+                            }
+                            _ => {
+                                // Timeout occurred - spawn background task to keep trying
+                                self.spawn_background_retry(key.to_string(), sub);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn spawn_background_retry(&self, key: String, sub: async_nats::Subscriber) {
+        let cache = self.cache.clone();
+        let storage = self.storage.clone();
+
+        tokio::spawn(async move {
+            let mut sub = sub;
+            // Try for up to 5 seconds in the background
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+            while tokio::time::Instant::now() < deadline {
+                match tokio::time::timeout(Duration::from_millis(500), sub.next()).await {
+                    Ok(Some(msg)) => {
+                        if let Ok(response) = serde_json::from_slice::<CacheResponse>(&msg.payload)
+                        {
+                            if let Some(window_data) = response.window {
+                                // Got a response! Check if we have existing data to merge
+                                let final_window = if let Some(mut existing) = cache.get(&key).await
+                                {
+                                    // Merge the peer data with our local data
+                                    existing.merge_with(&window_data);
+                                    existing
+                                } else {
+                                    // No local data anymore, just use peer data
+                                    window_data
+                                };
+
+                                // Update cache with merged data
+                                cache.insert(key.clone(), final_window.clone()).await;
+
+                                // Also save to NATS KV for persistence
+                                if let Err(e) = storage.save(&key, &final_window).await {
+                                    eprintln!(
+                                        "Failed to persist background-fetched rate limit: {}",
+                                        e
+                                    );
+                                }
+
+                                println!(
+                                    "Background sync completed for key '{}' - merged peer data",
+                                    key
+                                );
+                                return; // Success, exit
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        // Stream ended, exit
+                        return;
+                    }
+                    Err(_) => {
+                        // Timeout, continue looping
+                    }
+                }
+            }
+
+            // If we're here, we gave up after 5 seconds
+            eprintln!(
+                "Background cache fetch for key '{}' timed out after 5 seconds",
+                key
+            );
+        });
+    }
+
+    async fn check_rate_limit(&self, key: String, limit: u32, window: i64) -> (bool, u32, u32) {
+        // Try to get from cache first
+        let mut bucketed_window = if let Some(mut cached) = self.cache.get(&key).await {
+            // Check if configuration changed
+            if cached.max_requests != limit {
+                println!(
+                    "Limit changed for {}: {} -> {} (preserving {} existing requests)",
+                    key,
+                    cached.max_requests,
+                    limit,
+                    cached.buckets.values().sum::<u32>()
+                );
+                // Update the limit but preserve existing request counts
+                cached.max_requests = limit;
+            }
+            if cached.window_seconds != window {
+                // Window duration changed - this requires a reset since bucket sizes change
+                println!(
+                    "Window changed for {}: {}s -> {}s (reset required)",
+                    key, cached.window_seconds, window
+                );
+                BucketedWindow::new(limit, window)
+            } else {
+                cached
+            }
+        } else {
+            // Cache miss - try request from peers first
+            if let Some(mut peer_window) = self.request_from_peers(&key).await {
+                // Check if configuration matches
+                if peer_window.window_seconds != window {
+                    // Window duration changed - requires reset
+                    println!(
+                        "Peer window mismatch for {}: got {}s, expected {}s (reset required)",
+                        key, peer_window.window_seconds, window
+                    );
+                    BucketedWindow::new(limit, window)
+                } else if peer_window.max_requests != limit {
+                    // Just limit changed - update but preserve counts
+                    println!(
+                        "Peer limit mismatch for {}: {} -> {} (preserving counts)",
+                        key, peer_window.max_requests, limit
+                    );
+                    peer_window.max_requests = limit;
+                    peer_window
+                } else {
+                    peer_window
+                }
+            } else {
+                // No peer response, try NATS KV
+                match self.storage.load(&key).await {
+                    Ok(Some(mut stored)) => {
+                        if stored.window_seconds != window {
+                            // Window duration changed - requires reset
+                            println!(
+                                "Storage window mismatch for {}: got {}s, expected {}s (reset required)",
+                                key, stored.window_seconds, window
+                            );
+                            BucketedWindow::new(limit, window)
+                        } else if stored.max_requests != limit {
+                            // Just limit changed - update but preserve counts
+                            println!(
+                                "Storage limit mismatch for {}: {} -> {} (preserving counts)",
+                                key, stored.max_requests, limit
+                            );
+                            stored.max_requests = limit;
+                            stored
+                        } else {
+                            stored
+                        }
+                    }
+                    _ => {
+                        // Not found, create new window
+                        BucketedWindow::new(limit, window)
+                    }
+                }
+            }
+        };
+
+        // Get current bucket before the request
+        let now = Utc::now().timestamp();
+        let current_bucket = now / bucketed_window.bucket_size;
+
+        let (allowed, remaining) = bucketed_window.try_add_request();
+        let retry_after = bucketed_window.seconds_until_next_available();
+
+        // If request was allowed, publish the delta
+        if allowed {
+            self.publish_delta(&key, current_bucket, 1).await;
+        }
+
+        // Update cache
+        self.cache.insert(key.clone(), bucketed_window).await;
+
+        (allowed, remaining, retry_after)
+    }
+}
+
+// Parse limits from query parameters
+fn parse_limits(params: &HashMap<String, String>) -> Vec<(u32, i64)> {
+    let mut limits = Vec::new();
+
+    for (key, value) in params {
+        // Try to parse key as window duration and value as limit
+        if let (Ok(window), Ok(limit)) = (key.parse::<i64>(), value.parse::<u32>()) {
+            if window > 0 && limit > 0 {
+                limits.push((limit, window));
+            }
+        }
+    }
+
+    // If no valid limits found, use a default
+    if limits.is_empty() {
+        limits.push((100, 60)); // Default: 100 requests per 60 seconds
+    }
+
+    limits
+}
+
+async fn check_limit(
+    Path(identifier): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    State(limiter): State<RateLimiter>,
+) -> Response {
+    // Get deployment ID from header
+    let deployment_id = headers
+        .get("X-Deployment-ID")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("default");
+
+    // Parse dynamic limits from query parameters
+    let limits = parse_limits(&params);
+
+    let mut response_headers = HeaderMap::new();
+    let mut all_allowed = true;
+    let mut min_retry_after = u32::MAX;
+
+    // Check all rate limits
+    for (limit, window) in limits.iter() {
+        // Key includes window duration but NOT the limit value
+        // This allows limit changes while maintaining separate windows
+        let key = format!("{}:{}:{}", deployment_id, identifier, window);
+        let (allowed, remaining, retry_after) =
+            limiter.check_rate_limit(key, *limit, *window).await;
+
+        // Add headers for each limit
+        let limit_header = format!("X-RateLimit-{}s-Limit", window);
+        let remaining_header = format!("X-RateLimit-{}s-Remaining", window);
+        response_headers.insert(
+            axum::http::HeaderName::from_bytes(limit_header.as_bytes()).unwrap(),
+            HeaderValue::from_str(&limit.to_string()).unwrap(),
+        );
+        response_headers.insert(
+            axum::http::HeaderName::from_bytes(remaining_header.as_bytes()).unwrap(),
+            HeaderValue::from_str(&remaining.to_string()).unwrap(),
+        );
+
+        if !allowed {
+            all_allowed = false;
+            min_retry_after = min_retry_after.min(retry_after);
+            let reset_header = format!("X-RateLimit-{}s-Reset", window);
+            response_headers.insert(
+                axum::http::HeaderName::from_bytes(reset_header.as_bytes()).unwrap(),
+                HeaderValue::from_str(&retry_after.to_string()).unwrap(),
+            );
+        }
+    }
+
+    if all_allowed {
+        (StatusCode::OK, response_headers).into_response()
+    } else {
+        response_headers.insert(
+            "Retry-After",
+            HeaderValue::from_str(&min_retry_after.to_string()).unwrap(),
+        );
+        (StatusCode::TOO_MANY_REQUESTS, response_headers).into_response()
+    }
+}
+
+async fn health() -> &'static str {
+    "OK"
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv().ok();
+
+    let nats_url =
+        std::env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string());
+
+    println!("Connecting to NATS at: {}", nats_url);
+
+    let rate_limiter = RateLimiter::new(&nats_url).await?;
+
+    let app = Router::new()
+        .route("/check/:identifier", get(check_limit))
+        .route("/health", get(health))
+        .with_state(rate_limiter);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3002").await?;
+
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}

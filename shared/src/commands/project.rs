@@ -802,7 +802,6 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             project_id: deployment_row.project_id,
             mode: DeploymentMode::from(deployment_row.mode),
             mail_from_host: deployment_row.mail_from_host,
-            verification_status: Some(crate::models::VerificationStatus::Verified),
             domain_verification_records: None,
             email_verification_records: None,
         };
@@ -1678,7 +1677,6 @@ impl Command for CreateStagingDeploymentCommand {
             project_id: deployment_row.project_id,
             mode: DeploymentMode::from(deployment_row.mode),
             mail_from_host: deployment_row.mail_from_host,
-            verification_status: Some(crate::models::VerificationStatus::Verified),
             domain_verification_records: None,
             email_verification_records: None,
         })
@@ -2385,7 +2383,6 @@ impl Command for CreateProductionDeploymentCommand {
             project_id: deployment_row.project_id,
             mode: DeploymentMode::from(deployment_row.mode),
             mail_from_host: deployment_row.mail_from_host,
-            verification_status: Some(crate::models::VerificationStatus::Pending),
             domain_verification_records: Some(updated_domain_verification_records),
             email_verification_records: Some(email_verification_records),
         })
@@ -2512,7 +2509,7 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
         .execute(&app_state.db_pool)
         .await?;
 
-        let final_verification_status = match verification_status {
+        let _final_verification_status = match verification_status {
             "verified" => crate::models::VerificationStatus::Verified,
             "in_progress" => crate::models::VerificationStatus::InProgress,
             _ => crate::models::VerificationStatus::Pending,
@@ -2537,7 +2534,6 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
             project_id: deployment_row.project_id,
             mode: DeploymentMode::from(deployment_row.mode),
             mail_from_host: deployment_row.mail_from_host,
-            verification_status: Some(final_verification_status),
             domain_verification_records: Some(domain_verification_records),
             email_verification_records: Some(email_verification_records),
         })
@@ -2829,7 +2825,6 @@ impl Command for DeleteDeploymentCommand {
             project_id: deployment_row.project_id,
             mode: DeploymentMode::from(deployment_row.mode),
             mail_from_host: deployment_row.mail_from_host,
-            verification_status: None,
             domain_verification_records: deployment_row
                 .domain_verification_records
                 .and_then(|data| serde_json::from_value(data).ok()),

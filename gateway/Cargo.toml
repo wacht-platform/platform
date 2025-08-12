@@ -1,0 +1,15 @@
+[package]
+name = "gateway"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+axum = { version = "0.8" }
+moka = { version = "0.12", features = ["future"] }
+async-nats = "0.42.0"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dotenvy = "0.15.7"
+futures = "0.3"

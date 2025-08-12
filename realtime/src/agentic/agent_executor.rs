@@ -5,9 +5,7 @@ use crate::template::{AgentTemplates, render_template_with_prompt};
 
 #[derive(Debug, Clone)]
 pub enum ResumeContext {
-    /// Resume with platform function result
-    PlatformFunction(String, Value), // (execution_id, result)
-    /// Resume with user input (for user input requests)
+    PlatformFunction(String, Value),
     UserInput(String),
 }
 use llm::builder::{LLMBackend, LLMBuilder};
@@ -163,47 +161,53 @@ impl AgentExecutor {
             .await
     }
 
-    pub async fn resume_execution(&mut self, resume_context: ResumeContext) -> Result<(), AppError> {
+    pub async fn resume_execution(
+        &mut self,
+        resume_context: ResumeContext,
+    ) -> Result<(), AppError> {
         let context_id = self.context_id;
         let deployment_id = self.agent.deployment_id;
         let app_state = self.app_state.clone();
 
-        // Load saved state
         let immediate_context = self.get_immediate_context().await?;
         self.conversations = immediate_context.conversations;
         self.memories = immediate_context.memories;
-        
-        // Get execution context to restore state
+
         let exec_context = GetExecutionContextQuery::new(context_id, deployment_id)
             .execute(&app_state)
             .await?;
-            
-        // Restore execution state
+
         if let Some(state) = exec_context.execution_state {
             self.restore_from_state(state)?;
         }
 
-        // Handle the resume context
         match resume_context {
             ResumeContext::PlatformFunction(execution_id, result) => {
-                // Store platform function result in conversation
-                let conversation = self.create_conversation(
-                    ConversationContent::PlatformFunctionResult {
-                        execution_id: execution_id.clone(),
-                        result: serde_json::to_string(&result).unwrap_or_else(|_| result.to_string()),
-                    },
-                    ConversationMessageType::PlatformFunctionResult,
-                ).await?;
-                
+                let conversation = self
+                    .create_conversation(
+                        ConversationContent::PlatformFunctionResult {
+                            execution_id: execution_id.clone(),
+                            result: serde_json::to_string(&result)
+                                .unwrap_or_else(|_| result.to_string()),
+                        },
+                        ConversationMessageType::PlatformFunctionResult,
+                    )
+                    .await?;
+
                 self.conversations.push(conversation.clone());
-                let _ = self.channel.send(StreamEvent::ConversationMessage(conversation)).await;
-                
+                let _ = self
+                    .channel
+                    .send(StreamEvent::ConversationMessage(conversation))
+                    .await;
+
                 // If we're in a workflow, update the workflow state
                 if let Some(workflow_state) = &mut self.current_workflow_state {
                     // Find the node waiting for this execution_id
                     for (key, value) in workflow_state.clone().iter() {
                         if key.ends_with("_output") {
-                            if let Some(stored_exec_id) = value.get("execution_id").and_then(|v| v.as_str()) {
+                            if let Some(stored_exec_id) =
+                                value.get("execution_id").and_then(|v| v.as_str())
+                            {
                                 if stored_exec_id == &execution_id {
                                     // Update this node's output with the actual result
                                     workflow_state.insert(key.clone(), result.clone());
@@ -215,22 +219,24 @@ impl AgentExecutor {
                 }
             }
             ResumeContext::UserInput(input) => {
-                // Store user input response in conversation
-                let conversation = self.store_user_message(input.clone()).await?;
-                
+                self.store_user_message(input.clone()).await?;
+
                 // If we're in a workflow, update the current node's output
                 if let Some(workflow_state) = &mut self.current_workflow_state {
                     if let Some(node_id) = &self.current_workflow_node_id {
                         let node_output_key = format!("{}_output", node_id);
-                        workflow_state.insert(node_output_key, json!({
-                            "value": input,
-                            "type": "user_input"
-                        }));
+                        workflow_state.insert(
+                            node_output_key,
+                            json!({
+                                "value": input,
+                                "type": "user_input"
+                            }),
+                        );
                     }
                 }
             }
         }
-        
+
         // Update status to running
         UpdateExecutionContextQuery::new(context_id, deployment_id)
             .with_status(ExecutionContextStatus::Running)
@@ -2774,25 +2780,29 @@ impl AgentExecutor {
                 AppError::Internal(format!("Node {} not found in workflow", current_node_id))
             })?;
 
-        let mut workflow_state = self.current_workflow_state.clone().ok_or_else(|| {
+        let workflow_state = self.current_workflow_state.clone().ok_or_else(|| {
             AppError::Internal("No workflow state found in resume state".to_string())
         })?;
 
         // Check if we have a platform function result for this node
         let node_output_key = format!("{}_output", current_node_id);
         if let Some(pending_output) = workflow_state.get(&node_output_key) {
-            if let Some(execution_id) = pending_output
+            if let Some(_) = pending_output
                 .get("execution_id")
                 .and_then(|id| id.as_u64())
             {
                 // The result should have been updated in the workflow state during resume_execution
                 // Check if the node now has a non-pending result
                 if let Some(node_output) = workflow_state.get(&node_output_key) {
-                    if !node_output.get("status").and_then(|s| s.as_str()).map_or(false, |s| s == "pending") {
+                    if !node_output
+                        .get("status")
+                        .and_then(|s| s.as_str())
+                        .map_or(false, |s| s == "pending")
+                    {
                         // We have the actual result - continue workflow execution
                         // Update the executor's workflow state
                         self.current_workflow_state = Some(workflow_state.clone());
-                        
+
                         let next_edges: Vec<&WorkflowEdge> = workflow
                             .workflow_definition
                             .edges

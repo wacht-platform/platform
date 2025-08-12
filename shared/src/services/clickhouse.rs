@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct ClickHouseService {
-    client: Client,
+    pub client: Client,
 }
 
 #[derive(Serialize, Deserialize, Row)]

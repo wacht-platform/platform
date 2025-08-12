@@ -2,7 +2,6 @@ pub mod commands;
 pub mod dto;
 pub mod error;
 pub mod models;
-pub mod ports;
 pub mod queries;
 pub mod services;
 pub mod state;

@@ -262,7 +262,6 @@ impl Query for GetDeploymentWithSettingsQuery {
             publishable_key: row.publishable_key,
             mail_from_host: row.mail_from_host,
             mode,
-            verification_status: None, // TODO: Add verification_status to query when database is updated
             auth_settings: if row.auth_settings_id.is_some() {
                 Some(DeploymentAuthSettings {
                     id: row.auth_settings_id.unwrap(),

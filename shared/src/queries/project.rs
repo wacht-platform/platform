@@ -55,7 +55,6 @@ impl GetProjectsWithDeploymentQuery {
             mail_from_host: row
                 .get::<Option<String>, _>("deployment_mail_from_host")
                 .unwrap_or_default(),
-            verification_status: None,
             domain_verification_records: row
                 .get::<Option<serde_json::Value>, _>("deployment_domain_verification_records")
                 .and_then(|v| serde_json::from_value(v).ok()),

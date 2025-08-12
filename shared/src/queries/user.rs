@@ -407,6 +407,7 @@ impl Query for GetUserDetailsQuery {
     }
 }
 
+
 impl Query for DeploymentWaitlistQuery {
     type Output = Vec<DeploymentWaitlistUser>;
 
