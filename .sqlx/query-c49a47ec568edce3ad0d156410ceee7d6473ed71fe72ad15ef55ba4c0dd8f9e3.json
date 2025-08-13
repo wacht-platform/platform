@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM active_webhook_deliveries\n            WHERE created_at < NOW() - INTERVAL '1 day' * $1\n            AND attempts >= max_attempts\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c49a47ec568edce3ad0d156410ceee7d6473ed71fe72ad15ef55ba4c0dd8f9e3"
+}

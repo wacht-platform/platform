@@ -6,7 +6,8 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{application::HttpState, core::services::clickhouse::RecentSignup};
+use crate::application::HttpState;
+use common::clickhouse::RecentSignup;
 use crate::middleware::RequireDeployment;
 
 #[derive(Deserialize)]

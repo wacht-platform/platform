@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO organization_membership_roles (organization_membership_id, organization_role_id, organization_id)\n                VALUES ($1, $2, $3)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e540b61e8dbb6571964c0c45b480a656a109e7e42f94a0ba346d0be6c3c77810"
+}

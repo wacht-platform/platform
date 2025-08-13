@@ -1,16 +1,17 @@
 use anyhow::Result;
 use chrono;
-use serde::{Deserialize, Serialize};
-use shared::{
-    commands::{Command, email::SendEmailCommand},
-    models::{DeploymentInvitation, DeploymentWithSettings, SignIn, UserDetails},
-    queries::{
-        Query, deployment::GetDeploymentWithSettingsQuery,
-        invitation::GetDeploymentInvitationQuery, organization::GetOrganizationNameQuery,
-        signin::GetSignInQuery, user::GetUserDetailsQuery, workspace::GetWorkspaceNameQuery,
-    },
-    state::AppState,
+use commands::{Command, email::SendEmailCommand};
+use common::state::AppState;
+use models::{
+    DeploymentInvitation, DeploymentWithSettings, SchemaVersion, SecondFactorPolicy, SignIn,
+    UserDetails,
 };
+use queries::{
+    Query, deployment::GetDeploymentWithSettingsQuery, invitation::GetDeploymentInvitationQuery,
+    organization::GetOrganizationNameQuery, signin::GetSignInQuery, user::GetUserDetailsQuery,
+    workspace::GetWorkspaceNameQuery,
+};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -106,7 +107,6 @@ pub async fn send_verification_email_impl(
     verification_code: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
         .await
@@ -142,7 +142,6 @@ pub async fn send_password_reset_email_impl(
     reset_code: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
         .await
@@ -178,7 +177,6 @@ pub async fn send_magic_link_email_impl(
     magic_link: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
         .await
@@ -213,7 +211,6 @@ pub async fn send_signin_notification_email_impl(
     signin_id: u64,
     app_state: &AppState,
 ) -> Result<String, String> {
-
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
         .await
@@ -255,7 +252,6 @@ pub async fn send_email_change_notification_impl(
     new_email: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
         .await
@@ -290,7 +286,6 @@ pub async fn send_password_change_notification_impl(
     user_id: u64,
     app_state: &AppState,
 ) -> Result<String, String> {
-
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
         .await
@@ -327,7 +322,6 @@ pub async fn send_password_remove_notification_impl(
     user_id: u64,
     app_state: &AppState,
 ) -> Result<String, String> {
-
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
         .await
@@ -364,7 +358,6 @@ pub async fn send_waitlist_signup_email_impl(
     user_id: u64,
     app_state: &AppState,
 ) -> Result<String, String> {
-
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
         .execute(&app_state)
         .await
@@ -399,7 +392,6 @@ pub async fn send_organization_membership_invite_impl(
     organization_id: u64,
     app_state: &AppState,
 ) -> Result<String, String> {
-
     // Fetch inviter user details
     let inviter_details = GetUserDetailsQuery::new(deployment_id as i64, inviter_user_id as i64)
         .execute(&app_state)
@@ -449,7 +441,6 @@ pub async fn send_deployment_invite_impl(
     workspace_id: Option<u64>,
     app_state: &AppState,
 ) -> Result<String, String> {
-
     // Fetch inviter user details
     let inviter_details = GetUserDetailsQuery::new(deployment_id as i64, inviter_user_id as i64)
         .execute(&app_state)
@@ -504,8 +495,6 @@ pub async fn send_waitlist_approval_impl(
     deployment_invitation_id: u64,
     app_state: &AppState,
 ) -> Result<String, String> {
-
-    // Fetch invitation details (which contains user info)
     let invitation = fetch_deployment_invitation(&app_state, deployment_invitation_id)
         .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
@@ -516,18 +505,17 @@ pub async fn send_waitlist_approval_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    // Create a dummy user details from invitation data for template variables
     let user_details = UserDetails {
-        id: 0, // Not needed for waitlist
+        id: 0,
         created_at: invitation.created_at,
         updated_at: invitation.updated_at,
         first_name: invitation.first_name.clone(),
         last_name: invitation.last_name.clone(),
         username: None,
         profile_picture_url: String::new(),
-        schema_version: shared::models::SchemaVersion::V1,
+        schema_version: SchemaVersion::V1,
         disabled: false,
-        second_factor_policy: shared::models::SecondFactorPolicy::Optional,
+        second_factor_policy: SecondFactorPolicy::Optional,
         active_organization_membership_id: None,
         active_workspace_membership_id: None,
         deployment_id: deployment_id as i64,
@@ -560,7 +548,6 @@ pub async fn send_waitlist_approval_impl(
 
     Ok(format!("waitlist_approval_sent_{}", deployment_id))
 }
-
 
 async fn fetch_signin_details(app_state: &AppState, signin_id: u64) -> Result<SignIn, String> {
     GetSignInQuery::new(signin_id as i64)

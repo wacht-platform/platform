@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO deployment_auth_settings (\n                id,\n                deployment_id,\n                email_address,\n                phone_number,\n                username,\n                first_factor,\n                first_name,\n                last_name,\n                password,\n                auth_factors_enabled,\n                verification_policy,\n                second_factor_policy,\n                passkey,\n                magic_link,\n                multi_session_support,\n                session_token_lifetime,\n                session_validity_period,\n                session_inactive_timeout,\n                created_at,\n                updated_at\n            )\n            VALUES (\n                $1,\n                $2,\n                $3,\n                $4,\n                $5,\n                $6,\n                $7,\n                $8,\n                $9,\n                $10,\n                $11,\n                $12,\n                $13,\n                $14,\n                $15,\n                $16,\n                $17,\n                $18,\n                $19,\n                $20\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "495cc1bb372186c03fe7a2a9c2078758e6d72f349204589258dd8993e1d3ada8"
+}

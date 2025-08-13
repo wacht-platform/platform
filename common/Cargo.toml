@@ -1,0 +1,45 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+models = { path = "../models" }
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+sqlx = { version = "0.8", features = [
+    "postgres",
+    "chrono",
+    "json",
+    "runtime-tokio",
+    "tls-native-tls",
+] }
+redis = { version = "0.29.5", features = ["tokio-comp"] }
+handlebars = "6.2.0"
+rand = "0.9.0"
+regex = "1.10.2"
+argon2 = "0.5.3"
+totp-rs = "5.4.0"
+tracing = "0.1"
+base64 = "0.22.1"
+jsonwebtoken = "9.3"
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+sonyflake = "0.3"
+ipnetwork = "0.20"
+futures = "0.3"
+url = "2.5"
+reqwest = { version = "0.12", features = ["json"] }
+aws-config = "1.5.14"
+aws-sdk-s3 = "1.91.0"
+async-nats = "0.42.0"
+clickhouse = { version = "0.13.3", features = ["chrono"] }
+postmark = "0.9.0"
+tiktoken-rs = "0.6.0"
+encoding_rs = "0.8"
+pgvector = { version = "0.4.1", features = ["sqlx", "serde", "halfvec"] }
+pulldown-cmark = "0.12.2"
+pdf-extract = "0.7.9"

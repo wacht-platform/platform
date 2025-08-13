@@ -1,11 +1,9 @@
-mod agentic;
+mod agent;
 mod api;
 mod application;
 mod template;
-pub use shared as core;
-
+use common::state::AppState;
 use dotenvy::dotenv;
-use shared::state::AppState;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]

@@ -1,0 +1,13 @@
+[package]
+name = "dto"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+models = { path = "../models" }
+common = { path = "../common" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+pgvector = { version = "0.4.1", features = ["sqlx", "serde", "halfvec"] }
+half = "2.4"

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE user_phone_numbers\n                    SET updated_at = NOW(), phone_number = $1, verified = $2,\n                        verified_at = CASE WHEN $2 = true THEN NOW() ELSE verified_at END\n                    WHERE id = $3 AND user_id = $4\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5297ae3439381de56c6d1016f7fe7a0b7a4fa304c14436d23dcbb62d80909697"
+}

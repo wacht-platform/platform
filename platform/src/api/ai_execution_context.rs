@@ -3,12 +3,11 @@ use axum::extract::{Json, State};
 
 use crate::{
     application::{HttpState, response::ApiResult},
-    core::{
-        commands::{Command, CreateExecutionContextCommand},
-        dto::json::deployment::CreateExecutionContextRequest,
-        models::AgentExecutionContext,
-    },
 };
+
+use commands::{Command, CreateExecutionContextCommand};
+use dto::json::deployment::CreateExecutionContextRequest;
+use models::AgentExecutionContext;
 
 pub async fn create_execution_context(
     State(app_state): State<HttpState>,

@@ -154,11 +154,11 @@ fn deployment_routes() -> Router<HttpState> {
         )
         .route(
             "/settings/auth-settings",
-            patch(api::settings::update_deployment_authetication_settings),
+            patch(api::settings::update_deployment_auth_settings),
         )
         .route(
             "/settings/display-settings",
-            patch(api::settings::update_deployment_ui_settings),
+            patch(api::settings::update_deployment_display_settings),
         )
         .route(
             "/restrictions",
@@ -178,11 +178,11 @@ fn deployment_routes() -> Router<HttpState> {
         )
         .route(
             "/email-templates/{template_name}",
-            get(api::settings::get_email_template),
+            get(api::settings::get_deployment_email_template),
         )
         .route(
             "/email-templates/{template_name}",
-            patch(api::settings::update_email_template),
+            patch(api::settings::update_deployment_email_template),
         )
         .route("/upload/{image_type}", post(api::upload::upload_image))
         .route(
@@ -266,7 +266,6 @@ fn deployment_routes() -> Router<HttpState> {
     #[cfg(feature = "console-api")]
     {
         let console_routes = routes
-            // Console webhook routes
             .route(
                 "/webhooks/status",
                 get(api::webhook_console::get_webhook_status),

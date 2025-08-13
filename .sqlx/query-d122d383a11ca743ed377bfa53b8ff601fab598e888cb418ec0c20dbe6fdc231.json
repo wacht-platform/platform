@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM deployment_ui_settings\n                WHERE deployment_id = $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d122d383a11ca743ed377bfa53b8ff601fab598e888cb418ec0c20dbe6fdc231"
+}

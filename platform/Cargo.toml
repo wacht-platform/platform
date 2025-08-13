@@ -10,7 +10,11 @@ backend-api = []
 frontend-api = []
 
 [dependencies]
-shared = { path = "../shared" }
+models = { path = "../models" }
+dto = { path = "../dto" }
+commands = { path = "../commands" }
+queries = { path = "../queries" }
+common = { path = "../common" }
 wacht = { version = "0.0.1-alpha.1", features = ["axum"] }
 axum = { version = "0.8", features = ["macros", "multipart"] }
 tokio = { version = "1.35", features = ["full"] }

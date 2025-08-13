@@ -3,7 +3,7 @@ use axum::Json;
 use axum::extract::{Multipart, Path, Query as QueryParams, State};
 use axum::http::StatusCode;
 
-use crate::core::commands::{
+use commands::{
     AddOrganizationMemberCommand, Command, CreateOrganizationCommand,
     CreateOrganizationRoleCommand, CreateWorkspaceCommand, CreateWorkspaceRoleCommand,
     DeleteOrganizationCommand, DeleteOrganizationRoleCommand, DeleteWorkspaceCommand,
@@ -12,7 +12,7 @@ use crate::core::commands::{
     UpdateOrganizationRoleCommand, UpdateWorkspaceCommand, UpdateWorkspaceRoleCommand,
     UploadToCdnCommand,
 };
-use crate::core::dto::{
+use dto::{
     json::{
         b2b::{
             AddOrganizationMemberRequest, CreateOrganizationRoleRequest,
@@ -23,20 +23,18 @@ use crate::core::dto::{
     },
     query::OrganizationListQueryParams,
 };
-use crate::core::models::{
+use models::{
     Organization, OrganizationDetails, OrganizationMemberDetails, OrganizationRole, Workspace,
     WorkspaceDetails, WorkspaceRole, WorkspaceWithOrganizationName,
 };
-use crate::core::queries::{
+use queries::{
     DeploymentOrganizationListQuery, DeploymentWorkspaceListQuery, GetOrganizationDetailsQuery,
     GetWorkspaceDetailsQuery,
 };
+use models::{DeploymentOrganizationRole, DeploymentWorkspaceRole};
+use queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery, Query};
 use crate::{
     application::{HttpState, response::ApiResult, response::PaginatedResponse},
-    core::{
-        models::{DeploymentOrganizationRole, DeploymentWorkspaceRole},
-        queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery, Query},
-    },
 };
 
 pub async fn get_deployment_workspace_roles(

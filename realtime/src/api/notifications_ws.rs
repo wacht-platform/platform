@@ -3,12 +3,12 @@ use axum::{
     http::HeaderMap,
     response::IntoResponse,
 };
+use common::utils::jwt::verify_token;
 use fastwebsockets::{FragmentCollector, Frame, OpCode, WebSocketError, upgrade};
 use futures::StreamExt;
+use queries::{GetDeploymentWithKeyPairQuery, Query as QueryTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use shared::queries::{GetDeploymentWithKeyPairQuery, Query as QueryTrait};
-use shared::utils::jwt::verify_token;
 use std::collections::HashMap;
 use tracing::{error, info, warn};
 
@@ -22,7 +22,7 @@ pub struct NotificationParams {
 
 #[derive(Debug, Deserialize)]
 pub struct NotificationClaims {
-    pub sub: String, // user_id as string
+    pub sub: String,
     pub deployment_id: Option<i64>,
     pub exp: Option<i64>,
 }

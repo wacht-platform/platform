@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ai_workflows WHERE id = $1 AND deployment_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "baae5c87313bf24e2dfdf5094f90706f3024ae08f26d0631f66d7920739e8c4e"
+}

@@ -10,7 +10,7 @@ pub struct SMSTask {
     pub phone_number: String,
 }
 
-use shared::state::AppState;
+use common::state::AppState;
 
 pub async fn send_sms_by_type(
     sms_type: &str,

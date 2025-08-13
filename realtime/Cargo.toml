@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-shared = { path = "../shared" }
+models = { path = "../models" }
+dto = { path = "../dto" }
+commands = { path = "../commands" }
+queries = { path = "../queries" }
+common = { path = "../common" }
 llm = { version = "1.2.9", features = ["google"] }
 dotenvy = "0.15.7"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

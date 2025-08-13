@@ -7,25 +7,26 @@ use axum::http::StatusCode;
 
 use crate::application::{HttpState, response::ApiResult};
 use crate::middleware::RequireDeployment;
-use shared::{
-    commands::{
-        Command,
-        webhook_app::{
-            CreateWebhookAppCommand, RotateWebhookSecretCommand, UpdateWebhookAppCommand,
-        },
-        webhook_endpoint::{
-            CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand,
-            UpdateWebhookEndpointCommand, EventSubscriptionData,
-        },
-        webhook_trigger::ReplayWebhookDeliveryCommand,
+use commands::{
+    Command,
+    webhook_app::{
+        CreateWebhookAppCommand, RotateWebhookSecretCommand, UpdateWebhookAppCommand,
     },
-    dto::json::{WebhookStatus, webhook_requests::*},
-    models::webhook::{WebhookApp, WebhookEndpoint, WebhookEventDefinition},
-    queries::{
-        Query as QueryTrait,
-        webhook::{GetWebhookAppByNameQuery, GetWebhookEndpointsQuery, GetWebhookStatsQuery},
-        webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery, TimeseriesInterval},
+    webhook_endpoint::{
+        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand,
+        UpdateWebhookEndpointCommand, EventSubscriptionData,
     },
+    webhook_trigger::ReplayWebhookDeliveryCommand,
+};
+use dto::json::{WebhookStatus, webhook_requests::*};
+use models::{
+    webhook::{WebhookApp, WebhookEndpoint, WebhookEventDefinition},
+    webhook_analytics::TimeseriesInterval,
+};
+use queries::{
+    Query as QueryTrait,
+    webhook::{GetWebhookAppByNameQuery, GetWebhookEndpointsQuery, GetWebhookStatsQuery},
+    webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery},
 };
 
 // Helper function to get console deployment ID from environment

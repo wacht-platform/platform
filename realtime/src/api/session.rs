@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use super::models::WebsocketMessage;
 use serde_json::Value;
-use shared::{models::AiAgentWithFeatures, state::AppState};
+use models::AiAgentWithFeatures;
+use common::state::AppState;
 use tokio::sync::{Notify, mpsc};
 
 #[derive(Clone)]

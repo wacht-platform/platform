@@ -1,10 +1,10 @@
-use crate::agentic::AgentExecutor;
+use crate::agent::AgentExecutor;
+use common::error::AppError;
+use common::state::AppState;
+use dto::json::StreamEvent;
 use futures::StreamExt;
-use shared::dto::json::StreamEvent;
-use shared::error::AppError;
-use shared::models::{AiAgentWithFeatures, ExecutionContextStatus};
-use shared::queries::{GetExecutionContextQuery, Query};
-use shared::state::AppState;
+use models::{AiAgentWithFeatures, ExecutionContextStatus};
+use queries::{GetExecutionContextQuery, Query};
 use tracing::{error, warn};
 
 pub struct AgentHandler {
@@ -38,19 +38,19 @@ impl AgentHandler {
         )
         .await?;
 
-        // Platform function result will be passed to run_from_saved_state if needed
-
         let kv = self.get_key_value_store().await?;
         let watch = self.create_watcher(&kv, &context_key).await?;
         self.spawn_message_publisher(receiver, context_key.clone());
 
-        // Check if this is a resume scenario
         let context = GetExecutionContextQuery::new(request.context_id, deployment_id)
             .execute(&self.app_state)
             .await?;
-        
-        let execution_result = match (request.user_message, request.platform_function_result, context.status) {
-            // Platform function resume
+
+        let execution_result = match (
+            request.user_message,
+            request.platform_function_result,
+            context.status,
+        ) {
             (_, Some((exec_id, result)), _) => {
                 self.resume_agent_execution(
                     &kv,
@@ -58,11 +58,10 @@ impl AgentHandler {
                     execution_id,
                     &mut executor,
                     watch,
-                    crate::agentic::agent_executor::ResumeContext::PlatformFunction(exec_id, result),
+                    crate::agent::executor::ResumeContext::PlatformFunction(exec_id, result),
                 )
                 .await
             }
-            // User input response
             (Some(input), None, ExecutionContextStatus::WaitingForInput) => {
                 self.resume_agent_execution(
                     &kv,
@@ -70,11 +69,10 @@ impl AgentHandler {
                     execution_id,
                     &mut executor,
                     watch,
-                    crate::agentic::agent_executor::ResumeContext::UserInput(input),
+                    crate::agent::executor::ResumeContext::UserInput(input),
                 )
                 .await
             }
-            // New message
             (Some(message), None, _) => {
                 self.run_agent_execution(
                     &kv,
@@ -86,12 +84,8 @@ impl AgentHandler {
                 )
                 .await
             }
-            _ => {
-                Err(AppError::Internal("Invalid execution request".to_string()))
-            }
+            _ => Err(AppError::Internal("Invalid execution request".to_string())),
         };
-
-        println!("{execution_result:?}");
 
         executor.post_execution_processing();
 
@@ -164,7 +158,7 @@ impl AgentHandler {
         execution_id: i64,
         agent_executor: &mut AgentExecutor,
         mut watch: async_nats::jetstream::kv::Watch,
-        resume_context: crate::agentic::agent_executor::ResumeContext,
+        resume_context: crate::agent::executor::ResumeContext,
     ) -> Result<(), AppError> {
         kv.put(context_key, execution_id.to_string().into())
             .await

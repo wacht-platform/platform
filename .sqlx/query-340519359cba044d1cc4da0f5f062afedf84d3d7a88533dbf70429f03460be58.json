@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT d.id as \"id!\", \n                   d.endpoint_id as \"endpoint_id!\", \n                   d.event_name as \"event_name!\", \n                   d.attempts as \"attempts!\", \n                   d.max_attempts as \"max_attempts!\", \n                   d.next_retry_at, \n                   d.created_at as \"created_at!\"\n            FROM active_webhook_deliveries d\n            JOIN webhook_endpoints e ON d.endpoint_id = e.id\n            JOIN webhook_apps a ON e.app_id = a.id\n            WHERE d.id = $1 AND a.deployment_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "endpoint_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "event_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "attempts!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "max_attempts!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "next_retry_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "340519359cba044d1cc4da0f5f062afedf84d3d7a88533dbf70429f03460be58"
+}

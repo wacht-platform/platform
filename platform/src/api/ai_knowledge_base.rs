@@ -9,25 +9,24 @@ use crate::{
         AppError, HttpState,
         response::{ApiResult, PaginatedResponse},
     },
-    core::{
-        commands::{
-            Command, CreateAiKnowledgeBaseCommand, DeleteAiKnowledgeBaseCommand,
-            DeleteKnowledgeBaseDocumentCommand, UpdateAiKnowledgeBaseCommand,
-            UploadKnowledgeBaseDocumentCommand,
-        },
-        dto::{
-            json::ai_knowledge_base::{
-                CreateKnowledgeBaseRequest, GetDocumentsQuery, KnowledgeBaseResponse,
-                UpdateKnowledgeBaseRequest,
-            },
-            query::deployment::GetKnowledgeBasesQuery,
-        },
-        models::{AiKnowledgeBase, AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetails},
-        queries::{
-            GetAiKnowledgeBaseByIdQuery, GetAiKnowledgeBasesQuery as GetKnowledgeBasesQueryCore,
-            GetKnowledgeBaseDocumentsQuery, Query as QueryTrait,
-        },
+};
+
+use commands::{
+    Command, CreateAiKnowledgeBaseCommand, DeleteAiKnowledgeBaseCommand,
+    DeleteKnowledgeBaseDocumentCommand, UpdateAiKnowledgeBaseCommand,
+    UploadKnowledgeBaseDocumentCommand,
+};
+use dto::{
+    json::ai_knowledge_base::{
+        CreateKnowledgeBaseRequest, GetDocumentsQuery, KnowledgeBaseResponse,
+        UpdateKnowledgeBaseRequest,
     },
+    query::deployment::GetKnowledgeBasesQuery,
+};
+use models::{AiKnowledgeBase, AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetails};
+use queries::{
+    GetAiKnowledgeBaseByIdQuery, GetAiKnowledgeBasesQuery as GetKnowledgeBasesQueryCore,
+    GetKnowledgeBaseDocumentsQuery, Query as QueryTrait,
 };
 
 pub async fn get_ai_knowledge_bases(

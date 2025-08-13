@@ -1,22 +1,22 @@
 use async_nats::jetstream;
 use async_nats::jetstream::stream;
-use axum::extract::{State, Query as QueryParams};
-use axum::response::IntoResponse;
+use axum::extract::{Query as QueryParams, State};
 use axum::http::HeaderMap;
+use axum::response::IntoResponse;
+use common::state::AppState;
+use common::utils::jwt::verify_agent_context_token;
 use fastwebsockets::FragmentCollector;
 use fastwebsockets::Frame;
 use fastwebsockets::OpCode;
 use fastwebsockets::WebSocketError;
 use fastwebsockets::upgrade;
 use futures::StreamExt;
+use models::{ConversationContent, ConversationRecord, ExecutionContextStatus};
+use queries::GetRecentConversationsQuery;
+use queries::{GetAiAgentByNameWithFeatures, GetDeploymentWithKeyPairQuery};
+use queries::{GetExecutionContextQuery, Query};
 use serde_json::Value;
 use serde_json::json;
-use shared::models::{ConversationContent, ConversationRecord, ExecutionContextStatus};
-use shared::queries::{GetAiAgentByNameWithFeatures, GetDeploymentWithKeyPairQuery};
-use shared::utils::jwt::{verify_agent_context_token, AgentContextClaims};
-use shared::queries::GetRecentConversationsQuery;
-use shared::queries::{GetExecutionContextQuery, Query};
-use shared::state::AppState;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Notify;
@@ -38,7 +38,7 @@ pub async fn realtime_agent_handler(
         .get("host")
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
-    
+
     if host.is_none() {
         warn!("WebSocket connection attempted without Host header");
         return axum::response::Response::builder()
@@ -47,10 +47,10 @@ pub async fn realtime_agent_handler(
             .unwrap()
             .into_response();
     }
-    
+
     // Extract token from query parameters
     let token = params.get("token").cloned();
-    
+
     if token.is_none() {
         warn!("WebSocket connection attempted without authentication token");
         return axum::response::Response::builder()
@@ -59,7 +59,7 @@ pub async fn realtime_agent_handler(
             .unwrap()
             .into_response();
     }
-    
+
     let token = token.unwrap();
 
     let (response, fut) = ws.upgrade().unwrap();
@@ -80,7 +80,7 @@ async fn handle_client(
     token: String,
 ) -> Result<(), WebSocketError> {
     let mut ws = FragmentCollector::new(fut.await?);
-    
+
     // Get deployment ID and private key from host
     let (deployment_id, private_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
         .execute(&app_state)
@@ -93,13 +93,15 @@ async fn handle_client(
             let error_msg = json!({
                 "error": "Invalid deployment"
             });
-            let _ = ws.write_frame(Frame::text(fastwebsockets::Payload::Owned(
-                serde_json::to_vec(&error_msg).unwrap()
-            ))).await;
+            let _ = ws
+                .write_frame(Frame::text(fastwebsockets::Payload::Owned(
+                    serde_json::to_vec(&error_msg).unwrap(),
+                )))
+                .await;
             return Ok(());
         }
     };
-    
+
     // Verify JWT token with agent_context scope
     // Using ES256 which is the default algorithm for deployment tokens
     let claims = match verify_agent_context_token(&token, "ES256", &private_key, None) {
@@ -109,30 +111,28 @@ async fn handle_client(
             let error_msg = json!({
                 "error": "Invalid authentication token"
             });
-            let _ = ws.write_frame(Frame::text(fastwebsockets::Payload::Owned(
-                serde_json::to_vec(&error_msg).unwrap()
-            ))).await;
+            let _ = ws
+                .write_frame(Frame::text(fastwebsockets::Payload::Owned(
+                    serde_json::to_vec(&error_msg).unwrap(),
+                )))
+                .await;
             return Ok(());
         }
     };
-    
+
     let user_id = claims.sub.clone();
-    
+
     tracing::info!(
         "WebSocket connection for deployment {} (host: {}, user: {:?})",
         deployment_id,
         host,
         user_id
     );
-    
+
     let (sender, mut receiver) = mpsc::unbounded_channel::<WebsocketMessage<Value>>();
     let session = Arc::new(Mutex::new(
-        SessionState::new(
-            sender.clone(),
-            app_state.clone(),
-            deployment_id,
-        )
-        .with_user(user_id.clone())
+        SessionState::new(sender.clone(), app_state.clone(), deployment_id)
+            .with_user(user_id.clone()),
     ));
     let channel_ready = Arc::new(Notify::new());
 
@@ -567,7 +567,7 @@ async fn handle_execution_message(
         }
         WebsocketMessageType::UserInputResponse(input) => {
             tracing::info!("Received user input response: {}", input);
-            
+
             // Resume execution with user input
             let execution_request = ExecutionRequest {
                 agent,
@@ -575,7 +575,7 @@ async fn handle_execution_message(
                 context_id,
                 platform_function_result: None,
             };
-            
+
             match AgentHandler::new(app_state)
                 .execute_agent_streaming(execution_request)
                 .await
@@ -598,7 +598,7 @@ async fn handle_execution_message(
         }
         WebsocketMessageType::CancelExecution => {
             // Update context status to cancelled
-            use shared::commands::{Command, UpdateExecutionContextQuery};
+            use commands::{Command, UpdateExecutionContextQuery};
 
             let _ = UpdateExecutionContextQuery::new(context_id, deployment_id)
                 .with_status(ExecutionContextStatus::Failed)

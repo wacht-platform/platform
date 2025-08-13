@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ai_knowledge_base_documents WHERE id = $1 AND knowledge_base_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "32b97de38b01e6c90cf5866480cc9f2f43a980d5dd90cb1bf5e1537823a9b7c2"
+}

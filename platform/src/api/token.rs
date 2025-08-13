@@ -7,7 +7,7 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use shared::commands::{Command, GenerateTokenCommand, GenerateAgentContextTokenCommand, GenerateTokenResponse};
+use commands::{Command, GenerateTokenCommand, GenerateAgentContextTokenCommand, GenerateTokenResponse};
 
 #[derive(Debug, Deserialize)]
 pub struct GenerateTokenRequest {

@@ -1,11 +1,11 @@
 use crate::{
     application::{HttpState, response::ApiResult},
-    core::{
-        commands::{Command, UpdateDeploymentDisplaySettingsCommand, UploadToCdnCommand},
-        dto::json::{DeploymentDisplaySettingsUpdates, UploadResult},
-    },
     middleware::RequireDeployment,
 };
+
+use commands::{Command, UpdateDeploymentDisplaySettingsCommand, UploadToCdnCommand};
+use dto::json::{DeploymentDisplaySettingsUpdates, UploadResult};
+
 use axum::{
     extract::{Multipart, Path, State},
     http::StatusCode,

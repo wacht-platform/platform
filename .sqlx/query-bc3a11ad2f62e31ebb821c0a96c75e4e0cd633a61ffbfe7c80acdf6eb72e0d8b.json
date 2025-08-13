@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                e.id as \"id!\",\n                e.url as \"url!\",\n                e.headers,\n                e.max_retries as \"max_retries!\",\n                e.timeout_seconds as \"timeout_seconds!\",\n                s.filter_rules,\n                a.signing_secret as \"signing_secret!\"\n            FROM webhook_endpoints e\n            JOIN webhook_endpoint_subscriptions s ON e.id = s.endpoint_id\n            JOIN webhook_app_events ev ON s.event_id = ev.id\n            JOIN webhook_apps a ON e.app_id = a.id\n            WHERE a.name = $1 \n              AND ev.event_name = $2\n              AND e.is_active = true\n              AND a.is_active = true\n              AND a.deployment_id = $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "url!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "headers",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "max_retries!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "timeout_seconds!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "filter_rules",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "signing_secret!",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "bc3a11ad2f62e31ebb821c0a96c75e4e0cd633a61ffbfe7c80acdf6eb72e0d8b"
+}

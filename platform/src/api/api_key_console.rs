@@ -3,18 +3,16 @@ use axum::http::StatusCode;
 
 use crate::application::{HttpState, response::ApiResult};
 use crate::middleware::RequireDeployment;
-use shared::{
-    commands::{
-        Command,
-        api_key::{CreateApiKeyCommand, RevokeApiKeyCommand, RotateApiKeyCommand},
-        api_key_app::{CreateApiKeyAppCommand, DeleteApiKeyAppCommand, UpdateApiKeyAppCommand},
-    },
-    dto::json::api_key_requests::*,
-    models::api_key::{ApiKeyApp, ApiKeyWithSecret},
-    queries::{
-        Query as QueryTrait,
-        api_key::{GetApiKeyAppsQuery, GetApiKeyByIdQuery, GetApiKeysByAppQuery},
-    },
+use commands::{
+    Command,
+    api_key::{CreateApiKeyCommand, RevokeApiKeyCommand, RotateApiKeyCommand},
+    api_key_app::{CreateApiKeyAppCommand, DeleteApiKeyAppCommand, UpdateApiKeyAppCommand},
+};
+use dto::json::api_key_requests::*;
+use models::api_key::{ApiKeyApp, ApiKeyWithSecret};
+use queries::{
+    Query as QueryTrait,
+    api_key::{GetApiKeyAppsQuery, GetApiKeyByIdQuery, GetApiKeysByAppQuery},
 };
 
 pub async fn list_api_key_apps(

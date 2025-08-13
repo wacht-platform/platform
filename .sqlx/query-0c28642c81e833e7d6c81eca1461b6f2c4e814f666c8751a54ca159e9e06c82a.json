@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                om.id, om.created_at, om.updated_at,\n                om.organization_id, om.user_id,\n                u.first_name, u.last_name, u.username,\n                u.created_at as user_created_at,\n                e.email_address as \"primary_email_address?\",\n                p.phone_number as \"primary_phone_number?\"\n            FROM organization_memberships om\n            JOIN users u ON om.user_id = u.id\n            LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id\n            LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id\n            WHERE om.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "first_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "last_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "username",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "user_created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "primary_email_address?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "primary_phone_number?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "0c28642c81e833e7d6c81eca1461b6f2c4e814f666c8751a54ca159e9e06c82a"
+}

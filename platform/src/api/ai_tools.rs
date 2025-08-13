@@ -6,16 +6,15 @@ use crate::{
         HttpState,
         response::{ApiResult, PaginatedResponse},
     },
-    core::{
-        commands::{Command, CreateAiToolCommand, DeleteAiToolCommand, UpdateAiToolCommand},
-        dto::{
-            json::deployment::{CreateToolRequest, UpdateToolRequest},
-            query::deployment::GetToolsQuery,
-        },
-        models::{AiTool, AiToolType, AiToolWithDetails},
-        queries::{GetAiToolByIdQuery, GetAiToolsQuery, Query as QueryTrait},
-    },
 };
+
+use commands::{Command, CreateAiToolCommand, DeleteAiToolCommand, UpdateAiToolCommand};
+use dto::{
+    json::deployment::{CreateToolRequest, UpdateToolRequest},
+    query::deployment::GetToolsQuery,
+};
+use models::{AiTool, AiToolType, AiToolWithDetails};
+use queries::{GetAiToolByIdQuery, GetAiToolsQuery, Query as QueryTrait};
 
 pub async fn get_ai_tools(
     State(app_state): State<HttpState>,

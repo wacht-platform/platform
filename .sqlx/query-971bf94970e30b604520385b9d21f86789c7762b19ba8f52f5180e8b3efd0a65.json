@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE active_webhook_deliveries \n            SET attempts = $2, next_retry_at = $3\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "971bf94970e30b604520385b9d21f86789c7762b19ba8f52f5180e8b3efd0a65"
+}

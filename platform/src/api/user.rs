@@ -3,32 +3,32 @@ use crate::{
         HttpState,
         response::{ApiResult, PaginatedResponse},
     },
-    core::{
-        commands::{
-            AddUserEmailCommand, AddUserPhoneCommand, ApproveWaitlistUserCommand, Command,
-            CreateUserCommand, DeleteUserEmailCommand, DeleteUserPhoneCommand,
-            DeleteUserSocialConnectionCommand, InviteUserCommand, UpdateUserCommand,
-            UpdateUserEmailCommand, UpdateUserPhoneCommand, UpdateUserProfileImageCommand,
-            UpdateUserPasswordCommand, UploadToCdnCommand,
-        },
-        dto::{
-            json::{
-                AddEmailRequest, AddPhoneRequest, CreateUserRequest, InviteUserRequest,
-                UpdateEmailRequest, UpdatePhoneRequest, UpdateUserRequest,
-            },
-            query::{ActiveUserListQueryParams, InvitationsWaitlistQueryParams},
-        },
-        models::{
-            DeploymentInvitation, DeploymentWaitlistUser, UserDetails, UserEmailAddress,
-            UserPhoneNumber, UserWithIdentifiers,
-        },
-        queries::{
-            DeploymentActiveUserListQuery, DeploymentInvitationQuery, DeploymentWaitlistQuery,
-            GetUserDetailsQuery, GetDeploymentAuthSettingsQuery, Query,
-        },
-    },
     middleware::RequireDeployment,
 };
+
+use commands::{
+    AddUserEmailCommand, AddUserPhoneCommand, ApproveWaitlistUserCommand, Command,
+    CreateUserCommand, DeleteUserEmailCommand, DeleteUserPhoneCommand,
+    DeleteUserSocialConnectionCommand, InviteUserCommand, UpdateUserCommand,
+    UpdateUserEmailCommand, UpdateUserPasswordCommand, UpdateUserPhoneCommand,
+    UpdateUserProfileImageCommand, UploadToCdnCommand,
+};
+use dto::{
+    json::{
+        AddEmailRequest, AddPhoneRequest, CreateUserRequest, InviteUserRequest, UpdateEmailRequest,
+        UpdatePhoneRequest, UpdateUserRequest,
+    },
+    query::{ActiveUserListQueryParams, InvitationsWaitlistQueryParams},
+};
+use models::{
+    DeploymentInvitation, DeploymentWaitlistUser, UserDetails, UserEmailAddress, UserPhoneNumber,
+    UserWithIdentifiers,
+};
+use queries::{
+    DeploymentActiveUserListQuery, DeploymentInvitationQuery, DeploymentWaitlistQuery,
+    GetDeploymentAuthSettingsQuery, GetUserDetailsQuery, Query,
+};
+
 use axum::{
     Json,
     extract::{Multipart, Path, Query as QueryParams, State},
@@ -43,25 +43,54 @@ async fn validate_create_user_request(
     let auth_settings = GetDeploymentAuthSettingsQuery::new(deployment_id)
         .execute(app_state)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get deployment auth settings: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to get deployment auth settings: {}", e),
+            )
+        })?;
 
-    if auth_settings.first_name.enabled && auth_settings.first_name.required.unwrap_or(true) && request.first_name.trim().is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "First name is required".to_string()));
+    if auth_settings.first_name.enabled
+        && auth_settings.first_name.required.unwrap_or(true)
+        && request.first_name.trim().is_empty()
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "First name is required".to_string(),
+        ));
     }
 
-    if auth_settings.last_name.enabled && auth_settings.last_name.required.unwrap_or(true) && request.last_name.trim().is_empty() {
+    if auth_settings.last_name.enabled
+        && auth_settings.last_name.required.unwrap_or(true)
+        && request.last_name.trim().is_empty()
+    {
         return Err((StatusCode::BAD_REQUEST, "Last name is required".to_string()));
     }
 
-    if auth_settings.email_address.enabled && auth_settings.email_address.required && request.email_address.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "Email address is required".to_string()));
+    if auth_settings.email_address.enabled
+        && auth_settings.email_address.required
+        && request.email_address.is_none()
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Email address is required".to_string(),
+        ));
     }
 
-    if auth_settings.phone_number.enabled && auth_settings.phone_number.required && request.phone_number.is_none() {
-        return Err((StatusCode::BAD_REQUEST, "Phone number is required".to_string()));
+    if auth_settings.phone_number.enabled
+        && auth_settings.phone_number.required
+        && request.phone_number.is_none()
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Phone number is required".to_string(),
+        ));
     }
 
-    if auth_settings.username.enabled && auth_settings.username.required && request.username.is_none() {
+    if auth_settings.username.enabled
+        && auth_settings.username.required
+        && request.username.is_none()
+    {
         return Err((StatusCode::BAD_REQUEST, "Username is required".to_string()));
     }
 
@@ -69,10 +98,15 @@ async fn validate_create_user_request(
         if let Some(password) = &request.password {
             if let Some(min_length) = auth_settings.password.min_length {
                 if password.len() < min_length as usize {
-                    return Err((StatusCode::BAD_REQUEST, format!("Password must be at least {} characters", min_length)));
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        format!("Password must be at least {} characters", min_length),
+                    ));
                 }
             }
-        } else if auth_settings.password.min_length.is_some() && auth_settings.password.min_length.unwrap() > 0 {
+        } else if auth_settings.password.min_length.is_some()
+            && auth_settings.password.min_length.unwrap() > 0
+        {
             return Err((StatusCode::BAD_REQUEST, "Password is required".to_string()));
         }
     }
@@ -88,17 +122,34 @@ async fn validate_update_user_request(
     let auth_settings = GetDeploymentAuthSettingsQuery::new(deployment_id)
         .execute(app_state)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get deployment auth settings: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to get deployment auth settings: {}", e),
+            )
+        })?;
 
     if let Some(first_name) = &request.first_name {
-        if auth_settings.first_name.enabled && auth_settings.first_name.required.unwrap_or(true) && first_name.trim().is_empty() {
-            return Err((StatusCode::BAD_REQUEST, "First name cannot be empty".to_string()));
+        if auth_settings.first_name.enabled
+            && auth_settings.first_name.required.unwrap_or(true)
+            && first_name.trim().is_empty()
+        {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "First name cannot be empty".to_string(),
+            ));
         }
     }
 
     if let Some(last_name) = &request.last_name {
-        if auth_settings.last_name.enabled && auth_settings.last_name.required.unwrap_or(true) && last_name.trim().is_empty() {
-            return Err((StatusCode::BAD_REQUEST, "Last name cannot be empty".to_string()));
+        if auth_settings.last_name.enabled
+            && auth_settings.last_name.required.unwrap_or(true)
+            && last_name.trim().is_empty()
+        {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Last name cannot be empty".to_string(),
+            ));
         }
     }
 
@@ -111,12 +162,18 @@ async fn validate_update_user_request(
             let username_len = username.trim().len();
             if let Some(min_length) = auth_settings.username.min_length {
                 if username_len < min_length as usize {
-                    return Err((StatusCode::BAD_REQUEST, format!("Username must be at least {} characters", min_length)));
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        format!("Username must be at least {} characters", min_length),
+                    ));
                 }
             }
             if let Some(max_length) = auth_settings.username.max_length {
                 if username_len > max_length as usize {
-                    return Err((StatusCode::BAD_REQUEST, format!("Username must be at most {} characters", max_length)));
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        format!("Username must be at most {} characters", max_length),
+                    ));
                 }
             }
         }
@@ -128,15 +185,15 @@ async fn validate_update_user_request(
 pub async fn get_active_user_list(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    QueryParams(query_params): QueryParams<ActiveUserListQueryParams>,
+    QueryParams(params): QueryParams<ActiveUserListQueryParams>,
 ) -> ApiResult<PaginatedResponse<UserWithIdentifiers>> {
-    let limit = query_params.limit.unwrap_or(10) as i32;
+    let limit = params.limit.unwrap_or(10) as i32;
 
     let users = DeploymentActiveUserListQuery::new(deployment_id)
         .limit(limit + 1)
-        .offset(query_params.offset.unwrap_or(0))
-        .sort_key(query_params.sort_key.as_ref().map(ToString::to_string))
-        .sort_order(query_params.sort_order.as_ref().map(ToString::to_string))
+        .offset(params.offset.unwrap_or(0))
+        .sort_key(params.sort_key.as_ref().map(ToString::to_string))
+        .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .execute(&app_state)
         .await
         .unwrap();
@@ -154,53 +211,65 @@ pub async fn get_active_user_list(
 pub async fn get_invited_user_list(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    QueryParams(query_params): QueryParams<InvitationsWaitlistQueryParams>,
+    QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentInvitation>> {
-    let limit = query_params.limit.unwrap_or(10) as i32;
+    let limit = params.limit.unwrap_or(10) as i32;
 
-    let users = DeploymentInvitationQuery::new(deployment_id)
+    let invitations = DeploymentInvitationQuery::new(deployment_id)
         .limit(limit + 1)
-        .offset(query_params.offset.unwrap_or(0))
-        .sort_key(query_params.sort_key.as_ref().map(ToString::to_string))
-        .sort_order(query_params.sort_order.as_ref().map(ToString::to_string))
+        .offset(params.offset.unwrap_or(0))
+        .sort_key(params.sort_key.as_ref().map(ToString::to_string))
+        .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .execute(&app_state)
         .await
         .unwrap();
 
-    let has_more = users.len() > limit as usize;
-    let users = if has_more {
-        users[..limit as usize].to_vec()
+    let has_more = invitations.len() > limit as usize;
+    let invitations = if has_more {
+        invitations[..limit as usize].to_vec()
     } else {
-        users
+        invitations
     };
 
-    Ok(PaginatedResponse::from(users).into())
+    Ok(PaginatedResponse::from(invitations).into())
 }
 
 pub async fn get_user_waitlist(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    QueryParams(query_params): QueryParams<InvitationsWaitlistQueryParams>,
+    QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentWaitlistUser>> {
-    let limit = query_params.limit.unwrap_or(10) as i32;
+    let limit = params.limit.unwrap_or(10) as i32;
 
-    let users = DeploymentWaitlistQuery::new(deployment_id)
+    let waitlist = DeploymentWaitlistQuery::new(deployment_id)
         .limit(limit + 1)
-        .offset(query_params.offset.unwrap_or(0))
-        .sort_key(query_params.sort_key.as_ref().map(ToString::to_string))
-        .sort_order(query_params.sort_order.as_ref().map(ToString::to_string))
+        .offset(params.offset.unwrap_or(0))
+        .sort_key(params.sort_key.as_ref().map(ToString::to_string))
+        .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .execute(&app_state)
         .await
         .unwrap();
 
-    let has_more = users.len() > limit as usize;
-    let users = if has_more {
-        users[..limit as usize].to_vec()
+    let has_more = waitlist.len() > limit as usize;
+    let waitlist = if has_more {
+        waitlist[..limit as usize].to_vec()
     } else {
-        users
+        waitlist
     };
 
-    Ok(PaginatedResponse::from(users).into())
+    Ok(PaginatedResponse::from(waitlist).into())
+}
+
+pub async fn get_user_details(
+    State(app_state): State<HttpState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(user_id): Path<i64>,
+) -> ApiResult<UserDetails> {
+    GetUserDetailsQuery::new(deployment_id, user_id)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
 }
 
 pub async fn create_user(
@@ -328,42 +397,6 @@ pub async fn create_user(
     Ok(user.into())
 }
 
-pub async fn get_user_details(
-    State(app_state): State<HttpState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(user_id): Path<i64>,
-) -> ApiResult<UserDetails> {
-    let user_details = GetUserDetailsQuery::new(deployment_id, user_id)
-        .execute(&app_state)
-        .await?;
-
-    Ok(user_details.into())
-}
-
-pub async fn invite_user(
-    State(app_state): State<HttpState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Json(request): Json<InviteUserRequest>,
-) -> ApiResult<DeploymentInvitation> {
-    let invitation = InviteUserCommand::new(deployment_id, request)
-        .execute(&app_state)
-        .await?;
-
-    Ok(invitation.into())
-}
-
-pub async fn approve_waitlist_user(
-    State(app_state): State<HttpState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(waitlist_user_id): Path<i64>,
-) -> ApiResult<DeploymentInvitation> {
-    let invitation = ApproveWaitlistUserCommand::new(deployment_id, waitlist_user_id)
-        .execute(&app_state)
-        .await?;
-
-    Ok(invitation.into())
-}
-
 pub async fn update_user(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -408,6 +441,24 @@ pub async fn update_user(
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !username.is_empty() {
                     request.username = Some(username);
+                }
+            }
+            "public_metadata" => {
+                let metadata_str = field.text().await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                if !metadata_str.is_empty() {
+                    if let Ok(metadata) = serde_json::from_str(&metadata_str) {
+                        request.public_metadata = Some(metadata);
+                    }
+                }
+            }
+            "private_metadata" => {
+                let metadata_str = field.text().await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                if !metadata_str.is_empty() {
+                    if let Ok(metadata) = serde_json::from_str(&metadata_str) {
+                        request.private_metadata = Some(metadata);
+                    }
                 }
             }
             "profile_image" => {
@@ -481,17 +532,41 @@ pub async fn update_user(
     Ok(user_details.into())
 }
 
+pub async fn invite_user(
+    State(app_state): State<HttpState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Json(request): Json<InviteUserRequest>,
+) -> ApiResult<DeploymentInvitation> {
+    InviteUserCommand::new(deployment_id, request)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+pub async fn approve_waitlist_user(
+    State(app_state): State<HttpState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(user_id): Path<i64>,
+) -> ApiResult<DeploymentInvitation> {
+    ApproveWaitlistUserCommand::new(deployment_id, user_id)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
 pub async fn add_user_email(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(user_id): Path<i64>,
     Json(request): Json<AddEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    let email = AddUserEmailCommand::new(deployment_id, user_id, request)
+    AddUserEmailCommand::new(deployment_id, user_id, request)
         .execute(&app_state)
-        .await?;
-
-    Ok(email.into())
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
 }
 
 pub async fn update_user_email(
@@ -500,11 +575,11 @@ pub async fn update_user_email(
     Path((user_id, email_id)): Path<(i64, i64)>,
     Json(request): Json<UpdateEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    let email = UpdateUserEmailCommand::new(deployment_id, user_id, email_id, request)
+    UpdateUserEmailCommand::new(deployment_id, user_id, email_id, request)
         .execute(&app_state)
-        .await?;
-
-    Ok(email.into())
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
 }
 
 pub async fn delete_user_email(
@@ -514,9 +589,9 @@ pub async fn delete_user_email(
 ) -> ApiResult<()> {
     DeleteUserEmailCommand::new(user_id, email_id)
         .execute(&app_state)
-        .await?;
-
-    Ok(().into())
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
 }
 
 pub async fn add_user_phone(
@@ -525,12 +600,11 @@ pub async fn add_user_phone(
     Path(user_id): Path<i64>,
     Json(request): Json<AddPhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    let phone = AddUserPhoneCommand::new(deployment_id, user_id, request)
+    AddUserPhoneCommand::new(deployment_id, user_id, request)
         .execute(&app_state)
         .await
-        .unwrap();
-
-    Ok(phone.into())
+        .map(Into::into)
+        .map_err(Into::into)
 }
 
 pub async fn update_user_phone(
@@ -539,11 +613,11 @@ pub async fn update_user_phone(
     Path((user_id, phone_id)): Path<(i64, i64)>,
     Json(request): Json<UpdatePhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    let phone = UpdateUserPhoneCommand::new(user_id, phone_id, request)
+    UpdateUserPhoneCommand::new(user_id, phone_id, request)
         .execute(&app_state)
-        .await?;
-
-    Ok(phone.into())
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
 }
 
 pub async fn delete_user_phone(
@@ -553,9 +627,9 @@ pub async fn delete_user_phone(
 ) -> ApiResult<()> {
     DeleteUserPhoneCommand::new(user_id, phone_id)
         .execute(&app_state)
-        .await?;
-
-    Ok(().into())
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
 }
 
 pub async fn delete_user_social_connection(
@@ -565,27 +639,20 @@ pub async fn delete_user_social_connection(
 ) -> ApiResult<()> {
     DeleteUserSocialConnectionCommand::new(user_id, connection_id)
         .execute(&app_state)
-        .await?;
-
-    Ok(().into())
-}
-
-#[derive(serde::Deserialize)]
-pub struct UpdatePasswordRequest {
-    pub new_password: String,
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
 }
 
 pub async fn update_user_password(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(user_id): Path<i64>,
-    Json(request): Json<UpdatePasswordRequest>,
+    Json(new_password): Json<String>,
 ) -> ApiResult<()> {
-    UpdateUserPasswordCommand::new(deployment_id, user_id, request.new_password)
+    UpdateUserPasswordCommand::new(deployment_id, user_id, new_password)
         .execute(&app_state)
-        .await?;
-
-    Ok(().into())
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
 }
-
-

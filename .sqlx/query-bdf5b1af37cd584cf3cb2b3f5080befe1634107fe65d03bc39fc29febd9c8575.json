@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM deployment_social_connections\n                WHERE deployment_id = $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bdf5b1af37cd584cf3cb2b3f5080befe1634107fe65d03bc39fc29febd9c8575"
+}

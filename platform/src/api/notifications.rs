@@ -7,10 +7,8 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use shared::{
-    commands::{notification::CreateNotificationCommand, Command},
-    models::notification::Notification,
-};
+use commands::{notification::CreateNotificationCommand, Command};
+use models::notification::Notification;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateNotificationRequest {
@@ -48,7 +46,7 @@ pub async fn create_notification(
     }
     
     if let Some(severity_str) = request.severity {
-        use shared::models::notification::NotificationSeverity;
+        use models::notification::NotificationSeverity;
         let severity = NotificationSeverity::from(&severity_str);
         command = command.with_severity(severity);
     }

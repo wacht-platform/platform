@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT org_role.id, org_role.created_at, org_role.updated_at, org_role.name, org_role.permissions\n                    FROM organization_membership_roles omr\n                    JOIN organization_roles org_role ON omr.organization_role_id = org_role.id\n                    JOIN organization_memberships om ON omr.organization_membership_id = om.id\n                    WHERE om.organization_id = $1 AND om.user_id = $2\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "permissions",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f02af97ea10857349de50f0b11e7fdd0a5b68f2dec60fcd5a568fe1b001cc54d"
+}

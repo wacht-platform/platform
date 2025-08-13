@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO deployment_b2b_settings (\n                id,\n                deployment_id,\n                organizations_enabled,\n                workspaces_enabled,\n                ip_allowlist_per_org_enabled,\n                max_allowed_org_members,\n                max_allowed_workspace_members,\n                allow_org_deletion,\n                allow_workspace_deletion,\n                custom_org_role_enabled,\n                custom_workspace_role_enabled,\n                default_workspace_creator_role_id,\n                default_workspace_member_role_id,\n                default_org_creator_role_id,\n                default_org_member_role_id,\n                limit_org_creation_per_user,\n                limit_workspace_creation_per_org,\n                org_creation_per_user_count,\n                workspaces_per_org_count,\n                allow_users_to_create_orgs,\n                max_orgs_per_user,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "Int4",
+        "Int4",
+        "Bool",
+        "Int4",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aec42311c04c0c4f90e30b48d2cc4ccafdfd6603613059604e1773701c95b6f2"
+}

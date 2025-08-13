@@ -5,19 +5,17 @@ use axum::{
 
 use crate::{
     application::HttpState,
-    core::{
-        commands::{
-            Command, CreateProductionDeploymentCommand, CreateProjectWithStagingDeploymentCommand,
-            CreateStagingDeploymentCommand, DeleteDeploymentCommand, DeleteProjectCommand,
-            VerifyDeploymentDnsRecordsCommand,
-        },
-        dto::json::project::{CreateProductionDeploymentRequest, CreateStagingDeploymentRequest},
-        models::{Deployment, ProjectWithDeployments},
-        queries::{GetProjectsWithDeploymentQuery, Query},
-    },
+    application::response::{ApiResult, PaginatedResponse},
 };
 
-use crate::application::response::{ApiResult, PaginatedResponse};
+use commands::{
+    Command, CreateProductionDeploymentCommand, CreateProjectWithStagingDeploymentCommand,
+    CreateStagingDeploymentCommand, DeleteDeploymentCommand, DeleteProjectCommand,
+    VerifyDeploymentDnsRecordsCommand,
+};
+use dto::json::project::{CreateProductionDeploymentRequest, CreateStagingDeploymentRequest};
+use models::{Deployment, ProjectWithDeployments};
+use queries::{GetProjectsWithDeploymentQuery, Query};
 
 pub async fn get_projects(
     State(app_state): State<HttpState>,

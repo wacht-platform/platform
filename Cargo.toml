@@ -1,3 +1,13 @@
 [workspace]
 resolver = "3"
-members = ["realtime", "platform", "shared", "worker", "gateway"]
+members = [
+    "realtime",
+    "platform",
+    "worker",
+    "gateway",
+    "models",
+    "dto",
+    "commands",
+    "queries",
+    "common",
+]

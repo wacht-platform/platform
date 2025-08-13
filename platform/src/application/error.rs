@@ -1,6 +1,6 @@
 use crate::application::response::ApiErrorResponse;
 use axum::http::StatusCode;
-use shared::error::AppError;
+use common::error::AppError;
 
 impl From<AppError> for ApiErrorResponse {
     fn from(error: AppError) -> Self {

@@ -1,20 +1,18 @@
 use anyhow::Result;
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
-use shared::{
-    commands::{
-        Command,
-        webhook_delivery::{
-            CleanupExpiredDeliveriesCommand, ClearEndpointFailuresCommand,
-            DeactivateEndpointCommand, DeleteActiveDeliveryCommand, GetActiveDeliveryCommand,
-            GetFailedDeliveryDetailsCommand, IncrementEndpointFailuresCommand,
-            UpdateDeliveryAttemptsCommand, calculate_next_retry,
-        },
-        webhook_storage::{RetrieveWebhookPayloadCommand, StoreFailedWebhookDeliveryCommand},
+use commands::{
+    Command,
+    webhook_delivery::{
+        ClearEndpointFailuresCommand, DeactivateEndpointCommand, DeleteActiveDeliveryCommand,
+        GetActiveDeliveryCommand, GetFailedDeliveryDetailsCommand,
+        IncrementEndpointFailuresCommand, UpdateDeliveryAttemptsCommand, calculate_next_retry,
     },
-    services::clickhouse_webhook::WebhookDelivery,
-    state::AppState,
+    webhook_storage::{RetrieveWebhookPayloadCommand, StoreFailedWebhookDeliveryCommand},
 };
+use common::clickhouse_webhook::WebhookDelivery;
+use common::state::AppState;
+use common::utils::webhook;
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{error, info, warn};
 
@@ -75,12 +73,12 @@ pub async fn process_webhook_delivery(
 
             if !allowlist_strings.is_empty() {
                 // Resolve the endpoint URL to IPs
-                match shared::utils::webhook::resolve_url_to_ips(&delivery.url).await {
+                match webhook::resolve_url_to_ips(&delivery.url).await {
                     Ok(ips) => {
                         // Check if any resolved IP is in the allowlist
-                        let allowed = ips.iter().any(|ip| {
-                            shared::utils::webhook::is_ip_allowed(ip, &allowlist_strings)
-                        });
+                        let allowed = ips
+                            .iter()
+                            .any(|ip| webhook::is_ip_allowed(ip, &allowlist_strings));
 
                         if !allowed {
                             warn!(
@@ -194,8 +192,7 @@ pub async fn process_webhook_delivery(
     let mut request = client.post(&delivery.url).json(&payload);
 
     // Generate and add signature header
-    let signature =
-        shared::utils::webhook::generate_hmac_signature(&delivery.signing_secret, &payload);
+    let signature = webhook::generate_hmac_signature(&delivery.signing_secret, &payload);
 
     request = request
         .header("X-Webhook-Signature", signature)
@@ -614,29 +611,4 @@ pub async fn process_webhook_batch(
         "Batch processed: {} successful, {} failed, {} blocked, {} not found",
         successful, failed, blocked, not_found
     ))
-}
-
-// This should be called by a cron job, not through NATS
-pub async fn cleanup_expired_webhooks(app_state: &AppState) -> Result<String> {
-    info!("Running scheduled cleanup for expired webhook deliveries");
-
-    // Clean up deliveries older than 7 days that have exceeded max attempts
-    let expired_count = CleanupExpiredDeliveriesCommand { days_old: 7 }
-        .execute(app_state)
-        .await?;
-
-    if expired_count > 0 {
-        info!("Cleaned up {} expired webhook deliveries", expired_count);
-    }
-
-    // Also trigger ClickHouse cleanup for old data (older than 90 days)
-    if let Err(e) = app_state
-        .clickhouse_service
-        .cleanup_old_webhook_data(90)
-        .await
-    {
-        warn!("Failed to cleanup old ClickHouse data: {}", e);
-    }
-
-    Ok(format!("Cleaned up {} expired deliveries", expired_count))
 }

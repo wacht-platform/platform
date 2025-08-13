@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE webhook_endpoints e\n            SET url = COALESCE($3, e.url),\n                description = COALESCE($4, e.description),\n                headers = COALESCE($5, e.headers),\n                is_active = COALESCE($6, e.is_active),\n                max_retries = COALESCE($7, e.max_retries),\n                timeout_seconds = COALESCE($8, e.timeout_seconds)\n            FROM webhook_apps a\n            WHERE e.id = $1 \n                AND e.app_id = a.id \n                AND a.deployment_id = $2\n            RETURNING e.id as \"id!\", \n                      e.app_id as \"app_id!\", \n                      e.url as \"url!\", \n                      e.description, \n                      e.headers, \n                      e.is_active as \"is_active!\",\n                      e.max_retries as \"max_retries!\", \n                      e.timeout_seconds as \"timeout_seconds!\", \n                      e.created_at as \"created_at!\", \n                      e.updated_at as \"updated_at!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "app_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "url!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "headers",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_retries!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "timeout_seconds!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Bool",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "abc431e8893c31b5a88fb3219e30d907a32dbd386b3d0bb443040f52e4a33a1e"
+}

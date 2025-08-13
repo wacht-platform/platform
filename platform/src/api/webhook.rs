@@ -1,33 +1,33 @@
 use axum::extract::{Json, Path, Query, State};
-use shared::queries::{
-    GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery, WebhookAnalyticsResult,
-    WebhookTimeseriesResult,
+use queries::webhook_analytics::{
+    GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery,
+};
+use models::webhook_analytics::{
+    WebhookAnalyticsResult, WebhookTimeseriesResult,
 };
 
 use crate::application::{HttpState, response::ApiResult};
 use crate::middleware::RequireDeployment;
 use axum::http::StatusCode;
-use shared::{
-    commands::{
-        Command,
-        webhook_app::{
-            CreateWebhookAppCommand, DeleteWebhookAppCommand, RotateWebhookSecretCommand,
-            UpdateWebhookAppCommand,
-        },
-        webhook_endpoint::{
-            CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand,
-            UpdateWebhookEndpointCommand,
-        },
-        webhook_trigger::{BatchTriggerWebhookEventsCommand, TriggerWebhookEventCommand},
+use commands::{
+    Command,
+    webhook_app::{
+        CreateWebhookAppCommand, DeleteWebhookAppCommand, RotateWebhookSecretCommand,
+        UpdateWebhookAppCommand,
     },
-    dto::json::webhook_requests::*,
-    models::webhook::{WebhookApp, WebhookEndpoint},
-    queries::{
-        Query as QueryTrait,
-        webhook::{
-            GetWebhookAppByNameQuery, GetWebhookAppsQuery, GetWebhookDeliveryStatusQuery,
-            GetWebhookEndpointsQuery,
-        },
+    webhook_endpoint::{
+        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand,
+        UpdateWebhookEndpointCommand,
+    },
+    webhook_trigger::{BatchTriggerWebhookEventsCommand, TriggerWebhookEventCommand},
+};
+use dto::json::webhook_requests::*;
+use models::webhook::{WebhookApp, WebhookEndpoint};
+use queries::{
+    Query as QueryTrait,
+    webhook::{
+        GetWebhookAppByNameQuery, GetWebhookAppsQuery, GetWebhookDeliveryStatusQuery,
+        GetWebhookEndpointsQuery,
     },
 };
 
@@ -167,7 +167,7 @@ pub async fn create_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
-    use shared::commands::webhook_endpoint::EventSubscriptionData;
+    use commands::webhook_endpoint::EventSubscriptionData;
 
     // Convert API subscriptions to command subscriptions
     let subscriptions: Vec<EventSubscriptionData> = request
@@ -300,7 +300,7 @@ pub async fn replay_webhook_delivery(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<ReplayWebhookDeliveryRequest>,
 ) -> ApiResult<ReplayWebhookDeliveryResponse> {
-    use shared::commands::webhook_trigger::ReplayWebhookDeliveryCommand;
+    use commands::webhook_trigger::ReplayWebhookDeliveryCommand;
 
     let new_delivery_id = ReplayWebhookDeliveryCommand {
         delivery_id: request.delivery_id,
@@ -347,7 +347,7 @@ pub async fn reactivate_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<ReactivateEndpointRequest>,
 ) -> ApiResult<ReactivateEndpointResponse> {
-    use shared::commands::webhook_endpoint::ReactivateEndpointCommand;
+    use commands::webhook_endpoint::ReactivateEndpointCommand;
 
     // Reactivate the endpoint and clear failure counter
     let endpoint = ReactivateEndpointCommand {
@@ -358,7 +358,7 @@ pub async fn reactivate_webhook_endpoint(
     .await?;
 
     // Log reactivation to ClickHouse
-    use shared::services::clickhouse_webhook::WebhookDelivery;
+    use services::clickhouse_webhook::WebhookDelivery;
     let ch_delivery = WebhookDelivery {
         deployment_id,
         delivery_id: app_state.sf.next_id().unwrap() as i64,
@@ -393,7 +393,7 @@ pub async fn test_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<TestWebhookEndpointRequest>,
 ) -> ApiResult<TestWebhookEndpointResponse> {
-    use shared::commands::webhook_endpoint::TestWebhookEndpointCommand;
+    use commands::webhook_endpoint::TestWebhookEndpointCommand;
 
     let test_payload = serde_json::json!({
         "test": true,

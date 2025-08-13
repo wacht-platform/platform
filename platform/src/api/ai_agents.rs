@@ -6,16 +6,15 @@ use crate::{
         HttpState,
         response::{ApiResult, PaginatedResponse},
     },
-    core::{
-        commands::{Command, CreateAiAgentCommand, DeleteAiAgentCommand, UpdateAiAgentCommand},
-        dto::{
-            json::deployment::{CreateAgentRequest, UpdateAgentRequest},
-            query::deployment::GetAgentsQuery,
-        },
-        models::{AiAgent, AiAgentWithDetails},
-        queries::{GetAiAgentByIdQuery, GetAiAgentsQuery, Query as QueryTrait},
-    },
 };
+
+use commands::{Command, CreateAiAgentCommand, DeleteAiAgentCommand, UpdateAiAgentCommand};
+use dto::{
+    json::deployment::{CreateAgentRequest, UpdateAgentRequest},
+    query::deployment::GetAgentsQuery,
+};
+use models::{AiAgent, AiAgentWithDetails};
+use queries::{GetAiAgentByIdQuery, GetAiAgentsQuery, Query as QueryTrait};
 
 pub async fn get_ai_agents(
     State(app_state): State<HttpState>,

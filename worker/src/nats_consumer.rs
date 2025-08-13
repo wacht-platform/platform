@@ -2,7 +2,7 @@ use anyhow::Result;
 use async_nats::jetstream::{self, consumer};
 use futures::StreamExt;
 use serde_json;
-use shared::state::AppState;
+use common::state::AppState;
 use std::collections::HashMap;
 use tracing::{error, info, warn};
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use shared::state::AppState;
+use common::state::AppState;
 use tracing::{error, info};
 
 #[derive(Clone, Serialize, Deserialize)]

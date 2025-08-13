@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT e.id as \"id!\", e.app_id as \"app_id!\", e.url as \"url!\", e.description, e.headers, \n                           e.max_retries as \"max_retries!\", e.timeout_seconds as \"timeout_seconds!\", e.is_active as \"is_active!\", \n                           e.created_at as \"created_at!\", e.updated_at as \"updated_at!\"\n                    FROM webhook_endpoints e\n                    JOIN webhook_apps a ON e.app_id = a.id\n                    WHERE a.deployment_id = $1 AND e.app_id = $2 AND e.is_active = true\n                    ORDER BY e.created_at DESC\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "app_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "url!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "headers",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "max_retries!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "timeout_seconds!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "00cc9d9e80a048b74d26ec13218602bfccc0bbbc3dfb4fe479b1d565b6a154c8"
+}

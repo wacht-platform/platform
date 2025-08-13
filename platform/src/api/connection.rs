@@ -3,14 +3,13 @@ use crate::{
         HttpState,
         response::{ApiResult, ApiSuccess, PaginatedResponse},
     },
-    core::{
-        commands::{Command, UpsertDeploymentSocialConnectionCommand},
-        dto::json::DeploymentSocialConnectionUpsert,
-        models::DeploymentSocialConnection,
-        queries::{Query, deployment::GetDeploymentSocialConnectionsQuery},
-    },
     middleware::RequireDeployment,
 };
+
+use commands::{Command, UpsertDeploymentSocialConnectionCommand};
+use dto::json::DeploymentSocialConnectionUpsert;
+use models::DeploymentSocialConnection;
+use queries::{Query, deployment::GetDeploymentSocialConnectionsQuery};
 use axum::{
     Json,
     extract::State,

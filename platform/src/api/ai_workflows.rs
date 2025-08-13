@@ -6,18 +6,17 @@ use crate::{
         HttpState,
         response::{ApiResult, PaginatedResponse},
     },
-    core::{
-        commands::{
-            Command, CreateAiWorkflowCommand, DeleteAiWorkflowCommand, UpdateAiWorkflowCommand,
-        },
-        dto::{
-            json::deployment::{CreateWorkflowRequest, UpdateWorkflowRequest},
-            query::deployment::GetWorkflowsQuery,
-        },
-        models::{AiWorkflow, AiWorkflowWithDetails},
-        queries::{GetAiWorkflowByIdQuery, GetAiWorkflowsQuery, Query as QueryTrait},
-    },
 };
+
+use commands::{
+    Command, CreateAiWorkflowCommand, DeleteAiWorkflowCommand, UpdateAiWorkflowCommand,
+};
+use dto::{
+    json::deployment::{CreateWorkflowRequest, UpdateWorkflowRequest},
+    query::deployment::GetWorkflowsQuery,
+};
+use models::{AiWorkflow, AiWorkflowWithDetails};
+use queries::{GetAiWorkflowByIdQuery, GetAiWorkflowsQuery, Query as QueryTrait};
 
 pub async fn get_ai_workflows(
     State(app_state): State<HttpState>,

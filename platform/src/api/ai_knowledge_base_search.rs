@@ -3,14 +3,13 @@ use axum::extract::{Path, Query, State};
 
 use crate::{
     application::{AppError, HttpState, response::ApiResult},
-    core::{
-        commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand},
-        dto::json::ai_knowledge_base::{
-            KnowledgeBaseSearchResult, SearchKnowledgeBaseQuery, SearchKnowledgeBaseResponse,
-        },
-        queries::{Query as QueryTrait, ai_knowledge_base::GetAiKnowledgeBaseByIdQuery},
-    },
 };
+
+use commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
+use dto::json::ai_knowledge_base::{
+    KnowledgeBaseSearchResult, SearchKnowledgeBaseQuery, SearchKnowledgeBaseResponse,
+};
+use queries::{Query as QueryTrait, ai_knowledge_base::GetAiKnowledgeBaseByIdQuery};
 
 pub async fn search_knowledge_base(
     RequireDeployment(deployment_id): RequireDeployment,

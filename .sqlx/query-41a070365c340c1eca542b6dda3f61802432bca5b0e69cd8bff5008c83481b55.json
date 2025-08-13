@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO deployment_sms_templates (\n                id,\n                deployment_id,\n                reset_password_code_template,\n                verification_code_template,\n                password_change_template,\n                password_remove_template,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "41a070365c340c1eca542b6dda3f61802432bca5b0e69cd8bff5008c83481b55"
+}

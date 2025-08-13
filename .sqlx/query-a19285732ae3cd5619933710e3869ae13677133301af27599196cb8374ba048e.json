@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO deployment_email_templates (\n                id,\n                deployment_id,\n                organization_invite_template,\n                verification_code_template,\n                reset_password_code_template,\n                primary_email_change_template,\n                password_change_template,\n                password_remove_template,\n                sign_in_from_new_device_template,\n                magic_link_template,\n                waitlist_signup_template,\n                waitlist_invite_template,\n                workspace_invite_template,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a19285732ae3cd5619933710e3869ae13677133301af27599196cb8374ba048e"
+}
