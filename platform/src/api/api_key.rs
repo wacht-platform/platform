@@ -126,7 +126,6 @@ pub async fn list_api_keys(
         .await?;
 
     Ok(ListApiKeysResponse {
-        total: keys.len(),
         keys,
     }
     .into())

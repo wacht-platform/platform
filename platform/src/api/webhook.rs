@@ -8,7 +8,6 @@ use models::webhook_analytics::{
 
 use crate::application::{HttpState, response::ApiResult};
 use crate::middleware::RequireDeployment;
-use axum::http::StatusCode;
 use commands::{
     Command,
     webhook_app::{
@@ -24,11 +23,12 @@ use commands::{
     },
 };
 use dto::json::webhook_requests::*;
-use models::webhook::{WebhookApp, WebhookEndpoint};
+use dto::clickhouse::webhook::WebhookDelivery;
+use models::webhook::{WebhookApp, WebhookEndpoint, WebhookEventTrigger};
 use queries::{
     Query as QueryTrait,
     webhook::{
-        GetWebhookAppByNameQuery, GetWebhookAppsQuery, GetWebhookDeliveryStatusQuery,
+        GetWebhookAppsQuery, GetWebhookDeliveryStatusQuery,
         GetWebhookEndpointsQuery,
     },
 };
@@ -245,7 +245,7 @@ pub async fn batch_trigger_webhook_events(
         events: request
             .events
             .into_iter()
-            .map(|e| shared::commands::webhook_trigger::WebhookEventTrigger {
+            .map(|e| WebhookEventTrigger {
                 event_name: e.event_name,
                 payload: e.payload,
                 filter_context: e.filter_context,
@@ -328,12 +328,10 @@ pub async fn reactivate_webhook_endpoint(
     .await?;
 
     // Log reactivation to ClickHouse
-    use services::clickhouse_webhook::WebhookDelivery;
     let ch_delivery = WebhookDelivery {
         deployment_id,
         delivery_id: app_state.sf.next_id().unwrap() as i64,
-        app_id: endpoint.app_id,
-        app_name: String::new(), // We don't have app name here
+        app_name: endpoint.app_name.clone(),
         endpoint_id: endpoint.id,
         endpoint_url: endpoint.url.clone(),
         event_name: "endpoint.reactivated".to_string(),
@@ -341,8 +339,12 @@ pub async fn reactivate_webhook_endpoint(
         http_status_code: None,
         response_time_ms: None,
         attempt_number: 0,
+        max_attempts: 1,
         error_message: None,
         filtered_reason: None,
+        payload_s3_key: "endpoint-reactivation".to_string(),
+        response_body: None,
+        response_headers: None,
         timestamp: chrono::Utc::now(),
     };
 
@@ -398,7 +400,7 @@ pub async fn get_webhook_analytics(
     let mut query = GetWebhookAnalyticsQuery::new(deployment_id);
 
     if let Some(app_id) = params.app_id {
-        query = query.with_app(app_id);
+        query = query.with_app_name(app_id.to_string());
     }
 
     if let Some(endpoint_id) = params.endpoint_id {
@@ -422,7 +424,7 @@ pub async fn get_webhook_timeseries(
     let mut query = GetWebhookTimeseriesQuery::new(deployment_id, params.interval);
 
     if let Some(app_id) = params.app_id {
-        query = query.with_app(app_id);
+        query = query.with_app_name(app_id.to_string());
     }
 
     if let Some(endpoint_id) = params.endpoint_id {

@@ -1,6 +1,6 @@
 use axum::{
     extract::{Query, State},
-    http::HeaderMap,
+    http::{HeaderMap, header::COOKIE},
     response::IntoResponse,
 };
 use common::utils::jwt::verify_token;
@@ -16,13 +16,23 @@ use crate::application::HttpState;
 
 #[derive(Debug, Deserialize)]
 pub struct NotificationParams {
-    pub token: String,
     pub host: Option<String>,
+    pub channels: Option<Vec<String>>,
+    pub organization_ids: Option<Vec<i64>>,
+    pub workspace_ids: Option<Vec<i64>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct NotificationClaims {
     pub sub: String,
+    pub exp: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SessionClaims {
+    pub sub: String, // user_id
+    pub session_id: Option<String>,
+    pub rotating_token_id: Option<String>,
     pub exp: Option<i64>,
 }
 
@@ -41,7 +51,7 @@ pub struct NotificationMessage {
 
 pub async fn notification_stream_handler(
     headers: HeaderMap,
-    Query(params): Query<HashMap<String, String>>,
+    Query(params): Query<NotificationParams>,
     ws: upgrade::IncomingUpgrade,
     State(state): State<HttpState>,
 ) -> impl IntoResponse {
@@ -51,24 +61,23 @@ pub async fn notification_stream_handler(
         .map(|s| s.to_string())
         .unwrap_or_else(|| "localhost".to_string());
 
-    // Extract token from query parameters
-    let token = params.get("token").cloned();
-
-    if token.is_none() {
-        warn!("WebSocket connection attempted without authentication token");
+    // Extract session token from cookies
+    let session_token = extract_session_cookie(&headers);
+    if session_token.is_none() {
+        warn!("WebSocket connection attempted without session cookie");
         return axum::response::Response::builder()
             .status(401)
-            .body(axum::body::Body::from("Authentication required"))
+            .body(axum::body::Body::from("Session cookie required"))
             .unwrap()
             .into_response();
     }
-
-    let token = token.unwrap();
+    
+    let token = session_token.unwrap();
 
     let (response, fut) = ws.upgrade().unwrap();
 
     tokio::task::spawn(async move {
-        if let Err(e) = handle_notification_client(fut, state, host, token).await {
+        if let Err(e) = handle_notification_client(fut, state, host, token, params).await {
             error!("Error in notification websocket connection: {e}");
         }
     });
@@ -76,11 +85,29 @@ pub async fn notification_stream_handler(
     response.into_response()
 }
 
+fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
+    if let Some(cookie_header) = headers.get(COOKIE) {
+        if let Ok(cookie_str) = cookie_header.to_str() {
+            // Parse cookies to find __session
+            for cookie in cookie_str.split(';') {
+                let cookie = cookie.trim();
+                if let Some((name, value)) = cookie.split_once('=') {
+                    if name == "__session" {
+                        return Some(value.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 async fn handle_notification_client(
     fut: upgrade::UpgradeFut,
     app_state: HttpState,
     host: String,
     token: String,
+    params: NotificationParams,
 ) -> Result<(), WebSocketError> {
     let mut ws = FragmentCollector::new(fut.await?);
 
@@ -104,13 +131,13 @@ async fn handle_notification_client(
         }
     };
 
-    // Verify JWT token with deployment's private key using ES256 (same as frontend API)
-    let claims = match verify_token::<NotificationClaims>(&token, "ES256", &private_key) {
+    // Verify session JWT token with deployment's private key using ES256 (same as frontend API)
+    let claims = match verify_token::<SessionClaims>(&token, "ES256", &private_key) {
         Ok(token_data) => token_data.claims,
         Err(e) => {
-            error!("Invalid JWT token for notification stream: {}", e);
+            error!("Invalid session token for notification stream: {}", e);
             let error_msg = json!({
-                "error": "Unauthorized"
+                "error": "Unauthorized - invalid session"
             });
             let _ = ws
                 .write_frame(Frame::text(fastwebsockets::Payload::Owned(
