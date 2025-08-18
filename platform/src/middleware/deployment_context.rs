@@ -1,5 +1,6 @@
 #[cfg(feature = "backend-api")]
 use super::api_key_context::ApiKeyContext;
+#[cfg(feature = "backend-api")]
 use axum::{body::Body, extract::Request, http::StatusCode, response::Response};
 #[cfg(feature = "backend-api")]
 use chrono::Utc;
@@ -11,102 +12,11 @@ use commands::{Command, api_key::UpdateApiKeyLastUsedCommand};
 use queries::{Query, api_key::GetApiKeyByHashQuery};
 #[cfg(feature = "backend-api")]
 use common::state::AppState;
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
-use tower::{Layer, Service};
-use tracing::{debug, warn};
 
 /// Deployment context that gets injected into request extensions
 #[derive(Clone, Copy, Debug)]
 pub struct DeploymentContext {
     pub deployment_id: i64,
-}
-
-/// Layer for extracting deployment ID from path (console API)
-#[derive(Clone)]
-pub struct ConsoleDeploymentLayer;
-
-impl ConsoleDeploymentLayer {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl<S> Layer<S> for ConsoleDeploymentLayer {
-    type Service = ConsoleDeploymentService<S>;
-
-    fn layer(&self, inner: S) -> ConsoleDeploymentService<S> {
-        ConsoleDeploymentService { inner }
-    }
-}
-
-/// Service that extracts deployment ID from URL path
-#[derive(Clone)]
-pub struct ConsoleDeploymentService<S> {
-    inner: S,
-}
-
-impl<S> Service<Request<Body>> for ConsoleDeploymentService<S>
-where
-    S: Service<Request<Body>, Response = Response> + Send + 'static + Clone,
-    S::Future: Send + 'static,
-{
-    type Response = Response;
-    type Error = std::convert::Infallible;
-    type Future = Pin<Box<dyn Future<Output = Result<Response, std::convert::Infallible>> + Send>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), std::convert::Infallible>> {
-        match self.inner.poll_ready(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(_)) => Poll::Ready(Ok(())),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-
-    fn call(
-        &mut self,
-        mut req: Request<Body>,
-    ) -> Pin<Box<dyn Future<Output = Result<Response, std::convert::Infallible>> + Send>> {
-        let mut inner = self.inner.clone();
-        let path = req.uri().path().to_string();
-
-        Box::pin(async move {
-            // Extract deployment_id from path
-            // Pattern: /deployments/{deployment_id}/...
-            if let Some(deployment_id) = extract_deployment_id_from_path(&path) {
-                debug!(
-                    deployment_id = deployment_id,
-                    "Extracted deployment ID from path"
-                );
-                req.extensions_mut()
-                    .insert(DeploymentContext { deployment_id });
-            } else {
-                warn!(path = %path, "No deployment ID found in path");
-            }
-
-            match inner.call(req).await {
-                Ok(response) => Ok(response),
-                Err(_) => Ok(Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from("Internal server error"))
-                    .unwrap()),
-            }
-        })
-    }
-}
-
-fn extract_deployment_id_from_path(path: &str) -> Option<i64> {
-    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-
-    // Looking for pattern: /deployments/{deployment_id}/...
-    if segments.len() >= 2 && segments[0] == "deployments" {
-        segments[1].parse::<i64>().ok()
-    } else {
-        None
-    }
 }
 
 #[cfg(feature = "backend-api")]

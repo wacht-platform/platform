@@ -1,7 +1,6 @@
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::Utc;
 use serde_json::Value;
-use zstd::stream::{decode_all, encode_all};
 use futures::future::join_all;
 
 use crate::Command;
@@ -40,32 +39,34 @@ impl Command for StoreWebhookPayloadCommand {
 
         // Generate S3 key with date-based partitioning and snowflake ID
         let key = format!(
-            "webhooks/{}/{}.json.zst",
+            "webhooks/{}/{}.json",
             Utc::now().format("%Y/%m/%d"),
             app_state.sf.next_id().unwrap()
         );
 
-        // Serialize and compress payload
+        // Serialize payload to JSON
         let json_bytes = serde_json::to_vec(&self.payload)
             .map_err(|e| AppError::Internal(format!("Failed to serialize payload: {}", e)))?;
-        
-        let compressed = encode_all(json_bytes.as_slice(), 3)
-            .map_err(|e| AppError::Internal(format!("Failed to compress payload: {}", e)))?;
 
         // Upload to S3
+        tracing::debug!("Uploading webhook payload to S3: bucket={}, key={}", bucket, key);
+        
         app_state.s3_client
             .put_object()
             .bucket(&bucket)
             .key(&key)
-            .body(ByteStream::from(compressed))
-            .content_encoding("zstd")
+            .body(ByteStream::from(json_bytes.clone()))
             .content_type("application/json")
             .metadata("original_size", json_bytes.len().to_string())
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to upload to S3: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!("S3 upload failed - bucket: {}, key: {}, error: {}", bucket, key, e);
+                AppError::Internal(format!("Failed to upload to S3: {}", e))
+            })?;
 
-        Ok(format!("s3://{}/{}", bucket, key))
+        // Return just the key, not the full S3 URI
+        Ok(key)
     }
 }
 
@@ -97,19 +98,21 @@ impl Command for RetrieveWebhookPayloadCommand {
             std::env::var("WEBHOOK_BUCKET").unwrap_or_else(|_| "webhooks".to_string())
         });
 
-        // Parse S3 URI
-        let key = self.s3_key
-            .strip_prefix(&format!("s3://{}/", bucket))
-            .ok_or_else(|| AppError::BadRequest(format!("Invalid S3 key: {}", self.s3_key)))?;
+        // Use the key directly (no longer expecting s3:// prefix)
+        let key = &self.s3_key;
 
         // Get object from S3
+        tracing::info!("Fetching webhook payload from S3: bucket={}, key={}", bucket, key);
         let response = app_state.s3_client
             .get_object()
             .bucket(&bucket)
             .key(key)
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to get object from S3: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!("Failed to get object from S3: bucket={}, key={}, error={}", bucket, key, e);
+                AppError::Internal(format!("Failed to get object from S3: {}", e))
+            })?;
 
         // Collect body bytes
         let body = response
@@ -119,12 +122,8 @@ impl Command for RetrieveWebhookPayloadCommand {
             .map_err(|e| AppError::Internal(format!("Failed to read S3 object body: {}", e)))?
             .into_bytes();
 
-        // Decompress
-        let decompressed = decode_all(&body[..])
-            .map_err(|e| AppError::Internal(format!("Failed to decompress payload: {}", e)))?;
-
-        // Parse JSON
-        serde_json::from_slice(&decompressed)
+        // Parse JSON directly (no decompression needed)
+        serde_json::from_slice(&body)
             .map_err(|e| AppError::Internal(format!("Failed to parse JSON payload: {}", e)))
     }
 }
@@ -177,16 +176,12 @@ impl Command for StoreFailedWebhookDeliveryCommand {
 
         let json_bytes = serde_json::to_vec(&wrapper)
             .map_err(|e| AppError::Internal(format!("Failed to serialize failed delivery: {}", e)))?;
-        
-        let compressed = encode_all(json_bytes.as_slice(), 3)
-            .map_err(|e| AppError::Internal(format!("Failed to compress failed delivery: {}", e)))?;
 
         app_state.s3_client
             .put_object()
             .bucket(&bucket)
             .key(&key)
-            .body(ByteStream::from(compressed))
-            .content_encoding("zstd")
+            .body(ByteStream::from(json_bytes))
             .content_type("application/json")
             .send()
             .await
@@ -273,12 +268,8 @@ impl Command for BatchRetrieveWebhookPayloadsCommand {
                         .map_err(|e| format!("Failed to read body: {}", e))?
                         .into_bytes();
                     
-                    // Decompress
-                    let decompressed = decode_all(&body[..])
-                        .map_err(|e| format!("Failed to decompress: {}", e))?;
-                    
-                    // Parse JSON
-                    serde_json::from_slice::<Value>(&decompressed)
+                    // Parse JSON directly (no decompression)
+                    serde_json::from_slice::<Value>(&body)
                         .map_err(|e| format!("Failed to parse JSON: {}", e))
                 }.await;
                 

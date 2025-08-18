@@ -90,11 +90,6 @@ impl Query for GetUserNotificationsQuery {
                 read_at: row.get("read_at"),
                 is_archived: row.get("is_archived"),
                 archived_at: row.get("archived_at"),
-                group_id: row.get("group_id"),
-                group_count: row.get("group_count"),
-                dedupe_key: row.get("dedupe_key"),
-                source: row.get("source"),
-                source_id: row.get("source_id"),
                 metadata: row.get("metadata"),
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
@@ -179,9 +174,7 @@ impl Query for GetNotificationQuery {
                 id, deployment_id, user_id, organization_id, workspace_id,
                 title, body, action_url, action_label, severity,
                 is_read, read_at, is_archived, archived_at,
-                group_id, group_count, dedupe_key,
-                source, source_id, metadata,
-                created_at, updated_at, expires_at
+                metadata, created_at, updated_at, expires_at
             FROM notifications
             WHERE id = $1 AND user_id = $2
             "#,
@@ -211,11 +204,6 @@ impl Query for GetNotificationQuery {
             read_at: r.read_at,
             is_archived: r.is_archived.unwrap_or(false),
             archived_at: r.archived_at,
-            group_id: r.group_id,
-            group_count: r.group_count.unwrap_or(1),
-            dedupe_key: r.dedupe_key,
-            source: r.source,
-            source_id: r.source_id,
             metadata: r.metadata,
             created_at: r.created_at.unwrap_or_else(|| chrono::Utc::now()),
             updated_at: r.updated_at.unwrap_or_else(|| chrono::Utc::now()),
@@ -224,37 +212,3 @@ impl Query for GetNotificationQuery {
     }
 }
 
-// =====================================================
-// CHECK DUPLICATE NOTIFICATION QUERY
-// =====================================================
-#[derive(Debug)]
-pub struct CheckDuplicateNotificationQuery {
-    pub deployment_id: i64,
-    pub user_id: i64,
-    pub dedupe_key: String,
-}
-
-impl Query for CheckDuplicateNotificationQuery {
-    type Output = bool;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let exists: (bool,) = query_as(
-            r#"
-            SELECT EXISTS(
-                SELECT 1 FROM notifications
-                WHERE deployment_id = $1
-                AND user_id = $2
-                AND dedupe_key = $3
-                AND created_at > NOW() - INTERVAL '24 hours'
-            )
-            "#,
-        )
-        .bind(self.deployment_id)
-        .bind(self.user_id)
-        .bind(&self.dedupe_key)
-        .fetch_one(&app_state.db_pool)
-        .await?;
-
-        Ok(exists.0)
-    }
-}

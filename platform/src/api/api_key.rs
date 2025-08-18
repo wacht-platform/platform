@@ -8,7 +8,7 @@ use commands::{
     api_key::{CreateApiKeyCommand, RevokeApiKeyCommand, RotateApiKeyCommand},
     api_key_app::{CreateApiKeyAppCommand, DeleteApiKeyAppCommand, UpdateApiKeyAppCommand},
 };
-use dto::json::api_key_requests::*;
+use dto::json::api_key::*;
 use models::api_key::{ApiKeyApp, ApiKeyWithSecret};
 use queries::{
     Query as QueryTrait,
@@ -145,8 +145,12 @@ pub async fn create_api_key(
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
 
+    let key_prefix = request.key_prefix.ok_or_else(|| {
+        (StatusCode::BAD_REQUEST, "key_prefix is required for backend API")
+    })?;
+
     let mut command =
-        CreateApiKeyCommand::new(app.id, deployment_id, request.name, request.key_prefix);
+        CreateApiKeyCommand::new(app.id, deployment_id, request.name, key_prefix);
 
     if let Some(permissions) = request.permissions {
         command = command.with_permissions(permissions);

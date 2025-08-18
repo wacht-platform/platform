@@ -73,10 +73,9 @@ impl Command for GetSubscribedEndpointsCommand {
                 a.signing_secret as "signing_secret!"
             FROM webhook_endpoints e
             JOIN webhook_endpoint_subscriptions s ON e.id = s.endpoint_id
-            JOIN webhook_app_events ev ON s.event_id = ev.id
-            JOIN webhook_apps a ON e.app_id = a.id
+            JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_name = a.name)
             WHERE a.name = $1 
-              AND ev.event_name = $2
+              AND s.event_name = $2
               AND e.is_active = true
               AND a.is_active = true
               AND a.deployment_id = $3

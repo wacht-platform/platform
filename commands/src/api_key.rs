@@ -68,19 +68,23 @@ impl Command for CreateApiKeyCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let (full_key, key_hash, key_suffix) = self.generate_api_key();
         
+        // Generate Snowflake ID
+        let key_id = app_state.sf.next_id()? as i64;
+        
         let rec = sqlx::query!(
             r#"
             INSERT INTO api_keys (
-                app_id, deployment_id, name, key_prefix, key_hash, key_suffix,
+                id, app_id, deployment_id, name, key_prefix, key_hash, key_suffix,
                 permissions, metadata, expires_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id, app_id, deployment_id, name, key_prefix, key_suffix, key_hash, 
                       permissions as "permissions: serde_json::Value", 
                       metadata as "metadata: serde_json::Value", 
                       expires_at, last_used_at, is_active, created_at, updated_at, 
                       revoked_at, revoked_reason
             "#,
+            key_id,
             self.app_id,
             self.deployment_id,
             self.name,
@@ -220,7 +224,7 @@ impl Command for RotateApiKeyCommand {
         let create_command = CreateApiKeyCommand {
             app_id: existing_key.app_id,
             deployment_id: existing_key.deployment_id,
-            name: format!("{} (Rotated)", existing_key.name),
+            name: existing_key.name,
             key_prefix: existing_key.key_prefix,
             permissions: existing_key.permissions,
             metadata: Some(existing_key.metadata),

@@ -6,19 +6,23 @@ use axum::extract::{Json, Path, Query, State};
 use axum::http::StatusCode;
 
 use crate::application::{HttpState, response::ApiResult};
-use crate::middleware::RequireDeployment;
+use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use commands::{
     Command,
-    webhook_app::{
-        CreateWebhookAppCommand, RotateWebhookSecretCommand, UpdateWebhookAppCommand,
-    },
+    webhook_app::{CreateWebhookAppCommand, RotateWebhookSecretCommand},
     webhook_endpoint::{
-        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand,
-        UpdateWebhookEndpointCommand, EventSubscriptionData,
+        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, EventSubscriptionData,
+        UpdateWebhookEndpointCommand,
     },
-    webhook_trigger::ReplayWebhookDeliveryCommand,
 };
-use dto::json::{WebhookStatus, webhook_requests::*};
+use dto::json::{
+    WebhookStatus,
+    webhook_requests::{
+        ConsoleAnalyticsQuery, ConsoleTimeseriesQuery, CreateWebhookEndpointConsoleRequest,
+        DeliveryListQuery, GetAvailableEventsResponse, ListWebhookEndpointsQuery,
+        ListWebhookEndpointsResponse, TestWebhookRequest, UpdateWebhookEndpointRequest,
+    },
+};
 use models::{
     webhook::{WebhookApp, WebhookEndpoint, WebhookEventDefinition},
     webhook_analytics::TimeseriesInterval,
@@ -29,63 +33,56 @@ use queries::{
     webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery},
 };
 
-// Helper function to get console deployment ID from environment
-pub fn get_console_deployment_id() -> i64 {
-    std::env::var("CONSOLE_DEPLOYMENT_ID")
-        .expect("CONSOLE_DEPLOYMENT_ID environment variable must be set")
-        .parse::<i64>()
-        .expect("CONSOLE_DEPLOYMENT_ID must be a valid i64")
-}
-
 // Get webhook status for a deployment
 pub async fn get_webhook_status(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<WebhookStatus> {
-    let console_deployment_id = get_console_deployment_id();
     let app_name = deployment_id.to_string();
-    
+
     let app = GetWebhookAppByNameQuery::new(console_deployment_id, app_name)
         .execute(&app_state)
         .await?;
-    
+
     let stats = if let Some(ref app) = app {
-        Some(GetWebhookStatsQuery::new(console_deployment_id, app.id)
+        match GetWebhookStatsQuery::new(console_deployment_id, app.name.clone())
             .execute(&app_state)
-            .await?)
+            .await
+        {
+            Ok(stats) => Some(stats),
+            Err(e) => {
+                eprintln!("Failed to get webhook stats: {:?}", e);
+                // Return empty stats when ClickHouse query fails (likely no data yet)
+                Some(dto::json::WebhookStats {
+                    total_deliveries: 0,
+                    success_rate: 0.0,
+                    active_endpoints: 0,
+                    failed_deliveries_24h: 0,
+                })
+            }
+        }
     } else {
         None
     };
-    
+
     Ok(WebhookStatus {
         is_activated: app.is_some(),
         app,
         stats,
-    }.into())
+    }
+    .into())
 }
 
-// Activate webhooks for a deployment
 pub async fn activate_webhooks(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<WebhookApp> {
-    let console_deployment_id = get_console_deployment_id();
     let app_name = deployment_id.to_string();
-    
-    // Check if already exists
-    let existing = GetWebhookAppByNameQuery::new(console_deployment_id, app_name.clone())
-        .execute(&app_state)
-        .await?;
-    
-    if existing.is_some() {
-        return Err((StatusCode::BAD_REQUEST, "Webhooks already activated for this deployment").into());
-    }
-    
-    // Create webhook app in console's database
+
     let mut command = CreateWebhookAppCommand::new(console_deployment_id, app_name);
-    command = command.with_description(format!("Platform events for deployment {}", deployment_id));
-    
-    // Define platform events that we send to customers
+
     let platform_events = vec![
         WebhookEventDefinition {
             name: "user.created".to_string(),
@@ -93,7 +90,7 @@ pub async fn activate_webhooks(
             schema: None,
         },
         WebhookEventDefinition {
-            name: "user.updated".to_string(), 
+            name: "user.updated".to_string(),
             description: "User profile updated".to_string(),
             schema: None,
         },
@@ -103,8 +100,68 @@ pub async fn activate_webhooks(
             schema: None,
         },
         WebhookEventDefinition {
+            name: "user.email.verified".to_string(),
+            description: "User email address verified".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.password.updated".to_string(),
+            description: "User password changed".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.mfa.enabled".to_string(),
+            description: "User enabled two-factor authentication".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.mfa.disabled".to_string(),
+            description: "User disabled two-factor authentication".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "session.created".to_string(),
+            description: "User signed in".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "session.deleted".to_string(),
+            description: "User signed out".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "session.expired".to_string(),
+            description: "User session expired".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
             name: "organization.created".to_string(),
             description: "New organization created".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.updated".to_string(),
+            description: "Organization settings updated".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.deleted".to_string(),
+            description: "Organization deleted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.member.added".to_string(),
+            description: "Member added to organization".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.member.removed".to_string(),
+            description: "Member removed from organization".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.member.role.updated".to_string(),
+            description: "Organization member role changed".to_string(),
             schema: None,
         },
         WebhookEventDefinition {
@@ -112,103 +169,156 @@ pub async fn activate_webhooks(
             description: "New workspace created".to_string(),
             schema: None,
         },
+        WebhookEventDefinition {
+            name: "workspace.updated".to_string(),
+            description: "Workspace settings updated".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.deleted".to_string(),
+            description: "Workspace deleted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.member.added".to_string(),
+            description: "Member added to workspace".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.member.removed".to_string(),
+            description: "Member removed from workspace".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "api_key.created".to_string(),
+            description: "API key created".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "api_key.deleted".to_string(),
+            description: "API key deleted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "api_key.rotated".to_string(),
+            description: "API key rotated".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.created".to_string(),
+            description: "AI agent created".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.updated".to_string(),
+            description: "AI agent configuration updated".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.deleted".to_string(),
+            description: "AI agent deleted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.execution.started".to_string(),
+            description: "AI agent execution started".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.execution.completed".to_string(),
+            description: "AI agent execution completed successfully".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.execution.failed".to_string(),
+            description: "AI agent execution failed".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "waitlist.entry.created".to_string(),
+            description: "New waitlist entry added".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "waitlist.entry.approved".to_string(),
+            description: "Waitlist entry approved".to_string(),
+            schema: None,
+        },
     ];
-    
+
     command = command.with_events(platform_events);
-    
+
     let app = command.execute(&app_state).await?;
     Ok(app.into())
 }
 
-// Deactivate webhooks for a deployment
-pub async fn deactivate_webhooks(
-    State(app_state): State<HttpState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-) -> ApiResult<()> {
-    let console_deployment_id = get_console_deployment_id();
-    let app_name = deployment_id.to_string();
-    
-    let app = GetWebhookAppByNameQuery::new(console_deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found"))?;
-    
-    let command = UpdateWebhookAppCommand {
-        app_id: app.id,
-        deployment_id: console_deployment_id,
-        name: None,
-        description: None,
-        is_active: Some(false),
-        rate_limit_per_minute: None,
-    };
-    
-    command.execute(&app_state).await?;
-    Ok(().into())
-}
-
-// Rotate webhook signing secret
 pub async fn rotate_webhook_secret(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<WebhookApp> {
-    let console_deployment_id = get_console_deployment_id();
     let app_name = deployment_id.to_string();
-    
-    let app = GetWebhookAppByNameQuery::new(console_deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found"))?;
-    
+
     let command = RotateWebhookSecretCommand {
-        app_id: app.id,
         deployment_id: console_deployment_id,
+        app_name,
     };
-    
+
     let app = command.execute(&app_state).await?;
     Ok(app.into())
 }
 
-// List webhook endpoints
 pub async fn list_webhook_endpoints(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ListWebhookEndpointsQuery>,
 ) -> ApiResult<ListWebhookEndpointsResponse> {
-    let console_deployment_id = get_console_deployment_id();
     let app_name = deployment_id.to_string();
-    
+
     let app = GetWebhookAppByNameQuery::new(console_deployment_id, app_name)
         .execute(&app_state)
         .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found. Please activate webhooks first."))?;
-    
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "Webhook app not found. Please activate webhooks first.",
+            )
+        })?;
+
     let include_inactive = params.include_inactive.unwrap_or(false);
     let endpoints = GetWebhookEndpointsQuery::new(console_deployment_id)
         .with_inactive(include_inactive)
-        .for_app(app.id)
+        .for_app(app.name)
         .execute(&app_state)
         .await?;
-    
+
     Ok(ListWebhookEndpointsResponse {
         total: endpoints.len(),
         endpoints,
-    }.into())
+    }
+    .into())
 }
 
 // Create a webhook endpoint
 pub async fn create_webhook_endpoint(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
-    Json(request): Json<CreateWebhookEndpointRequest>,
+    Json(request): Json<CreateWebhookEndpointConsoleRequest>,
 ) -> ApiResult<WebhookEndpoint> {
-    let console_deployment_id = get_console_deployment_id();
     let app_name = deployment_id.to_string();
-    
+
     let app = GetWebhookAppByNameQuery::new(console_deployment_id, app_name)
         .execute(&app_state)
         .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found. Please activate webhooks first."))?;
-    
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "Webhook app not found. Please activate webhooks first.",
+            )
+        })?;
+
     let subscriptions: Vec<EventSubscriptionData> = request
         .subscriptions
         .into_iter()
@@ -217,10 +327,10 @@ pub async fn create_webhook_endpoint(
             filter_rules: sub.filter_rules,
         })
         .collect();
-    
+
     let command = CreateWebhookEndpointCommand {
-        app_id: app.id,
         deployment_id: console_deployment_id,
+        app_name: app.name,
         url: request.url,
         description: request.description,
         headers: request.headers,
@@ -228,7 +338,7 @@ pub async fn create_webhook_endpoint(
         max_retries: request.max_retries,
         timeout_seconds: request.timeout_seconds,
     };
-    
+
     let endpoint = command.execute(&app_state).await?;
     Ok(endpoint.into())
 }
@@ -236,12 +346,11 @@ pub async fn create_webhook_endpoint(
 // Update a webhook endpoint
 pub async fn update_webhook_endpoint(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(_deployment_id): RequireDeployment,
-    Path(endpoint_id): Path<i64>,
+    Path((_deployment_id_path, endpoint_id)): Path<(i64, i64)>,
     Json(request): Json<UpdateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
-    let console_deployment_id = get_console_deployment_id();
-    
     let command = UpdateWebhookEndpointCommand {
         endpoint_id,
         deployment_id: console_deployment_id,
@@ -252,7 +361,7 @@ pub async fn update_webhook_endpoint(
         timeout_seconds: request.timeout_seconds,
         is_active: request.is_active,
     };
-    
+
     let endpoint = command.execute(&app_state).await?;
     Ok(endpoint.into())
 }
@@ -260,16 +369,15 @@ pub async fn update_webhook_endpoint(
 // Delete a webhook endpoint
 pub async fn delete_webhook_endpoint(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(_deployment_id): RequireDeployment,
-    Path(endpoint_id): Path<i64>,
+    Path((_deployment_id_path, endpoint_id)): Path<(i64, i64)>,
 ) -> ApiResult<()> {
-    let console_deployment_id = get_console_deployment_id();
-    
     let command = DeleteWebhookEndpointCommand {
         endpoint_id,
         deployment_id: console_deployment_id,
     };
-    
+
     command.execute(&app_state).await?;
     Ok(().into())
 }
@@ -277,25 +385,25 @@ pub async fn delete_webhook_endpoint(
 // Analytics endpoints
 pub async fn get_webhook_analytics(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ConsoleAnalyticsQuery>,
 ) -> ApiResult<serde_json::Value> {
-    let console_deployment_id = get_console_deployment_id();
     let app_name = deployment_id.to_string();
-    
+
     // Get the app to find its ID
     let app = GetWebhookAppByNameQuery::new(console_deployment_id, app_name)
         .execute(&app_state)
         .await?;
-    
+
     if let Some(app) = app {
-        let mut query = GetWebhookAnalyticsQuery::new(console_deployment_id)
-            .with_app(app.id);
-        
+        let mut query =
+            GetWebhookAnalyticsQuery::new(console_deployment_id).with_app_name(app.name);
+
         if let (Some(start), Some(end)) = (params.start_date, params.end_date) {
             query = query.with_date_range(start, end);
         }
-        
+
         let result = query.execute(&app_state).await?;
         Ok(serde_json::to_value(result).unwrap().into())
     } else {
@@ -309,114 +417,276 @@ pub async fn get_webhook_analytics(
             "top_events": [],
             "endpoint_performance": [],
             "failure_reasons": []
-        }).into())
+        })
+        .into())
     }
 }
 
 pub async fn get_webhook_timeseries(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ConsoleTimeseriesQuery>,
 ) -> ApiResult<serde_json::Value> {
-    let console_deployment_id = get_console_deployment_id();
     let app_name = deployment_id.to_string();
-    
+
+    eprintln!(
+        "get_webhook_timeseries: deployment_id={}, console_deployment_id={}, app_name={}",
+        deployment_id, console_deployment_id, app_name
+    );
+    eprintln!(
+        "Query params: start={:?}, end={:?}, interval={}",
+        params.start_date, params.end_date, params.interval
+    );
+
     // Get the app to find its ID
-    let app = GetWebhookAppByNameQuery::new(console_deployment_id, app_name)
+    let app = match GetWebhookAppByNameQuery::new(console_deployment_id, app_name)
         .execute(&app_state)
-        .await?;
-    
+        .await
+    {
+        Ok(app) => app,
+        Err(e) => {
+            eprintln!("Failed to get webhook app: {:?}", e);
+            return Err(e.into());
+        }
+    };
+
     if let Some(app) = app {
+        eprintln!("Found app: name={}", app.name);
+
         let interval = match params.interval.as_str() {
+            "minute" => TimeseriesInterval::Minute,
             "hour" => TimeseriesInterval::Hour,
             "day" => TimeseriesInterval::Day,
             _ => TimeseriesInterval::Hour,
         };
-        
+
         let mut query = GetWebhookTimeseriesQuery::new(console_deployment_id, interval)
-            .with_app(app.id);
-        
+            .with_app_name(app.name.clone());
+
         if let (Some(start), Some(end)) = (params.start_date, params.end_date) {
             query = query.with_date_range(start, end);
         }
-        
-        let result = query.execute(&app_state).await?;
-        Ok(serde_json::to_value(result).unwrap().into())
+
+        eprintln!("Executing timeseries query with app_name={}", app.name);
+
+        match query.execute(&app_state).await {
+            Ok(result) => {
+                eprintln!(
+                    "Timeseries query successful, got {} data points",
+                    result.data.len()
+                );
+                match serde_json::to_value(result) {
+                    Ok(json) => Ok(json.into()),
+                    Err(e) => {
+                        eprintln!("Failed to serialize result to JSON: {:?}", e);
+                        Err((
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed to serialize response",
+                        )
+                            .into())
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Timeseries query failed: {:?}", e);
+                Err(e.into())
+            }
+        }
     } else {
+        eprintln!("No app found for deployment_id={}", deployment_id);
         Ok(serde_json::json!({
-            "timeseries": []
-        }).into())
+            "data": [],
+            "interval": params.interval
+        })
+        .into())
     }
 }
 
 // Delivery history endpoints
 pub async fn get_webhook_deliveries(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<DeliveryListQuery>,
 ) -> ApiResult<serde_json::Value> {
-    let console_deployment_id = get_console_deployment_id();
     let app_name = deployment_id.to_string();
-    
+
     // Get the app to find its ID
     let app = GetWebhookAppByNameQuery::new(console_deployment_id, app_name)
         .execute(&app_state)
         .await?;
-    
+
     if let Some(app) = app {
         // Get recent deliveries from ClickHouse
         let limit = params.limit.unwrap_or(100) as usize;
-        let deliveries = app_state.clickhouse_service
+        let deliveries = app_state
+            .clickhouse_service
             .get_recent_webhook_deliveries(
                 console_deployment_id,
-                Some(app.id),
+                Some(app.name),
                 params.status.as_deref(),
                 params.event_name.as_deref(),
                 limit,
             )
             .await?;
-        
+
         Ok(serde_json::json!({
             "deliveries": deliveries
-        }).into())
+        })
+        .into())
     } else {
         Ok(serde_json::json!({
             "deliveries": []
-        }).into())
+        })
+        .into())
     }
 }
 
 pub async fn get_webhook_delivery_details(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(_deployment_id): RequireDeployment,
-    Path(delivery_id): Path<i64>,
+    Path((_deployment_id_path, delivery_id)): Path<(i64, i64)>,
 ) -> ApiResult<serde_json::Value> {
-    let console_deployment_id = get_console_deployment_id();
-    
-    // Get delivery details from ClickHouse
-    let details = app_state.clickhouse_service
+    // Get delivery details from ClickHouse (using console deployment ID as that's where webhooks are stored)
+    let details = app_state
+        .clickhouse_service
         .get_webhook_delivery_details(console_deployment_id, delivery_id)
         .await?;
-    
+
     Ok(serde_json::to_value(details).unwrap().into())
 }
 
 pub async fn retry_webhook_delivery(
     State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(_deployment_id): RequireDeployment,
-    Path(delivery_id): Path<i64>,
+    Path((_deployment_id_path, delivery_id)): Path<(i64, i64)>,
 ) -> ApiResult<serde_json::Value> {
-    let console_deployment_id = get_console_deployment_id();
-    
-    let new_delivery_id = ReplayWebhookDeliveryCommand {
-        delivery_id,
+    use dto::json::nats::NatsTaskMessage;
+
+    // Queue retry task for background processing
+    let task_message = NatsTaskMessage {
+        task_type: "webhook.retry".to_string(),
+        task_id: format!("webhook-retry-{}-{}", delivery_id, console_deployment_id),
+        payload: serde_json::json!({
+            "delivery_id": delivery_id,
+            "deployment_id": console_deployment_id
+        }),
+        retry_count: 0,
+        max_retries: 3,
+    };
+
+    app_state
+        .nats_client
+        .publish(
+            "worker.tasks.webhook.retry",
+            serde_json::to_vec(&task_message)
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to serialize task: {}", e),
+                    )
+                })?
+                .into(),
+        )
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to queue retry task: {}", e),
+            )
+        })?;
+
+    Ok(serde_json::json!({
+        "message": "Webhook retry has been queued",
+        "delivery_id": delivery_id
+    })
+    .into())
+}
+
+// Test webhook endpoint
+pub async fn test_webhook_endpoint(
+    State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
+    RequireDeployment(_deployment_id): RequireDeployment,
+    Path((_, endpoint_id)): Path<(i64, i64)>,
+    Json(request): Json<TestWebhookRequest>,
+) -> ApiResult<serde_json::Value> {
+    use commands::webhook_endpoint::TestWebhookEndpointCommand;
+
+    // Send a test request to the endpoint
+    let result = TestWebhookEndpointCommand {
         deployment_id: console_deployment_id,
+        endpoint_id,
+        test_payload: request.payload.unwrap_or_else(|| {
+            serde_json::json!({
+                "event": request.event_name,
+                "test": true,
+                "timestamp": chrono::Utc::now().to_rfc3339()
+            })
+        }),
     }
     .execute(&app_state)
     .await?;
-    
+
     Ok(serde_json::json!({
-        "new_delivery_id": new_delivery_id,
-        "message": "Webhook delivery retried successfully"
+        "status_code": result.status_code,
+        "response_time_ms": result.response_time_ms,
+        "success": result.success,
+        "delivery_id": result.delivery_id,
+        "message": if result.success { "Test webhook sent successfully" } else { "Test webhook failed" }
     }).into())
+}
+
+// Reactivate webhook endpoint
+pub async fn reactivate_webhook_endpoint(
+    State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
+    RequireDeployment(_deployment_id): RequireDeployment,
+    Path((_deployment_id_path, endpoint_id)): Path<(i64, i64)>,
+) -> ApiResult<serde_json::Value> {
+    use commands::webhook_endpoint::ReactivateEndpointCommand;
+
+    ReactivateEndpointCommand {
+        deployment_id: console_deployment_id,
+        endpoint_id,
+    }
+    .execute(&app_state)
+    .await?;
+
+    Ok(serde_json::json!({
+        "message": "Webhook endpoint reactivated successfully"
+    })
+    .into())
+}
+
+// Get available events for a deployment
+pub async fn get_available_events(
+    State(app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
+    RequireDeployment(deployment_id): RequireDeployment,
+) -> ApiResult<GetAvailableEventsResponse> {
+    use queries::webhook::GetWebhookEventsQuery;
+
+    let app_name = deployment_id.to_string();
+
+    // Get the app first
+    let app = GetWebhookAppByNameQuery::new(console_deployment_id, app_name)
+        .execute(&app_state)
+        .await?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "Webhook app not found. Please activate webhooks first.",
+            )
+        })?;
+
+    // Get events for this app
+    let events = GetWebhookEventsQuery::new(console_deployment_id, app.name)
+        .execute(&app_state)
+        .await?;
+
+    Ok(GetAvailableEventsResponse { events }.into())
 }

@@ -10,7 +10,6 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::env::var as env;
 use std::error::Error;
 
-use crate::utils::handlebars_helpers;
 use crate::{
     ClickHouseService, CloudflareService, DnsVerificationService, PostmarkService,
     TextProcessingService,
@@ -64,7 +63,7 @@ impl AppState {
         let redis_client = RedisClient::open(env("REDIS_URL")?)?;
 
         let mut handlebars = handlebars::Handlebars::new();
-        handlebars.register_helper("image", Box::new(handlebars_helpers::ImageHelper));
+        handlebars.register_helper("image", Box::new(crate::utils::handlebars::ImageHelper));
 
         let cloudflare_service =
             CloudflareService::new(env("CLOUDFLARE_API_KEY")?, env("CLOUDFLARE_ZONE_ID")?);
@@ -80,6 +79,7 @@ impl AppState {
             ClickHouseService::new(env("CLICKHOUSE_HOST")?, env("CLICKHOUSE_PASSWORD")?)?;
         clickhouse_service.init_tables().await?;
         clickhouse_service.init_webhook_tables().await?;
+        clickhouse_service.init_api_key_tables().await?;
 
         let nats_client = async_nats::connect(env("NATS_URL")?).await?;
         let nats_jetstream = jetstream::new(nats_client.clone());

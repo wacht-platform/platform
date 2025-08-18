@@ -1157,6 +1157,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clickhouse",
+ "dto",
  "encoding_rs",
  "futures",
  "handlebars",
@@ -1534,7 +1535,7 @@ name = "dto"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "common",
+ "clickhouse",
  "half",
  "models",
  "pgvector",

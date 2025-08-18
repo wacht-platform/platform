@@ -46,6 +46,7 @@ pub struct FailureReason {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum TimeseriesInterval {
+    Minute,
     Hour,
     Day,
     Week,
@@ -55,6 +56,7 @@ pub enum TimeseriesInterval {
 impl TimeseriesInterval {
     pub fn to_clickhouse_interval(&self) -> &'static str {
         match self {
+            TimeseriesInterval::Minute => "toStartOfMinute",
             TimeseriesInterval::Hour => "toStartOfHour",
             TimeseriesInterval::Day => "toStartOfDay",
             TimeseriesInterval::Week => "toStartOfWeek",

@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE webhook_endpoints e\n            SET url = COALESCE($3, e.url),\n                description = COALESCE($4, e.description),\n                headers = COALESCE($5, e.headers),\n                is_active = COALESCE($6, e.is_active),\n                max_retries = COALESCE($7, e.max_retries),\n                timeout_seconds = COALESCE($8, e.timeout_seconds)\n            WHERE e.id = $1 AND e.deployment_id = $2\n            RETURNING e.id as \"id!\",\n                      e.deployment_id as \"deployment_id!\",\n                      e.app_name as \"app_name!\",\n                      e.url as \"url!\",\n                      e.description,\n                      e.headers,\n                      e.signing_secret,\n                      e.is_active as \"is_active!\",\n                      e.max_retries as \"max_retries!\",\n                      e.timeout_seconds as \"timeout_seconds!\",\n                      e.failure_count as \"failure_count!\",\n                      e.last_failure_at,\n                      e.auto_disabled as \"auto_disabled!\",\n                      e.auto_disabled_at,\n                      e.created_at as \"created_at!\",\n                      e.updated_at as \"updated_at!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "url!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "headers",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "signing_secret",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "max_retries!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "timeout_seconds!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "failure_count!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "last_failure_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "auto_disabled!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 13,
+        "name": "auto_disabled_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Bool",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3f185add6634effaa48e083c5d618392ec11aed1e519d246f54bfd9a6af3eed7"
+}

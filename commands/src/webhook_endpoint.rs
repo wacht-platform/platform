@@ -1,13 +1,17 @@
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{query, query_as};
 
+use crate::webhook_delivery::ClearEndpointFailuresCommand;
+use crate::webhook_storage::StoreWebhookPayloadCommand;
 use crate::Command;
 use common::error::AppError;
-use models::WebhookEndpoint;
 use common::state::AppState;
-
-
+use common::utils::webhook::generate_hmac_signature;
+use dto::clickhouse::webhook::{WebhookDelivery, WebhookEvent};
+use dto::json::nats::NatsTaskMessage;
+use models::WebhookEndpoint;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct EventSubscriptionData {
@@ -17,8 +21,8 @@ pub struct EventSubscriptionData {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateWebhookEndpointCommand {
-    pub app_id: i64,
     pub deployment_id: i64,
+    pub app_name: String,
     pub url: String,
     pub description: Option<String>,
     pub headers: Option<Value>,
@@ -28,10 +32,10 @@ pub struct CreateWebhookEndpointCommand {
 }
 
 impl CreateWebhookEndpointCommand {
-    pub fn new(app_id: i64, deployment_id: i64, url: String) -> Self {
+    pub fn new(deployment_id: i64, app_name: String, url: String) -> Self {
         Self {
-            app_id,
             deployment_id,
+            app_name,
             url,
             description: None,
             headers: None,
@@ -60,46 +64,55 @@ impl Command for CreateWebhookEndpointCommand {
         url::Url::parse(&self.url)
             .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
 
-        // Verify app exists and belongs to deployment
+        // Verify app exists
         let app_exists = query!(
             r#"
             SELECT 1 as exists
             FROM webhook_apps
-            WHERE id = $1 AND deployment_id = $2
+            WHERE deployment_id = $1 AND name = $2
             "#,
-            self.app_id,
-            self.deployment_id
+            self.deployment_id,
+            self.app_name
         )
         .fetch_optional(&app_state.db_pool)
         .await?
         .is_some();
-
+        
         if !app_exists {
             return Err(AppError::NotFound("Webhook app not found".to_string()));
         }
 
         let mut tx = app_state.db_pool.begin().await?;
 
-        // Create endpoint
+        // Create endpoint with Snowflake ID
+        let endpoint_id = app_state.sf.next_id()? as i64;
         let headers_json = self.headers.unwrap_or_else(|| serde_json::json!({}));
 
         let endpoint = query_as!(
             WebhookEndpoint,
             r#"
-            INSERT INTO webhook_endpoints (app_id, url, description, headers, max_retries, timeout_seconds, is_active)
-            VALUES ($1, $2, $3, $4, $5, $6, true)
-            RETURNING id as "id!", 
-                      app_id as "app_id!", 
-                      url as "url!", 
-                      description, 
-                      headers, 
-                      is_active as "is_active!", 
-                      max_retries as "max_retries!", 
-                      timeout_seconds as "timeout_seconds!", 
-                      created_at as "created_at!", 
+            INSERT INTO webhook_endpoints (id, deployment_id, app_name, url, description, headers, max_retries, timeout_seconds, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+            RETURNING id as "id!",
+                      deployment_id as "deployment_id!",
+                      app_name as "app_name!",
+                      url as "url!",
+                      description,
+                      headers,
+                      signing_secret,
+                      is_active as "is_active!",
+                      max_retries as "max_retries!",
+                      timeout_seconds as "timeout_seconds!",
+                      failure_count as "failure_count!",
+                      last_failure_at,
+                      auto_disabled as "auto_disabled!",
+                      auto_disabled_at,
+                      created_at as "created_at!",
                       updated_at as "updated_at!"
             "#,
-            self.app_id,
+            endpoint_id,
+            self.deployment_id,
+            self.app_name,
             self.url,
             self.description,
             headers_json,
@@ -113,15 +126,14 @@ impl Command for CreateWebhookEndpointCommand {
         for subscription in self.subscriptions {
             query!(
                 r#"
-                INSERT INTO webhook_endpoint_subscriptions (endpoint_id, event_id, filter_rules)
-                SELECT $1, e.id, $3
-                FROM webhook_app_events e
-                WHERE e.app_id = $2 AND e.event_name = $4
+                INSERT INTO webhook_endpoint_subscriptions (endpoint_id, deployment_id, app_name, event_name, filter_rules)
+                VALUES ($1, $2, $3, $4, $5)
                 "#,
                 endpoint.id,
-                self.app_id,
-                subscription.filter_rules,
-                subscription.event_name
+                self.deployment_id,
+                self.app_name,
+                subscription.event_name,
+                subscription.filter_rules
             )
             .execute(&mut *tx)
             .await?;
@@ -164,19 +176,22 @@ impl Command for UpdateWebhookEndpointCommand {
                 is_active = COALESCE($6, e.is_active),
                 max_retries = COALESCE($7, e.max_retries),
                 timeout_seconds = COALESCE($8, e.timeout_seconds)
-            FROM webhook_apps a
-            WHERE e.id = $1 
-                AND e.app_id = a.id 
-                AND a.deployment_id = $2
-            RETURNING e.id as "id!", 
-                      e.app_id as "app_id!", 
-                      e.url as "url!", 
-                      e.description, 
-                      e.headers, 
+            WHERE e.id = $1 AND e.deployment_id = $2
+            RETURNING e.id as "id!",
+                      e.deployment_id as "deployment_id!",
+                      e.app_name as "app_name!",
+                      e.url as "url!",
+                      e.description,
+                      e.headers,
+                      e.signing_secret,
                       e.is_active as "is_active!",
-                      e.max_retries as "max_retries!", 
-                      e.timeout_seconds as "timeout_seconds!", 
-                      e.created_at as "created_at!", 
+                      e.max_retries as "max_retries!",
+                      e.timeout_seconds as "timeout_seconds!",
+                      e.failure_count as "failure_count!",
+                      e.last_failure_at,
+                      e.auto_disabled as "auto_disabled!",
+                      e.auto_disabled_at,
+                      e.created_at as "created_at!",
                       e.updated_at as "updated_at!"
             "#,
             self.endpoint_id,
@@ -210,13 +225,12 @@ impl Command for UpdateEndpointSubscriptionsCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let mut tx = app_state.db_pool.begin().await?;
 
-        // Verify endpoint belongs to deployment
-        let app_id = query!(
+        // Verify endpoint belongs to deployment and get app_name
+        let app_name = query!(
             r#"
-            SELECT e.app_id
+            SELECT e.app_name
             FROM webhook_endpoints e
-            JOIN webhook_apps a ON e.app_id = a.id
-            WHERE e.id = $1 AND a.deployment_id = $2
+            WHERE e.id = $1 AND e.deployment_id = $2
             "#,
             self.endpoint_id,
             self.deployment_id
@@ -224,7 +238,7 @@ impl Command for UpdateEndpointSubscriptionsCommand {
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?
-        .app_id;
+        .app_name;
 
         // Clear existing subscriptions
         query!(
@@ -241,15 +255,14 @@ impl Command for UpdateEndpointSubscriptionsCommand {
         for event_name in &self.subscribe_to_events {
             query!(
                 r#"
-                INSERT INTO webhook_endpoint_subscriptions (endpoint_id, event_id, filter_rules)
-                SELECT $1, e.id, $3
-                FROM webhook_app_events e
-                WHERE e.app_id = $2 AND e.event_name = $4
+                INSERT INTO webhook_endpoint_subscriptions (endpoint_id, deployment_id, app_name, event_name, filter_rules)
+                VALUES ($1, $2, $3, $4, $5)
                 "#,
                 self.endpoint_id,
-                app_id,
-                self.filter_rules.clone(),
-                event_name
+                self.deployment_id,
+                app_name.clone(),
+                event_name,
+                self.filter_rules.clone()
             )
             .execute(&mut *tx)
             .await?;
@@ -273,10 +286,7 @@ impl Command for DeleteWebhookEndpointCommand {
         let result = query!(
             r#"
             DELETE FROM webhook_endpoints e
-            USING webhook_apps a
-            WHERE e.id = $1 
-                AND e.app_id = a.id 
-                AND a.deployment_id = $2
+            WHERE e.id = $1 AND e.deployment_id = $2
             "#,
             self.endpoint_id,
             self.deployment_id
@@ -306,10 +316,10 @@ impl Command for TestWebhookEndpointCommand {
         // Get endpoint details
         let endpoint = query!(
             r#"
-            SELECT e.url, e.headers, e.timeout_seconds, a.signing_secret
+            SELECT e.url, e.headers, e.timeout_seconds, e.app_name, a.signing_secret
             FROM webhook_endpoints e
-            JOIN webhook_apps a ON e.app_id = a.id
-            WHERE e.id = $1 AND a.deployment_id = $2
+            JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_name = a.name)
+            WHERE e.id = $1 AND e.deployment_id = $2
             "#,
             self.endpoint_id,
             self.deployment_id
@@ -317,6 +327,9 @@ impl Command for TestWebhookEndpointCommand {
         .fetch_optional(&app_state.db_pool)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
+
+        // App name is already in endpoint
+        let app_name = endpoint.app_name.clone();
 
         // Generate test signature
         let signature = common::utils::webhook::generate_hmac_signature(
@@ -331,7 +344,9 @@ impl Command for TestWebhookEndpointCommand {
             .json(&self.test_payload)
             .header("X-Webhook-Signature", signature)
             .header("X-Webhook-Test", "true")
-            .timeout(std::time::Duration::from_secs(endpoint.timeout_seconds.unwrap_or(30) as u64));
+            .timeout(std::time::Duration::from_secs(
+                endpoint.timeout_seconds.unwrap_or(30) as u64,
+            ));
 
         // Add custom headers
         if let Some(headers_obj) = endpoint.headers.as_ref().and_then(|h| h.as_object()) {
@@ -346,29 +361,153 @@ impl Command for TestWebhookEndpointCommand {
         let response = request.send().await;
         let duration = start.elapsed();
 
-        match response {
+        let (mut result, response_headers_json) = match response {
             Ok(resp) => {
                 let status = resp.status();
-                let body = resp.text().await.ok();
                 
-                Ok(TestWebhookResult {
+                // Capture response headers as JSON
+                let response_headers_json = {
+                    let mut headers_map = serde_json::Map::new();
+                    for (key, value) in resp.headers().iter() {
+                        if let Ok(value_str) = value.to_str() {
+                            headers_map.insert(key.as_str().to_string(), serde_json::Value::String(value_str.to_string()));
+                        }
+                    }
+                    Some(serde_json::Value::Object(headers_map).to_string())
+                };
+                
+                let content_type = resp.headers()
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+                
+                // Handle response body based on status and content type
+                let body = if status.as_u16() == 204 {
+                    // 204 No Content - don't try to read body
+                    None
+                } else if let Some(ref ct) = content_type {
+                    // Check if content type is text-like
+                    if ct.starts_with("text/") 
+                        || ct.contains("json") 
+                        || ct.contains("xml") 
+                        || ct.contains("javascript")
+                        || ct.contains("x-www-form-urlencoded")
+                        || ct.contains("yaml")
+                        || ct.contains("csv") {
+                        resp.text().await.ok()
+                    } else {
+                        // For binary content, just store a placeholder
+                        resp.bytes().await.ok().map(|_| "Binary data".to_string())
+                    }
+                } else {
+                    resp.text().await.ok()
+                };
+
+                (TestWebhookResult {
                     success: status.is_success(),
                     status_code: status.as_u16(),
                     response_time_ms: duration.as_millis() as u32,
                     response_body: body,
+                    response_content_type: content_type,
                     error: None,
-                })
+                    delivery_id: None,
+                }, response_headers_json)
             }
-            Err(e) => {
-                Ok(TestWebhookResult {
-                    success: false,
-                    status_code: 0,
-                    response_time_ms: duration.as_millis() as u32,
-                    response_body: None,
-                    error: Some(e.to_string()),
-                })
-            }
+            Err(e) => (TestWebhookResult {
+                success: false,
+                status_code: 0,
+                response_time_ms: duration.as_millis() as u32,
+                response_body: None,
+                response_content_type: None,
+                error: Some(e.to_string()),
+                delivery_id: None,
+            }, None),
+        };
+
+        // Record test delivery to ClickHouse for analytics
+
+        let delivery_id = app_state.sf.next_id()? as i64;
+        let event_id = app_state.sf.next_id()?.to_string();
+        let now = Utc::now();
+
+        // Store test payload in S3
+        let payload_s3_key = StoreWebhookPayloadCommand::new(self.test_payload.clone())
+            .execute(app_state)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to store test payload: {}", e)))?;
+
+        let payload_size = serde_json::to_string(&self.test_payload).unwrap_or_default().len() as i32;
+        
+        // Log the event to ClickHouse
+        let ch_event = WebhookEvent {
+            deployment_id: self.deployment_id,
+            app_name: app_name.clone(),
+            event_id,
+            event_name: "test.webhook".to_string(),
+            payload_size_bytes: payload_size,
+            filter_context: None,
+            timestamp: now,
+        };
+
+        if let Err(e) = app_state
+            .clickhouse_service
+            .insert_webhook_event(&ch_event)
+            .await
+        {
+            tracing::warn!("Failed to log test event to ClickHouse: {}", e);
         }
+
+        // Create delivery in active_webhook_deliveries and let worker process it
+        let signature = generate_hmac_signature(&endpoint.signing_secret, &self.test_payload);
+        
+        query!(
+            r#"
+            INSERT INTO active_webhook_deliveries 
+            (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, signature, max_attempts, attempts) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, 0)
+            "#,
+            delivery_id,
+            self.endpoint_id,
+            self.deployment_id,
+            app_name,
+            "test.webhook",
+            payload_s3_key,
+            payload_size,
+            signature
+        )
+        .execute(&app_state.db_pool)
+        .await?;
+
+        // Publish to worker for immediate processing
+        let task_message = NatsTaskMessage {
+            task_type: "webhook.deliver".to_string(),
+            task_id: format!("webhook-test-{}", delivery_id),
+            payload: serde_json::json!({
+                "delivery_id": delivery_id,
+                "deployment_id": self.deployment_id
+            }),
+            retry_count: 0,
+            max_retries: 0, // Test webhooks don't retry
+        };
+
+        app_state.nats_client
+            .publish(
+                "worker.tasks.webhook.deliver",
+                serde_json::to_vec(&task_message)?.into(),
+            )
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to publish test webhook: {}", e)))?;
+
+        // Return simple success response - actual results will be available in delivery history
+        Ok(TestWebhookResult {
+            delivery_id: Some(delivery_id),
+            success: true,
+            status_code: 202, // Accepted
+            response_time_ms: 0,
+            response_body: Some("Test webhook initiated. Check delivery history for results.".to_string()),
+            response_content_type: Some("text/plain".to_string()),
+            error: None,
+        })
     }
 }
 
@@ -378,7 +517,9 @@ pub struct TestWebhookResult {
     pub status_code: u16,
     pub response_time_ms: u32,
     pub response_body: Option<String>,
+    pub response_content_type: Option<String>,
     pub error: Option<String>,
+    pub delivery_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -397,19 +538,22 @@ impl Command for ReactivateEndpointCommand {
             r#"
             UPDATE webhook_endpoints e
             SET is_active = true, updated_at = NOW()
-            FROM webhook_apps a
-            WHERE e.id = $1 
-                AND e.app_id = a.id 
-                AND a.deployment_id = $2
-            RETURNING e.id as "id!", 
-                      e.app_id as "app_id!", 
-                      e.url as "url!", 
-                      e.description, 
-                      e.headers, 
+            WHERE e.id = $1 AND e.deployment_id = $2
+            RETURNING e.id as "id!",
+                      e.deployment_id as "deployment_id!",
+                      e.app_name as "app_name!",
+                      e.url as "url!",
+                      e.description,
+                      e.headers,
+                      e.signing_secret,
                       e.is_active as "is_active!",
-                      e.max_retries as "max_retries!", 
-                      e.timeout_seconds as "timeout_seconds!", 
-                      e.created_at as "created_at!", 
+                      e.max_retries as "max_retries!",
+                      e.timeout_seconds as "timeout_seconds!",
+                      e.failure_count as "failure_count!",
+                      e.last_failure_at,
+                      e.auto_disabled as "auto_disabled!",
+                      e.auto_disabled_at,
+                      e.created_at as "created_at!",
                       e.updated_at as "updated_at!"
             "#,
             self.endpoint_id,
@@ -420,9 +564,8 @@ impl Command for ReactivateEndpointCommand {
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
 
         // Clear failure counter in Redis
-        use super::webhook_delivery::ClearEndpointFailuresCommand;
-        ClearEndpointFailuresCommand { 
-            endpoint_id: self.endpoint_id 
+        ClearEndpointFailuresCommand {
+            endpoint_id: self.endpoint_id,
         }
         .execute(app_state)
         .await?;

@@ -1,4 +1,4 @@
-use crate::api::{ws, notifications_ws};
+use crate::api::{agent, notifications};
 use crate::application::HttpState;
 use axum::Router;
 use axum::routing::get;
@@ -7,8 +7,11 @@ use tower_http::trace::TraceLayer;
 
 fn router() -> Router<HttpState> {
     Router::new()
-        .route("/agent", get(ws::realtime_agent_handler))
-        .route("/notifications", get(notifications_ws::notification_stream_handler))
+        .route("/agent", get(agent::agent_stream_handler))
+        .route(
+            "/notifications",
+            get(notifications::notification_stream_handler),
+        )
 }
 
 fn configure_cors() -> CorsLayer {

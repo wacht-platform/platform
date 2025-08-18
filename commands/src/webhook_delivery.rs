@@ -31,13 +31,11 @@ impl Command for GetActiveDeliveryCommand {
                    e.headers,
                    e.timeout_seconds,
                    e.max_retries,
-                   e.ip_allowlist,
-                   a.id as "app_id!",
-                   a.name as "app_name!",
+                   e.app_name as "app_name!",
                    a.signing_secret as "signing_secret!"
             FROM active_webhook_deliveries d
             JOIN webhook_endpoints e ON d.endpoint_id = e.id
-            JOIN webhook_apps a ON e.app_id = a.id
+            JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_name = a.name)
             WHERE d.id = $1
             "#,
             self.delivery_id
@@ -58,8 +56,6 @@ impl Command for GetActiveDeliveryCommand {
             headers: d.headers,
             timeout_seconds: d.timeout_seconds.unwrap_or(30),
             max_retries: d.max_retries.unwrap_or(5),
-            ip_allowlist: d.ip_allowlist,
-            app_id: d.app_id,
             app_name: d.app_name,
             signing_secret: d.signing_secret,
         }))
@@ -80,8 +76,6 @@ pub struct ActiveDeliveryInfo {
     pub headers: Option<Value>,
     pub timeout_seconds: i32,
     pub max_retries: i32,
-    pub ip_allowlist: Option<Value>,
-    pub app_id: i64,
     pub app_name: String,
     pub signing_secret: String,
 }

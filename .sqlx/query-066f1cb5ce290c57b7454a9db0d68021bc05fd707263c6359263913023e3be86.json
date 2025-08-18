@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO webhook_endpoint_subscriptions (endpoint_id, deployment_id, app_name, event_name, filter_rules)\n                VALUES ($1, $2, $3, $4, $5)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "066f1cb5ce290c57b7454a9db0d68021bc05fd707263c6359263913023e3be86"
+}

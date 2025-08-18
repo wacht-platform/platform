@@ -18,10 +18,6 @@ pub struct CreateNotificationRequest {
     pub action_url: Option<String>,
     pub action_label: Option<String>,
     pub severity: Option<String>,
-    pub group_id: Option<String>,
-    pub dedupe_key: Option<String>,
-    pub source: Option<String>,
-    pub source_id: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub expires_hours: Option<i64>,
 }
@@ -51,17 +47,8 @@ pub async fn create_notification(
         command = command.with_severity(severity);
     }
     
-    if let Some(source) = request.source {
-        command = command.with_source(source, request.source_id);
-    }
     
-    if let Some(group_id) = request.group_id {
-        command = command.with_group(group_id);
-    }
     
-    if let Some(dedupe_key) = request.dedupe_key {
-        command = command.with_dedupe_key(dedupe_key);
-    }
     
     if let Some(metadata) = request.metadata {
         command = command.with_metadata(metadata);

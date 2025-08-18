@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT e.app_name\n            FROM webhook_endpoints e\n            WHERE e.id = $1 AND e.deployment_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "app_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e86a1ec7916789c820cac14e1d95ef4dc5c2172c87a05f9c015f5d4ab033ad5b"
+}

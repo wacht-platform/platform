@@ -37,10 +37,6 @@ pub struct CreateNotificationCommand {
     pub action_url: Option<String>,
     pub action_label: Option<String>,
     pub severity: NotificationSeverity,
-    pub group_id: Option<String>,
-    pub dedupe_key: Option<String>,
-    pub source: Option<String>,
-    pub source_id: Option<String>,
     pub metadata: Option<JsonValue>,
     pub expires_at: Option<DateTime<Utc>>,
 }
@@ -62,10 +58,6 @@ impl CreateNotificationCommand {
             action_url: None,
             action_label: None,
             severity: NotificationSeverity::Info,
-            group_id: None,
-            dedupe_key: None,
-            source: None,
-            source_id: None,
             metadata: None,
             expires_at: None,
         }
@@ -82,24 +74,8 @@ impl CreateNotificationCommand {
         self
     }
 
-    pub fn with_source(mut self, source: String, source_id: Option<String>) -> Self {
-        self.source = Some(source);
-        self.source_id = source_id;
-        self
-    }
-
     pub fn with_expiry_hours(mut self, hours: i64) -> Self {
         self.expires_at = Some(Utc::now() + chrono::Duration::hours(hours));
-        self
-    }
-
-    pub fn with_dedupe_key(mut self, key: String) -> Self {
-        self.dedupe_key = Some(key);
-        self
-    }
-
-    pub fn with_group(mut self, group_id: String) -> Self {
-        self.group_id = Some(group_id);
         self
     }
 
@@ -123,96 +99,6 @@ impl Command for CreateNotificationCommand {
     type Output = Notification;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Check for duplicate if dedupe_key is provided
-        if let Some(ref dedupe_key) = self.dedupe_key {
-            let exists: Option<(bool,)> = query_as(
-                r#"
-                SELECT EXISTS(
-                    SELECT 1 FROM notifications
-                    WHERE deployment_id = $1
-                    AND user_id = $2
-                    AND dedupe_key = $3
-                    AND created_at > NOW() - INTERVAL '24 hours'
-                ) as exists
-                "#,
-            )
-            .bind(&self.deployment_id)
-            .bind(&self.user_id)
-            .bind(dedupe_key)
-            .fetch_optional(&app_state.db_pool)
-            .await?;
-
-            if exists.map(|e| e.0).unwrap_or(false) {
-                // Return existing notification instead of creating duplicate
-                let existing = query_as::<_, Notification>(
-                    r#"
-                    SELECT * FROM notifications
-                    WHERE deployment_id = $1
-                    AND user_id = $2
-                    AND dedupe_key = $3
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                    "#,
-                )
-                .bind(&self.deployment_id)
-                .bind(&self.user_id)
-                .bind(dedupe_key)
-                .fetch_one(&app_state.db_pool)
-                .await?;
-                
-                return Ok(existing);
-            }
-        }
-
-        // Check if we should increment group count
-        if let Some(ref group_id) = self.group_id {
-            let updated = query!(
-                r#"
-                UPDATE notifications 
-                SET 
-                    group_count = group_count + 1,
-                    updated_at = NOW()
-                WHERE deployment_id = $1
-                AND user_id = $2
-                AND group_id = $3
-                AND created_at = (
-                    SELECT MAX(created_at) 
-                    FROM notifications 
-                    WHERE deployment_id = $1 
-                    AND user_id = $2 
-                    AND group_id = $3
-                )
-                RETURNING id
-                "#,
-                self.deployment_id,
-                self.user_id,
-                group_id
-            )
-            .fetch_optional(&app_state.db_pool)
-            .await?;
-
-            if updated.is_some() {
-                // Return the updated grouped notification
-                let grouped = query_as::<_, Notification>(
-                    r#"
-                    SELECT * FROM notifications
-                    WHERE deployment_id = $1
-                    AND user_id = $2
-                    AND group_id = $3
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                    "#,
-                )
-                .bind(&self.deployment_id)
-                .bind(&self.user_id)
-                .bind(group_id)
-                .fetch_one(&app_state.db_pool)
-                .await?;
-                
-                return Ok(grouped);
-            }
-        }
-
         // Create new notification
         let notification = query_as::<_, Notification>(
             r#"
@@ -226,14 +112,9 @@ impl Command for CreateNotificationCommand {
                 action_url,
                 action_label,
                 severity,
-                group_id,
-                group_count,
-                dedupe_key,
-                source,
-                source_id,
                 metadata,
                 expires_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *
             "#,
         )
@@ -246,11 +127,6 @@ impl Command for CreateNotificationCommand {
         .bind(self.action_url)
         .bind(self.action_label)
         .bind(&self.severity)
-        .bind(self.group_id)
-        .bind(1) // group_count starts at 1
-        .bind(self.dedupe_key)
-        .bind(self.source)
-        .bind(self.source_id)
         .bind(self.metadata)
         .bind(self.expires_at)
         .fetch_one(&app_state.db_pool)
@@ -425,4 +301,3 @@ impl Command for CleanupExpiredNotificationsCommand {
         Ok(result.rows_affected() as i64)
     }
 }
-

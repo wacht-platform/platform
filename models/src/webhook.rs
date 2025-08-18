@@ -12,21 +12,21 @@ pub struct WebhookEventTrigger {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct WebhookApp {
-    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub name: String,
     pub description: Option<String>,
     pub signing_secret: String,
     pub is_active: bool,
-    pub rate_limit_per_minute: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct WebhookAppEvent {
-    pub id: i64,
-    pub app_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    pub app_name: String,
     pub event_name: String,
     pub description: Option<String>,
     pub schema: Option<Value>,
@@ -35,30 +35,47 @@ pub struct WebhookAppEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct WebhookEndpoint {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
-    pub app_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    pub app_name: String,
     pub url: String,
     pub description: Option<String>,
     pub headers: Option<Value>,
     pub is_active: bool,
+    pub signing_secret: Option<String>,
     pub max_retries: i32,
     pub timeout_seconds: i32,
+    pub failure_count: i32,
+    pub last_failure_at: Option<DateTime<Utc>>,
+    pub auto_disabled: bool,
+    pub auto_disabled_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct WebhookEndpointSubscription {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub endpoint_id: i64,
-    pub event_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    pub app_name: String,
+    pub event_name: String,
     pub filter_rules: Option<Value>,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ActiveWebhookDelivery {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub endpoint_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    pub app_name: String,
     pub event_name: String,
     pub payload_s3_key: String,
     pub payload_size_bytes: i32,

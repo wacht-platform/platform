@@ -17,6 +17,7 @@ pub struct UserEvent {
     pub user_name: Option<String>,
     pub user_email: Option<String>,
     pub auth_method: Option<String>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
     pub ip_address: Option<String>,
 }
@@ -39,6 +40,7 @@ struct RecentSignupRow {
     user_name: Option<String>,
     user_email: Option<String>,
     auth_method: Option<String>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     timestamp: DateTime<Utc>,
 }
 
@@ -79,7 +81,7 @@ impl ClickHouseService {
                 user_name Nullable(String),
                 user_email Nullable(String),
                 auth_method LowCardinality(Nullable(String)),
-                timestamp DateTime64(3, 'UTC'),
+                timestamp DateTime64(6, 'UTC'),
                 ip_address Nullable(String),
 
                 -- Optimized indexes for small instance
@@ -108,7 +110,7 @@ impl ClickHouseService {
                 user_name Nullable(String),
                 user_email Nullable(String),
                 auth_method Nullable(String),
-                timestamp DateTime64(3, 'UTC'),
+                timestamp DateTime64(6, 'UTC'),
                 ip_address Nullable(String)
             )
             ENGINE = Distributed(

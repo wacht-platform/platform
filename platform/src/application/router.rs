@@ -9,10 +9,10 @@ use tower_http::{
 
 use super::HttpState;
 use crate::api;
-#[cfg(feature = "console-api")]
-use crate::middleware::ConsoleDeploymentLayer;
 #[cfg(feature = "backend-api")]
 use crate::middleware::backend_deployment_middleware;
+#[cfg(feature = "console-api")]
+use crate::middleware::console_deployment::console_deployment_middleware;
 
 fn health_routes() -> Router<HttpState> {
     Router::new().route("/health", get(api::health::check))
@@ -256,15 +256,12 @@ fn deployment_routes() -> Router<HttpState> {
         .route(
             "/token/agent-context",
             post(api::token::generate_agent_context_token),
-        )
-        // Notification routes
-        .route(
-            "/notifications",
-            post(api::notifications::create_notification),
         );
 
     #[cfg(feature = "console-api")]
     {
+        use axum::middleware;
+
         let console_routes = routes
             .route(
                 "/webhooks/status",
@@ -275,12 +272,12 @@ fn deployment_routes() -> Router<HttpState> {
                 post(api::webhook_console::activate_webhooks),
             )
             .route(
-                "/webhooks/deactivate",
-                post(api::webhook_console::deactivate_webhooks),
-            )
-            .route(
                 "/webhooks/rotate-secret",
                 post(api::webhook_console::rotate_webhook_secret),
+            )
+            .route(
+                "/webhooks/events",
+                get(api::webhook_console::get_available_events),
             )
             .route(
                 "/webhooks/endpoints",
@@ -319,38 +316,40 @@ fn deployment_routes() -> Router<HttpState> {
                 post(api::webhook_console::retry_webhook_delivery),
             )
             .route(
-                "/api-keys/apps",
-                get(api::api_key_console::list_api_key_apps),
+                "/webhooks/endpoints/{endpoint_id}/test",
+                post(api::webhook_console::test_webhook_endpoint),
             )
             .route(
-                "/api-keys/apps",
-                post(api::api_key_console::create_api_key_app),
+                "/webhooks/endpoints/{endpoint_id}/reactivate",
+                post(api::webhook_console::reactivate_webhook_endpoint),
             )
             .route(
-                "/api-keys/apps/{app_id}",
-                patch(api::api_key_console::update_api_key_app),
+                "/api-keys/status",
+                get(api::api_key_console::get_api_key_status),
             )
             .route(
-                "/api-keys/apps/{app_id}",
-                delete(api::api_key_console::delete_api_key_app),
+                "/api-keys/activate",
+                post(api::api_key_console::activate_api_keys),
             )
             .route(
-                "/api-keys/apps/{app_id}/keys",
-                get(api::api_key_console::list_api_keys),
+                "/api-keys/deactivate",
+                post(api::api_key_console::deactivate_api_keys),
             )
             .route(
-                "/api-keys/apps/{app_id}/keys",
-                post(api::api_key_console::create_api_key),
+                "/api-keys/stats",
+                get(api::api_key_console::get_api_key_stats),
             )
+            .route("/api-keys", get(api::api_key_console::list_api_keys))
+            .route("/api-keys", post(api::api_key_console::create_api_key))
             .route(
-                "/api-keys/apps/{app_id}/keys/{key_id}",
+                "/api-keys/{key_id}",
                 delete(api::api_key_console::revoke_api_key),
             )
             .route(
-                "/api-keys/apps/{app_id}/keys/{key_id}/rotate",
+                "/api-keys/{key_id}/rotate",
                 post(api::api_key_console::rotate_api_key),
             )
-            .layer(ConsoleDeploymentLayer::new());
+            .layer(middleware::from_fn(console_deployment_middleware));
 
         return Router::new().nest("/deployments/{deployment_id}", console_routes);
     }
@@ -440,7 +439,11 @@ fn deployment_routes() -> Router<HttpState> {
                 post(api::api_key::create_api_key),
             )
             .route("/api-keys/revoke", post(api::api_key::revoke_api_key))
-            .route("/api-keys/rotate", post(api::api_key::rotate_api_key));
+            .route("/api-keys/rotate", post(api::api_key::rotate_api_key))
+            .route(
+                "/notifications",
+                post(api::notifications::create_notification),
+            );
 
         return backend_routes.layer(middleware::from_fn(backend_deployment_middleware));
     }

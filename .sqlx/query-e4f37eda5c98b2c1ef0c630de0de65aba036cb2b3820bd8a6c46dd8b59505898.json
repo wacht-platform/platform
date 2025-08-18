@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT e.url, e.headers, e.timeout_seconds, e.app_name, a.signing_secret\n            FROM webhook_endpoints e\n            JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_name = a.name)\n            WHERE e.id = $1 AND e.deployment_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "headers",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "timeout_seconds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "app_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "signing_secret",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e4f37eda5c98b2c1ef0c630de0de65aba036cb2b3820bd8a6c46dd8b59505898"
+}

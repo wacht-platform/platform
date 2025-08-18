@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                deployment_id as \"deployment_id!\",\n                app_name as \"app_name!\",\n                event_name as \"event_name!\",\n                description,\n                schema,\n                created_at as \"created_at!\"\n            FROM webhook_app_events\n            WHERE deployment_id = $1 AND app_name = $2\n            ORDER BY event_name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deployment_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "app_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "event_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "schema",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "0f03fb1a5e7c19134fb006c2aa19446d76f015cf28616a34c74be7edc87563d9"
+}

@@ -4,26 +4,28 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY .sqlx/ ./.sqlx/
-COPY console/ ./console/
-COPY shared/ ./shared/
+COPY models/ ./models/
+COPY dto/ ./dto/
+COPY commands/ ./commands/
+COPY queries/ ./queries/
+COPY common/ ./common/
+COPY platform/ ./platform/
 COPY worker/ ./worker/
 COPY realtime/ ./realtime/
-COPY rate-limiter/ ./rate-limiter/
+COPY gateway/ ./gateway/
 
 RUN cargo build --release --bin realtime
 RUN cargo build --release --bin worker
-RUN cargo build --release --bin rate-limiter
+RUN cargo build --release --bin gateway
 
-RUN cargo build --release --bin console --features console-api
-RUN cp target/release/console target/release/console-temp
+RUN cargo build --release --bin platform --features console-api
+RUN cp target/release/platform target/release/console
 
-RUN cargo build --release --bin console --features backend-api --no-default-features
-RUN cp target/release/console target/release/backend
+RUN cargo build --release --bin platform --features backend-api --no-default-features
+RUN cp target/release/platform target/release/backend
 
-RUN cargo build --release --bin console --features frontend-api --no-default-features
-RUN cp target/release/console target/release/frontend
-
-RUN cp target/release/console-temp target/release/console
+RUN cargo build --release --bin platform --features frontend-api --no-default-features
+RUN cp target/release/platform target/release/frontend
 
 FROM debian:bookworm-slim
 
@@ -40,9 +42,9 @@ COPY --from=build /app/target/release/backend /app/backend
 COPY --from=build /app/target/release/frontend /app/frontend
 COPY --from=build /app/target/release/realtime /app/realtime
 COPY --from=build /app/target/release/worker /app/worker
-COPY --from=build /app/target/release/rate-limiter /app/rate-limiter
+COPY --from=build /app/target/release/gateway /app/gateway
 
-RUN chmod +x /app/entrypoint.sh /app/console /app/backend /app/frontend /app/realtime /app/worker /app/rate-limiter
+RUN chmod +x /app/entrypoint.sh /app/console /app/backend /app/frontend /app/realtime /app/worker /app/gateway
 
 EXPOSE 8973
 

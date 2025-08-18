@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT 1 as exists\n            FROM active_webhook_deliveries\n            WHERE id = $1 AND deployment_id = $2\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4f2aa7d9541c688d26122a12502ca8bd56d561c12bc0be7ba3a9cd3c34550379"
+}

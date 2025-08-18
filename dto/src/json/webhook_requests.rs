@@ -33,6 +33,12 @@ pub struct UpdateWebhookAppRequest {
     pub is_active: Option<bool>,
 }
 
+// Get available events response
+#[derive(Debug, Serialize)]
+pub struct GetAvailableEventsResponse {
+    pub events: Vec<models::webhook::WebhookAppEvent>,
+}
+
 // =====================================================
 // WEBHOOK ENDPOINT REQUESTS
 // =====================================================
@@ -58,6 +64,17 @@ pub struct EventSubscription {
 #[derive(Debug, Deserialize)]
 pub struct CreateWebhookEndpointRequest {
     pub app_name: String,
+    pub url: String,
+    pub description: Option<String>,
+    pub subscriptions: Vec<EventSubscription>,
+    pub headers: Option<Value>,
+    pub max_retries: Option<i32>,
+    pub timeout_seconds: Option<i32>,
+}
+
+// Console API version - doesn't require app_name since it's derived from deployment_id
+#[derive(Debug, Deserialize)]
+pub struct CreateWebhookEndpointConsoleRequest {
     pub url: String,
     pub description: Option<String>,
     pub subscriptions: Vec<EventSubscription>,
@@ -148,6 +165,12 @@ pub struct ReactivateEndpointResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TestWebhookRequest {
+    pub event_name: String,
+    pub payload: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct TestWebhookEndpointRequest {
     pub endpoint_id: i64,
     pub event_name: String,
@@ -216,6 +239,7 @@ pub struct DeliveryListQuery {
     pub status: Option<String>,
     pub event_name: Option<String>,
     pub limit: Option<i32>,
+    pub offset: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]

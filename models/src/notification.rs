@@ -31,16 +31,6 @@ pub struct Notification {
     pub is_archived: bool,
     pub archived_at: Option<DateTime<Utc>>,
     
-    // Grouping
-    pub group_id: Option<String>,
-    pub group_count: i32,
-    
-    // Deduplication
-    pub dedupe_key: Option<String>,
-    
-    // Source
-    pub source: Option<String>,
-    pub source_id: Option<String>,
     
     // Metadata
     pub metadata: Option<JsonValue>,
@@ -115,11 +105,6 @@ pub struct CreateNotificationRequest {
     
     pub severity: Option<NotificationSeverity>,
     
-    pub group_id: Option<String>,
-    pub dedupe_key: Option<String>,
-    
-    pub source: Option<String>,
-    pub source_id: Option<String>,
     
     pub metadata: Option<JsonValue>,
     pub expires_in_hours: Option<i32>,
@@ -166,7 +151,6 @@ pub struct NotificationListParams {
     pub is_read: Option<bool>,
     pub is_archived: Option<bool>,
     pub severity: Option<NotificationSeverity>,
-    pub source: Option<String>,
     pub organization_id: Option<i64>,
     pub workspace_id: Option<i64>,
 }
@@ -179,7 +163,6 @@ impl Default for NotificationListParams {
             is_read: None,
             is_archived: None,
             severity: None,
-            source: None,
             organization_id: None,
             workspace_id: None,
         }

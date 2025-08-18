@@ -19,7 +19,9 @@ use commands::{
         CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand,
         UpdateWebhookEndpointCommand,
     },
-    webhook_trigger::{BatchTriggerWebhookEventsCommand, TriggerWebhookEventCommand},
+    webhook_trigger::{
+        BatchTriggerWebhookEventsCommand, ReplayWebhookDeliveryCommand, TriggerWebhookEventCommand,
+    },
 };
 use dto::json::webhook_requests::*;
 use models::webhook::{WebhookApp, WebhookEndpoint};
@@ -76,19 +78,12 @@ pub async fn update_webhook_app(
     Path(app_name): Path<String>,
     Json(request): Json<UpdateWebhookAppRequest>,
 ) -> ApiResult<WebhookApp> {
-    // First get the app by name to find its ID
-    let app = GetWebhookAppByNameQuery::new(deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found"))?;
-
     let command = UpdateWebhookAppCommand {
-        app_id: app.id,
         deployment_id,
-        name: request.name,
+        app_name,
+        new_name: request.name,
         description: request.description,
         is_active: request.is_active,
-        rate_limit_per_minute: None, // TODO: Add to request if needed
     };
 
     let app = command.execute(&app_state).await?;
@@ -100,15 +95,9 @@ pub async fn delete_webhook_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
 ) -> ApiResult<()> {
-    // First get the app by name to find its ID
-    let app = GetWebhookAppByNameQuery::new(deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found"))?;
-
     let command = DeleteWebhookAppCommand {
-        app_id: app.id,
         deployment_id,
+        app_name,
     };
     command.execute(&app_state).await?;
 
@@ -120,15 +109,9 @@ pub async fn rotate_webhook_secret(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
 ) -> ApiResult<WebhookApp> {
-    // First get the app by name to find its ID
-    let app = GetWebhookAppByNameQuery::new(deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found"))?;
-
     let command = RotateWebhookSecretCommand {
-        app_id: app.id,
         deployment_id,
+        app_name,
     };
     let app = command.execute(&app_state).await?;
 
@@ -145,12 +128,7 @@ pub async fn list_webhook_endpoints(
     let mut query = GetWebhookEndpointsQuery::new(deployment_id).with_inactive(include_inactive);
 
     if let Some(app_name) = params.app_name {
-        // Get app by name to find its ID
-        let app = GetWebhookAppByNameQuery::new(deployment_id, app_name)
-            .execute(&app_state)
-            .await?
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found"))?;
-        query = query.for_app(app.id);
+        query = query.for_app(app_name);
     }
 
     let endpoints = query.execute(&app_state).await?;
@@ -179,15 +157,9 @@ pub async fn create_webhook_endpoint(
         })
         .collect();
 
-    // First get the app by name to find its ID
-    let app = GetWebhookAppByNameQuery::new(deployment_id, request.app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found"))?;
-
     let command = CreateWebhookEndpointCommand {
-        app_id: app.id,
         deployment_id,
+        app_name: request.app_name,
         url: request.url,
         description: request.description,
         headers: request.headers,
@@ -300,8 +272,6 @@ pub async fn replay_webhook_delivery(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<ReplayWebhookDeliveryRequest>,
 ) -> ApiResult<ReplayWebhookDeliveryResponse> {
-    use commands::webhook_trigger::ReplayWebhookDeliveryCommand;
-
     let new_delivery_id = ReplayWebhookDeliveryCommand {
         delivery_id: request.delivery_id,
         deployment_id,

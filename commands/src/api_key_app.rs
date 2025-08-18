@@ -38,12 +38,16 @@ impl Command for CreateApiKeyAppCommand {
     type Output = ApiKeyApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Generate Snowflake ID
+        let app_id = app_state.sf.next_id()? as i64;
+        
         let rec = sqlx::query!(
             r#"
-            INSERT INTO api_key_apps (deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, created_at, updated_at, deleted_at
             "#,
+            app_id,
             self.deployment_id,
             self.name,
             self.description,
