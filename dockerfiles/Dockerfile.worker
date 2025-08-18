@@ -1,0 +1,31 @@
+FROM rust:1.85.1 as builder
+
+WORKDIR /app
+
+# Copy workspace files
+COPY Cargo.toml Cargo.lock ./
+COPY .sqlx/ ./.sqlx/
+COPY models/ ./models/
+COPY dto/ ./dto/
+COPY commands/ ./commands/
+COPY queries/ ./queries/
+COPY common/ ./common/
+COPY worker/ ./worker/
+
+# Build worker
+RUN cargo build --release --bin worker
+
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/worker /app/worker
+
+RUN chmod +x /app/worker
+
+CMD ["/app/worker"]

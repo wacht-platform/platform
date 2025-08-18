@@ -1,6 +1,7 @@
 use common::error::AppError;
 use models::{SignIn};
 use common::state::AppState;
+use sqlx::Row;
 
 use super::Query;
 
@@ -53,5 +54,64 @@ impl Query for GetSignInQuery {
         };
 
         Ok(signin)
+    }
+}
+
+pub struct GetSessionWithActiveContextQuery {
+    session_id: i64,
+}
+
+impl GetSessionWithActiveContextQuery {
+    pub fn new(session_id: i64) -> Self {
+        Self { session_id }
+    }
+}
+
+#[derive(Debug)]
+pub struct SessionContext {
+    pub user_id: i64,
+    pub active_organization_id: Option<i64>,
+    pub active_workspace_id: Option<i64>,
+}
+
+impl Query for GetSessionWithActiveContextQuery {
+    type Output = SessionContext;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let row = sqlx::query(
+            r#"
+            SELECT 
+                si.user_id,
+                om.organization_id,
+                wm.workspace_id
+            FROM sessions s
+            LEFT JOIN signins si ON s.active_signin_id = si.id
+            LEFT JOIN organization_memberships om ON si.active_organization_membership_id = om.id
+            LEFT JOIN workspace_memberships wm ON si.active_workspace_membership_id = wm.id
+            WHERE s.id = $1 AND s.deleted_at IS NULL
+            "#
+        )
+        .bind(self.session_id)
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
+        let Some(row) = row else {
+            return Err(AppError::NotFound("Session not found".to_string()));
+        };
+
+        let user_id: Option<i64> = row.try_get("user_id").ok();
+        let user_id = user_id.unwrap_or(0);
+        if user_id == 0 {
+            return Err(AppError::NotFound("No active user for session".to_string()));
+        }
+
+        let active_organization_id: Option<i64> = row.try_get("organization_id").ok().flatten();
+        let active_workspace_id: Option<i64> = row.try_get("workspace_id").ok().flatten();
+
+        Ok(SessionContext {
+            user_id,
+            active_organization_id,
+            active_workspace_id,
+        })
     }
 }

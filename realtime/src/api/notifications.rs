@@ -6,10 +6,9 @@ use axum::{
 use common::utils::jwt::verify_token;
 use fastwebsockets::{FragmentCollector, Frame, OpCode, WebSocketError, upgrade};
 use futures::StreamExt;
-use queries::{GetDeploymentWithKeyPairQuery, Query as QueryTrait};
+use queries::{GetDeploymentWithKeyPairQuery, GetSessionWithActiveContextQuery, Query as QueryTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
 use tracing::{error, info, warn};
 
 use crate::application::HttpState;
@@ -23,16 +22,9 @@ pub struct NotificationParams {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct NotificationClaims {
-    pub sub: String,
-    pub exp: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct SessionClaims {
-    pub sub: String, // user_id
-    pub session_id: Option<String>,
-    pub rotating_token_id: Option<String>,
+    pub sess: String, // session_id as string
+    pub rotating_token: String, // rotating_token_id as string
     pub exp: Option<i64>,
 }
 
@@ -41,6 +33,8 @@ pub struct NotificationMessage {
     pub id: i64,
     pub user_id: i64,
     pub deployment_id: i64,
+    pub organization_id: Option<i64>,
+    pub workspace_id: Option<i64>,
     pub title: String,
     pub body: String,
     pub severity: String,
@@ -148,13 +142,13 @@ async fn handle_notification_client(
         }
     };
 
-    // Parse user_id from string to i64
-    let user_id = match claims.sub.parse::<i64>() {
+    // Parse session_id from claims
+    let session_id = match claims.sess.parse::<i64>() {
         Ok(id) => id,
         Err(e) => {
-            error!("Invalid user_id in token: {}", e);
+            error!("Invalid session_id in token: {}", e);
             let error_msg = json!({
-                "error": "Invalid user ID"
+                "error": "Invalid session ID"
             });
             let _ = ws
                 .write_frame(Frame::text(fastwebsockets::Payload::Owned(
@@ -164,6 +158,30 @@ async fn handle_notification_client(
             return Ok(());
         }
     };
+
+    // Query database to get user_id and active organization/workspace from session
+    let session_context = match GetSessionWithActiveContextQuery::new(session_id)
+        .execute(&app_state)
+        .await
+    {
+        Ok(context) => context,
+        Err(e) => {
+            error!("Failed to get session context for session {}: {}", session_id, e);
+            let error_msg = json!({
+                "error": "Session not found or invalid"
+            });
+            let _ = ws
+                .write_frame(Frame::text(fastwebsockets::Payload::Owned(
+                    serde_json::to_vec(&error_msg).unwrap(),
+                )))
+                .await;
+            return Ok(());
+        }
+    };
+
+    let user_id = session_context.user_id;
+    let active_organization_id = session_context.active_organization_id;
+    let active_workspace_id = session_context.active_workspace_id;
 
     info!(
         "Notification WebSocket connection established for user: {}, deployment: {}",
@@ -212,16 +230,19 @@ async fn handle_notification_client(
             Some(msg) = subscriber.next() => {
                 match serde_json::from_slice::<NotificationMessage>(&msg.payload) {
                     Ok(notification) => {
-                        let ws_message = json!({
-                            "type": "notification",
-                            "data": notification
-                        });
+                        // Apply channel filtering
+                        if should_send_notification(&notification, &params, active_organization_id, active_workspace_id) {
+                            let ws_message = json!({
+                                "type": "notification",
+                                "data": notification
+                            });
 
-                        if let Err(e) = ws.write_frame(Frame::text(fastwebsockets::Payload::Owned(
-                            serde_json::to_vec(&ws_message).unwrap()
-                        ))).await {
-                            error!("Failed to send notification to WebSocket: {}", e);
-                            break;
+                            if let Err(e) = ws.write_frame(Frame::text(fastwebsockets::Payload::Owned(
+                                serde_json::to_vec(&ws_message).unwrap()
+                            ))).await {
+                                error!("Failed to send notification to WebSocket: {}", e);
+                                break;
+                            }
                         }
                     }
                     Err(e) => {
@@ -260,4 +281,87 @@ async fn handle_notification_client(
 
     info!("Notification stream closed for user {}", user_id);
     Ok(())
+}
+
+fn should_send_notification(
+    notification: &NotificationMessage, 
+    params: &NotificationParams, 
+    active_organization_id: Option<i64>,
+    active_workspace_id: Option<i64>
+) -> bool {
+    // If no channels specified, default to "user" notifications only
+    let channels = match &params.channels {
+        Some(channels) if !channels.is_empty() => channels,
+        _ => return true, // Default behavior: send user notifications
+    };
+
+    // Check each channel type
+    for channel in channels {
+        match channel.as_str() {
+            "user" => {
+                // User notifications are always sent (they're targeted to this specific user)
+                return true;
+            }
+            "organization" => {
+                // Organization notifications: check if notification has organization_id
+                if notification.organization_id.is_some() && notification.workspace_id.is_none() {
+                    // Organization-level notification (has org_id but no workspace_id)
+                    if let Some(org_ids) = &params.organization_ids {
+                        if let Some(notif_org_id) = notification.organization_id {
+                            if org_ids.contains(&notif_org_id) {
+                                return true;
+                            }
+                        }
+                    } else {
+                        // No specific org IDs filter, include all org notifications
+                        return true;
+                    }
+                }
+            }
+            "workspace" => {
+                // Workspace notifications: check if notification has workspace_id
+                if notification.workspace_id.is_some() {
+                    if let Some(ws_ids) = &params.workspace_ids {
+                        if let Some(notif_ws_id) = notification.workspace_id {
+                            if ws_ids.contains(&notif_ws_id) {
+                                return true;
+                            }
+                        }
+                    } else {
+                        // No specific workspace IDs filter, include all workspace notifications
+                        return true;
+                    }
+                }
+            }
+            "current" => {
+                // Current channel: notifications for the user's active context
+                if let Some(active_org_id) = active_organization_id {
+                    // Check if notification is for the active organization
+                    if notification.organization_id == Some(active_org_id) {
+                        if let Some(active_ws_id) = active_workspace_id {
+                            // If there's an active workspace, show notifications for that workspace or org-level ones
+                            if notification.workspace_id == Some(active_ws_id) || notification.workspace_id.is_none() {
+                                return true;
+                            }
+                        } else {
+                            // No active workspace, show org-level notifications
+                            if notification.workspace_id.is_none() {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                // Always include user-level notifications in current context
+                if notification.organization_id.is_none() && notification.workspace_id.is_none() {
+                    return true;
+                }
+            }
+            _ => {
+                // Unknown channel type, ignore
+                continue;
+            }
+        }
+    }
+
+    false
 }
