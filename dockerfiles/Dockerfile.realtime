@@ -31,6 +31,6 @@ COPY --from=builder /app/target/release/realtime /app/realtime
 
 RUN chmod +x /app/realtime
 
-EXPOSE 8974
+EXPOSE 3002
 
 CMD ["/app/realtime"]

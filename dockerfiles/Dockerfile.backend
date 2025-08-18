@@ -31,6 +31,6 @@ COPY --from=builder /app/target/release/platform /app/backend
 
 RUN chmod +x /app/backend
 
-EXPOSE 8973
+EXPOSE 3001
 
 CMD ["/app/backend"]

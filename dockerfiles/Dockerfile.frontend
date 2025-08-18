@@ -31,6 +31,6 @@ COPY --from=builder /app/target/release/platform /app/frontend
 
 RUN chmod +x /app/frontend
 
-EXPOSE 8973
+EXPOSE 3001
 
 CMD ["/app/frontend"]
