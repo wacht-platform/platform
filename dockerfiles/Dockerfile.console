@@ -31,6 +31,6 @@ COPY --from=builder /app/target/release/platform /app/console
 
 RUN chmod +x /app/console
 
-EXPOSE 8973
+EXPOSE 3001
 
 CMD ["/app/console"]
