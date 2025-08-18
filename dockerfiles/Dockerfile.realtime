@@ -10,7 +10,10 @@ COPY dto/ ./dto/
 COPY commands/ ./commands/
 COPY queries/ ./queries/
 COPY common/ ./common/
+COPY platform/ ./platform/
 COPY realtime/ ./realtime/
+COPY worker/ ./worker/
+COPY gateway/ ./gateway/
 
 # Build realtime
 RUN cargo build --release --bin realtime

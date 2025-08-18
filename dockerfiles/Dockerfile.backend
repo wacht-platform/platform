@@ -11,6 +11,9 @@ COPY commands/ ./commands/
 COPY queries/ ./queries/
 COPY common/ ./common/
 COPY platform/ ./platform/
+COPY realtime/ ./realtime/
+COPY worker/ ./worker/
+COPY gateway/ ./gateway/
 
 # Build backend API
 RUN cargo build --release --bin platform --features backend-api --no-default-features
