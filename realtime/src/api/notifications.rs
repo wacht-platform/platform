@@ -21,6 +21,8 @@ pub struct NotificationParams {
     pub channels: Option<Vec<String>>,
     pub organization_ids: Option<Vec<i64>>,
     pub workspace_ids: Option<Vec<i64>>,
+    #[serde(rename = "__dev_session__")]
+    pub dev_session: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,13 +55,13 @@ pub async fn notification_stream_handler(
     State(state): State<HttpState>,
 ) -> impl IntoResponse {
 
-    // Extract session token from cookies
-    let session_token = extract_session_cookie(&headers);
+    // Extract session token from cookies or query params (like frontend API)
+    let session_token = extract_session_token(&headers, &params);
     if session_token.is_none() {
-        warn!("WebSocket connection attempted without session cookie");
+        warn!("WebSocket connection attempted without session token");
         return axum::response::Response::builder()
             .status(401)
-            .body(axum::body::Body::from("Session cookie required"))
+            .body(axum::body::Body::from("Session token required"))
             .unwrap()
             .into_response();
     }
@@ -77,7 +79,8 @@ pub async fn notification_stream_handler(
     response.into_response()
 }
 
-fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
+fn extract_session_token(headers: &HeaderMap, params: &NotificationParams) -> Option<String> {
+    // First try cookies (production mode)
     if let Some(cookie_header) = headers.get(COOKIE) {
         if let Ok(cookie_str) = cookie_header.to_str() {
             // Parse cookies to find __session
@@ -91,7 +94,9 @@ fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
             }
         }
     }
-    None
+    
+    // Fallback to query params (development mode)
+    params.dev_session.clone()
 }
 
 async fn handle_notification_client(

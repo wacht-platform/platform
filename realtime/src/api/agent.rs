@@ -277,14 +277,14 @@ pub async fn agent_stream_handler(
 
     let token = params.get("token").cloned();
 
-    // if token.is_none() {
-    //     warn!("WebSocket connection attempted without authentication token");
-    //     return axum::response::Response::builder()
-    //         .status(401)
-    //         .body(axum::body::Body::from("Authentication required"))
-    //         .unwrap()
-    //         .into_response();
-    // }
+    if token.is_none() {
+        warn!("WebSocket connection attempted without authentication token");
+        return axum::response::Response::builder()
+            .status(401)
+            .body(axum::body::Body::from("Authentication required"))
+            .unwrap()
+            .into_response();
+    }
 
     let token = token.unwrap();
 
@@ -298,6 +298,7 @@ pub async fn agent_stream_handler(
 
     response.into_response()
 }
+
 
 async fn handle_client(
     fut: upgrade::UpgradeFut,
