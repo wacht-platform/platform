@@ -184,7 +184,7 @@ pub async fn process_webhook_delivery(
                     response_time_ms: Some(duration.as_millis() as i32),
                     attempt_number: delivery.attempts + 1,
                     max_attempts: delivery.max_attempts,
-                    error_message: response_body.clone(),
+                    error_message: None,
                     filtered_reason: None,
                     payload_s3_key: delivery.payload_s3_key.clone(),
                     response_body: response_body.clone(),
