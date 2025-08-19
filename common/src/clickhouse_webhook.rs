@@ -8,42 +8,7 @@ use super::clickhouse::ClickHouseService;
 use dto::clickhouse::webhook::*;
 
 impl ClickHouseService {
-    pub async fn migrate_remove_app_id(&self) -> Result<(), AppError> {
-        eprintln!("Migrating ClickHouse tables to remove app_id...");
-        
-        // Drop existing tables - order matters for distributed tables
-        eprintln!("Dropping existing webhook tables...");
-        
-        // First drop the materialized view that depends on the tables
-        eprintln!("Dropping webhook_metrics_hourly materialized view...");
-        let _ = self.client.query("DROP TABLE IF EXISTS webhook_metrics_hourly ON CLUSTER 'wacht_prod' SYNC").execute().await;
-        
-        // Drop distributed tables first
-        eprintln!("Dropping webhook_events distributed table...");
-        let _ = self.client.query("DROP TABLE IF EXISTS webhook_events ON CLUSTER 'wacht_prod' SYNC").execute().await;
-        
-        eprintln!("Dropping webhook_deliveries distributed table...");
-        let _ = self.client.query("DROP TABLE IF EXISTS webhook_deliveries ON CLUSTER 'wacht_prod' SYNC").execute().await;
-        
-        // Then drop the local replicated tables
-        eprintln!("Dropping webhook_events_local replicated table...");
-        let _ = self.client.query("DROP TABLE IF EXISTS webhook_events_local ON CLUSTER 'wacht_prod' SYNC").execute().await;
-        
-        eprintln!("Dropping webhook_deliveries_local replicated table...");
-        let _ = self.client.query("DROP TABLE IF EXISTS webhook_deliveries_local ON CLUSTER 'wacht_prod' SYNC").execute().await;
-        
-        eprintln!("Creating new webhook tables without app_id...");
-        
-        // Now create new tables without app_id
-        self.init_webhook_tables().await?;
-        
-        eprintln!("ClickHouse migration completed - app_id removed from tables");
-        Ok(())
-    }
-
     pub async fn init_webhook_tables(&self) -> Result<(), AppError> {
-        eprintln!("Creating webhook tables...");
-
         let query = r#"
             CREATE TABLE IF NOT EXISTS webhook_events_local ON CLUSTER 'wacht_prod' (
                 deployment_id Int64,
@@ -127,7 +92,6 @@ impl ClickHouseService {
 
         self.client.query(query).execute().await?;
 
-        // Create distributed table for webhook deliveries
         let query = r#"
             CREATE TABLE IF NOT EXISTS webhook_deliveries ON CLUSTER 'wacht_prod' (
                 deployment_id Int64,
@@ -158,7 +122,6 @@ impl ClickHouseService {
 
         self.client.query(query).execute().await?;
 
-        // Create materialized view for hourly metrics
         let query = r#"
             CREATE MATERIALIZED VIEW IF NOT EXISTS webhook_metrics_hourly ON CLUSTER 'wacht_prod'
             ENGINE = ReplicatedSummingMergeTree('/clickhouse/tables/{shard}/webhook_metrics_hourly', '{replica}')
@@ -181,7 +144,6 @@ impl ClickHouseService {
 
         self.client.query(query).execute().await?;
 
-        eprintln!("All webhook tables created successfully with app_name column");
         Ok(())
     }
 
@@ -568,7 +530,9 @@ impl ClickHouseService {
             query_builder = query_builder.bind(binding.clone());
         }
 
-        let delivery_rows = query_builder.fetch_all::<WebhookDeliveryTimeseriesRow>().await?;
+        let delivery_rows = query_builder
+            .fetch_all::<WebhookDeliveryTimeseriesRow>()
+            .await?;
 
         // Also get event counts for the same time buckets
         // Build separate conditions for events table (doesn't have endpoint_id)
@@ -836,7 +800,6 @@ impl ClickHouseService {
                 "timestamp": row.timestamp,
             });
 
-
             eprintln!("Returning delivery details");
             Ok(result)
         } else {
@@ -866,4 +829,3 @@ impl ClickHouseService {
         Ok(())
     }
 }
-
