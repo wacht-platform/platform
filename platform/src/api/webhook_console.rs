@@ -29,7 +29,7 @@ use models::{
 };
 use queries::{
     Query as QueryTrait,
-    webhook::{GetWebhookAppByNameQuery, GetWebhookEndpointsQuery, GetWebhookStatsQuery},
+    webhook::{GetWebhookAppByNameQuery, GetWebhookEndpointsWithSubscriptionsQuery, GetWebhookStatsQuery},
     webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery},
 };
 
@@ -287,7 +287,7 @@ pub async fn list_webhook_endpoints(
         })?;
 
     let include_inactive = params.include_inactive.unwrap_or(false);
-    let endpoints = GetWebhookEndpointsQuery::new(console_deployment_id)
+    let endpoints = GetWebhookEndpointsWithSubscriptionsQuery::new(console_deployment_id)
         .with_inactive(include_inactive)
         .for_app(app.name)
         .execute(&app_state)

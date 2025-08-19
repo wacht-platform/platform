@@ -50,8 +50,37 @@ pub struct ListWebhookEndpointsQuery {
 }
 
 #[derive(Debug, Serialize)]
+pub struct WebhookEndpoint {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    pub app_name: String,
+    pub url: String,
+    pub description: Option<String>,
+    pub headers: Option<Value>,
+    pub is_active: bool,
+    pub signing_secret: Option<String>,
+    pub max_retries: i32,
+    pub timeout_seconds: i32,
+    pub failure_count: i32,
+    pub last_failure_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub auto_disabled: bool,
+    pub auto_disabled_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub subscriptions: Vec<WebhookEndpointSubscription>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WebhookEndpointSubscription {
+    pub event_name: String,
+    pub filter_rules: Option<Value>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ListWebhookEndpointsResponse {
-    pub endpoints: Vec<models::webhook::WebhookEndpoint>,
+    pub endpoints: Vec<WebhookEndpoint>,
     pub total: usize,
 }
 

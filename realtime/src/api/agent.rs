@@ -308,7 +308,7 @@ async fn handle_client(
 ) -> Result<(), WebSocketError> {
     let mut ws = FragmentCollector::new(fut.await?);
 
-    let (deployment_id, private_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
+    let (deployment_id, public_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
         .execute(&app_state)
         .await
     {
@@ -327,7 +327,7 @@ async fn handle_client(
         }
     };
 
-    let claims = match verify_agent_context_token(&token, "ES256", &private_key, None) {
+    let claims = match verify_agent_context_token(&token, "ES256", &public_key, None) {
         Ok(claims) => claims,
         Err(e) => {
             error!("Failed to verify token for host {}: {}", host, e);

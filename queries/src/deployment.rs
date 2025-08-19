@@ -51,12 +51,12 @@ impl GetDeploymentWithKeyPairQuery {
 }
 
 impl Query for GetDeploymentWithKeyPairQuery {
-    type Output = (i64, String); // (deployment_id, private_key)
+    type Output = (i64, String); // (deployment_id, public_key)
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let row = query!(
             r#"
-            SELECT d.id, kp.private_key as "private_key?"
+            SELECT d.id, kp.public_key as "public_key?"
             FROM deployments d
             LEFT JOIN deployment_key_pairs kp ON d.id = kp.deployment_id
             WHERE d.backend_host = $1 AND d.deleted_at IS NULL
@@ -68,10 +68,10 @@ impl Query for GetDeploymentWithKeyPairQuery {
 
         let row = row.ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
         
-        let private_key = row.private_key
+        let public_key = row.public_key
             .ok_or_else(|| AppError::NotFound("Deployment key pair not found".to_string()))?;
         
-        Ok((row.id, private_key))
+        Ok((row.id, public_key))
     }
 }
 

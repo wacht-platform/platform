@@ -108,8 +108,8 @@ async fn handle_notification_client(
 ) -> Result<(), WebSocketError> {
     let mut ws = FragmentCollector::new(fut.await?);
 
-    // Get deployment ID and private key from host
-    let (deployment_id, private_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
+    // Get deployment ID and public key from host
+    let (deployment_id, public_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
         .execute(&app_state)
         .await
     {
@@ -128,8 +128,8 @@ async fn handle_notification_client(
         }
     };
 
-    // Verify session JWT token with deployment's private key using ES256 (same as frontend API)
-    let claims = match verify_token::<SessionClaims>(&token, "ES256", &private_key) {
+    // Verify session JWT token with deployment's public key using ES256 (same as frontend API)
+    let claims = match verify_token::<SessionClaims>(&token, "ES256", &public_key) {
         Ok(token_data) => token_data.claims,
         Err(e) => {
             error!("Invalid session token for notification stream: {}", e);
