@@ -2,6 +2,7 @@ use models::{
     DeploymentAuthSettings, EmailSettings, PasswordSettings, PhoneSettings, UsernameSettings,
 };
 use regex::Regex;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[derive(Clone)]
 pub struct ValidationError {
@@ -317,5 +318,30 @@ impl UserValidator {
         let phone_regex = Regex::new(r"^\+?[1-9]\d{1,14}$|^\+?[1-9][\d\s\-\(\)]{7,20}$").unwrap();
         let cleaned = phone.replace(&[' ', '-', '(', ')'][..], "");
         phone_regex.is_match(&cleaned)
+    }
+}
+
+/// Host validation utility functions
+pub struct HostValidator;
+
+impl HostValidator {
+    /// Validates that a host is not an IP address (IPv4 or IPv6)
+    /// Returns true if the host is valid (not an IP address)
+    pub fn is_valid_host(host: &str) -> bool {
+        // Try to parse as an IP address
+        match host.parse::<IpAddr>() {
+            Ok(_) => false, // It's an IP address, so invalid
+            Err(_) => true, // Not an IP address, so valid
+        }
+    }
+
+    /// Validates that a host is not an IPv4 address
+    pub fn is_not_ipv4(host: &str) -> bool {
+        host.parse::<Ipv4Addr>().is_err()
+    }
+
+    /// Validates that a host is not an IPv6 address
+    pub fn is_not_ipv6(host: &str) -> bool {
+        host.parse::<Ipv6Addr>().is_err()
     }
 }

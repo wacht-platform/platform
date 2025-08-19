@@ -4,8 +4,8 @@ use crate::agent::AgentExecutor;
 use async_nats::jetstream;
 use async_nats::jetstream::stream;
 use axum::extract::{Query as QueryParams, State};
-use axum::http::HeaderMap;
 use axum::response::IntoResponse;
+use axum::Extension;
 use common::error::AppError;
 use common::state::AppState;
 use common::utils::jwt::verify_agent_context_token;
@@ -29,6 +29,7 @@ use std::time::Duration;
 use tokio::sync::Notify;
 use tokio::sync::{Mutex, mpsc};
 use tracing::{error, warn};
+use crate::middleware::host_extractor::ExtractedHost;
 
 pub struct AgentHandler {
     app_state: AppState,
@@ -268,24 +269,11 @@ async fn watch_for_cancellation(
 }
 
 pub async fn agent_stream_handler(
-    headers: HeaderMap,
+    Extension(ExtractedHost(host)): Extension<ExtractedHost>,
     QueryParams(params): QueryParams<HashMap<String, String>>,
     ws: upgrade::IncomingUpgrade,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let host = headers
-        .get("host")
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string());
-
-    if host.is_none() {
-        warn!("WebSocket connection attempted without Host header");
-        return axum::response::Response::builder()
-            .status(400)
-            .body(axum::body::Body::from("Missing Host header"))
-            .unwrap()
-            .into_response();
-    }
 
     let token = params.get("token").cloned();
 
@@ -303,7 +291,7 @@ pub async fn agent_stream_handler(
     let (response, fut) = ws.upgrade().unwrap();
 
     tokio::task::spawn(async move {
-        if let Err(e) = handle_client(fut, state, host.unwrap(), token).await {
+        if let Err(e) = handle_client(fut, state, host, token).await {
             eprintln!("Error in websocket connection: {e}");
         }
     });

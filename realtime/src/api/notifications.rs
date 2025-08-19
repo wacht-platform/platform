@@ -2,6 +2,7 @@ use axum::{
     extract::{Query, State},
     http::{HeaderMap, header::COOKIE},
     response::IntoResponse,
+    Extension,
 };
 use common::utils::jwt::verify_token;
 use fastwebsockets::{FragmentCollector, Frame, OpCode, WebSocketError, upgrade};
@@ -12,6 +13,7 @@ use serde_json::json;
 use tracing::{error, info, warn};
 
 use crate::application::HttpState;
+use crate::middleware::host_extractor::ExtractedHost;
 
 #[derive(Debug, Deserialize)]
 pub struct NotificationParams {
@@ -44,16 +46,12 @@ pub struct NotificationMessage {
 }
 
 pub async fn notification_stream_handler(
+    Extension(ExtractedHost(host)): Extension<ExtractedHost>,
     headers: HeaderMap,
     Query(params): Query<NotificationParams>,
     ws: upgrade::IncomingUpgrade,
     State(state): State<HttpState>,
 ) -> impl IntoResponse {
-    let host = headers
-        .get("host")
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "localhost".to_string());
 
     // Extract session token from cookies
     let session_token = extract_session_cookie(&headers);

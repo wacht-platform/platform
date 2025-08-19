@@ -1,6 +1,7 @@
 use crate::api::{agent, notifications};
 use crate::application::HttpState;
-use axum::Router;
+use crate::middleware::HostExtractorMiddleware;
+use axum::{middleware, Router};
 use axum::routing::get;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -26,6 +27,7 @@ pub fn create_router(state: HttpState) -> Router {
     let router = router();
 
     router
+        .layer(middleware::from_fn(HostExtractorMiddleware::extract_host))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)

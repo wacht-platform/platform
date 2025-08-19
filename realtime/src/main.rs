@@ -1,6 +1,7 @@
 mod agent;
 mod api;
 mod application;
+mod middleware;
 mod template;
 use common::state::AppState;
 use dotenvy::dotenv;
