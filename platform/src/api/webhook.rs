@@ -376,8 +376,6 @@ pub async fn retry_webhook_delivery(
             "delivery_id": delivery_id,
             "deployment_id": deployment_id
         }),
-        retry_count: 0,
-        max_retries: 3,
     };
 
     app_state

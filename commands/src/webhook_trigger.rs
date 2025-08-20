@@ -206,8 +206,6 @@ impl Command for TriggerWebhookEventCommand {
                     "delivery_id": delivery.id,
                     "deployment_id": self.deployment_id
                 }),
-                retry_count: 0,
-                max_retries: 3,
             };
 
             app_state.nats_client
@@ -455,8 +453,6 @@ impl Command for ReplayWebhookDeliveryCommand {
                 "delivery_id": new_delivery.id,
                 "deployment_id": self.deployment_id
             }),
-            retry_count: 0,
-            max_retries: 3,
         };
 
         app_state.nats_client

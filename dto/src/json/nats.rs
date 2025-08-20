@@ -5,8 +5,6 @@ pub struct NatsTaskMessage {
     pub task_type: String,
     pub task_id: String,
     pub payload: serde_json::Value,
-    pub retry_count: u32,
-    pub max_retries: u32,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

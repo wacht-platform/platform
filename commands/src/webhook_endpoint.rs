@@ -486,8 +486,6 @@ impl Command for TestWebhookEndpointCommand {
                 "delivery_id": delivery_id,
                 "deployment_id": self.deployment_id
             }),
-            retry_count: 0,
-            max_retries: 0, // Test webhooks don't retry
         };
 
         app_state.nats_client

@@ -470,7 +470,7 @@ fn deployment_routes() -> Router<HttpState> {
                 post(api::token::generate_agent_context_token),
             );
 
-        return backend_routes.layer(middleware::from_fn(backend_deployment_middleware));
+        backend_routes
     }
 }
 
@@ -500,7 +500,12 @@ pub async fn create_router(state: HttpState) -> Router {
 
     #[cfg(feature = "backend-api")]
     {
-        router = router.merge(deployment_routes());
+        use axum::middleware;
+        let backend_routes = deployment_routes().layer(middleware::from_fn_with_state(
+            state.clone(),
+            backend_deployment_middleware,
+        ));
+        router = router.merge(backend_routes);
     }
 
     #[cfg(feature = "frontend-api")]
