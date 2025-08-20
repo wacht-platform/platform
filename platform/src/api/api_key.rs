@@ -48,9 +48,15 @@ pub async fn create_api_key_app(
     }
 
     if let Some(per_minute) = request.rate_limit_per_minute {
-        if let Some(per_hour) = request.rate_limit_per_hour {
-            command = command.with_rate_limits(per_minute, per_hour);
-        }
+        command = command.with_rate_limit_per_minute(per_minute);
+    }
+
+    if let Some(per_hour) = request.rate_limit_per_hour {
+        command = command.with_rate_limit_per_hour(per_hour);
+    }
+
+    if let Some(per_day) = request.rate_limit_per_day {
+        command = command.with_rate_limit_per_day(per_day);
     }
 
     let app = command.execute(&app_state).await?;
@@ -78,6 +84,7 @@ pub async fn update_api_key_app(
         is_active: request.is_active,
         rate_limit_per_minute: request.rate_limit_per_minute,
         rate_limit_per_hour: request.rate_limit_per_hour,
+        rate_limit_per_day: request.rate_limit_per_day,
     };
 
     let app = command.execute(&app_state).await?;

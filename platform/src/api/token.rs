@@ -9,10 +9,10 @@ use axum::{
 use serde::Deserialize;
 use commands::{Command, GenerateTokenCommand, GenerateAgentContextTokenCommand, GenerateTokenResponse};
 
-// #[cfg(feature = "console-api")]
-// use crate::middleware::{RequireAuthentication, ConsoleDeployment};
-// #[cfg(feature = "console-api")]
-// use dto::json::GenerateUserAgentContextTokenRequest;
+#[cfg(feature = "console-api")]
+use crate::middleware::ConsoleDeployment;
+#[cfg(feature = "console-api")]
+use dto::json::GenerateUserAgentContextTokenRequest;
 
 #[derive(Debug, Deserialize)]
 pub struct GenerateTokenRequest {
@@ -63,26 +63,31 @@ pub async fn generate_agent_context_token(
 }
 
 
-// #[cfg(feature = "console-api")]
-// pub async fn generate_user_agent_context_token(
-//     State(_app_state): State<HttpState>,
-//     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
-//     RequireDeployment(_deployment_id): RequireDeployment,
-//     RequireAuthentication(user_id): RequireAuthentication,
-//     Json(request): Json<GenerateUserAgentContextTokenRequest>,
-// ) -> ApiResult<GenerateTokenResponse> {
-//     let agent_token_request = wacht_rs::models::GenerateAgentContextTokenRequest {
-//         user_id,
-//         audience: request.audience,
-//         validity_hours: request.validity_hours,
-//     };
+#[cfg(feature = "console-api")]
+pub async fn generate_user_agent_context_token(
+    State(_app_state): State<HttpState>,
+    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Json(request): Json<GenerateUserAgentContextTokenRequest>,
+) -> ApiResult<GenerateTokenResponse> {
+    // For console API, use console deployment ID as user ID
+    let user_id = console_deployment_id;
+    
+    let agent_token_request = wacht::agents::GenerateAgentContextTokenRequest {
+        user_id,
+        audience: request.audience,
+        validity_hours: request.validity_hours,
+    };
 
-//     let token_response = wacht_rs::api::deployments::generate_agent_context_token(agent_token_request)
-//         .await
-//         .map_err(|e| {
-//             tracing::error!("Failed to generate agent context token via SDK: {:?}", e);
-//             crate::error::Error::InternalServerError("Failed to generate token".to_string())
-//         })?;
+    let token_response = wacht::agents::generate_agent_context_token(agent_token_request)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to generate agent context token via SDK: {:?}", e);
+            crate::application::AppError::Internal("Failed to generate token".to_string())
+        })?;
 
-//     Ok(token_response.into())
-// }
+    Ok(GenerateTokenResponse {
+        token: token_response.token,
+        expires: token_response.expires,
+    }.into())
+}

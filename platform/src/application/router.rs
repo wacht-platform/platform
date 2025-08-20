@@ -349,10 +349,10 @@ fn deployment_routes() -> Router<HttpState> {
                 "/api-keys/{key_id}/rotate",
                 post(api::api_key_console::rotate_api_key),
             )
-            // .route(
-            //     "/token/user-agent-context",
-            //     post(api::token::generate_user_agent_context_token),
-            // )
+            .route(
+                "/token/user-agent-context",
+                post(api::token::generate_user_agent_context_token),
+            )
             .layer(middleware::from_fn(console_deployment_middleware));
 
         return Router::new().nest("/deployments/{deployment_id}", console_routes);

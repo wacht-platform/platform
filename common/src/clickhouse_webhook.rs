@@ -603,13 +603,14 @@ impl ClickHouseService {
             .collect())
     }
 
-    pub async fn get_recent_webhook_deliveries(
+    pub async fn get_webhook_deliveries(
         &self,
         deployment_id: i64,
         app_name: Option<String>,
         status: Option<&str>,
         event_name: Option<&str>,
         limit: usize,
+        offset: usize,
     ) -> Result<Vec<serde_json::Value>, AppError> {
         let mut query = format!(
             "SELECT
@@ -643,7 +644,7 @@ impl ClickHouseService {
             query.push_str(&format!(" AND event_name = '{event_name}'"));
         }
 
-        query.push_str(&format!(" ORDER BY timestamp DESC LIMIT {limit}"));
+        query.push_str(&format!(" ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"));
 
         eprintln!("Executing query: {}", query);
 

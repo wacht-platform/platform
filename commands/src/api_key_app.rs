@@ -35,6 +35,21 @@ impl CreateApiKeyAppCommand {
         self.rate_limit_per_day = Some(per_day);
         self
     }
+
+    pub fn with_rate_limit_per_minute(mut self, per_minute: i32) -> Self {
+        self.rate_limit_per_minute = Some(per_minute);
+        self
+    }
+
+    pub fn with_rate_limit_per_hour(mut self, per_hour: i32) -> Self {
+        self.rate_limit_per_hour = Some(per_hour);
+        self
+    }
+
+    pub fn with_rate_limit_per_day(mut self, per_day: i32) -> Self {
+        self.rate_limit_per_day = Some(per_day);
+        self
+    }
 }
 
 impl Command for CreateApiKeyAppCommand {

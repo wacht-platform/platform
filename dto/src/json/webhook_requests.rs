@@ -310,7 +310,7 @@ pub struct GetWebhookDeliveriesResponse {
     pub total: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WebhookDeliveryDetails {
     pub delivery_id: i64,
     pub deployment_id: i64,

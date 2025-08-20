@@ -518,16 +518,18 @@ pub async fn get_webhook_deliveries(
         .await?;
 
     if let Some(app) = app {
-        // Get recent deliveries from ClickHouse
+        // Get deliveries from ClickHouse with pagination
         let limit = params.limit.unwrap_or(100) as usize;
+        let offset = params.offset.unwrap_or(0) as usize;
         let deliveries = app_state
             .clickhouse_service
-            .get_recent_webhook_deliveries(
+            .get_webhook_deliveries(
                 console_deployment_id,
                 Some(app.name),
                 params.status.as_deref(),
                 params.event_name.as_deref(),
                 limit,
+                offset,
             )
             .await?;
 
