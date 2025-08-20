@@ -52,6 +52,11 @@
         "ordinal": 9,
         "name": "deleted_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "rate_limit_per_day",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
@@ -63,6 +68,7 @@
       false,
       false,
       false,
+      true,
       true,
       true,
       true,

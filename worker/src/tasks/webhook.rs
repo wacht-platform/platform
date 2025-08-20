@@ -69,8 +69,6 @@ pub async fn process_webhook_delivery(
         delivery.max_attempts
     );
 
-    // Check IP allowlist if configured
-
     // Retrieve payload from S3
     let payload = RetrieveWebhookPayloadCommand::new(delivery.payload_s3_key.clone())
         .execute(app_state)

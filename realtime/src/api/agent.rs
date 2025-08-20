@@ -355,7 +355,8 @@ async fn handle_client(
     let (sender, mut receiver) = mpsc::unbounded_channel::<WebsocketMessage<Value>>();
     let session = Arc::new(Mutex::new(
         SessionState::new(sender.clone(), app_state.clone(), deployment_id)
-            .with_user(user_id.clone()),
+            .with_user(user_id.clone())
+            .with_audience(claims.aud.clone()),
     ));
     let channel_ready = Arc::new(Notify::new());
 
@@ -571,6 +572,32 @@ async fn handle_execution_message(
                 .await
             {
                 Ok(context) => {
+                    // Check if token has audience restriction and validate it
+                    if let Some(token_audience) = &session_state.lock().await.audience {
+                        if let Some(ref context_group) = context.context_group {
+                            if token_audience != context_group {
+                                let error_message = WebsocketMessage {
+                                    message_id: message.message_id,
+                                    message_type: WebsocketMessageType::CloseConnection,
+                                    data: json!({
+                                        "error": format!("Access denied: token audience '{}' does not match execution context group '{}'", token_audience, context_group)
+                                    }),
+                                };
+                                let _ = sender.send(error_message);
+                                return;
+                            }
+                        } else {
+                            let error_message = WebsocketMessage {
+                                message_id: message.message_id,
+                                message_type: WebsocketMessageType::CloseConnection,
+                                data: json!({
+                                    "error": format!("Access denied: token requires audience '{}' but execution context has no group", token_audience)
+                                }),
+                            };
+                            let _ = sender.send(error_message);
+                            return;
+                        }
+                    }
                     let execution_status = match context.status {
                         ExecutionContextStatus::Idle => "Idle",
                         ExecutionContextStatus::Running => "Running",
@@ -829,6 +856,120 @@ async fn handle_execution_message(
                 message_id: message.message_id,
                 message_type: WebsocketMessageType::ExecutionCancelled,
                 data: json!({}),
+            };
+
+            let _ = sender.send(message);
+        }
+        WebsocketMessageType::ListExecutionContexts => {
+            use queries::ListExecutionContextsQuery;
+            
+            let message = match ListExecutionContextsQuery::new(deployment_id)
+                .with_limit(50) // Default limit
+                .execute(&app_state)
+                .await
+            {
+                Ok(contexts) => WebsocketMessage {
+                    message_id: message.message_id,
+                    message_type: WebsocketMessageType::ListExecutionContexts,
+                    data: json!({
+                        "data": contexts,
+                        "has_more": false // For now, simple implementation
+                    }),
+                },
+                Err(e) => WebsocketMessage {
+                    message_id: message.message_id,
+                    message_type: WebsocketMessageType::CloseConnection,
+                    data: json!({
+                        "error": format!("Failed to list execution contexts: {}", e)
+                    }),
+                },
+            };
+
+            let _ = sender.send(message);
+        }
+        WebsocketMessageType::CreateExecutionContext => {
+            use commands::{Command, CreateExecutionContextCommand};
+            use dto::json::deployment::CreateExecutionContextRequest;
+            
+            // Parse the request data
+            let create_request: CreateExecutionContextRequest = match serde_json::from_value(message.data) {
+                Ok(req) => req,
+                Err(_) => {
+                    let error_message = WebsocketMessage {
+                        message_id: message.message_id,
+                        message_type: WebsocketMessageType::CloseConnection,
+                        data: json!({
+                            "error": "Invalid create context request format"
+                        }),
+                    };
+                    let _ = sender.send(error_message);
+                    return;
+                }
+            };
+            
+            let mut command = CreateExecutionContextCommand::new(deployment_id);
+            
+            if let Some(title) = create_request.title {
+                command = command.with_title(title);
+            }
+            
+            if let Some(goal) = create_request.current_goal {
+                command = command.with_current_goal(goal);
+            }
+            
+            if let Some(context_group) = create_request.context_group {
+                command = command.with_context_group(context_group);
+            }
+            
+            let message = match command.execute(&app_state).await {
+                Ok(new_context) => WebsocketMessage {
+                    message_id: message.message_id,
+                    message_type: WebsocketMessageType::CreateExecutionContext,
+                    data: json!(new_context),
+                },
+                Err(e) => WebsocketMessage {
+                    message_id: message.message_id,
+                    message_type: WebsocketMessageType::CloseConnection,
+                    data: json!({
+                        "error": format!("Failed to create execution context: {}", e)
+                    }),
+                },
+            };
+
+            let _ = sender.send(message);
+        }
+        WebsocketMessageType::GetExecutionContext(context_id_str) => {
+            let requested_context_id: i64 = match context_id_str.parse() {
+                Ok(id) => id,
+                Err(_) => {
+                    let error_message = WebsocketMessage {
+                        message_id: message.message_id,
+                        message_type: WebsocketMessageType::CloseConnection,
+                        data: json!({
+                            "error": "Invalid context ID format"
+                        }),
+                    };
+                    let _ = sender.send(error_message);
+                    return;
+                }
+            };
+            
+            let message = match GetExecutionContextQuery::new(requested_context_id, deployment_id)
+                .execute(&app_state)
+                .await
+            {
+                Ok(context) => WebsocketMessage {
+                    message_id: message.message_id,
+                    message_type: WebsocketMessageType::GetExecutionContext(context_id_str),
+                    data: json!(context),
+                },
+                Err(e) => WebsocketMessage {
+                    message_id: message.message_id,
+                    message_type: WebsocketMessageType::CloseConnection,
+                    data: json!({
+                        "error": format!("Failed to get execution context: {}", e)
+                    }),
+                },
             };
 
             let _ = sender.send(message);

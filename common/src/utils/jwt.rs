@@ -40,7 +40,7 @@ pub fn sign_token<T: Serialize>(claims: T, algorithm: &str, key: &str) -> Result
 pub struct AgentContextClaims {
     pub sub: Option<String>,  // Subject (user_id)
     pub scope: Option<String>, // Scope should contain "agent_context"
-    pub context_subject: Option<String>, // Optional context subject requirement
+    pub aud: Option<String>, // Audience - intended context group/resource
     pub exp: Option<i64>,      // Expiration time
     pub iat: Option<i64>,      // Issued at
 }

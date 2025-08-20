@@ -62,7 +62,9 @@ pub struct ExecuteWorkflowRequest {
 // AI Execution Context models
 #[derive(Deserialize)]
 pub struct CreateExecutionContextRequest {
-    // Empty struct - deployment_id comes from path
+    pub title: Option<String>,
+    pub current_goal: Option<String>,
+    pub context_group: Option<String>,
 }
 
 #[derive(Serialize)]

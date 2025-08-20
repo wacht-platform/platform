@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, created_at, updated_at, deleted_at\n            ",
+  "query": "\n            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day)\n            VALUES ($1, $2, $3, $4, $5, $6, $7)\n            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, created_at, updated_at, deleted_at\n            ",
   "describe": {
     "columns": [
       {
@@ -40,16 +40,21 @@
       },
       {
         "ordinal": 7,
+        "name": "rate_limit_per_day",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
@@ -60,6 +65,7 @@
         "Int8",
         "Varchar",
         "Text",
+        "Int4",
         "Int4",
         "Int4"
       ]
@@ -74,8 +80,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "c65e38a82c81b439c156921bc8d28f1403789483db2bedb2a2e9ce34df76feae"
+  "hash": "d907115cbe1c0a3afd42d900dc50a99ab2c84f31c41f54a19e42148dcb7ca446"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE api_key_apps\n            SET \n                name = COALESCE($3, name),\n                description = COALESCE($4, description),\n                is_active = COALESCE($5, is_active),\n                rate_limit_per_minute = COALESCE($6, rate_limit_per_minute),\n                rate_limit_per_hour = COALESCE($7, rate_limit_per_hour),\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, created_at, updated_at, deleted_at\n            ",
+  "query": "\n            UPDATE api_key_apps\n            SET \n                name = COALESCE($3, name),\n                description = COALESCE($4, description),\n                is_active = COALESCE($5, is_active),\n                rate_limit_per_minute = COALESCE($6, rate_limit_per_minute),\n                rate_limit_per_hour = COALESCE($7, rate_limit_per_hour),\n                rate_limit_per_day = COALESCE($8, rate_limit_per_day),\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, created_at, updated_at, deleted_at\n            ",
   "describe": {
     "columns": [
       {
@@ -40,16 +40,21 @@
       },
       {
         "ordinal": 7,
+        "name": "rate_limit_per_day",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
@@ -61,6 +66,7 @@
         "Varchar",
         "Text",
         "Bool",
+        "Int4",
         "Int4",
         "Int4"
       ]
@@ -75,8 +81,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "1a1717fd53bbad53e2cb205cb5f584c59d045f97bd2a22157f486c8d94bdb1eb"
+  "hash": "6675c55039196d7d502f3c0dae27e352929033c881391328f26194f2427775e2"
 }

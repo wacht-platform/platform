@@ -287,3 +287,53 @@ pub struct WebhookDeliveryItem {
     pub filtered_reason: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
+
+// =====================================================
+// BACKEND API DELIVERY REQUESTS
+// =====================================================
+
+#[derive(Debug, Deserialize)]
+pub struct GetWebhookDeliveriesQuery {
+    pub app_name: Option<String>,
+    pub endpoint_id: Option<i64>,
+    pub event_name: Option<String>,
+    pub status: Option<String>,
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
+    pub since: Option<DateTime<Utc>>,
+    pub until: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GetWebhookDeliveriesResponse {
+    pub deliveries: Vec<crate::clickhouse::webhook::WebhookDelivery>,
+    pub total: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WebhookDeliveryDetails {
+    pub delivery_id: i64,
+    pub deployment_id: i64,
+    pub app_name: String,
+    pub endpoint_id: i64,
+    pub endpoint_url: String,
+    pub event_name: String,
+    pub status: String,
+    pub http_status_code: Option<i32>,
+    pub response_time_ms: Option<i32>,
+    pub attempt_number: i32,
+    pub max_attempts: i32,
+    pub error_message: Option<String>,
+    pub filtered_reason: Option<String>,
+    pub payload_s3_key: String,
+    pub response_body: Option<String>,
+    pub response_headers: Option<Value>,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RetryWebhookDeliveryResponse {
+    pub delivery_id: i64,
+    pub status: String,
+    pub message: String,
+}

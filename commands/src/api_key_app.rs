@@ -9,6 +9,7 @@ pub struct CreateApiKeyAppCommand {
     pub description: Option<String>,
     pub rate_limit_per_minute: Option<i32>,
     pub rate_limit_per_hour: Option<i32>,
+    pub rate_limit_per_day: Option<i32>,
 }
 
 impl CreateApiKeyAppCommand {
@@ -19,6 +20,7 @@ impl CreateApiKeyAppCommand {
             description: None,
             rate_limit_per_minute: None,
             rate_limit_per_hour: None,
+            rate_limit_per_day: None,
         }
     }
 
@@ -27,9 +29,10 @@ impl CreateApiKeyAppCommand {
         self
     }
 
-    pub fn with_rate_limits(mut self, per_minute: i32, per_hour: i32) -> Self {
+    pub fn with_rate_limits(mut self, per_minute: i32, per_hour: i32, per_day: i32) -> Self {
         self.rate_limit_per_minute = Some(per_minute);
         self.rate_limit_per_hour = Some(per_hour);
+        self.rate_limit_per_day = Some(per_day);
         self
     }
 }
@@ -43,16 +46,17 @@ impl Command for CreateApiKeyAppCommand {
         
         let rec = sqlx::query!(
             r#"
-            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, created_at, updated_at, deleted_at
+            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, created_at, updated_at, deleted_at
             "#,
             app_id,
             self.deployment_id,
             self.name,
             self.description,
             self.rate_limit_per_minute,
-            self.rate_limit_per_hour
+            self.rate_limit_per_hour,
+            self.rate_limit_per_day
         )
         .fetch_one(&app_state.db_pool)
         .await?;
@@ -65,6 +69,7 @@ impl Command for CreateApiKeyAppCommand {
             is_active: rec.is_active.unwrap_or(true),
             rate_limit_per_minute: rec.rate_limit_per_minute,
             rate_limit_per_hour: rec.rate_limit_per_hour,
+            rate_limit_per_day: rec.rate_limit_per_day,
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,
@@ -80,6 +85,7 @@ pub struct UpdateApiKeyAppCommand {
     pub is_active: Option<bool>,
     pub rate_limit_per_minute: Option<i32>,
     pub rate_limit_per_hour: Option<i32>,
+    pub rate_limit_per_day: Option<i32>,
 }
 
 impl Command for UpdateApiKeyAppCommand {
@@ -95,9 +101,10 @@ impl Command for UpdateApiKeyAppCommand {
                 is_active = COALESCE($5, is_active),
                 rate_limit_per_minute = COALESCE($6, rate_limit_per_minute),
                 rate_limit_per_hour = COALESCE($7, rate_limit_per_hour),
+                rate_limit_per_day = COALESCE($8, rate_limit_per_day),
                 updated_at = NOW()
             WHERE id = $1 AND deployment_id = $2
-            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, created_at, updated_at, deleted_at
+            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, created_at, updated_at, deleted_at
             "#,
             self.app_id,
             self.deployment_id,
@@ -105,7 +112,8 @@ impl Command for UpdateApiKeyAppCommand {
             self.description,
             self.is_active,
             self.rate_limit_per_minute,
-            self.rate_limit_per_hour
+            self.rate_limit_per_hour,
+            self.rate_limit_per_day
         )
         .fetch_one(&app_state.db_pool)
         .await?;
@@ -118,6 +126,7 @@ impl Command for UpdateApiKeyAppCommand {
             is_active: rec.is_active.unwrap_or(true),
             rate_limit_per_minute: rec.rate_limit_per_minute,
             rate_limit_per_hour: rec.rate_limit_per_hour,
+            rate_limit_per_day: rec.rate_limit_per_day,
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,

@@ -1,6 +1,7 @@
 use crate::Command;
 use common::error::AppError;
 use models::api_key::{ApiKey, ApiKeyWithSecret};
+use models::api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper};
 use common::state::AppState;
 use chrono::{DateTime, Utc};
 use sha2::{Sha256, Digest};
@@ -71,6 +72,21 @@ impl Command for CreateApiKeyCommand {
         // Generate Snowflake ID
         let key_id = app_state.sf.next_id()? as i64;
         
+        // Use default scopes if none provided
+        let permissions = if self.permissions.is_empty() {
+            ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes())
+        } else {
+            // Validate provided scopes
+            match ApiKeyScopeHelper::validate_scopes(&self.permissions) {
+                Ok(valid_scopes) => ApiKeyScopeHelper::scopes_to_strings(&valid_scopes),
+                Err(invalid_scopes) => {
+                    return Err(AppError::BadRequest(
+                        format!("Invalid scopes: {}", invalid_scopes.join(", "))
+                    ));
+                }
+            }
+        };
+        
         let rec = sqlx::query!(
             r#"
             INSERT INTO api_keys (
@@ -91,7 +107,7 @@ impl Command for CreateApiKeyCommand {
             self.key_prefix,
             key_hash,
             key_suffix,
-            serde_json::to_value(&self.permissions)?,
+            serde_json::to_value(&permissions)?,
             self.metadata.unwrap_or(serde_json::json!({})),
             self.expires_at
         )

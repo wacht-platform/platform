@@ -48,6 +48,13 @@ pub enum WebsocketMessageType {
     CancelExecution,
     #[serde(rename = "execution_cancelled")]
     ExecutionCancelled,
+    // Context management
+    #[serde(rename = "list_execution_contexts")]
+    ListExecutionContexts,
+    #[serde(rename = "create_execution_context")]
+    CreateExecutionContext,
+    #[serde(rename = "get_execution_context")]
+    GetExecutionContext(String),
 }
 
 #[derive(Serialize, Deserialize, Clone)]

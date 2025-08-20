@@ -18,6 +18,7 @@ use dto::json::api_key::{
 };
 use models::{
     api_key::{ApiKeyApp, ApiKeyWithSecret},
+    api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper},
     DeploymentMode,
 };
 use queries::{
@@ -76,8 +77,8 @@ pub async fn activate_api_keys(
     let mut command = CreateApiKeyAppCommand::new(console_deployment_id, app_name);
     command = command.with_description(format!("API keys for deployment {}", deployment_id));
     
-    // Set default rate limits
-    command = command.with_rate_limits(60, 1000);
+    // Set default rate limits (per minute, per hour, per day)
+    command = command.with_rate_limits(60, 1000, 10000);
     
     let app = command.execute(&app_state).await?;
     Ok(app.into())
@@ -104,6 +105,7 @@ pub async fn deactivate_api_keys(
         is_active: Some(false),
         rate_limit_per_minute: None,
         rate_limit_per_hour: None,
+        rate_limit_per_day: None,
     };
     
     command.execute(&app_state).await?;
@@ -207,9 +209,10 @@ pub async fn create_api_key(
         key_prefix.to_string(),
     );
     
-    if let Some(permissions) = request.permissions {
-        command = command.with_permissions(permissions);
-    }
+    // Always use default read-only scopes for console-created API keys
+    // This provides safe, limited access by default
+    let permissions = ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes());
+    command = command.with_permissions(permissions);
     
     if let Some(expires_at) = request.expires_at {
         command = command.with_expiration(expires_at);

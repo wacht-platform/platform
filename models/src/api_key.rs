@@ -14,6 +14,7 @@ pub struct ApiKeyApp {
     pub is_active: bool,
     pub rate_limit_per_minute: Option<i32>,
     pub rate_limit_per_hour: Option<i32>,
+    pub rate_limit_per_day: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,

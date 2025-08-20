@@ -9,6 +9,11 @@ use axum::{
 use serde::Deserialize;
 use commands::{Command, GenerateTokenCommand, GenerateAgentContextTokenCommand, GenerateTokenResponse};
 
+// #[cfg(feature = "console-api")]
+// use crate::middleware::{RequireAuthentication, ConsoleDeployment};
+// #[cfg(feature = "console-api")]
+// use dto::json::GenerateUserAgentContextTokenRequest;
+
 #[derive(Debug, Deserialize)]
 pub struct GenerateTokenRequest {
     pub session_id: i64,
@@ -36,7 +41,7 @@ pub async fn generate_token(
 #[derive(Debug, Deserialize)]
 pub struct GenerateAgentContextTokenRequest {
     pub user_id: i64,
-    pub context_subject: Option<String>,
+    pub audience: Option<String>,
     pub validity_hours: Option<u32>, // Optional validity in hours, defaults to 24
 }
 
@@ -48,7 +53,7 @@ pub async fn generate_agent_context_token(
     GenerateAgentContextTokenCommand::new(
         deployment_id,
         request.user_id,
-        request.context_subject,
+        request.audience,
     )
     .with_validity_hours(request.validity_hours.unwrap_or(24))
     .execute(&app_state)
@@ -56,3 +61,28 @@ pub async fn generate_agent_context_token(
     .map(Into::into)
     .map_err(Into::into)
 }
+
+
+// #[cfg(feature = "console-api")]
+// pub async fn generate_user_agent_context_token(
+//     State(_app_state): State<HttpState>,
+//     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
+//     RequireDeployment(_deployment_id): RequireDeployment,
+//     RequireAuthentication(user_id): RequireAuthentication,
+//     Json(request): Json<GenerateUserAgentContextTokenRequest>,
+// ) -> ApiResult<GenerateTokenResponse> {
+//     let agent_token_request = wacht_rs::models::GenerateAgentContextTokenRequest {
+//         user_id,
+//         audience: request.audience,
+//         validity_hours: request.validity_hours,
+//     };
+
+//     let token_response = wacht_rs::api::deployments::generate_agent_context_token(agent_token_request)
+//         .await
+//         .map_err(|e| {
+//             tracing::error!("Failed to generate agent context token via SDK: {:?}", e);
+//             crate::error::Error::InternalServerError("Failed to generate token".to_string())
+//         })?;
+
+//     Ok(token_response.into())
+// }

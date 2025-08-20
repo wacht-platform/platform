@@ -29,7 +29,7 @@ use queries::{
     Query as QueryTrait,
     webhook::{
         GetWebhookAppsQuery, GetWebhookDeliveryStatusQuery,
-        GetWebhookEndpointsQuery,
+        GetWebhookEndpointsQuery, GetWebhookEventsQuery,
     },
 };
 
@@ -116,6 +116,18 @@ pub async fn rotate_webhook_secret(
     let app = command.execute(&app_state).await?;
 
     Ok(app.into())
+}
+
+pub async fn get_webhook_events(
+    State(app_state): State<HttpState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(app_name): Path<String>,
+) -> ApiResult<GetAvailableEventsResponse> {
+    let events = GetWebhookEventsQuery::new(deployment_id, app_name)
+        .execute(&app_state)
+        .await?;
+
+    Ok(GetAvailableEventsResponse { events }.into())
 }
 
 pub async fn list_webhook_endpoints(
@@ -280,6 +292,83 @@ pub async fn replay_webhook_delivery(
     .await?;
 
     Ok(ReplayWebhookDeliveryResponse { new_delivery_id }.into())
+}
+
+pub async fn get_webhook_deliveries(
+    State(app_state): State<HttpState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Query(params): Query<dto::json::webhook_requests::GetWebhookDeliveriesQuery>,
+) -> ApiResult<dto::json::webhook_requests::GetWebhookDeliveriesResponse> {
+    use common::clickhouse_webhook::WebhookDeliveryFilter;
+
+    let filter = WebhookDeliveryFilter {
+        deployment_id: Some(deployment_id),
+        app_name: params.app_name,
+        endpoint_id: params.endpoint_id,
+        event_name: params.event_name,
+        status: params.status,
+        limit: params.limit.unwrap_or(100),
+        offset: params.offset.unwrap_or(0),
+        since: params.since,
+        until: params.until,
+    };
+
+    let deliveries = app_state
+        .clickhouse_service
+        .get_webhook_deliveries(filter)
+        .await?;
+
+    Ok(dto::json::webhook_requests::GetWebhookDeliveriesResponse {
+        deliveries,
+        total: deliveries.len(),
+    }
+    .into())
+}
+
+pub async fn get_webhook_delivery_details(
+    State(app_state): State<HttpState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(delivery_id): Path<String>,
+) -> ApiResult<dto::json::webhook_requests::WebhookDeliveryDetails> {
+    let delivery_id = delivery_id.parse::<i64>().map_err(|_| {
+        (axum::http::StatusCode::BAD_REQUEST, "Invalid delivery ID")
+    })?;
+
+    let details = app_state
+        .clickhouse_service
+        .get_webhook_delivery_details(deployment_id, delivery_id)
+        .await?
+        .ok_or_else(|| {
+            (axum::http::StatusCode::NOT_FOUND, "Delivery not found")
+        })?;
+
+    Ok(details.into())
+}
+
+pub async fn retry_webhook_delivery(
+    State(app_state): State<HttpState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(delivery_id): Path<String>,
+) -> ApiResult<dto::json::webhook_requests::RetryWebhookDeliveryResponse> {
+    use commands::webhook_trigger::RetryWebhookDeliveryCommand;
+
+    let delivery_id = delivery_id.parse::<i64>().map_err(|_| {
+        (axum::http::StatusCode::BAD_REQUEST, "Invalid delivery ID")
+    })?;
+
+    let command = RetryWebhookDeliveryCommand {
+        deployment_id,
+        delivery_id,
+    };
+
+    let result = command.execute(&app_state).await?;
+    
+    Ok(dto::json::webhook_requests::RetryWebhookDeliveryResponse {
+        delivery_id: result.delivery_id,
+        status: "retrying".to_string(),
+        message: "Delivery queued for retry".to_string(),
+    }
+    .into())
 }
 
 pub async fn get_webhook_delivery_status(

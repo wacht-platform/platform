@@ -54,6 +54,7 @@ pub mod webhook;
 
 // API Key models
 pub mod api_key;
+pub mod api_key_permissions;
 
 // Notification models
 pub mod notification;

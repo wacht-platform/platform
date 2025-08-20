@@ -7,11 +7,34 @@ use common::state::AppState;
 
 pub struct CreateExecutionContextCommand {
     pub deployment_id: i64,
+    pub title: Option<String>,
+    pub current_goal: Option<String>,
+    pub context_group: Option<String>,
 }
 
 impl CreateExecutionContextCommand {
     pub fn new(deployment_id: i64) -> Self {
-        Self { deployment_id }
+        Self { 
+            deployment_id,
+            title: None,
+            current_goal: None,
+            context_group: None,
+        }
+    }
+
+    pub fn with_title(mut self, title: String) -> Self {
+        self.title = Some(title);
+        self
+    }
+
+    pub fn with_current_goal(mut self, current_goal: String) -> Self {
+        self.current_goal = Some(current_goal);
+        self
+    }
+
+    pub fn with_context_group(mut self, context_group: String) -> Self {
+        self.context_group = Some(context_group);
+        self
     }
 }
 
@@ -25,15 +48,16 @@ impl Command for CreateExecutionContextCommand {
         sqlx::query!(
             r#"
             INSERT INTO agent_execution_contexts
-            (id, created_at, updated_at, deployment_id, title, current_goal, tasks, last_activity_at, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            (id, created_at, updated_at, deployment_id, title, current_goal, context_group, tasks, last_activity_at, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             "#,
             context_id,
             now,
             now,
             self.deployment_id,
-            "",
-            "",
+            self.title.as_deref().unwrap_or(""),
+            self.current_goal.as_deref().unwrap_or(""),
+            self.context_group,
             &Vec::<String>::new(),
             now,
             "idle"
@@ -47,8 +71,9 @@ impl Command for CreateExecutionContextCommand {
             created_at: now,
             updated_at: now,
             deployment_id: self.deployment_id,
-            title: "".to_string(),
-            current_goal: "".to_string(),
+            title: self.title.unwrap_or_default(),
+            current_goal: self.current_goal.unwrap_or_default(),
+            context_group: self.context_group,
             tasks: Vec::new(),
             last_activity_at: now,
             completed_at: None,

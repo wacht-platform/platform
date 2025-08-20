@@ -1260,16 +1260,16 @@ impl Command for GenerateTokenCommand {
 pub struct GenerateAgentContextTokenCommand {
     deployment_id: i64,
     user_id: i64,
-    context_subject: Option<String>, // Optional subject requirement for the context
+    audience: Option<String>, // Optional audience (context group) for the token
     validity_hours: u32, // Token validity in hours
 }
 
 impl GenerateAgentContextTokenCommand {
-    pub fn new(deployment_id: i64, user_id: i64, context_subject: Option<String>) -> Self {
+    pub fn new(deployment_id: i64, user_id: i64, audience: Option<String>) -> Self {
         Self {
             deployment_id,
             user_id,
-            context_subject,
+            audience,
             validity_hours: 24, // Default to 24 hours
         }
     }
@@ -1312,9 +1312,9 @@ impl Command for GenerateAgentContextTokenCommand {
         claims.insert("exp".to_string(), json!(exp.timestamp()));
         claims.insert("scope".to_string(), json!("agent_context")); // Important: Add the agent_context scope
         
-        // Add context subject if provided
-        if let Some(subject) = self.context_subject {
-            claims.insert("context_subject".to_string(), json!(subject));
+        // Add audience if provided
+        if let Some(audience) = self.audience {
+            claims.insert("aud".to_string(), json!(audience));
         }
 
         // Sign with ES256 (default algorithm)

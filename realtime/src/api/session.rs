@@ -12,6 +12,7 @@ pub struct SessionState {
     pub deployment_id: i64,
     pub user_id: Option<String>,
     pub context_id: Option<i64>,
+    pub audience: Option<String>,
     pub agent: Option<AiAgentWithFeatures>,
     pub app_state: AppState,
     pub ready: Arc<Notify>,
@@ -29,6 +30,7 @@ impl SessionState {
             deployment_id,
             user_id: None,
             context_id: None,
+            audience: None,
             agent: None,
             app_state,
             ready: Arc::new(Notify::new()),
@@ -38,6 +40,11 @@ impl SessionState {
     
     pub fn with_user(mut self, user_id: Option<String>) -> Self {
         self.user_id = user_id;
+        self
+    }
+    
+    pub fn with_audience(mut self, audience: Option<String>) -> Self {
+        self.audience = audience;
         self
     }
 }

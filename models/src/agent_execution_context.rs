@@ -14,6 +14,7 @@ pub struct AgentExecutionContext {
     pub title: String,
     pub current_goal: String,
     pub tasks: Vec<String>,
+    pub context_group: Option<String>,
     pub last_activity_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
     pub execution_state: Option<AgentExecutionState>,

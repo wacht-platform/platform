@@ -245,17 +245,17 @@ fn deployment_routes() -> Router<HttpState> {
         )
         .route(
             "/ai-execution-context",
-            post(api::ai_execution_context::create_execution_context),
+            get(api::ai_execution_context::get_execution_contexts)
+                .post(api::ai_execution_context::create_execution_context),
+        )
+        .route(
+            "/ai-execution-context/{context_id}",
+            get(api::ai_execution_context::get_execution_context_by_id),
         )
         .route("/analytics/stats", get(api::analytics::get_analytics_stats))
         .route(
             "/analytics/recent-signups",
             get(api::analytics::get_recent_signups),
-        )
-        .route("/token", post(api::token::generate_token))
-        .route(
-            "/token/agent-context",
-            post(api::token::generate_agent_context_token),
         );
 
     #[cfg(feature = "console-api")]
@@ -349,6 +349,10 @@ fn deployment_routes() -> Router<HttpState> {
                 "/api-keys/{key_id}/rotate",
                 post(api::api_key_console::rotate_api_key),
             )
+            // .route(
+            //     "/token/user-agent-context",
+            //     post(api::token::generate_user_agent_context_token),
+            // )
             .layer(middleware::from_fn(console_deployment_middleware));
 
         return Router::new().nest("/deployments/{deployment_id}", console_routes);
@@ -373,6 +377,10 @@ fn deployment_routes() -> Router<HttpState> {
                 post(api::webhook::rotate_webhook_secret),
             )
             .route(
+                "/webhooks/apps/{app_name}/events",
+                get(api::webhook::get_webhook_events),
+            )
+            .route(
                 "/webhooks/endpoints",
                 get(api::webhook::list_webhook_endpoints),
             )
@@ -395,6 +403,18 @@ fn deployment_routes() -> Router<HttpState> {
             .route(
                 "/webhooks/trigger/batch",
                 post(api::webhook::batch_trigger_webhook_events),
+            )
+            .route(
+                "/webhooks/deliveries",
+                get(api::webhook::get_webhook_deliveries),
+            )
+            .route(
+                "/webhooks/deliveries/{delivery_id}",
+                get(api::webhook::get_webhook_delivery_details),
+            )
+            .route(
+                "/webhooks/deliveries/{delivery_id}/retry",
+                post(api::webhook::retry_webhook_delivery),
             )
             .route(
                 "/webhooks/deliveries/status",
@@ -443,6 +463,11 @@ fn deployment_routes() -> Router<HttpState> {
             .route(
                 "/notifications",
                 post(api::notifications::create_notification),
+            )
+            .route("/token", post(api::token::generate_token))
+            .route(
+                "/token/agent-context",
+                post(api::token::generate_agent_context_token),
             );
 
         return backend_routes.layer(middleware::from_fn(backend_deployment_middleware));
