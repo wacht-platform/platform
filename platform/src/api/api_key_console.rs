@@ -106,6 +106,7 @@ pub async fn deactivate_api_keys(
         rate_limit_per_minute: None,
         rate_limit_per_hour: None,
         rate_limit_per_day: None,
+        rate_limit_mode: None,
     };
     
     command.execute(&app_state).await?;

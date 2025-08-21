@@ -1,9 +1,7 @@
 use crate::middleware::RequireDeployment;
 use axum::extract::{Path, Query, State};
 
-use crate::{
-    application::{AppError, HttpState, response::ApiResult},
-};
+use crate::application::{AppError, HttpState, response::ApiResult};
 
 use commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use dto::json::ai_knowledge_base::{
@@ -62,14 +60,13 @@ pub async fn search_knowledge_base(
     .into())
 }
 
-/// Search within a specific knowledge base
 pub async fn search_specific_knowledge_base(
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(knowledge_base_id): Path<i64>,
+    Path((_, kb_id)): Path<(i64, i64)>,
     Query(params): Query<SearchKnowledgeBaseQuery>,
     State(app_state): State<HttpState>,
 ) -> ApiResult<SearchKnowledgeBaseResponse> {
-    let _kb = GetAiKnowledgeBaseByIdQuery::new(deployment_id, knowledge_base_id)
+    let _kb = GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
         .execute(&app_state)
         .await
         .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
@@ -81,10 +78,9 @@ pub async fn search_specific_knowledge_base(
         .execute(&app_state)
         .await?;
 
-    let results =
-        SearchKnowledgeBaseEmbeddingsCommand::new(vec![knowledge_base_id], query_embedding, limit)
-            .execute(&app_state)
-            .await?;
+    let results = SearchKnowledgeBaseEmbeddingsCommand::new(vec![kb_id], query_embedding, limit)
+        .execute(&app_state)
+        .await?;
 
     let search_results: Vec<KnowledgeBaseSearchResult> = results
         .into_iter()

@@ -644,7 +644,9 @@ impl ClickHouseService {
             query.push_str(&format!(" AND event_name = '{event_name}'"));
         }
 
-        query.push_str(&format!(" ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"));
+        query.push_str(&format!(
+            " ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
+        ));
 
         eprintln!("Executing query: {}", query);
 
@@ -781,8 +783,7 @@ impl ClickHouseService {
                 row.delivery_id, row.status
             );
 
-            // Convert to JSON value and manually convert IDs to strings
-            let mut result = serde_json::json!({
+            let result = serde_json::json!({
                 "delivery_id": row.delivery_id.to_string(),
                 "app_name": row.app_name,
                 "endpoint_id": row.endpoint_id.to_string(),

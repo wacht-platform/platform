@@ -10,6 +10,7 @@ pub struct CreateApiKeyAppCommand {
     pub rate_limit_per_minute: Option<i32>,
     pub rate_limit_per_hour: Option<i32>,
     pub rate_limit_per_day: Option<i32>,
+    pub rate_limit_mode: Option<String>,
 }
 
 impl CreateApiKeyAppCommand {
@@ -21,6 +22,7 @@ impl CreateApiKeyAppCommand {
             rate_limit_per_minute: None,
             rate_limit_per_hour: None,
             rate_limit_per_day: None,
+            rate_limit_mode: None,
         }
     }
 
@@ -61,9 +63,9 @@ impl Command for CreateApiKeyAppCommand {
         
         let rec = sqlx::query!(
             r#"
-            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, created_at, updated_at, deleted_at
+            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode, created_at, updated_at, deleted_at
             "#,
             app_id,
             self.deployment_id,
@@ -71,7 +73,8 @@ impl Command for CreateApiKeyAppCommand {
             self.description,
             self.rate_limit_per_minute,
             self.rate_limit_per_hour,
-            self.rate_limit_per_day
+            self.rate_limit_per_day,
+            self.rate_limit_mode
         )
         .fetch_one(&app_state.db_pool)
         .await?;
@@ -85,6 +88,7 @@ impl Command for CreateApiKeyAppCommand {
             rate_limit_per_minute: rec.rate_limit_per_minute,
             rate_limit_per_hour: rec.rate_limit_per_hour,
             rate_limit_per_day: rec.rate_limit_per_day,
+            rate_limit_mode: rec.rate_limit_mode.and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,
@@ -101,6 +105,7 @@ pub struct UpdateApiKeyAppCommand {
     pub rate_limit_per_minute: Option<i32>,
     pub rate_limit_per_hour: Option<i32>,
     pub rate_limit_per_day: Option<i32>,
+    pub rate_limit_mode: Option<String>,
 }
 
 impl Command for UpdateApiKeyAppCommand {
@@ -117,9 +122,10 @@ impl Command for UpdateApiKeyAppCommand {
                 rate_limit_per_minute = COALESCE($6, rate_limit_per_minute),
                 rate_limit_per_hour = COALESCE($7, rate_limit_per_hour),
                 rate_limit_per_day = COALESCE($8, rate_limit_per_day),
+                rate_limit_mode = COALESCE($9, rate_limit_mode),
                 updated_at = NOW()
             WHERE id = $1 AND deployment_id = $2
-            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, created_at, updated_at, deleted_at
+            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode, created_at, updated_at, deleted_at
             "#,
             self.app_id,
             self.deployment_id,
@@ -128,7 +134,8 @@ impl Command for UpdateApiKeyAppCommand {
             self.is_active,
             self.rate_limit_per_minute,
             self.rate_limit_per_hour,
-            self.rate_limit_per_day
+            self.rate_limit_per_day,
+            self.rate_limit_mode
         )
         .fetch_one(&app_state.db_pool)
         .await?;
@@ -142,6 +149,7 @@ impl Command for UpdateApiKeyAppCommand {
             rate_limit_per_minute: rec.rate_limit_per_minute,
             rate_limit_per_hour: rec.rate_limit_per_hour,
             rate_limit_per_day: rec.rate_limit_per_day,
+            rate_limit_mode: rec.rate_limit_mode.and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,

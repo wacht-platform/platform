@@ -1,5 +1,7 @@
 use crate::error::AppError;
 use pulldown_cmark::{Parser, html};
+use quick_xml::events::Event;
+use quick_xml::Reader;
 
 #[derive(Clone)]
 pub struct TextProcessingService;
@@ -32,6 +34,7 @@ impl TextProcessingService {
             "txt" | "text" | "plain" | "text/plain" => self.extract_text_from_txt(file_content),
             "md" | "markdown" | "text/markdown" => self.extract_text_from_markdown(file_content),
             "json" | "application/json" => self.extract_text_from_json(file_content),
+            "xml" | "application/xml" | "text/xml" => self.extract_text_from_xml(file_content),
             _ => self.extract_text_from_txt(file_content),
         }
     }
@@ -108,6 +111,55 @@ impl TextProcessingService {
             }
             _ => {} // Skip numbers, booleans, null
         }
+    }
+
+    fn extract_text_from_xml(&self, content: &[u8]) -> Result<String, AppError> {
+        let mut reader = Reader::from_reader(content);
+        reader.config_mut().trim_text(true);
+        
+        let mut text_parts = Vec::new();
+        let mut buf = Vec::new();
+        
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                    // Extract attribute values
+                    for attr in e.attributes() {
+                        if let Ok(attr) = attr {
+                            if let Ok(value) = std::str::from_utf8(&attr.value) {
+                                if !value.trim().is_empty() {
+                                    text_parts.push(value.trim().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(Event::Text(e)) => {
+                    if let Ok(text) = e.unescape() {
+                        let text = text.trim();
+                        if !text.is_empty() {
+                            text_parts.push(text.to_string());
+                        }
+                    }
+                }
+                Ok(Event::CData(e)) => {
+                    if let Ok(text) = std::str::from_utf8(&e) {
+                        let text = text.trim();
+                        if !text.is_empty() {
+                            text_parts.push(text.to_string());
+                        }
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Err(e) => {
+                    return Err(AppError::Internal(format!("Error parsing XML: {}", e)));
+                }
+                _ => {}
+            }
+            buf.clear();
+        }
+        
+        Ok(text_parts.join(" "))
     }
 
     pub fn chunk_text(

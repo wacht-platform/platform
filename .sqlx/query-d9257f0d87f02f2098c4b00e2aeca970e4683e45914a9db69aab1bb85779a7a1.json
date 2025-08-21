@@ -57,6 +57,11 @@
         "ordinal": 10,
         "name": "rate_limit_per_day",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "rate_limit_mode",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -69,6 +74,7 @@
       false,
       false,
       false,
+      true,
       true,
       true,
       true,

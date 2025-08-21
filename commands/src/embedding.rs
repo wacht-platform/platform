@@ -167,59 +167,68 @@ impl Command for GenerateEmbeddingsCommand {
 
         let client = reqwest::Client::new();
         
-        // Create batch request with all texts
-        let requests: Vec<EmbedContentRequestItem> = self.texts
-            .into_iter()
-            .map(|text| EmbedContentRequestItem {
-                model: model.clone(),
-                content: Content {
-                    parts: vec![Part { text }],
-                },
-                task_type: self.task_type.clone().or(Some("RETRIEVAL_DOCUMENT".to_string())),
-                output_dimensionality: Some(3072),
-            })
-            .collect();
+        // Split texts into chunks of 100 (Gemini's batch limit)
+        const BATCH_SIZE: usize = 100;
+        let mut all_embeddings = Vec::new();
+        
+        for chunk in self.texts.chunks(BATCH_SIZE) {
+            // Create batch request for this chunk
+            let requests: Vec<EmbedContentRequestItem> = chunk
+                .iter()
+                .map(|text| EmbedContentRequestItem {
+                    model: model.clone(),
+                    content: Content {
+                        parts: vec![Part { text: text.clone() }],
+                    },
+                    task_type: self.task_type.clone().or(Some("RETRIEVAL_DOCUMENT".to_string())),
+                    output_dimensionality: Some(3072),
+                })
+                .collect();
 
-        let batch_request = BatchEmbedContentsRequest {
-            requests,
-        };
+            let batch_request = BatchEmbedContentsRequest {
+                requests,
+            };
 
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/{}:batchEmbedContents",
-            model
-        );
-
-        let response = client
-            .post(&url)
-            .header("x-goog-api-key", api_key)
-            .header("Content-Type", "application/json")
-            .json(&batch_request)
-            .send()
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to send batch embedding request: {}", e)))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            tracing::error!(
-                "Batch embedding API error - Status: {}, URL: {}, Error: {}",
-                status,
-                url,
-                error_text
+            let url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/{}:batchEmbedContents",
+                model
             );
-            return Err(AppError::Internal(format!(
-                "Batch embedding API error ({}): {}",
-                status,
-                error_text
-            )));
+
+            let response = client
+                .post(&url)
+                .header("x-goog-api-key", api_key.clone())
+                .header("Content-Type", "application/json")
+                .json(&batch_request)
+                .send()
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to send batch embedding request: {}", e)))?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let error_text = response.text().await.unwrap_or_default();
+                tracing::error!(
+                    "Batch embedding API error - Status: {}, URL: {}, Error: {}",
+                    status,
+                    url,
+                    error_text
+                );
+                return Err(AppError::Internal(format!(
+                    "Batch embedding API error ({}): {}",
+                    status,
+                    error_text
+                )));
+            }
+
+            let batch_response: BatchEmbedContentsResponse = response
+                .json()
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to parse batch embedding response: {}", e)))?;
+
+            // Add this chunk's embeddings to the result
+            all_embeddings.extend(batch_response.embeddings.into_iter().map(|e| e.values));
         }
 
-        let batch_response: BatchEmbedContentsResponse = response
-            .json()
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to parse batch embedding response: {}", e)))?;
-
-        Ok(batch_response.embeddings.into_iter().map(|e| e.values).collect())
+        Ok(all_embeddings)
     }
 }
 

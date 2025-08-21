@@ -4,11 +4,9 @@ use axum::{
     http::StatusCode,
 };
 
-use crate::{
-    application::{
-        AppError, HttpState,
-        response::{ApiResult, PaginatedResponse},
-    },
+use crate::application::{
+    AppError, HttpState,
+    response::{ApiResult, PaginatedResponse},
 };
 
 use commands::{
@@ -121,7 +119,7 @@ pub async fn update_ai_knowledge_base(
 pub async fn delete_ai_knowledge_base(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(kb_id): Path<i64>,
+    Path((_, kb_id)): Path<(i64, i64)>,
 ) -> ApiResult<()> {
     DeleteAiKnowledgeBaseCommand::new(deployment_id, kb_id)
         .execute(&app_state)
@@ -133,7 +131,7 @@ pub async fn delete_ai_knowledge_base(
 pub async fn upload_knowledge_base_document(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(kb_id): Path<i64>,
+    Path((_, kb_id)): Path<(i64, i64)>,
     mut multipart: Multipart,
 ) -> ApiResult<AiKnowledgeBaseDocument> {
     let mut title: Option<String> = None;
@@ -227,7 +225,7 @@ pub async fn upload_knowledge_base_document(
 pub async fn get_knowledge_base_documents(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(kb_id): Path<i64>,
+    Path((_, kb_id)): Path<(i64, i64)>,
     Query(query): Query<GetDocumentsQuery>,
 ) -> ApiResult<PaginatedResponse<AiKnowledgeBaseDocument>> {
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)

@@ -1,17 +1,21 @@
 use async_nats::jetstream::{self, kv, stream::StorageType};
 use axum::{
     Router,
-    extract::{Path, Query, State},
+    extract::{ConnectInfo, Path, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
 };
 use chrono::Utc;
+use common::state::AppState;
 use dotenvy::dotenv;
 use futures::StreamExt;
 use moka::future::Cache;
+use models::api_key::RateLimitMode;
+use queries::{Query as QueryTrait, api_key_gateway::GetApiKeyGatewayDataQuery};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use sha2::{Digest, Sha256};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -554,51 +558,171 @@ fn parse_limits(params: &HashMap<String, String>) -> Vec<(u32, i64)> {
 
 async fn check_limit(
     Path(identifier): Path<String>,
-    Query(params): Query<HashMap<String, String>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-    State(limiter): State<RateLimiter>,
+    State((limiter, app_state)): State<(RateLimiter, AppState)>,
 ) -> Response {
-    // Get deployment ID from header
-    let deployment_id = headers
-        .get("X-Deployment-ID")
+    // Extract API key from headers
+    let api_key = headers
+        .get("x-api-key")
+        .or_else(|| headers.get("authorization"))
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("default");
+        .and_then(|v| v.strip_prefix("Bearer ").or(Some(v)));
 
-    // Parse dynamic limits from query parameters
-    let limits = parse_limits(&params);
+    let api_key = match api_key {
+        Some(key) => key,
+        None => {
+            return (StatusCode::UNAUTHORIZED, "API key required").into_response();
+        }
+    };
+
+    // Hash the API key
+    let mut hasher = Sha256::new();
+    hasher.update(api_key.as_bytes());
+    let key_hash = format!("{:x}", hasher.finalize());
+
+    // Get API key data with rate limits in a single query
+    let key_data = match GetApiKeyGatewayDataQuery::new(key_hash)
+        .execute(&app_state)
+        .await
+    {
+        Ok(Some(data)) => data,
+        Ok(None) => {
+            return (StatusCode::UNAUTHORIZED, "Invalid API key").into_response();
+        }
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response();
+        }
+    };
+
+    // Check expiration
+    if let Some(expires_at) = key_data.expires_at {
+        if expires_at < Utc::now() {
+            return (StatusCode::UNAUTHORIZED, "API key has expired").into_response();
+        }
+    }
+
+    // Parse rate limit mode
+    let rate_limit_mode = key_data.rate_limit_mode
+        .as_deref()
+        .and_then(RateLimitMode::from_str)
+        .unwrap_or_default();
+
+    // Get client IP - prefer custom header from user's backend, fall back to connection IP
+    // X-Original-Client-IP is the header that the user's backend should set with their end-user's IP
+    let client_ip = headers
+        .get("x-original-client-ip")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| {
+            // Fall back to direct connection IP if custom header not present
+            // This would be the user's backend server IP if they didn't set the header
+            addr.ip().to_string()
+        });
 
     let mut response_headers = HeaderMap::new();
+    response_headers.insert("X-Deployment-ID", HeaderValue::from_str(&key_data.deployment_id.to_string()).unwrap());
+    
     let mut all_allowed = true;
     let mut min_retry_after = u32::MAX;
 
+    // Build rate limit checks based on configured limits
+    let mut limits = Vec::new();
+    if let Some(limit) = key_data.rate_limit_per_minute {
+        limits.push((limit as u32, 60i64));
+    }
+    if let Some(limit) = key_data.rate_limit_per_hour {
+        limits.push((limit as u32, 3600i64));
+    }
+    if let Some(limit) = key_data.rate_limit_per_day {
+        limits.push((limit as u32, 86400i64));
+    }
+
+    // If no limits configured, use a default
+    if limits.is_empty() {
+        limits.push((1000, 3600)); // Default: 1000 requests per hour
+    }
+
     // Check all rate limits
     for (limit, window) in limits.iter() {
-        // Key includes window duration but NOT the limit value
-        // This allows limit changes while maintaining separate windows
-        let key = format!("{}:{}:{}", deployment_id, identifier, window);
-        let (allowed, remaining, retry_after) =
-            limiter.check_rate_limit(key, *limit, *window).await;
+        // Build the rate limit key based on the mode
+        let key = match rate_limit_mode {
+            RateLimitMode::PerKey => {
+                format!("key:{}:{}:{}", key_data.key_id, identifier, window)
+            }
+            RateLimitMode::PerIp => {
+                format!("ip:{}:{}:{}:{}", key_data.deployment_id, client_ip, identifier, window)
+            }
+            RateLimitMode::PerKeyAndIp => {
+                // Check both key and IP limits - use the more restrictive one
+                let key_limit = format!("key:{}:{}:{}", key_data.key_id, identifier, window);
+                let ip_limit = format!("ip:{}:{}:{}:{}", key_data.key_id, client_ip, identifier, window);
+                
+                // Check key limit
+                let (key_allowed, key_remaining, key_retry) = 
+                    limiter.check_rate_limit(key_limit, *limit, *window).await;
+                
+                // Check IP limit
+                let (ip_allowed, ip_remaining, ip_retry) = 
+                    limiter.check_rate_limit(ip_limit, *limit, *window).await;
+                
+                // Use the more restrictive result
+                let allowed = key_allowed && ip_allowed;
+                let remaining = key_remaining.min(ip_remaining);
+                let retry_after = if !allowed { key_retry.max(ip_retry) } else { 0 };
+                
+                // Add headers for this limit
+                let limit_header = format!("X-RateLimit-{}s-Limit", window);
+                let remaining_header = format!("X-RateLimit-{}s-Remaining", window);
+                response_headers.insert(
+                    axum::http::HeaderName::from_bytes(limit_header.as_bytes()).unwrap(),
+                    HeaderValue::from_str(&limit.to_string()).unwrap(),
+                );
+                response_headers.insert(
+                    axum::http::HeaderName::from_bytes(remaining_header.as_bytes()).unwrap(),
+                    HeaderValue::from_str(&remaining.to_string()).unwrap(),
+                );
 
-        // Add headers for each limit
-        let limit_header = format!("X-RateLimit-{}s-Limit", window);
-        let remaining_header = format!("X-RateLimit-{}s-Remaining", window);
-        response_headers.insert(
-            axum::http::HeaderName::from_bytes(limit_header.as_bytes()).unwrap(),
-            HeaderValue::from_str(&limit.to_string()).unwrap(),
-        );
-        response_headers.insert(
-            axum::http::HeaderName::from_bytes(remaining_header.as_bytes()).unwrap(),
-            HeaderValue::from_str(&remaining.to_string()).unwrap(),
-        );
+                if !allowed {
+                    all_allowed = false;
+                    min_retry_after = min_retry_after.min(retry_after);
+                    let reset_header = format!("X-RateLimit-{}s-Reset", window);
+                    response_headers.insert(
+                        axum::http::HeaderName::from_bytes(reset_header.as_bytes()).unwrap(),
+                        HeaderValue::from_str(&retry_after.to_string()).unwrap(),
+                    );
+                }
+                
+                continue; // Skip the normal flow for this iteration
+            }
+        };
 
-        if !allowed {
-            all_allowed = false;
-            min_retry_after = min_retry_after.min(retry_after);
-            let reset_header = format!("X-RateLimit-{}s-Reset", window);
+        // For PerKey and PerIp modes (not PerKeyAndIp)
+        if !matches!(rate_limit_mode, RateLimitMode::PerKeyAndIp) {
+            let (allowed, remaining, retry_after) =
+                limiter.check_rate_limit(key, *limit, *window).await;
+
+            // Add headers for each limit
+            let limit_header = format!("X-RateLimit-{}s-Limit", window);
+            let remaining_header = format!("X-RateLimit-{}s-Remaining", window);
             response_headers.insert(
-                axum::http::HeaderName::from_bytes(reset_header.as_bytes()).unwrap(),
-                HeaderValue::from_str(&retry_after.to_string()).unwrap(),
+                axum::http::HeaderName::from_bytes(limit_header.as_bytes()).unwrap(),
+                HeaderValue::from_str(&limit.to_string()).unwrap(),
             );
+            response_headers.insert(
+                axum::http::HeaderName::from_bytes(remaining_header.as_bytes()).unwrap(),
+                HeaderValue::from_str(&remaining.to_string()).unwrap(),
+            );
+
+            if !allowed {
+                all_allowed = false;
+                min_retry_after = min_retry_after.min(retry_after);
+                let reset_header = format!("X-RateLimit-{}s-Reset", window);
+                response_headers.insert(
+                    axum::http::HeaderName::from_bytes(reset_header.as_bytes()).unwrap(),
+                    HeaderValue::from_str(&retry_after.to_string()).unwrap(),
+                );
+            }
         }
     }
 
@@ -623,6 +747,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let nats_url =
         std::env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string());
+    
+    // Initialize app state from environment
+    let app_state = AppState::new_from_env().await?;
 
     println!("Connecting to NATS at: {}", nats_url);
 
@@ -631,11 +758,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/check/:identifier", get(check_limit))
         .route("/health", get(health))
-        .with_state(rate_limiter);
+        .with_state((rate_limiter, app_state));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3002").await?;
+    
+    println!("API Gateway listening on 0.0.0.0:3002");
+    println!("Using header 'X-Original-Client-IP' for client IP forwarding");
 
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>()
+    )
+    .await?;
 
     Ok(())
 }

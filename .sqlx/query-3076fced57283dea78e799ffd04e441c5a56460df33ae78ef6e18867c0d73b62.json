@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day)\n            VALUES ($1, $2, $3, $4, $5, $6, $7)\n            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, created_at, updated_at, deleted_at\n            ",
+  "query": "\n            UPDATE api_key_apps\n            SET \n                name = COALESCE($3, name),\n                description = COALESCE($4, description),\n                is_active = COALESCE($5, is_active),\n                rate_limit_per_minute = COALESCE($6, rate_limit_per_minute),\n                rate_limit_per_hour = COALESCE($7, rate_limit_per_hour),\n                rate_limit_per_day = COALESCE($8, rate_limit_per_day),\n                rate_limit_mode = COALESCE($9, rate_limit_mode),\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode, created_at, updated_at, deleted_at\n            ",
   "describe": {
     "columns": [
       {
@@ -45,16 +45,21 @@
       },
       {
         "ordinal": 8,
+        "name": "rate_limit_mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
@@ -65,9 +70,11 @@
         "Int8",
         "Varchar",
         "Text",
+        "Bool",
         "Int4",
         "Int4",
-        "Int4"
+        "Int4",
+        "Varchar"
       ]
     },
     "nullable": [
@@ -81,8 +88,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "d907115cbe1c0a3afd42d900dc50a99ab2c84f31c41f54a19e42148dcb7ca446"
+  "hash": "3076fced57283dea78e799ffd04e441c5a56460df33ae78ef6e18867c0d73b62"
 }

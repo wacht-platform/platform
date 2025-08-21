@@ -47,3 +47,4 @@ encoding_rs = "0.8"
 pgvector = { version = "0.4.1", features = ["sqlx", "serde", "halfvec"] }
 pulldown-cmark = "0.12.2"
 pdf-extract = "0.7.9"
+quick-xml = { version = "0.37.2", features = ["serialize"] }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE api_key_apps\n            SET \n                name = COALESCE($3, name),\n                description = COALESCE($4, description),\n                is_active = COALESCE($5, is_active),\n                rate_limit_per_minute = COALESCE($6, rate_limit_per_minute),\n                rate_limit_per_hour = COALESCE($7, rate_limit_per_hour),\n                rate_limit_per_day = COALESCE($8, rate_limit_per_day),\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, created_at, updated_at, deleted_at\n            ",
+  "query": "\n            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode, created_at, updated_at, deleted_at\n            ",
   "describe": {
     "columns": [
       {
@@ -45,16 +45,21 @@
       },
       {
         "ordinal": 8,
+        "name": "rate_limit_mode",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
@@ -65,10 +70,10 @@
         "Int8",
         "Varchar",
         "Text",
-        "Bool",
         "Int4",
         "Int4",
-        "Int4"
+        "Int4",
+        "Varchar"
       ]
     },
     "nullable": [
@@ -82,8 +87,9 @@
       true,
       true,
       true,
+      true,
       true
     ]
   },
-  "hash": "6675c55039196d7d502f3c0dae27e352929033c881391328f26194f2427775e2"
+  "hash": "03d6defecf632b1404912f8c2c92f1d237168b673f7657fafadb4187d8cddf4e"
 }

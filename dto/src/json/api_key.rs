@@ -51,6 +51,7 @@ pub struct CreateApiKeyAppRequest {
     pub rate_limit_per_minute: Option<i32>,
     pub rate_limit_per_hour: Option<i32>,
     pub rate_limit_per_day: Option<i32>,
+    pub rate_limit_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -61,6 +62,7 @@ pub struct UpdateApiKeyAppRequest {
     pub rate_limit_per_minute: Option<i32>,
     pub rate_limit_per_hour: Option<i32>,
     pub rate_limit_per_day: Option<i32>,
+    pub rate_limit_mode: Option<String>,
 }
 
 // =====================================================

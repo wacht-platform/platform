@@ -58,6 +58,8 @@ pub async fn create_api_key_app(
     if let Some(per_day) = request.rate_limit_per_day {
         command = command.with_rate_limit_per_day(per_day);
     }
+    
+    command.rate_limit_mode = request.rate_limit_mode;
 
     let app = command.execute(&app_state).await?;
     Ok(app.into())
@@ -85,6 +87,7 @@ pub async fn update_api_key_app(
         rate_limit_per_minute: request.rate_limit_per_minute,
         rate_limit_per_hour: request.rate_limit_per_hour,
         rate_limit_per_day: request.rate_limit_per_day,
+        rate_limit_mode: request.rate_limit_mode,
     };
 
     let app = command.execute(&app_state).await?;

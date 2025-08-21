@@ -47,6 +47,7 @@ pub mod agent_memory;
 pub mod webhook;
 pub mod webhook_analytics;
 pub mod api_key;
+pub mod api_key_gateway;
 pub mod notification;
 pub use ai_tool::*;
 pub use ai_workflow::*;

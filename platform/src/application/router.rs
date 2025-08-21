@@ -41,6 +41,15 @@ fn project_routes() -> Router<HttpState> {
         )
 }
 
+fn ai_context_routes() -> Router<HttpState> {
+    Router::new()
+        .route(
+            "/ai-execution-context",
+            get(api::ai_execution_context::get_execution_contexts)
+                .post(api::ai_execution_context::create_execution_context),
+        )
+}
+
 #[cfg(any(feature = "console-api", feature = "backend-api"))]
 fn deployment_routes() -> Router<HttpState> {
     let routes = Router::new()
@@ -242,15 +251,6 @@ fn deployment_routes() -> Router<HttpState> {
         .route(
             "/ai-knowledge-bases/{kb_id}/search",
             get(api::ai_knowledge_base_search::search_specific_knowledge_base),
-        )
-        .route(
-            "/ai-execution-context",
-            get(api::ai_execution_context::get_execution_contexts)
-                .post(api::ai_execution_context::create_execution_context),
-        )
-        .route(
-            "/ai-execution-context/{context_id}",
-            get(api::ai_execution_context::get_execution_context_by_id),
         )
         .route("/analytics/stats", get(api::analytics::get_analytics_stats))
         .route(
@@ -489,6 +489,7 @@ pub async fn create_router(state: HttpState) -> Router {
     #[cfg(feature = "console-api")]
     {
         router = router.merge(project_routes());
+        router = router.merge(ai_context_routes());
         wacht::init_from_env().await.unwrap();
 
         use wacht::middleware::AuthLayer;
