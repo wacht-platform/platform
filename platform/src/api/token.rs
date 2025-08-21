@@ -9,8 +9,6 @@ use commands::{
 use serde::Deserialize;
 
 #[cfg(feature = "console-api")]
-use crate::middleware::ConsoleDeployment;
-#[cfg(feature = "console-api")]
 use dto::json::GenerateUserAgentContextTokenRequest;
 #[cfg(feature = "console-api")]
 use wacht::middleware::extractors::RequireAuth;

@@ -41,13 +41,13 @@ fn project_routes() -> Router<HttpState> {
         )
 }
 
+#[cfg(feature = "console-api")]
 fn ai_context_routes() -> Router<HttpState> {
-    Router::new()
-        .route(
-            "/ai-execution-context",
-            get(api::ai_execution_context::get_execution_contexts)
-                .post(api::ai_execution_context::create_execution_context),
-        )
+    Router::new().route(
+        "/ai-execution-context",
+        get(api::ai_execution_context::get_execution_contexts)
+            .post(api::ai_execution_context::create_execution_context),
+    )
 }
 
 #[cfg(any(feature = "console-api", feature = "backend-api"))]
@@ -360,7 +360,6 @@ fn deployment_routes() -> Router<HttpState> {
 
     #[cfg(feature = "backend-api")]
     {
-        use axum::middleware;
         let backend_routes = routes
             .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
             .route("/webhooks/apps", post(api::webhook::create_webhook_app))

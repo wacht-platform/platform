@@ -1,7 +1,5 @@
-use crate::{
-    application::response::{ApiResult, PaginatedResponse},
-    middleware::ConsoleDeployment,
-};
+use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::middleware::ConsoleDeployment;
 use axum::extract::{Json, Path, Query, State};
 
 use commands::{Command, CreateExecutionContextCommand};

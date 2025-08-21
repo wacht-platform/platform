@@ -1,10 +1,6 @@
 use axum::extract::{Json, Path, Query, State};
-use queries::webhook_analytics::{
-    GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery,
-};
-use models::webhook_analytics::{
-    WebhookAnalyticsResult, WebhookTimeseriesResult,
-};
+use models::webhook_analytics::{WebhookAnalyticsResult, WebhookTimeseriesResult};
+use queries::webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery};
 
 use crate::application::{HttpState, response::ApiResult};
 use crate::middleware::RequireDeployment;
@@ -15,21 +11,20 @@ use commands::{
         UpdateWebhookAppCommand,
     },
     webhook_endpoint::{
-        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand,
-        UpdateWebhookEndpointCommand,
+        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, UpdateWebhookEndpointCommand,
     },
     webhook_trigger::{
         BatchTriggerWebhookEventsCommand, ReplayWebhookDeliveryCommand, TriggerWebhookEventCommand,
     },
 };
-use dto::json::webhook_requests::{*, WebhookEndpoint as WebhookEndpointDTO};
 use dto::clickhouse::webhook::WebhookDelivery;
+use dto::json::webhook_requests::*;
 use models::webhook::{WebhookApp, WebhookEndpoint, WebhookEventTrigger};
 use queries::{
     Query as QueryTrait,
     webhook::{
         GetWebhookAppsQuery, GetWebhookDeliveryStatusQuery,
-        GetWebhookEndpointsQuery, GetWebhookEndpointsWithSubscriptionsQuery, GetWebhookEventsQuery,
+        GetWebhookEndpointsWithSubscriptionsQuery, GetWebhookEventsQuery,
     },
 };
 
@@ -302,7 +297,7 @@ pub async fn get_webhook_deliveries(
 ) -> ApiResult<dto::json::webhook_requests::GetWebhookDeliveriesResponse> {
     let limit = params.limit.unwrap_or(100) as usize;
     let offset = params.offset.unwrap_or(0) as usize;
-    
+
     let deliveries = app_state
         .clickhouse_service
         .get_webhook_deliveries(
@@ -335,9 +330,9 @@ pub async fn get_webhook_delivery_details(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(delivery_id): Path<String>,
 ) -> ApiResult<dto::json::webhook_requests::WebhookDeliveryDetails> {
-    let delivery_id = delivery_id.parse::<i64>().map_err(|_| {
-        (axum::http::StatusCode::BAD_REQUEST, "Invalid delivery ID")
-    })?;
+    let delivery_id = delivery_id
+        .parse::<i64>()
+        .map_err(|_| (axum::http::StatusCode::BAD_REQUEST, "Invalid delivery ID"))?;
 
     let details = app_state
         .clickhouse_service
@@ -345,14 +340,13 @@ pub async fn get_webhook_delivery_details(
         .await?;
 
     // Convert serde_json::Value to WebhookDeliveryDetails
-    let delivery_details: dto::json::webhook_requests::WebhookDeliveryDetails = 
-        serde_json::from_value(details)
-            .map_err(|e| {
-                (
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to parse delivery details: {}", e),
-                )
-            })?;
+    let delivery_details: dto::json::webhook_requests::WebhookDeliveryDetails =
+        serde_json::from_value(details).map_err(|e| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse delivery details: {}", e),
+            )
+        })?;
 
     Ok(delivery_details.into())
 }
@@ -364,9 +358,9 @@ pub async fn retry_webhook_delivery(
 ) -> ApiResult<dto::json::webhook_requests::RetryWebhookDeliveryResponse> {
     use dto::json::nats::NatsTaskMessage;
 
-    let delivery_id = delivery_id.parse::<i64>().map_err(|_| {
-        (axum::http::StatusCode::BAD_REQUEST, "Invalid delivery ID")
-    })?;
+    let delivery_id = delivery_id
+        .parse::<i64>()
+        .map_err(|_| (axum::http::StatusCode::BAD_REQUEST, "Invalid delivery ID"))?;
 
     // Queue retry task for background processing
     let task_message = NatsTaskMessage {
@@ -398,7 +392,7 @@ pub async fn retry_webhook_delivery(
                 format!("Failed to queue retry task: {}", e),
             )
         })?;
-    
+
     Ok(dto::json::webhook_requests::RetryWebhookDeliveryResponse {
         delivery_id,
         status: "retrying".to_string(),

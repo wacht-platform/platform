@@ -1,4 +1,5 @@
 pub mod ai_agents;
+#[cfg(feature = "console-api")]
 pub mod ai_execution_context;
 pub mod ai_knowledge_base;
 pub mod ai_knowledge_base_search;

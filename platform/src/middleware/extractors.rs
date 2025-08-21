@@ -1,16 +1,16 @@
 use axum::{
     extract::FromRequestParts,
-    http::{request::Parts, StatusCode},
+    http::{StatusCode, request::Parts},
 };
 use std::sync::LazyLock;
 
 use super::deployment_context::DeploymentContext;
 
 /// Extractor that requires deployment context to be present.
-/// 
+///
 /// This will be injected by either ConsoleDeploymentLayer (for console API)
 /// or backend_deployment_middleware (for backend API).
-/// 
+///
 /// # Example
 /// ```ignore
 /// async fn handler(
@@ -30,10 +30,7 @@ where
 {
     type Rejection = (StatusCode, &'static str);
 
-    async fn from_request_parts(
-        parts: &mut Parts,
-        _state: &S,
-    ) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         parts
             .extensions
             .get::<DeploymentContext>()
@@ -43,10 +40,10 @@ where
 }
 
 /// Environment-based extractor for console deployment ID.
-/// 
+///
 /// This extractor reads the CONSOLE_DEPLOYMENT_ID environment variable once
 /// and caches it using LazyLock for efficient access.
-/// 
+///
 /// # Example
 /// ```ignore
 /// async fn handler(
@@ -78,10 +75,7 @@ where
 {
     type Rejection = (StatusCode, String);
 
-    async fn from_request_parts(
-        _parts: &mut Parts,
-        _state: &S,
-    ) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(_parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         CONSOLE_DEPLOYMENT_ID
             .as_ref()
             .map(|id| ConsoleDeployment(*id))
