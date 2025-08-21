@@ -1,5 +1,6 @@
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     routing::{delete, get, patch, post, put},
 };
 use tower_http::{
@@ -238,7 +239,8 @@ fn deployment_routes() -> Router<HttpState> {
         .route(
             "/ai-knowledge-bases/{kb_id}/documents",
             get(api::ai_knowledge_base::get_knowledge_base_documents)
-                .post(api::ai_knowledge_base::upload_knowledge_base_document),
+                .post(api::ai_knowledge_base::upload_knowledge_base_document)
+                .layer(DefaultBodyLimit::max(10 * 1024 * 1024)), // 10MB limit
         )
         .route(
             "/ai-knowledge-bases/{kb_id}/documents/{document_id}",

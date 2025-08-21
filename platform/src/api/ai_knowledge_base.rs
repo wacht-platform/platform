@@ -3,6 +3,7 @@ use axum::{
     extract::{Json, Multipart, Path, Query, State},
     http::StatusCode,
 };
+use serde::Deserialize;
 
 use crate::application::{
     AppError, HttpState,
@@ -26,6 +27,19 @@ use queries::{
     GetAiKnowledgeBaseByIdQuery, GetAiKnowledgeBasesQuery as GetKnowledgeBasesQueryCore,
     GetKnowledgeBaseDocumentsQuery, Query as QueryTrait,
 };
+
+// Unified parameter extraction for knowledge base routes
+#[derive(Deserialize)]
+pub struct KnowledgeBaseParams {
+    pub kb_id: i64,
+}
+
+// For document-specific routes that need both kb_id and document_id
+#[derive(Deserialize)]
+pub struct DocumentParams {
+    pub kb_id: i64,
+    pub document_id: i64,
+}
 
 pub async fn get_ai_knowledge_bases(
     State(app_state): State<HttpState>,
@@ -80,9 +94,9 @@ pub async fn create_ai_knowledge_base(
 pub async fn get_ai_knowledge_base_by_id(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(kb_id): Path<i64>,
+    Path(params): Path<KnowledgeBaseParams>,
 ) -> ApiResult<AiKnowledgeBaseWithDetails> {
-    GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
+    GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -92,10 +106,10 @@ pub async fn get_ai_knowledge_base_by_id(
 pub async fn update_ai_knowledge_base(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(kb_id): Path<i64>,
+    Path(params): Path<KnowledgeBaseParams>,
     Json(request): Json<UpdateKnowledgeBaseRequest>,
 ) -> ApiResult<AiKnowledgeBase> {
-    let mut command = UpdateAiKnowledgeBaseCommand::new(deployment_id, kb_id);
+    let mut command = UpdateAiKnowledgeBaseCommand::new(deployment_id, params.kb_id);
 
     if let Some(name) = request.name {
         command = command.with_name(name);
@@ -119,9 +133,9 @@ pub async fn update_ai_knowledge_base(
 pub async fn delete_ai_knowledge_base(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((_, kb_id)): Path<(i64, i64)>,
+    Path(params): Path<KnowledgeBaseParams>,
 ) -> ApiResult<()> {
-    DeleteAiKnowledgeBaseCommand::new(deployment_id, kb_id)
+    DeleteAiKnowledgeBaseCommand::new(deployment_id, params.kb_id)
         .execute(&app_state)
         .await
         .map(|_| ().into())
@@ -131,7 +145,7 @@ pub async fn delete_ai_knowledge_base(
 pub async fn upload_knowledge_base_document(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((_, kb_id)): Path<(i64, i64)>,
+    Path(params): Path<KnowledgeBaseParams>,
     mut multipart: Multipart,
 ) -> ApiResult<AiKnowledgeBaseDocument> {
     let mut title: Option<String> = None;
@@ -141,6 +155,7 @@ pub async fn upload_knowledge_base_document(
     let mut file_type: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await.map_err(|e| {
+        println!("Failed to read multipart field: {}", e);
         (
             StatusCode::BAD_REQUEST,
             format!("Failed to read multipart field: {}", e),
@@ -198,7 +213,7 @@ pub async fn upload_knowledge_base_document(
         return Err((StatusCode::BAD_REQUEST, "File content is empty".to_string()).into());
     }
 
-    GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
+    GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
         .execute(&app_state)
         .await
         .map_err(|_| {
@@ -209,7 +224,7 @@ pub async fn upload_knowledge_base_document(
         })?;
 
     UploadKnowledgeBaseDocumentCommand::new(
-        kb_id,
+        params.kb_id,
         title,
         description,
         file_name,
@@ -225,10 +240,10 @@ pub async fn upload_knowledge_base_document(
 pub async fn get_knowledge_base_documents(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((_, kb_id)): Path<(i64, i64)>,
+    Path(params): Path<KnowledgeBaseParams>,
     Query(query): Query<GetDocumentsQuery>,
 ) -> ApiResult<PaginatedResponse<AiKnowledgeBaseDocument>> {
-    GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
+    GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
         .execute(&app_state)
         .await
         .map_err(|_| {
@@ -241,7 +256,7 @@ pub async fn get_knowledge_base_documents(
     let limit = query.limit.unwrap_or(20);
     let offset = query.offset.unwrap_or(0);
 
-    let mut documents = GetKnowledgeBaseDocumentsQuery::new(kb_id, limit + 1, offset)
+    let mut documents = GetKnowledgeBaseDocumentsQuery::new(params.kb_id, limit + 1, offset)
         .execute(&app_state)
         .await
         .map_err(|e| AppError::from(e))?;
@@ -261,9 +276,9 @@ pub async fn get_knowledge_base_documents(
 pub async fn delete_knowledge_base_document(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((kb_id, document_id)): Path<(i64, i64)>,
+    Path(params): Path<DocumentParams>,
 ) -> ApiResult<()> {
-    DeleteKnowledgeBaseDocumentCommand::new(deployment_id, kb_id, document_id)
+    DeleteKnowledgeBaseDocumentCommand::new(deployment_id, params.kb_id, params.document_id)
         .execute(&app_state)
         .await
         .map(|_| ().into())
