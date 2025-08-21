@@ -114,18 +114,13 @@ impl Command for ProcessDocumentBatchCommand {
                     r#"
                     UPDATE ai_knowledge_base_documents 
                     SET processing_metadata = jsonb_set(
-                        jsonb_set(
-                            COALESCE(processing_metadata, '{}'),
-                            '{status}',
-                            '"completed"'
-                        ),
-                        '{processed_at}',
-                        $1::text::jsonb
+                        COALESCE(processing_metadata, '{}'),
+                        '{status}',
+                        '"completed"'
                     ),
-                    updated_at = $2
-                    WHERE id = $3
+                    updated_at = $1
+                    WHERE id = $2
                     "#,
-                    Utc::now().to_rfc3339(),
                     Utc::now(),
                     document_id
                 )
