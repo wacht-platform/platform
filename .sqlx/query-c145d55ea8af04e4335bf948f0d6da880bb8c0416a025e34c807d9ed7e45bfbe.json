@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE ai_knowledge_base_documents \n                SET processing_metadata = jsonb_set(\n                    jsonb_set(\n                        COALESCE(processing_metadata, '{}'),\n                        '{status}',\n                        '\"failed\"'\n                    ),\n                    '{error}',\n                    '\"No chunks were created\"'::jsonb\n                ),\n                updated_at = $1\n                WHERE id = $2\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c145d55ea8af04e4335bf948f0d6da880bb8c0416a025e34c807d9ed7e45bfbe"
+}

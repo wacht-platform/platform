@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use common::error::AppError;
+use serde::{Deserialize, Serialize};
 use tracing::error;
 
 const GEMINI_API_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -104,8 +104,7 @@ impl GeminiClient {
                                     Err(e) => {
                                         error!("Failed to parse structured response: {}", e);
                                         error!("Raw response: {}", accumulated_text);
-                                        last_error =
-                                            Some(format!("Failed to parse response: {e}"));
+                                        last_error = Some(format!("Failed to parse response: {e}"));
                                     }
                                 }
                             }

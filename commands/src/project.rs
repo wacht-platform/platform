@@ -1,18 +1,14 @@
 use common::error::AppError;
-use models::{
-        AuthFactorsEnabled, DarkModeSettings, Deployment, DeploymentAuthSettings,
-        DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate,
-        DeploymentKeyPair, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
-        DeploymentSmsTemplate, DeploymentUISettings, DeploymentWorkspaceRole, EmailSettings,
-        EmailVerificationRecords, FirstFactor, IndividualAuthSettings, LightModeSettings, 
-        OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments, 
-        SecondFactorPolicy, SocialConnectionProvider, UsernameSettings, VerificationPolicy,
-        VerificationStatus,
-    };
 use common::state::AppState;
-use common::{
-    utils::name::generate_random_name,
-    validators::ProjectValidator,
+use common::{utils::name::generate_random_name, validators::ProjectValidator};
+use models::{
+    AuthFactorsEnabled, DarkModeSettings, Deployment, DeploymentAuthSettings,
+    DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate,
+    DeploymentKeyPair, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
+    DeploymentSmsTemplate, DeploymentUISettings, DeploymentWorkspaceRole, EmailSettings,
+    EmailVerificationRecords, FirstFactor, IndividualAuthSettings, LightModeSettings,
+    OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments, SecondFactorPolicy,
+    SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus,
 };
 
 use base64::{Engine, prelude::BASE64_STANDARD};
@@ -2266,7 +2262,10 @@ impl Command for CreateProductionDeploymentCommand {
             }
         }
 
-        let postmark_domain = app_state.postmark_service.create_domain(&mail_from_host).await?;
+        let postmark_domain = app_state
+            .postmark_service
+            .create_domain(&mail_from_host)
+            .await?;
         let postmark_domain_id = postmark_domain.id;
         let email_verification_records = app_state
             .postmark_service
@@ -2723,7 +2722,11 @@ impl DeleteDeploymentCommand {
 
             if let Some(email_records) = &deployment.email_verification_records {
                 if let Some(postmark_domain_id) = email_records.postmark_domain_id {
-                    if let Err(e) = app_state.postmark_service.delete_domain(postmark_domain_id).await {
+                    if let Err(e) = app_state
+                        .postmark_service
+                        .delete_domain(postmark_domain_id)
+                        .await
+                    {
                         tracing::warn!(
                             "Failed to cleanup Postmark domain {}: {}",
                             postmark_domain_id,

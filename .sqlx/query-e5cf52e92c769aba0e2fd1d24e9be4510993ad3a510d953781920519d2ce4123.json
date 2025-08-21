@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO knowledge_base_document_chunks\n                (document_id, knowledge_base_id, deployment_id, chunk_index, content, created_at, updated_at)\n                VALUES ($1, $2, $3, $4, $5, $6, $7)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int4",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e5cf52e92c769aba0e2fd1d24e9be4510993ad3a510d953781920519d2ce4123"
+}

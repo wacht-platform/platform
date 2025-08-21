@@ -1,8 +1,8 @@
-use common::error::AppError;
-use models::{ConversationRecord, MemoryBoundaries, MemoryRecord};
 use crate::Query;
-use common::state::AppState;
 use chrono::{DateTime, Utc};
+use common::error::AppError;
+use common::state::AppState;
+use models::{ConversationRecord, MemoryBoundaries, MemoryRecord};
 use pgvector::HalfVector;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -153,7 +153,6 @@ impl Query for GetLLMConversationHistoryQuery {
         Ok(records)
     }
 }
-
 
 /// Search memories with decay-adjusted scoring
 #[derive(Debug)]

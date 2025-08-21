@@ -1,5 +1,7 @@
-use jsonwebtoken::{encode, decode, Algorithm, EncodingKey, DecodingKey, Header, Validation, TokenData};
-use serde::{Serialize, Deserialize};
+use jsonwebtoken::{
+    Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode,
+};
+use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 
@@ -38,9 +40,9 @@ pub fn sign_token<T: Serialize>(claims: T, algorithm: &str, key: &str) -> Result
 
 #[derive(Debug, Deserialize)]
 pub struct AgentContextClaims {
-    pub sub: Option<String>,  // Subject (user_id)
+    pub sub: Option<String>,   // Subject (user_id)
     pub scope: Option<String>, // Scope should contain "agent_context"
-    pub aud: Option<String>, // Audience - intended context group/resource
+    pub aud: Option<String>,   // Audience - intended context group/resource
     pub exp: Option<i64>,      // Expiration time
     pub iat: Option<i64>,      // Issued at
 }
@@ -84,7 +86,7 @@ pub fn verify_token<T: for<'de> Deserialize<'de>>(
 
     let mut validation = Validation::new(algorithm);
     validation.validate_exp = true;
-    
+
     decode::<T>(token, &decoding_key, &validation)
         .map_err(|e| AppError::BadRequest(format!("Invalid token: {}", e)))
 }
@@ -97,7 +99,7 @@ pub fn verify_agent_context_token(
 ) -> Result<AgentContextClaims, AppError> {
     let token_data = verify_token::<AgentContextClaims>(token, algorithm, key)?;
     let claims = token_data.claims;
-    
+
     // Check if scope contains "agent_context"
     if let Some(scope) = &claims.scope {
         if !scope.contains("agent_context") {
@@ -108,7 +110,7 @@ pub fn verify_agent_context_token(
     } else {
         return Err(AppError::BadRequest("Token missing scope".to_string()));
     }
-    
+
     // Check subject if provided
     if let Some(expected_sub) = expected_subject {
         if let Some(sub) = &claims.sub {
@@ -121,6 +123,6 @@ pub fn verify_agent_context_token(
             return Err(AppError::BadRequest("Token missing subject".to_string()));
         }
     }
-    
+
     Ok(claims)
 }

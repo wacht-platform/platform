@@ -1,7 +1,7 @@
 use super::Query;
 use common::error::AppError;
-use models::api_key::{ApiKey, ApiKeyApp};
 use common::state::AppState;
+use models::api_key::{ApiKey, ApiKeyApp};
 
 pub struct GetApiKeyAppsQuery {
     pub deployment_id: i64,
@@ -44,7 +44,9 @@ impl Query for GetApiKeyAppsQuery {
                     rate_limit_per_minute: rec.rate_limit_per_minute,
                     rate_limit_per_hour: rec.rate_limit_per_hour,
                     rate_limit_per_day: rec.rate_limit_per_day,
-                    rate_limit_mode: rec.rate_limit_mode.and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+                    rate_limit_mode: rec
+                        .rate_limit_mode
+                        .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
                     created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
                     updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
                     deleted_at: rec.deleted_at,
@@ -68,7 +70,9 @@ impl Query for GetApiKeyAppsQuery {
                     rate_limit_per_minute: rec.rate_limit_per_minute,
                     rate_limit_per_hour: rec.rate_limit_per_hour,
                     rate_limit_per_day: rec.rate_limit_per_day,
-                    rate_limit_mode: rec.rate_limit_mode.and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+                    rate_limit_mode: rec
+                        .rate_limit_mode
+                        .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
                     created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
                     updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
                     deleted_at: rec.deleted_at,
@@ -106,7 +110,9 @@ impl Query for GetApiKeyAppByIdQuery {
             rate_limit_per_minute: rec.rate_limit_per_minute,
             rate_limit_per_hour: rec.rate_limit_per_hour,
             rate_limit_per_day: rec.rate_limit_per_day,
-            rate_limit_mode: rec.rate_limit_mode.and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+            rate_limit_mode: rec
+                .rate_limit_mode
+                .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,
@@ -149,7 +155,9 @@ impl Query for GetApiKeyAppByNameQuery {
             rate_limit_per_minute: rec.rate_limit_per_minute,
             rate_limit_per_hour: rec.rate_limit_per_hour,
             rate_limit_per_day: rec.rate_limit_per_day,
-            rate_limit_mode: rec.rate_limit_mode.and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+            rate_limit_mode: rec
+                .rate_limit_mode
+                .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,

@@ -1,9 +1,8 @@
 use crate::Command;
+use aws_sdk_s3::primitives::{ByteStream, SdkBody};
 use common::error::AppError;
 use common::state::AppState;
-use aws_sdk_s3::primitives::{ByteStream, SdkBody};
 use serde_json::json;
-
 
 pub struct UploadToCdnCommand {
     pub file_path: String,

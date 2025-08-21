@@ -1,9 +1,9 @@
 use sqlx::Row;
 
-use common::error::AppError;
-use models::{AiTool, AiToolConfiguration, AiToolType, AiToolWithDetails};
 use crate::Query;
+use common::error::AppError;
 use common::state::AppState;
+use models::{AiTool, AiToolConfiguration, AiToolType, AiToolWithDetails};
 
 pub struct GetAiToolsQuery {
     pub deployment_id: i64,
@@ -204,7 +204,9 @@ impl Query for GetToolByIdQuery {
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(|e| match e {
-            sqlx::Error::RowNotFound => AppError::NotFound(format!("Tool with id {} not found", self.tool_id)),
+            sqlx::Error::RowNotFound => {
+                AppError::NotFound(format!("Tool with id {} not found", self.tool_id))
+            }
             _ => AppError::Database(e),
         })?;
 

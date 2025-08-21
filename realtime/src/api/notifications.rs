@@ -1,13 +1,15 @@
 use axum::{
+    Extension,
     extract::{Query, State},
     http::{HeaderMap, header::COOKIE},
     response::IntoResponse,
-    Extension,
 };
 use common::utils::jwt::verify_token;
 use fastwebsockets::{FragmentCollector, Frame, OpCode, WebSocketError, upgrade};
 use futures::StreamExt;
-use queries::{GetDeploymentWithKeyPairQuery, GetSessionWithActiveContextQuery, Query as QueryTrait};
+use queries::{
+    GetDeploymentWithKeyPairQuery, GetSessionWithActiveContextQuery, Query as QueryTrait,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{error, info, warn};
@@ -27,7 +29,7 @@ pub struct NotificationParams {
 
 #[derive(Debug, Deserialize)]
 pub struct SessionClaims {
-    pub sess: String, // session_id as string
+    pub sess: String,           // session_id as string
     pub rotating_token: String, // rotating_token_id as string
     pub exp: Option<i64>,
 }
@@ -54,7 +56,6 @@ pub async fn notification_stream_handler(
     ws: upgrade::IncomingUpgrade,
     State(state): State<HttpState>,
 ) -> impl IntoResponse {
-
     // Extract session token from cookies or query params (like frontend API)
     let session_token = extract_session_token(&headers, &params);
     if session_token.is_none() {
@@ -65,7 +66,7 @@ pub async fn notification_stream_handler(
             .unwrap()
             .into_response();
     }
-    
+
     let token = session_token.unwrap();
 
     let (response, fut) = ws.upgrade().unwrap();
@@ -94,7 +95,7 @@ fn extract_session_token(headers: &HeaderMap, params: &NotificationParams) -> Op
             }
         }
     }
-    
+
     // Fallback to query params (development mode)
     params.dev_session.clone()
 }
@@ -169,7 +170,10 @@ async fn handle_notification_client(
     {
         Ok(context) => context,
         Err(e) => {
-            error!("Failed to get session context for session {}: {}", session_id, e);
+            error!(
+                "Failed to get session context for session {}: {}",
+                session_id, e
+            );
             let error_msg = json!({
                 "error": "Session not found or invalid"
             });
@@ -287,10 +291,10 @@ async fn handle_notification_client(
 }
 
 fn should_send_notification(
-    notification: &NotificationMessage, 
-    params: &NotificationParams, 
+    notification: &NotificationMessage,
+    params: &NotificationParams,
     active_organization_id: Option<i64>,
-    active_workspace_id: Option<i64>
+    active_workspace_id: Option<i64>,
 ) -> bool {
     // If no channels specified, default to "user" notifications only
     let channels = match &params.channels {
@@ -343,7 +347,9 @@ fn should_send_notification(
                     if notification.organization_id == Some(active_org_id) {
                         if let Some(active_ws_id) = active_workspace_id {
                             // If there's an active workspace, show notifications for that workspace or org-level ones
-                            if notification.workspace_id == Some(active_ws_id) || notification.workspace_id.is_none() {
+                            if notification.workspace_id == Some(active_ws_id)
+                                || notification.workspace_id.is_none()
+                            {
                                 return true;
                             }
                         } else {

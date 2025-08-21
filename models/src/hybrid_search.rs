@@ -10,9 +10,9 @@ pub struct HybridSearchKbResult {
     pub content: String,
     pub document_title: Option<String>,
     pub document_description: Option<String>,
-    pub vector_similarity: f64,  // double precision in PostgreSQL
-    pub text_rank: f64,          // double precision in PostgreSQL
-    pub combined_score: f64,     // double precision in PostgreSQL
+    pub vector_similarity: f64, // double precision in PostgreSQL
+    pub text_rank: f64,         // double precision in PostgreSQL
+    pub combined_score: f64,    // double precision in PostgreSQL
 }
 
 /// Result from hybrid search for memories

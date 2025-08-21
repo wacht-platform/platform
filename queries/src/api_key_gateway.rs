@@ -1,7 +1,7 @@
 use super::Query;
+use chrono::{DateTime, Utc};
 use common::error::AppError;
 use common::state::AppState;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Optimized query for the gateway - gets all needed data in a single query
@@ -15,7 +15,7 @@ pub struct ApiKeyGatewayData {
     pub is_active: bool,
     pub expires_at: Option<DateTime<Utc>>,
     pub permissions: Vec<String>,
-    
+
     // API Key App fields
     pub app_name: String,
     pub rate_limit_per_minute: Option<i32>,
@@ -72,9 +72,8 @@ impl Query for GetApiKeyGatewayDataQuery {
             key_name: r.key_name,
             is_active: r.is_active.unwrap_or(true),
             expires_at: r.expires_at,
-            permissions: serde_json::from_value(
-                r.permissions.unwrap_or(serde_json::json!([]))
-            ).unwrap_or_default(),
+            permissions: serde_json::from_value(r.permissions.unwrap_or(serde_json::json!([])))
+                .unwrap_or_default(),
             app_name: r.app_name,
             rate_limit_per_minute: r.rate_limit_per_minute,
             rate_limit_per_hour: r.rate_limit_per_hour,

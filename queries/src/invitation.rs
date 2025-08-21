@@ -1,6 +1,6 @@
 use common::error::AppError;
-use models::{DeploymentInvitation};
 use common::state::AppState;
+use models::DeploymentInvitation;
 
 use super::Query;
 

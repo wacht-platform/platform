@@ -1,8 +1,8 @@
 use crate::Command;
-use common::error::AppError;
-use models::AiAgent;
-use common::state::AppState;
 use chrono::Utc;
+use common::error::AppError;
+use common::state::AppState;
+use models::AiAgent;
 use sqlx::Row;
 
 pub struct CreateAiAgentCommand {

@@ -1,9 +1,9 @@
 use sqlx::Row;
 
-use common::error::AppError;
-use models::{AiAgent, AiAgentWithDetails, AiAgentWithFeatures};
 use crate::Query;
+use common::error::AppError;
 use common::state::AppState;
+use models::{AiAgent, AiAgentWithDetails, AiAgentWithFeatures};
 
 pub struct GetAiAgentsQuery {
     pub deployment_id: i64,

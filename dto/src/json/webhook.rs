@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use models::webhook::WebhookApp;
+use serde::{Deserialize, Serialize};
 
 // Webhook status response for deployment
 #[derive(Debug, Serialize, Deserialize)]

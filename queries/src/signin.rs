@@ -1,6 +1,6 @@
 use common::error::AppError;
-use models::{SignIn};
 use common::state::AppState;
+use models::SignIn;
 use sqlx::Row;
 
 use super::Query;
@@ -89,7 +89,7 @@ impl Query for GetSessionWithActiveContextQuery {
             LEFT JOIN organization_memberships om ON si.active_organization_membership_id = om.id
             LEFT JOIN workspace_memberships wm ON si.active_workspace_membership_id = wm.id
             WHERE s.id = $1 AND s.deleted_at IS NULL
-            "#
+            "#,
         )
         .bind(self.session_id)
         .fetch_optional(&app_state.db_pool)

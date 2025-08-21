@@ -58,7 +58,7 @@ pub async fn create_api_key_app(
     if let Some(per_day) = request.rate_limit_per_day {
         command = command.with_rate_limit_per_day(per_day);
     }
-    
+
     command.rate_limit_mode = request.rate_limit_mode;
 
     let app = command.execute(&app_state).await?;
@@ -135,10 +135,7 @@ pub async fn list_api_keys(
         .execute(&app_state)
         .await?;
 
-    Ok(ListApiKeysResponse {
-        keys,
-    }
-    .into())
+    Ok(ListApiKeysResponse { keys }.into())
 }
 
 pub async fn create_api_key(
@@ -155,11 +152,13 @@ pub async fn create_api_key(
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
 
     let key_prefix = request.key_prefix.ok_or_else(|| {
-        (StatusCode::BAD_REQUEST, "key_prefix is required for backend API")
+        (
+            StatusCode::BAD_REQUEST,
+            "key_prefix is required for backend API",
+        )
     })?;
 
-    let mut command =
-        CreateApiKeyCommand::new(app.id, deployment_id, request.name, key_prefix);
+    let mut command = CreateApiKeyCommand::new(app.id, deployment_id, request.name, key_prefix);
 
     if let Some(permissions) = request.permissions {
         command = command.with_permissions(permissions);
@@ -182,10 +181,10 @@ pub async fn revoke_api_key(
     RequireApiKey(_api_key): RequireApiKey,
     Json(request): Json<RevokeApiKeyRequest>,
 ) -> ApiResult<()> {
-    let key_id = request.key_id.ok_or_else(|| {
-        (StatusCode::BAD_REQUEST, "key_id is required")
-    })?;
-    
+    let key_id = request
+        .key_id
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "key_id is required"))?;
+
     let command = RevokeApiKeyCommand {
         key_id,
         deployment_id,

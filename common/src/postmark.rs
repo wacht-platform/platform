@@ -107,7 +107,8 @@ impl PostmarkService {
             return_path_domain,
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/domains", self.base_url))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
@@ -142,7 +143,8 @@ impl PostmarkService {
     }
 
     pub async fn get_domain(&self, domain_id: i64) -> Result<PostmarkDomain, AppError> {
-        let response = self.client
+        let response = self
+            .client
             .get(format!("{}/domains/{}", self.base_url, domain_id))
             .header("Accept", "application/json")
             .header("X-Postmark-Account-Token", &self.account_token)
@@ -170,7 +172,8 @@ impl PostmarkService {
     }
 
     pub async fn verify_dkim(&self, domain_id: i64) -> Result<PostmarkDomain, AppError> {
-        let response = self.client
+        let response = self
+            .client
             .put(format!(
                 "{}/domains/{}/verifyDkim",
                 self.base_url, domain_id
@@ -201,7 +204,8 @@ impl PostmarkService {
     }
 
     pub async fn verify_return_path(&self, domain_id: i64) -> Result<PostmarkDomain, AppError> {
-        let response = self.client
+        let response = self
+            .client
             .put(format!(
                 "{}/domains/{}/verifyReturnPath",
                 self.base_url, domain_id
@@ -248,7 +252,8 @@ impl PostmarkService {
             message_stream: Some("outbound".to_string()),
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(format!("{}/email", self.base_url))
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
@@ -286,7 +291,8 @@ impl PostmarkService {
     }
 
     pub async fn delete_domain(&self, domain_id: i64) -> Result<(), AppError> {
-        let response = self.client
+        let response = self
+            .client
             .delete(format!("{}/domains/{}", self.base_url, domain_id))
             .header("Accept", "application/json")
             .header("X-Postmark-Account-Token", &self.account_token)

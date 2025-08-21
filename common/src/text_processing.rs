@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use pulldown_cmark::{Parser, html};
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 #[derive(Clone)]
 pub struct TextProcessingService;
@@ -116,10 +116,10 @@ impl TextProcessingService {
     fn extract_text_from_xml(&self, content: &[u8]) -> Result<String, AppError> {
         let mut reader = Reader::from_reader(content);
         reader.config_mut().trim_text(true);
-        
+
         let mut text_parts = Vec::new();
         let mut buf = Vec::new();
-        
+
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
@@ -158,7 +158,7 @@ impl TextProcessingService {
             }
             buf.clear();
         }
-        
+
         Ok(text_parts.join(" "))
     }
 

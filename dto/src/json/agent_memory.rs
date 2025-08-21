@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use models::{ConversationContent, ConversationMessageType};
+use serde::{Deserialize, Serialize};
 
 // LLM Interaction DTOs
 

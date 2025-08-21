@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use crate::Command;
 use common::error::AppError;
-use queries::{Query, GetEmailTemplateByNameQuery};
 use common::state::AppState;
-
+use queries::{GetEmailTemplateByNameQuery, Query};
 
 pub struct SendEmailCommand {
     deployment_id: i64,
@@ -75,14 +74,16 @@ impl Command for SendEmailCommand {
         let from_email = format!("{}@{}", template.template_from, deployment.mail_from_host);
 
         // Send email via Postmark
-        match app_state.postmark_service.send_email(
-            &from_email,
-            &self.to_email,
-            &subject,
-            &body_html,
-            Some(&body_text),
-        )
-        .await
+        match app_state
+            .postmark_service
+            .send_email(
+                &from_email,
+                &self.to_email,
+                &subject,
+                &body_html,
+                Some(&body_text),
+            )
+            .await
         {
             Ok(response) => {
                 tracing::info!(

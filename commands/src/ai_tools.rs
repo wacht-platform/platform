@@ -1,7 +1,7 @@
 use crate::Command;
 use common::error::AppError;
-use models::{AiTool, AiToolConfiguration, AiToolType};
 use common::state::AppState;
+use models::{AiTool, AiToolConfiguration, AiToolType};
 
 use chrono::Utc;
 use sqlx::Row;

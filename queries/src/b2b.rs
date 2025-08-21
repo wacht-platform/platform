@@ -2,10 +2,10 @@ use sqlx::{Row, query, query_as};
 
 use crate::prelude::*;
 use models::{
-        DeploymentOrganizationRole, DeploymentWorkspaceRole, Organization, OrganizationDetails,
-        OrganizationMemberDetails, OrganizationRole, Workspace, WorkspaceDetails,
-        WorkspaceMemberDetails, WorkspaceRole, WorkspaceWithOrganizationName,
-    };
+    DeploymentOrganizationRole, DeploymentWorkspaceRole, Organization, OrganizationDetails,
+    OrganizationMemberDetails, OrganizationRole, Workspace, WorkspaceDetails,
+    WorkspaceMemberDetails, WorkspaceRole, WorkspaceWithOrganizationName,
+};
 
 pub struct GetDeploymentWorkspaceRolesQuery {
     deployment_id: i64,

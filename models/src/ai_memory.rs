@@ -71,4 +71,3 @@ pub struct MemorySearchResult {
     pub relevance_score: f64,
     pub similarity_score: f64,
 }
-

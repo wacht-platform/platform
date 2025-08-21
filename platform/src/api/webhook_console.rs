@@ -29,7 +29,9 @@ use models::{
 };
 use queries::{
     Query as QueryTrait,
-    webhook::{GetWebhookAppByNameQuery, GetWebhookEndpointsWithSubscriptionsQuery, GetWebhookStatsQuery},
+    webhook::{
+        GetWebhookAppByNameQuery, GetWebhookEndpointsWithSubscriptionsQuery, GetWebhookStatsQuery,
+    },
     webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery},
 };
 

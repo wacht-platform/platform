@@ -1,7 +1,7 @@
 use crate::Command;
 use common::error::AppError;
-use models::OrganizationRole;
 use common::state::AppState;
+use models::OrganizationRole;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 

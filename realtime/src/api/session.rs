@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use super::models::WebsocketMessage;
-use serde_json::Value;
-use models::AiAgentWithFeatures;
 use common::state::AppState;
+use models::AiAgentWithFeatures;
+use serde_json::Value;
 use tokio::sync::{Notify, mpsc};
 
 #[derive(Clone)]
@@ -37,12 +37,12 @@ impl SessionState {
             close: Arc::new(Notify::new()),
         }
     }
-    
+
     pub fn with_user(mut self, user_id: Option<String>) -> Self {
         self.user_id = user_id;
         self
     }
-    
+
     pub fn with_audience(mut self, audience: Option<String>) -> Self {
         self.audience = audience;
         self

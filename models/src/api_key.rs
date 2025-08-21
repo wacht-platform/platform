@@ -10,11 +10,11 @@ use std::fmt;
 #[sqlx(rename_all = "snake_case")]
 pub enum RateLimitMode {
     #[sqlx(rename = "per_key")]
-    PerKey,        // Rate limit is applied per API key
+    PerKey, // Rate limit is applied per API key
     #[sqlx(rename = "per_ip")]
-    PerIp,         // Rate limit is applied per IP address
+    PerIp, // Rate limit is applied per IP address
     #[sqlx(rename = "per_key_and_ip")]
-    PerKeyAndIp,   // Rate limit is applied per combination of key and IP
+    PerKeyAndIp, // Rate limit is applied per combination of key and IP
 }
 
 impl RateLimitMode {

@@ -2,11 +2,9 @@ use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
 use serde::Deserialize;
 
-use crate::{
-    application::{
-        HttpState,
-        response::{ApiResult, PaginatedResponse},
-    },
+use crate::application::{
+    HttpState,
+    response::{ApiResult, PaginatedResponse},
 };
 
 use commands::{

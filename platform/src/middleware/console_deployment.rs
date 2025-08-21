@@ -1,8 +1,8 @@
 use axum::{
     extract::{Path, Request},
+    http::StatusCode,
     middleware::Next,
     response::Response,
-    http::StatusCode,
 };
 use serde::Deserialize;
 use tracing::debug;
@@ -28,10 +28,11 @@ pub async fn console_deployment_middleware(
         deployment_id = params.deployment_id,
         "Extracted deployment ID from path"
     );
-    
+
     // Insert deployment context into request extensions
-    req.extensions_mut()
-        .insert(DeploymentContext { deployment_id: params.deployment_id });
-    
+    req.extensions_mut().insert(DeploymentContext {
+        deployment_id: params.deployment_id,
+    });
+
     Ok(next.run(req).await)
 }

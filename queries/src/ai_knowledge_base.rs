@@ -1,9 +1,9 @@
 use sqlx::Row;
 
-use common::error::AppError;
-use models::{AiKnowledgeBase, AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetails};
 use crate::Query;
+use common::error::AppError;
 use common::state::AppState;
+use models::{AiKnowledgeBase, AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetails};
 
 pub struct GetAiKnowledgeBasesQuery {
     pub deployment_id: i64,

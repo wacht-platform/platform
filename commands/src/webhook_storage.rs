@@ -1,13 +1,11 @@
 use aws_sdk_s3::primitives::ByteStream;
 use chrono::Utc;
-use serde_json::Value;
 use futures::future::join_all;
+use serde_json::Value;
 
 use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
-
-
 
 #[derive(Debug)]
 pub struct StoreWebhookPayloadCommand {
@@ -49,9 +47,14 @@ impl Command for StoreWebhookPayloadCommand {
             .map_err(|e| AppError::Internal(format!("Failed to serialize payload: {}", e)))?;
 
         // Upload to S3
-        tracing::debug!("Uploading webhook payload to S3: bucket={}, key={}", bucket, key);
-        
-        app_state.s3_client
+        tracing::debug!(
+            "Uploading webhook payload to S3: bucket={}, key={}",
+            bucket,
+            key
+        );
+
+        app_state
+            .s3_client
             .put_object()
             .bucket(&bucket)
             .key(&key)
@@ -61,7 +64,12 @@ impl Command for StoreWebhookPayloadCommand {
             .send()
             .await
             .map_err(|e| {
-                tracing::error!("S3 upload failed - bucket: {}, key: {}, error: {}", bucket, key, e);
+                tracing::error!(
+                    "S3 upload failed - bucket: {}, key: {}, error: {}",
+                    bucket,
+                    key,
+                    e
+                );
                 AppError::Internal(format!("Failed to upload to S3: {}", e))
             })?;
 
@@ -102,15 +110,25 @@ impl Command for RetrieveWebhookPayloadCommand {
         let key = &self.s3_key;
 
         // Get object from S3
-        tracing::info!("Fetching webhook payload from S3: bucket={}, key={}", bucket, key);
-        let response = app_state.s3_client
+        tracing::info!(
+            "Fetching webhook payload from S3: bucket={}, key={}",
+            bucket,
+            key
+        );
+        let response = app_state
+            .s3_client
             .get_object()
             .bucket(&bucket)
             .key(key)
             .send()
             .await
             .map_err(|e| {
-                tracing::error!("Failed to get object from S3: bucket={}, key={}, error={}", bucket, key, e);
+                tracing::error!(
+                    "Failed to get object from S3: bucket={}, key={}, error={}",
+                    bucket,
+                    key,
+                    e
+                );
                 AppError::Internal(format!("Failed to get object from S3: {}", e))
             })?;
 
@@ -174,10 +192,12 @@ impl Command for StoreFailedWebhookDeliveryCommand {
             "payload": self.payload
         });
 
-        let json_bytes = serde_json::to_vec(&wrapper)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize failed delivery: {}", e)))?;
+        let json_bytes = serde_json::to_vec(&wrapper).map_err(|e| {
+            AppError::Internal(format!("Failed to serialize failed delivery: {}", e))
+        })?;
 
-        app_state.s3_client
+        app_state
+            .s3_client
             .put_object()
             .bucket(&bucket)
             .key(&key)
@@ -185,7 +205,9 @@ impl Command for StoreFailedWebhookDeliveryCommand {
             .content_type("application/json")
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to upload failed delivery to S3: {}", e)))?;
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to upload failed delivery to S3: {}", e))
+            })?;
 
         Ok(format!("s3://{}/{}", bucket, key))
     }
@@ -219,11 +241,13 @@ impl Command for DeleteWebhookPayloadCommand {
             std::env::var("WEBHOOK_BUCKET").unwrap_or_else(|_| "webhooks".to_string())
         });
 
-        let key = self.s3_key
+        let key = self
+            .s3_key
             .strip_prefix(&format!("s3://{}/", bucket))
             .ok_or_else(|| AppError::BadRequest(format!("Invalid S3 key: {}", self.s3_key)))?;
 
-        app_state.s3_client
+        app_state
+            .s3_client
             .delete_object()
             .bucket(&bucket)
             .key(key)
@@ -245,16 +269,17 @@ impl Command for BatchRetrieveWebhookPayloadsCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let bucket = std::env::var("WEBHOOK_BUCKET").unwrap_or_else(|_| "webhooks".to_string());
-        
+
         // Process keys in parallel
         let futures = self.s3_keys.into_iter().map(|s3_key| {
             let s3_client = app_state.s3_client.clone();
             let bucket = bucket.clone();
-            
+
             async move {
-                let key = s3_key.strip_prefix(&format!("s3://{}/", bucket))
+                let key = s3_key
+                    .strip_prefix(&format!("s3://{}/", bucket))
                     .unwrap_or(&s3_key);
-                
+
                 let result = async {
                     let object = s3_client
                         .get_object()
@@ -263,20 +288,24 @@ impl Command for BatchRetrieveWebhookPayloadsCommand {
                         .send()
                         .await
                         .map_err(|e| format!("Failed to get object: {}", e))?;
-                    
-                    let body = object.body.collect().await
+
+                    let body = object
+                        .body
+                        .collect()
+                        .await
                         .map_err(|e| format!("Failed to read body: {}", e))?
                         .into_bytes();
-                    
+
                     // Parse JSON directly (no decompression)
                     serde_json::from_slice::<Value>(&body)
                         .map_err(|e| format!("Failed to parse JSON: {}", e))
-                }.await;
-                
+                }
+                .await;
+
                 (s3_key, result)
             }
         });
-        
+
         let results = join_all(futures).await;
         Ok(results)
     }

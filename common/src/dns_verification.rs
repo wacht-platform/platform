@@ -1,6 +1,6 @@
 use crate::error::AppError;
-use models::{DnsRecord, DomainVerificationRecords, EmailVerificationRecords};
 use chrono::Utc;
+use models::{DnsRecord, DomainVerificationRecords, EmailVerificationRecords};
 use serde::Deserialize;
 
 #[derive(Clone)]
@@ -44,7 +44,8 @@ impl DnsVerificationService {
             record.name, record_type_num
         );
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Accept", "application/dns-json")
             .send()
@@ -107,7 +108,10 @@ impl DnsVerificationService {
 
             // First try checking as a custom hostname (for domains like accounts.wacht.dev)
             tracing::info!("Attempting custom hostname check for: {}", record.name);
-            match cloudflare_service.check_custom_hostname_status(&record.name).await {
+            match cloudflare_service
+                .check_custom_hostname_status(&record.name)
+                .await
+            {
                 Ok(verified) => {
                     record.verified = verified;
                     if verified {
@@ -127,7 +131,10 @@ impl DnsVerificationService {
                     );
 
                     // Fallback to checking DNS records
-                    match cloudflare_service.check_domain_verification_status(&record.name).await {
+                    match cloudflare_service
+                        .check_domain_verification_status(&record.name)
+                        .await
+                    {
                         Ok(verified) => {
                             record.verified = verified;
                             if verified {
@@ -184,7 +191,10 @@ impl DnsVerificationService {
             record.verification_attempted_at = Some(Utc::now());
 
             // Use Cloudflare API to check custom hostname status
-            match cloudflare_service.check_custom_hostname_status(&record.name).await {
+            match cloudflare_service
+                .check_custom_hostname_status(&record.name)
+                .await
+            {
                 Ok(verified) => {
                     record.verified = verified;
                     if verified {

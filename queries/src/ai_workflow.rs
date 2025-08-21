@@ -1,9 +1,9 @@
 use sqlx::Row;
 
-use common::error::AppError;
-use models::{AiWorkflow, AiWorkflowWithDetails, WorkflowConfiguration, WorkflowDefinition};
 use crate::Query;
+use common::error::AppError;
 use common::state::AppState;
+use models::{AiWorkflow, AiWorkflowWithDetails, WorkflowConfiguration, WorkflowDefinition};
 
 pub struct GetAiWorkflowsQuery {
     pub deployment_id: i64,

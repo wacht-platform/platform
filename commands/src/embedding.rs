@@ -1,7 +1,7 @@
 use crate::Command;
 use common::error::AppError;
-use models::ai_knowledge_base::DocumentChunkSearchResult;
 use common::state::AppState;
+use models::ai_knowledge_base::DocumentChunkSearchResult;
 
 use pgvector::HalfVector;
 use serde::{Deserialize, Serialize};
@@ -65,12 +65,12 @@ pub struct GenerateEmbeddingCommand {
 
 impl GenerateEmbeddingCommand {
     pub fn new(text: String) -> Self {
-        Self { 
+        Self {
             text,
             task_type: None,
         }
     }
-    
+
     pub fn with_task_type(mut self, task_type: String) -> Self {
         self.task_type = Some(task_type);
         self
@@ -89,7 +89,7 @@ impl Command for GenerateEmbeddingCommand {
             .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
 
         let client = reqwest::Client::new();
-        
+
         let request = EmbedContentRequest {
             model: model.clone(),
             content: Content {
@@ -121,10 +121,9 @@ impl Command for GenerateEmbeddingCommand {
             )));
         }
 
-        let embed_response: EmbedContentResponse = response
-            .json()
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to parse embedding response: {}", e)))?;
+        let embed_response: EmbedContentResponse = response.json().await.map_err(|e| {
+            AppError::Internal(format!("Failed to parse embedding response: {}", e))
+        })?;
 
         Ok(embed_response.embedding.values)
     }
@@ -143,7 +142,7 @@ impl GenerateEmbeddingsCommand {
             task_type: None,
         }
     }
-    
+
     pub fn with_task_type(mut self, task_type: String) -> Self {
         self.task_type = Some(task_type);
         self
@@ -166,11 +165,11 @@ impl Command for GenerateEmbeddingsCommand {
             .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
 
         let client = reqwest::Client::new();
-        
+
         // Split texts into chunks of 100 (Gemini's batch limit)
         const BATCH_SIZE: usize = 100;
         let mut all_embeddings = Vec::new();
-        
+
         for chunk in self.texts.chunks(BATCH_SIZE) {
             // Create batch request for this chunk
             let requests: Vec<EmbedContentRequestItem> = chunk
@@ -180,14 +179,15 @@ impl Command for GenerateEmbeddingsCommand {
                     content: Content {
                         parts: vec![Part { text: text.clone() }],
                     },
-                    task_type: self.task_type.clone().or(Some("RETRIEVAL_DOCUMENT".to_string())),
+                    task_type: self
+                        .task_type
+                        .clone()
+                        .or(Some("RETRIEVAL_DOCUMENT".to_string())),
                     output_dimensionality: Some(3072),
                 })
                 .collect();
 
-            let batch_request = BatchEmbedContentsRequest {
-                requests,
-            };
+            let batch_request = BatchEmbedContentsRequest { requests };
 
             let url = format!(
                 "https://generativelanguage.googleapis.com/v1beta/{}:batchEmbedContents",
@@ -201,7 +201,9 @@ impl Command for GenerateEmbeddingsCommand {
                 .json(&batch_request)
                 .send()
                 .await
-                .map_err(|e| AppError::Internal(format!("Failed to send batch embedding request: {}", e)))?;
+                .map_err(|e| {
+                    AppError::Internal(format!("Failed to send batch embedding request: {}", e))
+                })?;
 
             if !response.status().is_success() {
                 let status = response.status();
@@ -214,15 +216,14 @@ impl Command for GenerateEmbeddingsCommand {
                 );
                 return Err(AppError::Internal(format!(
                     "Batch embedding API error ({}): {}",
-                    status,
-                    error_text
+                    status, error_text
                 )));
             }
 
-            let batch_response: BatchEmbedContentsResponse = response
-                .json()
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to parse batch embedding response: {}", e)))?;
+            let batch_response: BatchEmbedContentsResponse =
+                response.json().await.map_err(|e| {
+                    AppError::Internal(format!("Failed to parse batch embedding response: {}", e))
+                })?;
 
             // Add this chunk's embeddings to the result
             all_embeddings.extend(batch_response.embeddings.into_iter().map(|e| e.values));
@@ -258,7 +259,7 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
         // Cosine distance ranges from 0 (identical) to 2 (opposite)
         // Distance 1.0 = 50% similarity, 1.2 = 40% similarity
         let max_distance = 1.2_f64;
-        
+
         let rows = sqlx::query(
             r#"
             SELECT 
@@ -294,7 +295,9 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
                 score: row.try_get("score").map_err(AppError::from)?,
                 chunk_index: row.try_get("chunk_index").map_err(AppError::from)?,
                 document_title: row.try_get("document_title").map_err(AppError::from)?,
-                document_description: row.try_get("document_description").map_err(AppError::from)?,
+                document_description: row
+                    .try_get("document_description")
+                    .map_err(AppError::from)?,
             });
         }
 

@@ -1,9 +1,8 @@
-use chrono::{DateTime, Utc};
 use crate::Command;
+use chrono::{DateTime, Utc};
 use common::error::AppError;
-use models::{AgentExecutionContext, ExecutionContextStatus, AgentExecutionState};
 use common::state::AppState;
-
+use models::{AgentExecutionContext, AgentExecutionState, ExecutionContextStatus};
 
 pub struct CreateExecutionContextCommand {
     pub deployment_id: i64,
@@ -14,7 +13,7 @@ pub struct CreateExecutionContextCommand {
 
 impl CreateExecutionContextCommand {
     pub fn new(deployment_id: i64) -> Self {
-        Self { 
+        Self {
             deployment_id,
             title: None,
             current_goal: None,
@@ -207,27 +206,29 @@ impl super::Command for UpdateExecutionContextQuery {
             if matches!(status, ExecutionContextStatus::Failed) {
                 use crate::CreateConversationCommand;
                 use models::{ConversationContent, ConversationMessageType};
-                
+
                 let cancel_command = CreateConversationCommand::new(
                     app_state.sf.next_id()? as i64,
                     self.context_id,
                     ConversationContent::SystemDecision {
                         step: "execution_cancelled".to_string(),
-                        reasoning: "User requested cancellation of the current execution".to_string(),
+                        reasoning: "User requested cancellation of the current execution"
+                            .to_string(),
                         confidence: 1.0,
                     },
                     ConversationMessageType::SystemDecision,
                 );
-                
+
                 // Execute the command to store the cancellation message
                 if let Ok(conversation) = cancel_command.execute(app_state).await {
                     // Publish the cancellation message to the stream
                     let subject = format!("agent_execution_stream.context:{}", self.context_id);
                     let mut headers = async_nats::HeaderMap::new();
                     headers.insert("message_type", "conversation_message");
-                    
+
                     if let Ok(payload) = serde_json::to_vec(&conversation) {
-                        let _ = app_state.nats_jetstream
+                        let _ = app_state
+                            .nats_jetstream
                             .publish_with_headers(subject, headers, payload.into())
                             .await;
                     }
@@ -238,4 +239,3 @@ impl super::Command for UpdateExecutionContextQuery {
         Ok(())
     }
 }
-

@@ -1,8 +1,8 @@
 use crate::api::{agent, notifications};
 use crate::application::HttpState;
 use crate::middleware::HostExtractorMiddleware;
-use axum::{middleware, Router};
 use axum::routing::get;
+use axum::{Router, middleware};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 

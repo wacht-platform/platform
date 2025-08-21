@@ -8,33 +8,32 @@ use sqlx::FromRow;
 pub struct Notification {
     pub id: i64,
     pub deployment_id: i64,
-    
+
     // Recipients
     pub user_id: i64,
     pub organization_id: Option<i64>,
     pub workspace_id: Option<i64>,
-    
+
     // Content
     pub title: String,
     pub body: String,
-    
+
     // Action
     pub action_url: Option<String>,
     pub action_label: Option<String>,
-    
+
     // Severity
     pub severity: NotificationSeverity,
-    
+
     // Status
     pub is_read: bool,
     pub read_at: Option<DateTime<Utc>>,
     pub is_archived: bool,
     pub archived_at: Option<DateTime<Utc>>,
-    
-    
+
     // Metadata
     pub metadata: Option<JsonValue>,
-    
+
     // Timestamps
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -49,15 +48,15 @@ pub enum NotificationSeverity {
     #[serde(rename = "info")]
     #[sqlx(rename = "info")]
     Info,
-    
+
     #[serde(rename = "success")]
     #[sqlx(rename = "success")]
     Success,
-    
+
     #[serde(rename = "warning")]
     #[sqlx(rename = "warning")]
     Warning,
-    
+
     #[serde(rename = "error")]
     #[sqlx(rename = "error")]
     Error,
@@ -92,20 +91,19 @@ impl NotificationSeverity {
 // Request DTOs
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateNotificationRequest {
-    pub user_id: Option<i64>,           // Single user
-    pub user_ids: Option<Vec<i64>>,     // Multiple users
+    pub user_id: Option<i64>,       // Single user
+    pub user_ids: Option<Vec<i64>>, // Multiple users
     pub organization_id: Option<i64>,
     pub workspace_id: Option<i64>,
-    
+
     pub title: String,
     pub body: String,
-    
+
     pub action_url: Option<String>,
     pub action_label: Option<String>,
-    
+
     pub severity: Option<NotificationSeverity>,
-    
-    
+
     pub metadata: Option<JsonValue>,
     pub expires_in_hours: Option<i32>,
 }
@@ -118,8 +116,8 @@ pub struct UpdateNotificationRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BulkUpdateRequest {
-    pub notification_ids: Option<Vec<i64>>,  // Specific IDs
-    pub mark_all: Option<bool>,              // Or mark all
+    pub notification_ids: Option<Vec<i64>>, // Specific IDs
+    pub mark_all: Option<bool>,             // Or mark all
     pub is_read: Option<bool>,
     pub is_archived: Option<bool>,
 }
@@ -173,27 +171,13 @@ impl Default for NotificationListParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum NotificationEvent {
-    New {
-        notification: Notification,
-    },
-    Updated {
-        notification: Notification,
-    },
-    Read {
-        notification_id: i64,
-    },
-    Archived {
-        notification_id: i64,
-    },
-    Deleted {
-        notification_id: i64,
-    },
-    BulkRead {
-        notification_ids: Vec<i64>,
-    },
-    UnreadCountChanged {
-        count: i64,
-    },
+    New { notification: Notification },
+    Updated { notification: Notification },
+    Read { notification_id: i64 },
+    Archived { notification_id: i64 },
+    Deleted { notification_id: i64 },
+    BulkRead { notification_ids: Vec<i64> },
+    UnreadCountChanged { count: i64 },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

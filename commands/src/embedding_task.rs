@@ -26,7 +26,10 @@ impl Command for DispatchDocumentBatchTaskCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let task_message = NatsTaskMessage {
             task_type: "embedding.process_batch".to_string(),
-            task_id: format!("embedding-batch-{}-{}", self.deployment_id, self.knowledge_base_id),
+            task_id: format!(
+                "embedding-batch-{}-{}",
+                self.deployment_id, self.knowledge_base_id
+            ),
             payload: serde_json::json!({
                 "deployment_id": self.deployment_id,
                 "knowledge_base_id": self.knowledge_base_id,
@@ -43,7 +46,12 @@ impl Command for DispatchDocumentBatchTaskCommand {
                     .into(),
             )
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to publish embedding batch task to NATS: {}", e)))?;
+            .map_err(|e| {
+                AppError::Internal(format!(
+                    "Failed to publish embedding batch task to NATS: {}",
+                    e
+                ))
+            })?;
 
         Ok(())
     }

@@ -13,9 +13,9 @@ pub struct ApiKeyUsageEvent {
     pub key_id: i64,
     pub key_prefix: String,
     pub key_suffix: String,
-    pub endpoint: String,            // API endpoint accessed
-    pub method: String,               // HTTP method (GET, POST, etc.)
-    pub status: String,               // 'success', 'failed', 'rate_limited', 'expired'
+    pub endpoint: String, // API endpoint accessed
+    pub method: String,   // HTTP method (GET, POST, etc.)
+    pub status: String,   // 'success', 'failed', 'rate_limited', 'expired'
     pub http_status_code: i32,
     pub response_time_ms: i32,
     pub request_size_bytes: i32,
@@ -261,7 +261,10 @@ impl ClickHouseService {
     }
 
     // Batch insert API key usage events
-    pub async fn insert_api_key_usage_batch(&self, events: Vec<ApiKeyUsageEvent>) -> Result<(), AppError> {
+    pub async fn insert_api_key_usage_batch(
+        &self,
+        events: Vec<ApiKeyUsageEvent>,
+    ) -> Result<(), AppError> {
         if events.is_empty() {
             return Ok(());
         }
@@ -293,7 +296,7 @@ impl ClickHouseService {
                 quantileIf(0.95)(response_time_ms, status = 'success') as p95_response_time_ms,
                 quantileIf(0.99)(response_time_ms, status = 'success') as p99_response_time_ms
             FROM api_key_usage
-            WHERE deployment_id = ?"
+            WHERE deployment_id = ?",
         );
 
         let mut params = vec![deployment_id.to_string()];
@@ -313,7 +316,8 @@ impl ClickHouseService {
             params.push(end.to_rfc3339());
         }
 
-        let result = self.client
+        let result = self
+            .client
             .query(&query)
             .bind(deployment_id)
             .fetch_one::<ApiKeyStatsRow>()
@@ -351,7 +355,7 @@ impl ClickHouseService {
                 countIf(status = 'success') / count() as success_rate,
                 avgIf(response_time_ms, status = 'success') as avg_response_time_ms
             FROM api_key_usage
-            WHERE deployment_id = ?"
+            WHERE deployment_id = ?",
         );
 
         if let Some(_app_id) = app_id {
@@ -360,9 +364,7 @@ impl ClickHouseService {
 
         query.push_str(" GROUP BY endpoint, method ORDER BY total_calls DESC LIMIT ?");
 
-        let mut cursor = self.client
-            .query(&query)
-            .bind(deployment_id);
+        let mut cursor = self.client.query(&query).bind(deployment_id);
 
         if let Some(app_id) = app_id {
             cursor = cursor.bind(app_id);
@@ -396,7 +398,8 @@ impl ClickHouseService {
             ORDER BY total_requests DESC
         ";
 
-        let result = self.client
+        let result = self
+            .client
             .query(query)
             .bind(deployment_id)
             .bind(app_id)
@@ -421,10 +424,7 @@ impl ClickHouseService {
             _ => "api_key_metrics_hourly",
         };
 
-        let mut query = format!(
-            "SELECT * FROM {} WHERE deployment_id = ?",
-            table
-        );
+        let mut query = format!("SELECT * FROM {} WHERE deployment_id = ?", table);
 
         let mut params = vec![deployment_id.to_string()];
 

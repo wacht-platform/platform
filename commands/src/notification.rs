@@ -6,8 +6,8 @@ use tracing::warn;
 
 use crate::Command;
 use common::error::AppError;
-use models::notification::{Notification, NotificationSeverity};
 use common::state::AppState;
+use models::notification::{Notification, NotificationSeverity};
 
 // NATS notification message
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,12 +44,7 @@ pub struct CreateNotificationCommand {
 }
 
 impl CreateNotificationCommand {
-    pub fn new(
-        deployment_id: i64,
-        user_id: i64,
-        title: String,
-        body: String,
-    ) -> Self {
+    pub fn new(deployment_id: i64, user_id: i64, title: String, body: String) -> Self {
         Self {
             deployment_id,
             user_id,
@@ -135,7 +130,10 @@ impl Command for CreateNotificationCommand {
         .await?;
 
         // Publish to NATS for real-time delivery
-        let subject = format!("notifications.{}.{}", notification.deployment_id, notification.user_id);
+        let subject = format!(
+            "notifications.{}.{}",
+            notification.deployment_id, notification.user_id
+        );
         let message = NotificationMessage {
             id: notification.id,
             user_id: notification.user_id,
@@ -149,7 +147,7 @@ impl Command for CreateNotificationCommand {
             action_label: notification.action_label.clone(),
             created_at: notification.created_at,
         };
-        
+
         if let Ok(payload) = serde_json::to_vec(&message) {
             if let Err(e) = app_state.nats_client.publish(subject, payload.into()).await {
                 warn!("Failed to publish notification to NATS: {}", e);

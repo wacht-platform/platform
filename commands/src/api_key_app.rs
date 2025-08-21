@@ -1,7 +1,7 @@
 use crate::Command;
 use common::error::AppError;
-use models::api_key::ApiKeyApp;
 use common::state::AppState;
+use models::api_key::ApiKeyApp;
 
 pub struct CreateApiKeyAppCommand {
     pub deployment_id: i64,
@@ -60,7 +60,7 @@ impl Command for CreateApiKeyAppCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         // Generate Snowflake ID
         let app_id = app_state.sf.next_id()? as i64;
-        
+
         let rec = sqlx::query!(
             r#"
             INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode)
@@ -88,7 +88,9 @@ impl Command for CreateApiKeyAppCommand {
             rate_limit_per_minute: rec.rate_limit_per_minute,
             rate_limit_per_hour: rec.rate_limit_per_hour,
             rate_limit_per_day: rec.rate_limit_per_day,
-            rate_limit_mode: rec.rate_limit_mode.and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+            rate_limit_mode: rec
+                .rate_limit_mode
+                .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,
@@ -149,7 +151,9 @@ impl Command for UpdateApiKeyAppCommand {
             rate_limit_per_minute: rec.rate_limit_per_minute,
             rate_limit_per_hour: rec.rate_limit_per_hour,
             rate_limit_per_day: rec.rate_limit_per_day,
-            rate_limit_mode: rec.rate_limit_mode.and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+            rate_limit_mode: rec
+                .rate_limit_mode
+                .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,

@@ -1,7 +1,7 @@
 use crate::Command;
 use common::error::AppError;
-use models::{ConversationContent, ConversationMessageType, ConversationRecord};
 use common::state::AppState;
+use models::{ConversationContent, ConversationMessageType, ConversationRecord};
 
 use chrono::Utc;
 use tiktoken_rs::cl100k_base;
@@ -32,28 +32,39 @@ impl CreateConversationCommand {
         let text = match &self.content {
             ConversationContent::UserMessage { message } => message.clone(),
             ConversationContent::AgentResponse { response, .. } => response.clone(),
-            ConversationContent::AssistantAcknowledgment { acknowledgment_message, reasoning, .. } => {
+            ConversationContent::AssistantAcknowledgment {
+                acknowledgment_message,
+                reasoning,
+                ..
+            } => {
                 format!("{} {}", acknowledgment_message, reasoning)
             }
-            ConversationContent::AssistantIdeation { reasoning_summary, .. } => reasoning_summary.clone(),
+            ConversationContent::AssistantIdeation {
+                reasoning_summary, ..
+            } => reasoning_summary.clone(),
             ConversationContent::ExecutionSummary { token_count, .. } => {
                 // For execution summaries, use the pre-calculated token count
                 return Ok(*token_count as i32);
             }
-            ConversationContent::PlatformFunctionResult { execution_id, result } => {
-                format!("Platform function execution {} result: {}", execution_id, result)
+            ConversationContent::PlatformFunctionResult {
+                execution_id,
+                result,
+            } => {
+                format!(
+                    "Platform function execution {} result: {}",
+                    execution_id, result
+                )
             }
             _ => {
                 // For other complex types, serialize to JSON and count
-                serde_json::to_string(&self.content)
-                    .unwrap_or_else(|_| "{}".to_string())
+                serde_json::to_string(&self.content).unwrap_or_else(|_| "{}".to_string())
             }
         };
 
         let bpe = cl100k_base()
             .map_err(|e| AppError::Internal(format!("Failed to init tokenizer: {}", e)))?;
         let tokens = bpe.encode_with_special_tokens(&text);
-        
+
         Ok(tokens.len() as i32)
     }
 }

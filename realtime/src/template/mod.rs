@@ -71,9 +71,15 @@ pub fn render_template_with_prompt(
             prompt_loader::get_prompt("kb_search_validation_system")
         }
         AgentTemplates::MEMORY_EVALUATION => prompt_loader::get_prompt("memory_evaluation_system"),
-        AgentTemplates::SWITCH_CASE_EVALUATION => prompt_loader::get_prompt("switch_case_evaluation_system"),
-        AgentTemplates::TRIGGER_EVALUATION => prompt_loader::get_prompt("trigger_evaluation_system"),
-        AgentTemplates::USER_INPUT_REQUEST => prompt_loader::get_prompt("user_input_request_system"),
+        AgentTemplates::SWITCH_CASE_EVALUATION => {
+            prompt_loader::get_prompt("switch_case_evaluation_system")
+        }
+        AgentTemplates::TRIGGER_EVALUATION => {
+            prompt_loader::get_prompt("trigger_evaluation_system")
+        }
+        AgentTemplates::USER_INPUT_REQUEST => {
+            prompt_loader::get_prompt("user_input_request_system")
+        }
         AgentTemplates::EXECUTION_SUMMARY => prompt_loader::get_prompt("execution_summary_system"),
         _ => None,
     };

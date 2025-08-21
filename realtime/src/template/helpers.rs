@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
 use handlebars::{
     Context, Handlebars, Helper, HelperResult, Output, RenderContext, RenderErrorReason,
 };
 use serde_json::Value;
-use chrono::{DateTime, Utc};
 
 pub fn register_all_helpers(hb: &mut Handlebars) {
     hb.register_helper("format_tools", Box::new(FormatToolsHelper));
@@ -53,40 +53,65 @@ impl handlebars::HelperDef for FormatToolsHelper {
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");
-                
+
                 // Extract parameter information from tool configuration
                 let mut param_info = String::new();
                 if let Some(config) = tool.get("configuration") {
-                    let tool_type = config.get("type").and_then(|t| t.as_str()).unwrap_or("Unknown");
-                    
+                    let tool_type = config
+                        .get("type")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("Unknown");
+
                     match tool_type {
                         "Api" => {
                             param_info.push_str(" [API Tool]");
-                            if let Some(schema) = config.get("url_params_schema").and_then(|s| s.as_array()) {
+                            if let Some(schema) =
+                                config.get("url_params_schema").and_then(|s| s.as_array())
+                            {
                                 if !schema.is_empty() {
-                                    let params: Vec<String> = schema.iter()
+                                    let params: Vec<String> = schema
+                                        .iter()
                                         .filter_map(|field| {
                                             let name = field.get("name")?.as_str()?;
-                                            let required = field.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
-                                            Some(if required { format!("{name} (required)") } else { name.to_string() })
+                                            let required = field
+                                                .get("required")
+                                                .and_then(|r| r.as_bool())
+                                                .unwrap_or(false);
+                                            Some(if required {
+                                                format!("{name} (required)")
+                                            } else {
+                                                name.to_string()
+                                            })
                                         })
                                         .collect();
-                                    param_info.push_str(&format!(" | Parameters: {}", params.join(", ")));
+                                    param_info
+                                        .push_str(&format!(" | Parameters: {}", params.join(", ")));
                                 }
                             }
                         }
                         "PlatformFunction" => {
                             param_info.push_str(" [Platform Function]");
-                            if let Some(schema) = config.get("input_schema").and_then(|s| s.as_array()) {
+                            if let Some(schema) =
+                                config.get("input_schema").and_then(|s| s.as_array())
+                            {
                                 if !schema.is_empty() {
-                                    let params: Vec<String> = schema.iter()
+                                    let params: Vec<String> = schema
+                                        .iter()
                                         .filter_map(|field| {
                                             let name = field.get("name")?.as_str()?;
-                                            let required = field.get("required").and_then(|r| r.as_bool()).unwrap_or(false);
-                                            Some(if required { format!("{name} (required)") } else { name.to_string() })
+                                            let required = field
+                                                .get("required")
+                                                .and_then(|r| r.as_bool())
+                                                .unwrap_or(false);
+                                            Some(if required {
+                                                format!("{name} (required)")
+                                            } else {
+                                                name.to_string()
+                                            })
                                         })
                                         .collect();
-                                    param_info.push_str(&format!(" | Inputs: {}", params.join(", ")));
+                                    param_info
+                                        .push_str(&format!(" | Inputs: {}", params.join(", ")));
                                 }
                             }
                         }
@@ -99,7 +124,7 @@ impl handlebars::HelperDef for FormatToolsHelper {
                         }
                     }
                 }
-                
+
                 format!("- {name}: {description}{param_info}")
             })
             .collect();
@@ -177,7 +202,6 @@ impl handlebars::HelperDef for FormatKnowledgeBasesHelper {
         Ok(())
     }
 }
-
 
 pub struct FormatMemoriesHelper;
 
@@ -557,7 +581,7 @@ impl handlebars::HelperDef for JsonStringHelper {
 
 fn json_to_flat_string(value: &Value, indent_level: usize) -> String {
     let indent = "  ".repeat(indent_level);
-    
+
     match value {
         Value::Object(map) => {
             let mut parts = Vec::new();
@@ -645,16 +669,26 @@ impl handlebars::HelperDef for FormatTimestampHelper {
                 // Try to parse ISO 8601 format
                 DateTime::parse_from_rfc3339(s)
                     .map(|dt| dt.with_timezone(&Utc))
-                    .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").map(|dt| dt.with_timezone(&Utc)))
+                    .or_else(|_| {
+                        DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+                            .map(|dt| dt.with_timezone(&Utc))
+                    })
                     .map_err(|_| RenderErrorReason::InvalidParamType("Invalid timestamp format"))?
             }
             Value::Number(n) => {
                 // Assume it's a Unix timestamp
-                let secs = n.as_i64().ok_or_else(|| RenderErrorReason::InvalidParamType("Invalid timestamp number"))?;
+                let secs = n.as_i64().ok_or_else(|| {
+                    RenderErrorReason::InvalidParamType("Invalid timestamp number")
+                })?;
                 DateTime::from_timestamp(secs, 0)
                     .ok_or_else(|| RenderErrorReason::InvalidParamType("Invalid timestamp value"))?
             }
-            _ => return Err(RenderErrorReason::InvalidParamType("Timestamp must be string or number").into()),
+            _ => {
+                return Err(RenderErrorReason::InvalidParamType(
+                    "Timestamp must be string or number",
+                )
+                .into());
+            }
         };
 
         // Format as "YYYY-MM-DD HH:MM:SS UTC"
@@ -682,36 +716,64 @@ impl handlebars::HelperDef for RelativeTimeHelper {
 
         // Parse timestamp (same as above)
         let datetime = match timestamp {
-            Value::String(s) => {
-                DateTime::parse_from_rfc3339(s)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").map(|dt| dt.with_timezone(&Utc)))
-                    .map_err(|_| RenderErrorReason::InvalidParamType("Invalid timestamp format"))?
-            }
+            Value::String(s) => DateTime::parse_from_rfc3339(s)
+                .map(|dt| dt.with_timezone(&Utc))
+                .or_else(|_| {
+                    DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+                        .map(|dt| dt.with_timezone(&Utc))
+                })
+                .map_err(|_| RenderErrorReason::InvalidParamType("Invalid timestamp format"))?,
             Value::Number(n) => {
-                let secs = n.as_i64().ok_or_else(|| RenderErrorReason::InvalidParamType("Invalid timestamp number"))?;
+                let secs = n.as_i64().ok_or_else(|| {
+                    RenderErrorReason::InvalidParamType("Invalid timestamp number")
+                })?;
                 DateTime::from_timestamp(secs, 0)
                     .ok_or_else(|| RenderErrorReason::InvalidParamType("Invalid timestamp value"))?
             }
-            _ => return Err(RenderErrorReason::InvalidParamType("Timestamp must be string or number").into()),
+            _ => {
+                return Err(RenderErrorReason::InvalidParamType(
+                    "Timestamp must be string or number",
+                )
+                .into());
+            }
         };
 
         // Calculate relative time
         let now = Utc::now();
         let diff = now.signed_duration_since(datetime);
-        
+
         let relative = if diff.num_seconds() < 60 {
             "just now".to_string()
         } else if diff.num_minutes() < 60 {
-            format!("{} minute{} ago", diff.num_minutes(), if diff.num_minutes() == 1 { "" } else { "s" })
+            format!(
+                "{} minute{} ago",
+                diff.num_minutes(),
+                if diff.num_minutes() == 1 { "" } else { "s" }
+            )
         } else if diff.num_hours() < 24 {
-            format!("{} hour{} ago", diff.num_hours(), if diff.num_hours() == 1 { "" } else { "s" })
+            format!(
+                "{} hour{} ago",
+                diff.num_hours(),
+                if diff.num_hours() == 1 { "" } else { "s" }
+            )
         } else if diff.num_days() < 7 {
-            format!("{} day{} ago", diff.num_days(), if diff.num_days() == 1 { "" } else { "s" })
+            format!(
+                "{} day{} ago",
+                diff.num_days(),
+                if diff.num_days() == 1 { "" } else { "s" }
+            )
         } else if diff.num_weeks() < 4 {
-            format!("{} week{} ago", diff.num_weeks(), if diff.num_weeks() == 1 { "" } else { "s" })
+            format!(
+                "{} week{} ago",
+                diff.num_weeks(),
+                if diff.num_weeks() == 1 { "" } else { "s" }
+            )
         } else {
-            format!("{} month{} ago", diff.num_days() / 30, if diff.num_days() / 30 == 1 { "" } else { "s" })
+            format!(
+                "{} month{} ago",
+                diff.num_days() / 30,
+                if diff.num_days() / 30 == 1 { "" } else { "s" }
+            )
         };
 
         out.write(&relative)?;

@@ -15,7 +15,6 @@ where
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskExploration {
     pub message: String,

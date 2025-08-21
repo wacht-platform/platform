@@ -10,8 +10,8 @@ use chrono::Utc;
 use common::state::AppState;
 use dotenvy::dotenv;
 use futures::StreamExt;
-use moka::future::Cache;
 use models::api_key::RateLimitMode;
+use moka::future::Cache;
 use queries::{Query as QueryTrait, api_key_gateway::GetApiKeyGatewayDataQuery};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -603,7 +603,8 @@ async fn check_limit(
     }
 
     // Parse rate limit mode
-    let rate_limit_mode = key_data.rate_limit_mode
+    let rate_limit_mode = key_data
+        .rate_limit_mode
         .as_deref()
         .and_then(RateLimitMode::from_str)
         .unwrap_or_default();
@@ -621,8 +622,11 @@ async fn check_limit(
         });
 
     let mut response_headers = HeaderMap::new();
-    response_headers.insert("X-Deployment-ID", HeaderValue::from_str(&key_data.deployment_id.to_string()).unwrap());
-    
+    response_headers.insert(
+        "X-Deployment-ID",
+        HeaderValue::from_str(&key_data.deployment_id.to_string()).unwrap(),
+    );
+
     let mut all_allowed = true;
     let mut min_retry_after = u32::MAX;
 
@@ -651,26 +655,32 @@ async fn check_limit(
                 format!("key:{}:{}:{}", key_data.key_id, identifier, window)
             }
             RateLimitMode::PerIp => {
-                format!("ip:{}:{}:{}:{}", key_data.deployment_id, client_ip, identifier, window)
+                format!(
+                    "ip:{}:{}:{}:{}",
+                    key_data.deployment_id, client_ip, identifier, window
+                )
             }
             RateLimitMode::PerKeyAndIp => {
                 // Check both key and IP limits - use the more restrictive one
                 let key_limit = format!("key:{}:{}:{}", key_data.key_id, identifier, window);
-                let ip_limit = format!("ip:{}:{}:{}:{}", key_data.key_id, client_ip, identifier, window);
-                
+                let ip_limit = format!(
+                    "ip:{}:{}:{}:{}",
+                    key_data.key_id, client_ip, identifier, window
+                );
+
                 // Check key limit
-                let (key_allowed, key_remaining, key_retry) = 
+                let (key_allowed, key_remaining, key_retry) =
                     limiter.check_rate_limit(key_limit, *limit, *window).await;
-                
+
                 // Check IP limit
-                let (ip_allowed, ip_remaining, ip_retry) = 
+                let (ip_allowed, ip_remaining, ip_retry) =
                     limiter.check_rate_limit(ip_limit, *limit, *window).await;
-                
+
                 // Use the more restrictive result
                 let allowed = key_allowed && ip_allowed;
                 let remaining = key_remaining.min(ip_remaining);
                 let retry_after = if !allowed { key_retry.max(ip_retry) } else { 0 };
-                
+
                 // Add headers for this limit
                 let limit_header = format!("X-RateLimit-{}s-Limit", window);
                 let remaining_header = format!("X-RateLimit-{}s-Remaining", window);
@@ -692,7 +702,7 @@ async fn check_limit(
                         HeaderValue::from_str(&retry_after.to_string()).unwrap(),
                     );
                 }
-                
+
                 continue; // Skip the normal flow for this iteration
             }
         };
@@ -747,7 +757,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let nats_url =
         std::env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string());
-    
+
     // Initialize app state from environment
     let app_state = AppState::new_from_env().await?;
 
@@ -761,13 +771,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state((rate_limiter, app_state));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3002").await?;
-    
+
     println!("API Gateway listening on 0.0.0.0:3002");
     println!("Using header 'X-Original-Client-IP' for client IP forwarding");
 
     axum::serve(
         listener,
-        app.into_make_service_with_connect_info::<SocketAddr>()
+        app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .await?;
 

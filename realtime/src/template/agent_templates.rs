@@ -73,7 +73,6 @@ pub fn register_all_templates(hb: &mut Handlebars) {
     )
     .expect("Failed to register knowledge_base_search_prompt template");
 
-
     hb.register_template_string(
         "kb_search_execution_prompt",
         include_str!("templates/kb_search_execution_prompt.hbs"),

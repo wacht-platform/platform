@@ -156,7 +156,10 @@ async fn validate_update_user_request(
     if let Some(username) = &request.username {
         if auth_settings.username.enabled {
             if auth_settings.username.required && username.trim().is_empty() {
-                return Err((StatusCode::BAD_REQUEST, "Username cannot be empty".to_string()));
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "Username cannot be empty".to_string(),
+                ));
             }
 
             let username_len = username.trim().len();
@@ -298,36 +301,48 @@ pub async fn create_user(
 
         match name.as_str() {
             "first_name" => {
-                request.first_name = field.text().await
+                request.first_name = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
             }
             "last_name" => {
-                request.last_name = field.text().await
+                request.last_name = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
             }
             "email_address" => {
-                let email = field.text().await
+                let email = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !email.trim().is_empty() {
                     request.email_address = Some(email.trim().to_string());
                 }
             }
             "phone_number" => {
-                let phone = field.text().await
+                let phone = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !phone.trim().is_empty() {
                     request.phone_number = Some(phone.trim().to_string());
                 }
             }
             "username" => {
-                let username = field.text().await
+                let username = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !username.trim().is_empty() {
                     request.username = Some(username.trim().to_string());
                 }
             }
             "password" => {
-                let password = field.text().await
+                let password = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !password.trim().is_empty() {
                     request.password = Some(password.trim().to_string());
@@ -337,7 +352,9 @@ pub async fn create_user(
                 let content_type = field.content_type().unwrap_or_default().to_string();
 
                 if content_type.starts_with("image/") {
-                    let file_extension = if content_type == "image/jpeg" || content_type == "image/jpg" {
+                    let file_extension = if content_type == "image/jpeg"
+                        || content_type == "image/jpg"
+                    {
                         "jpg"
                     } else if content_type == "image/png" {
                         "png"
@@ -345,7 +362,9 @@ pub async fn create_user(
                         "gif"
                     } else if content_type == "image/webp" {
                         "webp"
-                    } else if content_type == "image/x-icon" || content_type == "image/vnd.microsoft.icon" {
+                    } else if content_type == "image/x-icon"
+                        || content_type == "image/vnd.microsoft.icon"
+                    {
                         "ico"
                     } else {
                         return Err((
@@ -354,7 +373,9 @@ pub async fn create_user(
                         ).into());
                     };
 
-                    let image_buffer = field.bytes().await
+                    let image_buffer = field
+                        .bytes()
+                        .await
                         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
                         .to_vec();
 
@@ -423,28 +444,36 @@ pub async fn update_user(
 
         match name.as_str() {
             "first_name" => {
-                let first_name = field.text().await
+                let first_name = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !first_name.is_empty() {
                     request.first_name = Some(first_name);
                 }
             }
             "last_name" => {
-                let last_name = field.text().await
+                let last_name = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !last_name.is_empty() {
                     request.last_name = Some(last_name);
                 }
             }
             "username" => {
-                let username = field.text().await
+                let username = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !username.is_empty() {
                     request.username = Some(username);
                 }
             }
             "public_metadata" => {
-                let metadata_str = field.text().await
+                let metadata_str = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !metadata_str.is_empty() {
                     if let Ok(metadata) = serde_json::from_str(&metadata_str) {
@@ -453,7 +482,9 @@ pub async fn update_user(
                 }
             }
             "private_metadata" => {
-                let metadata_str = field.text().await
+                let metadata_str = field
+                    .text()
+                    .await
                     .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
                 if !metadata_str.is_empty() {
                     if let Ok(metadata) = serde_json::from_str(&metadata_str) {
@@ -465,7 +496,9 @@ pub async fn update_user(
                 let content_type = field.content_type().unwrap_or_default().to_string();
 
                 if content_type.starts_with("image/") {
-                    let file_extension = if content_type == "image/jpeg" || content_type == "image/jpg" {
+                    let file_extension = if content_type == "image/jpeg"
+                        || content_type == "image/jpg"
+                    {
                         "jpg"
                     } else if content_type == "image/png" {
                         "png"
@@ -473,7 +506,9 @@ pub async fn update_user(
                         "gif"
                     } else if content_type == "image/webp" {
                         "webp"
-                    } else if content_type == "image/x-icon" || content_type == "image/vnd.microsoft.icon" {
+                    } else if content_type == "image/x-icon"
+                        || content_type == "image/vnd.microsoft.icon"
+                    {
                         "ico"
                     } else {
                         return Err((
@@ -482,7 +517,9 @@ pub async fn update_user(
                         ).into());
                     };
 
-                    let image_buffer = field.bytes().await
+                    let image_buffer = field
+                        .bytes()
+                        .await
                         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
                         .to_vec();
 

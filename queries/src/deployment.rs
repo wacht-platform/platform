@@ -1,14 +1,15 @@
 use std::str::FromStr;
 
-use dto::params::deployment::DeploymentNameParams;
 use common::error::AppError;
-use models::{
-        DeploymentAuthSettings, DeploymentB2bSettings, DeploymentB2bSettingsWithRoles,
-        DeploymentJwtTemplate, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
-        DeploymentRestrictionsSignUpMode, DeploymentSocialConnection, DeploymentUISettings,
-        DeploymentWithSettings, DeploymentWorkspaceRole, EmailTemplate, SecondFactorPolicy, FirstFactor,
-};
 use common::state::AppState;
+use dto::params::deployment::DeploymentNameParams;
+use models::{
+    DeploymentAuthSettings, DeploymentB2bSettings, DeploymentB2bSettingsWithRoles,
+    DeploymentJwtTemplate, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
+    DeploymentRestrictionsSignUpMode, DeploymentSocialConnection, DeploymentUISettings,
+    DeploymentWithSettings, DeploymentWorkspaceRole, EmailTemplate, FirstFactor,
+    SecondFactorPolicy,
+};
 use sqlx::{Row, query};
 
 use super::Query;
@@ -35,7 +36,7 @@ impl Query for GetDeploymentIdByBackendHostQuery {
         .await?;
 
         let row = row.ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
-        
+
         Ok(row.id)
     }
 }
@@ -67,10 +68,11 @@ impl Query for GetDeploymentWithKeyPairQuery {
         .await?;
 
         let row = row.ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
-        
-        let public_key = row.public_key
+
+        let public_key = row
+            .public_key
             .ok_or_else(|| AppError::NotFound("Deployment key pair not found".to_string()))?;
-        
+
         Ok((row.id, public_key))
     }
 }
@@ -795,10 +797,12 @@ impl Query for GetDeploymentAuthSettingsQuery {
             created_at: Some(row.created_at),
             updated_at: Some(row.updated_at),
             deployment_id: row.deployment_id,
-            email_address: serde_json::from_value(row.email_address)
-                .map_err(|e| AppError::BadRequest(format!("Failed to parse email_address: {}", e)))?,
-            phone_number: serde_json::from_value(row.phone_number)
-                .map_err(|e| AppError::BadRequest(format!("Failed to parse phone_number: {}", e)))?,
+            email_address: serde_json::from_value(row.email_address).map_err(|e| {
+                AppError::BadRequest(format!("Failed to parse email_address: {}", e))
+            })?,
+            phone_number: serde_json::from_value(row.phone_number).map_err(|e| {
+                AppError::BadRequest(format!("Failed to parse phone_number: {}", e))
+            })?,
             username: serde_json::from_value(row.username)
                 .map_err(|e| AppError::BadRequest(format!("Failed to parse username: {}", e)))?,
             first_name: serde_json::from_value(row.first_name)
@@ -809,24 +813,35 @@ impl Query for GetDeploymentAuthSettingsQuery {
                 .map_err(|e| AppError::BadRequest(format!("Failed to parse password: {}", e)))?,
             magic_link: serde_json::from_value(row.magic_link).ok(),
             passkey: serde_json::from_value(row.passkey).ok(),
-            auth_factors_enabled: serde_json::from_value(row.auth_factors_enabled)
-                .map_err(|e| AppError::BadRequest(format!("Failed to parse auth_factors_enabled: {}", e)))?,
-            verification_policy: serde_json::from_value(row.verification_policy)
-                .map_err(|e| AppError::BadRequest(format!("Failed to parse verification_policy: {}", e)))?,
+            auth_factors_enabled: serde_json::from_value(row.auth_factors_enabled).map_err(
+                |e| AppError::BadRequest(format!("Failed to parse auth_factors_enabled: {}", e)),
+            )?,
+            verification_policy: serde_json::from_value(row.verification_policy).map_err(|e| {
+                AppError::BadRequest(format!("Failed to parse verification_policy: {}", e))
+            })?,
             second_factor_policy: if row.second_factor_policy.trim().is_empty() {
                 SecondFactorPolicy::Optional
             } else {
-                SecondFactorPolicy::from_str(&row.second_factor_policy)
-                    .map_err(|e| AppError::BadRequest(format!("Failed to parse second_factor_policy '{}': {}", row.second_factor_policy, e)))?
+                SecondFactorPolicy::from_str(&row.second_factor_policy).map_err(|e| {
+                    AppError::BadRequest(format!(
+                        "Failed to parse second_factor_policy '{}': {}",
+                        row.second_factor_policy, e
+                    ))
+                })?
             },
             first_factor: if row.first_factor.trim().is_empty() {
                 FirstFactor::EmailPassword
             } else {
-                FirstFactor::from_str(&row.first_factor)
-                    .map_err(|e| AppError::BadRequest(format!("Failed to parse first_factor '{}': {}", row.first_factor, e)))?
+                FirstFactor::from_str(&row.first_factor).map_err(|e| {
+                    AppError::BadRequest(format!(
+                        "Failed to parse first_factor '{}': {}",
+                        row.first_factor, e
+                    ))
+                })?
             },
-            multi_session_support: serde_json::from_value(row.multi_session_support)
-                .map_err(|e| AppError::BadRequest(format!("Failed to parse multi_session_support: {}", e)))?,
+            multi_session_support: serde_json::from_value(row.multi_session_support).map_err(
+                |e| AppError::BadRequest(format!("Failed to parse multi_session_support: {}", e)),
+            )?,
             session_token_lifetime: row.session_token_lifetime,
             session_validity_period: row.session_validity_period,
             session_inactive_timeout: row.session_inactive_timeout,

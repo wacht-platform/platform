@@ -15,8 +15,7 @@ use commands::{
 use dto::{
     json::{
         DeploymentAuthSettingsUpdates, DeploymentDisplaySettingsUpdates,
-        DeploymentRestrictionsUpdates, NewDeploymentJwtTemplate,
-        PartialDeploymentJwtTemplate,
+        DeploymentRestrictionsUpdates, NewDeploymentJwtTemplate, PartialDeploymentJwtTemplate,
     },
     params::deployment::DeploymentNameParams,
 };

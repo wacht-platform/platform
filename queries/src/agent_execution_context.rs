@@ -1,6 +1,6 @@
 use common::error::AppError;
-use models::{AgentExecutionContext, ExecutionContextStatus, AgentExecutionState};
 use common::state::AppState;
+use models::{AgentExecutionContext, AgentExecutionState, ExecutionContextStatus};
 use std::str::FromStr;
 
 pub struct GetExecutionContextQuery {
@@ -38,7 +38,8 @@ impl super::Query for GetExecutionContextQuery {
 
         let status = ExecutionContextStatus::from_str(&context.status).unwrap_or_default();
 
-        let execution_state = context.execution_state
+        let execution_state = context
+            .execution_state
             .as_ref()
             .and_then(|s| serde_json::from_value::<AgentExecutionState>(s.clone()).ok());
 
@@ -127,21 +128,22 @@ impl super::Query for ListExecutionContextsQuery {
         let mut result = Vec::new();
         for context in contexts {
             let status = ExecutionContextStatus::from_str(&context.status).unwrap_or_default();
-            
+
             // Apply filters
             if let Some(ref status_filter) = self.status_filter {
                 if &context.status != status_filter {
                     continue;
                 }
             }
-            
+
             if let Some(ref context_group_filter) = self.context_group_filter {
                 if context.context_group.as_deref() != Some(context_group_filter) {
                     continue;
                 }
             }
-            
-            let execution_state = context.execution_state
+
+            let execution_state = context
+                .execution_state
                 .as_ref()
                 .and_then(|s| serde_json::from_value::<AgentExecutionState>(s.clone()).ok());
 
@@ -164,4 +166,3 @@ impl super::Query for ListExecutionContextsQuery {
         Ok(result)
     }
 }
-

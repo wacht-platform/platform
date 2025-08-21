@@ -377,7 +377,10 @@ impl NatsConsumer {
                 Box::pin(async move {
                     let task: embedding::ProcessDocumentBatchTask = serde_json::from_value(payload)
                         .map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize embedding batch task: {}", e))
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize embedding batch task: {}",
+                                e
+                            ))
                         })?;
                     embedding::process_document_batch_impl(
                         task.deployment_id,

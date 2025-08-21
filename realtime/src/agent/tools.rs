@@ -1,13 +1,14 @@
-use serde_json::{Value, json};
+use commands::{Command, GenerateEmbeddingsCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use common::error::AppError;
+use common::state::AppState;
+use dto::json::StreamEvent;
 use models::HttpMethod;
 use models::{AiTool, AiToolConfiguration};
 use models::{
-    ApiToolConfiguration, KnowledgeBaseToolConfiguration, PlatformEventToolConfiguration, PlatformFunctionToolConfiguration,
+    ApiToolConfiguration, KnowledgeBaseToolConfiguration, PlatformEventToolConfiguration,
+    PlatformFunctionToolConfiguration,
 };
-use common::state::AppState;
-use commands::{Command, GenerateEmbeddingsCommand, SearchKnowledgeBaseEmbeddingsCommand};
-use dto::json::StreamEvent;
+use serde_json::{Value, json};
 use std::collections::HashMap;
 
 pub struct ToolExecutor {
@@ -17,12 +18,12 @@ pub struct ToolExecutor {
 
 impl ToolExecutor {
     pub fn new(app_state: AppState) -> Self {
-        Self { 
+        Self {
             app_state,
             channel: None,
         }
     }
-    
+
     pub fn with_channel(mut self, channel: tokio::sync::mpsc::Sender<StreamEvent>) -> Self {
         self.channel = Some(channel);
         self
@@ -38,7 +39,8 @@ impl ToolExecutor {
                 self.execute_api_tool(tool, config, &execution_params).await
             }
             AiToolConfiguration::KnowledgeBase(config) => {
-                self.execute_knowledge_base_tool(tool, config, &execution_params).await
+                self.execute_knowledge_base_tool(tool, config, &execution_params)
+                    .await
             }
             AiToolConfiguration::PlatformEvent(config) => {
                 self.execute_platform_event_tool(tool, config, &execution_params)
@@ -174,18 +176,15 @@ impl ToolExecutor {
             .cloned()
             .or_else(|| config.event_data.clone())
             .unwrap_or(json!({}));
-        
+
         // Emit the event via WebSocket if channel is available
         if let Some(channel) = &self.channel {
-            let event = StreamEvent::PlatformEvent(
-                config.event_label.clone(),
-                event_data.clone(),
-            );
-            
+            let event = StreamEvent::PlatformEvent(config.event_label.clone(), event_data.clone());
+
             // Try to send, but don't fail if channel is closed
             let _ = channel.send(event).await;
         }
-        
+
         Ok(json!({
             "success": true,
             "tool": tool.name,
@@ -213,7 +212,7 @@ impl ToolExecutor {
 
         // Generate a unique execution ID for this function call
         let execution_id = self.app_state.sf.next_id()? as u64;
-        
+
         // Prepare function data - send execution_id as string to avoid JS number precision issues
         let function_data = json!({
             "execution_id": execution_id.to_string(),
@@ -230,18 +229,13 @@ impl ToolExecutor {
                 execution_id,
                 function_params
             );
-            
-            let event = StreamEvent::PlatformFunction(
-                config.function_name.clone(),
-                function_data.clone(),
-            );
-            
+
+            let event =
+                StreamEvent::PlatformFunction(config.function_name.clone(), function_data.clone());
+
             // Send the event
             let send_result = channel.send(event).await;
-            tracing::info!(
-                "Platform function send result: {:?}",
-                send_result.is_ok()
-            );
+            tracing::info!("Platform function send result: {:?}", send_result.is_ok());
         } else {
             tracing::warn!("No channel available to send platform function");
         }
@@ -266,12 +260,18 @@ impl ToolExecutor {
         let query = execution_params
             .get("query")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| AppError::Internal("Query parameter is required for knowledge base search".to_string()))?;
+            .ok_or_else(|| {
+                AppError::Internal(
+                    "Query parameter is required for knowledge base search".to_string(),
+                )
+            })?;
 
         // First generate embeddings for the query
         let embeddings_command = GenerateEmbeddingsCommand::new(vec![query.to_string()]);
         let embeddings = embeddings_command.execute(&self.app_state).await?;
-        let query_embedding = embeddings.into_iter().next()
+        let query_embedding = embeddings
+            .into_iter()
+            .next()
             .ok_or_else(|| AppError::Internal("Failed to generate query embedding".to_string()))?;
 
         // Search across all configured knowledge bases using semantic search
@@ -281,35 +281,41 @@ impl ToolExecutor {
             query_embedding,
             limit,
         );
-        
+
         let search_results = search_command.execute(&self.app_state).await?;
-        
+
         // Filter by similarity threshold and convert to JSON
         let threshold = config.search_settings.similarity_threshold.unwrap_or(0.7);
         let mut all_results: Vec<Value> = search_results
             .into_iter()
             .filter(|result| result.score >= threshold as f64)
-            .map(|result| json!({
-                "content": result.content,
-                "knowledge_base_id": result.knowledge_base_id.to_string(),
-                "similarity_score": result.score,
-                "chunk_index": result.chunk_index,
-                "document_id": result.document_id.to_string(),
-                "document_title": result.document_title,
-                "document_description": result.document_description,
-            }))
+            .map(|result| {
+                json!({
+                    "content": result.content,
+                    "knowledge_base_id": result.knowledge_base_id.to_string(),
+                    "similarity_score": result.score,
+                    "chunk_index": result.chunk_index,
+                    "document_id": result.document_id.to_string(),
+                    "document_title": result.document_title,
+                    "document_description": result.document_description,
+                })
+            })
             .collect();
 
         // Sort all results by relevance if requested
         if config.search_settings.sort_by_relevance {
             all_results.sort_by(|a, b| {
-                let score_a = a.get("similarity_score")
+                let score_a = a
+                    .get("similarity_score")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0);
-                let score_b = b.get("similarity_score")
+                let score_b = b
+                    .get("similarity_score")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0);
-                score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+                score_b
+                    .partial_cmp(&score_a)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
         }
 

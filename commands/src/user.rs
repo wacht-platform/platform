@@ -3,17 +3,15 @@ use serde_json::json;
 use std::collections::HashMap;
 
 use crate::{Command, SendEmailCommand};
-use dto::json::{CreateUserRequest, InviteUserRequest, UpdateUserRequest};
 use common::error::AppError;
+use common::state::AppState;
+use common::utils::{
+    security::{PasswordHasher, TotpGenerator},
+    validation::UserValidator,
+};
+use dto::json::{CreateUserRequest, InviteUserRequest, UpdateUserRequest};
 use models::{DeploymentInvitation, UserDetails, UserWithIdentifiers};
 use queries::{GetDeploymentAuthSettingsQuery, Query};
-use common::state::AppState;
-use common::{
-    utils::{
-        security::{PasswordHasher, TotpGenerator},
-        validation::UserValidator,
-    },
-};
 
 pub struct CreateUserCommand {
     deployment_id: i64,
@@ -429,8 +427,6 @@ impl Command for UpdateUserCommand {
 
         // Execute the single query
         query_builder.build().execute(&app_state.db_pool).await?;
-
-
 
         use queries::{GetUserDetailsQuery, Query};
         let user_details = GetUserDetailsQuery::new(self.deployment_id, self.user_id)

@@ -2,10 +2,10 @@ use common::error::AppError;
 use common::state::AppState;
 
 pub mod prelude {
+    pub use super::Query;
     pub use common::error::AppError;
     pub use common::state::AppState;
     pub use std::result::Result as StdResult;
-    pub use super::Query;
 }
 
 pub trait Query {
@@ -44,14 +44,14 @@ pub use signin::*;
 pub use user::*;
 pub use workspace::*;
 pub mod agent_memory;
-pub mod webhook;
-pub mod webhook_analytics;
 pub mod api_key;
 pub mod api_key_gateway;
 pub mod notification;
+pub mod webhook;
+pub mod webhook_analytics;
+pub use agent_memory::*;
 pub use ai_tool::*;
 pub use ai_workflow::*;
 pub use hybrid_search::*;
-pub use agent_memory::*;
 pub use webhook::*;
 pub use webhook_analytics::*;

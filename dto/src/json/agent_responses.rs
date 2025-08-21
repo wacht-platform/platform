@@ -143,7 +143,6 @@ pub struct ExecutionAction {
     pub purpose: String,
 }
 
-
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ValidationResponse {
     pub validation_result: ValidationResult,

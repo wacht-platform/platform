@@ -6,8 +6,6 @@ use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
 
-
-
 #[derive(Debug)]
 pub struct GetActiveDeliveryCommand {
     pub delivery_id: i64,
@@ -183,19 +181,17 @@ impl Command for CheckEndpointFailuresCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         use redis::AsyncCommands;
-        
-        let mut redis_conn = app_state.redis_client
+
+        let mut redis_conn = app_state
+            .redis_client
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
 
         let failure_key = format!("webhook:endpoint:failures:{}", self.endpoint_id);
-        
+
         // Get current failure count
-        let failure_count: i64 = redis_conn
-            .get(&failure_key)
-            .await
-            .unwrap_or(0);
+        let failure_count: i64 = redis_conn.get(&failure_key).await.unwrap_or(0);
 
         Ok(EndpointFailureInfo {
             failure_count,
@@ -220,20 +216,21 @@ impl Command for IncrementEndpointFailuresCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         use redis::AsyncCommands;
-        
-        let mut redis_conn = app_state.redis_client
+
+        let mut redis_conn = app_state
+            .redis_client
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
 
         let failure_key = format!("webhook:endpoint:failures:{}", self.endpoint_id);
-        
+
         // Increment failure counter
         let failure_count: i64 = redis_conn
             .incr(&failure_key, 1)
             .await
             .map_err(|e| AppError::Internal(format!("Redis incr failed: {}", e)))?;
-        
+
         // Set TTL only on first failure
         if failure_count == 1 {
             let _: () = redis_conn
@@ -256,8 +253,9 @@ impl Command for ClearEndpointFailuresCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         use redis::AsyncCommands;
-        
-        let mut redis_conn = app_state.redis_client
+
+        let mut redis_conn = app_state
+            .redis_client
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
@@ -280,7 +278,7 @@ pub fn calculate_next_retry(attempts: i32) -> DateTime<Utc> {
         4 => Duration::minutes(15),
         _ => Duration::hours(1),
     };
-    
+
     Utc::now() + delay
 }
 

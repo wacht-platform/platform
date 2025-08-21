@@ -4,14 +4,14 @@ use commands::{
     Command,
     webhook_delivery::{
         ClearEndpointFailuresCommand, DeactivateEndpointCommand, DeleteActiveDeliveryCommand,
-        GetActiveDeliveryCommand,
-        IncrementEndpointFailuresCommand, UpdateDeliveryAttemptsCommand, calculate_next_retry,
+        GetActiveDeliveryCommand, IncrementEndpointFailuresCommand, UpdateDeliveryAttemptsCommand,
+        calculate_next_retry,
     },
     webhook_storage::RetrieveWebhookPayloadCommand,
 };
-use dto::clickhouse::webhook::WebhookDelivery;
 use common::state::AppState;
 use common::utils::webhook;
+use dto::clickhouse::webhook::WebhookDelivery;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{error, info, warn};
@@ -39,7 +39,7 @@ pub enum DeliveryResult {
     Success,
     Failed,
     NotFound,
-    RetryAfter(std::time::Duration),  // Add retry with delay
+    RetryAfter(std::time::Duration), // Add retry with delay
 }
 
 // HTTP status codes we need
@@ -126,7 +126,7 @@ pub async fn process_webhook_delivery(
                 let ch_delivery = WebhookDelivery {
                     deployment_id,
                     delivery_id,
-                    
+
                     app_name: delivery.app_name.clone(),
                     endpoint_id: delivery.endpoint_id,
                     endpoint_url: delivery.url.clone(),
@@ -172,12 +172,16 @@ pub async fn process_webhook_delivery(
                 let ch_delivery = WebhookDelivery {
                     deployment_id,
                     delivery_id,
-                    
+
                     app_name: delivery.app_name.clone(),
                     endpoint_id: delivery.endpoint_id,
                     endpoint_url: delivery.url.clone(),
                     event_name: delivery.event_name.clone(),
-                    status: if will_retry { "failed".to_string() } else { "permanently_failed".to_string() },
+                    status: if will_retry {
+                        "failed".to_string()
+                    } else {
+                        "permanently_failed".to_string()
+                    },
                     http_status_code: Some(status_code as i32),
                     response_time_ms: Some(duration.as_millis() as i32),
                     attempt_number: delivery.attempts + 1,
@@ -226,12 +230,16 @@ pub async fn process_webhook_delivery(
             let ch_delivery = WebhookDelivery {
                 deployment_id,
                 delivery_id,
-                
+
                 app_name: delivery.app_name.clone(),
                 endpoint_id: delivery.endpoint_id,
                 endpoint_url: delivery.url.clone(),
                 event_name: delivery.event_name.clone(),
-                status: if will_retry { "failed".to_string() } else { "permanently_failed".to_string() },
+                status: if will_retry {
+                    "failed".to_string()
+                } else {
+                    "permanently_failed".to_string()
+                },
                 http_status_code: None,
                 response_time_ms: None,
                 attempt_number: delivery.attempts + 1,
@@ -314,7 +322,9 @@ async fn handle_delivery_failure(
         .await?;
 
         // Return retry delay so consumer can NAK with delay
-        return Ok(DeliveryResult::RetryAfter(std::time::Duration::from_secs(retry_delay)));
+        return Ok(DeliveryResult::RetryAfter(std::time::Duration::from_secs(
+            retry_delay,
+        )));
     } else {
         warn!(
             "Max attempts reached for delivery {} or non-retryable error",
@@ -354,7 +364,7 @@ async fn handle_delivery_failure(
                 let ch_delivery = WebhookDelivery {
                     deployment_id,
                     delivery_id: app_state.sf.next_id().unwrap() as i64,
-                    
+
                     app_name: app_name.clone(),
                     endpoint_id,
                     endpoint_url: endpoint_url.clone(),
@@ -464,9 +474,12 @@ pub async fn process_webhook_retry(
     app_state: &AppState,
 ) -> Result<String> {
     use commands::webhook_trigger::ReplayWebhookDeliveryCommand;
-    
-    info!("Processing webhook retry for delivery {} in deployment {}", delivery_id, deployment_id);
-    
+
+    info!(
+        "Processing webhook retry for delivery {} in deployment {}",
+        delivery_id, deployment_id
+    );
+
     // Execute the replay command which handles all the logic
     let new_delivery_id = ReplayWebhookDeliveryCommand {
         delivery_id,
@@ -475,6 +488,9 @@ pub async fn process_webhook_retry(
     .execute(app_state)
     .await
     .map_err(|e| anyhow::anyhow!("Failed to replay webhook delivery: {}", e))?;
-    
-    Ok(format!("Webhook delivery {} retried as new delivery {}", delivery_id, new_delivery_id))
+
+    Ok(format!(
+        "Webhook delivery {} retried as new delivery {}",
+        delivery_id, new_delivery_id
+    ))
 }

@@ -1,8 +1,8 @@
 use common::error::AppError;
+use common::state::AppState;
 use models::notification::{
     Notification, NotificationListParams, NotificationListResponse, NotificationSeverity,
 };
-use common::state::AppState;
 use sqlx::{Row, query, query_as};
 
 use super::Query;
@@ -211,4 +211,3 @@ impl Query for GetNotificationQuery {
         }))
     }
 }
-

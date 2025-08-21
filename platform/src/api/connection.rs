@@ -6,14 +6,11 @@ use crate::{
     middleware::RequireDeployment,
 };
 
+use axum::{Json, extract::State};
 use commands::{Command, UpsertDeploymentSocialConnectionCommand};
 use dto::json::DeploymentSocialConnectionUpsert;
 use models::DeploymentSocialConnection;
 use queries::{Query, deployment::GetDeploymentSocialConnectionsQuery};
-use axum::{
-    Json,
-    extract::State,
-};
 
 pub async fn get_deployment_social_connections(
     State(app_state): State<HttpState>,

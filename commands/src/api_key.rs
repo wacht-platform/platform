@@ -1,10 +1,10 @@
 use crate::Command;
+use chrono::{DateTime, Utc};
 use common::error::AppError;
+use common::state::AppState;
 use models::api_key::{ApiKey, ApiKeyWithSecret};
 use models::api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper};
-use common::state::AppState;
-use chrono::{DateTime, Utc};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 pub struct CreateApiKeyCommand {
     pub app_id: i64,
@@ -44,21 +44,27 @@ impl CreateApiKeyCommand {
         use rand::RngCore;
         let mut random_bytes = vec![0u8; 32];
         rand::rng().fill_bytes(&mut random_bytes);
-        
+
         // Encode to URL-safe base64
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         let key_string = URL_SAFE_NO_PAD.encode(&random_bytes);
         let full_key = format!("{}_{}", self.key_prefix, key_string);
-        
+
         // Hash the key
         let mut hasher = Sha256::new();
         hasher.update(full_key.as_bytes());
         let key_hash = format!("{:x}", hasher.finalize());
-        
+
         // Get last 8 characters as suffix
-        let key_suffix = full_key.chars().rev().take(8).collect::<String>()
-            .chars().rev().collect();
-        
+        let key_suffix = full_key
+            .chars()
+            .rev()
+            .take(8)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+
         (full_key, key_hash, key_suffix)
     }
 }
@@ -68,10 +74,10 @@ impl Command for CreateApiKeyCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let (full_key, key_hash, key_suffix) = self.generate_api_key();
-        
+
         // Generate Snowflake ID
         let key_id = app_state.sf.next_id()? as i64;
-        
+
         // Use default scopes if none provided
         let permissions = if self.permissions.is_empty() {
             ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes())
@@ -80,13 +86,14 @@ impl Command for CreateApiKeyCommand {
             match ApiKeyScopeHelper::validate_scopes(&self.permissions) {
                 Ok(valid_scopes) => ApiKeyScopeHelper::scopes_to_strings(&valid_scopes),
                 Err(invalid_scopes) => {
-                    return Err(AppError::BadRequest(
-                        format!("Invalid scopes: {}", invalid_scopes.join(", "))
-                    ));
+                    return Err(AppError::BadRequest(format!(
+                        "Invalid scopes: {}",
+                        invalid_scopes.join(", ")
+                    )));
                 }
             }
         };
-        
+
         let rec = sqlx::query!(
             r#"
             INSERT INTO api_keys (
@@ -122,7 +129,10 @@ impl Command for CreateApiKeyCommand {
             key_prefix: rec.key_prefix,
             key_suffix: rec.key_suffix,
             key_hash: rec.key_hash,
-            permissions: serde_json::from_value(rec.permissions.clone().unwrap_or(serde_json::json!([]))).unwrap_or_default(),
+            permissions: serde_json::from_value(
+                rec.permissions.clone().unwrap_or(serde_json::json!([])),
+            )
+            .unwrap_or_default(),
             metadata: rec.metadata.unwrap_or(serde_json::json!({})),
             expires_at: rec.expires_at,
             last_used_at: rec.last_used_at,
@@ -168,7 +178,9 @@ impl Command for RevokeApiKeyCommand {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("API key not found or already revoked".to_string()));
+            return Err(AppError::NotFound(
+                "API key not found or already revoked".to_string(),
+            ));
         }
 
         Ok(())
@@ -200,7 +212,7 @@ impl Command for RotateApiKeyCommand {
         .fetch_optional(&app_state.db_pool)
         .await?
         .ok_or_else(|| AppError::NotFound("API key not found or inactive".to_string()))?;
-        
+
         let existing_key = ApiKey {
             id: rec.id,
             app_id: rec.app_id,
@@ -209,7 +221,10 @@ impl Command for RotateApiKeyCommand {
             key_prefix: rec.key_prefix,
             key_suffix: rec.key_suffix,
             key_hash: String::new(), // Not needed for rotation
-            permissions: serde_json::from_value(rec.permissions.clone().unwrap_or(serde_json::json!([]))).unwrap_or_default(),
+            permissions: serde_json::from_value(
+                rec.permissions.clone().unwrap_or(serde_json::json!([])),
+            )
+            .unwrap_or_default(),
             metadata: rec.metadata.unwrap_or(serde_json::json!({})),
             expires_at: rec.expires_at,
             last_used_at: None,

@@ -39,7 +39,7 @@ pub struct ListDocumentsParams {
     pub knowledge_base_ids: Option<Vec<String>>, // Multiple KB IDs for simultaneous pagination
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keyword_filter: Option<String>,
-    pub page: i32, // Page number starting from 1
+    pub page: i32,  // Page number starting from 1
     pub limit: i32, // Number of documents per page
 }
 

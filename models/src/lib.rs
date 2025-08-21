@@ -33,10 +33,6 @@ mod workspace_permission;
 mod workspace_role;
 
 // AI-related models
-pub mod error;
-pub mod utils;
-pub mod webhook_analytics;
-pub mod hybrid_search;
 pub mod agent_execution_context;
 pub mod agent_memory;
 pub mod ai_agent;
@@ -46,8 +42,12 @@ pub mod ai_memory;
 pub mod ai_tool;
 pub mod ai_workflow;
 pub mod conversation;
+pub mod error;
+pub mod hybrid_search;
 pub mod memory;
 pub mod memory_boundaries;
+pub mod utils;
+pub mod webhook_analytics;
 
 // Webhook models
 pub mod webhook;
@@ -103,5 +103,5 @@ pub use ai_workflow::*;
 pub use conversation::*;
 pub use memory::*;
 pub use memory_boundaries::*;
-pub use webhook::*;
 pub use notification::*;
+pub use webhook::*;

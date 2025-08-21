@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{query, query_as};
 
+use crate::Command;
 use crate::webhook_delivery::ClearEndpointFailuresCommand;
 use crate::webhook_storage::StoreWebhookPayloadCommand;
-use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
 use common::utils::webhook::generate_hmac_signature;
@@ -77,7 +77,7 @@ impl Command for CreateWebhookEndpointCommand {
         .fetch_optional(&app_state.db_pool)
         .await?
         .is_some();
-        
+
         if !app_exists {
             return Err(AppError::NotFound("Webhook app not found".to_string()));
         }
@@ -364,36 +364,41 @@ impl Command for TestWebhookEndpointCommand {
         let (mut result, response_headers_json) = match response {
             Ok(resp) => {
                 let status = resp.status();
-                
+
                 // Capture response headers as JSON
                 let response_headers_json = {
                     let mut headers_map = serde_json::Map::new();
                     for (key, value) in resp.headers().iter() {
                         if let Ok(value_str) = value.to_str() {
-                            headers_map.insert(key.as_str().to_string(), serde_json::Value::String(value_str.to_string()));
+                            headers_map.insert(
+                                key.as_str().to_string(),
+                                serde_json::Value::String(value_str.to_string()),
+                            );
                         }
                     }
                     Some(serde_json::Value::Object(headers_map).to_string())
                 };
-                
-                let content_type = resp.headers()
+
+                let content_type = resp
+                    .headers()
                     .get("content-type")
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_string());
-                
+
                 // Handle response body based on status and content type
                 let body = if status.as_u16() == 204 {
                     // 204 No Content - don't try to read body
                     None
                 } else if let Some(ref ct) = content_type {
                     // Check if content type is text-like
-                    if ct.starts_with("text/") 
-                        || ct.contains("json") 
-                        || ct.contains("xml") 
+                    if ct.starts_with("text/")
+                        || ct.contains("json")
+                        || ct.contains("xml")
                         || ct.contains("javascript")
                         || ct.contains("x-www-form-urlencoded")
                         || ct.contains("yaml")
-                        || ct.contains("csv") {
+                        || ct.contains("csv")
+                    {
                         resp.text().await.ok()
                     } else {
                         // For binary content, just store a placeholder
@@ -403,25 +408,31 @@ impl Command for TestWebhookEndpointCommand {
                     resp.text().await.ok()
                 };
 
-                (TestWebhookResult {
-                    success: status.is_success(),
-                    status_code: status.as_u16(),
-                    response_time_ms: duration.as_millis() as u32,
-                    response_body: body,
-                    response_content_type: content_type,
-                    error: None,
-                    delivery_id: None,
-                }, response_headers_json)
+                (
+                    TestWebhookResult {
+                        success: status.is_success(),
+                        status_code: status.as_u16(),
+                        response_time_ms: duration.as_millis() as u32,
+                        response_body: body,
+                        response_content_type: content_type,
+                        error: None,
+                        delivery_id: None,
+                    },
+                    response_headers_json,
+                )
             }
-            Err(e) => (TestWebhookResult {
-                success: false,
-                status_code: 0,
-                response_time_ms: duration.as_millis() as u32,
-                response_body: None,
-                response_content_type: None,
-                error: Some(e.to_string()),
-                delivery_id: None,
-            }, None),
+            Err(e) => (
+                TestWebhookResult {
+                    success: false,
+                    status_code: 0,
+                    response_time_ms: duration.as_millis() as u32,
+                    response_body: None,
+                    response_content_type: None,
+                    error: Some(e.to_string()),
+                    delivery_id: None,
+                },
+                None,
+            ),
         };
 
         // Record test delivery to ClickHouse for analytics
@@ -436,8 +447,10 @@ impl Command for TestWebhookEndpointCommand {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to store test payload: {}", e)))?;
 
-        let payload_size = serde_json::to_string(&self.test_payload).unwrap_or_default().len() as i32;
-        
+        let payload_size = serde_json::to_string(&self.test_payload)
+            .unwrap_or_default()
+            .len() as i32;
+
         // Log the event to ClickHouse
         let ch_event = WebhookEvent {
             deployment_id: self.deployment_id,
@@ -459,7 +472,7 @@ impl Command for TestWebhookEndpointCommand {
 
         // Create delivery in active_webhook_deliveries and let worker process it
         let signature = generate_hmac_signature(&endpoint.signing_secret, &self.test_payload);
-        
+
         query!(
             r#"
             INSERT INTO active_webhook_deliveries 
@@ -488,7 +501,8 @@ impl Command for TestWebhookEndpointCommand {
             }),
         };
 
-        app_state.nats_client
+        app_state
+            .nats_client
             .publish(
                 "worker.tasks.webhook.deliver",
                 serde_json::to_vec(&task_message)?.into(),
@@ -502,7 +516,9 @@ impl Command for TestWebhookEndpointCommand {
             success: true,
             status_code: 202, // Accepted
             response_time_ms: 0,
-            response_body: Some("Test webhook initiated. Check delivery history for results.".to_string()),
+            response_body: Some(
+                "Test webhook initiated. Check delivery history for results.".to_string(),
+            ),
             response_content_type: Some("text/plain".to_string()),
             error: None,
         })

@@ -1,5 +1,5 @@
-use crate::middleware::RequireDeployment;
 use crate::api::ai_knowledge_base::KnowledgeBaseParams;
+use crate::middleware::RequireDeployment;
 use axum::extract::{Path, Query, State};
 
 use crate::application::{AppError, HttpState, response::ApiResult};
@@ -79,9 +79,10 @@ pub async fn search_specific_knowledge_base(
         .execute(&app_state)
         .await?;
 
-    let results = SearchKnowledgeBaseEmbeddingsCommand::new(vec![path_params.kb_id], query_embedding, limit)
-        .execute(&app_state)
-        .await?;
+    let results =
+        SearchKnowledgeBaseEmbeddingsCommand::new(vec![path_params.kb_id], query_embedding, limit)
+            .execute(&app_state)
+            .await?;
 
     let search_results: Vec<KnowledgeBaseSearchResult> = results
         .into_iter()

@@ -1,6 +1,6 @@
 use common::error::AppError;
-use models::hybrid_search::{HybridSearchKbResult, HybridSearchMemoryResult, FullTextSearchResult};
 use common::state::AppState;
+use models::hybrid_search::{FullTextSearchResult, HybridSearchKbResult, HybridSearchMemoryResult};
 
 use super::Query;
 
@@ -114,7 +114,7 @@ impl Query for HybridSearchKnowledgeBaseQuery {
         })?;
 
         tracing::info!("Hybrid search returned {} results", results.len());
-        
+
         for (idx, result) in results.iter().enumerate() {
             tracing::debug!(
                 "Result {}: doc_id={}, chunk={}, title={:?}, desc={:?}, vector_sim={:.4}, text_rank={:.4}, combined={:.4}",
@@ -181,14 +181,14 @@ impl Query for HybridSearchMemoriesQuery {
                 $7::FLOAT,                   -- vector_weight
                 $8::FLOAT                    -- text_weight
             )
-            "#
+            "#,
         )
         .bind(&self.query_text)
         .bind(&embedding_str)
         .bind(self.agent_id)
         .bind(self.context_id)
         .bind(self.max_results)
-        .bind(0.0_f64)  // min_relevance disabled - pass 0.0 to return all results
+        .bind(0.0_f64) // min_relevance disabled - pass 0.0 to return all results
         .bind(self.vector_weight)
         .bind(self.text_weight)
         .fetch_all(pool)
@@ -233,7 +233,7 @@ impl Query for FullTextSearchKnowledgeBaseQuery {
               AND kbc.search_vector @@ plainto_tsquery('english', $1)
             ORDER BY text_rank DESC
             LIMIT $4
-            "#
+            "#,
         )
         .bind(&self.query_text)
         .bind(&self.knowledge_base_ids)

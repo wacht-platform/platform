@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use sqlx::{Row, query};
 
 use common::error::AppError;
-use models::{Deployment, ProjectWithDeployments};
 use common::state::AppState;
+use models::{Deployment, ProjectWithDeployments};
 
 use super::Query;
 

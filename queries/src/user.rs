@@ -1,10 +1,10 @@
 use super::Query;
 use common::error::AppError;
-use models::{
-        DeploymentInvitation, DeploymentWaitlistUser, SocialConnection, UserDetails,
-        UserEmailAddress, UserPhoneNumber, UserWithIdentifiers,
-    };
 use common::state::AppState;
+use models::{
+    DeploymentInvitation, DeploymentWaitlistUser, SocialConnection, UserDetails, UserEmailAddress,
+    UserPhoneNumber, UserWithIdentifiers,
+};
 use sqlx::Row;
 use std::str::FromStr;
 
@@ -404,7 +404,6 @@ impl Query for GetUserDetailsQuery {
         Ok(user_details)
     }
 }
-
 
 impl Query for DeploymentWaitlistQuery {
     type Output = Vec<DeploymentWaitlistUser>;

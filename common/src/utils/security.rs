@@ -49,5 +49,3 @@ impl TotpGenerator {
         Ok(totp.get_secret_base32())
     }
 }
-
-

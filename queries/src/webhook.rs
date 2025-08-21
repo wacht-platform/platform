@@ -3,8 +3,12 @@ use sqlx::{query, query_as};
 
 use common::error::AppError;
 use common::state::AppState;
-use models::webhook::{WebhookApp, WebhookEndpoint as ModelWebhookEndpoint, WebhookEndpointSubscription};
-use dto::json::webhook_requests::{WebhookEndpoint, WebhookEndpointSubscription as WebhookEndpointSubscriptionDTO};
+use dto::json::webhook_requests::{
+    WebhookEndpoint, WebhookEndpointSubscription as WebhookEndpointSubscriptionDTO,
+};
+use models::webhook::{
+    WebhookApp, WebhookEndpoint as ModelWebhookEndpoint, WebhookEndpointSubscription,
+};
 
 use super::Query;
 

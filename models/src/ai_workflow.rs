@@ -108,7 +108,6 @@ pub struct WorkflowEdge {
     pub target_handle: Option<String>,
 }
 
-
 // Node-specific configurations
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TriggerNodeConfig {
@@ -169,7 +168,6 @@ pub struct SwitchCase {
     pub case_label: Option<String>,
 }
 
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ToolCallNodeConfig {
     #[serde(default)]
@@ -200,7 +198,6 @@ pub enum UserInputType {
     Boolean,
     Date,
 }
-
 
 // Workflow execution models
 #[derive(Serialize, Deserialize, Clone)]

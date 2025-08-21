@@ -1,7 +1,7 @@
 use crate::Command;
 use common::error::AppError;
-use models::Organization;
 use common::state::AppState;
+use models::Organization;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

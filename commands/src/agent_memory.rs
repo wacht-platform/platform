@@ -1,8 +1,8 @@
 use crate::Command;
-use common::error::AppError;
-use models::MemoryRecord;
-use common::state::AppState;
 use chrono::Utc;
+use common::error::AppError;
+use common::state::AppState;
+use models::MemoryRecord;
 use pgvector::HalfVector;
 
 /// Command to create a new memory record

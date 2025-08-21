@@ -1,7 +1,7 @@
 use crate::Command;
 use common::error::AppError;
-use models::{AiWorkflow, WorkflowConfiguration, WorkflowDefinition};
 use common::state::AppState;
+use models::{AiWorkflow, WorkflowConfiguration, WorkflowDefinition};
 
 use chrono::Utc;
 use sqlx::Row;
@@ -243,7 +243,8 @@ impl Command for DeleteAiWorkflowCommand {
         .map_err(|e| AppError::Database(e))?;
 
         if !dependent_agents.is_empty() {
-            let agent_names: Vec<String> = dependent_agents.iter()
+            let agent_names: Vec<String> = dependent_agents
+                .iter()
                 .map(|agent| agent.name.clone())
                 .collect();
 

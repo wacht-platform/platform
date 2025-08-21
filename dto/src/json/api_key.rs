@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
+use models::api_key::{ApiKey, ApiKeyApp};
+use models::api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use chrono::{DateTime, Utc};
-use models::api_key::{ApiKeyApp, ApiKey};
-use models::api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper};
 
 // =====================================================
 // API KEY STATUS & STATS
@@ -82,11 +82,11 @@ pub struct ListApiKeysResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApiKeyScopePreset {
-    Default,    // Basic read-only access
-    ReadOnly,   // Full read-only access
-    ReadWrite,  // Read and write, no delete
-    Admin,      // Full admin access
-    Custom,     // Custom permissions list
+    Default,   // Basic read-only access
+    ReadOnly,  // Full read-only access
+    ReadWrite, // Read and write, no delete
+    Admin,     // Full admin access
+    Custom,    // Custom permissions list
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,11 +115,9 @@ impl CreateApiKeyRequest {
             Some(ApiKeyScopePreset::Admin) => {
                 vec![ApiKeyScope::AdminAccess.as_str().to_string()]
             }
-            Some(ApiKeyScopePreset::Custom) => {
-                self.permissions.clone().unwrap_or_else(|| {
-                    ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes())
-                })
-            }
+            Some(ApiKeyScopePreset::Custom) => self.permissions.clone().unwrap_or_else(|| {
+                ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes())
+            }),
         }
     }
 }
@@ -191,7 +189,7 @@ impl AvailableScopesResponse {
             },
             // Add more as needed...
         ];
-        
+
         let presets = vec![
             ScopePresetInfo {
                 name: "default".to_string(),
@@ -214,7 +212,7 @@ impl AvailableScopesResponse {
                 scopes: vec![ApiKeyScope::AdminAccess.as_str().to_string()],
             },
         ];
-        
+
         Self { scopes, presets }
     }
 }

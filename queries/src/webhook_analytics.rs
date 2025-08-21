@@ -2,11 +2,11 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use common::error::AppError;
-use models::webhook_analytics::{
-    WebhookAnalyticsResult, EventCount, EndpointPerformance, FailureReason,
-    TimeseriesInterval, WebhookTimeseriesResult, TimeseriesPoint
-};
 use common::state::AppState;
+use models::webhook_analytics::{
+    EndpointPerformance, EventCount, FailureReason, TimeseriesInterval, TimeseriesPoint,
+    WebhookAnalyticsResult, WebhookTimeseriesResult,
+};
 
 use super::Query;
 
@@ -113,7 +113,12 @@ impl Query for GetWebhookAnalyticsQuery {
             // Get all endpoints for the app
             let perf_data = app_state
                 .clickhouse_service
-                .get_app_endpoints_performance(self.deployment_id, app_name.clone(), start_date, end_date)
+                .get_app_endpoints_performance(
+                    self.deployment_id,
+                    app_name.clone(),
+                    start_date,
+                    end_date,
+                )
                 .await?;
             perf_data
                 .into_iter()

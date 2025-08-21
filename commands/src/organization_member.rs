@@ -1,7 +1,7 @@
 use crate::Command;
 use common::error::AppError;
-use models::OrganizationMemberDetails;
 use common::state::AppState;
+use models::OrganizationMemberDetails;
 
 use serde::{Deserialize, Serialize};
 

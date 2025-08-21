@@ -1,5 +1,5 @@
-use models::ConversationRecord;
 use chrono::Utc;
+use models::ConversationRecord;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

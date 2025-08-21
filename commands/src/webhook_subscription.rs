@@ -1,13 +1,11 @@
+use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::query;
-use redis::AsyncCommands;
 
 use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
-
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EndpointWithRules {
@@ -283,7 +281,9 @@ fn evaluate_condition(field_value: Option<&Value>, condition: &Value) -> bool {
                         }
                     }
                     // For strings: check if string contains substring
-                    else if let (Some(str_val), Some(substr)) = (field_value.as_str(), expected.as_str()) {
+                    else if let (Some(str_val), Some(substr)) =
+                        (field_value.as_str(), expected.as_str())
+                    {
                         if !str_val.contains(substr) {
                             return false;
                         }
@@ -315,7 +315,7 @@ where
     if let (Some(a_num), Some(b_num)) = (a.as_f64(), b.as_f64()) {
         return compare(a_num, b_num);
     }
-    
+
     // Try string comparison
     if let (Some(a_str), Some(b_str)) = (a.as_str(), b.as_str()) {
         return match (compare(0.0, 1.0), compare(1.0, 0.0)) {
@@ -325,6 +325,6 @@ where
             (false, false) => a_str <= b_str, // lte
         };
     }
-    
+
     false
 }

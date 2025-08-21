@@ -1,17 +1,17 @@
 use sqlx::Row;
-use std::str::FromStr;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use crate::Command;
-use dto::json::{
-    DeploymentAuthSettingsUpdates, DeploymentB2bSettingsUpdates,
-    DeploymentDisplaySettingsUpdates, DeploymentRestrictionsUpdates,
-    DeploymentSocialConnectionUpsert, NewDeploymentJwtTemplate, PartialDeploymentJwtTemplate,
-};
 use common::error::AppError;
-use models::{DeploymentJwtTemplate, DeploymentSocialConnection, SocialConnectionProvider};
 use common::state::AppState;
 use common::utils::jwt::sign_token;
+use dto::json::{
+    DeploymentAuthSettingsUpdates, DeploymentB2bSettingsUpdates, DeploymentDisplaySettingsUpdates,
+    DeploymentRestrictionsUpdates, DeploymentSocialConnectionUpsert, NewDeploymentJwtTemplate,
+    PartialDeploymentJwtTemplate,
+};
+use models::{DeploymentJwtTemplate, DeploymentSocialConnection, SocialConnectionProvider};
 use queries::{Query, user::GetUserDetailsQuery};
 
 use chrono::{Duration, Utc};
@@ -474,7 +474,11 @@ pub struct UpdateDeploymentJwtTemplateCommand {
 
 impl UpdateDeploymentJwtTemplateCommand {
     pub fn new(deployment_id: i64, id: i64, template: PartialDeploymentJwtTemplate) -> Self {
-        Self { deployment_id, id, template }
+        Self {
+            deployment_id,
+            id,
+            template,
+        }
     }
 }
 
@@ -517,13 +521,16 @@ impl Command for UpdateDeploymentJwtTemplateCommand {
 
         query_builder.push(" RETURNING *");
 
-        let result = query_builder.build()
+        let result = query_builder
+            .build()
             .fetch_optional(&app_state.db_pool)
             .await?
-            .ok_or_else(|| AppError::NotFound(format!(
-                "JWT template {} not found in deployment {}",
-                self.id, self.deployment_id
-            )))?;
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "JWT template {} not found in deployment {}",
+                    self.id, self.deployment_id
+                ))
+            })?;
 
         let template = DeploymentJwtTemplate {
             id: result.get("id"),
@@ -913,7 +920,6 @@ impl Command for UpdateDeploymentDisplaySettingsCommand {
     }
 }
 
-
 #[derive(Debug, Serialize)]
 pub struct GenerateTokenResponse {
     pub token: String,
@@ -971,9 +977,10 @@ impl Command for GenerateTokenCommand {
         .fetch_optional(&app_state.db_pool)
         .await?
         .ok_or_else(|| AppError::NotFound("Session not found or no active sign-in".to_string()))?;
-        
+
         // Ensure user_id exists
-        let user_id = session_data.user_id
+        let user_id = session_data
+            .user_id
             .ok_or_else(|| AppError::BadRequest("Sign-in has no associated user".to_string()))?;
 
         // Get user details
@@ -982,8 +989,9 @@ impl Command for GenerateTokenCommand {
             .await?;
 
         // Get organization permissions and roles if active organization membership exists
-        let (organization_id, organization_permissions, organization_details, organization_roles) = if let Some(org_membership_id) = session_data.active_organization_membership_id {
-            let org_data = sqlx::query!(
+        let (organization_id, organization_permissions, organization_details, organization_roles) =
+            if let Some(org_membership_id) = session_data.active_organization_membership_id {
+                let org_data = sqlx::query!(
                 r#"
                 SELECT 
                     om.organization_id,
@@ -1015,26 +1023,34 @@ impl Command for GenerateTokenCommand {
             .fetch_optional(&app_state.db_pool)
             .await?;
 
-            if let Some(data) = org_data {
-                let details = json!({
-                    "id": data.organization_id.to_string(),
-                    "name": data.organization_name,
-                });
-                let roles: Vec<Value> = data.roles.unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|r| serde_json::from_value(r).ok())
-                    .collect();
-                (Some(data.organization_id), data.permissions, Some(details), roles)
+                if let Some(data) = org_data {
+                    let details = json!({
+                        "id": data.organization_id.to_string(),
+                        "name": data.organization_name,
+                    });
+                    let roles: Vec<Value> = data
+                        .roles
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|r| serde_json::from_value(r).ok())
+                        .collect();
+                    (
+                        Some(data.organization_id),
+                        data.permissions,
+                        Some(details),
+                        roles,
+                    )
+                } else {
+                    (None, None, None, vec![])
+                }
             } else {
                 (None, None, None, vec![])
-            }
-        } else {
-            (None, None, None, vec![])
-        };
+            };
 
         // Get workspace permissions and roles if active workspace membership exists
-        let (workspace_id, workspace_permissions, workspace_details, workspace_roles) = if let Some(workspace_membership_id) = session_data.active_workspace_membership_id {
-            let workspace_data = sqlx::query!(
+        let (workspace_id, workspace_permissions, workspace_details, workspace_roles) =
+            if let Some(workspace_membership_id) = session_data.active_workspace_membership_id {
+                let workspace_data = sqlx::query!(
                 r#"
                 SELECT 
                     wm.workspace_id,
@@ -1066,22 +1082,29 @@ impl Command for GenerateTokenCommand {
             .fetch_optional(&app_state.db_pool)
             .await?;
 
-            if let Some(data) = workspace_data {
-                let details = json!({
-                    "id": data.workspace_id.to_string(),
-                    "name": data.workspace_name,
-                });
-                let roles: Vec<Value> = data.roles.unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|r| serde_json::from_value(r).ok())
-                    .collect();
-                (Some(data.workspace_id), data.permissions, Some(details), roles)
+                if let Some(data) = workspace_data {
+                    let details = json!({
+                        "id": data.workspace_id.to_string(),
+                        "name": data.workspace_name,
+                    });
+                    let roles: Vec<Value> = data
+                        .roles
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|r| serde_json::from_value(r).ok())
+                        .collect();
+                    (
+                        Some(data.workspace_id),
+                        data.permissions,
+                        Some(details),
+                        roles,
+                    )
+                } else {
+                    (None, None, None, vec![])
+                }
             } else {
                 (None, None, None, vec![])
-            }
-        } else {
-            (None, None, None, vec![])
-        };
+            };
 
         // Get JWT template
         let template = if self.template_name == "default" {
@@ -1113,7 +1136,7 @@ impl Command for GenerateTokenCommand {
             .fetch_optional(&app_state.db_pool)
             .await?
             .ok_or_else(|| AppError::NotFound("Template not found".to_string()))?;
-            
+
             DeploymentJwtTemplate {
                 id: row.id,
                 created_at: row.created_at,
@@ -1122,14 +1145,18 @@ impl Command for GenerateTokenCommand {
                 name: row.name,
                 token_lifetime: row.token_lifetime,
                 allowed_clock_skew: row.allowed_clock_skew,
-                custom_signing_key: row.custom_signing_key
+                custom_signing_key: row
+                    .custom_signing_key
                     .and_then(|v| serde_json::from_value(v).ok()),
                 template: row.template,
             }
         };
 
         let now = Utc::now();
-        let exp = now + Duration::seconds(template.token_lifetime as i64 + template.allowed_clock_skew as i64);
+        let exp = now
+            + Duration::seconds(
+                template.token_lifetime as i64 + template.allowed_clock_skew as i64,
+            );
 
         // Build handlebars context - matching Go implementation which passes ActiveSignin data
         let handlebars_context = json!({
@@ -1138,7 +1165,7 @@ impl Command for GenerateTokenCommand {
             "user_id": user_id,
             "active_organization_membership_id": session_data.active_organization_membership_id,
             "active_workspace_membership_id": session_data.active_workspace_membership_id,
-            
+
             // User object embedded in signin
             "user": {
                 "id": user_details.id,
@@ -1156,7 +1183,7 @@ impl Command for GenerateTokenCommand {
                 "email_addresses": user_details.email_addresses,
                 "phone_numbers": user_details.phone_numbers,
             },
-            
+
             // Active organization membership with roles
             "active_organization_membership": if session_data.active_organization_membership_id.is_some() {
                 json!({
@@ -1168,7 +1195,7 @@ impl Command for GenerateTokenCommand {
             } else {
                 json!(null)
             },
-            
+
             // Active workspace membership with roles
             "active_workspace_membership": if session_data.active_workspace_membership_id.is_some() {
                 json!({
@@ -1190,37 +1217,40 @@ impl Command for GenerateTokenCommand {
             // Check if template is a string (handlebars template)
             if let Some(template_str) = template.template.as_str() {
                 // Render handlebars template
-                let rendered = app_state.handlebars
+                let rendered = app_state
+                    .handlebars
                     .render_template(template_str, &handlebars_context)
-                    .map_err(|e| AppError::BadRequest(format!("Failed to render template: {}", e)))?;
-                
+                    .map_err(|e| {
+                        AppError::BadRequest(format!("Failed to render template: {}", e))
+                    })?;
+
                 // Parse rendered JSON into custom claims
-                let parsed: Value = serde_json::from_str(&rendered)
-                    .map_err(|e| AppError::BadRequest(format!("Template must render valid JSON: {}", e)))?;
-                
+                let parsed: Value = serde_json::from_str(&rendered).map_err(|e| {
+                    AppError::BadRequest(format!("Template must render valid JSON: {}", e))
+                })?;
+
                 if let Some(obj) = parsed.as_object() {
-                    custom_claims = obj.iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect();
+                    custom_claims = obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 }
             } else if template.template.is_object() {
                 // Legacy: direct JSON object
                 if let Some(obj) = template.template.as_object() {
-                    custom_claims = obj.iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect();
+                    custom_claims = obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 }
             }
         }
 
         // Merge standard claims with custom claims
         let mut all_claims = custom_claims;
-        all_claims.insert("iss".to_string(), json!(format!("https://{}", deployment.backend_host)));
+        all_claims.insert(
+            "iss".to_string(),
+            json!(format!("https://{}", deployment.backend_host)),
+        );
         all_claims.insert("sub".to_string(), json!(user_id.to_string()));
         all_claims.insert("iat".to_string(), json!(now.timestamp()));
         all_claims.insert("exp".to_string(), json!(exp.timestamp()));
         all_claims.insert("session_id".to_string(), json!(self.session_id.to_string()));
-        
+
         if let Some(org_id) = organization_id {
             all_claims.insert("organization".to_string(), json!(org_id.to_string()));
         }
@@ -1261,7 +1291,7 @@ pub struct GenerateAgentContextTokenCommand {
     deployment_id: i64,
     user_id: i64,
     audience: Option<String>, // Optional audience (context group) for the token
-    validity_hours: u32, // Token validity in hours
+    validity_hours: u32,      // Token validity in hours
 }
 
 impl GenerateAgentContextTokenCommand {
@@ -1273,7 +1303,7 @@ impl GenerateAgentContextTokenCommand {
             validity_hours: 24, // Default to 24 hours
         }
     }
-    
+
     pub fn with_validity_hours(mut self, hours: u32) -> Self {
         self.validity_hours = hours;
         self
@@ -1297,8 +1327,9 @@ impl Command for GenerateAgentContextTokenCommand {
         .fetch_optional(&app_state.db_pool)
         .await?
         .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
-        
-        let private_key = deployment.private_key
+
+        let private_key = deployment
+            .private_key
             .ok_or_else(|| AppError::NotFound("Deployment key pair not found".to_string()))?;
 
         let now = Utc::now();
@@ -1306,12 +1337,15 @@ impl Command for GenerateAgentContextTokenCommand {
 
         // Build claims for agent context token
         let mut claims = HashMap::new();
-        claims.insert("iss".to_string(), json!(format!("https://{}", deployment.backend_host)));
+        claims.insert(
+            "iss".to_string(),
+            json!(format!("https://{}", deployment.backend_host)),
+        );
         claims.insert("sub".to_string(), json!(self.user_id.to_string()));
         claims.insert("iat".to_string(), json!(now.timestamp()));
         claims.insert("exp".to_string(), json!(exp.timestamp()));
         claims.insert("scope".to_string(), json!("agent_context")); // Important: Add the agent_context scope
-        
+
         // Add audience if provided
         if let Some(audience) = self.audience {
             claims.insert("aud".to_string(), json!(audience));

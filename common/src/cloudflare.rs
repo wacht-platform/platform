@@ -41,7 +41,11 @@ pub struct CloudflareService {
 impl CloudflareService {
     pub fn new(api_key: String, zone_id: String) -> Self {
         let client = reqwest::Client::new();
-        Self { api_key, zone_id, client }
+        Self {
+            api_key,
+            zone_id,
+            client,
+        }
     }
 
     pub async fn create_custom_hostname(
@@ -59,7 +63,8 @@ impl CloudflareService {
             custom_origin_server: origin_server.to_string(),
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
@@ -68,10 +73,10 @@ impl CloudflareService {
             .await
             .map_err(|e| AppError::External(format!("Cloudflare API request failed: {}", e)))?;
 
-        let cloudflare_response: CloudflareResponse<CustomHostname> = response
-            .json()
-            .await
-            .map_err(|e| AppError::External(format!("Failed to parse Cloudflare response: {}", e)))?;
+        let cloudflare_response: CloudflareResponse<CustomHostname> =
+            response.json().await.map_err(|e| {
+                AppError::External(format!("Failed to parse Cloudflare response: {}", e))
+            })?;
 
         if !cloudflare_response.success {
             let error_messages: Vec<String> = cloudflare_response
@@ -96,7 +101,8 @@ impl CloudflareService {
             self.zone_id, hostname_id
         );
 
-        let response = self.client
+        let response = self
+            .client
             .delete(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
@@ -152,17 +158,18 @@ impl CloudflareService {
             self.zone_id, domain
         );
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
             .await
             .map_err(|e| AppError::External(format!("Cloudflare API error: {}", e)))?;
 
-        let cloudflare_response: CloudflareResponse<Vec<serde_json::Value>> = response
-            .json()
-            .await
-            .map_err(|e| AppError::External(format!("Failed to parse Cloudflare response: {}", e)))?;
+        let cloudflare_response: CloudflareResponse<Vec<serde_json::Value>> =
+            response.json().await.map_err(|e| {
+                AppError::External(format!("Failed to parse Cloudflare response: {}", e))
+            })?;
 
         if !cloudflare_response.success {
             let error_messages: Vec<String> = cloudflare_response
@@ -216,7 +223,8 @@ impl CloudflareService {
 
         tracing::info!("Making Cloudflare API call to: {}", list_url);
 
-        let list_response = self.client
+        let list_response = self
+            .client
             .get(&list_url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
@@ -226,10 +234,8 @@ impl CloudflareService {
                 AppError::External(format!("Cloudflare API error: {}", e))
             })?;
 
-        let list_cloudflare_response: CloudflareResponse<Vec<CustomHostname>> = list_response
-            .json()
-            .await
-            .map_err(|e| {
+        let list_cloudflare_response: CloudflareResponse<Vec<CustomHostname>> =
+            list_response.json().await.map_err(|e| {
                 tracing::error!("Failed to parse Cloudflare response: {}", e);
                 AppError::External(format!("Failed to parse Cloudflare response: {}", e))
             })?;
@@ -287,7 +293,8 @@ impl CloudflareService {
 
         tracing::info!("Getting detailed status from: {}", detail_url);
 
-        let detail_response = self.client
+        let detail_response = self
+            .client
             .get(&detail_url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
@@ -297,10 +304,8 @@ impl CloudflareService {
                 AppError::External(format!("Cloudflare API error: {}", e))
             })?;
 
-        let detail_cloudflare_response: CloudflareResponse<serde_json::Value> = detail_response
-            .json()
-            .await
-            .map_err(|e| {
+        let detail_cloudflare_response: CloudflareResponse<serde_json::Value> =
+            detail_response.json().await.map_err(|e| {
                 tracing::error!("Failed to parse Cloudflare detail response: {}", e);
                 AppError::External(format!("Failed to parse Cloudflare response: {}", e))
             })?;

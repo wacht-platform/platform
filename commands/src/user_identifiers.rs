@@ -6,8 +6,6 @@ use common::state::AppState;
 use dto::json::{AddEmailRequest, AddPhoneRequest, UpdateEmailRequest, UpdatePhoneRequest};
 use models::{UserEmailAddress, UserPhoneNumber, VerificationStrategy};
 
-
-
 pub struct AddUserEmailCommand {
     deployment_id: i64,
     user_id: i64,
