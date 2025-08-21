@@ -1,5 +1,6 @@
 use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
+use serde::Deserialize;
 
 use crate::application::{
     HttpState,
@@ -13,6 +14,12 @@ use dto::{
 };
 use models::{AiAgent, AiAgentWithDetails};
 use queries::{GetAiAgentByIdQuery, GetAiAgentsQuery, Query as QueryTrait};
+
+// Unified parameter extraction for AI agent routes
+#[derive(Deserialize)]
+pub struct AgentParams {
+    pub agent_id: i64,
+}
 
 pub async fn get_ai_agents(
     State(app_state): State<HttpState>,
@@ -64,9 +71,9 @@ pub async fn create_ai_agent(
 pub async fn get_ai_agent_by_id(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(agent_id): Path<i64>,
+    Path(params): Path<AgentParams>,
 ) -> ApiResult<AiAgentWithDetails> {
-    GetAiAgentByIdQuery::new(deployment_id, agent_id)
+    GetAiAgentByIdQuery::new(deployment_id, params.agent_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -76,10 +83,10 @@ pub async fn get_ai_agent_by_id(
 pub async fn update_ai_agent(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(agent_id): Path<i64>,
+    Path(params): Path<AgentParams>,
     Json(request): Json<UpdateAgentRequest>,
 ) -> ApiResult<AiAgent> {
-    let mut command = UpdateAiAgentCommand::new(deployment_id, agent_id);
+    let mut command = UpdateAiAgentCommand::new(deployment_id, params.agent_id);
 
     if let Some(name) = request.name {
         command = command.with_name(name);
@@ -101,9 +108,9 @@ pub async fn update_ai_agent(
 pub async fn delete_ai_agent(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(agent_id): Path<i64>,
+    Path(params): Path<AgentParams>,
 ) -> ApiResult<()> {
-    DeleteAiAgentCommand::new(deployment_id, agent_id)
+    DeleteAiAgentCommand::new(deployment_id, params.agent_id)
         .execute(&app_state)
         .await
         .map(Into::into)

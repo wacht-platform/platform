@@ -1,5 +1,6 @@
 use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
+use serde::Deserialize;
 
 use crate::{
     application::{
@@ -17,6 +18,12 @@ use dto::{
 };
 use models::{AiWorkflow, AiWorkflowWithDetails};
 use queries::{GetAiWorkflowByIdQuery, GetAiWorkflowsQuery, Query as QueryTrait};
+
+// Unified parameter extraction for AI workflow routes
+#[derive(Deserialize)]
+pub struct WorkflowParams {
+    pub workflow_id: i64,
+}
 
 pub async fn get_ai_workflows(
     State(app_state): State<HttpState>,
@@ -67,9 +74,9 @@ pub async fn create_ai_workflow(
 pub async fn get_ai_workflow_by_id(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(workflow_id): Path<i64>,
+    Path(params): Path<WorkflowParams>,
 ) -> ApiResult<AiWorkflowWithDetails> {
-    GetAiWorkflowByIdQuery::new(deployment_id, workflow_id)
+    GetAiWorkflowByIdQuery::new(deployment_id, params.workflow_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -79,10 +86,10 @@ pub async fn get_ai_workflow_by_id(
 pub async fn update_ai_workflow(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(workflow_id): Path<i64>,
+    Path(params): Path<WorkflowParams>,
     Json(request): Json<UpdateWorkflowRequest>,
 ) -> ApiResult<AiWorkflow> {
-    let mut command = UpdateAiWorkflowCommand::new(deployment_id, workflow_id);
+    let mut command = UpdateAiWorkflowCommand::new(deployment_id, params.workflow_id);
 
     if let Some(name) = request.name {
         command = command.with_name(name);
@@ -107,9 +114,9 @@ pub async fn update_ai_workflow(
 pub async fn delete_ai_workflow(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(workflow_id): Path<i64>,
+    Path(params): Path<WorkflowParams>,
 ) -> ApiResult<()> {
-    DeleteAiWorkflowCommand::new(deployment_id, workflow_id)
+    DeleteAiWorkflowCommand::new(deployment_id, params.workflow_id)
         .execute(&app_state)
         .await
         .map(Into::into)

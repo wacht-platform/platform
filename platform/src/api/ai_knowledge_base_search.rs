@@ -1,4 +1,5 @@
 use crate::middleware::RequireDeployment;
+use crate::api::ai_knowledge_base::KnowledgeBaseParams;
 use axum::extract::{Path, Query, State};
 
 use crate::application::{AppError, HttpState, response::ApiResult};
@@ -62,11 +63,11 @@ pub async fn search_knowledge_base(
 
 pub async fn search_specific_knowledge_base(
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((_, kb_id)): Path<(i64, i64)>,
+    Path(path_params): Path<KnowledgeBaseParams>,
     Query(params): Query<SearchKnowledgeBaseQuery>,
     State(app_state): State<HttpState>,
 ) -> ApiResult<SearchKnowledgeBaseResponse> {
-    let _kb = GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
+    let _kb = GetAiKnowledgeBaseByIdQuery::new(deployment_id, path_params.kb_id)
         .execute(&app_state)
         .await
         .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
@@ -78,7 +79,7 @@ pub async fn search_specific_knowledge_base(
         .execute(&app_state)
         .await?;
 
-    let results = SearchKnowledgeBaseEmbeddingsCommand::new(vec![kb_id], query_embedding, limit)
+    let results = SearchKnowledgeBaseEmbeddingsCommand::new(vec![path_params.kb_id], query_embedding, limit)
         .execute(&app_state)
         .await?;
 

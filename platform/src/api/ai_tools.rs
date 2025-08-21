@@ -1,5 +1,6 @@
 use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
+use serde::Deserialize;
 
 use crate::{
     application::{
@@ -15,6 +16,12 @@ use dto::{
 };
 use models::{AiTool, AiToolType, AiToolWithDetails};
 use queries::{GetAiToolByIdQuery, GetAiToolsQuery, Query as QueryTrait};
+
+// Unified parameter extraction for AI tool routes
+#[derive(Deserialize)]
+pub struct ToolParams {
+    pub tool_id: i64,
+}
 
 pub async fn get_ai_tools(
     State(app_state): State<HttpState>,
@@ -67,9 +74,9 @@ pub async fn create_ai_tool(
 pub async fn get_ai_tool_by_id(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(tool_id): Path<i64>,
+    Path(params): Path<ToolParams>,
 ) -> ApiResult<AiToolWithDetails> {
-    GetAiToolByIdQuery::new(deployment_id, tool_id)
+    GetAiToolByIdQuery::new(deployment_id, params.tool_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -79,10 +86,10 @@ pub async fn get_ai_tool_by_id(
 pub async fn update_ai_tool(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(tool_id): Path<i64>,
+    Path(params): Path<ToolParams>,
     Json(request): Json<UpdateToolRequest>,
 ) -> ApiResult<AiTool> {
-    let mut command = UpdateAiToolCommand::new(deployment_id, tool_id);
+    let mut command = UpdateAiToolCommand::new(deployment_id, params.tool_id);
 
     if let Some(name) = request.name {
         command = command.with_name(name);
@@ -107,9 +114,9 @@ pub async fn update_ai_tool(
 pub async fn delete_ai_tool(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(tool_id): Path<i64>,
+    Path(params): Path<ToolParams>,
 ) -> ApiResult<()> {
-    DeleteAiToolCommand::new(deployment_id, tool_id)
+    DeleteAiToolCommand::new(deployment_id, params.tool_id)
         .execute(&app_state)
         .await
         .map(Into::into)
