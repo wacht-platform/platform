@@ -1,11 +1,10 @@
-use crate::{Command, GenerateEmbeddingsCommand, UploadToKnowledgeBaseBucketCommand};
+use crate::{Command, DispatchDocumentBatchTaskCommand, UploadToKnowledgeBaseBucketCommand};
 use common::error::AppError;
 use common::state::AppState;
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument};
 use queries::{GetAiKnowledgeBaseByIdQuery, Query};
 
 use chrono::Utc;
-use pgvector::HalfVector;
 use sqlx::Row;
 
 pub struct CreateAiKnowledgeBaseCommand {
@@ -323,8 +322,8 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
         let document = sqlx::query!(
             r#"
             INSERT INTO ai_knowledge_base_documents
-            (id, created_at, updated_at, title, description, file_name, file_size, file_type, file_url, knowledge_base_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            (id, created_at, updated_at, title, description, file_name, file_size, file_type, file_url, knowledge_base_id, processing_metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING id, created_at, updated_at, title, description, file_name, file_size, file_type, file_url, knowledge_base_id, processing_metadata
             "#,
             document_id,
@@ -335,40 +334,48 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
             self.file_name,
             file_size,
             self.file_type,
-            file_url,
+            file_url.clone(),
             self.knowledge_base_id,
+            serde_json::json!({"status": "pending"})
         )
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        // Process document for embeddings in background
-        let doc_id = document.id;
-        let file_content_for_processing = self.file_content.clone();
-        let file_type_clone = self.file_type.clone();
-        let title_clone = self.title.clone();
-        let kb_id = self.knowledge_base_id;
-
+        // Dispatch embedding processing task to workers
         let kb_query = sqlx::query!(
             "SELECT deployment_id FROM ai_knowledge_bases WHERE id = $1",
-            kb_id
+            self.knowledge_base_id
         )
         .fetch_one(&app_state.db_pool)
         .await?;
         let deployment_id = kb_query.deployment_id;
 
-        if let Err(e) = Self::process_document_embeddings(
-            doc_id,
-            kb_id,
+        let dispatch_task = DispatchDocumentBatchTaskCommand::new(
             deployment_id,
-            file_content_for_processing,
-            file_type_clone,
-            title_clone,
-            app_state,
-        )
-        .await
-        {
-            eprintln!("Failed to process document embeddings: {}", e);
+            self.knowledge_base_id,
+            100, // Process in batches of 100
+        );
+
+        if let Err(e) = dispatch_task.execute(app_state).await {
+            tracing::error!("Failed to dispatch embedding processing task: {}", e);
+            // Update document status to failed
+            let _ = sqlx::query!(
+                r#"
+                UPDATE ai_knowledge_base_documents 
+                SET processing_metadata = jsonb_set(
+                    COALESCE(processing_metadata, '{}'),
+                    '{status}',
+                    '"failed"'
+                ),
+                updated_at = $1
+                WHERE id = $2
+                "#,
+                chrono::Utc::now(),
+                document.id
+            )
+            .execute(&app_state.db_pool)
+            .await;
         }
 
         Ok(AiKnowledgeBaseDocument {
@@ -387,59 +394,6 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
     }
 }
 
-impl UploadKnowledgeBaseDocumentCommand {
-    async fn process_document_embeddings(
-        document_id: i64,
-        knowledge_base_id: i64,
-        deployment_id: i64,
-        file_content: Vec<u8>,
-        file_type: String,
-        _title: String,
-        app_state: &AppState,
-    ) -> Result<(), AppError> {
-        let text = app_state
-            .text_processing_service
-            .extract_text_from_file(&file_content, &file_type)?;
-        let cleaned_text = app_state.text_processing_service.clean_text(&text);
-
-        // Use larger chunks (2000 chars) with more overlap (400 chars)
-        // This provides better context for embeddings
-        let chunks = app_state
-            .text_processing_service
-            .chunk_text(&cleaned_text, 2000, 400)?;
-
-        let chunk_texts: Vec<String> = chunks.iter().map(|c| c.content.clone()).collect();
-        let embeddings_command = GenerateEmbeddingsCommand::new(chunk_texts);
-        let embeddings = embeddings_command.execute(app_state).await?;
-
-        for (chunk_index, (chunk, embedding)) in
-            chunks.into_iter().zip(embeddings.into_iter()).enumerate()
-        {
-            let now = Utc::now();
-            let embedding_vector = HalfVector::from_f32_slice(&embedding);
-
-            sqlx::query(
-                r#"
-                INSERT INTO knowledge_base_document_chunks
-                (document_id, knowledge_base_id, deployment_id, chunk_index, content, embedding, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                "#,
-            )
-            .bind(document_id)
-            .bind(knowledge_base_id)
-            .bind(deployment_id)
-            .bind(chunk_index as i32)
-            .bind(chunk.content)
-            .bind(embedding_vector)
-            .bind(now)
-            .bind(now)
-            .execute(&app_state.db_pool)
-            .await?;
-        }
-
-        Ok(())
-    }
-}
 
 pub struct DeleteKnowledgeBaseDocumentCommand {
     pub deployment_id: i64,

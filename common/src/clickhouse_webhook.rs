@@ -647,10 +647,6 @@ impl ClickHouseService {
         query.push_str(&format!(
             " ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
         ));
-
-        eprintln!("Executing query: {}", query);
-
-        // Define a struct for the delivery row
         #[derive(Debug, Row, Deserialize)]
         struct DeliveryRow {
             delivery_id: i64,
@@ -772,8 +768,6 @@ impl ClickHouseService {
             #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
             timestamp: DateTime<Utc>,
         }
-
-        eprintln!("Executing query: {}", query);
         let mut cursor = self.client.query(&query).fetch::<DeliveryRow>()?;
 
         eprintln!("Fetching row from cursor...");
