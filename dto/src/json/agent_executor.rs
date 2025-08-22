@@ -14,6 +14,7 @@ pub struct StepDecision {
     pub planned_tasks: Option<Vec<ExecutableTask>>,
     pub examine_tool: Option<ExamineToolData>,
     pub examine_workflow: Option<ExamineWorkflowData>,
+    pub context_gathering_objective: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

@@ -30,7 +30,6 @@ impl HostExtractorMiddleware {
         let host = match extract_host_from_headers(headers) {
             Some(host) => host,
             None => {
-                warn!("WebSocket connection attempted without Host header");
                 return Err(create_error_response(
                     StatusCode::BAD_REQUEST,
                     "Missing Host header",
@@ -40,10 +39,6 @@ impl HostExtractorMiddleware {
 
         // Validate that host is not an IP address
         if !HostValidator::is_valid_host(&host) {
-            warn!(
-                "WebSocket connection attempted with IP address host: {}",
-                host
-            );
             return Err(create_error_response(
                 StatusCode::NOT_FOUND,
                 "Deployment not found",

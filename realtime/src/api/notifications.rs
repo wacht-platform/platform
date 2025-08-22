@@ -29,8 +29,8 @@ pub struct NotificationParams {
 
 #[derive(Debug, Deserialize)]
 pub struct SessionClaims {
-    pub sess: String,           // session_id as string
-    pub rotating_token: String, // rotating_token_id as string
+    pub sess: String,
+    pub rotating_token: String,
     pub exp: Option<i64>,
 }
 

@@ -37,10 +37,10 @@
           "type": "STRING",
           "description": "CRITICAL: Use 2-6 focused keywords only. NEVER use 'summary of' or 'all documents related to'. For compound requests like 'X and Y', search for 'X' in one iteration and 'Y' in another. DO NOT copy text from the objective."
         },
-        "search_scope": {
+        "next_action": {
           "type": "STRING",
-          "enum": ["knowledge_base", "experience", "universal", "list_knowledge_base_documents", "read_knowledge_base_documents", "conversations", "gathered_context"],
-          "description": "The scope of search: knowledge_base (search KB content), experience (search memories), universal (search all), list_knowledge_base_documents (list available docs), read_knowledge_base_documents (read specific docs), conversations (search recent raw conversations), gathered_context (stop gathering, sufficient context)"
+          "enum": ["knowledge_base", "experience", "universal", "list_knowledge_base_documents", "read_knowledge_base_documents", "conversations", "complete"],
+          "description": "The next action to take: knowledge_base (search KB content), experience (search memories), universal (search all), list_knowledge_base_documents (list available docs), read_knowledge_base_documents (read specific docs), conversations (search recent raw conversations), complete (objective accomplished, return control to step decision)"
         },
         "filters": {
           "type": "OBJECT",
@@ -81,7 +81,7 @@
         "list_documents_params": {
           "type": "OBJECT",
           "nullable": true,
-          "description": "Parameters for listing knowledge base documents (only when search_scope is list_knowledge_base_documents)",
+          "description": "Parameters for listing knowledge base documents (only when next_action is list_knowledge_base_documents)",
           "properties": {
             "knowledge_base_ids": {
               "type": "ARRAY",
@@ -110,11 +110,11 @@
         "read_document_params": {
           "type": "OBJECT",
           "nullable": true,
-          "description": "Parameters for reading document chunks (only when search_scope is read_knowledge_base_documents)",
+          "description": "REQUIRED when next_action is read_knowledge_base_documents. MUST contain valid document_id obtained from list_knowledge_base_documents. NEVER use read_knowledge_base_documents action without this parameter.",
           "properties": {
             "document_id": {
               "type": "STRING",
-              "description": "The ID of the document to read chunks from"
+              "description": "MANDATORY: The ID of the document to read chunks from. Must be a valid document_id from previous list_knowledge_base_documents search."
             },
             "chunk_range": {
               "type": "OBJECT",
@@ -147,9 +147,41 @@
             }
           },
           "required": ["document_id"]
+        },
+        "reasoning": {
+          "type": "STRING",
+          "description": "Explain your decision: Why this search strategy? What information are you looking for? If using gathered_context, explain what you've found and why it's sufficient. If continuing, explain what specific gaps you're trying to fill."
+        },
+        "convergence_analysis": {
+          "type": "OBJECT",
+          "nullable": true,
+          "description": "Analysis of search progress and loop detection (included when progress data is available)",
+          "properties": {
+            "detected_patterns": {
+              "type": "ARRAY",
+              "items": {
+                "type": "STRING"
+              },
+              "description": "List of any problematic patterns detected (query repetition, diminishing returns, etc.)"
+            },
+            "progress_assessment": {
+              "type": "STRING",
+              "enum": ["excellent", "good", "declining", "poor", "exhausted"],
+              "description": "Assessment of current search progress effectiveness"
+            },
+            "should_continue": {
+              "type": "BOOLEAN",
+              "description": "Based on progress analysis, whether searching should continue"
+            },
+            "confidence_in_decision": {
+              "type": "NUMBER",
+              "description": "Confidence level (0.0-1.0) in the decision to continue or stop"
+            }
+          },
+          "required": ["progress_assessment", "should_continue", "confidence_in_decision"]
         }
       },
-      "required": ["search_query", "search_scope", "filters"]
+      "required": ["search_query", "next_action", "filters", "reasoning"]
     }
   }
 }

@@ -291,7 +291,6 @@ pub async fn agent_stream_handler(
 
     tokio::task::spawn(async move {
         if let Err(e) = handle_client(fut, state, host, token).await {
-            eprintln!("Error in websocket connection: {e}");
         }
     });
 
@@ -516,7 +515,6 @@ async fn handle_client(
             Some(message) = receiver.recv() => {
                 let payload = serde_json::to_vec(&message).unwrap();
                 if let Err(e) = ws.write_frame(Frame::text(fastwebsockets::Payload::Owned(payload))).await {
-                    eprintln!("Error writing frame: {e}");
                     break;
                 }
                 if message.message_type == WebsocketMessageType::CloseConnection {
@@ -540,7 +538,6 @@ fn handler_websocket_message(frame: Frame, session_state: Arc<Mutex<SessionState
                     tokio::spawn(handle_execution_message(message, session_state));
                 }
                 Err(e) => {
-                    eprintln!("Error parsing message: {e}");
                 }
             };
 

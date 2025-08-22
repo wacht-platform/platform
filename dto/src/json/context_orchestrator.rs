@@ -5,12 +5,34 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextSearchDerivation {
     pub search_query: String,
-    pub search_scope: SearchScope,
+    pub next_action: SearchScope,
     pub filters: LLMFilters,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub list_documents_params: Option<ListDocumentsParams>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_document_params: Option<ReadDocumentParams>,
+    pub reasoning: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub convergence_analysis: Option<ConvergenceAnalysis>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConvergenceAnalysis {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detected_patterns: Option<Vec<String>>,
+    pub progress_assessment: ProgressAssessment,
+    pub should_continue: bool,
+    pub confidence_in_decision: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProgressAssessment {
+    Excellent,
+    Good,
+    Declining,
+    Poor,
+    Exhausted,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,5 +91,5 @@ pub enum SearchScope {
     ListKnowledgeBaseDocuments,
     ReadKnowledgeBaseDocuments,
     Conversations,
-    GatheredContext,
+    Complete,
 }

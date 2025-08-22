@@ -136,6 +136,10 @@
           },
           "required": ["workflow_name"]
         },
+        "context_gathering_objective": {
+          "type": "STRING",
+          "description": "MANDATORY when next_step is gather_context - you MUST provide this field. Specific objective for context gathering (e.g., 'List all available documents', 'Find error patterns in system logs', 'Read authentication configuration files'). This should be a focused, single-purpose instruction that context gathering can complete and return control to step decision."
+        },
         {{#if is_in_planning_mode}}
         "planned_tasks": {
           "type": "ARRAY",

@@ -17,9 +17,187 @@ use queries::{
     HybridSearchKnowledgeBaseQuery, Query, SearchConversationsQuery, SearchMemoriesWithDecayQuery,
 };
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 const RELEVANCE_SCORE_DIVISOR: f32 = 2.0;
+
+#[derive(Debug, Clone)]
+struct SearchMetrics {
+    unique_sources: HashSet<String>,
+    query_similarity_scores: HashMap<String, f32>,
+    result_overlap_tracking: Vec<HashSet<String>>,
+    consecutive_low_yields: usize,
+    consecutive_duplicates: usize,
+    consecutive_zero_progress: usize,
+    discovery_rate_trend: Vec<usize>,
+    total_unique_results: usize,
+}
+
+impl SearchMetrics {
+    fn new() -> Self {
+        Self {
+            unique_sources: HashSet::new(),
+            query_similarity_scores: HashMap::new(),
+            result_overlap_tracking: Vec::new(),
+            consecutive_low_yields: 0,
+            consecutive_duplicates: 0,
+            consecutive_zero_progress: 0,
+            discovery_rate_trend: Vec::new(),
+            total_unique_results: 0,
+        }
+    }
+
+    fn calculate_query_similarity(&self, new_query: &str) -> f32 {
+        if self.query_similarity_scores.is_empty() {
+            return 0.0;
+        }
+
+        let new_words: HashSet<&str> = new_query.split_whitespace().collect();
+        let mut max_similarity = 0.0;
+
+        for existing_query in self.query_similarity_scores.keys() {
+            let existing_words: HashSet<&str> = existing_query.split_whitespace().collect();
+            let intersection = new_words.intersection(&existing_words).count();
+            let union = new_words.union(&existing_words).count();
+
+            if union > 0 {
+                let similarity = intersection as f32 / union as f32;
+                max_similarity = f32::max(max_similarity, similarity);
+            }
+        }
+
+        max_similarity
+    }
+
+    fn update(&mut self, query: &str, results: &[ContextSearchResult]) -> SearchProgressData {
+        // Calculate new unique sources this iteration
+        let current_sources: HashSet<String> =
+            results.iter().map(|r| self.get_source_key(r)).collect();
+
+        let new_sources_count = current_sources.difference(&self.unique_sources).count();
+        self.unique_sources.extend(current_sources.clone());
+
+        // Track result overlap
+        let mut overlap_percentage = 0.0;
+        if !self.result_overlap_tracking.is_empty() {
+            let last_results = self.result_overlap_tracking.last().unwrap();
+            let intersection = current_sources.intersection(last_results).count();
+            if !current_sources.is_empty() {
+                overlap_percentage = (intersection as f32 / current_sources.len() as f32) * 100.0;
+            }
+        }
+        self.result_overlap_tracking.push(current_sources);
+
+        // Update consecutive patterns
+        if results.len() <= 2 {
+            self.consecutive_low_yields += 1;
+        } else {
+            self.consecutive_low_yields = 0;
+        }
+
+        if new_sources_count == 0 && !results.is_empty() {
+            self.consecutive_duplicates += 1;
+        } else {
+            self.consecutive_duplicates = 0;
+        }
+
+        // Track consecutive zero progress
+        if new_sources_count == 0 {
+            self.consecutive_zero_progress += 1;
+        } else {
+            self.consecutive_zero_progress = 0;
+        }
+
+        // Track discovery rate
+        self.discovery_rate_trend.push(new_sources_count);
+        self.total_unique_results = self.unique_sources.len();
+
+        // Calculate query similarity
+        let query_similarity = self.calculate_query_similarity(query);
+        self.query_similarity_scores
+            .insert(query.to_string(), query_similarity);
+
+        SearchProgressData {
+            new_sources_this_iteration: new_sources_count,
+            total_unique_sources: self.unique_sources.len(),
+            result_overlap_percentage: overlap_percentage,
+            query_similarity_score: query_similarity,
+            consecutive_low_yields: self.consecutive_low_yields,
+            consecutive_duplicates: self.consecutive_duplicates,
+            discovery_rate_trend: self.get_discovery_trend(),
+            information_density_declining: self.is_density_declining(),
+        }
+    }
+
+    fn get_source_key(&self, result: &ContextSearchResult) -> String {
+        match &result.source {
+            ContextSource::KnowledgeBase { kb_id, document_id } => {
+                let chunk_index = result
+                    .metadata
+                    .get("chunk_index")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                format!("kb_{}_{}_chunk_{}", kb_id, document_id, chunk_index)
+            }
+            ContextSource::Memory { memory_id, .. } => format!("memory_{}", memory_id),
+            ContextSource::Conversation { conversation_id } => format!("conv_{}", conversation_id),
+            ContextSource::System => format!("system_{}", result.content.len()),
+        }
+    }
+
+    fn get_discovery_trend(&self) -> String {
+        if self.discovery_rate_trend.len() < 2 {
+            return "insufficient_data".to_string();
+        }
+
+        let recent_trend = self
+            .discovery_rate_trend
+            .iter()
+            .rev()
+            .take(3)
+            .collect::<Vec<_>>();
+        let is_declining = recent_trend.windows(2).all(|w| w[0] >= w[1]);
+        let is_increasing = recent_trend.windows(2).all(|w| w[0] <= w[1]);
+
+        if is_declining {
+            "declining".to_string()
+        } else if is_increasing {
+            "increasing".to_string()
+        } else {
+            "stable".to_string()
+        }
+    }
+
+    fn is_density_declining(&self) -> bool {
+        if self.discovery_rate_trend.len() < 3 {
+            return false;
+        }
+
+        let last_three: Vec<_> = self
+            .discovery_rate_trend
+            .iter()
+            .rev()
+            .take(3)
+            .cloned()
+            .collect();
+        last_three[0] <= last_three[1] && last_three[1] <= last_three[2]
+    }
+
+    // Removed should_continue method - now trusting LLM agent decisions
+    // Agent will return next_action: "gathered_context" when ready to stop
+}
+
+#[derive(Debug, Clone)]
+struct SearchProgressData {
+    new_sources_this_iteration: usize,
+    total_unique_sources: usize,
+    result_overlap_percentage: f32,
+    query_similarity_score: f32,
+    consecutive_low_yields: usize,
+    consecutive_duplicates: usize,
+    discovery_rate_trend: String,
+    information_density_declining: bool,
+}
 
 pub struct ContextOrchestrator {
     app_state: AppState,
@@ -43,67 +221,157 @@ impl ContextOrchestrator {
     ) -> Result<Vec<ContextSearchResult>, AppError> {
         let mut all_results = Vec::new();
         let mut previous_searches = Vec::new();
+        let mut search_metrics = SearchMetrics::new();
+        let mut iteration = 1;
 
-        const MAX_ITERATIONS: usize = 5;
+        loop {
 
-        for iteration in 1..=MAX_ITERATIONS {
-            eprintln!("\n=== Context Search Iteration {iteration} ===");
-            eprintln!("Previous searches: {previous_searches:?}");
+            // Create enhanced progress data for the agent
+            let progress_data = if iteration > 1 {
+                Some(self.create_progress_summary(&search_metrics, &previous_searches))
+            } else {
+                None
+            };
 
             let derivation = self
-                .derive_search_strategy(conversations, current_objective, &previous_searches)
+                .derive_search_strategy(
+                    conversations,
+                    current_objective,
+                    &previous_searches,
+                    progress_data.as_ref(),
+                )
                 .await?;
 
-            eprintln!("Derivation result:");
-            eprintln!("  - Search scope: {:?}", derivation.search_scope);
-            eprintln!("  - Search query: {}", derivation.search_query);
-            eprintln!("  - Search mode: {:?}", derivation.filters.search_mode);
-            eprintln!("  - Max results: {}", derivation.filters.max_results);
-            if let Some(keywords) = &derivation.filters.boost_keywords {
-                eprintln!("  - Boost keywords: {keywords:?}");
-            }
 
-            if matches!(derivation.search_scope, SearchScope::GatheredContext) {
-                eprintln!("Search complete - gathered_context signal received");
+            // Check if agent decided to stop
+            if matches!(derivation.next_action, SearchScope::Complete) {
                 break;
             }
 
+            // PARAMETER VALIDATION: Check for required parameters and retry if missing
+            let parameter_error = match &derivation.next_action {
+                SearchScope::ReadKnowledgeBaseDocuments => {
+                    if derivation.read_document_params.is_none() {
+                        Some("ERROR: ReadKnowledgeBaseDocuments requires read_document_params with a valid document_id. You must provide a document_id from a previous ListKnowledgeBaseDocuments search.")
+                    } else if let Some(params) = &derivation.read_document_params {
+                        if params.document_id.is_empty() {
+                            Some("ERROR: ReadKnowledgeBaseDocuments requires a non-empty document_id. Use the document_id from a previous document listing.")
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                SearchScope::ListKnowledgeBaseDocuments => {
+                    if derivation.list_documents_params.is_none() {
+                        Some("ERROR: ListKnowledgeBaseDocuments requires list_documents_params with page and limit fields. Use: {\"page\": 1, \"limit\": 100}")
+                    } else {
+                        None
+                    }
+                }
+                _ => None
+            };
+
+            if let Some(error_msg) = parameter_error {
+                
+                // Add error message to previous searches for context
+                let error_context = json!({
+                    "iteration": iteration,
+                    "error_message": error_msg,
+                    "failed_action": format!("{:?}", derivation.next_action),
+                    "failed_query": derivation.search_query
+                });
+                previous_searches.push(error_context);
+                
+                // Retry with the same context but include the error message
+                continue;
+            }
+
             let results = self.execute_search(&derivation).await?;
-            eprintln!("Search returned {} results", results.len());
+
+            // Add results to accumulator BEFORE any potential break
+            all_results.extend(results.clone());
+
+            // Update metrics for progress tracking
+            let current_progress = search_metrics.update(&derivation.search_query, &results);
+
+
+            // HARD ENFORCEMENT: Override LLM decision if mandatory stop conditions are met
+            let mut forced_stop = false;
+            let mut stop_reason = String::new();
+
+            // Condition 1: Perfect loop detection (query similarity >= 0.9)
+            if current_progress.query_similarity_score >= 0.9 {
+                forced_stop = true;
+                stop_reason = format!(
+                    "FORCED STOP: Perfect loop detected (query similarity: {:.2})",
+                    current_progress.query_similarity_score
+                );
+            }
+            // Condition 2: Zero progress for 2+ consecutive iterations
+            else if current_progress.new_sources_this_iteration == 0 && iteration >= 3 {
+                // Check if last 2 iterations had zero progress
+                let recent_low_progress = search_metrics.consecutive_zero_progress >= 2;
+                if recent_low_progress {
+                    forced_stop = true;
+                    stop_reason = format!(
+                        "FORCED STOP: Zero progress for {} consecutive iterations",
+                        search_metrics.consecutive_zero_progress
+                    );
+                }
+            }
+            // Condition 3: Found 15+ documents in listing operation
+            else if results.len() >= 15 && matches!(derivation.next_action, SearchScope::ListKnowledgeBaseDocuments) {
+                forced_stop = true;
+                stop_reason = format!(
+                    "FORCED STOP: Document discovery complete ({} documents found)",
+                    results.len()
+                );
+            }
+
+            if forced_stop {
+                break;
+            }
 
             let search_record = json!({
                 "iteration": iteration,
                 "search_query": derivation.search_query,
-                "search_scope": format!("{:?}", derivation.search_scope),
+                "next_action": format!("{:?}", derivation.next_action),
                 "search_mode": format!("{:?}", derivation.filters.search_mode),
                 "max_results": derivation.filters.max_results,
                 "knowledge_base_ids": derivation.filters.knowledge_base_ids.clone(),
                 "boost_keywords": derivation.filters.boost_keywords.clone(),
                 "time_range": derivation.filters.time_range.clone(),
                 "results_count": results.len(),
+                "progress_metrics": {
+                    "new_sources": current_progress.new_sources_this_iteration,
+                    "total_unique_sources": current_progress.total_unique_sources,
+                    "overlap_percentage": current_progress.result_overlap_percentage,
+                    "query_similarity": current_progress.query_similarity_score,
+                    "discovery_trend": current_progress.discovery_rate_trend,
+                    "information_density_declining": current_progress.information_density_declining,
+                }
             });
 
-            eprintln!("Adding to previous searches: {search_record:?}");
             previous_searches.push(search_record);
 
-            // Move results into all_results instead of cloning
-            all_results.extend(results);
+            // Only safety limit to prevent infinite loops - trust LLM agent otherwise
+            if iteration >= 10 {
+                break;
+            }
 
-            // Clear memory after a threshold to prevent unbounded growth
+            // Memory management
             if all_results.len() > 1000 {
-                eprintln!(
-                    "Warning: Context search accumulated {} results, truncating to prevent memory issues",
-                    all_results.len()
-                );
                 all_results.truncate(500);
             }
+
+            iteration += 1;
         }
 
         let mut deduped_results = self.deduplicate_results(all_results);
 
-        // Add a system message with search iteration details
         if !previous_searches.is_empty() {
-            // Build search summary details
             let total_results_before_dedup = previous_searches
                 .iter()
                 .filter_map(|s| s.get("results_count").and_then(|v| v.as_i64()))
@@ -117,7 +385,7 @@ impl ContextOrchestrator {
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
                     let scope = s
-                        .get("search_scope")
+                        .get("next_action")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
                     let count = s.get("results_count").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -149,13 +417,69 @@ impl ContextOrchestrator {
         Ok(deduped_results)
     }
 
+    fn create_progress_summary(&self, metrics: &SearchMetrics, searches: &[Value]) -> Value {
+        let avg_results = if !searches.is_empty() {
+            searches
+                .iter()
+                .filter_map(|s| s.get("results_count").and_then(|v| v.as_i64()))
+                .sum::<i64>() as f32
+                / searches.len() as f32
+        } else {
+            0.0
+        };
+
+        let query_repetition_score = metrics
+            .query_similarity_scores
+            .values()
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(&0.0);
+
+        json!({
+            "search_convergence": {
+                "total_unique_sources_found": metrics.total_unique_results,
+                "discovery_rate_trend": metrics.get_discovery_trend(),
+                "information_density_declining": metrics.is_density_declining(),
+                "consecutive_low_yields": metrics.consecutive_low_yields,
+                "consecutive_duplicates": metrics.consecutive_duplicates,
+                "highest_query_similarity": query_repetition_score,
+            },
+            "effectiveness_metrics": {
+                "avg_results_per_iteration": avg_results,
+                "total_iterations": searches.len(),
+                "search_space_coverage_indicators": {
+                    "unique_queries": metrics.query_similarity_scores.len(),
+                    "scopes_explored": searches.iter()
+                        .filter_map(|s| s.get("next_action").and_then(|v| v.as_str()))
+                        .collect::<std::collections::HashSet<_>>()
+                        .len(),
+                    "modes_used": searches.iter()
+                        .filter_map(|s| s.get("search_mode").and_then(|v| v.as_str()))
+                        .collect::<std::collections::HashSet<_>>()
+                        .len(),
+                }
+            },
+            "loop_detection_signals": {
+                "query_similarity_threshold_reached": query_repetition_score > &0.7,
+                "diminishing_returns_detected": metrics.is_density_declining(),
+                "potential_loop_indicators": {
+                    "high_result_overlap": metrics.result_overlap_tracking.len() >= 2 &&
+                        metrics.result_overlap_tracking.windows(2).last()
+                        .map(|w| w[1].intersection(&w[0]).count() as f32 / w[1].len().max(1) as f32 > 0.8)
+                        .unwrap_or(false),
+                    "consecutive_failures": metrics.consecutive_low_yields >= 2,
+                    "same_results_pattern": metrics.consecutive_duplicates >= 1,
+                }
+            }
+        })
+    }
+
     async fn derive_search_strategy(
         &self,
         conversations: &[ConversationRecord],
         current_objective: &Option<ObjectiveDefinition>,
         previous_searches: &[Value],
+        progress_data: Option<&Value>,
     ) -> Result<ContextSearchDerivation, AppError> {
-        eprintln!("\n=== Context Search Derivation Request ===");
 
         // Log the last user message
         if let Some(last_user_msg) = conversations
@@ -164,61 +488,36 @@ impl ContextOrchestrator {
             .find(|c| matches!(c.message_type, ConversationMessageType::UserMessage))
         {
             if let ConversationContent::UserMessage { message } = &last_user_msg.content {
-                eprintln!("Last user message: \"{message}\"");
             }
         }
 
-        eprintln!("Current objective: {current_objective:?}");
-        eprintln!("Has previous searches: {}", !previous_searches.is_empty());
-        eprintln!("Previous search count: {}", previous_searches.len());
-        if !previous_searches.is_empty() {
-            eprintln!("Previous searches summary:");
-            for (i, search) in previous_searches.iter().enumerate() {
-                eprintln!(
-                    "  Search {}: query='{}', scope={}, results={}",
-                    i + 1,
-                    search
-                        .get("search_query")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown"),
-                    search
-                        .get("search_scope")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown"),
-                    search
-                        .get("results_count")
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0)
-                );
-            }
+
+        let mut template_data = json!({
+            "conversation_history": self.format_conversation_history(conversations),
+            "current_objective": current_objective,
+            "available_knowledge_bases": self.agent.knowledge_bases.clone(),
+            "has_previous_searches": !previous_searches.is_empty(),
+            "previous_search_count": previous_searches.len(),
+            "previous_search_results": previous_searches,
+        });
+
+        // Add progress data if available
+        if let Some(progress) = progress_data {
+            template_data["search_progress_analysis"] = progress.clone();
+            template_data["has_progress_data"] = json!(true);
+        } else {
+            template_data["has_progress_data"] = json!(false);
         }
 
-        let request_body = render_template_with_prompt(
-            AgentTemplates::CONTEXT_SEARCH_DERIVATION,
-            json!({
-                "conversation_history": self.format_conversation_history(conversations),
-                "current_objective": current_objective,
-                "available_knowledge_bases": self.agent.knowledge_bases.clone(),
-                "has_previous_searches": !previous_searches.is_empty(),
-                "previous_search_count": previous_searches.len(),
-                "previous_search_results": previous_searches,
-            }),
-        )
-        .map_err(|e| AppError::Internal(format!("Failed to render template: {e}")))?;
+        let request_body =
+            render_template_with_prompt(AgentTemplates::CONTEXT_SEARCH_DERIVATION, template_data)
+                .map_err(|e| AppError::Internal(format!("Failed to render template: {e}")))?;
 
         let derivation = self
             .create_gemini_client()?
             .generate_structured_content::<ContextSearchDerivation>(request_body)
             .await?;
 
-        eprintln!("\n=== Gemini Derivation Decision ===");
-        eprintln!("Decided to search for: \"{}\"", derivation.search_query);
-        eprintln!("Search scope: {:?}", derivation.search_scope);
-        eprintln!(
-            "Query length: {} characters, {} words",
-            derivation.search_query.len(),
-            derivation.search_query.split_whitespace().count()
-        );
 
         Ok(derivation)
     }
@@ -231,16 +530,13 @@ impl ContextOrchestrator {
         let max_results = derivation.filters.max_results as usize;
         let query = &derivation.search_query;
 
-        match &derivation.search_scope {
+        match &derivation.next_action {
             SearchScope::KnowledgeBase => {
                 let kb_ids = derivation.filters.knowledge_base_ids.as_ref().map(|ids| {
                     ids.iter()
                         .filter_map(|id| {
                             id.parse::<i64>()
                                 .map_err(|_| {
-                                    eprintln!(
-                                        "Warning: Failed to parse knowledge_base_id '{id}' as i64"
-                                    );
                                 })
                                 .ok()
                         })
@@ -262,7 +558,7 @@ impl ContextOrchestrator {
                 self.read_knowledge_base_documents(derivation).await
             }
             SearchScope::Conversations => self.search_conversations(query, max_results).await,
-            SearchScope::GatheredContext => Ok(Vec::new()),
+            SearchScope::Complete => Ok(Vec::new()),
         }
     }
 
@@ -274,12 +570,8 @@ impl ContextOrchestrator {
                 let vector_weight = 0.7;
                 let text_weight = 0.3;
 
-                // Validate weights sum to 1.0 (with small epsilon for floating point)
                 let weight_sum = vector_weight + text_weight;
                 if (weight_sum - 1.0_f32).abs() > 0.001 {
-                    eprintln!(
-                        "Warning: Hybrid search weights don't sum to 1.0: {vector_weight} + {text_weight} = {weight_sum}"
-                    );
                 }
 
                 SearchMode::Hybrid {
@@ -574,7 +866,6 @@ impl ContextOrchestrator {
                 .filter_map(|id| {
                     id.parse::<i64>()
                         .map_err(|_| {
-                            eprintln!("Warning: Failed to parse knowledge_base_id '{id}' as i64");
                         })
                         .ok()
                 })
@@ -599,16 +890,8 @@ impl ContextOrchestrator {
 
         // Warn if unusual values are provided
         if list_params.page < 1 {
-            eprintln!(
-                "Warning: Page number {} is less than 1, using page 1",
-                list_params.page
-            );
         }
         if list_params.limit < 1 || list_params.limit > 200 {
-            eprintln!(
-                "Warning: Limit {} is outside range [1, 200], using {}",
-                list_params.limit, limit
-            );
         }
 
         // For multiple KBs, we need to distribute the limit across them
@@ -663,7 +946,6 @@ impl ContextOrchestrator {
             }
         }
 
-        // Sort all documents by created_at to maintain consistent ordering
         all_documents.sort_by(|a, b| {
             let a_created = a
                 .metadata
@@ -675,16 +957,13 @@ impl ContextOrchestrator {
                 .get("created_at")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            b_created.cmp(a_created) // Most recent first
+            b_created.cmp(a_created)
         });
 
-        // Limit total results to requested limit
         all_documents.truncate(limit as usize);
 
-        // Check if any KB has more pages
         let any_has_next_page = kb_has_next_page.values().any(|&has_next| has_next);
 
-        // Add a summary result indicating pagination info
         if !all_documents.is_empty() || page == 1 {
             let total_returned = all_documents.len();
             let kb_summary: Vec<String> = kb_ids
@@ -811,10 +1090,8 @@ impl ContextOrchestrator {
         let mut seen_items = HashSet::new();
 
         for result in results {
-            // Create a unique key based on source and content
             let unique_key = match &result.source {
                 ContextSource::KnowledgeBase { kb_id, document_id } => {
-                    // For KB results, use document_id and chunk_index if available
                     let chunk_index = result
                         .metadata
                         .get("chunk_index")
@@ -829,7 +1106,6 @@ impl ContextOrchestrator {
                     format!("conversation_{conversation_id}")
                 }
                 ContextSource::System => {
-                    // System messages should not be deduplicated
                     format!("system_{}", unique_results.len())
                 }
             };
@@ -879,7 +1155,7 @@ impl ContextOrchestrator {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
         Ok(GeminiClient::new(
             api_key,
-            Some("gemini-2.5-flash".to_string()),
+            Some("gemini-2.5-pro".to_string()),
         ))
     }
 
@@ -926,7 +1202,7 @@ impl ContextOrchestrator {
                         conversation_id: conv.id,
                     },
                     content,
-                    relevance_score: 1.0 - (idx as f64 * 0.01), // Newer conversations have higher relevance
+                    relevance_score: 1.0 - (idx as f64 * 0.01),
                     metadata: json!({
                         "message_type": format!("{:?}", conv.message_type),
                         "timestamp": conv.timestamp,

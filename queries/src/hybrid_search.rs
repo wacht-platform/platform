@@ -223,7 +223,7 @@ impl Query for FullTextSearchKnowledgeBaseQuery {
                 kbc.knowledge_base_id,
                 kbc.chunk_index,
                 kbc.content,
-                ts_rank(kbc.search_vector, plainto_tsquery('english', $1)) as text_rank,
+                ts_rank(kbc.search_vector, plainto_tsquery('english', $1))::float8 as text_rank,
                 d.title as document_title,
                 d.description as document_description
             FROM knowledge_base_document_chunks kbc

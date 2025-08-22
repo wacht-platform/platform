@@ -9,7 +9,7 @@ use crate::webhook_storage::StoreWebhookPayloadCommand;
 use common::error::AppError;
 use common::state::AppState;
 use common::utils::webhook::generate_hmac_signature;
-use dto::clickhouse::webhook::{WebhookDelivery, WebhookEvent};
+use dto::clickhouse::webhook::WebhookEvent;
 use dto::json::nats::NatsTaskMessage;
 use models::WebhookEndpoint;
 
@@ -475,8 +475,8 @@ impl Command for TestWebhookEndpointCommand {
 
         query!(
             r#"
-            INSERT INTO active_webhook_deliveries 
-            (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, signature, max_attempts, attempts) 
+            INSERT INTO active_webhook_deliveries
+            (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, signature, max_attempts, attempts)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, 0)
             "#,
             delivery_id,

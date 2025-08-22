@@ -361,7 +361,7 @@ impl AgentExecutor {
 
             let decision = self.decide_next_step().await?;
 
-            if !self.process_decision(decision).await? {
+            if !self.process_decision(decision).await.unwrap() {
                 return Ok(());
             }
         }
@@ -391,16 +391,25 @@ impl AgentExecutor {
                 }
             }
 
-            NextStep::GatherContext => match self.gather_context().await {
-                Ok(_) => Ok(true),
-                Err(e) => Err(e),
+            NextStep::GatherContext => {
+                // Validate that context_gathering_objective is provided
+                let objective = decision.context_gathering_objective.as_deref();
+                if objective.is_none() {
+                    return Err(AppError::Internal(
+                        "Context gathering objective is required when using gather_context step".to_string(),
+                    ));
+                }
+                
+                match self.gather_context(objective).await {
+                    Ok(_) => Ok(true),
+                    Err(e) => Err(e),
+                }
             },
 
             NextStep::DirectExecution => {
                 if let Some(action) = decision.direct_execution {
                     let result = self.execute_action(&action).await?;
 
-                    // Check if this was a Platform Function that returned pending
                     let execution_status = if let Some(status) =
                         result.get("status").and_then(|s| s.as_str())
                     {
@@ -413,7 +422,6 @@ impl AgentExecutor {
                             tracing::info!(
                                 "Detected pending platform function in direct execution, saving state and pausing"
                             );
-                            // Save execution state before pausing
                             let execution_state = AgentExecutionState {
                                 executable_tasks: self
                                     .executable_tasks
@@ -474,7 +482,6 @@ impl AgentExecutor {
                     )
                     .await?;
 
-                    // If pending, return false to stop the loop
                     if execution_status == "pending" {
                         return Ok(false);
                     }
@@ -761,10 +768,23 @@ impl AgentExecutor {
         Ok(())
     }
 
-    async fn gather_context(&mut self) -> Result<(), AppError> {
+    async fn gather_context(&mut self, specific_objective: Option<&str>) -> Result<(), AppError> {
+        // Create a focused objective for context gathering if provided by step decision
+        let context_objective = if let Some(objective) = specific_objective {
+            Some(ObjectiveDefinition {
+                primary_goal: objective.to_string(),
+                success_criteria: vec!["Context gathering completed successfully".to_string()],
+                constraints: vec!["Single-purpose search".to_string()],
+                context_from_history: "Directed by step decision system".to_string(),
+                inferred_intent: objective.to_string(),
+            })
+        } else {
+            self.current_objective.clone()
+        };
+
         let context_results = match self
             .context_orchestrator
-            .gather_context(&self.conversations, &self.current_objective)
+            .gather_context(&self.conversations, &context_objective)
             .await
         {
             Ok(results) => results,
@@ -772,6 +792,8 @@ impl AgentExecutor {
                 return Err(e);
             }
         };
+
+        println!("{context_results:?}");
 
         self.store_conversation(
             ConversationContent::ContextResults {
