@@ -1,5 +1,5 @@
 use super::gemini::GeminiClient;
-use crate::template::{AgentTemplates, render_template_with_prompt};
+use crate::template::{render_template_with_prompt, AgentTemplates};
 use chrono::{Duration, Utc};
 use commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use common::error::AppError;
@@ -16,7 +16,7 @@ use queries::{
     FullTextSearchKnowledgeBaseQuery, GetDocumentChunksQuery, GetKnowledgeBaseDocumentsQuery,
     HybridSearchKnowledgeBaseQuery, Query, SearchConversationsQuery, SearchMemoriesWithDecayQuery,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
 const RELEVANCE_SCORE_DIVISOR: f32 = 2.0;
@@ -182,9 +182,6 @@ impl SearchMetrics {
             .collect();
         last_three[0] <= last_three[1] && last_three[1] <= last_three[2]
     }
-
-    // Removed should_continue method - now trusting LLM agent decisions
-    // Agent will return next_action: "gathered_context" when ready to stop
 }
 
 #[derive(Debug, Clone)]
@@ -225,7 +222,6 @@ impl ContextOrchestrator {
         let mut iteration = 1;
 
         loop {
-
             // Create enhanced progress data for the agent
             let progress_data = if iteration > 1 {
                 Some(self.create_progress_summary(&search_metrics, &previous_searches))
@@ -241,7 +237,6 @@ impl ContextOrchestrator {
                     progress_data.as_ref(),
                 )
                 .await?;
-
 
             // Check if agent decided to stop
             if matches!(derivation.next_action, SearchScope::Complete) {
@@ -270,11 +265,10 @@ impl ContextOrchestrator {
                         None
                     }
                 }
-                _ => None
+                _ => None,
             };
 
             if let Some(error_msg) = parameter_error {
-                
                 // Add error message to previous searches for context
                 let error_context = json!({
                     "iteration": iteration,
@@ -283,7 +277,7 @@ impl ContextOrchestrator {
                     "failed_query": derivation.search_query
                 });
                 previous_searches.push(error_context);
-                
+
                 // Retry with the same context but include the error message
                 continue;
             }
@@ -296,18 +290,12 @@ impl ContextOrchestrator {
             // Update metrics for progress tracking
             let current_progress = search_metrics.update(&derivation.search_query, &results);
 
-
             // HARD ENFORCEMENT: Override LLM decision if mandatory stop conditions are met
             let mut forced_stop = false;
-            let mut stop_reason = String::new();
 
             // Condition 1: Perfect loop detection (query similarity >= 0.9)
             if current_progress.query_similarity_score >= 0.9 {
                 forced_stop = true;
-                stop_reason = format!(
-                    "FORCED STOP: Perfect loop detected (query similarity: {:.2})",
-                    current_progress.query_similarity_score
-                );
             }
             // Condition 2: Zero progress for 2+ consecutive iterations
             else if current_progress.new_sources_this_iteration == 0 && iteration >= 3 {
@@ -315,19 +303,16 @@ impl ContextOrchestrator {
                 let recent_low_progress = search_metrics.consecutive_zero_progress >= 2;
                 if recent_low_progress {
                     forced_stop = true;
-                    stop_reason = format!(
-                        "FORCED STOP: Zero progress for {} consecutive iterations",
-                        search_metrics.consecutive_zero_progress
-                    );
                 }
             }
             // Condition 3: Found 15+ documents in listing operation
-            else if results.len() >= 15 && matches!(derivation.next_action, SearchScope::ListKnowledgeBaseDocuments) {
+            else if results.len() >= 15
+                && matches!(
+                    derivation.next_action,
+                    SearchScope::ListKnowledgeBaseDocuments
+                )
+            {
                 forced_stop = true;
-                stop_reason = format!(
-                    "FORCED STOP: Document discovery complete ({} documents found)",
-                    results.len()
-                );
             }
 
             if forced_stop {
@@ -480,17 +465,14 @@ impl ContextOrchestrator {
         previous_searches: &[Value],
         progress_data: Option<&Value>,
     ) -> Result<ContextSearchDerivation, AppError> {
-
         // Log the last user message
         if let Some(last_user_msg) = conversations
             .iter()
             .rev()
             .find(|c| matches!(c.message_type, ConversationMessageType::UserMessage))
         {
-            if let ConversationContent::UserMessage { message } = &last_user_msg.content {
-            }
+            if let ConversationContent::UserMessage { message } = &last_user_msg.content {}
         }
-
 
         let mut template_data = json!({
             "conversation_history": self.format_conversation_history(conversations),
@@ -518,7 +500,6 @@ impl ContextOrchestrator {
             .generate_structured_content::<ContextSearchDerivation>(request_body)
             .await?;
 
-
         Ok(derivation)
     }
 
@@ -534,12 +515,7 @@ impl ContextOrchestrator {
             SearchScope::KnowledgeBase => {
                 let kb_ids = derivation.filters.knowledge_base_ids.as_ref().map(|ids| {
                     ids.iter()
-                        .filter_map(|id| {
-                            id.parse::<i64>()
-                                .map_err(|_| {
-                                })
-                                .ok()
-                        })
+                        .filter_map(|id| id.parse::<i64>().map_err(|_| {}).ok())
                         .collect::<Vec<i64>>()
                 });
 
@@ -571,8 +547,7 @@ impl ContextOrchestrator {
                 let text_weight = 0.3;
 
                 let weight_sum = vector_weight + text_weight;
-                if (weight_sum - 1.0_f32).abs() > 0.001 {
-                }
+                if (weight_sum - 1.0_f32).abs() > 0.001 {}
 
                 SearchMode::Hybrid {
                     vector_weight,
@@ -863,12 +838,7 @@ impl ContextOrchestrator {
         // Parse KB IDs from the request
         let kb_ids: Vec<i64> = if let Some(ids) = &list_params.knowledge_base_ids {
             ids.iter()
-                .filter_map(|id| {
-                    id.parse::<i64>()
-                        .map_err(|_| {
-                        })
-                        .ok()
-                })
+                .filter_map(|id| id.parse::<i64>().map_err(|_| {}).ok())
                 .collect()
         } else {
             // If no specific KBs provided, use all available KBs
@@ -889,10 +859,8 @@ impl ContextOrchestrator {
         let limit = list_params.limit.max(1).min(200); // Ensure limit is between 1 and 200
 
         // Warn if unusual values are provided
-        if list_params.page < 1 {
-        }
-        if list_params.limit < 1 || list_params.limit > 200 {
-        }
+        if list_params.page < 1 {}
+        if list_params.limit < 1 || list_params.limit > 200 {}
 
         // For multiple KBs, we need to distribute the limit across them
         let per_kb_limit = (limit as f32 / kb_ids.len() as f32).ceil() as i32;

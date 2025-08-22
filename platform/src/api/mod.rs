@@ -5,9 +5,7 @@ pub mod ai_knowledge_base_search;
 pub mod ai_tools;
 pub mod ai_workflows;
 pub mod analytics;
-#[cfg(feature = "backend-api")]
 pub mod api_key;
-#[cfg(feature = "console-api")]
 pub mod api_key_console;
 pub mod b2b;
 pub mod connection;
@@ -18,7 +16,5 @@ pub mod settings;
 pub mod token;
 pub mod upload;
 pub mod user;
-#[cfg(feature = "backend-api")]
 pub mod webhook;
-#[cfg(feature = "console-api")]
 pub mod webhook_console;

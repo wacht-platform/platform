@@ -14,9 +14,10 @@ COPY platform/ ./platform/
 COPY realtime/ ./realtime/
 COPY worker/ ./worker/
 COPY gateway/ ./gateway/
+COPY agent-engine/ ./agent-engine/
 
 # Build frontend API
-RUN cargo build --release --bin platform --features frontend-api --no-default-features
+RUN cargo build --release --bin frontend-api
 
 FROM debian:bookworm-slim
 
@@ -27,7 +28,7 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/platform /app/frontend
+COPY --from=builder /app/target/release/frontend-api /app/frontend
 
 RUN chmod +x /app/frontend
 

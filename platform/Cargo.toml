@@ -3,11 +3,17 @@ name = "platform"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-default = ["console-api"]
-console-api = []
-backend-api = []
-frontend-api = []
+[[bin]]
+name = "console-api"
+path = "src/bin/console-api.rs"
+
+[[bin]]
+name = "backend-api"
+path = "src/bin/backend-api.rs"
+
+[[bin]]
+name = "frontend-api"
+path = "src/bin/frontend-api.rs"
 
 [dependencies]
 models = { path = "../models" }

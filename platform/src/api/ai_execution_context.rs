@@ -1,15 +1,12 @@
 use crate::application::response::{ApiResult, PaginatedResponse};
-#[cfg(feature = "console-api")]
-use crate::middleware::ConsoleDeployment;
-#[cfg(feature = "backend-api")]
-use crate::middleware::RequireDeployment;
-use axum::extract::{Json, Path, Query, State};
+use crate::middleware::{ConsoleDeployment, RequireDeployment};
+use axum::extract::{Json, Query, State};
 
 use commands::{Command, CreateExecutionContextCommand};
 use common::state::AppState;
 use dto::json::deployment::CreateExecutionContextRequest;
 use models::AgentExecutionContext;
-use queries::{GetExecutionContextQuery, ListExecutionContextsQuery, Query as QueryTrait};
+use queries::{ListExecutionContextsQuery, Query as QueryTrait};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -20,7 +17,6 @@ pub struct ListExecutionContextsParams {
     pub context_group: Option<String>,
 }
 
-#[cfg(feature = "console-api")]
 pub async fn create_execution_context(
     State(app_state): State<AppState>,
     ConsoleDeployment(deployment_id): ConsoleDeployment,
@@ -43,7 +39,6 @@ pub async fn create_execution_context(
         .map_err(Into::into)
 }
 
-#[cfg(feature = "backend-api")]
 pub async fn create_execution_context_backend(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -66,7 +61,6 @@ pub async fn create_execution_context_backend(
         .map_err(Into::into)
 }
 
-#[cfg(feature = "console-api")]
 pub async fn get_execution_contexts(
     State(app_state): State<AppState>,
     ConsoleDeployment(deployment_id): ConsoleDeployment,
@@ -102,7 +96,6 @@ pub async fn get_execution_contexts(
     .into())
 }
 
-#[cfg(feature = "backend-api")]
 pub async fn get_execution_contexts_backend(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,

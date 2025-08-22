@@ -1,0 +1,30 @@
+[package]
+name = "agent-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Workspace dependencies
+commands = { path = "../commands" }
+queries = { path = "../queries" }
+models = { path = "../models" }
+common = { path = "../common" }
+dto = { path = "../dto" }
+
+# External dependencies
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1"
+futures = "0.3"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio-stream = "0.1"
+rand = "0.8"
+regex = "1.10"
+scraper = "0.22"
+handlebars = "6.2.0"
+tiktoken-rs = "0.5"
+quick-xml = { version = "0.38.0", features = ["serialize"] }
+urlencoding = "2.1"

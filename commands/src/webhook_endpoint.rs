@@ -361,7 +361,7 @@ impl Command for TestWebhookEndpointCommand {
         let response = request.send().await;
         let duration = start.elapsed();
 
-        let (mut result, response_headers_json) = match response {
+        match response {
             Ok(resp) => {
                 let status = resp.status();
 
@@ -385,12 +385,9 @@ impl Command for TestWebhookEndpointCommand {
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_string());
 
-                // Handle response body based on status and content type
                 let body = if status.as_u16() == 204 {
-                    // 204 No Content - don't try to read body
                     None
                 } else if let Some(ref ct) = content_type {
-                    // Check if content type is text-like
                     if ct.starts_with("text/")
                         || ct.contains("json")
                         || ct.contains("xml")
@@ -401,7 +398,6 @@ impl Command for TestWebhookEndpointCommand {
                     {
                         resp.text().await.ok()
                     } else {
-                        // For binary content, just store a placeholder
                         resp.bytes().await.ok().map(|_| "Binary data".to_string())
                     }
                 } else {

@@ -10,9 +10,7 @@ use tower_http::{
 
 use super::HttpState;
 use crate::api;
-#[cfg(feature = "backend-api")]
 use crate::middleware::backend_deployment_middleware;
-#[cfg(feature = "console-api")]
 use crate::middleware::console_deployment::console_deployment_middleware;
 
 fn health_routes() -> Router<HttpState> {
@@ -42,7 +40,6 @@ fn project_routes() -> Router<HttpState> {
         )
 }
 
-#[cfg(feature = "console-api")]
 fn ai_context_routes() -> Router<HttpState> {
     Router::new().route(
         "/ai-execution-context",
@@ -51,9 +48,8 @@ fn ai_context_routes() -> Router<HttpState> {
     )
 }
 
-#[cfg(any(feature = "console-api", feature = "backend-api"))]
-fn deployment_routes() -> Router<HttpState> {
-    let routes = Router::new()
+fn base_deployment_routes() -> Router<HttpState> {
+    Router::new()
         .route("/users", get(api::user::get_active_user_list))
         .route("/users", post(api::user::create_user))
         .route("/users/{user_id}/details", get(api::user::get_user_details))
@@ -258,268 +254,278 @@ fn deployment_routes() -> Router<HttpState> {
         .route(
             "/analytics/recent-signups",
             get(api::analytics::get_recent_signups),
-        );
-
-    #[cfg(feature = "console-api")]
-    {
-        use axum::middleware;
-
-        let console_routes = routes
-            .route(
-                "/webhooks/status",
-                get(api::webhook_console::get_webhook_status),
-            )
-            .route(
-                "/webhooks/activate",
-                post(api::webhook_console::activate_webhooks),
-            )
-            .route(
-                "/webhooks/rotate-secret",
-                post(api::webhook_console::rotate_webhook_secret),
-            )
-            .route(
-                "/webhooks/events",
-                get(api::webhook_console::get_available_events),
-            )
-            .route(
-                "/webhooks/endpoints",
-                get(api::webhook_console::list_webhook_endpoints),
-            )
-            .route(
-                "/webhooks/endpoints",
-                post(api::webhook_console::create_webhook_endpoint),
-            )
-            .route(
-                "/webhooks/endpoints/{endpoint_id}",
-                patch(api::webhook_console::update_webhook_endpoint),
-            )
-            .route(
-                "/webhooks/endpoints/{endpoint_id}",
-                delete(api::webhook_console::delete_webhook_endpoint),
-            )
-            .route(
-                "/webhooks/analytics",
-                get(api::webhook_console::get_webhook_analytics),
-            )
-            .route(
-                "/webhooks/analytics/timeseries",
-                get(api::webhook_console::get_webhook_timeseries),
-            )
-            .route(
-                "/webhooks/deliveries",
-                get(api::webhook_console::get_webhook_deliveries),
-            )
-            .route(
-                "/webhooks/deliveries/{delivery_id}",
-                get(api::webhook_console::get_webhook_delivery_details),
-            )
-            .route(
-                "/webhooks/deliveries/{delivery_id}/retry",
-                post(api::webhook_console::retry_webhook_delivery),
-            )
-            .route(
-                "/webhooks/endpoints/{endpoint_id}/test",
-                post(api::webhook_console::test_webhook_endpoint),
-            )
-            .route(
-                "/webhooks/endpoints/{endpoint_id}/reactivate",
-                post(api::webhook_console::reactivate_webhook_endpoint),
-            )
-            .route(
-                "/api-keys/status",
-                get(api::api_key_console::get_api_key_status),
-            )
-            .route(
-                "/api-keys/activate",
-                post(api::api_key_console::activate_api_keys),
-            )
-            .route(
-                "/api-keys/deactivate",
-                post(api::api_key_console::deactivate_api_keys),
-            )
-            .route(
-                "/api-keys/stats",
-                get(api::api_key_console::get_api_key_stats),
-            )
-            .route("/api-keys", get(api::api_key_console::list_api_keys))
-            .route("/api-keys", post(api::api_key_console::create_api_key))
-            .route(
-                "/api-keys/{key_id}",
-                delete(api::api_key_console::revoke_api_key),
-            )
-            .route(
-                "/api-keys/{key_id}/rotate",
-                post(api::api_key_console::rotate_api_key),
-            )
-            .route(
-                "/token/user-agent-context",
-                post(api::token::generate_user_agent_context_token),
-            )
-            .layer(middleware::from_fn(console_deployment_middleware));
-
-        return Router::new().nest("/deployments/{deployment_id}", console_routes);
-    }
-
-    #[cfg(feature = "backend-api")]
-    {
-        let backend_routes = routes
-            .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
-            .route("/webhooks/apps", post(api::webhook::create_webhook_app))
-            .route(
-                "/webhooks/apps/{app_name}",
-                patch(api::webhook::update_webhook_app),
-            )
-            .route(
-                "/webhooks/apps/{app_name}",
-                delete(api::webhook::delete_webhook_app),
-            )
-            .route(
-                "/webhooks/apps/{app_name}/rotate-secret",
-                post(api::webhook::rotate_webhook_secret),
-            )
-            .route(
-                "/webhooks/apps/{app_name}/events",
-                get(api::webhook::get_webhook_events),
-            )
-            .route(
-                "/webhooks/endpoints",
-                get(api::webhook::list_webhook_endpoints),
-            )
-            .route(
-                "/webhooks/endpoints",
-                post(api::webhook::create_webhook_endpoint),
-            )
-            .route(
-                "/webhooks/endpoints/{endpoint_id}",
-                patch(api::webhook::update_webhook_endpoint),
-            )
-            .route(
-                "/webhooks/endpoints/{endpoint_id}",
-                delete(api::webhook::delete_webhook_endpoint),
-            )
-            .route(
-                "/webhooks/trigger",
-                post(api::webhook::trigger_webhook_event),
-            )
-            .route(
-                "/webhooks/trigger/batch",
-                post(api::webhook::batch_trigger_webhook_events),
-            )
-            .route(
-                "/webhooks/deliveries",
-                get(api::webhook::get_webhook_deliveries),
-            )
-            .route(
-                "/webhooks/deliveries/{delivery_id}",
-                get(api::webhook::get_webhook_delivery_details),
-            )
-            .route(
-                "/webhooks/deliveries/{delivery_id}/retry",
-                post(api::webhook::retry_webhook_delivery),
-            )
-            .route(
-                "/webhooks/deliveries/status",
-                get(api::webhook::get_webhook_delivery_status),
-            )
-            .route(
-                "/webhooks/deliveries/replay",
-                post(api::webhook::replay_webhook_delivery),
-            )
-            .route(
-                "/webhooks/endpoints/reactivate",
-                post(api::webhook::reactivate_webhook_endpoint),
-            )
-            .route(
-                "/webhooks/endpoints/test",
-                post(api::webhook::test_webhook_endpoint),
-            )
-            .route(
-                "/webhooks/analytics",
-                get(api::webhook::get_webhook_analytics),
-            )
-            .route(
-                "/webhooks/analytics/timeseries",
-                get(api::webhook::get_webhook_timeseries),
-            )
-            .route("/api-keys/apps", get(api::api_key::list_api_key_apps))
-            .route("/api-keys/apps", post(api::api_key::create_api_key_app))
-            .route(
-                "/api-keys/apps/{app_name}",
-                patch(api::api_key::update_api_key_app),
-            )
-            .route(
-                "/api-keys/apps/{app_name}",
-                delete(api::api_key::delete_api_key_app),
-            )
-            .route(
-                "/api-keys/apps/{app_name}/keys",
-                get(api::api_key::list_api_keys),
-            )
-            .route(
-                "/api-keys/apps/{app_name}/keys",
-                post(api::api_key::create_api_key),
-            )
-            .route("/api-keys/revoke", post(api::api_key::revoke_api_key))
-            .route("/api-keys/rotate", post(api::api_key::rotate_api_key))
-            .route(
-                "/notifications",
-                post(api::notifications::create_notification),
-            )
-            .route("/token", post(api::token::generate_token))
-            .route(
-                "/token/agent-context",
-                post(api::token::generate_agent_context_token),
-            )
-            .route(
-                "/ai-execution-contexts",
-                get(api::ai_execution_context::get_execution_contexts_backend)
-                    .post(api::ai_execution_context::create_execution_context_backend),
-            );
-
-        backend_routes
-    }
+        )
 }
 
-fn configure_cors() -> CorsLayer {
-    CorsLayer::new()
+fn console_specific_routes() -> Router<HttpState> {
+    Router::new()
+        .route(
+            "/webhooks/status",
+            get(api::webhook_console::get_webhook_status),
+        )
+        .route(
+            "/webhooks/activate",
+            post(api::webhook_console::activate_webhooks),
+        )
+        .route(
+            "/webhooks/rotate-secret",
+            post(api::webhook_console::rotate_webhook_secret),
+        )
+        .route(
+            "/webhooks/events",
+            get(api::webhook_console::get_available_events),
+        )
+        .route(
+            "/webhooks/endpoints",
+            get(api::webhook_console::list_webhook_endpoints),
+        )
+        .route(
+            "/webhooks/endpoints",
+            post(api::webhook_console::create_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/endpoints/{endpoint_id}",
+            patch(api::webhook_console::update_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/endpoints/{endpoint_id}",
+            delete(api::webhook_console::delete_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/analytics",
+            get(api::webhook_console::get_webhook_analytics),
+        )
+        .route(
+            "/webhooks/analytics/timeseries",
+            get(api::webhook_console::get_webhook_timeseries),
+        )
+        .route(
+            "/webhooks/deliveries",
+            get(api::webhook_console::get_webhook_deliveries),
+        )
+        .route(
+            "/webhooks/deliveries/{delivery_id}",
+            get(api::webhook_console::get_webhook_delivery_details),
+        )
+        .route(
+            "/webhooks/deliveries/{delivery_id}/retry",
+            post(api::webhook_console::retry_webhook_delivery),
+        )
+        .route(
+            "/webhooks/endpoints/{endpoint_id}/test",
+            post(api::webhook_console::test_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/endpoints/{endpoint_id}/reactivate",
+            post(api::webhook_console::reactivate_webhook_endpoint),
+        )
+        .route(
+            "/api-keys/status",
+            get(api::api_key_console::get_api_key_status),
+        )
+        .route(
+            "/api-keys/activate",
+            post(api::api_key_console::activate_api_keys),
+        )
+        .route(
+            "/api-keys/deactivate",
+            post(api::api_key_console::deactivate_api_keys),
+        )
+        .route(
+            "/api-keys/stats",
+            get(api::api_key_console::get_api_key_stats),
+        )
+        .route("/api-keys", get(api::api_key_console::list_api_keys))
+        .route("/api-keys", post(api::api_key_console::create_api_key))
+        .route(
+            "/api-keys/{key_id}",
+            delete(api::api_key_console::revoke_api_key),
+        )
+        .route(
+            "/api-keys/{key_id}/rotate",
+            post(api::api_key_console::rotate_api_key),
+        )
+        .route(
+            "/token/user-agent-context",
+            post(api::token::generate_user_agent_context_token),
+        )
+}
+
+fn backend_specific_routes() -> Router<HttpState> {
+    Router::new()
+        .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
+        .route("/webhooks/apps", post(api::webhook::create_webhook_app))
+        .route(
+            "/webhooks/apps/{app_name}",
+            patch(api::webhook::update_webhook_app),
+        )
+        .route(
+            "/webhooks/apps/{app_name}",
+            delete(api::webhook::delete_webhook_app),
+        )
+        .route(
+            "/webhooks/apps/{app_name}/rotate-secret",
+            post(api::webhook::rotate_webhook_secret),
+        )
+        .route(
+            "/webhooks/apps/{app_name}/events",
+            get(api::webhook::get_webhook_events),
+        )
+        .route(
+            "/webhooks/endpoints",
+            get(api::webhook::list_webhook_endpoints),
+        )
+        .route(
+            "/webhooks/endpoints",
+            post(api::webhook::create_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/endpoints/{endpoint_id}",
+            patch(api::webhook::update_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/endpoints/{endpoint_id}",
+            delete(api::webhook::delete_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/trigger",
+            post(api::webhook::trigger_webhook_event),
+        )
+        .route(
+            "/webhooks/trigger/batch",
+            post(api::webhook::batch_trigger_webhook_events),
+        )
+        .route(
+            "/webhooks/deliveries",
+            get(api::webhook::get_webhook_deliveries),
+        )
+        .route(
+            "/webhooks/deliveries/{delivery_id}",
+            get(api::webhook::get_webhook_delivery_details),
+        )
+        .route(
+            "/webhooks/deliveries/{delivery_id}/retry",
+            post(api::webhook::retry_webhook_delivery),
+        )
+        .route(
+            "/webhooks/deliveries/status",
+            get(api::webhook::get_webhook_delivery_status),
+        )
+        .route(
+            "/webhooks/deliveries/replay",
+            post(api::webhook::replay_webhook_delivery),
+        )
+        .route(
+            "/webhooks/endpoints/reactivate",
+            post(api::webhook::reactivate_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/endpoints/test",
+            post(api::webhook::test_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/analytics",
+            get(api::webhook::get_webhook_analytics),
+        )
+        .route(
+            "/webhooks/analytics/timeseries",
+            get(api::webhook::get_webhook_timeseries),
+        )
+        .route("/api-keys/apps", get(api::api_key::list_api_key_apps))
+        .route("/api-keys/apps", post(api::api_key::create_api_key_app))
+        .route(
+            "/api-keys/apps/{app_name}",
+            patch(api::api_key::update_api_key_app),
+        )
+        .route(
+            "/api-keys/apps/{app_name}",
+            delete(api::api_key::delete_api_key_app),
+        )
+        .route(
+            "/api-keys/apps/{app_name}/keys",
+            get(api::api_key::list_api_keys),
+        )
+        .route(
+            "/api-keys/apps/{app_name}/keys",
+            post(api::api_key::create_api_key),
+        )
+        .route("/api-keys/revoke", post(api::api_key::revoke_api_key))
+        .route("/api-keys/rotate", post(api::api_key::rotate_api_key))
+        .route(
+            "/notifications",
+            post(api::notifications::create_notification),
+        )
+        .route("/token", post(api::token::generate_token))
+        .route(
+            "/token/agent-context",
+            post(api::token::generate_agent_context_token),
+        )
+        .route(
+            "/ai-execution-contexts",
+            get(api::ai_execution_context::get_execution_contexts_backend)
+                .post(api::ai_execution_context::create_execution_context_backend),
+        )
+}
+
+pub async fn create_console_router(state: HttpState) -> Router {
+    let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
-        .allow_headers(Any)
-}
+        .allow_headers(Any);
 
-pub async fn create_router(state: HttpState) -> Router {
-    let cors = configure_cors();
+    // Initialize wacht for console
+    wacht::init_from_env().await.unwrap();
+    
+    use wacht::middleware::AuthLayer;
+    let auth_layer = AuthLayer::new();
+    
+    let authenticated_deployment_routes = base_deployment_routes()
+        .merge(console_specific_routes())
+        .layer(axum::middleware::from_fn(console_deployment_middleware))
+        .layer(auth_layer);
 
-    let mut router = Router::new().merge(health_routes());
-
-    #[cfg(feature = "console-api")]
-    {
-        router = router.merge(project_routes());
-        router = router.merge(ai_context_routes());
-        wacht::init_from_env().await.unwrap();
-
-        use wacht::middleware::AuthLayer;
-        let auth_layer = AuthLayer::new();
-        let authenticated_deployment_routes = deployment_routes().layer(auth_layer);
-
-        router = router.merge(authenticated_deployment_routes);
-    }
-
-    #[cfg(feature = "backend-api")]
-    {
-        use axum::middleware;
-        let backend_routes = deployment_routes().layer(middleware::from_fn_with_state(
-            state.clone(),
-            backend_deployment_middleware,
-        ));
-        router = router.merge(backend_routes);
-    }
-
-    #[cfg(feature = "frontend-api")]
-    {}
-
-    router
+    Router::new()
+        .merge(health_routes())
+        .merge(project_routes())
+        .merge(ai_context_routes())
+        .merge(authenticated_deployment_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
 }
+
+pub async fn create_backend_router(state: HttpState) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    let backend_routes = base_deployment_routes()
+        .merge(backend_specific_routes())
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            backend_deployment_middleware,
+        ));
+
+    Router::new()
+        .merge(health_routes())
+        .merge(backend_routes)
+        .with_state(state)
+        .layer(TraceLayer::new_for_http())
+        .layer(cors)
+}
+
+pub async fn create_frontend_router(state: HttpState) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    // Frontend API doesn't have any specific routes currently
+    Router::new()
+        .merge(health_routes())
+        .with_state(state)
+        .layer(TraceLayer::new_for_http())
+        .layer(cors)
+}
+

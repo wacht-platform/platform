@@ -1,6 +1,7 @@
 [workspace]
-resolver = "3"
+resolver = "2"
 members = [
+    "agent-engine",
     "realtime",
     "platform",
     "worker",

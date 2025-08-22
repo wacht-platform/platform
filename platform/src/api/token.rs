@@ -8,9 +8,7 @@ use commands::{
 };
 use serde::Deserialize;
 
-#[cfg(feature = "console-api")]
 use dto::json::GenerateUserAgentContextTokenRequest;
-#[cfg(feature = "console-api")]
 use wacht::middleware::extractors::RequireAuth;
 
 #[derive(Debug, Deserialize)]
@@ -53,7 +51,6 @@ pub async fn generate_agent_context_token(
         .map_err(Into::into)
 }
 
-#[cfg(feature = "console-api")]
 pub async fn generate_user_agent_context_token(
     auth: RequireAuth,
     RequireDeployment(_): RequireDeployment,

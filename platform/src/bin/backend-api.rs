@@ -1,9 +1,6 @@
-mod api;
-mod application;
-mod middleware;
-
 use common::state::AppState;
 use dotenvy::dotenv;
+use platform::application;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -19,8 +16,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = application::new(AppState::new_from_env().await?).await;
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3001").await?;
+    let app_state = AppState::new_from_env().await?;
+    let app = application::backend_router(app_state).await;
+    
+    let port = std::env::var("BACKEND_API_PORT").unwrap_or_else(|_| "3002".to_string());
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+    
+    tracing::info!("Backend API listening on port {}", port);
     axum::serve(listener, app).await?;
 
     Ok(())

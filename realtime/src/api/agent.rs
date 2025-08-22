@@ -1,6 +1,6 @@
 use super::models::{WebsocketMessage, WebsocketMessageType};
 use super::session::SessionState;
-use crate::agent::AgentExecutor;
+use agent_engine::{AgentExecutor, ResumeContext};
 use crate::middleware::host_extractor::ExtractedHost;
 use async_nats::jetstream;
 use async_nats::jetstream::stream;
@@ -82,7 +82,7 @@ impl AgentHandler {
                     execution_id,
                     &mut executor,
                     watch,
-                    crate::agent::executor::ResumeContext::PlatformFunction(exec_id, result),
+                    ResumeContext::PlatformFunction(exec_id, result),
                 )
                 .await
             }
@@ -93,7 +93,7 @@ impl AgentHandler {
                     execution_id,
                     &mut executor,
                     watch,
-                    crate::agent::executor::ResumeContext::UserInput(input),
+                    ResumeContext::UserInput(input),
                 )
                 .await
             }
@@ -182,7 +182,7 @@ impl AgentHandler {
         execution_id: i64,
         agent_executor: &mut AgentExecutor,
         mut watch: async_nats::jetstream::kv::Watch,
-        resume_context: crate::agent::executor::ResumeContext,
+        resume_context: ResumeContext,
     ) -> Result<(), AppError> {
         kv.put(context_key, execution_id.to_string().into())
             .await

@@ -1,8 +1,6 @@
-mod api;
-mod application;
-mod middleware;
 use common::state::AppState;
 use dotenvy::dotenv;
+use platform::application;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -18,9 +16,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = application::new(AppState::new_from_env().await?);
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3002").await?;
+    let app_state = AppState::new_from_env().await?;
+    let app = application::console_router(app_state).await;
+    
+    let port = std::env::var("CONSOLE_API_PORT").unwrap_or_else(|_| "3001".to_string());
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+    
+    tracing::info!("Console API listening on port {}", port);
     axum::serve(listener, app).await?;
 
     Ok(())

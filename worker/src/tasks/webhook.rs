@@ -208,11 +208,9 @@ pub async fn process_webhook_delivery(
                     delivery.app_name.clone(),
                     delivery.endpoint_id,
                     delivery.url.clone(),
-                    delivery.event_name.clone(),
                     delivery.attempts + 1,
                     delivery.max_attempts,
                     Some(status_code),
-                    response_body,
                     app_state,
                 )
                 .await?;
@@ -266,11 +264,9 @@ pub async fn process_webhook_delivery(
                 delivery.app_name,
                 delivery.endpoint_id,
                 delivery.url,
-                delivery.event_name,
                 delivery.attempts + 1,
                 delivery.max_attempts,
                 None,
-                Some(e.to_string()),
                 app_state,
             )
             .await?;
@@ -286,11 +282,9 @@ async fn handle_delivery_failure(
     app_name: String,
     endpoint_id: i64,
     endpoint_url: String,
-    event_name: String,
     new_attempts: i32,
     max_attempts: i32,
     status_code: Option<u16>,
-    error_message: Option<String>,
     app_state: &AppState,
 ) -> Result<DeliveryResult> {
     // Check if we should retry

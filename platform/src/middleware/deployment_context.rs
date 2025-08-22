@@ -1,21 +1,14 @@
-#[cfg(feature = "backend-api")]
 use super::api_key_context::ApiKeyContext;
-#[cfg(feature = "backend-api")]
 use axum::{
     body::Body,
     extract::{Request, State},
     http::StatusCode,
     response::Response,
 };
-#[cfg(feature = "backend-api")]
 use chrono::Utc;
-#[cfg(feature = "backend-api")]
 use commands::{Command, api_key::UpdateApiKeyLastUsedCommand};
-#[cfg(feature = "backend-api")]
 use common::state::AppState;
-#[cfg(feature = "backend-api")]
 use queries::{Query, api_key::GetApiKeyByHashQuery};
-#[cfg(feature = "backend-api")]
 use sha2::{Digest, Sha256};
 
 /// Deployment context that gets injected into request extensions
@@ -24,7 +17,6 @@ pub struct DeploymentContext {
     pub deployment_id: i64,
 }
 
-#[cfg(feature = "backend-api")]
 pub async fn backend_deployment_middleware(
     State(state): State<AppState>,
     mut req: Request<Body>,

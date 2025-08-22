@@ -54,11 +54,9 @@ where
 ///     // handle request...
 /// }
 /// ```
-#[cfg(feature = "console-api")]
 #[derive(Debug, Clone, Copy)]
 pub struct ConsoleDeployment(pub i64);
 
-#[cfg(feature = "console-api")]
 static CONSOLE_DEPLOYMENT_ID: LazyLock<Result<i64, String>> = LazyLock::new(|| {
     std::env::var("CONSOLE_DEPLOYMENT_ID")
         .map_err(|_| "CONSOLE_DEPLOYMENT_ID environment variable not set".to_string())
@@ -68,7 +66,6 @@ static CONSOLE_DEPLOYMENT_ID: LazyLock<Result<i64, String>> = LazyLock::new(|| {
         })
 });
 
-#[cfg(feature = "console-api")]
 impl<S> FromRequestParts<S> for ConsoleDeployment
 where
     S: Send + Sync,

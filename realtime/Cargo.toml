@@ -9,7 +9,7 @@ dto = { path = "../dto" }
 commands = { path = "../commands" }
 queries = { path = "../queries" }
 common = { path = "../common" }
-llm = { version = "1.2.9", features = ["google"] }
+agent-engine = { path = "../agent-engine" }
 dotenvy = "0.15.7"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rustls = { version = "0.23.27", features = ["ring"] }

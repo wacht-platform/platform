@@ -1,4 +1,6 @@
-use crate::agent::{context::ContextOrchestrator, gemini::GeminiClient, tools::ToolExecutor};
+use crate::context::ContextOrchestrator;
+use crate::gemini::GeminiClient;
+use crate::tools::ToolExecutor;
 use crate::template::{AgentTemplates, render_template_with_prompt};
 
 #[derive(Debug, Clone)]
@@ -22,8 +24,6 @@ use dto::json::agent_responses::{
     ValidationResponse,
 };
 use dto::json::{StreamEvent, ToolCall, WorkflowCall};
-use llm::builder::{LLMBackend, LLMBuilder};
-use llm::chat::ChatMessage;
 use models::{
     AgentExecutionState, AiAgentWithFeatures, AiTool, AiToolConfiguration, AiWorkflow,
     ApiToolConfiguration, ConversationContent, ConversationMessageType, ConversationRecord,
@@ -2008,24 +2008,26 @@ impl AgentExecutor {
     async fn execute_llm_call_node(&self, config: &LLMCallNodeConfig) -> Result<Value, AppError> {
         let prompt = config.prompt_template.clone();
 
-        let api_key = std::env::var("GEMINI_API_KEY")
-            .map_err(|_| AppError::Internal("GEMINI_API_KEY not set".to_string()))?;
+        let request_body = serde_json::json!({
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }],
+            "generationConfig": {
+                "temperature": 0.7,
+                "topK": 40,
+                "topP": 0.95,
+                "maxOutputTokens": 8192,
+            }
+        }).to_string();
 
-        let llm = LLMBuilder::new()
-            .backend(LLMBackend::Google)
-            .api_key(&api_key)
-            .model("gemini-2.5-pro")
-            .build()
-            .map_err(|e| AppError::Internal(format!("Failed to create LLM: {e}")))?;
-
-        let messages = vec![ChatMessage::user().content(&prompt).build()];
-
-        let response = llm
-            .chat(&messages)
+        let llm = self.create_main_llm()?;
+        let response: Value = llm
+            .generate_structured_content(request_body)
             .await
             .map_err(|e| AppError::Internal(format!("LLM call failed: {e}")))?;
 
-        let response_text = response.to_string();
+        let response_text = serde_json::to_string(&response)
+            .unwrap_or_else(|_| response.to_string());
 
         match config.response_format {
             ResponseFormat::Text => Ok(json!({
