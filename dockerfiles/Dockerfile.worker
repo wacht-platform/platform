@@ -14,6 +14,7 @@ COPY platform/ ./platform/
 COPY realtime/ ./realtime/
 COPY worker/ ./worker/
 COPY gateway/ ./gateway/
+COPY agent-engine/ ./agent-engine/
 
 # Build worker
 RUN cargo build --release --bin worker
