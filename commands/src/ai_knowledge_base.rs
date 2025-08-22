@@ -1,4 +1,4 @@
-use crate::{Command, DispatchDocumentBatchTaskCommand, UploadToKnowledgeBaseBucketCommand};
+use crate::{Command, DispatchDocumentProcessingTaskCommand, UploadToKnowledgeBaseBucketCommand};
 use common::error::AppError;
 use common::state::AppState;
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument};
@@ -351,55 +351,23 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
         .await?;
         let deployment_id = kb_query.deployment_id;
 
-        // Extract text and create chunks immediately
-        let text = app_state
-            .text_processing_service
-            .extract_text_from_file(&self.file_content, &self.file_type)?;
-        
-        let cleaned_text = app_state.text_processing_service.clean_text(&text);
-        let chunks = app_state
-            .text_processing_service
-            .chunk_text(&cleaned_text, 2000, 200)?;
+        // Dispatch document processing to NATS worker
+        let dispatch_processing_task = DispatchDocumentProcessingTaskCommand::new(
+            deployment_id,
+            self.knowledge_base_id,
+            document.id,
+        );
 
-        // Store chunks in database (without embeddings)
-        let mut stored_chunks = 0;
-        for (chunk_index, chunk) in chunks.iter().enumerate() {
-            match sqlx::query!(
-                r#"
-                INSERT INTO knowledge_base_document_chunks
-                (document_id, knowledge_base_id, deployment_id, chunk_index, content, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                "#,
-                document.id,
-                self.knowledge_base_id,
-                deployment_id,
-                chunk_index as i32,
-                chunk.content,
-                now,
-                now
-            )
-            .execute(&app_state.db_pool)
-            .await {
-                Ok(_) => stored_chunks += 1,
-                Err(e) => {
-                    tracing::error!("Failed to store chunk {} for document {}: {}", chunk_index, document.id, e);
-                }
-            }
-        }
-
-        // Update document status
-        if stored_chunks == 0 {
+        if let Err(e) = dispatch_processing_task.execute(app_state).await {
+            tracing::error!("Failed to dispatch document processing task: {}", e);
+            // Update document status to failed
             let _ = sqlx::query!(
                 r#"
                 UPDATE ai_knowledge_base_documents 
                 SET processing_metadata = jsonb_set(
-                    jsonb_set(
-                        COALESCE(processing_metadata, '{}'),
-                        '{status}',
-                        '"failed"'
-                    ),
-                    '{error}',
-                    '"No chunks were created"'::jsonb
+                    COALESCE(processing_metadata, '{}'),
+                    '{status}',
+                    '"failed"'
                 ),
                 updated_at = $1
                 WHERE id = $2
@@ -409,58 +377,6 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
             )
             .execute(&app_state.db_pool)
             .await;
-        } else {
-            let _ = sqlx::query!(
-                r#"
-                UPDATE ai_knowledge_base_documents 
-                SET processing_metadata = jsonb_set(
-                    jsonb_set(
-                        COALESCE(processing_metadata, '{}'),
-                        '{status}',
-                        '"chunks_ready"'
-                    ),
-                    '{chunks_count}',
-                    $1::text::jsonb
-                ),
-                updated_at = $2
-                WHERE id = $3
-                "#,
-                stored_chunks.to_string(),
-                chrono::Utc::now(),
-                document.id
-            )
-            .execute(&app_state.db_pool)
-            .await;
-        }
-
-        // Only dispatch embedding task if chunks were stored successfully
-        if stored_chunks > 0 {
-            let dispatch_task = DispatchDocumentBatchTaskCommand::new(
-                deployment_id,
-                self.knowledge_base_id,
-                100, // Process in batches of 100
-            );
-
-            if let Err(e) = dispatch_task.execute(app_state).await {
-                tracing::error!("Failed to dispatch embedding processing task: {}", e);
-                // Update document status to failed
-                let _ = sqlx::query!(
-                    r#"
-                    UPDATE ai_knowledge_base_documents 
-                    SET processing_metadata = jsonb_set(
-                        COALESCE(processing_metadata, '{}'),
-                        '{status}',
-                        '"failed"'
-                    ),
-                    updated_at = $1
-                    WHERE id = $2
-                    "#,
-                    chrono::Utc::now(),
-                    document.id
-                )
-                .execute(&app_state.db_pool)
-                .await;
-            }
         }
 
         Ok(AiKnowledgeBaseDocument {

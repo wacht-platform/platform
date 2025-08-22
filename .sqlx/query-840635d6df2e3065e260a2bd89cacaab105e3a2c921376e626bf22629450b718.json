@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_knowledge_base_documents \n            SET processing_metadata = jsonb_set(\n                jsonb_set(\n                    COALESCE(processing_metadata, '{}'),\n                    '{status}',\n                    '\"chunks_ready\"'\n                ),\n                '{chunks_count}',\n                $1::text::jsonb\n            ),\n            updated_at = $2\n            WHERE id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "840635d6df2e3065e260a2bd89cacaab105e3a2c921376e626bf22629450b718"
+}

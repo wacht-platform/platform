@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use crate::tasks::{email, embedding, sms, token, webhook};
+use crate::tasks::{document, email, embedding, sms, token, webhook};
 use dto::json::NatsTaskMessage;
 
 #[derive(Debug)]
@@ -367,6 +367,29 @@ impl NatsConsumer {
                     webhook::process_webhook_retry(task.delivery_id, task.deployment_id, &app_state)
                         .await
                         .map_err(|e| TaskError::Permanent(e.to_string()))
+                })
+            }),
+        );
+
+        task_handlers.insert(
+            "document.process".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: document::ProcessDocumentTask = serde_json::from_value(payload)
+                        .map_err(|e| {
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize document processing task: {}",
+                                e
+                            ))
+                        })?;
+                    document::process_document_impl(
+                        task.deployment_id,
+                        task.knowledge_base_id,
+                        task.document_id,
+                        &app_state,
+                    )
+                    .await
+                    .map_err(|e| TaskError::Permanent(e.to_string()))
                 })
             }),
         );
