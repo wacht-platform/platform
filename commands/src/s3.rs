@@ -61,27 +61,16 @@ impl Command for UploadToKnowledgeBaseBucketCommand {
     type Output = String;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let bucket_name = std::env::var("R2_KNOWLEDGE_BASE_BUCKET").unwrap_or_else(|_| {
-            // Fallback to CDN bucket if knowledge base bucket is not configured
-            std::env::var("R2_CDN_BUCKET")
-                .expect("Either R2_KNOWLEDGE_BASE_BUCKET or R2_CDN_BUCKET must be set")
-        });
-
         app_state
             .s3_client
             .put_object()
-            .bucket(&bucket_name)
+            .bucket("wacht-knowledge-base")
             .key(&self.file_path)
             .body(ByteStream::new(SdkBody::from(self.body)))
             .send()
             .await
             .map_err(|e| AppError::S3(e.to_string()))?;
 
-        // For knowledge base documents, we don't need CDN cache purging
-        // as they are not served through the CDN
-        let base_url = std::env::var("R2_KNOWLEDGE_BASE_BASE_URL")
-            .unwrap_or_else(|_| format!("https://{}.r2.cloudflarestorage.com", bucket_name));
-
-        Ok(format!("{}/{}", base_url, self.file_path))
+        Ok(format!("https://wacht-knowledge-base.r2.cloudflarestorage.com/{}", self.file_path))
     }
 }

@@ -39,15 +39,37 @@ impl Command for ProcessDocumentCommand {
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        // Download file content from URL
-        let response = reqwest::get(&document.file_url)
+        // Extract file key from URL (format: deployment_id/kb_id/filename)
+        let url_parts: Vec<&str> = document.file_url
+            .split('/')
+            .collect();
+        
+        if url_parts.len() < 3 {
+            return Err(AppError::Internal("Invalid file URL format".to_string()));
+        }
+        
+        let file_key = format!("{}/{}/{}", 
+            url_parts[url_parts.len() - 3], // deployment_id
+            url_parts[url_parts.len() - 2], // kb_id  
+            url_parts[url_parts.len() - 1]  // filename
+        );
+
+        // Download file content from S3/R2
+        let response = app_state
+            .s3_client
+            .get_object()
+            .bucket("wacht-knowledge-base")
+            .key(file_key)
+            .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to download file: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("Failed to download file from S3: {}", e)))?;
         
         let file_content = response
-            .bytes()
+            .body
+            .collect()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to read file content: {}", e)))?
+            .into_bytes()
             .to_vec();
 
         // Extract text and create chunks

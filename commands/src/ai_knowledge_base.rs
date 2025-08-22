@@ -311,8 +311,8 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
         let now = Utc::now();
         let file_size = self.file_content.len() as i64;
 
-        // Upload file to knowledge base bucket (directly in root)
-        let file_path = self.file_name.clone();
+        // Upload file to knowledge base bucket with path structure
+        let file_path = format!("{}/{}/{}", deployment_id, self.knowledge_base_id, self.file_name);
         let file_content_clone = self.file_content.clone();
         let file_url = UploadToKnowledgeBaseBucketCommand::new(file_path, file_content_clone)
             .execute(app_state)
