@@ -258,6 +258,11 @@ fn deployment_routes() -> Router<HttpState> {
         .route(
             "/analytics/recent-signups",
             get(api::analytics::get_recent_signups),
+        )
+        .route(
+            "/ai-execution-contexts",
+            get(api::ai_execution_context::get_execution_contexts_backend)
+                .post(api::ai_execution_context::create_execution_context_backend),
         );
 
     #[cfg(feature = "console-api")]
