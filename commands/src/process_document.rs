@@ -39,17 +39,16 @@ impl Command for ProcessDocumentCommand {
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        // Extract file key from URL (format: deployment_id/kb_id/filename)
+        // Extract file key from URL (format: kb_id/filename)
         let url_parts: Vec<&str> = document.file_url
             .split('/')
             .collect();
         
-        if url_parts.len() < 3 {
+        if url_parts.len() < 2 {
             return Err(AppError::Internal("Invalid file URL format".to_string()));
         }
         
-        let file_key = format!("{}/{}/{}", 
-            url_parts[url_parts.len() - 3], // deployment_id
+        let file_key = format!("{}/{}", 
             url_parts[url_parts.len() - 2], // kb_id  
             url_parts[url_parts.len() - 1]  // filename
         );
