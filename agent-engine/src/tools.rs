@@ -1,14 +1,17 @@
 use commands::{Command, GenerateEmbeddingsCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use common::error::AppError;
 use common::state::AppState;
-use dto::json::StreamEvent;
+use dto::json::{
+    ApiToolResult, ToolKnowledgeBaseSearchResult, KnowledgeBaseToolResult, PlatformEventResult,
+    PlatformFunctionData, PlatformFunctionResult, StreamEvent,
+};
 use models::HttpMethod;
 use models::{AiTool, AiToolConfiguration};
 use models::{
     ApiToolConfiguration, KnowledgeBaseToolConfiguration, PlatformEventToolConfiguration,
     PlatformFunctionToolConfiguration,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::collections::HashMap;
 
 pub struct ToolExecutor {
@@ -36,19 +39,26 @@ impl ToolExecutor {
     ) -> Result<Value, AppError> {
         match &tool.configuration {
             AiToolConfiguration::Api(config) => {
-                self.execute_api_tool(tool, config, &execution_params).await
+                let result = self.execute_api_tool(tool, config, &execution_params).await?;
+                Ok(serde_json::to_value(result)?)
             }
             AiToolConfiguration::KnowledgeBase(config) => {
-                self.execute_knowledge_base_tool(tool, config, &execution_params)
-                    .await
+                let result = self
+                    .execute_knowledge_base_tool(tool, config, &execution_params)
+                    .await?;
+                Ok(serde_json::to_value(result)?)
             }
             AiToolConfiguration::PlatformEvent(config) => {
-                self.execute_platform_event_tool(tool, config, &execution_params)
-                    .await
+                let result = self
+                    .execute_platform_event_tool(tool, config, &execution_params)
+                    .await?;
+                Ok(serde_json::to_value(result)?)
             }
             AiToolConfiguration::PlatformFunction(config) => {
-                self.execute_platform_function_tool(tool, config, &execution_params)
-                    .await
+                let result = self
+                    .execute_platform_function_tool(tool, config, &execution_params)
+                    .await?;
+                Ok(serde_json::to_value(result)?)
             }
         }
     }
@@ -58,7 +68,7 @@ impl ToolExecutor {
         tool: &AiTool,
         config: &ApiToolConfiguration,
         execution_params: &Value,
-    ) -> Result<Value, AppError> {
+    ) -> Result<ApiToolResult, AppError> {
         let url_params = execution_params
             .get("url_params")
             .and_then(|v| v.as_object())
@@ -82,19 +92,16 @@ impl ToolExecutor {
         let mut url = config.endpoint.clone();
         let mut query_params = HashMap::new();
 
-        println!("API Tool - Original URL: {url}");
 
         for (key, value) in &url_params {
             let placeholder = format!("{{{key}}}");
             if url.contains(&placeholder) {
-                println!("API Tool - Replacing {placeholder} with {value}");
                 url = url.replace(&placeholder, value);
             } else {
                 query_params.insert(key.clone(), value.clone());
             }
         }
 
-        println!("API Tool - Final URL after substitution: {url}");
 
         let client = reqwest::Client::new();
 
@@ -115,7 +122,6 @@ impl ToolExecutor {
         }
 
         if !query_params.is_empty() {
-            println!("API Tool - Adding query parameters: {query_params:?}");
         }
         request_builder = request_builder.query(&query_params);
 
@@ -123,15 +129,9 @@ impl ToolExecutor {
             HttpMethod::POST | HttpMethod::PUT | HttpMethod::PATCH => {
                 request_builder = request_builder.header("Content-Type", "application/json");
                 if let Some(body_value) = body {
-                    println!(
-                        "API Tool - Adding request body: {}",
-                        serde_json::to_string_pretty(&body_value)
-                            .unwrap_or_else(|_| "Invalid JSON".to_string())
-                    );
                     request_builder = request_builder.json(&body_value);
                 } else {
-                    println!("API Tool - No body provided, sending empty object");
-                    request_builder = request_builder.json(&json!({}));
+                    request_builder = request_builder.json(&serde_json::json!({}));
                 }
             }
             _ => {}
@@ -145,19 +145,24 @@ impl ToolExecutor {
                 let body_text = res.text().await.unwrap_or_default();
 
                 if (200..300).contains(&status) {
-                    Ok(json!({
-                        "success": true,
-                        "status": status,
-                        "data": serde_json::from_str::<Value>(&body_text).unwrap_or(Value::String(body_text)),
-                        "tool": tool.name,
-                    }))
+                    Ok(ApiToolResult {
+                        success: true,
+                        status,
+                        data: Some(
+                            serde_json::from_str::<Value>(&body_text)
+                                .unwrap_or(Value::String(body_text)),
+                        ),
+                        error: None,
+                        tool: tool.name.clone(),
+                    })
                 } else {
-                    Ok(json!({
-                        "success": false,
-                        "status": status,
-                        "error": body_text,
-                        "tool": tool.name,
-                    }))
+                    Ok(ApiToolResult {
+                        success: false,
+                        status,
+                        data: None,
+                        error: Some(body_text),
+                        tool: tool.name.clone(),
+                    })
                 }
             }
             Err(e) => Err(AppError::External(format!("API request failed: {e}"))),
@@ -169,13 +174,13 @@ impl ToolExecutor {
         tool: &AiTool,
         config: &PlatformEventToolConfiguration,
         execution_params: &Value,
-    ) -> Result<Value, AppError> {
+    ) -> Result<PlatformEventResult, AppError> {
         // Get event data from execution params or use config default
         let event_data = execution_params
             .get("event_data")
             .cloned()
             .or_else(|| config.event_data.clone())
-            .unwrap_or(json!({}));
+            .unwrap_or(serde_json::json!({}));
 
         // Emit the event via WebSocket if channel is available
         if let Some(channel) = &self.channel {
@@ -185,13 +190,13 @@ impl ToolExecutor {
             let _ = channel.send(event).await;
         }
 
-        Ok(json!({
-            "success": true,
-            "tool": tool.name,
-            "event_label": config.event_label,
-            "event_data": event_data,
-            "message": "Platform event emitted successfully",
-        }))
+        Ok(PlatformEventResult {
+            success: true,
+            tool: tool.name.clone(),
+            event_label: config.event_label.clone(),
+            event_data,
+            message: "Platform event emitted successfully".to_string(),
+        })
     }
 
     async fn execute_platform_function_tool(
@@ -199,7 +204,7 @@ impl ToolExecutor {
         tool: &AiTool,
         config: &PlatformFunctionToolConfiguration,
         execution_params: &Value,
-    ) -> Result<Value, AppError> {
+    ) -> Result<PlatformFunctionResult, AppError> {
         let mut function_params = HashMap::new();
 
         if let Some(schema) = &config.input_schema {
@@ -214,40 +219,33 @@ impl ToolExecutor {
         let execution_id = self.app_state.sf.next_id()? as u64;
 
         // Prepare function data - send execution_id as string to avoid JS number precision issues
-        let function_data = json!({
-            "execution_id": execution_id.to_string(),
-            "function_name": config.function_name,
-            "parameters": function_params,
-            "is_overridable": config.is_overridable,
-        });
+        let function_data = PlatformFunctionData {
+            execution_id: execution_id.to_string(),
+            function_name: config.function_name.clone(),
+            parameters: function_params.clone(),
+            is_overridable: config.is_overridable,
+        };
 
         // Emit the platform function event via WebSocket if channel is available
         if let Some(channel) = &self.channel {
-            tracing::info!(
-                "Sending platform function to frontend: function_name: {}, execution_id: {}, params: {:?}",
-                config.function_name,
-                execution_id,
-                function_params
+
+            let event = StreamEvent::PlatformFunction(
+                config.function_name.clone(),
+                serde_json::to_value(&function_data)?,
             );
 
-            let event =
-                StreamEvent::PlatformFunction(config.function_name.clone(), function_data.clone());
-
             // Send the event
-            let send_result = channel.send(event).await;
-            tracing::info!("Platform function send result: {:?}", send_result.is_ok());
-        } else {
-            tracing::warn!("No channel available to send platform function");
+            let _ = channel.send(event).await;
         }
 
         // Return immediately with pending status
-        Ok(json!({
-            "success": true,
-            "tool": tool.name,
-            "function": config.function_name,
-            "execution_id": execution_id.to_string(),
-            "status": "pending"
-        }))
+        Ok(PlatformFunctionResult {
+            success: true,
+            tool: tool.name.clone(),
+            function: config.function_name.clone(),
+            execution_id: execution_id.to_string(),
+            status: "pending".to_string(),
+        })
     }
 
     async fn execute_knowledge_base_tool(
@@ -255,7 +253,7 @@ impl ToolExecutor {
         tool: &AiTool,
         config: &KnowledgeBaseToolConfiguration,
         execution_params: &Value,
-    ) -> Result<Value, AppError> {
+    ) -> Result<KnowledgeBaseToolResult, AppError> {
         // Get the query from execution parameters
         let query = execution_params
             .get("query")
@@ -284,37 +282,27 @@ impl ToolExecutor {
 
         let search_results = search_command.execute(&self.app_state).await?;
 
-        // Filter by similarity threshold and convert to JSON
+        // Filter by similarity threshold and convert to structs
         let threshold = config.search_settings.similarity_threshold.unwrap_or(0.7);
-        let mut all_results: Vec<Value> = search_results
+        let mut all_results: Vec<ToolKnowledgeBaseSearchResult> = search_results
             .into_iter()
             .filter(|result| result.score >= threshold as f64)
-            .map(|result| {
-                json!({
-                    "content": result.content,
-                    "knowledge_base_id": result.knowledge_base_id.to_string(),
-                    "similarity_score": result.score,
-                    "chunk_index": result.chunk_index,
-                    "document_id": result.document_id.to_string(),
-                    "document_title": result.document_title,
-                    "document_description": result.document_description,
-                })
+            .map(|result| ToolKnowledgeBaseSearchResult {
+                content: result.content,
+                knowledge_base_id: result.knowledge_base_id.to_string(),
+                similarity_score: result.score,
+                chunk_index: result.chunk_index,
+                document_id: result.document_id.to_string(),
+                document_title: result.document_title,
+                document_description: result.document_description,
             })
             .collect();
 
         // Sort all results by relevance if requested
         if config.search_settings.sort_by_relevance {
             all_results.sort_by(|a, b| {
-                let score_a = a
-                    .get("similarity_score")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0);
-                let score_b = b
-                    .get("similarity_score")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0);
-                score_b
-                    .partial_cmp(&score_a)
+                b.similarity_score
+                    .partial_cmp(&a.similarity_score)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
         }
@@ -323,14 +311,14 @@ impl ToolExecutor {
         let max_results = config.search_settings.max_results.unwrap_or(10) as usize;
         all_results.truncate(max_results);
 
-        Ok(json!({
-            "success": true,
-            "tool": tool.name,
-            "query": query,
-            "knowledge_base_ids": config.knowledge_base_ids,
-            "results": all_results,
-            "total_results": all_results.len(),
-            "search_settings": config.search_settings,
-        }))
+        Ok(KnowledgeBaseToolResult {
+            success: true,
+            tool: tool.name.clone(),
+            query: query.to_string(),
+            knowledge_base_ids: config.knowledge_base_ids.clone(),
+            results: all_results.clone(),
+            total_results: all_results.len(),
+            search_settings: serde_json::to_value(&config.search_settings)?,
+        })
     }
 }

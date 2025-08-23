@@ -260,6 +260,26 @@ fn base_deployment_routes() -> Router<HttpState> {
 fn console_specific_routes() -> Router<HttpState> {
     Router::new()
         .route(
+            "/projects/{project_id}/subscription",
+            get(api::billing::get_subscription),
+        )
+        .route(
+            "/projects/{project_id}/subscription/checkout",
+            post(api::billing::create_checkout),
+        )
+        .route(
+            "/projects/{project_id}/subscription/portal",
+            get(api::billing::get_portal_url),
+        )
+        .route(
+            "/projects/{project_id}/subscription/cancel",
+            post(api::billing::cancel_subscription),
+        )
+        .route(
+            "/webhooks/chargebee",
+            post(api::billing_webhook::handle_chargebee_webhook),
+        )
+        .route(
             "/webhooks/status",
             get(api::webhook_console::get_webhook_status),
         )
@@ -310,10 +330,6 @@ fn console_specific_routes() -> Router<HttpState> {
         .route(
             "/webhooks/deliveries/{delivery_id}/retry",
             post(api::webhook_console::retry_webhook_delivery),
-        )
-        .route(
-            "/webhooks/endpoints/{endpoint_id}/test",
-            post(api::webhook_console::test_webhook_endpoint),
         )
         .route(
             "/webhooks/endpoints/{endpoint_id}/reactivate",
@@ -416,12 +432,8 @@ fn backend_specific_routes() -> Router<HttpState> {
             post(api::webhook::replay_webhook_delivery),
         )
         .route(
-            "/webhooks/endpoints/reactivate",
+            "/webhooks/endpoints/{endpoint_id}/reactivate",
             post(api::webhook::reactivate_webhook_endpoint),
-        )
-        .route(
-            "/webhooks/endpoints/test",
-            post(api::webhook::test_webhook_endpoint),
         )
         .route(
             "/webhooks/analytics",
@@ -473,13 +485,12 @@ pub async fn create_console_router(state: HttpState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Initialize wacht for console
     wacht::init_from_env().await.unwrap();
-    
+
     use wacht::middleware::AuthLayer;
     let auth_layer = AuthLayer::new();
-    
-    let authenticated_deployment_routes = base_deployment_routes()
+
+    let deployment_routes = base_deployment_routes()
         .merge(console_specific_routes())
         .layer(axum::middleware::from_fn(console_deployment_middleware))
         .layer(auth_layer);
@@ -488,7 +499,7 @@ pub async fn create_console_router(state: HttpState) -> Router {
         .merge(health_routes())
         .merge(project_routes())
         .merge(ai_context_routes())
-        .merge(authenticated_deployment_routes)
+        .nest("/deployments/{deployment_id}", deployment_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
@@ -500,7 +511,7 @@ pub async fn create_backend_router(state: HttpState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let backend_routes = base_deployment_routes()
+    let deployment_routes = base_deployment_routes()
         .merge(backend_specific_routes())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -509,7 +520,7 @@ pub async fn create_backend_router(state: HttpState) -> Router {
 
     Router::new()
         .merge(health_routes())
-        .merge(backend_routes)
+        .nest("/deployments/{deployment_id}", deployment_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
@@ -528,4 +539,3 @@ pub async fn create_frontend_router(state: HttpState) -> Router {
         .layer(TraceLayer::new_for_http())
         .layer(cors)
 }
-

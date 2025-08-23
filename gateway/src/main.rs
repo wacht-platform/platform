@@ -535,27 +535,6 @@ impl RateLimiter {
     }
 }
 
-// Parse limits from query parameters
-fn parse_limits(params: &HashMap<String, String>) -> Vec<(u32, i64)> {
-    let mut limits = Vec::new();
-
-    for (key, value) in params {
-        // Try to parse key as window duration and value as limit
-        if let (Ok(window), Ok(limit)) = (key.parse::<i64>(), value.parse::<u32>()) {
-            if window > 0 && limit > 0 {
-                limits.push((limit, window));
-            }
-        }
-    }
-
-    // If no valid limits found, use a default
-    if limits.is_empty() {
-        limits.push((100, 60)); // Default: 100 requests per 60 seconds
-    }
-
-    limits
-}
-
 async fn check_limit(
     Path(identifier): Path<String>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,

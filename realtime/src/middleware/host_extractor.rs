@@ -6,7 +6,6 @@ use axum::{
 };
 use common::utils::validation::HostValidator;
 use serde_json::json;
-use tracing::warn;
 
 /// Extracted host information from the HTTP Host header
 #[derive(Debug, Clone)]

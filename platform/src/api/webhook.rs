@@ -434,13 +434,13 @@ pub async fn get_webhook_delivery_status(
 pub async fn reactivate_webhook_endpoint(
     State(app_state): State<HttpState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Json(request): Json<ReactivateEndpointRequest>,
+    Path(endpoint_id): Path<i64>,
 ) -> ApiResult<ReactivateEndpointResponse> {
     use commands::webhook_endpoint::ReactivateEndpointCommand;
 
     // Reactivate the endpoint and clear failure counter
     let endpoint = ReactivateEndpointCommand {
-        endpoint_id: request.endpoint_id,
+        endpoint_id,
         deployment_id,
     }
     .execute(&app_state)

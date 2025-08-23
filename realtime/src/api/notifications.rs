@@ -170,10 +170,6 @@ async fn handle_notification_client(
     {
         Ok(context) => context,
         Err(e) => {
-            error!(
-                "Failed to get session context for session {}: {}",
-                session_id, e
-            );
             let error_msg = json!({
                 "error": "Session not found or invalid"
             });
@@ -247,13 +243,11 @@ async fn handle_notification_client(
                             if let Err(e) = ws.write_frame(Frame::text(fastwebsockets::Payload::Owned(
                                 serde_json::to_vec(&ws_message).unwrap()
                             ))).await {
-                                error!("Failed to send notification to WebSocket: {}", e);
                                 break;
                             }
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to parse notification message: {}", e);
                     }
                 }
             }
@@ -271,14 +265,12 @@ async fn handle_notification_client(
                                 }
                             }
                             OpCode::Close => {
-                                info!("WebSocket closed by client for user {}", user_id);
                                 break;
                             }
                             _ => {}
                         }
                     }
                     Err(e) => {
-                        error!("WebSocket error for user {}: {}", user_id, e);
                         break;
                     }
                 }
@@ -286,7 +278,6 @@ async fn handle_notification_client(
         }
     }
 
-    info!("Notification stream closed for user {}", user_id);
     Ok(())
 }
 

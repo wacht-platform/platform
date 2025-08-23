@@ -59,6 +59,9 @@ pub mod api_key_permissions;
 // Notification models
 pub mod notification;
 
+// Billing models
+pub mod billing;
+
 pub use deployment::*;
 pub use deployment_auth_settings::*;
 pub use deployment_b2b_settings::*;
@@ -105,3 +108,4 @@ pub use memory::*;
 pub use memory_boundaries::*;
 pub use notification::*;
 pub use webhook::*;
+pub use billing::*;

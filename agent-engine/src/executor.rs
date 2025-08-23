@@ -23,7 +23,16 @@ use dto::json::agent_responses::{
     SwitchCaseEvaluation, TaskExecution, TaskExecutionResponse, TaskType, TriggerEvaluation,
     ValidationResponse,
 };
-use dto::json::{StreamEvent, ToolCall, WorkflowCall};
+use dto::json::{
+    StreamEvent, ToolCall, WorkflowCall, WorkflowExecutionResult, WorkflowTaskExecution,
+    TriggerNodeResult, TriggerEvaluation as TriggerEvaluationResult, LLMNodeResult,
+    SwitchNodeResult, UserInputNodeResult, WorkflowContextSummary, WorkflowInputData,
+    TaskSummary, TaskExecutionSuccess, UserInputOutputState, StepDecisionContext,
+    ValidationContext, SummaryContext, UserInputRequestContext, TriggerEvaluationContext,
+    WorkflowStateSummary, SwitchCaseContext, CaseDescription, LLMGenerationConfig,
+    LLMContent, LLMPart, GenerationConfig, WorkingMemory, ConversationHistoryEntry,
+    ApiToolParameters, KnowledgeBaseParameters,
+};
 use models::{
     AgentExecutionState, AiAgentWithFeatures, AiTool, AiToolConfiguration, AiWorkflow,
     ApiToolConfiguration, ConversationContent, ConversationMessageType, ConversationRecord,
@@ -226,12 +235,13 @@ impl AgentExecutor {
                 if let Some(workflow_state) = &mut self.current_workflow_state {
                     if let Some(node_id) = &self.current_workflow_node_id {
                         let node_output_key = format!("{}_output", node_id);
+                        let user_input_output = UserInputOutputState {
+                            value: input,
+                            output_type: "user_input".to_string(),
+                        };
                         workflow_state.insert(
                             node_output_key,
-                            json!({
-                                "value": input,
-                                "type": "user_input"
-                            }),
+                            serde_json::to_value(&user_input_output)?,
                         );
                     }
                 }
@@ -301,41 +311,41 @@ impl AgentExecutor {
             let result = self.resume_workflow_execution().await?;
 
             // Check if workflow is still pending
-            let execution_status =
-                if let Some(status) = result.get("execution_status").and_then(|s| s.as_str()) {
-                    if status == "pending" {
-                        // Store the pending workflow result
-                        self.store_conversation(
-                            ConversationContent::AssistantTaskExecution {
-                                task_execution: json!({
-                                    "type": "workflow",
-                                    "workflow_id": workflow_id,
-                                    "result": result,
-                                }),
-                                execution_status: "pending".to_string(),
-                                blocking_reason: None,
-                            },
-                            ConversationMessageType::AssistantTaskExecution,
-                        )
-                        .await?;
-
-                        // Workflow is still pending, return early
-                        return Ok(());
-                    }
-                    status.to_string()
-                } else {
-                    "completed".to_string()
+            let workflow_result: WorkflowExecutionResult = serde_json::from_value(result)?;
+            
+            if workflow_result.execution_status == "pending" {
+                // Store the pending workflow result
+                let task_execution = WorkflowTaskExecution {
+                    execution_type: "workflow".to_string(),
+                    workflow_id,
+                    result: workflow_result.clone(),
                 };
+                
+                self.store_conversation(
+                    ConversationContent::AssistantTaskExecution {
+                        task_execution: serde_json::to_value(&task_execution)?,
+                        execution_status: "pending".to_string(),
+                        blocking_reason: None,
+                    },
+                    ConversationMessageType::AssistantTaskExecution,
+                )
+                .await?;
+
+                // Workflow is still pending, return early
+                return Ok(());
+            }
 
             // Store the workflow result as a task execution
+            let task_execution = WorkflowTaskExecution {
+                execution_type: "workflow".to_string(),
+                workflow_id,
+                result: workflow_result.clone(),
+            };
+            
             self.store_conversation(
                 ConversationContent::AssistantTaskExecution {
-                    task_execution: json!({
-                        "type": "workflow",
-                        "workflow_id": workflow_id,
-                        "result": result,
-                    }),
-                    execution_status,
+                    task_execution: serde_json::to_value(&task_execution)?,
+                    execution_status: workflow_result.execution_status,
                     blocking_reason: None,
                 },
                 ConversationMessageType::AssistantTaskExecution,
@@ -413,15 +423,7 @@ impl AgentExecutor {
                     let execution_status = if let Some(status) =
                         result.get("status").and_then(|s| s.as_str())
                     {
-                        tracing::info!(
-                            "Direct execution result status: {}, result: {:?}",
-                            status,
-                            result
-                        );
                         if status == "pending" {
-                            tracing::info!(
-                                "Detected pending platform function in direct execution, saving state and pausing"
-                            );
                             let execution_state = AgentExecutionState {
                                 executable_tasks: self
                                     .executable_tasks
@@ -509,14 +511,14 @@ impl AgentExecutor {
                     self.is_in_planning_mode = false;
                     self.executable_tasks = tasks;
 
-                    let task_summary = json!({
-                        "total_tasks": self.executable_tasks.len(),
-                        "tasks": self.executable_tasks.clone(),
-                    });
+                    let task_summary = TaskSummary {
+                        total_tasks: self.executable_tasks.len(),
+                        tasks: self.executable_tasks.iter().map(|t| serde_json::to_value(t).unwrap()).collect(),
+                    };
 
                     self.store_conversation(
                         ConversationContent::AssistantActionPlanning {
-                            task_execution: task_summary,
+                            task_execution: serde_json::to_value(&task_summary)?,
                             execution_status: "ready".to_string(),
                             blocking_reason: None,
                         },
@@ -648,24 +650,26 @@ impl AgentExecutor {
     }
 
     async fn decide_next_step(&mut self) -> Result<StepDecision, AppError> {
+        let context = StepDecisionContext {
+            conversation_history: self.get_conversation_history_for_llm(),
+            user_request: self.user_request.clone(),
+            current_objective: self.current_objective.as_ref().map(|o| serde_json::to_value(o).unwrap()),
+            conversation_insights: self.conversation_insights.as_ref().map(|c| serde_json::to_value(c).unwrap()),
+            executable_tasks: self.executable_tasks.iter().map(|t| serde_json::to_value(t).unwrap()).collect(),
+            task_results: self.task_results.iter().map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap())).collect(),
+            available_tools: self.agent.tools.iter().map(|t| serde_json::to_value(t).unwrap()).collect(),
+            available_workflows: self.agent.workflows.iter().map(|w| serde_json::to_value(w).unwrap()).collect(),
+            available_knowledge_bases: self.agent.knowledge_bases.iter().map(|kb| serde_json::to_value(kb).unwrap()).collect(),
+            iteration_info: dto::json::IterationInfo {
+                current_iteration: 1,
+                max_iterations: MAX_LOOP_ITERATIONS,
+            },
+            is_in_planning_mode: self.is_in_planning_mode,
+        };
+        
         let request_body = render_template_with_prompt(
             AgentTemplates::STEP_DECISION,
-            json!({
-                "conversation_history": self.get_conversation_history_for_llm(),
-                "user_request": self.user_request,
-                "current_objective": self.current_objective,
-                "conversation_insights": self.conversation_insights,
-                "executable_tasks": self.executable_tasks,
-                "task_results": self.task_results,
-                "available_tools": self.agent.tools.clone(),
-                "available_workflows": self.agent.workflows.clone(),
-                "available_knowledge_bases": self.agent.knowledge_bases.clone(),
-                "iteration_info": {
-                    "current_iteration": 1,
-                    "max_iterations": MAX_LOOP_ITERATIONS,
-                },
-                "is_in_planning_mode": self.is_in_planning_mode,
-            }),
+            serde_json::to_value(&context)?,
         )
         .map_err(|e| AppError::Internal(format!("Failed to render step decision template: {e}")))?;
 
@@ -691,18 +695,20 @@ impl AgentExecutor {
     // async fn breakdown_tasks(&mut self) -> Result<(), AppError> { ... }
 
     async fn validate_execution(&mut self) -> Result<ValidationResponse, AppError> {
+        let context = ValidationContext {
+            conversation_history: self.get_conversation_history_for_llm(),
+            user_request: self.user_request.clone(),
+            current_objective: self.current_objective.as_ref().map(|o| serde_json::to_value(o).unwrap()),
+            task_results: self.task_results.iter().map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap())).collect(),
+            executable_tasks: self.executable_tasks.iter().map(|t| serde_json::to_value(t).unwrap()).collect(),
+            available_tools: self.agent.tools.iter().map(|t| serde_json::to_value(t).unwrap()).collect(),
+            available_workflows: self.agent.workflows.iter().map(|w| serde_json::to_value(w).unwrap()).collect(),
+            available_knowledge_bases: self.agent.knowledge_bases.iter().map(|kb| serde_json::to_value(kb).unwrap()).collect(),
+        };
+        
         let request_body = render_template_with_prompt(
             AgentTemplates::VALIDATION,
-            json!({
-                "conversation_history": self.get_conversation_history_for_llm(),
-                "user_request": self.user_request,
-                "current_objective": self.current_objective,
-                "task_results": self.task_results,
-                "executable_tasks": self.executable_tasks,
-                "available_tools": self.agent.tools.clone(),
-                "available_workflows": self.agent.workflows.clone(),
-                "available_knowledge_bases": self.agent.knowledge_bases.clone(),
-            }),
+            serde_json::to_value(&context)?,
         )
         .map_err(|e| AppError::Internal(format!("Failed to render validation template: {e}")))?;
 
@@ -793,7 +799,6 @@ impl AgentExecutor {
             }
         };
 
-        println!("{context_results:?}");
 
         self.store_conversation(
             ConversationContent::ContextResults {
@@ -940,15 +945,7 @@ impl AgentExecutor {
 
             // Check if this was a Platform Function that returned pending
             if let Some(status) = action_result.get("status").and_then(|s| s.as_str()) {
-                tracing::info!(
-                    "Task execution result status: {}, action_result: {:?}",
-                    status,
-                    action_result
-                );
                 if status == "pending" {
-                    tracing::info!(
-                        "Detected pending platform function, saving state and pausing execution"
-                    );
                     // Save execution state before pausing
                     let execution_state = AgentExecutionState {
                         executable_tasks: self
@@ -1587,11 +1584,8 @@ impl AgentExecutor {
 
         match &result {
             Ok(res) => {
-                tracing::info!("Workflow {} completed successfully", workflow.name);
-                tracing::debug!("Workflow result: {:?}", res);
             }
             Err(e) => {
-                tracing::error!("Workflow {} failed: {}", workflow.name, e);
             }
         }
 
@@ -1633,21 +1627,25 @@ impl AgentExecutor {
         if let Some(status) = output.get("status").and_then(|s| s.as_str()) {
             if status == "pending" {
                 // Workflow paused, return with pending status
-                return Ok(json!({
-                    "workflow_id": workflow.id,
-                    "workflow_name": workflow.name,
-                    "execution_status": "pending",
-                    "output": output,
-                }));
+                let result = WorkflowExecutionResult {
+                    workflow_id: workflow.id,
+                    workflow_name: workflow.name.clone(),
+                    execution_status: "pending".to_string(),
+                    output: Some(output),
+                    message: None,
+                };
+                return Ok(serde_json::to_value(&result)?);
             }
         }
 
-        Ok(json!({
-            "workflow_id": workflow.id,
-            "workflow_name": workflow.name,
-            "execution_status": "completed",
-            "output": output,
-        }))
+        let result = WorkflowExecutionResult {
+            workflow_id: workflow.id,
+            workflow_name: workflow.name.clone(),
+            execution_status: "completed".to_string(),
+            output: Some(output),
+            message: None,
+        };
+        Ok(serde_json::to_value(&result)?)
     }
 
     fn execute_node_recursive<'a>(
@@ -1871,27 +1869,31 @@ impl AgentExecutor {
         config: &TriggerNodeConfig,
         workflow_state: &HashMap<String, Value>,
     ) -> Result<Value, AppError> {
-        let mut context_summary = json!({
-            "inputs": workflow_state.get("inputs").cloned().unwrap_or(json!({})),
-            "total_context_items": workflow_state.get("total_context_items").cloned().unwrap_or(json!(0)),
-            "has_conversation_history": workflow_state.contains_key("conversation_history"),
-            "has_memory_context": workflow_state.contains_key("memory_context"),
-        });
-
+        let mut outputs = HashMap::new();
         for (key, value) in workflow_state {
             if key.ends_with("_output") {
-                context_summary[key] = value.clone();
+                outputs.insert(key.clone(), value.clone());
             }
         }
-
-        let template_context = json!({
-            "trigger_condition": config.condition,
-            "trigger_description": config.description,
-            "workflow_state": context_summary,
-        });
+        
+        let workflow_state_summary = WorkflowStateSummary {
+            inputs: workflow_state.get("inputs").cloned().unwrap_or(serde_json::json!({})),
+            total_context_items: workflow_state.get("total_context_items")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as i32,
+            has_conversation_history: workflow_state.contains_key("conversation_history"),
+            has_memory_context: workflow_state.contains_key("memory_context"),
+            outputs,
+        };
+        
+        let template_context = TriggerEvaluationContext {
+            trigger_condition: config.condition.clone(),
+            trigger_description: config.description.clone().unwrap_or_default(),
+            workflow_state: workflow_state_summary,
+        };
 
         let request_body =
-            render_template_with_prompt(AgentTemplates::TRIGGER_EVALUATION, template_context)
+            render_template_with_prompt(AgentTemplates::TRIGGER_EVALUATION, serde_json::to_value(&template_context)?)
                 .map_err(|e| {
                     AppError::Internal(format!("Failed to render trigger evaluation template: {e}"))
                 })?;
@@ -1902,17 +1904,18 @@ impl AgentExecutor {
             .await?;
 
         if evaluation.should_trigger {
-            Ok(json!({
-                "type": "trigger",
-                "triggered": true,
-                "description": config.description,
-                "trigger_condition": config.condition,
-                "evaluation": {
-                    "reasoning": evaluation.reasoning,
-                    "confidence": evaluation.confidence,
+            let result = TriggerNodeResult {
+                node_type: "trigger".to_string(),
+                triggered: true,
+                description: config.description.clone().unwrap_or_default(),
+                trigger_condition: config.condition.clone(),
+                evaluation: TriggerEvaluationResult {
+                    reasoning: evaluation.reasoning,
+                    confidence: evaluation.confidence as f32,
                 },
-                "context": workflow_state,
-            }))
+                context: workflow_state.clone(),
+            };
+            Ok(serde_json::to_value(&result)?)
         } else {
             Err(AppError::BadRequest(format!(
                 "Trigger condition not met: {}. Missing requirements: {}",
@@ -2008,18 +2011,19 @@ impl AgentExecutor {
     async fn execute_llm_call_node(&self, config: &LLMCallNodeConfig) -> Result<Value, AppError> {
         let prompt = config.prompt_template.clone();
 
-        let request_body = serde_json::json!({
-            "contents": [{
-                "parts": [{"text": prompt}]
+        let generation_config = LLMGenerationConfig {
+            contents: vec![LLMContent {
+                parts: vec![LLMPart { text: prompt }],
             }],
-            "generationConfig": {
-                "temperature": 0.7,
-                "topK": 40,
-                "topP": 0.95,
-                "maxOutputTokens": 8192,
-            }
-        }).to_string();
+            generation_config: GenerationConfig {
+                temperature: 0.7,
+                top_k: 40,
+                top_p: 0.95,
+                max_output_tokens: 8192,
+            },
+        };
 
+        let request_body = serde_json::to_string(&generation_config)?;
         let llm = self.create_main_llm()?;
         let response: Value = llm
             .generate_structured_content(request_body)
@@ -2030,19 +2034,33 @@ impl AgentExecutor {
             .unwrap_or_else(|_| response.to_string());
 
         match config.response_format {
-            ResponseFormat::Text => Ok(json!({
-                "type": "llm_response",
-                "format": "text",
-                "content": response_text,
-            })),
-            ResponseFormat::Json => serde_json::from_str(&response_text).or_else(|_| {
-                Ok(json!({
-                    "type": "llm_response",
-                    "format": "json",
-                    "content": response_text,
-                    "parse_error": "Failed to parse response as JSON"
-                }))
-            }),
+            ResponseFormat::Text => {
+                let result = LLMNodeResult {
+                    node_type: "llm_response".to_string(),
+                    format: "text".to_string(),
+                    content: response_text,
+                    parse_error: None,
+                };
+                Ok(serde_json::to_value(&result)?)
+            }
+            ResponseFormat::Json => {
+                let result = if serde_json::from_str::<Value>(&response_text).is_ok() {
+                    LLMNodeResult {
+                        node_type: "llm_response".to_string(),
+                        format: "json".to_string(),
+                        content: response_text,
+                        parse_error: None,
+                    }
+                } else {
+                    LLMNodeResult {
+                        node_type: "llm_response".to_string(),
+                        format: "json".to_string(),
+                        content: response_text,
+                        parse_error: Some("Failed to parse response as JSON".to_string()),
+                    }
+                };
+                Ok(serde_json::to_value(&result)?)
+            }
         }
     }
 
@@ -2051,29 +2069,29 @@ impl AgentExecutor {
         config: &SwitchNodeConfig,
         workflow_state: &HashMap<String, Value>,
     ) -> Result<Value, AppError> {
-        let switch_value = json!(config.switch_condition);
+        let switch_value = serde_json::to_value(&config.switch_condition)?;
 
-        let case_descriptions: Vec<Value> = config
+        let case_descriptions: Vec<CaseDescription> = config
             .cases
             .iter()
             .enumerate()
-            .map(|(index, case)| {
-                json!({
-                    "index": index,
-                    "label": case.case_label,
-                    "condition": case.case_condition,
-                })
+            .map(|(index, case)| CaseDescription {
+                index,
+                label: case.case_label.clone().unwrap_or_default(),
+                condition: case.case_condition.clone(),
             })
             .collect();
 
+        let context = SwitchCaseContext {
+            switch_value: switch_value.clone(),
+            cases: case_descriptions,
+            has_default: config.default_case,
+            workflow_state: workflow_state.clone(),
+        };
+
         let request_body = render_template_with_prompt(
             AgentTemplates::SWITCH_CASE_EVALUATION,
-            json!({
-                "switch_value": switch_value,
-                "cases": case_descriptions,
-                "has_default": config.default_case,
-                "workflow_state": workflow_state,
-            }),
+            serde_json::to_value(&context)?,
         )
         .map_err(|e| AppError::Internal(format!("Failed to render switch case template: {e}")))?;
 
@@ -2084,24 +2102,28 @@ impl AgentExecutor {
 
         if let Some(case_index) = evaluation.selected_case_index {
             if case_index < config.cases.len() {
-                return Ok(json!({
-                    "type": "switch",
-                    "matched_case": case_index,
-                    "case_label": evaluation.selected_case_label,
-                    "switch_value": switch_value,
-                    "reasoning": evaluation.reasoning,
-                    "confidence": evaluation.confidence,
-                }));
+                let result = SwitchNodeResult {
+                    node_type: "switch".to_string(),
+                    matched_case: serde_json::to_value(case_index)?,
+                    case_label: evaluation.selected_case_label,
+                    switch_value: switch_value.clone(),
+                    reasoning: evaluation.reasoning,
+                    confidence: Some(evaluation.confidence as f32),
+                };
+                return Ok(serde_json::to_value(&result)?);
             }
         }
 
         if evaluation.use_default && config.default_case {
-            Ok(json!({
-                "type": "switch",
-                "matched_case": "default",
-                "switch_value": switch_value,
-                "reasoning": evaluation.reasoning,
-            }))
+            let result = SwitchNodeResult {
+                node_type: "switch".to_string(),
+                matched_case: serde_json::to_value("default")?,
+                case_label: None,
+                switch_value,
+                reasoning: evaluation.reasoning,
+                confidence: None,
+            };
+            Ok(serde_json::to_value(&result)?)
         } else {
             Err(AppError::Internal(format!(
                 "No matching case for switch value: {}. Reasoning: {}",
@@ -2157,22 +2179,23 @@ impl AgentExecutor {
         }
 
         // Return a pending status that will pause the workflow
-        Ok(json!({
-            "status": "pending",
-            "type": "user_input",
-            "input_type": match &config.input_type {
+        let result = UserInputNodeResult {
+            status: "pending".to_string(),
+            node_type: "user_input".to_string(),
+            input_type: match &config.input_type {
                 UserInputType::Text => "text",
                 UserInputType::Number => "number",
                 UserInputType::Select => "select",
                 UserInputType::MultiSelect => "multiselect",
                 UserInputType::Boolean => "boolean",
                 UserInputType::Date => "date",
-            },
-            "prompt": config.prompt,
-            "options": config.options,
-            "default_value": config.default_value,
-            "placeholder": config.placeholder,
-        }))
+            }.to_string(),
+            prompt: config.prompt.clone(),
+            options: config.options.clone(),
+            default_value: config.default_value.clone(),
+            placeholder: config.placeholder.clone(),
+        };
+        Ok(serde_json::to_value(&result)?)
     }
 
     pub async fn get_immediate_context(&self) -> Result<ImmediateContext, AppError> {
@@ -2206,7 +2229,6 @@ impl AgentExecutor {
     pub fn post_execution_processing(mut self) {
         tokio::spawn(async move {
             if let Err(e) = self.check_and_generate_summaries().await {
-                tracing::error!("Failed to check and generate summaries: {}", e);
             }
         });
     }
@@ -2222,19 +2244,9 @@ impl AgentExecutor {
             .map(|conv| conv.token_count as usize)
             .sum();
 
-        tracing::info!(
-            "Total uncompressed tokens for context {}: {}",
-            self.context_id,
-            total_uncompressed_tokens
-        );
 
         // Only generate summaries if we exceed the threshold
         if total_uncompressed_tokens >= TOKEN_THRESHOLD {
-            tracing::info!(
-                "Token threshold exceeded ({} >= {}), applying sliding window compression",
-                total_uncompressed_tokens,
-                TOKEN_THRESHOLD
-            );
 
             // Find the start of the current execution (last user message)
             let current_execution_start = self
@@ -2249,11 +2261,6 @@ impl AgentExecutor {
             self.apply_sliding_window_compression(tokens_to_compress, current_execution_start)
                 .await?;
         } else {
-            tracing::info!(
-                "Token threshold not exceeded ({} < {}), skipping compression",
-                total_uncompressed_tokens,
-                TOKEN_THRESHOLD
-            );
         }
 
         Ok(())
@@ -2414,14 +2421,7 @@ impl AgentExecutor {
 
         // Validate compression effectiveness
         if compressed_tokens == 0 {
-            tracing::warn!(
-                "Compression failed to reduce any tokens. This may indicate all executions are already compressed or too small."
-            );
         } else {
-            tracing::info!(
-                "Sliding window compression complete. Compressed approximately {} tokens",
-                compressed_tokens
-            );
         }
 
         // Recalculate total tokens to verify compression worked
@@ -2469,7 +2469,6 @@ impl AgentExecutor {
             .generate_structured_content::<serde_json::Value>(request_body)
             .await
             .map_err(|e| {
-                tracing::error!("Failed to generate execution summary: {}", e);
                 AppError::Internal(format!("Summary generation failed: {e}"))
             })?;
 
@@ -2502,11 +2501,6 @@ impl AgentExecutor {
                 Ok(embeddings) => {
                     // Verify we got the correct number of embeddings
                     if embeddings.len() != working_memory_items.len() {
-                        tracing::error!(
-                            "Embedding count mismatch: expected {}, got {}",
-                            working_memory_items.len(),
-                            embeddings.len()
-                        );
                     } else {
                         let mut stored_count = 0;
                         for (memory_content, embedding) in
@@ -2531,26 +2525,18 @@ impl AgentExecutor {
                                     };
 
                                     if let Err(e) = create_cmd.execute(&self.app_state).await {
-                                        tracing::error!("Failed to store working memory: {}", e);
                                     } else {
                                         stored_count += 1;
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::error!("Failed to generate memory ID: {}", e);
                                 }
                             }
                         }
 
-                        tracing::info!(
-                            "Stored {} out of {} working memory items",
-                            stored_count,
-                            working_memory_items.len()
-                        );
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to generate embeddings for working memory: {}", e);
                     // Continue without storing memories - don't fail the entire summary
                 }
             };
@@ -2563,7 +2549,6 @@ impl AgentExecutor {
                 bpe.encode_with_special_tokens(&full_summary).len()
             }
             Err(e) => {
-                tracing::error!("Failed to initialize tokenizer for token counting: {}", e);
                 // Estimate token count as a fallback (roughly 4 chars per token)
                 let full_summary = format!("User: {user_request}\nAgent: {agent_execution}");
                 full_summary.len() / 4
@@ -2585,12 +2570,10 @@ impl AgentExecutor {
                 );
 
                 if let Err(e) = command.execute(&self.app_state).await {
-                    tracing::error!("Failed to store execution summary: {}", e);
                     return Err(AppError::Internal(format!("Failed to store summary: {e}")));
                 }
             }
             Err(e) => {
-                tracing::error!("Failed to generate summary ID: {}", e);
                 return Err(AppError::Internal(format!("Failed to generate ID: {e}")));
             }
         }

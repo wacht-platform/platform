@@ -1,6 +1,5 @@
 use common::error::AppError;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 const GEMINI_API_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -67,7 +66,6 @@ impl GeminiClient {
         let mut last_error = None;
         for attempt in 1..=3 {
             if attempt > 1 {
-                tracing::warn!("Retrying Gemini API request (attempt {})", attempt);
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
             }
 
@@ -102,15 +100,11 @@ impl GeminiClient {
                                         return Ok(parsed_response);
                                     }
                                     Err(e) => {
-                                        error!("Failed to parse structured response: {}", e);
-                                        error!("Raw response: {}", accumulated_text);
                                         last_error = Some(format!("Failed to parse response: {e}"));
                                     }
                                 }
                             }
                             Err(e) => {
-                                error!("Failed to parse Gemini response: {}", e);
-                                error!("Raw body: {:?}", String::from_utf8_lossy(&bytes));
                                 last_error = Some(format!("Invalid API response format: {e}"));
                             }
                         },

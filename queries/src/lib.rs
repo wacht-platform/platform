@@ -28,6 +28,7 @@ pub mod workspace;
 
 pub mod agent_execution_context;
 pub mod ai_agent;
+pub mod billing;
 pub mod ai_knowledge_base;
 pub mod ai_tool;
 pub mod ai_workflow;

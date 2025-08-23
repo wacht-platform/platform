@@ -8,6 +8,8 @@ pub mod analytics;
 pub mod api_key;
 pub mod api_key_console;
 pub mod b2b;
+pub mod billing;
+pub mod billing_webhook;
 pub mod connection;
 pub mod health;
 pub mod notifications;

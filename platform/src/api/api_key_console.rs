@@ -1,49 +1,43 @@
 // Console-specific API key management functions
-// API key apps are stored in the console's database
-// Each customer deployment can have one API key app (named after their deployment_id)
+// These functions use the SDK to call backend API endpoints
 
-use axum::extract::{Json, Path, State};
+use axum::extract::{Json, Path};
 use axum::http::StatusCode;
+use wacht::api::api_keys;
 
-use crate::application::{HttpState, response::ApiResult};
-use crate::middleware::{ConsoleDeployment, RequireDeployment};
-use commands::{
-    Command,
-    api_key::{CreateApiKeyCommand, RevokeApiKeyCommand, RotateApiKeyCommand},
-    api_key_app::{CreateApiKeyAppCommand, UpdateApiKeyAppCommand},
-};
+use crate::application::response::ApiResult;
+use crate::middleware::RequireDeployment;
 use dto::json::api_key::{
     ApiKeyStats, ApiKeyStatus, CreateApiKeyRequest, ListApiKeysResponse, RevokeApiKeyRequest,
 };
 use models::{
-    DeploymentMode,
-    api_key::{ApiKeyApp, ApiKeyWithSecret},
-    api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper},
-};
-use queries::{
-    Query as QueryTrait,
-    api_key::{GetApiKeyAppByNameQuery, GetApiKeysByAppQuery},
+    api_key::{ApiKey, ApiKeyApp, ApiKeyWithSecret},
 };
 
 // Get API key status for a deployment
 pub async fn get_api_key_status(
-    State(app_state): State<HttpState>,
-    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<ApiKeyStatus> {
     let app_name = deployment_id.to_string();
 
-    let app = GetApiKeyAppByNameQuery::new(console_deployment_id, app_name)
-        .execute(&app_state)
-        .await?;
+    // Try to get the app using SDK
+    let apps = api_keys::list_api_key_apps(Some(true))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    
+    let app = apps.into_iter()
+        .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(&app_name))
+        .and_then(|a| serde_json::from_value::<ApiKeyApp>(a).ok());
 
-    let keys = if let Some(ref app) = app {
-        Some(
-            GetApiKeysByAppQuery::new(app.id, console_deployment_id)
-                .with_inactive(true)
-                .execute(&app_state)
-                .await?,
-        )
+    let keys = if let Some(ref _app) = app {
+        let keys_json = api_keys::list_api_keys(&app_name, Some(true))
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        
+        let keys: Vec<models::api_key::ApiKey> = keys_json.into_iter()
+            .filter_map(|k| serde_json::from_value(k).ok())
+            .collect();
+        Some(keys)
     } else {
         None
     };
@@ -58,18 +52,19 @@ pub async fn get_api_key_status(
 
 // Activate API keys for a deployment
 pub async fn activate_api_keys(
-    State(app_state): State<HttpState>,
-    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<ApiKeyApp> {
     let app_name = deployment_id.to_string();
 
-    // Check if already exists
-    let existing = GetApiKeyAppByNameQuery::new(console_deployment_id, app_name.clone())
-        .execute(&app_state)
-        .await?;
+    // Check if already exists using SDK
+    let apps = api_keys::list_api_key_apps(Some(true))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    
+    let existing = apps.into_iter()
+        .any(|a| a.get("name").and_then(|n| n.as_str()) == Some(&app_name));
 
-    if existing.is_some() {
+    if existing {
         return Err((
             StatusCode::BAD_REQUEST,
             "API keys already activated for this deployment",
@@ -77,68 +72,62 @@ pub async fn activate_api_keys(
             .into());
     }
 
-    // Create API key app in console's database
-    let mut command = CreateApiKeyAppCommand::new(console_deployment_id, app_name);
-    command = command.with_description(format!("API keys for deployment {}", deployment_id));
+    // Create API key app using SDK
+    let request = api_keys::CreateApiKeyAppRequest {
+        name: app_name,
+        description: Some(format!("API keys for deployment {}", deployment_id)),
+        rate_limit_per_minute: Some(60),
+        rate_limit_per_hour: Some(1000),
+        rate_limit_per_day: Some(10000),
+    };
 
-    // Set default rate limits (per minute, per hour, per day)
-    command = command.with_rate_limits(60, 1000, 10000);
-
-    let app = command.execute(&app_state).await?;
+    let app_json = api_keys::create_api_key_app(request)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    
+    let app: ApiKeyApp = serde_json::from_value(app_json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    
     Ok(app.into())
 }
 
 // Deactivate API keys for a deployment
 pub async fn deactivate_api_keys(
-    State(app_state): State<HttpState>,
-    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<()> {
     let app_name = deployment_id.to_string();
 
-    let app = GetApiKeyAppByNameQuery::new(console_deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
-
-    let command = UpdateApiKeyAppCommand {
-        app_id: app.id,
-        deployment_id: console_deployment_id,
+    // Update app to deactivate using SDK
+    let request = api_keys::UpdateApiKeyAppRequest {
         name: None,
         description: None,
         is_active: Some(false),
         rate_limit_per_minute: None,
         rate_limit_per_hour: None,
         rate_limit_per_day: None,
-        rate_limit_mode: None,
     };
 
-    command.execute(&app_state).await?;
+    api_keys::update_api_key_app(&app_name, request)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    
     Ok(().into())
 }
 
 // Get API key statistics
 pub async fn get_api_key_stats(
-    State(app_state): State<HttpState>,
-    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<ApiKeyStats> {
     let app_name = deployment_id.to_string();
 
-    let app = GetApiKeyAppByNameQuery::new(console_deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "API key app not found. Please activate API keys first.",
-            )
-        })?;
-
-    let keys = GetApiKeysByAppQuery::new(app.id, console_deployment_id)
-        .with_inactive(true)
-        .execute(&app_state)
-        .await?;
+    // Get keys using SDK
+    let keys_json = api_keys::list_api_keys(&app_name, Some(true))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    
+    let keys: Vec<ApiKey> = keys_json.into_iter()
+        .filter_map(|k| serde_json::from_value(k).ok())
+        .collect();
 
     let total_keys = keys.len() as i64;
     let active_keys = keys.iter().filter(|k| k.is_active).count() as i64;
@@ -167,133 +156,175 @@ pub async fn get_api_key_stats(
 
 // List API keys
 pub async fn list_api_keys(
-    State(app_state): State<HttpState>,
-    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<ListApiKeysResponse> {
     let app_name = deployment_id.to_string();
 
-    let app = GetApiKeyAppByNameQuery::new(console_deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "API key app not found. Please activate API keys first.",
-            )
+    // Get keys using SDK
+    let keys_json = api_keys::list_api_keys(&app_name, Some(true))
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("404") || e.to_string().contains("Not Found") {
+                (
+                    StatusCode::NOT_FOUND,
+                    "API key app not found. Please activate API keys first.".to_string(),
+                )
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
         })?;
-
-    let keys = GetApiKeysByAppQuery::new(app.id, console_deployment_id)
-        .with_inactive(true)
-        .execute(&app_state)
-        .await?;
+    
+    let keys: Vec<ApiKey> = keys_json.into_iter()
+        .filter_map(|k| serde_json::from_value(k).ok())
+        .collect();
 
     Ok(ListApiKeysResponse { keys }.into())
 }
 
 // Create an API key
 pub async fn create_api_key(
-    State(app_state): State<HttpState>,
-    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> ApiResult<ApiKeyWithSecret> {
-    use queries::deployment::GetDeploymentWithSettingsQuery;
-
     let app_name = deployment_id.to_string();
 
-    // Get the app
-    let app = GetApiKeyAppByNameQuery::new(console_deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "API key app not found. Please activate API keys first.",
-            )
-        })?;
-
-    // Get deployment to determine key prefix
-    let deployment = GetDeploymentWithSettingsQuery::new(deployment_id)
-        .execute(&app_state)
-        .await?;
-
-    // Automatically determine key prefix based on deployment mode
-    let key_prefix = match deployment.mode {
-        DeploymentMode::Production => "sk_live",
-        DeploymentMode::Staging => "sk_test",
-    };
-
-    let mut command = CreateApiKeyCommand::new(
-        app.id,
-        console_deployment_id,
-        request.name,
-        key_prefix.to_string(),
+    // Always use default read-only scopes for console-created API keys
+    let permissions = models::api_key_permissions::ApiKeyScopeHelper::scopes_to_strings(
+        &models::api_key_permissions::ApiKeyScope::default_scopes()
     );
 
-    // Always use default read-only scopes for console-created API keys
-    // This provides safe, limited access by default
-    let permissions = ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes());
-    command = command.with_permissions(permissions);
+    // Create API key using SDK
+    let sdk_request = api_keys::CreateApiKeyRequest {
+        name: request.name,
+        permissions: Some(permissions),
+        expires_at: request.expires_at.map(|dt| dt.to_rfc3339()),
+        metadata: request.metadata,
+    };
 
-    if let Some(expires_at) = request.expires_at {
-        command = command.with_expiration(expires_at);
-    }
-
-    if let Some(metadata) = request.metadata {
-        command.metadata = Some(metadata);
-    }
-
-    let key_with_secret = command.execute(&app_state).await?;
-    Ok(key_with_secret.into())
+    let key = api_keys::create_api_key(&app_name, sdk_request)
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("404") || e.to_string().contains("Not Found") {
+                (
+                    StatusCode::NOT_FOUND,
+                    "API key app not found. Please activate API keys first.".to_string(),
+                )
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
+        })?;
+    
+    // SDK returns the same structure as our model
+    // Just need to convert the timestamps from strings to DateTime
+    let api_key_data = ApiKey {
+        id: key.key.id,
+        app_id: key.key.app_id,
+        deployment_id: key.key.deployment_id,
+        name: key.key.name,
+        key_prefix: key.key.key_prefix,
+        key_suffix: key.key.key_suffix,
+        key_hash: key.key.key_hash,
+        permissions: key.key.permissions,
+        metadata: key.key.metadata,
+        expires_at: key.key.expires_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc)),
+        last_used_at: key.key.last_used_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc)),
+        is_active: key.key.is_active,
+        created_at: chrono::DateTime::parse_from_rfc3339(&key.key.created_at)
+            .unwrap_or_else(|_| chrono::Utc::now().into())
+            .with_timezone(&chrono::Utc),
+        updated_at: chrono::DateTime::parse_from_rfc3339(&key.key.updated_at)
+            .unwrap_or_else(|_| chrono::Utc::now().into())
+            .with_timezone(&chrono::Utc),
+        revoked_at: key.key.revoked_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc)),
+        revoked_reason: key.key.revoked_reason,
+    };
+    
+    let api_key = ApiKeyWithSecret {
+        key: api_key_data,
+        secret: key.secret,
+    };
+    
+    Ok(api_key.into())
 }
 
 // Revoke an API key
 pub async fn revoke_api_key(
-    State(app_state): State<HttpState>,
-    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
-    RequireDeployment(deployment_id): RequireDeployment,
     Path((_, key_id)): Path<(i64, i64)>,
     Json(request): Json<RevokeApiKeyRequest>,
 ) -> ApiResult<()> {
-    let app_name = deployment_id.to_string();
-
-    // Verify app exists
-    let _app = GetApiKeyAppByNameQuery::new(console_deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
-
-    let command = RevokeApiKeyCommand {
+    // Revoke using SDK
+    let sdk_request = api_keys::RevokeApiKeyRequest {
         key_id,
-        deployment_id: console_deployment_id,
         reason: request.reason,
     };
 
-    command.execute(&app_state).await?;
+    api_keys::revoke_api_key(sdk_request)
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("404") || e.to_string().contains("Not Found") {
+                (StatusCode::NOT_FOUND, "API key not found".to_string())
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
+        })?;
+    
     Ok(().into())
 }
 
 // Rotate an API key
 pub async fn rotate_api_key(
-    State(app_state): State<HttpState>,
-    ConsoleDeployment(console_deployment_id): ConsoleDeployment,
-    RequireDeployment(deployment_id): RequireDeployment,
     Path((_, key_id)): Path<(i64, i64)>,
 ) -> ApiResult<ApiKeyWithSecret> {
-    let app_name = deployment_id.to_string();
-
-    // Verify app exists
-    let _app = GetApiKeyAppByNameQuery::new(console_deployment_id, app_name)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
-
-    let command = RotateApiKeyCommand {
+    // Rotate using SDK
+    let sdk_request = api_keys::RotateApiKeyRequest {
         key_id,
-        deployment_id: console_deployment_id,
     };
 
-    let key_with_secret = command.execute(&app_state).await?;
-    Ok(key_with_secret.into())
+    let key = api_keys::rotate_api_key(sdk_request)
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("404") || e.to_string().contains("Not Found") {
+                (StatusCode::NOT_FOUND, "API key not found".to_string())
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
+        })?;
+    
+    // SDK returns the same structure as our model
+    // Just need to convert the timestamps from strings to DateTime
+    let api_key_data = ApiKey {
+        id: key.key.id,
+        app_id: key.key.app_id,
+        deployment_id: key.key.deployment_id,
+        name: key.key.name,
+        key_prefix: key.key.key_prefix,
+        key_suffix: key.key.key_suffix,
+        key_hash: key.key.key_hash,
+        permissions: key.key.permissions,
+        metadata: key.key.metadata,
+        expires_at: key.key.expires_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc)),
+        last_used_at: key.key.last_used_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc)),
+        is_active: key.key.is_active,
+        created_at: chrono::DateTime::parse_from_rfc3339(&key.key.created_at)
+            .unwrap_or_else(|_| chrono::Utc::now().into())
+            .with_timezone(&chrono::Utc),
+        updated_at: chrono::DateTime::parse_from_rfc3339(&key.key.updated_at)
+            .unwrap_or_else(|_| chrono::Utc::now().into())
+            .with_timezone(&chrono::Utc),
+        revoked_at: key.key.revoked_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc)),
+        revoked_reason: key.key.revoked_reason,
+    };
+    
+    let api_key = ApiKeyWithSecret {
+        key: api_key_data,
+        secret: key.secret,
+    };
+    
+    Ok(api_key.into())
 }

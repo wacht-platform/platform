@@ -68,6 +68,9 @@ pub mod vec_i64_as_string {
     }
 }
 
+// Helper function for optional i64 serialization
+pub use i64_as_string_option::serialize as serialize_option_i64_as_string;
+
 pub mod enum_from_str {
     use serde::{Deserialize, Deserializer};
     use std::{fmt::Display, str::FromStr};

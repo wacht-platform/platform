@@ -1,7 +1,7 @@
 use super::models::{WebsocketMessage, WebsocketMessageType};
 use super::session::SessionState;
-use agent_engine::{AgentExecutor, ResumeContext};
 use crate::middleware::host_extractor::ExtractedHost;
+use agent_engine::{AgentExecutor, ResumeContext};
 use async_nats::jetstream;
 use async_nats::jetstream::stream;
 use axum::Extension;
@@ -10,11 +10,14 @@ use axum::response::IntoResponse;
 use common::error::AppError;
 use common::state::AppState;
 use common::utils::jwt::verify_agent_context_token;
-use dto::json::StreamEvent;
+use dto::json::{
+    ExecutionStatusUpdate, PlatformEventPayload, PlatformFunctionPayload, SessionConnectedMessage,
+    StreamEvent, WebSocketError,
+};
 use fastwebsockets::FragmentCollector;
 use fastwebsockets::Frame;
 use fastwebsockets::OpCode;
-use fastwebsockets::WebSocketError;
+use fastwebsockets::WebSocketError as FastWebSocketError;
 use fastwebsockets::upgrade;
 use futures::StreamExt;
 use models::{AiAgentWithFeatures, ExecutionContextStatus};
@@ -214,19 +217,21 @@ async fn publish_stream_event(
             ("conversation_message", payload)
         }
         StreamEvent::PlatformEvent(event_label, event_data) => {
-            let payload = serde_json::to_vec(&serde_json::json!({
-                "event_label": event_label,
-                "event_data": event_data,
-            }))
-            .map_err(|e| AppError::Internal(format!("Failed to serialize platform event: {e}")))?;
+            let event_payload = PlatformEventPayload {
+                event_label,
+                event_data,
+            };
+            let payload = serde_json::to_vec(&event_payload).map_err(|e| {
+                AppError::Internal(format!("Failed to serialize platform event: {e}"))
+            })?;
             ("platform_event", payload)
         }
         StreamEvent::PlatformFunction(function_name, function_data) => {
-            let payload = serde_json::to_vec(&serde_json::json!({
-                "function_name": function_name,
-                "function_data": function_data,
-            }))
-            .map_err(|e| {
+            let function_payload = PlatformFunctionPayload {
+                function_name,
+                function_data,
+            };
+            let payload = serde_json::to_vec(&function_payload).map_err(|e| {
                 AppError::Internal(format!("Failed to serialize platform function: {e}"))
             })?;
             ("platform_function", payload)
@@ -289,10 +294,9 @@ pub async fn agent_stream_handler(
 
     let (response, fut) = ws.upgrade().unwrap();
 
-    tokio::task::spawn(async move {
-        if let Err(e) = handle_client(fut, state, host, token).await {
-        }
-    });
+    tokio::task::spawn(
+        async move { if let Err(e) = handle_client(fut, state, host, token).await {} },
+    );
 
     response.into_response()
 }
@@ -302,7 +306,7 @@ async fn handle_client(
     app_state: AppState,
     host: String,
     token: String,
-) -> Result<(), WebSocketError> {
+) -> Result<(), FastWebSocketError> {
     let mut ws = FragmentCollector::new(fut.await?);
 
     let (deployment_id, public_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
@@ -312,9 +316,9 @@ async fn handle_client(
         Ok(result) => result,
         Err(e) => {
             error!("Failed to get deployment for host {}: {}", host, e);
-            let error_msg = json!({
-                "error": "Invalid deployment"
-            });
+            let error_msg = WebSocketError {
+                error: "Invalid deployment".to_string(),
+            };
             let _ = ws
                 .write_frame(Frame::text(fastwebsockets::Payload::Owned(
                     serde_json::to_vec(&error_msg).unwrap(),
@@ -328,9 +332,9 @@ async fn handle_client(
         Ok(claims) => claims,
         Err(e) => {
             error!("Failed to verify token for host {}: {}", host, e);
-            let error_msg = json!({
-                "error": "Invalid authentication token"
-            });
+            let error_msg = WebSocketError {
+                error: "Invalid authentication token".to_string(),
+            };
             let _ = ws
                 .write_frame(Frame::text(fastwebsockets::Payload::Owned(
                     serde_json::to_vec(&error_msg).unwrap(),
@@ -514,7 +518,7 @@ async fn handle_client(
             },
             Some(message) = receiver.recv() => {
                 let payload = serde_json::to_vec(&message).unwrap();
-                if let Err(e) = ws.write_frame(Frame::text(fastwebsockets::Payload::Owned(payload))).await {
+                if let Err(_) = ws.write_frame(Frame::text(fastwebsockets::Payload::Owned(payload))).await {
                     break;
                 }
                 if message.message_type == WebsocketMessageType::CloseConnection {
@@ -537,8 +541,7 @@ fn handler_websocket_message(frame: Frame, session_state: Arc<Mutex<SessionState
                 Ok(message) => {
                     tokio::spawn(handle_execution_message(message, session_state));
                 }
-                Err(e) => {
-                }
+                Err(e) => {}
             };
 
             false
@@ -572,12 +575,16 @@ async fn handle_execution_message(
                 if let Some(token_audience) = &session_state.lock().await.audience {
                     if let Some(ref context_group) = context.context_group {
                         if token_audience != context_group {
+                            let error = WebSocketError {
+                                error: format!(
+                                    "Access denied: token audience '{}' does not match execution context group '{}'",
+                                    token_audience, context_group
+                                ),
+                            };
                             let error_message = WebsocketMessage {
                                 message_id: message.message_id,
                                 message_type: WebsocketMessageType::CloseConnection,
-                                data: json!({
-                                    "error": format!("Access denied: token audience '{}' does not match execution context group '{}'", token_audience, context_group)
-                                }),
+                                data: serde_json::to_value(&error).unwrap(),
                             };
                             let _ = sender.send(error_message);
                             return;
@@ -603,13 +610,14 @@ async fn handle_execution_message(
                     ExecutionContextStatus::Failed => "Failed",
                 };
 
+                let session_data = SessionConnectedMessage {
+                    context: serde_json::to_value(&context).unwrap(),
+                    execution_status: execution_status.to_string(),
+                };
                 WebsocketMessage {
                     message_id: message.message_id,
                     message_type: WebsocketMessageType::SessionConnected,
-                    data: json!({
-                        "context": context,
-                        "execution_status": execution_status,
-                    }),
+                    data: serde_json::to_value(&session_data).unwrap(),
                 }
             }
             Err(e) => WebsocketMessage {
@@ -696,12 +704,13 @@ async fn handle_execution_message(
         }
         WebsocketMessageType::MessageInput(user_message) => {
             // Send starting status
+            let status_update = ExecutionStatusUpdate {
+                status: "Starting".to_string(),
+            };
             let status_message = WebsocketMessage {
                 message_id: None,
                 message_type: WebsocketMessageType::ExecutionStatusUpdate,
-                data: json!({
-                    "status": "Starting"
-                }),
+                data: serde_json::to_value(&status_update).unwrap(),
             };
             let _ = sender.send(status_message);
 
@@ -719,23 +728,25 @@ async fn handle_execution_message(
             {
                 Ok(_) => {
                     // Send idle status on completion
+                    let status_update = ExecutionStatusUpdate {
+                        status: "Idle".to_string(),
+                    };
                     let status_message = WebsocketMessage {
                         message_id: None,
                         message_type: WebsocketMessageType::ExecutionStatusUpdate,
-                        data: json!({
-                            "status": "Idle"
-                        }),
+                        data: serde_json::to_value(&status_update).unwrap(),
                     };
                     let _ = sender.send(status_message);
                 }
                 Err(_) => {
                     // Send failed status on error
+                    let status_update = ExecutionStatusUpdate {
+                        status: "Failed".to_string(),
+                    };
                     let status_message = WebsocketMessage {
                         message_id: None,
                         message_type: WebsocketMessageType::ExecutionStatusUpdate,
-                        data: json!({
-                            "status": "Failed"
-                        }),
+                        data: serde_json::to_value(&status_update).unwrap(),
                     };
                     let _ = sender.send(status_message);
                 }
@@ -827,12 +838,13 @@ async fn handle_execution_message(
                 }
                 Err(e) => {
                     tracing::error!("Failed to resume with user input: {}", e);
+                    let status_update = ExecutionStatusUpdate {
+                        status: "Failed".to_string(),
+                    };
                     let status_message = WebsocketMessage {
                         message_id: None,
                         message_type: WebsocketMessageType::ExecutionStatusUpdate,
-                        data: json!({
-                            "status": "Failed"
-                        }),
+                        data: serde_json::to_value(&status_update).unwrap(),
                     };
                     let _ = sender.send(status_message);
                 }
