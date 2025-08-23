@@ -373,11 +373,9 @@ fn backend_specific_routes() -> Router<HttpState> {
         .route("/webhooks/apps", post(api::webhook::create_webhook_app))
         .route(
             "/webhooks/apps/{app_name}",
-            patch(api::webhook::update_webhook_app),
-        )
-        .route(
-            "/webhooks/apps/{app_name}",
-            delete(api::webhook::delete_webhook_app),
+            patch(api::webhook::update_webhook_app)
+                .get(api::webhook::get_webhook_delivery_details)
+                .delete(api::webhook::delete_webhook_app),
         )
         .route(
             "/webhooks/apps/{app_name}/rotate-secret",
@@ -511,7 +509,7 @@ pub async fn create_backend_router(state: HttpState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let deployment_routes = base_deployment_routes()
+    let backend_routs = base_deployment_routes()
         .merge(backend_specific_routes())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -520,7 +518,7 @@ pub async fn create_backend_router(state: HttpState) -> Router {
 
     Router::new()
         .merge(health_routes())
-        .nest("/deployments/{deployment_id}", deployment_routes)
+        .merge(backend_routs)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)

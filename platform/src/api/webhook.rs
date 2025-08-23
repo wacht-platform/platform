@@ -1,5 +1,7 @@
 use axum::extract::{Json, Path, Query, State};
+use axum::http::StatusCode;
 use models::webhook_analytics::{WebhookAnalyticsResult, WebhookTimeseriesResult};
+use queries::GetWebhookAppByNameQuery;
 use queries::webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery};
 
 use crate::application::{HttpState, response::ApiResult};
@@ -82,6 +84,23 @@ pub async fn update_webhook_app(
     };
 
     let app = command.execute(&app_state).await?;
+    Ok(app.into())
+}
+
+pub async fn get_webhook_app(
+    State(app_state): State<HttpState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(app_name): Path<String>,
+) -> ApiResult<WebhookApp> {
+    let command = GetWebhookAppByNameQuery::new(deployment_id, app_name);
+
+    let app = command.execute(&app_state).await?.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            "Knowledge base not found".to_string(),
+        )
+    })?;
+
     Ok(app.into())
 }
 
