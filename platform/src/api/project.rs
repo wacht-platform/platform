@@ -4,9 +4,9 @@ use axum::{
 };
 
 use crate::{
-    application::HttpState,
     application::response::{ApiResult, PaginatedResponse},
 };
+use common::state::AppState;
 
 use commands::{
     Command, CreateProductionDeploymentCommand, CreateProjectWithStagingDeploymentCommand,
@@ -18,7 +18,7 @@ use models::{Deployment, ProjectWithDeployments};
 use queries::{GetProjectsWithDeploymentQuery, Query};
 
 pub async fn get_projects(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
 ) -> ApiResult<PaginatedResponse<ProjectWithDeployments>> {
     let projects = GetProjectsWithDeploymentQuery::new(0)
         .execute(&app_state)
@@ -27,12 +27,14 @@ pub async fn get_projects(
     Ok(PaginatedResponse {
         data: projects,
         has_more: false,
+        limit: None,
+        offset: None,
     }
     .into())
 }
 
 pub async fn create_project(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     mut multipart: Multipart,
 ) -> ApiResult<ProjectWithDeployments> {
     let mut name = String::new();
@@ -71,7 +73,7 @@ pub async fn create_project(
 }
 
 pub async fn create_staging_deployment(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     Path(project_id): Path<i64>,
     Json(request): Json<CreateStagingDeploymentRequest>,
 ) -> ApiResult<Deployment> {
@@ -83,7 +85,7 @@ pub async fn create_staging_deployment(
 }
 
 pub async fn create_production_deployment(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     Path(project_id): Path<i64>,
     Json(request): Json<CreateProductionDeploymentRequest>,
 ) -> ApiResult<Deployment> {
@@ -99,7 +101,7 @@ pub async fn create_production_deployment(
 }
 
 pub async fn verify_deployment_dns_records(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     Path(deployment_id): Path<i64>,
 ) -> ApiResult<Deployment> {
     VerifyDeploymentDnsRecordsCommand::new(deployment_id)
@@ -110,7 +112,7 @@ pub async fn verify_deployment_dns_records(
 }
 
 pub async fn delete_project(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     Path(id): Path<i64>,
 ) -> ApiResult<()> {
     let command = DeleteProjectCommand::new(id, 0);
@@ -120,7 +122,7 @@ pub async fn delete_project(
 }
 
 pub async fn delete_deployment(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     Path((project_id, deployment_id)): Path<(i64, i64)>,
 ) -> ApiResult<()> {
     let command = DeleteDeploymentCommand::new(deployment_id, project_id);

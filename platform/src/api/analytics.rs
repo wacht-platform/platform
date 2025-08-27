@@ -6,7 +6,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::application::HttpState;
+use common::state::AppState;
 use crate::middleware::RequireDeployment;
 use common::clickhouse::RecentSignup;
 
@@ -40,7 +40,7 @@ pub struct RecentSignupsResponse {
 }
 
 pub async fn get_analytics_stats(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<AnalyticsQuery>,
 ) -> Result<Json<AnalyticsStatsResponse>, StatusCode> {
@@ -118,7 +118,7 @@ pub async fn get_analytics_stats(
 }
 
 pub async fn get_recent_signups(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<RecentSignupsQuery>,
 ) -> Result<Json<RecentSignupsResponse>, StatusCode> {

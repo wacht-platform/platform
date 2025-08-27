@@ -146,50 +146,25 @@ pub struct ExecutionAction {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ValidationResponse {
     pub validation_result: ValidationResult,
-    pub loop_decision: LoopDecision,
-    pub decision_reasoning: String,
+    pub next_action: NextAction,
+    pub reasoning: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_iteration_focus: Option<String>,
-    pub has_unresolvable_errors: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub unresolvable_error_details: Option<String>,
-    pub detected_error_patterns: Vec<ErrorPattern>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ErrorPattern {
-    pub error_type: String,
-    pub occurrences: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub first_seen: Option<String>,
-    pub is_recurring: bool,
+    pub next_focus: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ValidationResult {
     pub overall_success: bool,
     pub completeness_score: f32,
-    pub quality_assessment: QualityLevel,
-    pub issues_found: Vec<String>,
     pub achievements: Vec<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum QualityLevel {
-    Excellent,
-    Good,
-    Acceptable,
-    NeedsImprovement,
-    Poor,
+    pub remaining_gaps: Vec<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
-pub enum LoopDecision {
+pub enum NextAction {
     Continue,
     Complete,
-    AbortUnresolvable,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

@@ -1,7 +1,8 @@
 use crate::{
-    application::{HttpState, response::ApiResult},
+    application::response::ApiResult,
     middleware::RequireDeployment,
 };
+use common::state::AppState;
 use axum::{Json, extract::State};
 use commands::{Command, notification::CreateNotificationCommand};
 use models::notification::Notification;
@@ -21,7 +22,7 @@ pub struct CreateNotificationRequest {
 
 /// Create a notification for a specific user
 pub async fn create_notification(
-    State(state): State<HttpState>,
+    State(state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateNotificationRequest>,
 ) -> ApiResult<Notification> {

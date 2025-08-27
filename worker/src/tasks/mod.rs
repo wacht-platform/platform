@@ -4,3 +4,4 @@ pub mod embedding;
 pub mod sms;
 pub mod token;
 pub mod webhook;
+pub mod webhook_replay_batch;

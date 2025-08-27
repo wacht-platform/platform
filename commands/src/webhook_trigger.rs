@@ -317,7 +317,7 @@ impl Command for ReplayWebhookDeliveryCommand {
             signature,
             max_attempts,
             app_name,
-            endpoint_url,
+            _endpoint_url,
         ): (
             i64,
             String,
@@ -342,32 +342,10 @@ impl Command for ReplayWebhookDeliveryCommand {
                 delivery_details
             );
 
-            // Extract the necessary fields from the ClickHouse data
-            let endpoint_id = if let Some(id_str) = delivery_details["endpoint_id"].as_str() {
-                id_str.parse::<i64>().map_err(|e| {
-                    AppError::BadRequest(format!("Invalid endpoint ID string: {}", e))
-                })?
-            } else if let Some(id_num) = delivery_details["endpoint_id"].as_i64() {
-                id_num
-            } else {
-                return Err(AppError::BadRequest(
-                    "Missing or invalid endpoint ID in delivery details".to_string(),
-                ));
-            };
-
-            let event_name = delivery_details["event_name"]
-                .as_str()
-                .ok_or_else(|| {
-                    AppError::BadRequest("Missing event name in delivery details".to_string())
-                })?
-                .to_string();
-
-            let original_s3_key = delivery_details["payload_s3_key"].as_str().ok_or_else(|| {
-                AppError::BadRequest(
-                    "Cannot replay this delivery. The original payload is no longer available."
-                        .to_string(),
-                )
-            })?;
+            // Extract the necessary fields from the delivery struct
+            let endpoint_id = delivery_details.endpoint_id;
+            let event_name = delivery_details.event_name.clone();
+            let original_s3_key = &delivery_details.payload_s3_key;
 
             // Retrieve the original payload from S3
             let payload = RetrieveWebhookPayloadCommand::new(original_s3_key.to_string())
@@ -488,35 +466,6 @@ impl Command for ReplayWebhookDeliveryCommand {
         .fetch_one(&app_state.db_pool)
         .await?;
 
-        // Log the replay to ClickHouse
-        let ch_delivery = WebhookDelivery {
-            deployment_id: self.deployment_id,
-            delivery_id: new_delivery.id,
-            app_name: app_name.clone(),
-            endpoint_id,
-            endpoint_url: endpoint_url.clone(),
-            event_name: event_name.clone(),
-            status: "replayed".to_string(),
-            http_status_code: None,
-            response_time_ms: None,
-            attempt_number: 0,
-            max_attempts,
-            error_message: None,
-            filtered_reason: None,
-            payload_s3_key: payload_s3_key.clone(),
-            response_body: None,
-            response_headers: None,
-            timestamp: Utc::now(),
-        };
-
-        if let Err(e) = app_state
-            .clickhouse_service
-            .insert_webhook_delivery(&ch_delivery)
-            .await
-        {
-            tracing::warn!("Failed to log replay to ClickHouse: {}", e);
-        }
-
         // Publish for immediate delivery via NATS
         let task_message = NatsTaskMessage {
             task_type: "webhook.deliver".to_string(),
@@ -539,3 +488,4 @@ impl Command for ReplayWebhookDeliveryCommand {
         Ok(new_delivery.id)
     }
 }
+

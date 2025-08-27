@@ -105,9 +105,7 @@ impl Default for ExecutionContextStatus {
 // Agent execution state that can be restored
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AgentExecutionState {
-    pub executable_tasks: Vec<serde_json::Value>,
     pub task_results: HashMap<String, serde_json::Value>,
-    pub is_in_planning_mode: bool,
     pub current_objective: Option<serde_json::Value>,
     pub conversation_insights: Option<serde_json::Value>,
     pub workflow_state: Option<WorkflowExecutionState>,

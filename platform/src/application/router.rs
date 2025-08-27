@@ -8,16 +8,16 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use super::HttpState;
+use common::state::AppState;
 use crate::api;
 use crate::middleware::backend_deployment_middleware;
 use crate::middleware::console_deployment::console_deployment_middleware;
 
-fn health_routes() -> Router<HttpState> {
+fn health_routes() -> Router<AppState> {
     Router::new().route("/health", get(api::health::check))
 }
 
-fn project_routes() -> Router<HttpState> {
+fn project_routes() -> Router<AppState> {
     Router::new()
         .route("/projects", get(api::project::get_projects))
         .route("/project", post(api::project::create_project))
@@ -40,7 +40,7 @@ fn project_routes() -> Router<HttpState> {
         )
 }
 
-fn ai_context_routes() -> Router<HttpState> {
+fn ai_context_routes() -> Router<AppState> {
     Router::new().route(
         "/ai-execution-context",
         get(api::ai_execution_context::get_execution_contexts)
@@ -48,7 +48,7 @@ fn ai_context_routes() -> Router<HttpState> {
     )
 }
 
-fn base_deployment_routes() -> Router<HttpState> {
+fn base_deployment_routes() -> Router<AppState> {
     Router::new()
         .route("/users", get(api::user::get_active_user_list))
         .route("/users", post(api::user::create_user))
@@ -257,23 +257,35 @@ fn base_deployment_routes() -> Router<HttpState> {
         )
 }
 
-fn console_specific_routes() -> Router<HttpState> {
+fn console_specific_routes() -> Router<AppState> {
     Router::new()
         .route(
-            "/projects/{project_id}/subscription",
-            get(api::billing::get_subscription),
+            "/billing/users/{user_id}/subscription",
+            get(api::billing::get_user_subscription),
         )
         .route(
-            "/projects/{project_id}/subscription/checkout",
+            "/billing/organizations/{org_id}/subscription",
+            get(api::billing::get_organization_subscription),
+        )
+        .route(
+            "/billing/checkout",
             post(api::billing::create_checkout),
         )
         .route(
-            "/projects/{project_id}/subscription/portal",
-            get(api::billing::get_portal_url),
+            "/billing/users/{user_id}/portal",
+            get(api::billing::get_user_portal_url),
         )
         .route(
-            "/projects/{project_id}/subscription/cancel",
-            post(api::billing::cancel_subscription),
+            "/billing/organizations/{org_id}/portal",
+            get(api::billing::get_org_portal_url),
+        )
+        .route(
+            "/billing/users/{user_id}/cancel",
+            post(api::billing::cancel_user_subscription),
+        )
+        .route(
+            "/billing/organizations/{org_id}/cancel",
+            post(api::billing::cancel_org_subscription),
         )
         .route(
             "/webhooks/chargebee",
@@ -328,12 +340,16 @@ fn console_specific_routes() -> Router<HttpState> {
             get(api::webhook_console::get_webhook_delivery_details),
         )
         .route(
-            "/webhooks/deliveries/{delivery_id}/retry",
-            post(api::webhook_console::retry_webhook_delivery),
+            "/webhooks/deliveries/replay",
+            post(api::webhook_console::replay_webhook_deliveries),
         )
         .route(
             "/webhooks/endpoints/{endpoint_id}/reactivate",
             post(api::webhook_console::reactivate_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/endpoints/{endpoint_id}/test",
+            post(api::webhook_console::test_webhook_endpoint),
         )
         .route(
             "/api-keys/status",
@@ -367,14 +383,14 @@ fn console_specific_routes() -> Router<HttpState> {
         )
 }
 
-fn backend_specific_routes() -> Router<HttpState> {
+fn backend_specific_routes() -> Router<AppState> {
     Router::new()
         .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
         .route("/webhooks/apps", post(api::webhook::create_webhook_app))
         .route(
             "/webhooks/apps/{app_name}",
             patch(api::webhook::update_webhook_app)
-                .get(api::webhook::get_webhook_delivery_details)
+                .get(api::webhook::get_webhook_app)
                 .delete(api::webhook::delete_webhook_app),
         )
         .route(
@@ -386,8 +402,16 @@ fn backend_specific_routes() -> Router<HttpState> {
             get(api::webhook::get_webhook_events),
         )
         .route(
-            "/webhooks/endpoints",
+            "/webhooks/apps/{app_name}/endpoints",
             get(api::webhook::list_webhook_endpoints),
+        )
+        .route(
+            "/webhooks/apps/{app_name}/stats",
+            get(api::webhook::get_webhook_stats),
+        )
+        .route(
+            "/webhooks/apps/{app_name}/deliveries",
+            get(api::webhook::get_app_webhook_deliveries),
         )
         .route(
             "/webhooks/endpoints",
@@ -402,31 +426,23 @@ fn backend_specific_routes() -> Router<HttpState> {
             delete(api::webhook::delete_webhook_endpoint),
         )
         .route(
-            "/webhooks/trigger",
+            "/webhooks/apps/{app_name}/endpoints/{endpoint_id}/test",
+            post(api::webhook::test_webhook_endpoint),
+        )
+        .route(
+            "/webhooks/apps/{app_name}/trigger",
             post(api::webhook::trigger_webhook_event),
         )
         .route(
-            "/webhooks/trigger/batch",
+            "/webhooks/apps/{app_name}/trigger/batch",
             post(api::webhook::batch_trigger_webhook_events),
-        )
-        .route(
-            "/webhooks/deliveries",
-            get(api::webhook::get_webhook_deliveries),
         )
         .route(
             "/webhooks/deliveries/{delivery_id}",
             get(api::webhook::get_webhook_delivery_details),
         )
         .route(
-            "/webhooks/deliveries/{delivery_id}/retry",
-            post(api::webhook::retry_webhook_delivery),
-        )
-        .route(
-            "/webhooks/deliveries/status",
-            get(api::webhook::get_webhook_delivery_status),
-        )
-        .route(
-            "/webhooks/deliveries/replay",
+            "/webhooks/apps/{app_name}/deliveries/replay",
             post(api::webhook::replay_webhook_delivery),
         )
         .route(
@@ -434,15 +450,19 @@ fn backend_specific_routes() -> Router<HttpState> {
             post(api::webhook::reactivate_webhook_endpoint),
         )
         .route(
-            "/webhooks/analytics",
+            "/webhooks/apps/{app_name}/analytics",
             get(api::webhook::get_webhook_analytics),
         )
         .route(
-            "/webhooks/analytics/timeseries",
+            "/webhooks/apps/{app_name}/timeseries",
             get(api::webhook::get_webhook_timeseries),
         )
         .route("/api-keys/apps", get(api::api_key::list_api_key_apps))
         .route("/api-keys/apps", post(api::api_key::create_api_key_app))
+        .route(
+            "/api-keys/apps/{app_name}",
+            get(api::api_key::get_api_key_app),
+        )
         .route(
             "/api-keys/apps/{app_name}",
             patch(api::api_key::update_api_key_app),
@@ -477,7 +497,7 @@ fn backend_specific_routes() -> Router<HttpState> {
         )
 }
 
-pub async fn create_console_router(state: HttpState) -> Router {
+pub async fn create_console_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -503,7 +523,7 @@ pub async fn create_console_router(state: HttpState) -> Router {
         .layer(cors)
 }
 
-pub async fn create_backend_router(state: HttpState) -> Router {
+pub async fn create_backend_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -524,7 +544,7 @@ pub async fn create_backend_router(state: HttpState) -> Router {
         .layer(cors)
 }
 
-pub async fn create_frontend_router(state: HttpState) -> Router {
+pub async fn create_frontend_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)

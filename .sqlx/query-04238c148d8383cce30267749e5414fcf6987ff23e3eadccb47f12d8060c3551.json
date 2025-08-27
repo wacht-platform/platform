@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO subscriptions (\n                id,\n                project_id, \n                chargebee_customer_id, \n                chargebee_subscription_id,\n                status,\n                created_at,\n                updated_at\n            ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())\n            ON CONFLICT (project_id) DO UPDATE SET\n                chargebee_customer_id = EXCLUDED.chargebee_customer_id,\n                chargebee_subscription_id = EXCLUDED.chargebee_subscription_id,\n                status = EXCLUDED.status,\n                updated_at = NOW()\n            RETURNING *\n            ",
+  "query": "\n                INSERT INTO subscriptions (\n                    id,\n                    user_id,\n                    organization_id,\n                    chargebee_customer_id,\n                    chargebee_subscription_id,\n                    status,\n                    created_at,\n                    updated_at\n                ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())\n                RETURNING *\n                ",
   "describe": {
     "columns": [
       {
@@ -10,37 +10,43 @@
       },
       {
         "ordinal": 1,
-        "name": "project_id",
+        "name": "user_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 2,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
         "name": "chargebee_customer_id",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "chargebee_subscription_id",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "status",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Int8",
         "Int8",
         "Varchar",
@@ -50,7 +56,8 @@
     },
     "nullable": [
       false,
-      false,
+      true,
+      true,
       false,
       false,
       false,
@@ -58,5 +65,5 @@
       true
     ]
   },
-  "hash": "3317a1c4f6956f940f080b069f6c73a6f2b0e8ae3acf55d368be432f6c587d27"
+  "hash": "04238c148d8383cce30267749e5414fcf6987ff23e3eadccb47f12d8060c3551"
 }

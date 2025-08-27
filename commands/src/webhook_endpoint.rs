@@ -19,6 +19,15 @@ pub struct EventSubscriptionData {
     pub filter_rules: Option<Value>,
 }
 
+impl From<dto::json::webhook_requests::EventSubscription> for EventSubscriptionData {
+    fn from(s: dto::json::webhook_requests::EventSubscription) -> Self {
+        Self {
+            event_name: s.event_name,
+            filter_rules: s.filter_rules,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateWebhookEndpointCommand {
     pub deployment_id: i64,
@@ -154,6 +163,7 @@ pub struct UpdateWebhookEndpointCommand {
     pub is_active: Option<bool>,
     pub max_retries: Option<i32>,
     pub timeout_seconds: Option<i32>,
+    pub subscriptions: Option<Vec<EventSubscriptionData>>,
 }
 
 impl Command for UpdateWebhookEndpointCommand {
@@ -165,6 +175,8 @@ impl Command for UpdateWebhookEndpointCommand {
             url::Url::parse(url)
                 .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
         }
+
+        let mut tx = app_state.db_pool.begin().await?;
 
         let endpoint = query_as!(
             WebhookEndpoint,
@@ -203,10 +215,42 @@ impl Command for UpdateWebhookEndpointCommand {
             self.max_retries,
             self.timeout_seconds
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
 
+        // Update subscriptions if provided
+        if let Some(subscriptions) = self.subscriptions {
+            // Clear existing subscriptions
+            query!(
+                r#"
+                DELETE FROM webhook_endpoint_subscriptions
+                WHERE endpoint_id = $1
+                "#,
+                self.endpoint_id
+            )
+            .execute(&mut *tx)
+            .await?;
+
+            // Add new subscriptions with individual filter rules
+            for subscription in subscriptions {
+                query!(
+                    r#"
+                    INSERT INTO webhook_endpoint_subscriptions (endpoint_id, deployment_id, app_name, event_name, filter_rules)
+                    VALUES ($1, $2, $3, $4, $5)
+                    "#,
+                    self.endpoint_id,
+                    self.deployment_id,
+                    endpoint.app_name.clone(),
+                    subscription.event_name,
+                    subscription.filter_rules
+                )
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
+        tx.commit().await?;
         Ok(endpoint)
     }
 }
@@ -313,7 +357,7 @@ impl Command for TestWebhookEndpointCommand {
     type Output = TestWebhookResult;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Get endpoint details
+        // Get endpoint details to validate it exists
         let endpoint = query!(
             r#"
             SELECT e.url, e.headers, e.timeout_seconds, e.app_name, a.signing_secret
@@ -330,106 +374,6 @@ impl Command for TestWebhookEndpointCommand {
 
         // App name is already in endpoint
         let app_name = endpoint.app_name.clone();
-
-        // Generate test signature
-        let signature = common::utils::webhook::generate_hmac_signature(
-            &endpoint.signing_secret,
-            &self.test_payload,
-        );
-
-        // Make test request
-        let client = reqwest::Client::new();
-        let mut request = client
-            .post(&endpoint.url)
-            .json(&self.test_payload)
-            .header("X-Webhook-Signature", signature)
-            .header("X-Webhook-Test", "true")
-            .timeout(std::time::Duration::from_secs(
-                endpoint.timeout_seconds.unwrap_or(30) as u64,
-            ));
-
-        // Add custom headers
-        if let Some(headers_obj) = endpoint.headers.as_ref().and_then(|h| h.as_object()) {
-            for (key, value) in headers_obj {
-                if let Some(value_str) = value.as_str() {
-                    request = request.header(key, value_str);
-                }
-            }
-        }
-
-        let start = std::time::Instant::now();
-        let response = request.send().await;
-        let duration = start.elapsed();
-
-        match response {
-            Ok(resp) => {
-                let status = resp.status();
-
-                // Capture response headers as JSON
-                let response_headers_json = {
-                    let mut headers_map = serde_json::Map::new();
-                    for (key, value) in resp.headers().iter() {
-                        if let Ok(value_str) = value.to_str() {
-                            headers_map.insert(
-                                key.as_str().to_string(),
-                                serde_json::Value::String(value_str.to_string()),
-                            );
-                        }
-                    }
-                    Some(serde_json::Value::Object(headers_map).to_string())
-                };
-
-                let content_type = resp
-                    .headers()
-                    .get("content-type")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_string());
-
-                let body = if status.as_u16() == 204 {
-                    None
-                } else if let Some(ref ct) = content_type {
-                    if ct.starts_with("text/")
-                        || ct.contains("json")
-                        || ct.contains("xml")
-                        || ct.contains("javascript")
-                        || ct.contains("x-www-form-urlencoded")
-                        || ct.contains("yaml")
-                        || ct.contains("csv")
-                    {
-                        resp.text().await.ok()
-                    } else {
-                        resp.bytes().await.ok().map(|_| "Binary data".to_string())
-                    }
-                } else {
-                    resp.text().await.ok()
-                };
-
-                (
-                    TestWebhookResult {
-                        success: status.is_success(),
-                        status_code: status.as_u16(),
-                        response_time_ms: duration.as_millis() as u32,
-                        response_body: body,
-                        response_content_type: content_type,
-                        error: None,
-                        delivery_id: None,
-                    },
-                    response_headers_json,
-                )
-            }
-            Err(e) => (
-                TestWebhookResult {
-                    success: false,
-                    status_code: 0,
-                    response_time_ms: duration.as_millis() as u32,
-                    response_body: None,
-                    response_content_type: None,
-                    error: Some(e.to_string()),
-                    delivery_id: None,
-                },
-                None,
-            ),
-        };
 
         // Record test delivery to ClickHouse for analytics
 

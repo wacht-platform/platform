@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{error, info, warn};
 
-use crate::application::HttpState;
+use common::state::AppState;
 use crate::middleware::host_extractor::ExtractedHost;
 
 #[derive(Debug, Deserialize)]
@@ -54,7 +54,7 @@ pub async fn notification_stream_handler(
     headers: HeaderMap,
     Query(params): Query<NotificationParams>,
     ws: upgrade::IncomingUpgrade,
-    State(state): State<HttpState>,
+    State(state): State<AppState>,
 ) -> impl IntoResponse {
     // Extract session token from cookies or query params (like frontend API)
     let session_token = extract_session_token(&headers, &params);
@@ -102,7 +102,7 @@ fn extract_session_token(headers: &HeaderMap, params: &NotificationParams) -> Op
 
 async fn handle_notification_client(
     fut: upgrade::UpgradeFut,
-    app_state: HttpState,
+    app_state: AppState,
     host: String,
     token: String,
     params: NotificationParams,

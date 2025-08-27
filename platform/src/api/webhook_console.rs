@@ -1,23 +1,45 @@
 // Console-specific webhook management functions
 // These functions use the SDK to call backend API endpoints
 
-use axum::extract::{Json, Path, Query};
+use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::middleware::RequireDeployment;
+use axum::extract::{Json, Path, Query, State};
 use axum::http::StatusCode;
-use wacht::api::webhooks;
+use dto::clickhouse::webhook::WebhookDeliveryListResponse;
 use dto::json::{
     WebhookStatus,
     webhook_requests::{
         ConsoleAnalyticsQuery, ConsoleTimeseriesQuery, CreateWebhookEndpointConsoleRequest,
         DeliveryListQuery, GetAvailableEventsResponse, ListWebhookEndpointsQuery,
-        ListWebhookEndpointsResponse, TestWebhookRequest, UpdateWebhookEndpointRequest,
-        WebhookEndpointSubscription,
+        ReplayWebhookDeliveryRequest, ReplayWebhookDeliveryResponse,
+        TestWebhookRequest, TestWebhookEndpointResponse, UpdateWebhookEndpointRequest,
+        WebhookEndpoint as WebhookEndpointDto, WebhookEndpointSubscription,
     },
 };
-use models::{
-    webhook::{WebhookApp, WebhookEndpoint, WebhookEventDefinition},
-};
-use crate::application::response::ApiResult;
-use crate::middleware::RequireDeployment;
+use models::webhook::{WebhookApp, WebhookEndpoint, WebhookEventDefinition};
+use models::webhook_analytics::{WebhookAnalyticsResult, WebhookTimeseriesResult};
+use queries::Query as QueryTrait;
+use wacht::api::webhooks;
+
+// Helper function to convert SDK WebhookDelivery to DTO WebhookDeliveryListResponse
+fn convert_sdk_delivery(delivery: wacht::api::webhooks::WebhookDelivery) -> WebhookDeliveryListResponse {
+    WebhookDeliveryListResponse {
+        delivery_id: delivery.delivery_id.parse().unwrap_or(0),
+        deployment_id: delivery.deployment_id.parse().unwrap_or(0),
+        app_name: delivery.app_name,
+        endpoint_id: delivery.endpoint_id.parse().unwrap_or(0),
+        endpoint_url: delivery.endpoint_url,
+        event_name: delivery.event_name,
+        status: delivery.status,
+        http_status_code: delivery.http_status_code,
+        response_time_ms: delivery.response_time_ms,
+        attempt_number: delivery.attempt_number,
+        max_attempts: delivery.max_attempts,
+        error_message: delivery.error_message,
+        filtered_reason: delivery.filtered_reason,
+        timestamp: delivery.timestamp,
+    }
+}
 
 // Get webhook status for a deployment
 pub async fn get_webhook_status(
@@ -26,41 +48,27 @@ pub async fn get_webhook_status(
     let app_name = deployment_id.to_string();
 
     // Try to get app using SDK
-    let app = match webhooks::get_webhook_app(&app_name).await {
-        Ok(app_data) => {
-            // Convert SDK response to model
-            let app = WebhookApp {
-                deployment_id: app_data.deployment_id,
-                name: app_data.name,
-                description: app_data.description,
-                signing_secret: app_data.signing_secret,
-                is_active: app_data.is_active,
-                created_at: chrono::DateTime::parse_from_rfc3339(&app_data.created_at)
-                    .unwrap_or_else(|_| chrono::Utc::now().into())
-                    .with_timezone(&chrono::Utc),
-                updated_at: chrono::DateTime::parse_from_rfc3339(&app_data.updated_at)
-                    .unwrap_or_else(|_| chrono::Utc::now().into())
-                    .with_timezone(&chrono::Utc),
-            };
-            Some(app)
-        }
-        Err(_) => None,
-    };
+    let app = webhooks::get_webhook_app(&app_name)
+        .await
+        .ok()
+        .map(|app_data| WebhookApp {
+            deployment_id: app_data.deployment_id.parse().unwrap_or(deployment_id),
+            name: app_data.name,
+            description: app_data.description,
+            signing_secret: app_data.signing_secret,
+            is_active: app_data.is_active,
+            created_at: app_data.created_at,
+            updated_at: app_data.updated_at,
+        });
 
     let stats = if let Some(ref app) = app {
         match webhooks::get_webhook_stats(&app.name).await {
-            Ok(stats_json) => {
-                Some(dto::json::WebhookStats {
-                    total_deliveries: stats_json.get("total_deliveries")
-                        .and_then(|v| v.as_i64()).unwrap_or(0),
-                    success_rate: stats_json.get("success_rate")
-                        .and_then(|v| v.as_f64()).unwrap_or(0.0),
-                    active_endpoints: stats_json.get("active_endpoints")
-                        .and_then(|v| v.as_i64()).unwrap_or(0),
-                    failed_deliveries_24h: stats_json.get("failed_deliveries_24h")
-                        .and_then(|v| v.as_i64()).unwrap_or(0),
-                })
-            }
+            Ok(stats_data) => Some(dto::json::WebhookStats {
+                total_deliveries: stats_data.total_deliveries,
+                success_rate: stats_data.success_rate,
+                active_endpoints: stats_data.endpoint_performance.len() as i64,
+                failed_deliveries_24h: stats_data.failed_deliveries,
+            }),
             Err(e) => {
                 eprintln!("Failed to get webhook stats: {:?}", e);
                 // Return empty stats when query fails (likely no data yet)
@@ -253,13 +261,14 @@ pub async fn activate_webhooks(
     ];
 
     // Convert model events to SDK events
-    let sdk_events: Vec<webhooks::WebhookEventDefinition> = platform_events.iter().map(|e| {
-        webhooks::WebhookEventDefinition {
+    let sdk_events: Vec<webhooks::WebhookEventDefinition> = platform_events
+        .iter()
+        .map(|e| webhooks::WebhookEventDefinition {
             name: e.name.clone(),
             description: e.description.clone(),
             schema: e.schema.clone(),
-        }
-    }).collect();
+        })
+        .collect();
 
     let request = webhooks::CreateWebhookAppRequest {
         name: app_name,
@@ -271,21 +280,17 @@ pub async fn activate_webhooks(
     let app_data = webhooks::create_webhook_app(request)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    
+
     let app = WebhookApp {
-        deployment_id: app_data.deployment_id,
+        deployment_id: app_data.deployment_id.parse().unwrap_or(0),
         name: app_data.name,
         description: app_data.description,
         signing_secret: app_data.signing_secret,
         is_active: app_data.is_active,
-        created_at: chrono::DateTime::parse_from_rfc3339(&app_data.created_at)
-            .unwrap_or_else(|_| chrono::Utc::now().into())
-            .with_timezone(&chrono::Utc),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&app_data.updated_at)
-            .unwrap_or_else(|_| chrono::Utc::now().into())
-            .with_timezone(&chrono::Utc),
+        created_at: app_data.created_at,
+        updated_at: app_data.updated_at,
     };
-    
+
     Ok(app.into())
 }
 
@@ -297,85 +302,88 @@ pub async fn rotate_webhook_secret(
     let app_data = webhooks::rotate_webhook_secret(&app_name)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    
+
     let app = WebhookApp {
-        deployment_id: app_data.deployment_id,
+        deployment_id: app_data.deployment_id.parse().unwrap_or(0),
         name: app_data.name,
         description: app_data.description,
         signing_secret: app_data.signing_secret,
         is_active: app_data.is_active,
-        created_at: chrono::DateTime::parse_from_rfc3339(&app_data.created_at)
-            .unwrap_or_else(|_| chrono::Utc::now().into())
-            .with_timezone(&chrono::Utc),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&app_data.updated_at)
-            .unwrap_or_else(|_| chrono::Utc::now().into())
-            .with_timezone(&chrono::Utc),
+        created_at: app_data.created_at,
+        updated_at: app_data.updated_at,
     };
-    
+
     Ok(app.into())
 }
 
 pub async fn list_webhook_endpoints(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ListWebhookEndpointsQuery>,
-) -> ApiResult<ListWebhookEndpointsResponse> {
+) -> ApiResult<PaginatedResponse<WebhookEndpointDto>> {
     let app_name = deployment_id.to_string();
 
     // Check if app exists first
-    webhooks::get_webhook_app(&app_name)
-        .await
-        .map_err(|_| {
-            (
-                StatusCode::NOT_FOUND,
-                "Webhook app not found. Please activate webhooks first.",
-            )
-        })?;
+    webhooks::get_webhook_app(&app_name).await.map_err(|err| {
+        eprintln!("Error getting webhook app: {}", err);
+        (
+            StatusCode::NOT_FOUND,
+            "Webhook app not found. Please activate webhooks first.",
+        )
+    })?;
 
     let include_inactive = params.include_inactive.unwrap_or(false);
-    let endpoints_with_subs = webhooks::get_webhook_endpoints_with_subscriptions(&app_name, Some(include_inactive))
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let paginated_response = webhooks::get_webhook_endpoints_with_subscriptions(
+        &app_name, 
+        Some(include_inactive),
+        params.limit,
+        params.offset,
+    )
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Convert to dto types
-    let endpoints: Vec<dto::json::webhook_requests::WebhookEndpoint> = endpoints_with_subs.into_iter().map(|e| {
-        // Convert subscribed events to subscription structs
-        let subscriptions: Vec<WebhookEndpointSubscription> = e.subscribed_events.into_iter().map(|event_name| {
-            WebhookEndpointSubscription {
-                event_name,
-                filter_rules: None, // These will be populated if needed
-            }
-        }).collect();
-        
-        dto::json::webhook_requests::WebhookEndpoint {
-            id: e.endpoint.id,
-            deployment_id: e.endpoint.deployment_id,
-            app_name: e.endpoint.app_name,
-            url: e.endpoint.url,
-            description: e.endpoint.description,
-            headers: e.endpoint.headers,
-            is_active: e.endpoint.is_active,
-            signing_secret: e.endpoint.signing_secret,
-            max_retries: e.endpoint.max_retries,
-            timeout_seconds: e.endpoint.timeout_seconds,
-            failure_count: e.endpoint.failure_count,
-            last_failure_at: e.endpoint.last_failure_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                .map(|dt| dt.with_timezone(&chrono::Utc)),
-            auto_disabled: e.endpoint.auto_disabled,
-            auto_disabled_at: e.endpoint.auto_disabled_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                .map(|dt| dt.with_timezone(&chrono::Utc)),
-            created_at: chrono::DateTime::parse_from_rfc3339(&e.endpoint.created_at)
-                .unwrap_or_else(|_| chrono::Utc::now().into())
-                .with_timezone(&chrono::Utc),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&e.endpoint.updated_at)
-                .unwrap_or_else(|_| chrono::Utc::now().into())
-                .with_timezone(&chrono::Utc),
-            subscriptions,
-        }
-    }).collect();
+    let endpoints: Vec<WebhookEndpointDto> = paginated_response.endpoints
+        .into_iter()
+        .map(|e| {
+            // Convert subscribed events to subscription structs
+            let subscriptions: Vec<WebhookEndpointSubscription> = e
+                .subscribed_events
+                .into_iter()
+                .map(|event_name| {
+                    WebhookEndpointSubscription {
+                        event_name,
+                        filter_rules: None, // These will be populated if needed
+                    }
+                })
+                .collect();
 
-    Ok(ListWebhookEndpointsResponse {
-        total: endpoints.len(),
-        endpoints,
+            WebhookEndpointDto {
+                id: e.endpoint.id.parse().unwrap_or(0),
+                deployment_id: e.endpoint.deployment_id.parse().unwrap_or(0),
+                app_name: e.endpoint.app_name,
+                url: e.endpoint.url,
+                description: e.endpoint.description,
+                headers: e.endpoint.headers,
+                is_active: e.endpoint.is_active,
+                signing_secret: e.endpoint.signing_secret,
+                max_retries: e.endpoint.max_retries,
+                timeout_seconds: e.endpoint.timeout_seconds,
+                failure_count: e.endpoint.failure_count,
+                last_failure_at: e.endpoint.last_failure_at,
+                auto_disabled: e.endpoint.auto_disabled,
+                auto_disabled_at: e.endpoint.auto_disabled_at,
+                created_at: e.endpoint.created_at,
+                updated_at: e.endpoint.updated_at,
+                subscriptions,
+            }
+        })
+        .collect();
+
+    Ok(PaginatedResponse {
+        data: endpoints,
+        has_more: paginated_response.has_more,
+        limit: Some(paginated_response.limit),
+        offset: Some(paginated_response.offset),
     }
     .into())
 }
@@ -388,14 +396,12 @@ pub async fn create_webhook_endpoint(
     let app_name = deployment_id.to_string();
 
     // Check if app exists first
-    webhooks::get_webhook_app(&app_name)
-        .await
-        .map_err(|_| {
-            (
-                StatusCode::NOT_FOUND,
-                "Webhook app not found. Please activate webhooks first.",
-            )
-        })?;
+    webhooks::get_webhook_app(&app_name).await.map_err(|_| {
+        (
+            StatusCode::NOT_FOUND,
+            "Webhook app not found. Please activate webhooks first.",
+        )
+    })?;
 
     let subscriptions: Vec<webhooks::EventSubscription> = request
         .subscriptions
@@ -419,10 +425,10 @@ pub async fn create_webhook_endpoint(
     let endpoint_data = webhooks::create_webhook_endpoint(sdk_request)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    
+
     let endpoint = WebhookEndpoint {
-        id: endpoint_data.id,
-        deployment_id: endpoint_data.deployment_id,
+        id: endpoint_data.id.parse().unwrap_or(0),
+        deployment_id: endpoint_data.deployment_id.parse().unwrap_or(0),
         app_name: endpoint_data.app_name,
         url: endpoint_data.url,
         description: endpoint_data.description,
@@ -432,19 +438,13 @@ pub async fn create_webhook_endpoint(
         max_retries: endpoint_data.max_retries,
         timeout_seconds: endpoint_data.timeout_seconds,
         failure_count: endpoint_data.failure_count,
-        last_failure_at: endpoint_data.last_failure_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc)),
+        last_failure_at: endpoint_data.last_failure_at,
         auto_disabled: endpoint_data.auto_disabled,
-        auto_disabled_at: endpoint_data.auto_disabled_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc)),
-        created_at: chrono::DateTime::parse_from_rfc3339(&endpoint_data.created_at)
-            .unwrap_or_else(|_| chrono::Utc::now().into())
-            .with_timezone(&chrono::Utc),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&endpoint_data.updated_at)
-            .unwrap_or_else(|_| chrono::Utc::now().into())
-            .with_timezone(&chrono::Utc),
+        auto_disabled_at: endpoint_data.auto_disabled_at,
+        created_at: endpoint_data.created_at,
+        updated_at: endpoint_data.updated_at,
     };
-    
+
     Ok(endpoint.into())
 }
 
@@ -460,15 +460,18 @@ pub async fn update_webhook_endpoint(
         is_active: request.is_active,
         max_retries: request.max_retries,
         timeout_seconds: request.timeout_seconds,
+        subscriptions: request.subscriptions.map(|subs| {
+            subs.into_iter().map(Into::into).collect()
+        }),
     };
 
-    let endpoint_data = webhooks::update_webhook_endpoint(endpoint_id, sdk_request)
+    let endpoint_data = webhooks::update_webhook_endpoint(endpoint_id.to_string(), sdk_request)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    
+
     let endpoint = WebhookEndpoint {
-        id: endpoint_data.id,
-        deployment_id: endpoint_data.deployment_id,
+        id: endpoint_data.id.parse().unwrap_or(0),
+        deployment_id: endpoint_data.deployment_id.parse().unwrap_or(0),
         app_name: endpoint_data.app_name,
         url: endpoint_data.url,
         description: endpoint_data.description,
@@ -478,19 +481,13 @@ pub async fn update_webhook_endpoint(
         max_retries: endpoint_data.max_retries,
         timeout_seconds: endpoint_data.timeout_seconds,
         failure_count: endpoint_data.failure_count,
-        last_failure_at: endpoint_data.last_failure_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc)),
+        last_failure_at: endpoint_data.last_failure_at,
         auto_disabled: endpoint_data.auto_disabled,
-        auto_disabled_at: endpoint_data.auto_disabled_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc)),
-        created_at: chrono::DateTime::parse_from_rfc3339(&endpoint_data.created_at)
-            .unwrap_or_else(|_| chrono::Utc::now().into())
-            .with_timezone(&chrono::Utc),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&endpoint_data.updated_at)
-            .unwrap_or_else(|_| chrono::Utc::now().into())
-            .with_timezone(&chrono::Utc),
+        auto_disabled_at: endpoint_data.auto_disabled_at,
+        created_at: endpoint_data.created_at,
+        updated_at: endpoint_data.updated_at,
     };
-    
+
     Ok(endpoint.into())
 }
 
@@ -498,10 +495,10 @@ pub async fn update_webhook_endpoint(
 pub async fn delete_webhook_endpoint(
     Path((_deployment_id_path, endpoint_id)): Path<(i64, i64)>,
 ) -> ApiResult<()> {
-    webhooks::delete_webhook_endpoint(endpoint_id)
+    webhooks::delete_webhook_endpoint(endpoint_id.to_string())
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    
+
     Ok(().into())
 }
 
@@ -509,7 +506,7 @@ pub async fn delete_webhook_endpoint(
 pub async fn get_webhook_analytics(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ConsoleAnalyticsQuery>,
-) -> ApiResult<serde_json::Value> {
+) -> ApiResult<WebhookAnalyticsResult> {
     let app_name = deployment_id.to_string();
 
     // Check if app exists
@@ -518,104 +515,132 @@ pub async fn get_webhook_analytics(
     if app_exists {
         let start_date = params.start_date.map(|d| d.to_rfc3339());
         let end_date = params.end_date.map(|d| d.to_rfc3339());
-        
-        let result = webhooks::get_webhook_analytics(
-            Some(&app_name), 
-            start_date.as_deref(), 
-            end_date.as_deref()
+
+        let sdk_result = webhooks::get_webhook_analytics(
+            &app_name,
+            start_date.as_deref(),
+            end_date.as_deref(),
         )
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        
-        Ok(result.into())
+
+        // Convert SDK result to platform model
+        Ok(WebhookAnalyticsResult {
+            total_events: sdk_result.total_events,
+            total_deliveries: sdk_result.total_deliveries,
+            successful_deliveries: sdk_result.successful_deliveries,
+            failed_deliveries: sdk_result.failed_deliveries,
+            filtered_deliveries: sdk_result.filtered_deliveries,
+            avg_response_time_ms: sdk_result.avg_response_time_ms,
+            p50_response_time_ms: sdk_result.p50_response_time_ms,
+            p95_response_time_ms: sdk_result.p95_response_time_ms,
+            p99_response_time_ms: sdk_result.p99_response_time_ms,
+            success_rate: sdk_result.success_rate,
+            top_events: sdk_result.top_events.into_iter()
+                .map(|e| models::webhook_analytics::EventCount {
+                    event_name: e.event_name,
+                    count: e.count,
+                })
+                .collect(),
+            endpoint_performance: sdk_result.endpoint_performance.into_iter()
+                .map(|e| models::webhook_analytics::EndpointPerformance {
+                    endpoint_id: e.endpoint_id,
+                    endpoint_url: e.endpoint_url,
+                    total_attempts: e.total_attempts,
+                    successful_attempts: e.successful_attempts,
+                    failed_attempts: e.failed_attempts,
+                    avg_response_time_ms: e.avg_response_time_ms,
+                    success_rate: e.success_rate,
+                })
+                .collect(),
+            failure_reasons: sdk_result.failure_reasons.into_iter()
+                .map(|f| models::webhook_analytics::FailureReason {
+                    reason: f.reason,
+                    count: f.count,
+                })
+                .collect(),
+        }.into())
     } else {
-        Ok(serde_json::json!({
-            "total_events": 0,
-            "total_deliveries": 0,
-            "successful_deliveries": 0,
-            "failed_deliveries": 0,
-            "filtered_deliveries": 0,
-            "success_rate": 0.0,
-            "top_events": [],
-            "endpoint_performance": [],
-            "failure_reasons": []
-        })
-        .into())
+        // Return empty analytics result
+        Ok(WebhookAnalyticsResult {
+            total_events: 0,
+            total_deliveries: 0,
+            successful_deliveries: 0,
+            failed_deliveries: 0,
+            filtered_deliveries: 0,
+            avg_response_time_ms: None,
+            p50_response_time_ms: None,
+            p95_response_time_ms: None,
+            p99_response_time_ms: None,
+            success_rate: 0.0,
+            top_events: vec![],
+            endpoint_performance: vec![],
+            failure_reasons: vec![],
+        }.into())
     }
 }
 
 pub async fn get_webhook_timeseries(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ConsoleTimeseriesQuery>,
-) -> ApiResult<serde_json::Value> {
+) -> ApiResult<WebhookTimeseriesResult> {
     let app_name = deployment_id.to_string();
 
-    eprintln!(
-        "get_webhook_timeseries: deployment_id={}, app_name={}",
-        deployment_id, app_name
-    );
-    eprintln!(
-        "Query params: start={:?}, end={:?}, interval={}",
-        params.start_date, params.end_date, params.interval
-    );
-
-    // Check if app exists
     let app_exists = match webhooks::get_webhook_app(&app_name).await {
         Ok(_) => true,
-        Err(e) => {
-            eprintln!("Failed to get webhook app: {:?}", e);
-            false
-        }
+        Err(_) => false,
     };
 
     if app_exists {
-        eprintln!("Found app: name={}", app_name);
-
         let start_date = params.start_date.map(|d| d.to_rfc3339());
         let end_date = params.end_date.map(|d| d.to_rfc3339());
 
-        eprintln!("Executing timeseries query with app_name={}", app_name);
-
-        match webhooks::get_webhook_timeseries(
+        let sdk_result = webhooks::get_webhook_timeseries(
             &app_name,
             &params.interval,
             start_date.as_deref(),
-            end_date.as_deref()
-        ).await {
-            Ok(result) => {
-                eprintln!(
-                    "Timeseries query successful"
-                );
-                Ok(result.into())
-            }
-            Err(e) => {
-                eprintln!("Timeseries query failed: {:?}", e);
-                Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into())
-            }
-        }
+            end_date.as_deref(),
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        // Convert SDK result to platform model
+        Ok(WebhookTimeseriesResult {
+            data: sdk_result.data.into_iter()
+                .map(|p| models::webhook_analytics::TimeseriesPoint {
+                    timestamp: p.timestamp,
+                    total_events: p.total_events,
+                    total_deliveries: p.total_deliveries,
+                    successful_deliveries: p.successful_deliveries,
+                    failed_deliveries: p.failed_deliveries,
+                    filtered_deliveries: p.filtered_deliveries,
+                    avg_response_time_ms: p.avg_response_time_ms,
+                    success_rate: p.success_rate,
+                })
+                .collect(),
+            interval: sdk_result.interval,
+        }.into())
     } else {
-        eprintln!("No app found for deployment_id={}", deployment_id);
-        Ok(serde_json::json!({
-            "data": [],
-            "interval": params.interval
-        })
-        .into())
+        // Return empty timeseries result
+        Ok(WebhookTimeseriesResult {
+            data: vec![],
+            interval: params.interval,
+        }.into())
     }
 }
 
-// Delivery history endpoints
 pub async fn get_webhook_deliveries(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<DeliveryListQuery>,
-) -> ApiResult<serde_json::Value> {
+) -> ApiResult<PaginatedResponse<WebhookDeliveryListResponse>> {
     let app_name = deployment_id.to_string();
 
     // Check if app exists
     let app_exists = webhooks::get_webhook_app(&app_name).await.is_ok();
 
     if app_exists {
-        let deliveries = webhooks::get_webhook_deliveries(
-            Some(&app_name),
+        let sdk_result = webhooks::get_webhook_deliveries(
+            &app_name,
             None, // endpoint_id
             params.event_name.as_deref(),
             params.status.as_deref(),
@@ -625,62 +650,114 @@ pub async fn get_webhook_deliveries(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-        Ok(serde_json::json!({
-            "deliveries": deliveries
-        })
-        .into())
+        // Convert SDK response to our DTO
+        let deliveries = sdk_result.data.into_iter()
+            .map(convert_sdk_delivery)
+            .collect();
+
+        Ok(PaginatedResponse {
+            data: deliveries,
+            has_more: sdk_result.has_more,
+            limit: sdk_result.limit,
+            offset: sdk_result.offset,
+        }.into())
     } else {
-        Ok(serde_json::json!({
-            "deliveries": []
-        })
-        .into())
+        Ok(PaginatedResponse {
+            data: vec![],
+            has_more: false,
+            limit: Some(params.limit.unwrap_or(100)),
+            offset: Some(params.offset.unwrap_or(0)),
+        }.into())
     }
 }
 
 pub async fn get_webhook_delivery_details(
     Path((_deployment_id_path, delivery_id)): Path<(i64, i64)>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> ApiResult<serde_json::Value> {
-    let details = webhooks::get_webhook_delivery_details(delivery_id)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    Ok(details.into())
-}
-
-pub async fn retry_webhook_delivery(
-    Path((_deployment_id_path, delivery_id)): Path<(i64, i64)>,
-) -> ApiResult<serde_json::Value> {
-    let result = webhooks::retry_webhook_delivery(delivery_id)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Get status from query params if provided
+    let status = params.get("status").map(|s| s.as_str());
     
-    Ok(result.into())
+    let details = webhooks::get_webhook_delivery_details(delivery_id.to_string(), status)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(serde_json::to_value(details)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .into())
 }
 
-// Test webhook endpoint
+// Replay webhook deliveries
+pub async fn replay_webhook_deliveries(
+    State(app_state): State<common::state::AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Json(request): Json<ReplayWebhookDeliveryRequest>,
+) -> ApiResult<ReplayWebhookDeliveryResponse> {
+    // Get the app name for this deployment
+    let apps = queries::webhook::GetWebhookAppsQuery::new(deployment_id)
+        .execute(&app_state)
+        .await
+        .map_err(|_| (StatusCode::NOT_FOUND, "Failed to get webhook apps"))?;
+    
+    let app = apps.first()
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "No webhook app found for deployment"))?;
+
+    // Handle the request based on type
+    match request {
+        ReplayWebhookDeliveryRequest::ByIds { delivery_ids, include_successful } => {
+            // Delivery IDs are already strings (for Snowflake ID compatibility)
+            webhooks::replay_webhook_deliveries(app.name.clone(), delivery_ids, include_successful)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        }
+        ReplayWebhookDeliveryRequest::ByDateRange { .. } => {
+            // Date range replay not supported through SDK yet
+            return Err((StatusCode::BAD_REQUEST, "Date range replay not yet supported through console").into());
+        }
+    }
+
+    Ok(ReplayWebhookDeliveryResponse {
+        status: "queued".to_string(),
+        message: "Webhook deliveries queued for replay".to_string(),
+    }.into())
+}
+
+// Test webhook endpoint directly
 pub async fn test_webhook_endpoint(
-    Path((_, endpoint_id)): Path<(i64, i64)>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path((_deployment_id_path, endpoint_id)): Path<(i64, i64)>,
     Json(request): Json<TestWebhookRequest>,
-) -> ApiResult<serde_json::Value> {
+) -> ApiResult<TestWebhookEndpointResponse> {
+    let app_name = deployment_id.to_string();
+    
+    // Call SDK's test endpoint
     let result = webhooks::test_webhook_endpoint(
-        endpoint_id,
-        request.event_name.clone(),
+        &app_name,
+        endpoint_id.to_string(),
+        request.event_name,
         request.payload,
     )
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    Ok(result.into())
+    
+    // Return strongly typed response
+    Ok(TestWebhookEndpointResponse {
+        success: result.success,
+        status_code: result.status_code as u16,
+        response_time_ms: result.response_time_ms as u32,
+        response_body: result.response_body,
+        error: result.error_message,
+    }.into())
 }
 
 // Reactivate webhook endpoint
 pub async fn reactivate_webhook_endpoint(
     Path((_deployment_id_path, endpoint_id)): Path<(i64, i64)>,
 ) -> ApiResult<serde_json::Value> {
-    let result = webhooks::reactivate_webhook_endpoint(endpoint_id)
+    let result = webhooks::reactivate_webhook_endpoint(endpoint_id.to_string())
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    
+
     Ok(result.into())
 }
 
@@ -691,31 +768,17 @@ pub async fn get_available_events(
     let app_name = deployment_id.to_string();
 
     // Check if app exists first
-    webhooks::get_webhook_app(&app_name)
-        .await
-        .map_err(|_| {
-            (
-                StatusCode::NOT_FOUND,
-                "Webhook app not found. Please activate webhooks first.",
-            )
-        })?;
+    webhooks::get_webhook_app(&app_name).await.map_err(|_| {
+        (
+            StatusCode::NOT_FOUND,
+            "Webhook app not found. Please activate webhooks first.",
+        )
+    })?;
 
-    // Get events for this app
-    let events_data = webhooks::get_webhook_events(&app_name)
+    // Get events for this app - pass through SDK data directly
+    let events = webhooks::get_webhook_events(&app_name)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    // Convert to model types
-    let events: Vec<models::webhook::WebhookAppEvent> = events_data.into_iter().map(|e| {
-        models::webhook::WebhookAppEvent {
-            deployment_id: 0, // This will be filled by backend
-            app_name: app_name.clone(),
-            event_name: e.name,
-            description: Some(e.description),
-            schema: e.schema,
-            created_at: chrono::Utc::now(),
-        }
-    }).collect();
 
     Ok(GetAvailableEventsResponse { events }.into())
 }

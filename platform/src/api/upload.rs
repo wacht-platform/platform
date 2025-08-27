@@ -1,7 +1,8 @@
 use crate::{
-    application::{HttpState, response::ApiResult},
+    application::response::ApiResult,
     middleware::RequireDeployment,
 };
+use common::state::AppState;
 
 use commands::{Command, UpdateDeploymentDisplaySettingsCommand, UploadToCdnCommand};
 use dto::json::{DeploymentDisplaySettingsUpdates, UploadResult};
@@ -12,7 +13,7 @@ use axum::{
 };
 
 pub async fn upload_image(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(image_type): Path<String>,
     mut multipart: Multipart,

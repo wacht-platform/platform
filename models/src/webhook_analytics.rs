@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 // Analytics result models
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WebhookAnalyticsResult {
     pub total_events: i64,
     pub total_deliveries: i64,
@@ -19,13 +19,13 @@ pub struct WebhookAnalyticsResult {
     pub failure_reasons: Vec<FailureReason>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EventCount {
     pub event_name: String,
     pub count: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EndpointPerformance {
     pub endpoint_id: i64,
     pub endpoint_url: String,
@@ -36,7 +36,7 @@ pub struct EndpointPerformance {
     pub success_rate: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FailureReason {
     pub reason: String,
     pub count: i64,
@@ -65,13 +65,13 @@ impl TimeseriesInterval {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WebhookTimeseriesResult {
     pub data: Vec<TimeseriesPoint>,
     pub interval: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TimeseriesPoint {
     pub timestamp: DateTime<Utc>,
     pub total_events: i64,

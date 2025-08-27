@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::{query, query_as};
 
 use common::error::AppError;
@@ -7,7 +7,7 @@ use dto::json::webhook_requests::{
     WebhookEndpoint, WebhookEndpointSubscription as WebhookEndpointSubscriptionDTO,
 };
 use models::webhook::{
-    WebhookApp, WebhookEndpoint as ModelWebhookEndpoint, WebhookEndpointSubscription,
+    PendingDeliveryRow, WebhookApp, WebhookEndpoint as ModelWebhookEndpoint, WebhookEndpointSubscription,
 };
 
 use super::Query;
@@ -197,6 +197,8 @@ pub struct GetWebhookEndpointsWithSubscriptionsQuery {
     deployment_id: i64,
     app_name: Option<String>,
     include_inactive: bool,
+    limit: Option<i32>,
+    offset: Option<i32>,
 }
 
 impl GetWebhookEndpointsWithSubscriptionsQuery {
@@ -205,6 +207,8 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
             deployment_id,
             app_name: None,
             include_inactive: false,
+            limit: None,
+            offset: None,
         }
     }
 
@@ -217,12 +221,21 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
         self.include_inactive = include;
         self
     }
+    
+    pub fn with_pagination(mut self, limit: Option<i32>, offset: Option<i32>) -> Self {
+        self.limit = limit;
+        self.offset = offset;
+        self
+    }
 }
 
 impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
     type Output = Vec<WebhookEndpoint>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let limit = self.limit.unwrap_or(100) as i64;
+        let offset = self.offset.unwrap_or(0) as i64;
+        
         let endpoints = match (&self.app_name, self.include_inactive) {
             (Some(app_name), true) => {
                 query_as!(
@@ -236,9 +249,12 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
                     FROM webhook_endpoints e
                     WHERE e.deployment_id = $1 AND e.app_name = $2
                     ORDER BY e.created_at DESC
+                    LIMIT $3 OFFSET $4
                     "#,
                     self.deployment_id,
-                    app_name
+                    app_name,
+                    limit,
+                    offset
                 )
                 .fetch_all(&app_state.db_pool)
                 .await?
@@ -351,68 +367,6 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub struct WebhookDeliveryInfo {
-    pub id: i64,
-    pub endpoint_id: i64,
-    pub event_name: String,
-    pub attempts: i32,
-    pub max_attempts: i32,
-    pub next_retry_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct GetWebhookDeliveryStatusQuery {
-    delivery_id: i64,
-    deployment_id: i64,
-}
-
-impl GetWebhookDeliveryStatusQuery {
-    pub fn new(delivery_id: i64, deployment_id: i64) -> Self {
-        Self {
-            delivery_id,
-            deployment_id,
-        }
-    }
-}
-
-impl Query for GetWebhookDeliveryStatusQuery {
-    type Output = WebhookDeliveryInfo;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let delivery = query!(
-            r#"
-            SELECT d.id as "id!",
-                   d.endpoint_id as "endpoint_id!",
-                   d.event_name as "event_name!",
-                   d.attempts as "attempts!",
-                   d.max_attempts as "max_attempts!",
-                   d.next_retry_at,
-                   d.created_at as "created_at!"
-            FROM active_webhook_deliveries d
-            WHERE d.id = $1 AND d.deployment_id = $2
-            "#,
-            self.delivery_id,
-            self.deployment_id
-        )
-        .fetch_optional(&app_state.db_pool)
-        .await?;
-
-        match delivery {
-            Some(d) => Ok(WebhookDeliveryInfo {
-                id: d.id,
-                endpoint_id: d.endpoint_id,
-                event_name: d.event_name,
-                attempts: d.attempts,
-                max_attempts: d.max_attempts,
-                next_retry_at: d.next_retry_at,
-                created_at: d.created_at,
-            }),
-            None => Err(AppError::NotFound("Delivery not found".to_string())),
-        }
-    }
-}
 
 // Query for getting webhook app by name
 #[derive(Debug, Deserialize)]
@@ -574,6 +528,71 @@ impl Query for GetWebhookStatsQuery {
             success_rate,
             active_endpoints,
             failed_deliveries_24h: failed_24h,
+        })
+    }
+}
+
+pub struct GetPendingWebhookDeliveryQuery {
+    pub deployment_id: i64,
+    pub delivery_id: i64,
+}
+
+impl GetPendingWebhookDeliveryQuery {
+    pub fn new(deployment_id: i64, delivery_id: i64) -> Self {
+        Self {
+            deployment_id,
+            delivery_id,
+        }
+    }
+}
+
+impl Query for GetPendingWebhookDeliveryQuery {
+    type Output = dto::clickhouse::webhook::WebhookDelivery;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let row = sqlx::query_as::<_, PendingDeliveryRow>(
+            r#"
+            SELECT 
+                d.id as delivery_id,
+                d.deployment_id,
+                d.app_name,
+                d.endpoint_id,
+                e.url as endpoint_url,
+                d.event_name,
+                d.payload_s3_key,
+                d.attempts as attempt_number,
+                d.max_attempts,
+                d.created_at as timestamp
+            FROM active_webhook_deliveries d
+            JOIN webhook_endpoints e ON e.id = d.endpoint_id
+            WHERE d.id = $1 AND d.deployment_id = $2
+            "#,
+        )
+        .bind(self.delivery_id)
+        .bind(self.deployment_id)
+        .fetch_optional(&app_state.db_pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Pending delivery not found".to_string()))?;
+
+        // Convert to WebhookDelivery DTO
+        Ok(dto::clickhouse::webhook::WebhookDelivery {
+            deployment_id: row.deployment_id,
+            delivery_id: row.delivery_id,
+            app_name: row.app_name,
+            endpoint_id: row.endpoint_id,
+            endpoint_url: row.endpoint_url,
+            event_name: row.event_name,
+            status: "pending".to_string(),
+            http_status_code: None,
+            response_time_ms: None,
+            attempt_number: row.attempt_number,
+            max_attempts: row.max_attempts,
+            error_message: None,
+            filtered_reason: None,
+            payload_s3_key: row.payload_s3_key,
+            response_body: None,
+            response_headers: None,
+            timestamp: row.timestamp,
         })
     }
 }

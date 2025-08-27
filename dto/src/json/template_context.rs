@@ -11,13 +11,11 @@ pub struct StepDecisionContext {
     pub current_objective: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation_insights: Option<Value>,
-    pub executable_tasks: Vec<Value>,
     pub task_results: HashMap<String, Value>,
     pub available_tools: Vec<Value>,
     pub available_workflows: Vec<Value>,
     pub available_knowledge_bases: Vec<Value>,
     pub iteration_info: IterationInfo,
-    pub is_in_planning_mode: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,17 +30,6 @@ pub struct ValidationContext {
     pub user_request: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_objective: Option<Value>,
-    pub task_results: HashMap<String, Value>,
-    pub executable_tasks: Vec<Value>,
-    pub available_tools: Vec<Value>,
-    pub available_workflows: Vec<Value>,
-    pub available_knowledge_bases: Vec<Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SummaryContext {
-    pub conversation_history: Vec<Value>,
-    pub user_request: String,
     pub task_results: HashMap<String, Value>,
     pub available_tools: Vec<Value>,
     pub available_workflows: Vec<Value>,

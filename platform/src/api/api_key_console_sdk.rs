@@ -4,7 +4,8 @@
 use axum::extract::{Json, Path, State};
 use axum::http::StatusCode;
 
-use crate::application::{HttpState, response::ApiResult};
+use crate::application::response::ApiResult;
+use common::state::AppState;
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use dto::json::api_key::{
     ApiKeyStatus, CreateApiKeyRequest as ConsoleCreateApiKeyRequest,
@@ -18,7 +19,7 @@ use models::{
 
 // Example: Get API key status using SDK
 pub async fn get_api_key_status(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<ApiKeyStatus> {
@@ -63,7 +64,7 @@ pub async fn get_api_key_status(
 
 // Example: Activate API keys using SDK
 pub async fn activate_api_keys(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<ApiKeyApp> {
@@ -106,7 +107,7 @@ pub async fn activate_api_keys(
 
 // Example: Deactivate API keys using SDK
 pub async fn deactivate_api_keys(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<()> {
@@ -133,7 +134,7 @@ pub async fn deactivate_api_keys(
 
 // Example: List API keys using SDK
 pub async fn list_api_keys(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<ListApiKeysResponse> {
@@ -161,7 +162,7 @@ pub async fn list_api_keys(
 
 // Example: Create API key using SDK
 pub async fn create_api_key(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<ConsoleCreateApiKeyRequest>,
@@ -182,10 +183,17 @@ pub async fn create_api_key(
         })
     });
     
+    // Determine key_prefix based on mode
+    let key_prefix = match request.mode.as_ref() {
+        Some(DeploymentMode::Live) => "sk_live",
+        Some(DeploymentMode::Test) | None => "sk_test",
+    };
+
     let sdk_request = wacht::api_keys::CreateApiKeyRequest {
         name: request.name,
+        key_prefix: key_prefix.to_string(),
         permissions,
-        expires_at: request.expires_at.map(|dt| dt.to_rfc3339()),
+        expires_at: request.expires_at,
         metadata: request.metadata,
     };
     
@@ -201,7 +209,7 @@ pub async fn create_api_key(
 
 // Example: Revoke API key using SDK
 pub async fn revoke_api_key(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(_deployment_id): RequireDeployment,
     Path(key_id): Path<i64>,
@@ -223,7 +231,7 @@ pub async fn revoke_api_key(
 
 // Example: Rotate API key using SDK
 pub async fn rotate_api_key(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(_deployment_id): RequireDeployment,
     Path(key_id): Path<i64>,

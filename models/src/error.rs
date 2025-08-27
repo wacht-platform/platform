@@ -41,9 +41,3 @@ impl From<clickhouse::error::Error> for AppError {
         AppError::Database(sqlx::Error::Protocol(error.to_string()))
     }
 }
-
-impl From<llm::error::LLMError> for AppError {
-    fn from(error: llm::error::LLMError) -> Self {
-        AppError::Internal(error.to_string())
-    }
-}

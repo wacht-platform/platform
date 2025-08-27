@@ -3,9 +3,9 @@ use axum::extract::{Json, Path, Query, State};
 use serde::Deserialize;
 
 use crate::application::{
-    HttpState,
     response::{ApiResult, PaginatedResponse},
 };
+use common::state::AppState;
 
 use commands::{
     Command, CreateAiWorkflowCommand, DeleteAiWorkflowCommand, UpdateAiWorkflowCommand,
@@ -24,7 +24,7 @@ pub struct WorkflowParams {
 }
 
 pub async fn get_ai_workflows(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<GetWorkflowsQuery>,
 ) -> ApiResult<PaginatedResponse<AiWorkflowWithDetails>> {
@@ -47,12 +47,14 @@ pub async fn get_ai_workflows(
     Ok(PaginatedResponse {
         data: workflows,
         has_more,
+        limit: Some(limit as i32),
+        offset: query.offset.map(|o| o as i32),
     }
     .into())
 }
 
 pub async fn create_ai_workflow(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateWorkflowRequest>,
 ) -> ApiResult<AiWorkflow> {
@@ -70,7 +72,7 @@ pub async fn create_ai_workflow(
 }
 
 pub async fn get_ai_workflow_by_id(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WorkflowParams>,
 ) -> ApiResult<AiWorkflowWithDetails> {
@@ -82,7 +84,7 @@ pub async fn get_ai_workflow_by_id(
 }
 
 pub async fn update_ai_workflow(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WorkflowParams>,
     Json(request): Json<UpdateWorkflowRequest>,
@@ -110,7 +112,7 @@ pub async fn update_ai_workflow(
 }
 
 pub async fn delete_ai_workflow(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WorkflowParams>,
 ) -> ApiResult<()> {

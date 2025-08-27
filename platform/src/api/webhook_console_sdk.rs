@@ -4,7 +4,8 @@
 use axum::extract::{Json, Path, Query, State};
 use axum::http::StatusCode;
 
-use crate::application::{HttpState, response::ApiResult};
+use crate::application::response::ApiResult;
+use common::state::AppState;
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use dto::json::{
     WebhookStatus,
@@ -18,7 +19,7 @@ use models::webhook::{WebhookApp, WebhookEndpoint, WebhookEventDefinition};
 
 // Example: Get webhook status using SDK
 pub async fn get_webhook_status(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<WebhookStatus> {
@@ -61,7 +62,7 @@ pub async fn get_webhook_status(
 
 // Example: Activate webhooks using SDK
 pub async fn activate_webhooks(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<WebhookApp> {
@@ -87,7 +88,7 @@ pub async fn activate_webhooks(
 
 // Example: Create webhook endpoint using SDK
 pub async fn create_webhook_endpoint(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateWebhookEndpointConsoleRequest>,
@@ -126,7 +127,7 @@ pub async fn create_webhook_endpoint(
 
 // Example: Update webhook endpoint using SDK
 pub async fn update_webhook_endpoint(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(_deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
@@ -155,7 +156,7 @@ pub async fn update_webhook_endpoint(
 
 // Example: Delete webhook endpoint using SDK
 pub async fn delete_webhook_endpoint(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(_deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
@@ -172,7 +173,7 @@ pub async fn delete_webhook_endpoint(
 
 // Example: List webhook endpoints using SDK
 pub async fn list_webhook_endpoints(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<ListWebhookEndpointsQuery>,
@@ -204,7 +205,7 @@ pub async fn list_webhook_endpoints(
 
 // Example: Get webhook deliveries using SDK
 pub async fn get_webhook_deliveries(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<DeliveryListQuery>,
@@ -234,7 +235,7 @@ pub async fn get_webhook_deliveries(
 
 // Example: Retry webhook delivery using SDK
 pub async fn retry_webhook_delivery(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(_deployment_id): RequireDeployment,
     Path(delivery_id): Path<i64>,
@@ -251,7 +252,7 @@ pub async fn retry_webhook_delivery(
 
 // Example: Reactivate webhook endpoint using SDK
 pub async fn reactivate_webhook_endpoint(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(_deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
@@ -268,7 +269,7 @@ pub async fn reactivate_webhook_endpoint(
 
 // Example: Get webhook analytics using SDK
 pub async fn get_webhook_analytics(
-    State(_app_state): State<HttpState>,
+    State(_app_state): State<AppState>,
     ConsoleDeployment(_console_deployment_id): ConsoleDeployment,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<ConsoleAnalyticsQuery>,

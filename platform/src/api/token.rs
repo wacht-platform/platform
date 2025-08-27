@@ -1,7 +1,8 @@
 use crate::{
-    application::{HttpState, response::ApiResult},
+    application::response::ApiResult,
     middleware::RequireDeployment,
 };
+use common::state::AppState;
 use axum::{Json, extract::State};
 use commands::{
     Command, GenerateAgentContextTokenCommand, GenerateTokenCommand, GenerateTokenResponse,
@@ -18,7 +19,7 @@ pub struct GenerateTokenRequest {
 }
 
 pub async fn generate_token(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<GenerateTokenRequest>,
 ) -> ApiResult<GenerateTokenResponse> {
@@ -39,7 +40,7 @@ pub struct GenerateAgentContextTokenRequest {
 }
 
 pub async fn generate_agent_context_token(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<GenerateAgentContextTokenRequest>,
 ) -> ApiResult<GenerateTokenResponse> {

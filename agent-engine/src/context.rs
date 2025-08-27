@@ -216,6 +216,12 @@ impl ContextOrchestrator {
         conversations: &[ConversationRecord],
         current_objective: &Option<ObjectiveDefinition>,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
+        tracing::info!(
+            "Starting context gathering for agent {} with objective: {:?}",
+            self.agent.id,
+            current_objective.as_ref().map(|o| &o.primary_goal)
+        );
+        
         let mut all_results = Vec::new();
         let mut previous_searches = Vec::new();
         let mut search_metrics = SearchMetrics::new();
@@ -238,8 +244,21 @@ impl ContextOrchestrator {
                 )
                 .await?;
 
+            tracing::info!(
+                "Iteration {}: Search strategy - Action: {:?}, Query: '{}', Reasoning: {}",
+                iteration,
+                derivation.next_action,
+                derivation.search_query,
+                derivation.reasoning
+            );
+
             // Check if agent decided to stop
             if matches!(derivation.next_action, SearchScope::Complete) {
+                tracing::info!(
+                    "Context gathering complete after {} iterations. Total results: {}",
+                    iteration - 1,
+                    all_results.len()
+                );
                 break;
             }
 
@@ -282,7 +301,41 @@ impl ContextOrchestrator {
                 continue;
             }
 
-            let results = self.execute_search(&derivation).await?;
+            let results = match self.execute_search(&derivation).await {
+                Ok(results) => {
+                    tracing::info!(
+                        "Search returned {} results for iteration {}",
+                        results.len(),
+                        iteration
+                    );
+                    results
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Search failed in iteration {}: {}. Adding error context.",
+                        iteration,
+                        e
+                    );
+                    // Create an informative result about the failure
+                    vec![ContextSearchResult {
+                        source: ContextSource::KnowledgeBase { kb_id: 0, document_id: 0 },
+                        content: format!(
+                            "Failed to execute search '{}': {}. This resource may not exist or is not accessible. Consider alternative search strategies.",
+                            derivation.search_query,
+                            e
+                        ),
+                        relevance_score: 0.1,
+                        metadata: json!({
+                            "error_type": "search_failure",
+                            "failed_action": format!("{:?}", derivation.next_action),
+                            "failed_query": derivation.search_query,
+                            "error_message": e.to_string(),
+                            "iteration": iteration,
+                            "suggestion": "Try searching by document name or listing available documents first"
+                        }),
+                    }]
+                }
+            };
 
             // Add results to accumulator BEFORE any potential break
             all_results.extend(results.clone());
@@ -319,6 +372,22 @@ impl ContextOrchestrator {
                 break;
             }
 
+            // Check if this search had an error
+            let had_error = results.iter().any(|r| r.metadata.get("error_type").is_some());
+            let error_info = if had_error {
+                results.iter()
+                    .find(|r| r.metadata.get("error_type").is_some())
+                    .and_then(|r| {
+                        Some(json!({
+                            "error_message": r.metadata.get("error_message"),
+                            "suggestion": r.metadata.get("suggestion"),
+                            "failed_action": r.metadata.get("failed_action")
+                        }))
+                    })
+            } else {
+                None
+            };
+            
             let search_record = json!({
                 "iteration": iteration,
                 "search_query": derivation.search_query,
@@ -329,6 +398,8 @@ impl ContextOrchestrator {
                 "boost_keywords": derivation.filters.boost_keywords.clone(),
                 "time_range": derivation.filters.time_range.clone(),
                 "results_count": results.len(),
+                "had_error": had_error,
+                "error_info": error_info,
                 "progress_metrics": {
                     "new_sources": current_progress.new_sources_this_iteration,
                     "total_unique_sources": current_progress.total_unique_sources,
@@ -511,8 +582,22 @@ impl ContextOrchestrator {
         let max_results = derivation.filters.max_results as usize;
         let query = &derivation.search_query;
 
+        tracing::info!(
+            "Executing search - Type: {:?}, Query: '{}', Max Results: {}, Filters: {:?}",
+            derivation.next_action,
+            query,
+            max_results,
+            derivation.filters
+        );
+
         match &derivation.next_action {
             SearchScope::KnowledgeBase => {
+                tracing::info!(
+                    "KB Search - Mode: {:?}, KB IDs: {:?}, Boost Keywords: {:?}",
+                    filters.search_mode,
+                    derivation.filters.knowledge_base_ids,
+                    filters.boost_keywords
+                );
                 let kb_ids = derivation.filters.knowledge_base_ids.as_ref().map(|ids| {
                     ids.iter()
                         .filter_map(|id| id.parse::<i64>().map_err(|_| {}).ok())
@@ -522,18 +607,46 @@ impl ContextOrchestrator {
                 self.execute_knowledge_base_search(query, kb_ids, max_results, &filters)
                     .await
             }
-            SearchScope::Experience => self.search_memories(query, max_results, &filters).await,
+            SearchScope::Experience => {
+                tracing::info!(
+                    "Memory Search - Query: '{}', Time Range: {:?}",
+                    query,
+                    filters.time_range
+                );
+                self.search_memories(query, max_results, &filters).await
+            }
             SearchScope::Universal => {
+                tracing::info!(
+                    "Universal Search - Query: '{}', Mode: {:?}, Combining KB + Memory results",
+                    query,
+                    filters.search_mode
+                );
                 self.execute_universal_search(query, max_results, &filters)
                     .await
             }
             SearchScope::ListKnowledgeBaseDocuments => {
+                tracing::info!(
+                    "List KB Documents - Params: {:?}",
+                    derivation.list_documents_params
+                );
                 self.list_knowledge_base_documents(derivation).await
             }
             SearchScope::ReadKnowledgeBaseDocuments => {
+                tracing::info!(
+                    "Read KB Document - Document ID: {:?}, Chunk Range: {:?}",
+                    derivation.read_document_params.as_ref().map(|p| &p.document_id),
+                    derivation.read_document_params.as_ref().and_then(|p| p.chunk_range.as_ref())
+                );
                 self.read_knowledge_base_documents(derivation).await
             }
-            SearchScope::Conversations => self.search_conversations(query, max_results).await,
+            SearchScope::Conversations => {
+                tracing::info!(
+                    "Conversation Search - Query: '{}', Max Results: {}",
+                    query,
+                    max_results
+                );
+                self.search_conversations(query, max_results).await
+            }
             SearchScope::Complete => Ok(Vec::new()),
         }
     }
@@ -600,6 +713,13 @@ impl ContextOrchestrator {
     ) -> Result<Vec<ContextSearchResult>, AppError> {
         let kb_ids =
             kb_ids.unwrap_or_else(|| self.agent.knowledge_bases.iter().map(|kb| kb.id).collect());
+        
+        tracing::debug!(
+            "Executing KB search - Query: '{}', KB IDs: {:?}, Mode: {:?}",
+            query,
+            kb_ids,
+            filters.search_mode
+        );
 
         let results = match &filters.search_mode {
             SearchMode::FullText => {
@@ -691,6 +811,8 @@ impl ContextOrchestrator {
                 content: r.content,
                 relevance_score: r.text_rank as f64,
                 metadata: json!({
+                    "document_id": r.document_id.to_string(),  // Store as string to preserve Snowflake ID
+                    "knowledge_base_id": r.knowledge_base_id.to_string(),  // Store as string
                     "document_title": r.document_title,
                     "chunk_index": r.chunk_index,
                     "query": query,
@@ -707,6 +829,14 @@ impl ContextOrchestrator {
         query_embedding: &[f32],
         max_results: usize,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
+        tracing::debug!(
+            "Vector Search - Query: '{}', KB IDs: {:?}, Max Results: {}, Embedding Dim: {}",
+            query,
+            kb_ids,
+            max_results,
+            query_embedding.len()
+        );
+        
         let results = SearchKnowledgeBaseEmbeddingsCommand::new(
             kb_ids.to_vec(),
             query_embedding.to_vec(),
@@ -714,6 +844,8 @@ impl ContextOrchestrator {
         )
         .execute(&self.app_state)
         .await?;
+        
+        tracing::debug!("Vector search returned {} results", results.len());
 
         Ok(results
             .into_iter()
@@ -725,6 +857,8 @@ impl ContextOrchestrator {
                 content: r.content,
                 relevance_score: r.score,
                 metadata: json!({
+                    "document_id": r.document_id.to_string(),  // Store as string to preserve Snowflake ID
+                    "knowledge_base_id": r.knowledge_base_id.to_string(),  // Store as string
                     "chunk_index": r.chunk_index,
                     "document_title": r.document_title,
                     "document_description": r.document_description,
@@ -772,6 +906,8 @@ impl ContextOrchestrator {
                 content: r.content,
                 relevance_score: (r.combined_score / RELEVANCE_SCORE_DIVISOR as f64),
                 metadata: json!({
+                    "document_id": r.document_id.to_string(),  // Store as string to preserve Snowflake ID
+                    "knowledge_base_id": r.knowledge_base_id.to_string(),  // Store as string
                     "document_title": r.document_title,
                     "chunk_index": r.chunk_index,
                     "text_rank": r.text_rank,
@@ -904,9 +1040,9 @@ impl ContextOrchestrator {
                     content: format!("Document: {} (ID: {}) from KB {}", doc.title, doc.id, kb_id),
                     relevance_score: 1.0,
                     metadata: json!({
-                        "document_id": doc.id,
+                        "document_id": doc.id.to_string(),  // CRITICAL: Store as string to preserve Snowflake ID precision
                         "document_title": doc.title,
-                        "knowledge_base_id": kb_id,
+                        "knowledge_base_id": kb_id.to_string(),  // Also store KB ID as string
                         "created_at": doc.created_at,
                         "page": page,
                     }),
@@ -967,7 +1103,7 @@ impl ContextOrchestrator {
                     relevance_score: 1.0,
                     metadata: json!({
                         "is_pagination_info": true,
-                        "knowledge_base_ids": kb_ids,
+                        "knowledge_base_ids": kb_ids.iter().map(|id| id.to_string()).collect::<Vec<String>>(),
                         "page": page,
                         "limit": limit,
                         "per_kb_limit": per_kb_limit,
@@ -992,51 +1128,198 @@ impl ContextOrchestrator {
             )
         })?;
 
-        let document_id = read_params.document_id.parse::<i64>().map_err(|_| {
-            AppError::BadRequest(format!(
-                "Invalid document_id format: '{}'",
-                read_params.document_id
-            ))
-        })?;
-        let limit = read_params.limit.unwrap_or(10) as usize;
+        // Parse comma-separated document IDs
+        let document_ids_str = read_params.document_id.trim();
+        let document_id_strings: Vec<&str> = if document_ids_str.contains(',') {
+            document_ids_str.split(',').map(|s| s.trim()).collect()
+        } else {
+            vec![document_ids_str]
+        };
 
-        let mut query = GetDocumentChunksQuery::new(document_id);
+        tracing::info!(
+            "Attempting to parse document_ids: {:?}",
+            document_id_strings
+        );
 
-        if let Some(keywords) = &read_params.keywords {
-            query = query.with_keywords(keywords.clone());
+        // Parse and validate all document IDs
+        let mut document_ids = Vec::new();
+        let mut invalid_ids = Vec::new();
+        
+        for id_str in document_id_strings {
+            match id_str.parse::<i64>() {
+                Ok(id) => document_ids.push(id),
+                Err(_) => invalid_ids.push(id_str.to_string()),
+            }
         }
 
-        if let Some(range) = &read_params.chunk_range {
-            query = query.with_chunk_range(range.start, range.end);
+        // If there are invalid IDs, include them in the error response
+        if !invalid_ids.is_empty() {
+            let error_msg = format!(
+                "Invalid document ID format: {}. All IDs must be valid numbers.",
+                invalid_ids.join(", ")
+            );
+            tracing::error!("{}", error_msg);
         }
 
-        query = query.with_limit(limit);
-
-        let chunks = query.execute(&self.app_state).await.map_err(|e| {
-            AppError::Internal(format!(
-                "Failed to fetch document chunks for document_id {document_id}: {e}"
-            ))
-        })?;
-
-        if chunks.is_empty() {
-            return Err(AppError::NotFound(format!(
-                "No chunks found for document_id {document_id}"
-            )));
+        // If no valid IDs were found, return error
+        if document_ids.is_empty() {
+            return Ok(vec![ContextSearchResult {
+                source: ContextSource::KnowledgeBase { kb_id: 0, document_id: 0 },
+                content: format!(
+                    "No valid document IDs found in: '{}'. All IDs must be valid numbers.",
+                    read_params.document_id
+                ),
+                relevance_score: 0.1,
+                metadata: json!({
+                    "error": "invalid_document_ids",
+                    "provided_ids": read_params.document_id,
+                    "invalid_ids": invalid_ids,
+                    "message": "All document IDs must be valid numbers"
+                }),
+            }]);
         }
 
-        let kb_id = chunks.first().map(|c| c.knowledge_base_id).unwrap_or(0);
+        let limit_per_document = read_params.limit.unwrap_or(10) as usize;
+        let mut all_results = Vec::new();
+        let mut successful_docs = Vec::new();
+        let mut failed_docs = Vec::new();
 
-        Ok(chunks
-            .into_iter()
-            .map(|chunk| ContextSearchResult {
-                source: ContextSource::KnowledgeBase { kb_id, document_id },
-                content: chunk.content,
+        // Fetch chunks for each document ID
+        for document_id in &document_ids {
+            tracing::info!(
+                "Fetching chunks for document_id: {}",
+                document_id
+            );
+
+            let mut query = GetDocumentChunksQuery::new(*document_id);
+
+            if let Some(keywords) = &read_params.keywords {
+                query = query.with_keywords(keywords.clone());
+            }
+
+            if let Some(range) = &read_params.chunk_range {
+                query = query.with_chunk_range(range.start, range.end);
+            }
+
+            query = query.with_limit(limit_per_document);
+
+            match query.execute(&self.app_state).await {
+                Ok(chunks) => {
+                    if chunks.is_empty() {
+                        tracing::warn!(
+                            "No chunks found for document_id {}. Document may be empty or not properly indexed.",
+                            document_id
+                        );
+                        failed_docs.push(format!("{} (no chunks)", document_id));
+                        
+                        // Add informative result for empty document
+                        all_results.push(ContextSearchResult {
+                            source: ContextSource::KnowledgeBase { 
+                                kb_id: 0, 
+                                document_id: *document_id 
+                            },
+                            content: format!(
+                                "Document with ID {} exists but has no content chunks. It may be empty or not properly indexed.",
+                                document_id
+                            ),
+                            relevance_score: 0.1,
+                            metadata: json!({
+                                "error": "no_chunks",
+                                "document_id": document_id.to_string(),
+                                "message": "Document has no content chunks"
+                            }),
+                        });
+                    } else {
+                        successful_docs.push(document_id.to_string());
+                        let kb_id = chunks.first().map(|c| c.knowledge_base_id).unwrap_or(0);
+                        
+                        // Add all chunks from this document
+                        for chunk in chunks {
+                            all_results.push(ContextSearchResult {
+                                source: ContextSource::KnowledgeBase { kb_id, document_id: *document_id },
+                                content: chunk.content,
+                                relevance_score: 1.0,
+                                metadata: json!({
+                                    "chunk_index": chunk.chunk_index,
+                                    "document_id": document_id.to_string(),
+                                    "knowledge_base_id": kb_id.to_string(),
+                                }),
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to fetch chunks for document_id {}: {}",
+                        document_id,
+                        e
+                    );
+                    failed_docs.push(format!("{} (fetch error)", document_id));
+                    
+                    // Add error result for this document
+                    all_results.push(ContextSearchResult {
+                        source: ContextSource::KnowledgeBase { kb_id: 0, document_id: *document_id },
+                        content: format!(
+                            "Failed to fetch document with ID {}: {}. Document may not exist or access is denied.",
+                            document_id,
+                            e
+                        ),
+                        relevance_score: 0.1,
+                        metadata: json!({
+                            "error": "fetch_failed",
+                            "document_id": document_id.to_string(),
+                            "error_message": e.to_string(),
+                            "message": "Document fetch failed"
+                        }),
+                    });
+                }
+            }
+        }
+
+        // Add summary result at the beginning if multiple documents were requested
+        if document_ids.len() > 1 {
+            let summary_content = if successful_docs.is_empty() && failed_docs.is_empty() {
+                format!("No valid documents found from the provided IDs: {}", read_params.document_id)
+            } else {
+                let mut summary_parts = Vec::new();
+                
+                if !successful_docs.is_empty() {
+                    summary_parts.push(format!("Successfully loaded {} documents: {}", 
+                        successful_docs.len(), 
+                        successful_docs.join(", ")));
+                }
+                
+                if !failed_docs.is_empty() {
+                    summary_parts.push(format!("Failed to load {} documents: {}", 
+                        failed_docs.len(), 
+                        failed_docs.join(", ")));
+                }
+                
+                if !invalid_ids.is_empty() {
+                    summary_parts.push(format!("Invalid document IDs: {}", 
+                        invalid_ids.join(", ")));
+                }
+                
+                format!("Multi-document read results: {}", summary_parts.join("; "))
+            };
+
+            all_results.insert(0, ContextSearchResult {
+                source: ContextSource::System,
+                content: summary_content,
                 relevance_score: 1.0,
                 metadata: json!({
-                    "chunk_index": chunk.chunk_index,
+                    "is_multi_document_summary": true,
+                    "requested_documents": document_ids.len(),
+                    "successful_documents": successful_docs.len(),
+                    "failed_documents": failed_docs.len(),
+                    "invalid_ids": invalid_ids,
+                    "successful_ids": successful_docs,
+                    "failed_ids": failed_docs,
                 }),
-            })
-            .collect())
+            });
+        }
+
+        Ok(all_results)
     }
 
     fn sort_and_limit_results(

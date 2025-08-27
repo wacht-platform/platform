@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE subscriptions \n            SET status = $1, updated_at = NOW()\n            WHERE id = $2\n            RETURNING *\n            ",
+  "query": "\n            SELECT * FROM subscriptions\n            WHERE user_id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -46,7 +46,6 @@
     ],
     "parameters": {
       "Left": [
-        "Varchar",
         "Int8"
       ]
     },
@@ -61,5 +60,5 @@
       true
     ]
   },
-  "hash": "1fb21a03b167d3bac40d408fb7658689778162466e3cc400117fa89c692e071a"
+  "hash": "67007f94e528e3aa15933d881234bbfd63392a8bdcd787420e6eb6e0e523243e"
 }

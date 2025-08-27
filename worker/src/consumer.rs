@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use crate::tasks::{document, email, embedding, sms, token, webhook};
+use crate::tasks::{document, email, embedding, sms, token, webhook, webhook_replay_batch};
 use dto::json::NatsTaskMessage;
 
 #[derive(Debug)]
@@ -365,6 +365,17 @@ impl NatsConsumer {
                             TaskError::Permanent(format!("Failed to deserialize retry task: {}", e))
                         })?;
                     webhook::process_webhook_retry(task.delivery_id, task.deployment_id, &app_state)
+                        .await
+                        .map_err(|e| TaskError::Permanent(e.to_string()))
+                })
+            }),
+        );
+
+        task_handlers.insert(
+            "webhook.replay_batch".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    webhook_replay_batch::handle_webhook_replay_batch(&app_state, payload)
                         .await
                         .map_err(|e| TaskError::Permanent(e.to_string()))
                 })

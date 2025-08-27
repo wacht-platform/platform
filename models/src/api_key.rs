@@ -120,3 +120,58 @@ pub struct ApiKeyScope {
     pub actions: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
+
+// Conversions from SDK types to model types
+impl From<wacht::api::api_keys::ApiKeyApp> for ApiKeyApp {
+    fn from(sdk_app: wacht::api::api_keys::ApiKeyApp) -> Self {
+        Self {
+            id: sdk_app.id.parse().unwrap_or(0),
+            deployment_id: sdk_app.deployment_id.parse().unwrap_or(0),
+            name: sdk_app.name,
+            description: sdk_app.description,
+            is_active: sdk_app.is_active,
+            rate_limit_per_minute: sdk_app.rate_limit_per_minute,
+            rate_limit_per_hour: sdk_app.rate_limit_per_hour,
+            rate_limit_per_day: sdk_app.rate_limit_per_day,
+            rate_limit_mode: sdk_app.rate_limit_mode.map(|m| match m {
+                wacht::api::api_keys::RateLimitMode::PerKey => RateLimitMode::PerKey,
+                wacht::api::api_keys::RateLimitMode::PerApp => RateLimitMode::PerIp, // Note: SDK uses PerApp, models use PerIp
+            }),
+            created_at: sdk_app.created_at,
+            updated_at: sdk_app.updated_at,
+            deleted_at: None,
+        }
+    }
+}
+
+impl From<wacht::api::api_keys::ApiKey> for ApiKey {
+    fn from(sdk_key: wacht::api::api_keys::ApiKey) -> Self {
+        Self {
+            id: sdk_key.id.parse().unwrap_or(0),
+            app_id: sdk_key.app_id.parse().unwrap_or(0),
+            deployment_id: sdk_key.deployment_id.parse().unwrap_or(0),
+            name: sdk_key.name,
+            key_prefix: sdk_key.key_prefix,
+            key_suffix: sdk_key.key_suffix,
+            key_hash: String::new(), // SDK doesn't have key_hash for security
+            permissions: sdk_key.permissions,
+            metadata: sdk_key.metadata,
+            expires_at: sdk_key.expires_at,
+            last_used_at: sdk_key.last_used_at,
+            is_active: sdk_key.is_active,
+            created_at: sdk_key.created_at,
+            updated_at: sdk_key.updated_at,
+            revoked_at: sdk_key.revoked_at,
+            revoked_reason: sdk_key.revoked_reason,
+        }
+    }
+}
+
+impl From<wacht::api::api_keys::ApiKeyWithSecret> for ApiKeyWithSecret {
+    fn from(sdk_key: wacht::api::api_keys::ApiKeyWithSecret) -> Self {
+        Self {
+            key: sdk_key.key.into(),
+            secret: sdk_key.secret,
+        }
+    }
+}

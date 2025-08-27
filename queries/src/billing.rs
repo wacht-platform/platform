@@ -3,18 +3,18 @@ use crate::{Query};
 use common::error::AppError;
 use common::state::AppState;
 
-// Get subscription for a project
-pub struct GetProjectSubscriptionQuery {
-    project_id: i64,
+// Get subscription for a user
+pub struct GetUserSubscriptionQuery {
+    user_id: i64,
 }
 
-impl GetProjectSubscriptionQuery {
-    pub fn new(project_id: i64) -> Self {
-        Self { project_id }
+impl GetUserSubscriptionQuery {
+    pub fn new(user_id: i64) -> Self {
+        Self { user_id }
     }
 }
 
-impl Query for GetProjectSubscriptionQuery {
+impl Query for GetUserSubscriptionQuery {
     type Output = Option<Subscription>;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
@@ -22,9 +22,39 @@ impl Query for GetProjectSubscriptionQuery {
             Subscription,
             r#"
             SELECT * FROM subscriptions
-            WHERE project_id = $1
+            WHERE user_id = $1
             "#,
-            self.project_id
+            self.user_id
+        )
+        .fetch_optional(&state.db_pool)
+        .await?;
+        
+        Ok(subscription)
+    }
+}
+
+// Get subscription for an organization
+pub struct GetOrganizationSubscriptionQuery {
+    organization_id: i64,
+}
+
+impl GetOrganizationSubscriptionQuery {
+    pub fn new(organization_id: i64) -> Self {
+        Self { organization_id }
+    }
+}
+
+impl Query for GetOrganizationSubscriptionQuery {
+    type Output = Option<Subscription>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        let subscription = sqlx::query_as!(
+            Subscription,
+            r#"
+            SELECT * FROM subscriptions
+            WHERE organization_id = $1
+            "#,
+            self.organization_id
         )
         .fetch_optional(&state.db_pool)
         .await?;

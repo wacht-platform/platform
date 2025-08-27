@@ -25,7 +25,7 @@
       "properties": {
         "next_step": {
           "type": "STRING",
-          "enum": ["acknowledge", "gather_context", "task_planning", {{#if is_in_planning_mode}}"finish_planning",{{/if}} "execute_tasks", "validate_progress", "deliver_response", "request_user_input", "complete", "direct_execution", "examine_tool", "examine_workflow"],
+          "enum": ["acknowledge", "gathercontext", "executeaction", "deliverresponse", "validateprogress", "requestuserinput", "examinetool", "examineworkflow", "complete"],
           "description": "The next step to execute in the flow"
         },
         "reasoning": {
@@ -84,9 +84,9 @@
           },
           "required": ["message", "further_action_required", "objective"]
         },
-        "direct_execution": {
+        "execute_action": {
           "type": "OBJECT",
-          "description": "Direct execution action (required when next_step is direct_execution)",
+          "description": "Execute a single tool or workflow action (required when next_step is execute_action)",
           "properties": {
             "type": {
               "type": "STRING",
@@ -138,47 +138,8 @@
         },
         "context_gathering_objective": {
           "type": "STRING",
-          "description": "MANDATORY when next_step is gather_context - you MUST provide this field. Specific objective for context gathering (e.g., 'List all available documents', 'Find error patterns in system logs', 'Read authentication configuration files'). This should be a focused, single-purpose instruction that context gathering can complete and return control to step decision."
-        },
-        {{#if is_in_planning_mode}}
-        "planned_tasks": {
-          "type": "ARRAY",
-          "description": "List of initial tasks to execute (required when next_step is finish_planning)",
-          "items": {
-            "type": "OBJECT",
-            "properties": {
-              "id": {
-                "type": "STRING",
-                "description": "Unique identifier for this task"
-              },
-              "name": {
-                "type": "STRING",
-                "description": "Short name for the task"
-              },
-              "description": {
-                "type": "STRING",
-                "description": "Detailed description of what this task does"
-              },
-              "dependencies": {
-                "type": "ARRAY",
-                "items": {
-                  "type": "STRING"
-                },
-                "description": "IDs of tasks that must complete before this one"
-              },
-              "success_criteria": {
-                "type": "STRING",
-                "description": "How to determine if this task succeeded"
-              },
-              "error_handling": {
-                "type": "STRING",
-                "description": "What to do if this task fails"
-              }
-            },
-            "required": ["id", "name", "description", "success_criteria", "error_handling"]
-          }
+          "description": "MANDATORY when next_step is gathercontext - you MUST provide this field. Specific objective for context gathering (e.g., 'List all available documents', 'Find error patterns in system logs', 'Read authentication configuration files'). This should be a focused, single-purpose instruction that context gathering can complete and return control to step decision."
         }
-        {{/if}}
       },
       "required": ["next_step", "reasoning", "confidence"]
     }

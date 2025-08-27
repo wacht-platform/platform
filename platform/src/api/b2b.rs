@@ -2,8 +2,44 @@ use crate::middleware::RequireDeployment;
 use axum::Json;
 use axum::extract::{Multipart, Path, Query as QueryParams, State};
 use axum::http::StatusCode;
+use serde::Deserialize;
 
-use crate::application::{HttpState, response::ApiResult, response::PaginatedResponse};
+// Path parameter structs for nested routes
+#[derive(Deserialize)]
+pub struct OrganizationParams {
+    pub deployment_id: i64,
+    pub organization_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct OrganizationMemberParams {
+    pub deployment_id: i64,
+    pub organization_id: i64,
+    pub membership_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct OrganizationRoleParams {
+    pub deployment_id: i64,
+    pub organization_id: i64,
+    pub role_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct WorkspaceParams {
+    pub deployment_id: i64,
+    pub workspace_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct WorkspaceRoleParams {
+    pub deployment_id: i64,
+    pub workspace_id: i64,
+    pub role_id: i64,
+}
+
+use crate::application::{response::ApiResult, response::PaginatedResponse};
+use common::state::AppState;
 use commands::{
     AddOrganizationMemberCommand, Command, CreateOrganizationCommand,
     CreateOrganizationRoleCommand, CreateWorkspaceCommand, CreateWorkspaceRoleCommand,
@@ -36,7 +72,7 @@ use queries::{
 use queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery, Query};
 
 pub async fn get_deployment_workspace_roles(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<PaginatedResponse<DeploymentWorkspaceRole>> {
     GetDeploymentWorkspaceRolesQuery::new(deployment_id)
@@ -48,7 +84,7 @@ pub async fn get_deployment_workspace_roles(
 }
 
 pub async fn get_deployment_org_roles(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<PaginatedResponse<DeploymentOrganizationRole>> {
     GetDeploymentOrganizationRolesQuery::new(deployment_id)
@@ -60,7 +96,7 @@ pub async fn get_deployment_org_roles(
 }
 
 pub async fn update_deployment_b2b_settings(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(settings): Json<DeploymentB2bSettingsUpdates>,
 ) -> ApiResult<()> {
@@ -72,7 +108,7 @@ pub async fn update_deployment_b2b_settings(
 }
 
 pub async fn get_organization_list(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     QueryParams(query_params): QueryParams<OrganizationListQueryParams>,
 ) -> ApiResult<PaginatedResponse<Organization>> {
@@ -97,7 +133,7 @@ pub async fn get_organization_list(
 }
 
 pub async fn get_workspace_list(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     QueryParams(query_params): QueryParams<OrganizationListQueryParams>,
 ) -> ApiResult<PaginatedResponse<WorkspaceWithOrganizationName>> {
@@ -122,11 +158,11 @@ pub async fn get_workspace_list(
 }
 
 pub async fn get_organization_details(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(organization_id): Path<i64>,
+    Path(params): Path<OrganizationParams>,
 ) -> ApiResult<OrganizationDetails> {
-    GetOrganizationDetailsQuery::new(deployment_id, organization_id)
+    GetOrganizationDetailsQuery::new(deployment_id, params.organization_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -134,11 +170,11 @@ pub async fn get_organization_details(
 }
 
 pub async fn get_workspace_details(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(workspace_id): Path<i64>,
+    Path(params): Path<WorkspaceParams>,
 ) -> ApiResult<WorkspaceDetails> {
-    GetWorkspaceDetailsQuery::new(deployment_id, workspace_id)
+    GetWorkspaceDetailsQuery::new(deployment_id, params.workspace_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -146,7 +182,7 @@ pub async fn get_workspace_details(
 }
 
 pub async fn create_organization(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     mut multipart: Multipart,
 ) -> ApiResult<Organization> {
@@ -289,9 +325,9 @@ pub async fn create_organization(
 }
 
 pub async fn create_workspace_for_organization(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(organization_id): Path<i64>,
+    Path(params): Path<OrganizationParams>,
     mut multipart: Multipart,
 ) -> ApiResult<Workspace> {
     let mut name = String::new();
@@ -420,7 +456,7 @@ pub async fn create_workspace_for_organization(
 
     CreateWorkspaceCommand::new(
         deployment_id,
-        organization_id,
+        params.organization_id,
         name.trim().to_string(),
         description,
         image_url,
@@ -434,9 +470,9 @@ pub async fn create_workspace_for_organization(
 }
 
 pub async fn update_workspace(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(workspace_id): Path<i64>,
+    Path(params): Path<WorkspaceParams>,
     mut multipart: Multipart,
 ) -> ApiResult<Workspace> {
     let mut name: Option<String> = None;
@@ -534,7 +570,7 @@ pub async fn update_workspace(
                     if !image_buffer.is_empty() {
                         let file_path = format!(
                             "deployments/{}/workspaces/{}/logo.{}",
-                            deployment_id, workspace_id, file_extension
+                            deployment_id, params.workspace_id, file_extension
                         );
 
                         let url = UploadToCdnCommand::new(file_path, image_buffer)
@@ -552,7 +588,7 @@ pub async fn update_workspace(
         }
     }
 
-    let mut command = UpdateWorkspaceCommand::new(deployment_id, workspace_id);
+    let mut command = UpdateWorkspaceCommand::new(deployment_id, params.workspace_id);
 
     if let Some(name) = name {
         command = command.with_name(name);
@@ -578,9 +614,9 @@ pub async fn update_workspace(
 }
 
 pub async fn update_organization(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(organization_id): Path<i64>,
+    Path(params): Path<OrganizationParams>,
     mut multipart: Multipart,
 ) -> ApiResult<Organization> {
     let mut name: Option<String> = None;
@@ -678,7 +714,7 @@ pub async fn update_organization(
                     if !image_buffer.is_empty() {
                         let file_path = format!(
                             "deployments/{}/organizations/{}/logo.{}",
-                            deployment_id, organization_id, file_extension
+                            deployment_id, params.organization_id, file_extension
                         );
 
                         let url = UploadToCdnCommand::new(file_path, image_buffer)
@@ -698,7 +734,7 @@ pub async fn update_organization(
 
     UpdateOrganizationCommand::new(
         deployment_id,
-        organization_id,
+        params.organization_id,
         name,
         description,
         image_url,
@@ -712,11 +748,11 @@ pub async fn update_organization(
 }
 
 pub async fn delete_organization(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(organization_id): Path<i64>,
+    Path(params): Path<OrganizationParams>,
 ) -> ApiResult<()> {
-    DeleteOrganizationCommand::new(deployment_id, organization_id)
+    DeleteOrganizationCommand::new(deployment_id, params.organization_id)
         .execute(&app_state)
         .await?;
 
@@ -724,11 +760,11 @@ pub async fn delete_organization(
 }
 
 pub async fn delete_workspace(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(workspace_id): Path<i64>,
+    Path(params): Path<WorkspaceParams>,
 ) -> ApiResult<()> {
-    DeleteWorkspaceCommand::new(deployment_id, workspace_id)
+    DeleteWorkspaceCommand::new(deployment_id, params.workspace_id)
         .execute(&app_state)
         .await?;
 
@@ -738,14 +774,14 @@ pub async fn delete_workspace(
 // Organization Member Management
 
 pub async fn add_organization_member(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(organization_id): Path<i64>,
+    Path(params): Path<OrganizationParams>,
     Json(request): Json<AddOrganizationMemberRequest>,
 ) -> ApiResult<OrganizationMemberDetails> {
     AddOrganizationMemberCommand::new(
         deployment_id,
-        organization_id,
+        params.organization_id,
         request.user_id,
         request.role_ids,
     )
@@ -756,15 +792,15 @@ pub async fn add_organization_member(
 }
 
 pub async fn update_organization_member(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((organization_id, membership_id)): Path<(i64, i64)>,
+    Path(params): Path<OrganizationMemberParams>,
     Json(request): Json<UpdateOrganizationMemberRequest>,
 ) -> ApiResult<()> {
     UpdateOrganizationMemberCommand::new(
         deployment_id,
-        organization_id,
-        membership_id,
+        params.organization_id,
+        params.membership_id,
         request.role_ids,
     )
     .execute(&app_state)
@@ -774,11 +810,11 @@ pub async fn update_organization_member(
 }
 
 pub async fn remove_organization_member(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((organization_id, membership_id)): Path<(i64, i64)>,
+    Path(params): Path<OrganizationMemberParams>,
 ) -> ApiResult<()> {
-    RemoveOrganizationMemberCommand::new(deployment_id, organization_id, membership_id)
+    RemoveOrganizationMemberCommand::new(deployment_id, params.organization_id, params.membership_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -786,14 +822,14 @@ pub async fn remove_organization_member(
 }
 
 pub async fn create_organization_role(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(organization_id): Path<i64>,
+    Path(params): Path<OrganizationParams>,
     Json(request): Json<CreateOrganizationRoleRequest>,
 ) -> ApiResult<OrganizationRole> {
     CreateOrganizationRoleCommand::new(
         deployment_id,
-        organization_id,
+        params.organization_id,
         request.name,
         request.permissions,
     )
@@ -804,15 +840,15 @@ pub async fn create_organization_role(
 }
 
 pub async fn update_organization_role(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((organization_id, role_id)): Path<(i64, i64)>,
+    Path(params): Path<OrganizationRoleParams>,
     Json(request): Json<UpdateOrganizationRoleRequest>,
 ) -> ApiResult<OrganizationRole> {
     UpdateOrganizationRoleCommand::new(
         deployment_id,
-        organization_id,
-        role_id,
+        params.organization_id,
+        params.role_id,
         request.name,
         request.permissions,
     )
@@ -823,11 +859,11 @@ pub async fn update_organization_role(
 }
 
 pub async fn delete_organization_role(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((organization_id, role_id)): Path<(i64, i64)>,
+    Path(params): Path<OrganizationRoleParams>,
 ) -> ApiResult<()> {
-    DeleteOrganizationRoleCommand::new(deployment_id, organization_id, role_id)
+    DeleteOrganizationRoleCommand::new(deployment_id, params.organization_id, params.role_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -836,14 +872,14 @@ pub async fn delete_organization_role(
 
 // Workspace Role Management
 pub async fn create_workspace_role(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(workspace_id): Path<i64>,
+    Path(params): Path<WorkspaceParams>,
     Json(request): Json<CreateWorkspaceRoleRequest>,
 ) -> ApiResult<WorkspaceRole> {
     CreateWorkspaceRoleCommand::new(
         deployment_id,
-        workspace_id,
+        params.workspace_id,
         request.name,
         request.permissions,
     )
@@ -854,15 +890,15 @@ pub async fn create_workspace_role(
 }
 
 pub async fn update_workspace_role(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((workspace_id, role_id)): Path<(i64, i64)>,
+    Path(params): Path<WorkspaceRoleParams>,
     Json(request): Json<UpdateWorkspaceRoleRequest>,
 ) -> ApiResult<WorkspaceRole> {
     UpdateWorkspaceRoleCommand::new(
         deployment_id,
-        workspace_id,
-        role_id,
+        params.workspace_id,
+        params.role_id,
         request.name,
         request.permissions,
     )
@@ -873,11 +909,11 @@ pub async fn update_workspace_role(
 }
 
 pub async fn delete_workspace_role(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((workspace_id, role_id)): Path<(i64, i64)>,
+    Path(params): Path<WorkspaceRoleParams>,
 ) -> ApiResult<()> {
-    DeleteWorkspaceRoleCommand::new(deployment_id, workspace_id, role_id)
+    DeleteWorkspaceRoleCommand::new(deployment_id, params.workspace_id, params.role_id)
         .execute(&app_state)
         .await
         .map(Into::into)

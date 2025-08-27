@@ -227,7 +227,7 @@ pub struct WebhookTimeseriesResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, Row)]
 pub struct WebhookDeliveryListRow {
     pub delivery_id: i64,
-    pub app_id: i64,
+    pub deployment_id: i64,
     pub app_name: String,
     pub endpoint_id: i64,
     pub endpoint_url: String,
@@ -239,7 +239,6 @@ pub struct WebhookDeliveryListRow {
     pub max_attempts: i32,
     pub error_message: Option<String>,
     pub filtered_reason: Option<String>,
-    pub response_headers: Option<String>,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
 }
@@ -248,7 +247,7 @@ pub struct WebhookDeliveryListRow {
 #[derive(Debug, Clone, Serialize, Deserialize, Row)]
 pub struct WebhookDeliveryDetailRow {
     pub delivery_id: i64,
-    pub app_id: i64,
+    pub deployment_id: i64,
     pub app_name: String,
     pub endpoint_id: i64,
     pub endpoint_url: String,
@@ -273,7 +272,7 @@ pub struct WebhookDeliveryListResponse {
     #[serde(with = "models::utils::serde::i64_as_string")]
     pub delivery_id: i64,
     #[serde(with = "models::utils::serde::i64_as_string")]
-    pub app_id: i64,
+    pub deployment_id: i64,
     pub app_name: String,
     #[serde(with = "models::utils::serde::i64_as_string")]
     pub endpoint_id: i64,
@@ -286,7 +285,6 @@ pub struct WebhookDeliveryListResponse {
     pub max_attempts: i32,
     pub error_message: Option<String>,
     pub filtered_reason: Option<String>,
-    pub response_headers: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -294,7 +292,7 @@ impl From<WebhookDeliveryListRow> for WebhookDeliveryListResponse {
     fn from(row: WebhookDeliveryListRow) -> Self {
         Self {
             delivery_id: row.delivery_id,
-            app_id: row.app_id,
+            deployment_id: row.deployment_id,
             app_name: row.app_name,
             endpoint_id: row.endpoint_id,
             endpoint_url: row.endpoint_url,
@@ -306,7 +304,6 @@ impl From<WebhookDeliveryListRow> for WebhookDeliveryListResponse {
             max_attempts: row.max_attempts,
             error_message: row.error_message,
             filtered_reason: row.filtered_reason,
-            response_headers: row.response_headers,
             timestamp: row.timestamp,
         }
     }
@@ -316,7 +313,7 @@ impl From<WebhookDeliveryDetailRow> for WebhookDeliveryListResponse {
     fn from(row: WebhookDeliveryDetailRow) -> Self {
         Self {
             delivery_id: row.delivery_id,
-            app_id: row.app_id,
+            deployment_id: row.deployment_id,
             app_name: row.app_name,
             endpoint_id: row.endpoint_id,
             endpoint_url: row.endpoint_url,
@@ -328,7 +325,6 @@ impl From<WebhookDeliveryDetailRow> for WebhookDeliveryListResponse {
             max_attempts: row.max_attempts,
             error_message: row.error_message,
             filtered_reason: row.filtered_reason,
-            response_headers: row.response_headers,
             timestamp: row.timestamp,
         }
     }

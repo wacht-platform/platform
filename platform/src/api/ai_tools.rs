@@ -3,9 +3,9 @@ use axum::extract::{Json, Path, Query, State};
 use serde::Deserialize;
 
 use crate::application::{
-    HttpState,
     response::{ApiResult, PaginatedResponse},
 };
+use common::state::AppState;
 
 use commands::{Command, CreateAiToolCommand, DeleteAiToolCommand, UpdateAiToolCommand};
 use dto::{
@@ -22,7 +22,7 @@ pub struct ToolParams {
 }
 
 pub async fn get_ai_tools(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<GetToolsQuery>,
 ) -> ApiResult<PaginatedResponse<AiToolWithDetails>> {
@@ -45,12 +45,14 @@ pub async fn get_ai_tools(
     Ok(PaginatedResponse {
         data: tools,
         has_more,
+        limit: Some(limit as i32),
+        offset: query.offset.map(|o| o as i32),
     }
     .into())
 }
 
 pub async fn create_ai_tool(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateToolRequest>,
 ) -> ApiResult<AiTool> {
@@ -70,7 +72,7 @@ pub async fn create_ai_tool(
 }
 
 pub async fn get_ai_tool_by_id(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ToolParams>,
 ) -> ApiResult<AiToolWithDetails> {
@@ -82,7 +84,7 @@ pub async fn get_ai_tool_by_id(
 }
 
 pub async fn update_ai_tool(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ToolParams>,
     Json(request): Json<UpdateToolRequest>,
@@ -110,7 +112,7 @@ pub async fn update_ai_tool(
 }
 
 pub async fn delete_ai_tool(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ToolParams>,
 ) -> ApiResult<()> {

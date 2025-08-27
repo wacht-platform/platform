@@ -36,7 +36,7 @@ pub struct UpdateWebhookAppRequest {
 // Get available events response
 #[derive(Debug, Serialize)]
 pub struct GetAvailableEventsResponse {
-    pub events: Vec<models::webhook::WebhookAppEvent>,
+    pub events: Vec<wacht::api::webhooks::WebhookAppEvent>,
 }
 
 // =====================================================
@@ -45,8 +45,9 @@ pub struct GetAvailableEventsResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct ListWebhookEndpointsQuery {
-    pub app_name: Option<String>,
     pub include_inactive: Option<bool>,
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -81,13 +82,25 @@ pub struct WebhookEndpointSubscription {
 #[derive(Debug, Serialize)]
 pub struct ListWebhookEndpointsResponse {
     pub endpoints: Vec<WebhookEndpoint>,
-    pub total: usize,
+    pub count: usize,  // Number of items in this response
+    pub limit: i32,
+    pub offset: i32,
+    pub has_more: bool,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct EventSubscription {
     pub event_name: String,
     pub filter_rules: Option<Value>,
+}
+
+impl From<EventSubscription> for wacht::api::webhooks::EventSubscription {
+    fn from(s: EventSubscription) -> Self {
+        Self {
+            event_name: s.event_name,
+            filter_rules: s.filter_rules,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,6 +133,7 @@ pub struct UpdateWebhookEndpointRequest {
     pub max_retries: Option<i32>,
     pub timeout_seconds: Option<i32>,
     pub is_active: Option<bool>,
+    pub subscriptions: Option<Vec<EventSubscription>>,
 }
 
 // =====================================================
@@ -152,30 +166,29 @@ pub struct BatchTriggerWebhookEventsRequest {
 // =====================================================
 
 #[derive(Debug, Deserialize)]
-pub struct ReplayWebhookDeliveryRequest {
-    pub delivery_id: i64,
+#[serde(untagged)]
+pub enum ReplayWebhookDeliveryRequest {
+    ByIds {
+        delivery_ids: Vec<String>,
+        #[serde(default = "default_include_successful")]
+        include_successful: bool,
+    },
+    ByDateRange {
+        start_date: DateTime<Utc>,
+        end_date: Option<DateTime<Utc>>,
+        #[serde(default = "default_include_successful")]
+        include_successful: bool,
+    },
+}
+
+fn default_include_successful() -> bool {
+    false // Default to excluding successful deliveries
 }
 
 #[derive(Debug, Serialize)]
 pub struct ReplayWebhookDeliveryResponse {
-    pub new_delivery_id: i64,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct GetWebhookDeliveryStatusRequest {
-    pub delivery_id: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct WebhookDeliveryStatus {
-    pub id: i64,
-    pub endpoint_id: i64,
-    pub event_name: String,
-    pub attempts: i32,
-    pub max_attempts: i32,
-    pub next_retry_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
     pub status: String,
+    pub message: String,
 }
 
 // =====================================================
@@ -201,9 +214,8 @@ pub struct TestWebhookRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct TestWebhookEndpointRequest {
-    pub endpoint_id: i64,
     pub event_name: String,
-    pub payload: Value,
+    pub payload: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -274,7 +286,7 @@ pub struct DeliveryListQuery {
 #[derive(Debug, Serialize)]
 pub struct WebhookDeliveryItem {
     pub delivery_id: i64,
-    pub app_id: i64,
+    pub deployment_id: i64,
     pub app_name: String,
     pub endpoint_id: i64,
     pub endpoint_url: String,
@@ -304,17 +316,56 @@ pub struct GetWebhookDeliveriesQuery {
     pub until: Option<DateTime<Utc>>,
 }
 
+// For app-specific deliveries endpoint where app_name comes from path
+#[derive(Debug, Deserialize)]
+pub struct GetAppWebhookDeliveriesQuery {
+    pub endpoint_id: Option<i64>,
+    pub event_name: Option<String>,
+    pub status: Option<String>,
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
+    pub since: Option<DateTime<Utc>>,
+    pub until: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebhookDeliveryResponse {
+    pub deployment_id: String,
+    pub delivery_id: String,
+    pub app_name: String,
+    pub endpoint_id: String,
+    pub endpoint_url: String,
+    pub event_name: String,
+    pub status: String,
+    pub http_status_code: Option<i32>,
+    pub response_time_ms: Option<i32>,
+    pub attempt_number: i32,
+    pub max_attempts: i32,
+    pub error_message: Option<String>,
+    pub filtered_reason: Option<String>,
+    pub payload_s3_key: String,
+    pub response_body: Option<String>,
+    pub response_headers: Option<String>,
+    pub timestamp: DateTime<Utc>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct GetWebhookDeliveriesResponse {
-    pub deliveries: Vec<crate::clickhouse::webhook::WebhookDelivery>,
-    pub total: usize,
+    pub deliveries: Vec<crate::clickhouse::webhook::WebhookDeliveryListResponse>,
+    pub count: usize,  // Number of items in this response
+    pub limit: i32,
+    pub offset: i32,
+    pub has_more: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebhookDeliveryDetails {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub delivery_id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub app_name: String,
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub endpoint_id: i64,
     pub endpoint_url: String,
     pub event_name: String,
@@ -329,11 +380,6 @@ pub struct WebhookDeliveryDetails {
     pub response_body: Option<String>,
     pub response_headers: Option<Value>,
     pub timestamp: DateTime<Utc>,
+    pub payload: Option<Value>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct RetryWebhookDeliveryResponse {
-    pub delivery_id: i64,
-    pub status: String,
-    pub message: String,
-}

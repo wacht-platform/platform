@@ -1,8 +1,9 @@
 use axum::extract::{Json, Path, Query, State};
 use axum::http::StatusCode;
 
-use crate::application::{HttpState, response::ApiResult};
-use crate::middleware::{RequireApiKey, RequireDeployment};
+use crate::application::response::ApiResult;
+use common::state::AppState;
+use crate::middleware::RequireDeployment;
 use commands::{
     Command,
     api_key::{CreateApiKeyCommand, RevokeApiKeyCommand, RotateApiKeyCommand},
@@ -16,9 +17,8 @@ use queries::{
 };
 
 pub async fn list_api_key_apps(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    RequireApiKey(_api_key): RequireApiKey,
     Query(params): Query<ListApiKeyAppsQuery>,
 ) -> ApiResult<ListApiKeyAppsResponse> {
     let include_inactive = params.include_inactive.unwrap_or(false);
@@ -35,10 +35,22 @@ pub async fn list_api_key_apps(
     .into())
 }
 
-pub async fn create_api_key_app(
-    State(app_state): State<HttpState>,
+pub async fn get_api_key_app(
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    RequireApiKey(_api_key): RequireApiKey,
+    Path(app_name): Path<String>,
+) -> ApiResult<ApiKeyApp> {
+    let app = GetApiKeyAppByNameQuery::new(deployment_id, app_name)
+        .execute(&app_state)
+        .await?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+
+    Ok(app.into())
+}
+
+pub async fn create_api_key_app(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateApiKeyAppRequest>,
 ) -> ApiResult<ApiKeyApp> {
     let mut command = CreateApiKeyAppCommand::new(deployment_id, request.name);
@@ -66,9 +78,8 @@ pub async fn create_api_key_app(
 }
 
 pub async fn update_api_key_app(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    RequireApiKey(_api_key): RequireApiKey,
     Path(app_name): Path<String>,
     Json(request): Json<UpdateApiKeyAppRequest>,
 ) -> ApiResult<ApiKeyApp> {
@@ -95,9 +106,8 @@ pub async fn update_api_key_app(
 }
 
 pub async fn delete_api_key_app(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    RequireApiKey(_api_key): RequireApiKey,
     Path(app_name): Path<String>,
 ) -> ApiResult<()> {
     // First get the app by name to find its ID
@@ -116,9 +126,8 @@ pub async fn delete_api_key_app(
 }
 
 pub async fn list_api_keys(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    RequireApiKey(_api_key): RequireApiKey,
     Path(app_name): Path<String>,
     Query(params): Query<ListApiKeysQuery>,
 ) -> ApiResult<ListApiKeysResponse> {
@@ -139,9 +148,8 @@ pub async fn list_api_keys(
 }
 
 pub async fn create_api_key(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    RequireApiKey(_api_key): RequireApiKey,
     Path(app_name): Path<String>,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> ApiResult<ApiKeyWithSecret> {
@@ -176,9 +184,8 @@ pub async fn create_api_key(
 }
 
 pub async fn revoke_api_key(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    RequireApiKey(_api_key): RequireApiKey,
     Json(request): Json<RevokeApiKeyRequest>,
 ) -> ApiResult<()> {
     let key_id = request
@@ -196,9 +203,8 @@ pub async fn revoke_api_key(
 }
 
 pub async fn rotate_api_key(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    RequireApiKey(_api_key): RequireApiKey,
     Json(request): Json<RotateApiKeyRequest>,
 ) -> ApiResult<ApiKeyWithSecret> {
     let command = RotateApiKeyCommand {

@@ -1,10 +1,10 @@
 use crate::{
     application::{
-        HttpState,
         response::{ApiResult, PaginatedResponse},
     },
     middleware::RequireDeployment,
 };
+use common::state::AppState;
 
 use commands::{
     Command, CreateDeploymentJwtTemplateCommand, DeleteDeploymentJwtTemplateCommand,
@@ -29,9 +29,17 @@ use axum::{
     Json,
     extract::{Path, State},
 };
+use serde::Deserialize;
+
+// Path parameter struct for email template routes
+#[derive(Deserialize)]
+pub struct EmailTemplateParams {
+    pub deployment_id: i64,
+    pub template_name: DeploymentNameParams,
+}
 
 pub async fn get_deployment_with_settings(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<DeploymentWithSettings> {
     GetDeploymentWithSettingsQuery::new(deployment_id)
@@ -42,7 +50,7 @@ pub async fn get_deployment_with_settings(
 }
 
 pub async fn update_deployment_display_settings(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentDisplaySettingsUpdates>,
 ) -> ApiResult<()> {
@@ -54,7 +62,7 @@ pub async fn update_deployment_display_settings(
 }
 
 pub async fn update_deployment_auth_settings(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentAuthSettingsUpdates>,
 ) -> ApiResult<()> {
@@ -66,7 +74,7 @@ pub async fn update_deployment_auth_settings(
 }
 
 pub async fn update_deployment_restrictions(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentRestrictionsUpdates>,
 ) -> ApiResult<()> {
@@ -78,7 +86,7 @@ pub async fn update_deployment_restrictions(
 }
 
 pub async fn get_deployment_jwt_templates(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<PaginatedResponse<DeploymentJwtTemplate>> {
     let templates = GetDeploymentJwtTemplatesQuery::new(deployment_id)
@@ -88,12 +96,14 @@ pub async fn get_deployment_jwt_templates(
     Ok(PaginatedResponse {
         data: templates,
         has_more: false,
+        limit: None,
+        offset: None,
     }
     .into())
 }
 
 pub async fn create_deployment_jwt_template(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(template): Json<NewDeploymentJwtTemplate>,
 ) -> ApiResult<DeploymentJwtTemplate> {
@@ -105,7 +115,7 @@ pub async fn create_deployment_jwt_template(
 }
 
 pub async fn update_deployment_jwt_template(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(id): Path<i64>,
     Json(updates): Json<PartialDeploymentJwtTemplate>,
@@ -118,7 +128,7 @@ pub async fn update_deployment_jwt_template(
 }
 
 pub async fn delete_deployment_jwt_template(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(id): Path<i64>,
 ) -> ApiResult<()> {
@@ -130,11 +140,11 @@ pub async fn delete_deployment_jwt_template(
 }
 
 pub async fn get_deployment_email_template(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(template_name): Path<DeploymentNameParams>,
+    Path(params): Path<EmailTemplateParams>,
 ) -> ApiResult<EmailTemplate> {
-    GetDeploymentEmailTemplateQuery::new(deployment_id, template_name)
+    GetDeploymentEmailTemplateQuery::new(deployment_id, params.template_name)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -142,12 +152,12 @@ pub async fn get_deployment_email_template(
 }
 
 pub async fn update_deployment_email_template(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(template_name): Path<DeploymentNameParams>,
+    Path(params): Path<EmailTemplateParams>,
     Json(template): Json<EmailTemplate>,
 ) -> ApiResult<EmailTemplate> {
-    UpdateDeploymentEmailTemplateCommand::new(deployment_id, template_name, template)
+    UpdateDeploymentEmailTemplateCommand::new(deployment_id, params.template_name, template)
         .execute(&app_state)
         .await
         .map(Into::into)

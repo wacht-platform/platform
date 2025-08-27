@@ -3,9 +3,9 @@ use axum::extract::{Json, Path, Query, State};
 use serde::Deserialize;
 
 use crate::application::{
-    HttpState,
     response::{ApiResult, PaginatedResponse},
 };
+use common::state::AppState;
 
 use commands::{Command, CreateAiAgentCommand, DeleteAiAgentCommand, UpdateAiAgentCommand};
 use dto::{
@@ -22,7 +22,7 @@ pub struct AgentParams {
 }
 
 pub async fn get_ai_agents(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<GetAgentsQuery>,
 ) -> ApiResult<PaginatedResponse<AiAgentWithDetails>> {
@@ -45,12 +45,14 @@ pub async fn get_ai_agents(
     Ok(PaginatedResponse {
         data: agents,
         has_more,
+        limit: Some(limit as i32),
+        offset: query.offset.map(|o| o as i32),
     }
     .into())
 }
 
 pub async fn create_ai_agent(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateAgentRequest>,
 ) -> ApiResult<AiAgent> {
@@ -69,7 +71,7 @@ pub async fn create_ai_agent(
 }
 
 pub async fn get_ai_agent_by_id(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<AiAgentWithDetails> {
@@ -81,7 +83,7 @@ pub async fn get_ai_agent_by_id(
 }
 
 pub async fn update_ai_agent(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
     Json(request): Json<UpdateAgentRequest>,
@@ -106,7 +108,7 @@ pub async fn update_ai_agent(
 }
 
 pub async fn delete_ai_agent(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<()> {

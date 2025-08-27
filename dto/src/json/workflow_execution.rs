@@ -77,24 +77,3 @@ pub struct UserInputNodeResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
 }
-
-// Workflow State Components
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowContextSummary {
-    pub inputs: Value,
-    pub total_context_items: i32,
-    pub has_conversation_history: bool,
-    pub has_memory_context: bool,
-    #[serde(flatten)]
-    pub node_outputs: HashMap<String, Value>, // Keys ending with "_output"
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowInputData {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub conversation_context: Option<Vec<Value>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub memory_context: Option<Vec<Value>>,
-    pub inputs: HashMap<String, Value>,
-    pub total_context_items: usize,
-}

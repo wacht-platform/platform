@@ -4,7 +4,7 @@ use models::webhook_analytics::{WebhookAnalyticsResult, WebhookTimeseriesResult}
 use queries::GetWebhookAppByNameQuery;
 use queries::webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery};
 
-use crate::application::{HttpState, response::ApiResult};
+use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::RequireDeployment;
 use commands::{
     Command,
@@ -16,22 +16,25 @@ use commands::{
         CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, UpdateWebhookEndpointCommand,
     },
     webhook_trigger::{
-        BatchTriggerWebhookEventsCommand, ReplayWebhookDeliveryCommand, TriggerWebhookEventCommand,
+        BatchTriggerWebhookEventsCommand, TriggerWebhookEventCommand,
     },
 };
-use dto::clickhouse::webhook::WebhookDelivery;
-use dto::json::webhook_requests::*;
+use common::state::AppState;
+use dto::clickhouse::webhook::{WebhookDelivery, WebhookDeliveryListResponse};
+use dto::json::webhook_requests::{
+    WebhookEndpoint as WebhookEndpointDto, *
+};
 use models::webhook::{WebhookApp, WebhookEndpoint, WebhookEventTrigger};
 use queries::{
     Query as QueryTrait,
     webhook::{
-        GetWebhookAppsQuery, GetWebhookDeliveryStatusQuery,
+        GetWebhookAppsQuery,
         GetWebhookEndpointsWithSubscriptionsQuery, GetWebhookEventsQuery,
     },
 };
 
 pub async fn list_webhook_apps(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ListWebhookAppsQuery>,
 ) -> ApiResult<ListWebhookAppsResponse> {
@@ -50,7 +53,7 @@ pub async fn list_webhook_apps(
 }
 
 pub async fn create_webhook_app(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateWebhookAppRequest>,
 ) -> ApiResult<WebhookApp> {
@@ -70,7 +73,7 @@ pub async fn create_webhook_app(
 }
 
 pub async fn update_webhook_app(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
     Json(request): Json<UpdateWebhookAppRequest>,
@@ -88,24 +91,22 @@ pub async fn update_webhook_app(
 }
 
 pub async fn get_webhook_app(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
 ) -> ApiResult<WebhookApp> {
     let command = GetWebhookAppByNameQuery::new(deployment_id, app_name);
 
-    let app = command.execute(&app_state).await?.ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            "Knowledge base not found".to_string(),
-        )
-    })?;
+    let app = command
+        .execute(&app_state)
+        .await?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found".to_string()))?;
 
     Ok(app.into())
 }
 
 pub async fn delete_webhook_app(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
 ) -> ApiResult<()> {
@@ -119,7 +120,7 @@ pub async fn delete_webhook_app(
 }
 
 pub async fn rotate_webhook_secret(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
 ) -> ApiResult<WebhookApp> {
@@ -133,42 +134,65 @@ pub async fn rotate_webhook_secret(
 }
 
 pub async fn get_webhook_events(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
 ) -> ApiResult<GetAvailableEventsResponse> {
-    let events = GetWebhookEventsQuery::new(deployment_id, app_name)
+    let model_events = GetWebhookEventsQuery::new(deployment_id, app_name)
         .execute(&app_state)
         .await?;
+    
+    // Convert model events to SDK format
+    let events: Vec<wacht::api::webhooks::WebhookAppEvent> = model_events
+        .into_iter()
+        .map(|e| wacht::api::webhooks::WebhookAppEvent {
+            deployment_id: e.deployment_id.to_string(),
+            app_name: e.app_name,
+            event_name: e.event_name,
+            description: e.description,
+            schema: e.schema,
+            created_at: e.created_at,
+        })
+        .collect();
 
     Ok(GetAvailableEventsResponse { events }.into())
 }
 
 pub async fn list_webhook_endpoints(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
+    Path(app_name): Path<String>,
     Query(params): Query<ListWebhookEndpointsQuery>,
-) -> ApiResult<ListWebhookEndpointsResponse> {
+) -> ApiResult<PaginatedResponse<WebhookEndpointDto>> {
     let include_inactive = params.include_inactive.unwrap_or(false);
+    let limit = params.limit.unwrap_or(100);
+    let offset = params.offset.unwrap_or(0);
 
-    let mut query = GetWebhookEndpointsWithSubscriptionsQuery::new(deployment_id)
-        .with_inactive(include_inactive);
+    // Fetch one extra to determine if there are more
+    // The query already returns dto::json::webhook_requests::WebhookEndpoint with subscriptions
+    let mut endpoints = GetWebhookEndpointsWithSubscriptionsQuery::new(deployment_id)
+        .with_inactive(include_inactive)
+        .for_app(app_name)
+        .with_pagination(Some(limit + 1), Some(offset))
+        .execute(&app_state)
+        .await?;
 
-    if let Some(app_name) = params.app_name {
-        query = query.for_app(app_name);
+    let has_more = endpoints.len() > limit as usize;
+    if has_more {
+        endpoints.truncate(limit as usize);
     }
 
-    let endpoints = query.execute(&app_state).await?;
-
-    Ok(ListWebhookEndpointsResponse {
-        total: endpoints.len(),
-        endpoints,
+    Ok(PaginatedResponse {
+        data: endpoints,
+        has_more,
+        limit: Some(limit),
+        offset: Some(offset),
     }
     .into())
 }
 
 pub async fn create_webhook_endpoint(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
@@ -201,7 +225,7 @@ pub async fn create_webhook_endpoint(
 }
 
 pub async fn update_webhook_endpoint(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
     Json(request): Json<UpdateWebhookEndpointRequest>,
@@ -215,6 +239,9 @@ pub async fn update_webhook_endpoint(
         max_retries: request.max_retries,
         timeout_seconds: request.timeout_seconds,
         is_active: request.is_active,
+        subscriptions: request.subscriptions.map(|subs| {
+            subs.into_iter().map(Into::into).collect()
+        }),
     };
 
     let endpoint = command.execute(&app_state).await?;
@@ -222,7 +249,7 @@ pub async fn update_webhook_endpoint(
 }
 
 pub async fn delete_webhook_endpoint(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
 ) -> ApiResult<()> {
@@ -236,13 +263,14 @@ pub async fn delete_webhook_endpoint(
 }
 
 pub async fn trigger_webhook_event(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
+    Path(app_name): Path<String>,
     Json(request): Json<TriggerWebhookEventRequest>,
 ) -> ApiResult<TriggerWebhookEventResponse> {
     let mut command = TriggerWebhookEventCommand::new(
         deployment_id,
-        request.app_name,
+        app_name,
         request.event_name,
         request.payload,
     );
@@ -262,13 +290,14 @@ pub async fn trigger_webhook_event(
 }
 
 pub async fn batch_trigger_webhook_events(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
+    Path(app_name): Path<String>,
     Json(request): Json<BatchTriggerWebhookEventsRequest>,
 ) -> ApiResult<Vec<TriggerWebhookEventResponse>> {
     let results = BatchTriggerWebhookEventsCommand {
         deployment_id,
-        app_name: request.app_name,
+        app_name,
         events: request
             .events
             .into_iter()
@@ -295,106 +324,49 @@ pub async fn batch_trigger_webhook_events(
 }
 
 pub async fn replay_webhook_delivery(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
+    Path(_app_name): Path<String>,
     Json(request): Json<ReplayWebhookDeliveryRequest>,
 ) -> ApiResult<ReplayWebhookDeliveryResponse> {
-    let new_delivery_id = ReplayWebhookDeliveryCommand {
-        delivery_id: request.delivery_id,
-        deployment_id,
-    }
-    .execute(&app_state)
-    .await?;
-
-    Ok(ReplayWebhookDeliveryResponse { new_delivery_id }.into())
-}
-
-pub async fn get_webhook_deliveries(
-    State(app_state): State<HttpState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Query(params): Query<dto::json::webhook_requests::GetWebhookDeliveriesQuery>,
-) -> ApiResult<dto::json::webhook_requests::GetWebhookDeliveriesResponse> {
-    let limit = params.limit.unwrap_or(100) as usize;
-    let offset = params.offset.unwrap_or(0) as usize;
-
-    let deliveries = app_state
-        .clickhouse_service
-        .get_webhook_deliveries(
-            deployment_id,
-            params.app_name,
-            params.status.as_deref(),
-            params.event_name.as_deref(),
-            limit,
-            offset,
-        )
-        .await?;
-
-    // Convert Vec<serde_json::Value> to Vec<WebhookDelivery>
-    let webhook_deliveries: Vec<dto::clickhouse::webhook::WebhookDelivery> = deliveries
-        .into_iter()
-        .filter_map(|value| serde_json::from_value(value).ok())
-        .collect();
-
-    let total = webhook_deliveries.len();
-
-    Ok(dto::json::webhook_requests::GetWebhookDeliveriesResponse {
-        deliveries: webhook_deliveries,
-        total,
-    }
-    .into())
-}
-
-pub async fn get_webhook_delivery_details(
-    State(app_state): State<HttpState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(delivery_id): Path<String>,
-) -> ApiResult<dto::json::webhook_requests::WebhookDeliveryDetails> {
-    let delivery_id = delivery_id
-        .parse::<i64>()
-        .map_err(|_| (axum::http::StatusCode::BAD_REQUEST, "Invalid delivery ID"))?;
-
-    let details = app_state
-        .clickhouse_service
-        .get_webhook_delivery_details(deployment_id, delivery_id)
-        .await?;
-
-    // Convert serde_json::Value to WebhookDeliveryDetails
-    let delivery_details: dto::json::webhook_requests::WebhookDeliveryDetails =
-        serde_json::from_value(details).map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse delivery details: {}", e),
-            )
-        })?;
-
-    Ok(delivery_details.into())
-}
-
-pub async fn retry_webhook_delivery(
-    State(app_state): State<HttpState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(delivery_id): Path<String>,
-) -> ApiResult<dto::json::webhook_requests::RetryWebhookDeliveryResponse> {
-    use dto::json::nats::NatsTaskMessage;
-
-    let delivery_id = delivery_id
-        .parse::<i64>()
-        .map_err(|_| (axum::http::StatusCode::BAD_REQUEST, "Invalid delivery ID"))?;
-
-    // Queue retry task for background processing
-    let task_message = NatsTaskMessage {
-        task_type: "webhook.retry".to_string(),
-        task_id: format!("webhook-retry-{}-{}", delivery_id, deployment_id),
-        payload: serde_json::json!({
-            "delivery_id": delivery_id,
-            "deployment_id": deployment_id
-        }),
+    use dto::json::nats::{NatsTaskMessage, WebhookReplayBatchPayload};
+    
+    // Create strongly typed task payload based on request type
+    let task_payload = match request {
+        ReplayWebhookDeliveryRequest::ByIds { delivery_ids, include_successful } => {
+            WebhookReplayBatchPayload::ByIds {
+                deployment_id,
+                delivery_ids,
+                include_successful,
+            }
+        }
+        ReplayWebhookDeliveryRequest::ByDateRange { start_date, end_date, include_successful } => {
+            WebhookReplayBatchPayload::ByDateRange {
+                deployment_id,
+                start_date,
+                end_date,
+                include_successful,
+            }
+        }
     };
-
+    
+    let task_payload_json = serde_json::to_value(task_payload)
+        .map_err(|e| (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to serialize task payload: {}", e),
+        ))?;
+    
+    let task_message = NatsTaskMessage {
+        task_type: "webhook.replay_batch".to_string(),
+        task_id: format!("webhook-replay-batch-{}-{}", deployment_id, chrono::Utc::now().timestamp()),
+        payload: task_payload_json,
+    };
+    
+    // Queue to NATS for background processing
     app_state
         .nats_client
         .publish(
-            "worker.tasks.webhook.retry",
+            "worker.tasks.webhook.replay_batch",
             serde_json::to_vec(&task_message)
                 .map_err(|e| {
                     (
@@ -408,50 +380,85 @@ pub async fn retry_webhook_delivery(
         .map_err(|e| {
             (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to queue retry task: {}", e),
+                format!("Failed to queue replay task: {}", e),
             )
         })?;
 
-    Ok(dto::json::webhook_requests::RetryWebhookDeliveryResponse {
-        delivery_id,
-        status: "retrying".to_string(),
-        message: "Delivery queued for retry".to_string(),
+    Ok(ReplayWebhookDeliveryResponse {
+        status: "queued".to_string(),
+        message: "Webhook deliveries queued for replay".to_string(),
     }
     .into())
 }
 
-pub async fn get_webhook_delivery_status(
-    State(app_state): State<HttpState>,
+pub async fn get_webhook_delivery_details(
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Query(params): Query<GetWebhookDeliveryStatusRequest>,
-) -> ApiResult<WebhookDeliveryStatus> {
-    let delivery = GetWebhookDeliveryStatusQuery::new(params.delivery_id, deployment_id)
-        .execute(&app_state)
-        .await?;
+    Path(delivery_id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> ApiResult<dto::json::webhook_requests::WebhookDeliveryDetails> {
+    let delivery_id = delivery_id
+        .parse::<i64>()
+        .map_err(|_| (axum::http::StatusCode::BAD_REQUEST, "Invalid delivery ID"))?;
 
-    let status = if delivery.attempts >= delivery.max_attempts {
-        "failed".to_string()
-    } else if delivery.attempts > 0 {
-        "retrying".to_string()
+    // Check if status=pending to look in PostgreSQL instead of ClickHouse
+    let status = params.get("status").map(|s| s.as_str());
+    
+    let delivery = if status == Some("pending") {
+        // Check PostgreSQL for active/pending deliveries  
+        queries::webhook::GetPendingWebhookDeliveryQuery::new(deployment_id, delivery_id)
+            .execute(&app_state)
+            .await?
     } else {
-        "pending".to_string()
+        // Check ClickHouse for completed deliveries
+        app_state
+            .clickhouse_service
+            .get_webhook_delivery_details(deployment_id, delivery_id)
+            .await?
     };
 
-    Ok(WebhookDeliveryStatus {
-        id: delivery.id,
+    // Fetch payload from S3 if available
+    let payload = if !delivery.payload_s3_key.is_empty() 
+        && !delivery.payload_s3_key.starts_with("endpoint-") {
+        commands::webhook_storage::RetrieveWebhookPayloadCommand::new(delivery.payload_s3_key.clone())
+            .execute(&app_state)
+            .await
+            .ok()
+    } else {
+        None
+    };
+
+    // Convert WebhookDelivery to WebhookDeliveryDetails
+    let delivery_details = dto::json::webhook_requests::WebhookDeliveryDetails {
+        delivery_id: delivery.delivery_id,
+        deployment_id: delivery.deployment_id,
+        app_name: delivery.app_name,
         endpoint_id: delivery.endpoint_id,
+        endpoint_url: delivery.endpoint_url,
         event_name: delivery.event_name,
-        attempts: delivery.attempts,
+        status: delivery.status,
+        http_status_code: delivery.http_status_code,
+        response_time_ms: delivery.response_time_ms,
+        attempt_number: delivery.attempt_number,
         max_attempts: delivery.max_attempts,
-        next_retry_at: delivery.next_retry_at,
-        created_at: delivery.created_at,
-        status,
-    }
-    .into())
+        error_message: delivery.error_message,
+        filtered_reason: delivery.filtered_reason,
+        payload_s3_key: delivery.payload_s3_key,
+        response_body: delivery.response_body,
+        response_headers: delivery
+            .response_headers
+            .and_then(|h| serde_json::from_str(&h).ok()),
+        timestamp: delivery.timestamp,
+        payload,
+    };
+
+    Ok(delivery_details.into())
 }
 
+
+
 pub async fn reactivate_webhook_endpoint(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
 ) -> ApiResult<ReactivateEndpointResponse> {
@@ -499,21 +506,24 @@ pub async fn reactivate_webhook_endpoint(
 }
 
 pub async fn test_webhook_endpoint(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
+    Path((_app_name, endpoint_id)): Path<(String, i64)>,
     Json(request): Json<TestWebhookEndpointRequest>,
 ) -> ApiResult<TestWebhookEndpointResponse> {
     use commands::webhook_endpoint::TestWebhookEndpointCommand;
 
-    let test_payload = serde_json::json!({
-        "test": true,
-        "event": request.event_name,
-        "payload": request.payload,
-        "timestamp": chrono::Utc::now()
+    // Use the payload from the request
+    let test_payload = request.payload.unwrap_or_else(|| {
+        serde_json::json!({
+            "test": true,
+            "event": request.event_name,
+            "timestamp": chrono::Utc::now()
+        })
     });
 
     let result = TestWebhookEndpointCommand {
-        endpoint_id: request.endpoint_id,
+        endpoint_id,
         deployment_id,
         test_payload,
     }
@@ -531,15 +541,12 @@ pub async fn test_webhook_endpoint(
 }
 
 pub async fn get_webhook_analytics(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
+    Path(app_name): Path<String>,
     Query(params): Query<WebhookAnalyticsQuery>,
 ) -> ApiResult<WebhookAnalyticsResult> {
-    let mut query = GetWebhookAnalyticsQuery::new(deployment_id);
-
-    if let Some(app_id) = params.app_id {
-        query = query.with_app_name(app_id.to_string());
-    }
+    let mut query = GetWebhookAnalyticsQuery::new(deployment_id).with_app_name(app_name);
 
     if let Some(endpoint_id) = params.endpoint_id {
         query = query.with_endpoint(endpoint_id);
@@ -555,15 +562,13 @@ pub async fn get_webhook_analytics(
 }
 
 pub async fn get_webhook_timeseries(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
+    Path(app_name): Path<String>,
     Query(params): Query<WebhookTimeseriesQuery>,
 ) -> ApiResult<WebhookTimeseriesResult> {
-    let mut query = GetWebhookTimeseriesQuery::new(deployment_id, params.interval);
-
-    if let Some(app_id) = params.app_id {
-        query = query.with_app_name(app_id.to_string());
-    }
+    let mut query =
+        GetWebhookTimeseriesQuery::new(deployment_id, params.interval).with_app_name(app_name);
 
     if let Some(endpoint_id) = params.endpoint_id {
         query = query.with_endpoint(endpoint_id);
@@ -577,3 +582,77 @@ pub async fn get_webhook_timeseries(
 
     Ok(result.into())
 }
+
+pub async fn get_webhook_stats(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(app_name): Path<String>,
+) -> ApiResult<WebhookAnalyticsResult> {
+    let query = GetWebhookAnalyticsQuery::new(deployment_id).with_app_name(app_name);
+
+    let result = query.execute(&app_state).await?;
+
+    Ok(result.into())
+}
+
+pub async fn get_app_webhook_deliveries(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(app_name): Path<String>,
+    Query(params): Query<GetAppWebhookDeliveriesQuery>,
+) -> ApiResult<PaginatedResponse<WebhookDeliveryListResponse>> {
+    tracing::info!(
+        "get_app_webhook_deliveries called - deployment_id: {}, app_name: {}, limit: {:?}, offset: {:?}",
+        deployment_id,
+        app_name,
+        params.limit,
+        params.offset
+    );
+
+    let limit = params.limit.unwrap_or(100);
+    let offset = params.offset.unwrap_or(0);
+
+    // Fetch one extra to determine if there are more
+    let delivery_rows = match app_state
+        .clickhouse_service
+        .get_webhook_deliveries(
+            deployment_id,
+            Some(app_name),
+            params.status.as_deref(),
+            params.event_name.as_deref(),
+            (limit + 1) as usize,
+            offset as usize,
+        )
+        .await
+    {
+        Ok(d) => {
+            tracing::info!(
+                "Successfully fetched {} deliveries from ClickHouse",
+                d.len()
+            );
+            d
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch deliveries from ClickHouse: {:?}", e);
+            return Err(e.into());
+        }
+    };
+
+    let has_more = delivery_rows.len() > limit as usize;
+    let mut deliveries: Vec<WebhookDeliveryListResponse> =
+        delivery_rows.into_iter().map(|row| row.into()).collect();
+    
+    if has_more {
+        deliveries.truncate(limit as usize);
+    }
+
+    tracing::info!("Returning {} deliveries", deliveries.len());
+
+    Ok(PaginatedResponse { 
+        data: deliveries, 
+        has_more,
+        limit: Some(limit),
+        offset: Some(offset),
+    }.into())
+}
+

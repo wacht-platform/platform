@@ -1,12 +1,12 @@
 use crate::api::{agent, notifications};
-use crate::application::HttpState;
+use common::state::AppState;
 use crate::middleware::HostExtractorMiddleware;
 use axum::routing::get;
 use axum::{Router, middleware};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-fn router() -> Router<HttpState> {
+fn router() -> Router<AppState> {
     Router::new()
         .route("/agent", get(agent::agent_stream_handler))
         .route(
@@ -22,7 +22,7 @@ fn configure_cors() -> CorsLayer {
         .allow_headers(Any)
 }
 
-pub fn create_router(state: HttpState) -> Router {
+pub fn create_router(state: AppState) -> Router {
     let cors = configure_cors();
     let router = router();
 

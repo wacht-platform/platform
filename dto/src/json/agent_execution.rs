@@ -1,24 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
-
-// Memory and Context Structures
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkingMemory {
-    pub user_request: String,
-    pub conversation_count: usize,
-    pub pending_tasks_count: usize,
-    pub completed_tasks_count: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub successful_task_count: Option<usize>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationHistoryEntry {
-    pub role: String,
-    pub content: String,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextMetadata {
@@ -87,14 +70,6 @@ pub struct ApiToolParameters {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnowledgeBaseParameters {
     pub query: String,
-}
-
-// Task Execution
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskExecutionSuccess {
-    pub success: bool,
-    pub task_id: String,
-    pub output: Value,
 }
 
 // User Input State

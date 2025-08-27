@@ -104,6 +104,10 @@ where
 {
     pub data: Vec<T>,
     pub has_more: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<i32>,
 }
 
 impl<T> From<Vec<T>> for PaginatedResponse<T>
@@ -114,6 +118,8 @@ where
         PaginatedResponse {
             data,
             has_more: false,
+            limit: None,
+            offset: None,
         }
     }
 }

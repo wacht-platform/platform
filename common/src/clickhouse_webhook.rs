@@ -1,7 +1,5 @@
 use crate::error::AppError;
 use chrono::{DateTime, Utc};
-use clickhouse::Row;
-use serde::{Deserialize, Serialize};
 
 use super::clickhouse::ClickHouseService;
 
@@ -611,10 +609,11 @@ impl ClickHouseService {
         event_name: Option<&str>,
         limit: usize,
         offset: usize,
-    ) -> Result<Vec<serde_json::Value>, AppError> {
+    ) -> Result<Vec<WebhookDeliveryListRow>, AppError> {
         let mut query = format!(
             "SELECT
                 delivery_id,
+                deployment_id,
                 app_name,
                 endpoint_id,
                 endpoint_url,
@@ -626,105 +625,80 @@ impl ClickHouseService {
                 max_attempts,
                 error_message,
                 filtered_reason,
-                response_headers,
                 timestamp
             FROM webhook_deliveries
             WHERE deployment_id = {deployment_id}"
         );
 
         if let Some(ref app_name) = app_name {
-            query.push_str(&format!(" AND app_name = '{app_name}'"));
+            // Escape single quotes to prevent SQL injection
+            let escaped_app_name = app_name.replace("'", "''");
+            query.push_str(&format!(" AND app_name = '{escaped_app_name}'"));
         }
 
         if let Some(status) = status {
-            query.push_str(&format!(" AND status = '{status}'"));
+            // Escape single quotes to prevent SQL injection
+            let escaped_status = status.replace("'", "''");
+            query.push_str(&format!(" AND status = '{escaped_status}'"));
         }
 
         if let Some(event_name) = event_name {
-            query.push_str(&format!(" AND event_name = '{event_name}'"));
+            // Escape single quotes to prevent SQL injection
+            let escaped_event_name = event_name.replace("'", "''");
+            query.push_str(&format!(" AND event_name = '{escaped_event_name}'"));
         }
 
         query.push_str(&format!(
             " ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
         ));
-        #[derive(Debug, Row, Deserialize)]
-        struct DeliveryRow {
-            delivery_id: i64,
-            app_name: String,
-            endpoint_id: i64,
-            endpoint_url: String,
-            event_name: String,
-            status: String,
-            http_status_code: Option<i32>,
-            response_time_ms: Option<i32>,
-            attempt_number: i32,
-            max_attempts: i32,
-            error_message: Option<String>,
-            filtered_reason: Option<String>,
-            response_headers: Option<String>,
-            #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
-            timestamp: DateTime<Utc>,
-        }
 
-        // Struct for JSON serialization with IDs as strings
-        #[derive(Debug, Serialize)]
-        struct DeliveryJson {
-            #[serde(with = "models::utils::serde::i64_as_string")]
-            delivery_id: i64,
-            app_name: String,
-            #[serde(with = "models::utils::serde::i64_as_string")]
-            endpoint_id: i64,
-            endpoint_url: String,
-            event_name: String,
-            status: String,
-            http_status_code: Option<i32>,
-            response_time_ms: Option<i32>,
-            attempt_number: i32,
-            max_attempts: i32,
-            error_message: Option<String>,
-            filtered_reason: Option<String>,
-            response_headers: Option<String>,
-            timestamp: DateTime<Utc>,
-        }
+        tracing::info!("Executing ClickHouse query: {}", query);
 
-        let rows = self.client.query(&query).fetch_all::<DeliveryRow>().await?;
+        let rows = match self
+            .client
+            .query(&query)
+            .fetch_all::<WebhookDeliveryListRow>()
+            .await
+        {
+            Ok(r) => {
+                tracing::info!("ClickHouse query successful, fetched {} rows", r.len());
+                r
+            }
+            Err(e) => {
+                tracing::error!("ClickHouse query failed: {:?}", e);
+                return Err(AppError::Internal(format!(
+                    "ClickHouse query failed: {}",
+                    e
+                )));
+            }
+        };
 
-        let results: Vec<serde_json::Value> = rows
-            .into_iter()
-            .map(|row| DeliveryJson {
-                delivery_id: row.delivery_id,
-                app_name: row.app_name,
-                endpoint_id: row.endpoint_id,
-                endpoint_url: row.endpoint_url,
-                event_name: row.event_name,
-                status: row.status,
-                http_status_code: row.http_status_code,
-                response_time_ms: row.response_time_ms,
-                attempt_number: row.attempt_number,
-                max_attempts: row.max_attempts,
-                error_message: row.error_message,
-                filtered_reason: row.filtered_reason,
-                response_headers: row.response_headers,
-                timestamp: row.timestamp,
-            })
-            .filter_map(|row| serde_json::to_value(row).ok())
-            .collect();
-
-        eprintln!("Successfully fetched {} deliveries", results.len());
-        Ok(results)
+        Ok(rows)
     }
 
     pub async fn get_webhook_delivery_details(
         &self,
         deployment_id: i64,
         delivery_id: i64,
-    ) -> Result<serde_json::Value, AppError> {
-        eprintln!(
+    ) -> Result<WebhookDelivery, AppError> {
+        tracing::info!(
             "Getting delivery details for deployment_id={}, delivery_id={}",
             deployment_id, delivery_id
         );
+        
+        // First, let's check what we have for this delivery
+        let check_query = format!(
+            "SELECT count(*) as cnt, groupArray(status) as statuses 
+             FROM webhook_deliveries 
+             WHERE deployment_id = {} AND delivery_id = {}",
+            deployment_id, delivery_id
+        );
+        
+        tracing::info!("Checking for delivery existence with query: {}", check_query);
+        
         let query = format!(
             "SELECT
+                deployment_id,
                 delivery_id,
                 app_name,
                 endpoint_id,
@@ -743,65 +717,129 @@ impl ClickHouseService {
                 timestamp
             FROM webhook_deliveries
             WHERE deployment_id = {deployment_id} AND delivery_id = {delivery_id}
-                AND status != 'replayed'
             ORDER BY timestamp DESC
             LIMIT 1"
         );
 
-        #[derive(Debug, Row, Deserialize)]
-        struct DeliveryRow {
-            delivery_id: i64,
-            app_name: String,
-            endpoint_id: i64,
-            endpoint_url: String,
-            event_name: String,
-            status: String,
-            http_status_code: Option<i32>,
-            response_time_ms: Option<i32>,
-            attempt_number: i32,
-            max_attempts: i32,
-            error_message: Option<String>,
-            filtered_reason: Option<String>,
-            payload_s3_key: String,
-            response_body: Option<String>,
-            response_headers: Option<String>,
-            #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
-            timestamp: DateTime<Utc>,
+        tracing::info!("Executing query: {}", query);
+
+        match self.client.query(&query).fetch_one::<WebhookDelivery>().await {
+            Ok(delivery) => {
+                tracing::info!("Successfully fetched delivery details");
+                Ok(delivery)
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch delivery details: {:?}", e);
+                Err(AppError::Internal(format!("Failed to fetch webhook delivery: {}", e)))
+            }
         }
-        let mut cursor = self.client.query(&query).fetch::<DeliveryRow>()?;
+    }
 
-        eprintln!("Fetching row from cursor...");
-        if let Some(row) = cursor.next().await? {
-            eprintln!(
-                "Got row: delivery_id={}, status={}",
-                row.delivery_id, row.status
-            );
-
-            let result = serde_json::json!({
-                "delivery_id": row.delivery_id.to_string(),
-                "app_name": row.app_name,
-                "endpoint_id": row.endpoint_id.to_string(),
-                "endpoint_url": row.endpoint_url,
-                "event_name": row.event_name,
-                "status": row.status,
-                "http_status_code": row.http_status_code,
-                "response_time_ms": row.response_time_ms,
-                "attempt_number": row.attempt_number,
-                "max_attempts": row.max_attempts,
-                "error_message": row.error_message,
-                "filtered_reason": row.filtered_reason,
-                "payload_s3_key": row.payload_s3_key,
-                "response_body": row.response_body,
-                "response_headers": row.response_headers,
-                "timestamp": row.timestamp,
-            });
-
-            eprintln!("Returning delivery details");
-            Ok(result)
+    pub async fn get_deliveries_for_replay(
+        &self,
+        deployment_id: i64,
+        start_date: DateTime<Utc>,
+        end_date: Option<DateTime<Utc>>,
+        include_successful: bool,
+    ) -> Result<Vec<i64>, AppError> {
+        let end_date = end_date.unwrap_or_else(|| Utc::now());
+        
+        // Escape values for SQL
+        let start_date_str = start_date.format("%Y-%m-%d %H:%M:%S").to_string();
+        let end_date_str = end_date.format("%Y-%m-%d %H:%M:%S").to_string();
+        
+        // Build the query with optional filtering of successful deliveries
+        let having_clause = if include_successful {
+            String::new() // No filter, include all deliveries
         } else {
-            eprintln!("No row found for delivery_id={}", delivery_id);
-            Err(AppError::NotFound("Delivery not found".to_string()))
+            "HAVING final_status != 'success'".to_string()
+        };
+        
+        // Query to get unique delivery IDs
+        // We group by delivery_id and take the latest status for each delivery
+        let query = format!(
+            "SELECT 
+                delivery_id,
+                argMax(status, timestamp) as final_status
+            FROM webhook_deliveries
+            WHERE deployment_id = {}
+                AND timestamp >= '{}'
+                AND timestamp <= '{}'
+            GROUP BY delivery_id
+            {}
+            ORDER BY delivery_id DESC",
+            deployment_id,
+            start_date_str,
+            end_date_str,
+            having_clause
+        );
+        
+        tracing::info!("Fetching deliveries for replay with query: {}", query);
+        
+        let mut cursor = self.client.query(&query).fetch::<(i64, String)>()?;
+        let mut delivery_ids = Vec::new();
+        
+        while let Some((delivery_id, _status)) = cursor.next().await? {
+            delivery_ids.push(delivery_id);
         }
+        
+        tracing::info!("Found {} deliveries to replay (include_successful: {})", 
+            delivery_ids.len(), include_successful);
+        Ok(delivery_ids)
+    }
+    
+    pub async fn get_deliveries_by_ids(
+        &self,
+        deployment_id: i64,
+        delivery_ids: Vec<i64>,
+        include_successful: bool,
+    ) -> Result<Vec<i64>, AppError> {
+        if delivery_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        
+        // Convert delivery IDs to comma-separated string
+        let ids_str = delivery_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        
+        // Build the query with optional filtering of successful deliveries
+        let having_clause = if include_successful {
+            String::new() // No filter, include all deliveries
+        } else {
+            "HAVING final_status != 'success'".to_string()
+        };
+        
+        // Query to get the latest status for each delivery
+        let query = format!(
+            "SELECT 
+                delivery_id,
+                argMax(status, timestamp) as final_status
+            FROM webhook_deliveries
+            WHERE deployment_id = {}
+                AND delivery_id IN ({})
+            GROUP BY delivery_id
+            {}
+            ORDER BY delivery_id DESC",
+            deployment_id,
+            ids_str,
+            having_clause
+        );
+        
+        tracing::info!("Fetching deliveries by IDs with query: {}", query);
+        
+        let mut cursor = self.client.query(&query).fetch::<(i64, String)>()?;
+        let mut valid_delivery_ids = Vec::new();
+        
+        while let Some((delivery_id, _status)) = cursor.next().await? {
+            valid_delivery_ids.push(delivery_id);
+        }
+        
+        tracing::info!("Found {} deliveries eligible for replay out of {} requested (include_successful: {})", 
+            valid_delivery_ids.len(), delivery_ids.len(), include_successful);
+        Ok(valid_delivery_ids)
     }
 
     pub async fn cleanup_old_webhook_data(&self, days_to_keep: i32) -> Result<(), AppError> {

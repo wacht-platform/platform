@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM webhook_endpoint_subscriptions\n                WHERE endpoint_id = $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ac76919876f242133d2769d0cd7f31225285ef45f73247d0b05f046ac3d287d"
+}

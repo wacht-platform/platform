@@ -12,7 +12,7 @@
       "role": "{{this.role}}",
       "parts": [
         {
-          "text": "{{this.content}}"
+          "text": "{{json_string this.content}}"
         }
       ]
     }{{#unless @last}},{{/unless}}

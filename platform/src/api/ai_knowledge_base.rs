@@ -6,9 +6,10 @@ use axum::{
 use serde::Deserialize;
 
 use crate::application::{
-    AppError, HttpState,
+    AppError,
     response::{ApiResult, PaginatedResponse},
 };
+use common::state::AppState;
 
 use commands::{
     Command, CreateAiKnowledgeBaseCommand, DeleteAiKnowledgeBaseCommand,
@@ -42,7 +43,7 @@ pub struct DocumentParams {
 }
 
 pub async fn get_ai_knowledge_bases(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<GetKnowledgeBasesQuery>,
 ) -> ApiResult<KnowledgeBaseResponse> {
@@ -73,7 +74,7 @@ pub async fn get_ai_knowledge_bases(
 }
 
 pub async fn create_ai_knowledge_base(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateKnowledgeBaseRequest>,
 ) -> ApiResult<AiKnowledgeBase> {
@@ -92,7 +93,7 @@ pub async fn create_ai_knowledge_base(
 }
 
 pub async fn get_ai_knowledge_base_by_id(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
 ) -> ApiResult<AiKnowledgeBaseWithDetails> {
@@ -104,7 +105,7 @@ pub async fn get_ai_knowledge_base_by_id(
 }
 
 pub async fn update_ai_knowledge_base(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
     Json(request): Json<UpdateKnowledgeBaseRequest>,
@@ -131,7 +132,7 @@ pub async fn update_ai_knowledge_base(
 }
 
 pub async fn delete_ai_knowledge_base(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
 ) -> ApiResult<()> {
@@ -143,7 +144,7 @@ pub async fn delete_ai_knowledge_base(
 }
 
 pub async fn upload_knowledge_base_document(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
     mut multipart: Multipart,
@@ -238,7 +239,7 @@ pub async fn upload_knowledge_base_document(
 }
 
 pub async fn get_knowledge_base_documents(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
     Query(query): Query<GetDocumentsQuery>,
@@ -269,12 +270,14 @@ pub async fn get_knowledge_base_documents(
     Ok(PaginatedResponse {
         data: documents,
         has_more,
+        limit: Some(limit as i32),
+        offset: Some(offset as i32),
     }
     .into())
 }
 
 pub async fn delete_knowledge_base_document(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<DocumentParams>,
 ) -> ApiResult<()> {

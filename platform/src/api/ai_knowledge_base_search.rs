@@ -2,7 +2,8 @@ use crate::api::ai_knowledge_base::KnowledgeBaseParams;
 use crate::middleware::RequireDeployment;
 use axum::extract::{Path, Query, State};
 
-use crate::application::{AppError, HttpState, response::ApiResult};
+use crate::application::{AppError, response::ApiResult};
+use common::state::AppState;
 
 use commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use dto::json::ai_knowledge_base::{
@@ -13,7 +14,7 @@ use queries::{Query as QueryTrait, ai_knowledge_base::GetAiKnowledgeBaseByIdQuer
 pub async fn search_knowledge_base(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<SearchKnowledgeBaseQuery>,
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
 ) -> ApiResult<SearchKnowledgeBaseResponse> {
     let limit = params.limit.unwrap_or(10).min(100);
 
@@ -65,7 +66,7 @@ pub async fn search_specific_knowledge_base(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(path_params): Path<KnowledgeBaseParams>,
     Query(params): Query<SearchKnowledgeBaseQuery>,
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
 ) -> ApiResult<SearchKnowledgeBaseResponse> {
     let _kb = GetAiKnowledgeBaseByIdQuery::new(deployment_id, path_params.kb_id)
         .execute(&app_state)

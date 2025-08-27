@@ -28,23 +28,11 @@
           "properties": {
             "overall_success": {
               "type": "BOOLEAN",
-              "description": "Whether the execution met success criteria"
+              "description": "Whether the objectives are sufficiently met"
             },
             "completeness_score": {
               "type": "NUMBER",
               "description": "Percentage of completion (0-100)"
-            },
-            "quality_assessment": {
-              "type": "STRING",
-              "enum": ["excellent", "good", "acceptable", "needs_improvement", "poor"],
-              "description": "Quality of the solution"
-            },
-            "issues_found": {
-              "type": "ARRAY",
-              "items": {
-                "type": "STRING"
-              },
-              "description": "List of issues or gaps identified"
             },
             "achievements": {
               "type": "ARRAY",
@@ -52,66 +40,35 @@
                 "type": "STRING"
               },
               "description": "What was successfully accomplished"
+            },
+            "remaining_gaps": {
+              "type": "ARRAY",
+              "items": {
+                "type": "STRING"
+              },
+              "description": "What remains incomplete (if any)"
             }
           },
-          "required": ["overall_success", "completeness_score", "quality_assessment", "issues_found", "achievements"]
+          "required": ["overall_success", "completeness_score", "achievements", "remaining_gaps"]
         },
-        "loop_decision": {
+        "next_action": {
           "type": "STRING",
-          "enum": ["continue", "complete", "abortunresolvable"],
-          "description": "Whether to continue the loop, complete, or abort due to unresolvable errors"
+          "enum": ["continue", "complete"],
+          "description": "Whether to continue iterating or complete"
         },
-        "decision_reasoning": {
+        "reasoning": {
           "type": "STRING",
-          "description": "Detailed explanation for the loop decision, including analysis of error patterns from conversation history"
+          "description": "Brief explanation of the decision"
         },
-        "next_iteration_focus": {
+        "next_focus": {
           "type": "STRING",
-          "description": "If continuing, what to focus on next and why it will be different",
+          "description": "If continuing, what to focus on next",
           "nullable": true
-        },
-        "has_unresolvable_errors": {
-          "type": "BOOLEAN",
-          "description": "Whether there are errors that cannot be resolved through iteration (based on pattern analysis)"
-        },
-        "unresolvable_error_details": {
-          "type": "STRING",
-          "description": "If has_unresolvable_errors is true, detailed explanation including the repeated pattern observed",
-          "nullable": true
-        },
-        "detected_error_patterns": {
-          "type": "ARRAY",
-          "description": "List of error patterns detected from conversation history",
-          "items": {
-            "type": "OBJECT",
-            "properties": {
-              "error_type": {
-                "type": "STRING",
-                "description": "Type or category of the error"
-              },
-              "occurrences": {
-                "type": "NUMBER",
-                "description": "How many times this error appeared"
-              },
-              "first_seen": {
-                "type": "STRING",
-                "description": "When this error was first encountered"
-              },
-              "is_recurring": {
-                "type": "BOOLEAN",
-                "description": "Whether this error keeps appearing"
-              }
-            },
-            "required": ["error_type", "occurrences", "is_recurring"]
-          }
         }
       },
-      "required": ["validation_result", "loop_decision", "decision_reasoning", "has_unresolvable_errors", "detected_error_patterns"]
+      "required": ["validation_result", "next_action", "reasoning"]
     },
     "temperature": 0.6,
-    "maxOutputTokens": 4096,
-    "thinkingConfig": {
-      "thinkingBudget": 256
-    }
+    "maxOutputTokens": 2048
   }
 }

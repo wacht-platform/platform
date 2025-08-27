@@ -1,10 +1,10 @@
 use crate::{
     application::{
-        HttpState,
         response::{ApiResult, PaginatedResponse},
     },
     middleware::RequireDeployment,
 };
+use common::state::AppState;
 
 use commands::{
     AddUserEmailCommand, AddUserPhoneCommand, ApproveWaitlistUserCommand, Command,
@@ -34,9 +34,44 @@ use axum::{
     extract::{Multipart, Path, Query as QueryParams, State},
     http::StatusCode,
 };
+use serde::Deserialize;
+
+// Path parameter structs for nested routes
+#[derive(Deserialize)]
+pub struct UserParams {
+    pub deployment_id: i64,
+    pub user_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct UserEmailParams {
+    pub deployment_id: i64,
+    pub user_id: i64,
+    pub email_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct UserPhoneParams {
+    pub deployment_id: i64,
+    pub user_id: i64,
+    pub phone_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct UserSocialParams {
+    pub deployment_id: i64,
+    pub user_id: i64,
+    pub connection_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct WaitlistUserParams {
+    pub deployment_id: i64,
+    pub waitlist_user_id: i64,
+}
 
 async fn validate_create_user_request(
-    app_state: &HttpState,
+    app_state: &AppState,
     deployment_id: i64,
     request: &CreateUserRequest,
 ) -> Result<(), (StatusCode, String)> {
@@ -115,7 +150,7 @@ async fn validate_create_user_request(
 }
 
 async fn validate_update_user_request(
-    app_state: &HttpState,
+    app_state: &AppState,
     deployment_id: i64,
     request: &UpdateUserRequest,
 ) -> Result<(), (StatusCode, String)> {
@@ -186,7 +221,7 @@ async fn validate_update_user_request(
 }
 
 pub async fn get_active_user_list(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     QueryParams(params): QueryParams<ActiveUserListQueryParams>,
 ) -> ApiResult<PaginatedResponse<UserWithIdentifiers>> {
@@ -212,7 +247,7 @@ pub async fn get_active_user_list(
 }
 
 pub async fn get_invited_user_list(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentInvitation>> {
@@ -238,7 +273,7 @@ pub async fn get_invited_user_list(
 }
 
 pub async fn get_user_waitlist(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentWaitlistUser>> {
@@ -264,11 +299,11 @@ pub async fn get_user_waitlist(
 }
 
 pub async fn get_user_details(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(user_id): Path<i64>,
+    Path(params): Path<UserParams>,
 ) -> ApiResult<UserDetails> {
-    GetUserDetailsQuery::new(deployment_id, user_id)
+    GetUserDetailsQuery::new(deployment_id, params.user_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -276,7 +311,7 @@ pub async fn get_user_details(
 }
 
 pub async fn create_user(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     mut multipart: Multipart,
 ) -> ApiResult<UserWithIdentifiers> {
@@ -419,9 +454,9 @@ pub async fn create_user(
 }
 
 pub async fn update_user(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(user_id): Path<i64>,
+    Path(params): Path<UserParams>,
     mut multipart: Multipart,
 ) -> ApiResult<UserDetails> {
     let mut request = UpdateUserRequest {
@@ -538,7 +573,7 @@ pub async fn update_user(
     validate_update_user_request(&app_state, deployment_id, &request).await?;
 
     // Update user fields
-    let user_details = UpdateUserCommand::new(deployment_id, user_id, request)
+    let user_details = UpdateUserCommand::new(deployment_id, params.user_id, request)
         .execute(&app_state)
         .await?;
 
@@ -546,7 +581,7 @@ pub async fn update_user(
     if let Some((image_buffer, file_extension)) = profile_image_data {
         let file_path = format!(
             "deployments/{}/users/{}/profile.{}",
-            deployment_id, user_id, file_extension
+            deployment_id, params.user_id, file_extension
         );
 
         let url = UploadToCdnCommand::new(file_path, image_buffer)
@@ -554,12 +589,12 @@ pub async fn update_user(
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-        UpdateUserProfileImageCommand::new(deployment_id, user_id, url)
+        UpdateUserProfileImageCommand::new(deployment_id, params.user_id, url)
             .execute(&app_state)
             .await?;
 
         // Fetch updated user details to return the new profile picture URL
-        let updated_user_details = GetUserDetailsQuery::new(deployment_id, user_id)
+        let updated_user_details = GetUserDetailsQuery::new(deployment_id, params.user_id)
             .execute(&app_state)
             .await?;
 
@@ -570,7 +605,7 @@ pub async fn update_user(
 }
 
 pub async fn invite_user(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<InviteUserRequest>,
 ) -> ApiResult<DeploymentInvitation> {
@@ -582,11 +617,11 @@ pub async fn invite_user(
 }
 
 pub async fn approve_waitlist_user(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(user_id): Path<i64>,
+    Path(params): Path<WaitlistUserParams>,
 ) -> ApiResult<DeploymentInvitation> {
-    ApproveWaitlistUserCommand::new(deployment_id, user_id)
+    ApproveWaitlistUserCommand::new(deployment_id, params.waitlist_user_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -594,7 +629,7 @@ pub async fn approve_waitlist_user(
 }
 
 pub async fn add_user_email(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(user_id): Path<i64>,
     Json(request): Json<AddEmailRequest>,
@@ -607,7 +642,7 @@ pub async fn add_user_email(
 }
 
 pub async fn update_user_email(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path((user_id, email_id)): Path<(i64, i64)>,
     Json(request): Json<UpdateEmailRequest>,
@@ -620,11 +655,11 @@ pub async fn update_user_email(
 }
 
 pub async fn delete_user_email(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(_): RequireDeployment,
-    Path((user_id, email_id)): Path<(i64, i64)>,
+    Path(params): Path<UserEmailParams>,
 ) -> ApiResult<()> {
-    DeleteUserEmailCommand::new(user_id, email_id)
+    DeleteUserEmailCommand::new(params.user_id, params.email_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -632,7 +667,7 @@ pub async fn delete_user_email(
 }
 
 pub async fn add_user_phone(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(user_id): Path<i64>,
     Json(request): Json<AddPhoneRequest>,
@@ -645,12 +680,12 @@ pub async fn add_user_phone(
 }
 
 pub async fn update_user_phone(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(_): RequireDeployment,
-    Path((user_id, phone_id)): Path<(i64, i64)>,
+    Path(params): Path<UserPhoneParams>,
     Json(request): Json<UpdatePhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    UpdateUserPhoneCommand::new(user_id, phone_id, request)
+    UpdateUserPhoneCommand::new(params.user_id, params.phone_id, request)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -658,11 +693,11 @@ pub async fn update_user_phone(
 }
 
 pub async fn delete_user_phone(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(_): RequireDeployment,
-    Path((user_id, phone_id)): Path<(i64, i64)>,
+    Path(params): Path<UserPhoneParams>,
 ) -> ApiResult<()> {
-    DeleteUserPhoneCommand::new(user_id, phone_id)
+    DeleteUserPhoneCommand::new(params.user_id, params.phone_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -670,11 +705,11 @@ pub async fn delete_user_phone(
 }
 
 pub async fn delete_user_social_connection(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(_): RequireDeployment,
-    Path((user_id, connection_id)): Path<(i64, i64)>,
+    Path(params): Path<UserSocialParams>,
 ) -> ApiResult<()> {
-    DeleteUserSocialConnectionCommand::new(user_id, connection_id)
+    DeleteUserSocialConnectionCommand::new(params.user_id, params.connection_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -682,12 +717,12 @@ pub async fn delete_user_social_connection(
 }
 
 pub async fn update_user_password(
-    State(app_state): State<HttpState>,
+    State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(user_id): Path<i64>,
+    Path(params): Path<UserParams>,
     Json(new_password): Json<String>,
 ) -> ApiResult<()> {
-    UpdateUserPasswordCommand::new(deployment_id, user_id, new_password)
+    UpdateUserPasswordCommand::new(deployment_id, params.user_id, new_password)
         .execute(&app_state)
         .await
         .map(Into::into)

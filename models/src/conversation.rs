@@ -57,8 +57,6 @@ pub enum ConversationContent {
         loop_decision: String,
         decision_reasoning: String,
         next_iteration_focus: Option<String>,
-        has_unresolvable_errors: bool,
-        unresolvable_error_details: Option<String>,
     },
     SystemDecision {
         step: String,

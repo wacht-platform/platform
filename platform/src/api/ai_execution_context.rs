@@ -92,6 +92,8 @@ pub async fn get_execution_contexts(
     Ok(PaginatedResponse {
         data: contexts,
         has_more,
+        limit: Some(limit as i32),
+        offset: Some(params.offset.unwrap_or(0) as i32),
     }
     .into())
 }
@@ -127,6 +129,8 @@ pub async fn get_execution_contexts_backend(
     Ok(PaginatedResponse {
         data: contexts,
         has_more,
+        limit: Some(limit as i32),
+        offset: Some(params.offset.unwrap_or(0) as i32),
     }
     .into())
 }

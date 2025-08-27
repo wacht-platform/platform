@@ -37,6 +37,7 @@ pub use agent_execution_context::*;
 pub use ai_agent::*;
 pub use ai_knowledge_base::*;
 pub use b2b::*;
+pub use billing::*;
 pub use deployment::*;
 pub use invitation::*;
 pub use organization::*;

@@ -133,3 +133,18 @@ pub struct WebhookEndpointWithSubscriptions {
     pub endpoint: WebhookEndpoint,
     pub subscribed_events: Vec<String>,
 }
+
+// Row type for pending deliveries from PostgreSQL
+#[derive(FromRow)]
+pub struct PendingDeliveryRow {
+    pub delivery_id: i64,
+    pub deployment_id: i64,
+    pub app_name: String,
+    pub endpoint_id: i64,
+    pub endpoint_url: String,
+    pub event_name: String,
+    pub payload_s3_key: String,
+    pub attempt_number: i32,
+    pub max_attempts: i32,
+    pub timestamp: DateTime<Utc>,
+}
