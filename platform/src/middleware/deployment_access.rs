@@ -9,7 +9,7 @@ use tracing::{debug, warn};
 use wacht::middleware::auth::AuthContext;
 
 use common::state::AppState;
-use queries::{deployment::{GetDeploymentWithProjectQuery, DeploymentWithProject}, Query};
+use queries::{deployment::GetDeploymentWithProjectQuery, Query};
 use super::deployment_context::DeploymentContext;
 
 /// Path extractor that captures deployment_id and any additional path params
@@ -70,11 +70,11 @@ pub async fn deployment_access_middleware(
     })?;
 
     // Check if user has access to this deployment's project
-    let has_access = match deployment_with_project.project_owner_id {
+    let has_access = match &deployment_with_project.project_owner_id {
         Some(owner_id) => {
             // Check if owner is the user or their organization
-            owner_id == auth_context.user_id || 
-            auth_context.organization_id.as_ref().map_or(false, |org_id| owner_id == *org_id)
+            owner_id == &auth_context.user_id || 
+            auth_context.organization_id.as_ref().map_or(false, |org_id| owner_id == org_id)
         }
         None => {
             // No owner set, deny access for safety
