@@ -3,11 +3,13 @@ pub mod context;
 pub mod tools;
 pub mod gemini;
 pub mod template;
+pub mod handler;
 
 pub use executor::{AgentExecutor, AgentExecutorBuilder, ResumeContext};
 pub use context::ContextOrchestrator;
 pub use tools::ToolExecutor;
 pub use gemini::GeminiClient;
+pub use handler::{AgentHandler, ExecutionRequest};
 
 use dto::json::StreamEvent;
 use tokio::sync::mpsc;

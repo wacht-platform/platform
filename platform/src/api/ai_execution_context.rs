@@ -2,6 +2,7 @@ use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use axum::extract::{Json, Path, Query, State};
 
+use agent_engine::{AgentHandler, ExecutionRequest};
 use commands::{Command, CreateExecutionContextCommand};
 use common::error::AppError;
 use common::state::AppState;
@@ -9,7 +10,6 @@ use dto::json::deployment::{CreateExecutionContextRequest, ExecuteAgentRequest, 
 use models::AgentExecutionContext;
 use queries::{GetAiAgentByNameWithFeatures, GetExecutionContextQuery, ListExecutionContextsQuery, Query as QueryTrait};
 use serde::Deserialize;
-use serde_json::json;
 use tracing::{error, info};
 
 #[derive(Debug, Deserialize)]
@@ -155,8 +155,8 @@ pub async fn execute_agent_async(
         .execute(&app_state)
         .await?;
     
-    // Verify agent exists
-    GetAiAgentByNameWithFeatures::new(deployment_id, request.agent_name.clone())
+    // Get the agent
+    let agent = GetAiAgentByNameWithFeatures::new(deployment_id, request.agent_name.clone())
         .execute(&app_state)
         .await?;
     
@@ -164,42 +164,46 @@ pub async fn execute_agent_async(
     let execution_id = app_state.sf.next_id()
         .map_err(|e| AppError::Internal(format!("Failed to generate execution ID: {}", e)))? as i64;
     
-    // Publish to NATS for background processing
-    let subject = format!("agent.execute.{}.{}", deployment_id, context_id);
-    let payload = json!({
-        "execution_id": execution_id,
-        "deployment_id": deployment_id,
-        "context_id": context_id,
-        "agent_name": request.agent_name,
-        "message": request.message,
-        "platform_function_result": request.platform_function_result,
+    // Create execution request
+    let execution_request = ExecutionRequest {
+        agent,
+        user_message: Some(request.message),
+        context_id,
+        platform_function_result: request.platform_function_result,
+    };
+    
+    // Spawn background task to execute the agent
+    tokio::spawn(async move {
+        info!(
+            "Starting background execution {} for context {} in deployment {}",
+            execution_id, context_id, deployment_id
+        );
+        
+        let handler = AgentHandler::new(app_state);
+        match handler.execute_agent_streaming(execution_request).await {
+            Ok(_) => {
+                info!(
+                    "Successfully completed execution {} for context {}",
+                    execution_id, context_id
+                );
+            }
+            Err(e) => {
+                error!(
+                    "Failed to execute agent for context {}: {}",
+                    context_id, e
+                );
+            }
+        }
     });
     
-    let payload_bytes = serde_json::to_vec(&payload)
-        .map_err(|e| AppError::Internal(format!("Failed to serialize payload: {}", e)))?;
-    
-    app_state
-        .nats_jetstream
-        .publish(subject, payload_bytes.into())
-        .await
-        .map_err(|e| {
-            error!("Failed to publish execution request: {}", e);
-            AppError::Internal("Failed to queue execution".to_string())
-        })?
-        .await
-        .map_err(|e| {
-            error!("Failed to publish execution request: {}", e);
-            AppError::Internal("Failed to queue execution".to_string())
-        })?;
-    
     info!(
-        "Queued agent execution {} for context {} in deployment {}",
+        "Started async agent execution {} for context {} in deployment {}",
         execution_id, context_id, deployment_id
     );
     
     Ok(ExecuteAgentResponse {
         execution_id,
-        status: "queued".to_string(),
+        status: "running".to_string(),
     }
     .into())
 }

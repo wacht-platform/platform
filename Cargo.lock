@@ -30,6 +30,7 @@ dependencies = [
 name = "agent-engine"
 version = "0.1.0"
 dependencies = [
+ "async-nats",
  "async-trait",
  "chrono",
  "commands",
@@ -2513,7 +2514,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -3274,6 +3275,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 name = "platform"
 version = "0.1.0"
 dependencies = [
+ "agent-engine",
  "axum",
  "chrono",
  "commands",
