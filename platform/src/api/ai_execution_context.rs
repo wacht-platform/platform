@@ -1,13 +1,16 @@
 use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
-use axum::extract::{Json, Query, State};
+use axum::extract::{Json, Path, Query, State};
 
 use commands::{Command, CreateExecutionContextCommand};
+use common::error::AppError;
 use common::state::AppState;
-use dto::json::deployment::CreateExecutionContextRequest;
-use models::AgentExecutionContext;
-use queries::{ListExecutionContextsQuery, Query as QueryTrait};
+use dto::json::deployment::{CreateExecutionContextRequest, ExecuteAgentRequest, ExecuteAgentResponse};
+use models::{AgentExecutionContext, ExecutionContextStatus};
+use queries::{GetAiAgentByNameWithFeatures, GetExecutionContextQuery, ListExecutionContextsQuery, Query as QueryTrait};
 use serde::Deserialize;
+use serde_json::json;
+use tracing::{error, info};
 
 #[derive(Debug, Deserialize)]
 pub struct ListExecutionContextsParams {

@@ -66,6 +66,19 @@ pub struct CreateExecutionContextRequest {
     pub context_group: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct ExecuteAgentRequest {
+    pub agent_name: String,
+    pub message: String,
+    pub platform_function_result: Option<(String, serde_json::Value)>,
+}
+
+#[derive(Serialize)]
+pub struct ExecuteAgentResponse {
+    pub execution_id: i64,
+    pub status: String,
+}
+
 #[derive(Serialize)]
 pub struct UploadResult {
     pub url: String,

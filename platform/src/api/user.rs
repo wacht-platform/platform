@@ -1,7 +1,5 @@
 use crate::{
-    application::{
-        response::{ApiResult, PaginatedResponse},
-    },
+    application::response::{ApiResult, PaginatedResponse},
     middleware::RequireDeployment,
 };
 use common::state::AppState;
@@ -326,7 +324,6 @@ pub async fn create_user(
 
     let mut profile_image_data: Option<(Vec<u8>, String)> = None;
 
-    // Parse multipart form data
     while let Some(field) = multipart
         .next_field()
         .await

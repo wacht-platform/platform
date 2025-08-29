@@ -69,19 +69,20 @@ impl Command for CreateUserCommand {
             r#"
             INSERT INTO users (
                 id, created_at, updated_at, first_name, last_name, username,
-                password, profile_picture_url, schema_version, disabled, second_factor_policy,
-                deployment_id, public_metadata, private_metadata, otp_secret, backup_codes
+                password, profile_picture_url, has_profile_picture, schema_version, disabled, second_factor_policy,
+                deployment_id, public_metadata, private_metadata, otp_secret, backup_codes, backup_codes_generated
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             "#,
             user_id,
             now,
             now,
             self.request.first_name,
             self.request.last_name,
-            self.request.username,
-            hashed_password,
+            self.request.username.as_deref().unwrap_or(""),
+            hashed_password.as_deref(),
             "", // Empty profile_picture_url, will be updated later if image is provided
+            false, // has_profile_picture defaults to false
             "v1",
             false,
             "optional",
@@ -89,7 +90,8 @@ impl Command for CreateUserCommand {
             json!({}),
             json!({}),
             otp_secret,
-            &Vec::<String>::new()
+            &Vec::<String>::new(),
+            false // backup_codes_generated defaults to false
         )
         .execute(&mut *tx)
         .await?;
