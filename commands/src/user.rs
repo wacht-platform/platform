@@ -149,12 +149,12 @@ impl Command for CreateUserCommand {
                 now,
                 user_id,
                 false,
-                self.request.phone_number,
+                phone,
                 true,
                 now,
                 self.deployment_id,
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *tx)
             .await?;
 
             sqlx::query!(
@@ -175,7 +175,7 @@ impl Command for CreateUserCommand {
             first_name: self.request.first_name,
             last_name: self.request.last_name,
             username: self.request.username,
-            profile_picture_url: String::new(), // Empty initially, will be updated if image is provided
+            profile_picture_url: String::new(),
             primary_email_address,
             primary_phone_number,
         };

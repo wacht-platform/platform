@@ -8,9 +8,9 @@ use serde::Deserialize;
 use tracing::{debug, warn};
 use wacht::middleware::auth::AuthContext;
 
-use common::state::AppState;
-use queries::{deployment::GetDeploymentWithProjectQuery, Query};
 use super::deployment_context::DeploymentContext;
+use common::state::AppState;
+use queries::{Query, deployment::GetDeploymentWithProjectQuery};
 
 /// Path extractor that captures deployment_id and any additional path params
 #[derive(Debug, Deserialize)]
@@ -48,7 +48,6 @@ pub async fn deployment_access_middleware(
         })?
         .clone();
 
-    // Get the deployment with its project in a single query
     let deployment_with_project = GetDeploymentWithProjectQuery::new(params.deployment_id)
         .execute(&app_state)
         .await
@@ -60,24 +59,20 @@ pub async fn deployment_access_middleware(
             )
         })?;
 
-    // Check if deployment exists
     let deployment_with_project = deployment_with_project.ok_or_else(|| {
-        warn!(
-            deployment_id = params.deployment_id,
-            "Deployment not found"
-        );
+        warn!(deployment_id = params.deployment_id, "Deployment not found");
         (StatusCode::NOT_FOUND, "Deployment not found".to_string())
     })?;
 
-    // Check if user has access to this deployment's project
     let has_access = match &deployment_with_project.project_owner_id {
         Some(owner_id) => {
-            // Check if owner is the user or their organization
-            owner_id == &auth_context.user_id || 
-            auth_context.organization_id.as_ref().map_or(false, |org_id| owner_id == org_id)
+            owner_id == &auth_context.user_id
+                || auth_context
+                    .organization_id
+                    .as_ref()
+                    .map_or(false, |org_id| owner_id == org_id)
         }
         None => {
-            // No owner set, deny access for safety
             warn!(
                 deployment_id = params.deployment_id,
                 project_id = deployment_with_project.project_id,
@@ -106,53 +101,9 @@ pub async fn deployment_access_middleware(
         "Access granted to deployment"
     );
 
-    // Insert deployment context into request extensions
     req.extensions_mut().insert(DeploymentContext {
         deployment_id: params.deployment_id,
     });
 
     Ok(next.run(req).await)
-}
-
-/// Lightweight version for routes that already have deployment context
-/// but need ownership verification
-pub async fn verify_deployment_ownership(
-    app_state: &AppState,
-    deployment_id: i64,
-    auth_context: &AuthContext,
-) -> Result<(), (StatusCode, String)> {
-    // Get the deployment with its project in a single query
-    let deployment_with_project = GetDeploymentWithProjectQuery::new(deployment_id)
-        .execute(app_state)
-        .await
-        .map_err(|e| {
-            warn!("Failed to get deployment: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to verify access".to_string(),
-            )
-        })?;
-
-    // Check if deployment exists
-    let deployment_with_project = deployment_with_project.ok_or_else(|| {
-        (StatusCode::NOT_FOUND, "Deployment not found".to_string())
-    })?;
-
-    // Check if user has access to this deployment's project
-    let has_access = match deployment_with_project.project_owner_id {
-        Some(owner_id) => {
-            owner_id == auth_context.user_id || 
-            auth_context.organization_id.as_ref().map_or(false, |org_id| owner_id == *org_id)
-        }
-        None => false
-    };
-
-    if !has_access {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "You don't have permission to access this deployment".to_string(),
-        ));
-    }
-
-    Ok(())
 }
