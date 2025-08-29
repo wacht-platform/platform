@@ -850,3 +850,47 @@ impl Query for GetDeploymentAuthSettingsQuery {
         Ok(auth_settings)
     }
 }
+
+// Query to get deployment with its project for access control
+pub struct GetDeploymentWithProjectQuery {
+    deployment_id: i64,
+}
+
+impl GetDeploymentWithProjectQuery {
+    pub fn new(deployment_id: i64) -> Self {
+        Self { deployment_id }
+    }
+}
+
+pub struct DeploymentWithProject {
+    pub deployment_id: i64,
+    pub project_id: i64,
+    pub project_owner_id: Option<String>,
+}
+
+impl Query for GetDeploymentWithProjectQuery {
+    type Output = Option<DeploymentWithProject>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT 
+                d.id as deployment_id,
+                d.project_id,
+                p.owner_id as project_owner_id
+            FROM deployments d
+            INNER JOIN projects p ON d.project_id = p.id
+            WHERE d.id = $1 AND d.deleted_at IS NULL
+            "#,
+            self.deployment_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
+        Ok(row.map(|r| DeploymentWithProject {
+            deployment_id: r.deployment_id,
+            project_id: r.project_id,
+            project_owner_id: r.project_owner_id,
+        }))
+    }
+}

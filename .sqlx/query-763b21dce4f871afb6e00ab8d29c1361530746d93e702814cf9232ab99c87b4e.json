@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO projects (id, name, image_url, created_at, updated_at)\n            VALUES ($1, $2, $3, $4, $5)\n            RETURNING id, created_at, updated_at, deleted_at, name, image_url\n            ",
+  "query": "\n            INSERT INTO projects (id, name, image_url, owner_id, created_at, updated_at)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            RETURNING id, created_at, updated_at, deleted_at, name, image_url, owner_id\n            ",
   "describe": {
     "columns": [
       {
@@ -32,11 +32,17 @@
         "ordinal": 5,
         "name": "image_url",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "owner_id",
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
         "Int8",
+        "Text",
         "Text",
         "Text",
         "Timestamptz",
@@ -49,8 +55,9 @@
       false,
       true,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "ea9138f5f38860bdeb28ebb7463b038892062c3e0237bdf7216e074812537be7"
+  "hash": "763b21dce4f871afb6e00ab8d29c1361530746d93e702814cf9232ab99c87b4e"
 }

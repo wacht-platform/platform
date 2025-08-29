@@ -22,6 +22,7 @@ pub struct CreateProjectWithStagingDeploymentCommand {
     logo: Vec<u8>,
     has_logo: bool,
     auth_methods: Vec<String>,
+    owner_id: Option<String>,
 }
 
 impl CreateProjectWithStagingDeploymentCommand {
@@ -32,7 +33,13 @@ impl CreateProjectWithStagingDeploymentCommand {
             logo,
             has_logo,
             auth_methods,
+            owner_id: None,
         }
+    }
+    
+    pub fn with_owner(mut self, owner_id: String) -> Self {
+        self.owner_id = Some(owner_id);
+        self
     }
 
     fn create_b2b_settings(&self, deployment_id: i64) -> DeploymentB2bSettingsWithRoles {
@@ -221,13 +228,14 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         let project_row = sqlx::query!(
             r#"
-            INSERT INTO projects (id, name, image_url, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, created_at, updated_at, deleted_at, name, image_url
+            INSERT INTO projects (id, name, image_url, owner_id, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id, created_at, updated_at, deleted_at, name, image_url, owner_id
             "#,
             project_id,
             self.name,
             image_url,
+            self.owner_id.as_deref(),
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
@@ -810,6 +818,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             created_at: project_row.created_at,
             updated_at: project_row.updated_at,
             name: project_row.name,
+            owner_id: project_row.owner_id,
             deployments: vec![deployment],
         })
     }

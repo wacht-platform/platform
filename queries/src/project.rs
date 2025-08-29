@@ -11,11 +11,40 @@ use super::Query;
 #[allow(dead_code)]
 pub struct GetProjectsWithDeploymentQuery {
     oid: i64,
+    owner_ids: Vec<String>,
 }
 
 impl GetProjectsWithDeploymentQuery {
     pub fn new(oid: i64) -> Self {
-        GetProjectsWithDeploymentQuery { oid }
+        GetProjectsWithDeploymentQuery { 
+            oid,
+            owner_ids: Vec::new(),
+        }
+    }
+    
+    pub fn for_owner(owner_id: String) -> Self {
+        GetProjectsWithDeploymentQuery {
+            oid: 0,
+            owner_ids: vec![owner_id],
+        }
+    }
+    
+    pub fn for_owners(owner_ids: Vec<String>) -> Self {
+        GetProjectsWithDeploymentQuery {
+            oid: 0,
+            owner_ids,
+        }
+    }
+    
+    pub fn for_user_and_organization(user_id: String, org_id: Option<String>) -> Self {
+        let mut owner_ids = vec![user_id];
+        if let Some(org) = org_id {
+            owner_ids.push(org);
+        }
+        GetProjectsWithDeploymentQuery {
+            oid: 0,
+            owner_ids,
+        }
     }
 }
 
@@ -66,10 +95,10 @@ impl Query for GetProjectsWithDeploymentQuery {
     type Output = Vec<ProjectWithDeployments>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let rows = query(
-            r#"
+        let mut query_str = r#"
             SELECT
-                p.id, p.created_at, p.updated_at,p.name, p.image_url,
+                p.id, p.created_at, p.updated_at, p.name, p.image_url,
+                p.owner_id,
                 d.id as deployment_id, d.created_at as deployment_created_at,
                 d.updated_at as deployment_updated_at,
                 d.maintenance_mode as deployment_maintenance_mode, d.backend_host as deployment_backend_host,
@@ -81,9 +110,21 @@ impl Query for GetProjectsWithDeploymentQuery {
                 d.email_verification_records::jsonb as deployment_email_verification_records
             FROM projects p
             LEFT JOIN deployments d ON p.id = d.project_id AND d.deleted_at IS NULL
-            ORDER BY p.id DESC
-            "#,
-        )
+        "#.to_string();
+        
+        // Add ownership filtering
+        if !self.owner_ids.is_empty() {
+            let owner_conditions: Vec<String> = self.owner_ids
+                .iter()
+                .map(|id| format!("'{}'", id.replace("'", "''")))
+                .collect();
+            
+            query_str.push_str(&format!(" WHERE p.owner_id IN ({})", owner_conditions.join(", ")));
+        }
+        
+        query_str.push_str(" ORDER BY p.id DESC");
+        
+        let rows = query(&query_str)
         .fetch_all(&app_state.db_pool)
         .await?;
 
@@ -112,6 +153,7 @@ impl Query for GetProjectsWithDeploymentQuery {
                         created_at: row.get("created_at"),
                         updated_at: row.get("updated_at"),
                         name: row.get("name"),
+                        owner_id: row.get("owner_id"),
                         deployments,
                     },
                 );

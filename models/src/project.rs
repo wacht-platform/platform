@@ -11,6 +11,7 @@ pub struct ProjectWithDeployments {
     pub updated_at: DateTime<Utc>,
     pub name: String,
     pub image_url: String,
+    pub owner_id: Option<String>,
     pub deployments: Vec<Deployment>,
 }
 
@@ -22,4 +23,5 @@ pub struct Project {
     pub updated_at: DateTime<Utc>,
     pub name: String,
     pub image_url: String,
+    pub owner_id: Option<String>,
 }

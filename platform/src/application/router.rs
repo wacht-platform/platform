@@ -8,10 +8,10 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use common::state::AppState;
 use crate::api;
 use crate::middleware::backend_deployment_middleware;
-use crate::middleware::console_deployment::console_deployment_middleware;
+use crate::middleware::deployment_access::deployment_access_middleware;
+use common::state::AppState;
 
 fn health_routes() -> Router<AppState> {
     Router::new().route("/health", get(api::health::check))
@@ -267,10 +267,7 @@ fn console_specific_routes() -> Router<AppState> {
             "/billing/organizations/{org_id}/subscription",
             get(api::billing::get_organization_subscription),
         )
-        .route(
-            "/billing/checkout",
-            post(api::billing::create_checkout),
-        )
+        .route("/billing/checkout", post(api::billing::create_checkout))
         .route(
             "/billing/users/{user_id}/portal",
             get(api::billing::get_user_portal_url),
@@ -510,14 +507,20 @@ pub async fn create_console_router(state: AppState) -> Router {
 
     let deployment_routes = base_deployment_routes()
         .merge(console_specific_routes())
-        .layer(axum::middleware::from_fn(console_deployment_middleware))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            deployment_access_middleware,
+        ));
+
+    let protected_routes = Router::new()
+        .merge(project_routes())
+        .merge(ai_context_routes())
+        .nest("/deployments/{deployment_id}", deployment_routes)
         .layer(auth_layer);
 
     Router::new()
         .merge(health_routes())
-        .merge(project_routes())
-        .merge(ai_context_routes())
-        .nest("/deployments/{deployment_id}", deployment_routes)
+        .merge(protected_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)

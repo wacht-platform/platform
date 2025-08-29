@@ -2,10 +2,9 @@ use axum::{
     extract::{Json, Multipart, Path, State},
     http::StatusCode,
 };
+use wacht::middleware::extractors::RequireAuth;
 
-use crate::{
-    application::response::{ApiResult, PaginatedResponse},
-};
+use crate::application::response::{ApiResult, PaginatedResponse};
 use common::state::AppState;
 
 use commands::{
@@ -19,10 +18,14 @@ use queries::{GetProjectsWithDeploymentQuery, Query};
 
 pub async fn get_projects(
     State(app_state): State<AppState>,
+    RequireAuth(auth): RequireAuth,
 ) -> ApiResult<PaginatedResponse<ProjectWithDeployments>> {
-    let projects = GetProjectsWithDeploymentQuery::new(0)
-        .execute(&app_state)
-        .await?;
+    let projects = GetProjectsWithDeploymentQuery::for_user_and_organization(
+        auth.user_id,
+        auth.organization_id,
+    )
+    .execute(&app_state)
+    .await?;
 
     Ok(PaginatedResponse {
         data: projects,
@@ -35,6 +38,7 @@ pub async fn get_projects(
 
 pub async fn create_project(
     State(app_state): State<AppState>,
+    RequireAuth(auth): RequireAuth,
     mut multipart: Multipart,
 ) -> ApiResult<ProjectWithDeployments> {
     let mut name = String::new();
@@ -65,7 +69,9 @@ pub async fn create_project(
         return Err((StatusCode::BAD_REQUEST, "Name is required").into());
     }
 
+    let owner_id = auth.organization_id.clone().unwrap_or(auth.user_id.clone());
     CreateProjectWithStagingDeploymentCommand::new(name, logo_buffer, methods)
+        .with_owner(owner_id)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -113,8 +119,24 @@ pub async fn verify_deployment_dns_records(
 
 pub async fn delete_project(
     State(app_state): State<AppState>,
+    RequireAuth(auth): RequireAuth,
     Path(id): Path<i64>,
 ) -> ApiResult<()> {
+    let projects = GetProjectsWithDeploymentQuery::for_user_and_organization(
+        auth.user_id.clone(),
+        auth.organization_id.clone(),
+    )
+    .execute(&app_state)
+    .await?;
+
+    if !projects.iter().any(|p| p.id == id) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "You don't have permission to delete this project",
+        )
+            .into());
+    }
+
     let command = DeleteProjectCommand::new(id, 0);
     command.execute(&app_state).await?;
 
