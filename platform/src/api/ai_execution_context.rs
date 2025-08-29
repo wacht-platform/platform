@@ -6,7 +6,7 @@ use commands::{Command, CreateExecutionContextCommand};
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::deployment::{CreateExecutionContextRequest, ExecuteAgentRequest, ExecuteAgentResponse};
-use models::{AgentExecutionContext, ExecutionContextStatus};
+use models::AgentExecutionContext;
 use queries::{GetAiAgentByNameWithFeatures, GetExecutionContextQuery, ListExecutionContextsQuery, Query as QueryTrait};
 use serde::Deserialize;
 use serde_json::json;
@@ -134,6 +134,72 @@ pub async fn get_execution_contexts_backend(
         has_more,
         limit: Some(limit as i32),
         offset: Some(params.offset.unwrap_or(0) as i32),
+    }
+    .into())
+}
+#[derive(Deserialize)]
+pub struct ExecuteParams {
+    pub context_id: i64,
+}
+
+pub async fn execute_agent_async(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<ExecuteParams>,
+    Json(request): Json<ExecuteAgentRequest>,
+) -> ApiResult<ExecuteAgentResponse> {
+    let context_id = params.context_id;
+    
+    // Verify context exists and belongs to deployment
+    GetExecutionContextQuery::new(context_id, deployment_id)
+        .execute(&app_state)
+        .await?;
+    
+    // Verify agent exists
+    GetAiAgentByNameWithFeatures::new(deployment_id, request.agent_name.clone())
+        .execute(&app_state)
+        .await?;
+    
+    // Generate execution ID
+    let execution_id = app_state.sf.next_id()
+        .map_err(|e| AppError::Internal(format!("Failed to generate execution ID: {}", e)))? as i64;
+    
+    // Publish to NATS for background processing
+    let subject = format!("agent.execute.{}.{}", deployment_id, context_id);
+    let payload = json!({
+        "execution_id": execution_id,
+        "deployment_id": deployment_id,
+        "context_id": context_id,
+        "agent_name": request.agent_name,
+        "message": request.message,
+        "platform_function_result": request.platform_function_result,
+    });
+    
+    let payload_bytes = serde_json::to_vec(&payload)
+        .map_err(|e| AppError::Internal(format!("Failed to serialize payload: {}", e)))?;
+    
+    app_state
+        .nats_jetstream
+        .publish(subject, payload_bytes.into())
+        .await
+        .map_err(|e| {
+            error!("Failed to publish execution request: {}", e);
+            AppError::Internal("Failed to queue execution".to_string())
+        })?
+        .await
+        .map_err(|e| {
+            error!("Failed to publish execution request: {}", e);
+            AppError::Internal("Failed to queue execution".to_string())
+        })?;
+    
+    info!(
+        "Queued agent execution {} for context {} in deployment {}",
+        execution_id, context_id, deployment_id
+    );
+    
+    Ok(ExecuteAgentResponse {
+        execution_id,
+        status: "queued".to_string(),
     }
     .into())
 }

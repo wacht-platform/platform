@@ -184,6 +184,7 @@ impl SearchMetrics {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct SearchProgressData {
     new_sources_this_iteration: usize,
@@ -221,7 +222,7 @@ impl ContextOrchestrator {
             self.agent.id,
             current_objective.as_ref().map(|o| &o.primary_goal)
         );
-        
+
         let mut all_results = Vec::new();
         let mut previous_searches = Vec::new();
         let mut search_metrics = SearchMetrics::new();
@@ -373,9 +374,12 @@ impl ContextOrchestrator {
             }
 
             // Check if this search had an error
-            let had_error = results.iter().any(|r| r.metadata.get("error_type").is_some());
+            let had_error = results
+                .iter()
+                .any(|r| r.metadata.get("error_type").is_some());
             let error_info = if had_error {
-                results.iter()
+                results
+                    .iter()
                     .find(|r| r.metadata.get("error_type").is_some())
                     .and_then(|r| {
                         Some(json!({
@@ -387,7 +391,7 @@ impl ContextOrchestrator {
             } else {
                 None
             };
-            
+
             let search_record = json!({
                 "iteration": iteration,
                 "search_query": derivation.search_query,
@@ -634,8 +638,14 @@ impl ContextOrchestrator {
             SearchScope::ReadKnowledgeBaseDocuments => {
                 tracing::info!(
                     "Read KB Document - Document ID: {:?}, Chunk Range: {:?}",
-                    derivation.read_document_params.as_ref().map(|p| &p.document_id),
-                    derivation.read_document_params.as_ref().and_then(|p| p.chunk_range.as_ref())
+                    derivation
+                        .read_document_params
+                        .as_ref()
+                        .map(|p| &p.document_id),
+                    derivation
+                        .read_document_params
+                        .as_ref()
+                        .and_then(|p| p.chunk_range.as_ref())
                 );
                 self.read_knowledge_base_documents(derivation).await
             }
@@ -713,7 +723,7 @@ impl ContextOrchestrator {
     ) -> Result<Vec<ContextSearchResult>, AppError> {
         let kb_ids =
             kb_ids.unwrap_or_else(|| self.agent.knowledge_bases.iter().map(|kb| kb.id).collect());
-        
+
         tracing::debug!(
             "Executing KB search - Query: '{}', KB IDs: {:?}, Mode: {:?}",
             query,
@@ -836,7 +846,7 @@ impl ContextOrchestrator {
             max_results,
             query_embedding.len()
         );
-        
+
         let results = SearchKnowledgeBaseEmbeddingsCommand::new(
             kb_ids.to_vec(),
             query_embedding.to_vec(),
@@ -844,7 +854,7 @@ impl ContextOrchestrator {
         )
         .execute(&self.app_state)
         .await?;
-        
+
         tracing::debug!("Vector search returned {} results", results.len());
 
         Ok(results
@@ -1144,7 +1154,7 @@ impl ContextOrchestrator {
         // Parse and validate all document IDs
         let mut document_ids = Vec::new();
         let mut invalid_ids = Vec::new();
-        
+
         for id_str in document_id_strings {
             match id_str.parse::<i64>() {
                 Ok(id) => document_ids.push(id),
@@ -1164,7 +1174,10 @@ impl ContextOrchestrator {
         // If no valid IDs were found, return error
         if document_ids.is_empty() {
             return Ok(vec![ContextSearchResult {
-                source: ContextSource::KnowledgeBase { kb_id: 0, document_id: 0 },
+                source: ContextSource::KnowledgeBase {
+                    kb_id: 0,
+                    document_id: 0,
+                },
                 content: format!(
                     "No valid document IDs found in: '{}'. All IDs must be valid numbers.",
                     read_params.document_id
@@ -1186,10 +1199,7 @@ impl ContextOrchestrator {
 
         // Fetch chunks for each document ID
         for document_id in &document_ids {
-            tracing::info!(
-                "Fetching chunks for document_id: {}",
-                document_id
-            );
+            tracing::info!("Fetching chunks for document_id: {}", document_id);
 
             let mut query = GetDocumentChunksQuery::new(*document_id);
 
@@ -1211,12 +1221,12 @@ impl ContextOrchestrator {
                             document_id
                         );
                         failed_docs.push(format!("{} (no chunks)", document_id));
-                        
+
                         // Add informative result for empty document
                         all_results.push(ContextSearchResult {
-                            source: ContextSource::KnowledgeBase { 
-                                kb_id: 0, 
-                                document_id: *document_id 
+                            source: ContextSource::KnowledgeBase {
+                                kb_id: 0,
+                                document_id: *document_id
                             },
                             content: format!(
                                 "Document with ID {} exists but has no content chunks. It may be empty or not properly indexed.",
@@ -1232,11 +1242,14 @@ impl ContextOrchestrator {
                     } else {
                         successful_docs.push(document_id.to_string());
                         let kb_id = chunks.first().map(|c| c.knowledge_base_id).unwrap_or(0);
-                        
+
                         // Add all chunks from this document
                         for chunk in chunks {
                             all_results.push(ContextSearchResult {
-                                source: ContextSource::KnowledgeBase { kb_id, document_id: *document_id },
+                                source: ContextSource::KnowledgeBase {
+                                    kb_id,
+                                    document_id: *document_id,
+                                },
                                 content: chunk.content,
                                 relevance_score: 1.0,
                                 metadata: json!({
@@ -1255,7 +1268,7 @@ impl ContextOrchestrator {
                         e
                     );
                     failed_docs.push(format!("{} (fetch error)", document_id));
-                    
+
                     // Add error result for this document
                     all_results.push(ContextSearchResult {
                         source: ContextSource::KnowledgeBase { kb_id: 0, document_id: *document_id },
@@ -1279,44 +1292,53 @@ impl ContextOrchestrator {
         // Add summary result at the beginning if multiple documents were requested
         if document_ids.len() > 1 {
             let summary_content = if successful_docs.is_empty() && failed_docs.is_empty() {
-                format!("No valid documents found from the provided IDs: {}", read_params.document_id)
+                format!(
+                    "No valid documents found from the provided IDs: {}",
+                    read_params.document_id
+                )
             } else {
                 let mut summary_parts = Vec::new();
-                
+
                 if !successful_docs.is_empty() {
-                    summary_parts.push(format!("Successfully loaded {} documents: {}", 
-                        successful_docs.len(), 
-                        successful_docs.join(", ")));
+                    summary_parts.push(format!(
+                        "Successfully loaded {} documents: {}",
+                        successful_docs.len(),
+                        successful_docs.join(", ")
+                    ));
                 }
-                
+
                 if !failed_docs.is_empty() {
-                    summary_parts.push(format!("Failed to load {} documents: {}", 
-                        failed_docs.len(), 
-                        failed_docs.join(", ")));
+                    summary_parts.push(format!(
+                        "Failed to load {} documents: {}",
+                        failed_docs.len(),
+                        failed_docs.join(", ")
+                    ));
                 }
-                
+
                 if !invalid_ids.is_empty() {
-                    summary_parts.push(format!("Invalid document IDs: {}", 
-                        invalid_ids.join(", ")));
+                    summary_parts.push(format!("Invalid document IDs: {}", invalid_ids.join(", ")));
                 }
-                
+
                 format!("Multi-document read results: {}", summary_parts.join("; "))
             };
 
-            all_results.insert(0, ContextSearchResult {
-                source: ContextSource::System,
-                content: summary_content,
-                relevance_score: 1.0,
-                metadata: json!({
-                    "is_multi_document_summary": true,
-                    "requested_documents": document_ids.len(),
-                    "successful_documents": successful_docs.len(),
-                    "failed_documents": failed_docs.len(),
-                    "invalid_ids": invalid_ids,
-                    "successful_ids": successful_docs,
-                    "failed_ids": failed_docs,
-                }),
-            });
+            all_results.insert(
+                0,
+                ContextSearchResult {
+                    source: ContextSource::System,
+                    content: summary_content,
+                    relevance_score: 1.0,
+                    metadata: json!({
+                        "is_multi_document_summary": true,
+                        "requested_documents": document_ids.len(),
+                        "successful_documents": successful_docs.len(),
+                        "failed_documents": failed_docs.len(),
+                        "invalid_ids": invalid_ids,
+                        "successful_ids": successful_docs,
+                        "failed_ids": failed_docs,
+                    }),
+                },
+            );
         }
 
         Ok(all_results)

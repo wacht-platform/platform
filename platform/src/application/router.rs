@@ -492,6 +492,10 @@ fn backend_specific_routes() -> Router<AppState> {
             get(api::ai_execution_context::get_execution_contexts_backend)
                 .post(api::ai_execution_context::create_execution_context_backend),
         )
+        .route(
+            "/ai-execution-contexts/{context_id}/execute",
+            post(api::ai_execution_context::execute_agent_async),
+        )
 }
 
 pub async fn create_console_router(state: AppState) -> Router {
