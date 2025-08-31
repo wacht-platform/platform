@@ -17,7 +17,7 @@ COPY gateway/ ./gateway/
 COPY agent-engine/ ./agent-engine/
 
 # Build backend API
-RUN cargo build --release --bin backend-api
+RUN cargo build --release --all
 
 FROM debian:bookworm-slim
 
@@ -29,6 +29,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/backend-api /app/backend
+COPY --from=builder /app/target/release/console-api /app/console
+COPY --from=builder /app/target/release/realtime /app/realtime
+COPY --from=builder /app/target/release/gateway /app/gateway
 
 RUN chmod +x /app/backend
 
