@@ -38,8 +38,7 @@ impl AppState {
             .min_connections(1)
             .max_connections(5)
             .connect(&database_url)
-            .await
-            .unwrap();
+            .await?;
 
         let s3_client = S3Client::new(
             &aws_config::defaults(BehaviorVersion::latest())
@@ -57,11 +56,12 @@ impl AppState {
         );
 
         let sf = sonyflake::Sonyflake::builder()
-            .start_time(
-                chrono::DateTime::<chrono::Utc>::from_str("2025-01-01 00:00:00+0000").unwrap(),
-            )
-            .finalize()
-            .unwrap();
+            .start_time(chrono::DateTime::<chrono::Utc>::from_str(
+                "2025-01-01 00:00:00+0000",
+            )?)
+            .machine_id(&|| Ok(rand::random::<u16>()))
+            .finalize()?;
+
         let redis_client = RedisClient::open(env("REDIS_URL")?)?;
 
         let mut handlebars = handlebars::Handlebars::new();
@@ -80,7 +80,7 @@ impl AppState {
         let clickhouse_service =
             ClickHouseService::new(env("CLICKHOUSE_HOST")?, env("CLICKHOUSE_PASSWORD")?)?;
 
-        let nats_client = async_nats::connect(env("NATS_URL")?).await.unwrap();
+        let nats_client = async_nats::connect(env("NATS_URL")?).await?;
         let nats_jetstream = jetstream::new(nats_client.clone());
 
         Ok(Self {
