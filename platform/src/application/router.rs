@@ -282,7 +282,7 @@ fn billing_routes() -> Router<AppState> {
             get(api::billing::list_invoices),
         )
         .route(
-            "/billing/invoices/:id",
+            "/billing/invoices/{id}",
             get(api::billing::get_invoice),
         )
         .route(
