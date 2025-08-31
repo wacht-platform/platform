@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use crate::tasks::{document, email, embedding, sms, token, webhook, webhook_replay_batch};
+use crate::tasks::{agent, document, email, embedding, sms, token, webhook, webhook_replay_batch};
 use dto::json::NatsTaskMessage;
 
 #[derive(Debug)]
@@ -406,6 +406,24 @@ impl NatsConsumer {
         );
 
         task_handlers.insert(
+            "agent.stream_log".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: agent::AgentStreamLogTask = serde_json::from_value(payload)
+                        .map_err(|e| {
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize agent stream log task: {}",
+                                e
+                            ))
+                        })?;
+                    agent::log_agent_stream_message(&app_state, task)
+                        .await
+                        .map_err(|e| TaskError::Permanent(e.to_string()))
+                })
+            }),
+        );
+
+        task_handlers.insert(
             "embedding.process_batch".to_string(),
             Box::new(|payload, app_state| {
                 Box::pin(async move {
@@ -440,7 +458,6 @@ impl NatsConsumer {
 
         let stream = self.jetstream.get_stream("worker_tasks").await?;
 
-        // Clear old messages on startup (temporary fix for schema changes)
         if std::env::var("CLEAR_QUEUE_ON_STARTUP").unwrap_or_default() == "true" {
             warn!("CLEAR_QUEUE_ON_STARTUP is enabled - purging all messages");
             match stream.purge().await {
@@ -530,7 +547,6 @@ impl NatsConsumer {
             }
         } else {
             warn!("Unknown task type: {}", task_message.task_type);
-            // ACK unknown tasks to remove them from queue
             if let Err(e) = message.ack().await {
                 error!(
                     "Failed to acknowledge unknown task {}: {}",

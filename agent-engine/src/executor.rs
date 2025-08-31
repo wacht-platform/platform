@@ -2036,7 +2036,7 @@ impl AgentExecutor {
     }
 
     pub fn post_execution_processing(mut self) {
-        tokio::spawn(async move { if let Err(e) = self.check_and_generate_summaries().await {} });
+        tokio::spawn(async move { if let Err(_e) = self.check_and_generate_summaries().await {} });
     }
 
     async fn check_and_generate_summaries(&mut self) -> Result<(), AppError> {
@@ -2328,7 +2328,7 @@ impl AgentExecutor {
                 let full_summary = format!("User: {user_request}\nAgent: {agent_execution}");
                 bpe.encode_with_special_tokens(&full_summary).len()
             }
-            Err(e) => {
+            Err(_e) => {
                 // Estimate token count as a fallback (roughly 4 chars per token)
                 let full_summary = format!("User: {user_request}\nAgent: {agent_execution}");
                 full_summary.len() / 4

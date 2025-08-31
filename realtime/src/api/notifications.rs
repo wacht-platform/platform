@@ -19,7 +19,6 @@ use crate::middleware::host_extractor::ExtractedHost;
 
 #[derive(Debug, Deserialize)]
 pub struct NotificationParams {
-    pub host: Option<String>,
     pub channels: Option<Vec<String>>,
     pub organization_ids: Option<Vec<i64>>,
     pub workspace_ids: Option<Vec<i64>>,
@@ -30,8 +29,6 @@ pub struct NotificationParams {
 #[derive(Debug, Deserialize)]
 pub struct SessionClaims {
     pub sess: String,
-    pub rotating_token: String,
-    pub exp: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,7 +166,7 @@ async fn handle_notification_client(
         .await
     {
         Ok(context) => context,
-        Err(e) => {
+        Err(_) => {
             let error_msg = json!({
                 "error": "Session not found or invalid"
             });
@@ -240,14 +237,14 @@ async fn handle_notification_client(
                                 "data": notification
                             });
 
-                            if let Err(e) = ws.write_frame(Frame::text(fastwebsockets::Payload::Owned(
+                            if let Err(_) = ws.write_frame(Frame::text(fastwebsockets::Payload::Owned(
                                 serde_json::to_vec(&ws_message).unwrap()
                             ))).await {
                                 break;
                             }
                         }
                     }
-                    Err(e) => {
+                    Err(_) => {
                     }
                 }
             }
@@ -270,7 +267,7 @@ async fn handle_notification_client(
                             _ => {}
                         }
                     }
-                    Err(e) => {
+                    Err(_) => {
                         break;
                     }
                 }

@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use common::error::AppError;
 use common::state::AppState;
 use models::SignIn;
@@ -41,8 +42,8 @@ impl Query for GetSignInQuery {
             user_id: row.user_id,
             active_organization_membership_id: row.active_organization_membership_id,
             active_workspace_membership_id: row.active_workspace_membership_id,
-            expires_at: row.expires_at,
-            last_active_at: row.last_active_at,
+            expires_at: DateTime::from_naive_utc_and_offset(row.expires_at, Utc),
+            last_active_at: DateTime::from_naive_utc_and_offset(row.last_active_at, Utc),
             ip_address: row.ip_address.unwrap_or_default(),
             browser: row.browser.unwrap_or_default(),
             device: row.device.unwrap_or_default(),

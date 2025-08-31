@@ -257,33 +257,42 @@ fn base_deployment_routes() -> Router<AppState> {
         )
 }
 
-fn console_specific_routes() -> Router<AppState> {
+fn billing_routes() -> Router<AppState> {
     Router::new()
         .route(
-            "/billing/users/{user_id}/subscription",
-            get(api::billing::get_user_subscription),
-        )
-        .route(
-            "/billing/organizations/{org_id}/subscription",
-            get(api::billing::get_organization_subscription),
+            "/billing",
+            get(api::billing::get_billing_account)
+                .patch(api::billing::update_billing_account),
         )
         .route("/billing/checkout", post(api::billing::create_checkout))
         .route(
-            "/billing/users/{user_id}/portal",
-            get(api::billing::get_user_portal_url),
+            "/billing/portal",
+            get(api::billing::get_portal_url),
         )
         .route(
-            "/billing/organizations/{org_id}/portal",
-            get(api::billing::get_org_portal_url),
+            "/billing/cancel",
+            post(api::billing::cancel_subscription),
         )
         .route(
-            "/billing/users/{user_id}/cancel",
-            post(api::billing::cancel_user_subscription),
+            "/billing/usage",
+            post(api::billing::record_usage),
         )
         .route(
-            "/billing/organizations/{org_id}/cancel",
-            post(api::billing::cancel_org_subscription),
+            "/billing/invoices",
+            get(api::billing::list_invoices),
         )
+        .route(
+            "/billing/invoices/:id",
+            get(api::billing::get_invoice),
+        )
+        .route(
+            "/billing/change-plan",
+            post(api::billing::change_plan),
+        )
+}
+
+fn console_specific_routes() -> Router<AppState> {
+    Router::new()
         .route(
             "/webhooks/chargebee",
             post(api::billing_webhook::handle_chargebee_webhook),
@@ -519,6 +528,7 @@ pub async fn create_console_router(state: AppState) -> Router {
     let protected_routes = Router::new()
         .merge(project_routes())
         .merge(ai_context_routes())
+        .merge(billing_routes())
         .nest("/deployments/{deployment_id}", deployment_routes)
         .layer(auth_layer);
 

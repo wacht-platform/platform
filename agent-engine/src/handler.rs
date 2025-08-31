@@ -1,13 +1,11 @@
 use crate::{AgentExecutor, ResumeContext};
-use async_nats::jetstream;
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::StreamEvent;
 use futures::StreamExt;
 use models::{AiAgentWithFeatures, ExecutionContextStatus};
 use queries::{GetExecutionContextQuery, Query};
-use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
 pub struct AgentHandler {
     app_state: AppState,
@@ -42,7 +40,7 @@ impl AgentHandler {
 
         let kv = self.get_key_value_store().await?;
         let watch = self.create_watcher(&kv, &context_key).await?;
-        self.spawn_message_publisher(receiver, context_key.clone());
+        self.spawn_message_publisher(receiver, context_key.clone(), deployment_id);
 
         let context = GetExecutionContextQuery::new(request.context_id, deployment_id)
             .execute(&self.app_state)
@@ -120,11 +118,12 @@ impl AgentHandler {
         &self,
         mut receiver: tokio::sync::mpsc::Receiver<StreamEvent>,
         context_key: String,
+        deployment_id: i64,
     ) {
         let jetstream = self.app_state.nats_jetstream.clone();
         tokio::spawn(async move {
             while let Some(message) = receiver.recv().await {
-                let _ = publish_stream_event(&jetstream, &context_key, message).await;
+                let _ = publish_stream_event(&jetstream, &context_key, deployment_id, message).await;
             }
         });
     }
@@ -181,6 +180,7 @@ impl AgentHandler {
 async fn publish_stream_event(
     jetstream: &async_nats::jetstream::Context,
     context_key: &str,
+    deployment_id: i64,
     event: StreamEvent,
 ) -> Result<(), AppError> {
     let subject = format!("agent_execution_stream.context:{context_key}");
@@ -221,11 +221,32 @@ async fn publish_stream_event(
 
     let mut headers = async_nats::HeaderMap::new();
     headers.insert("message_type", message_type);
+    headers.insert("context_id", context_key);
+    headers.insert("deployment_id", deployment_id.to_string().as_str());
 
     jetstream
-        .publish_with_headers(subject, headers, payload.into())
+        .publish_with_headers(subject, headers, payload.clone().into())
         .await
         .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {e}")))?;
+
+    let worker_task = dto::json::NatsTaskMessage {
+        task_id: format!("agent_stream_{}_{}", context_key, chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)),
+        task_type: "agent.stream_log".to_string(),
+        payload: serde_json::json!({
+            "context_id": context_key.parse::<i64>().unwrap_or(0),
+            "deployment_id": deployment_id,
+            "message_type": message_type,
+            "payload": serde_json::from_slice::<serde_json::Value>(&payload).unwrap_or(serde_json::Value::Null),
+        }),
+    };
+    
+    let worker_payload = serde_json::to_vec(&worker_task)
+        .map_err(|e| AppError::Internal(format!("Failed to serialize worker task: {e}")))?;
+    
+    jetstream
+        .publish("worker.tasks.agent.stream_log", worker_payload.into())
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to publish worker task: {e}")))?;
 
     Ok(())
 }

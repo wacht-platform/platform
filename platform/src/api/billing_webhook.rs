@@ -2,12 +2,13 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
 };
-use common::chargebee::ChargebeeClient;
+use common::chargebee::{ChargebeeClient, UpdateSubscriptionParams};
 use commands::{
     Command,
-    billing::UpsertSubscriptionCommand,
+    billing::{UpsertSubscriptionCommand, UpdateBillingAccountStatusCommand},
 };
 use common::state::AppState;
+use tracing::{info, error};
 
 // Webhook endpoint for Chargebee events
 pub async fn handle_chargebee_webhook(
@@ -36,26 +37,83 @@ pub async fn handle_chargebee_webhook(
     
     // Handle subscription events
     match event_type {
-        "subscription_created" | "subscription_changed" | "subscription_cancelled" | "subscription_reactivated" => {
+        "subscription_created" => {
+            if let Some(subscription) = event["content"]["subscription"].as_object() {
+                if let Some(customer) = event["content"]["customer"].as_object() {
+                    let customer_id = customer["id"].as_str().unwrap_or("");
+                    let subscription_id = subscription["id"].as_str().unwrap_or("");
+                    
+                    // Use customer_id directly as owner_id (format: "user_123" or "org_123")
+                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
+                        let status = subscription["status"].as_str().unwrap_or("active");
+                        
+                        // Save subscription to database
+                        UpsertSubscriptionCommand {
+                            owner_id: customer_id.to_string(),
+                            chargebee_customer_id: customer_id.to_string(),
+                            chargebee_subscription_id: subscription_id.to_string(),
+                            status: status.to_string(),
+                        }
+                        .execute(&state)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to upsert subscription: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?;
+                        
+                        // Update billing account status to active
+                        UpdateBillingAccountStatusCommand {
+                            owner_id: customer_id.to_string(),
+                            status: "active".to_string(),
+                        }
+                        .execute(&state)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to update billing account status: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?;
+                        
+                        // Set threshold billing for the subscription
+                        // $50 threshold for Growth plan, $500 for Enterprise
+                        let plan_id = subscription["plan_id"].as_str().unwrap_or("");
+                        let threshold = match plan_id {
+                            "growth_monthly" => Some(5000), // $50 in cents
+                            "enterprise_custom" => Some(50000), // $500 in cents
+                            _ => None,
+                        };
+                        
+                        if let Some(threshold_amount) = threshold {
+                            info!("Setting threshold billing of ${} for subscription {}", threshold_amount / 100, subscription_id);
+                            
+                            if let Err(e) = chargebee.update_subscription(
+                                subscription_id,
+                                UpdateSubscriptionParams {
+                                    plan_id: None,
+                                    plan_quantity: None,
+                                    trial_end: None,
+                                    invoice_immediately: Some(true),
+                                    invoice_immediately_min_amount: Some(threshold_amount),
+                                }
+                            ).await {
+                                error!("Failed to set threshold billing: {}", e);
+                                // Don't fail the webhook, just log the error
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "subscription_changed" | "subscription_cancelled" | "subscription_reactivated" => {
             if let Some(subscription) = event["content"]["subscription"].as_object() {
                 if let Some(customer) = event["content"]["customer"].as_object() {
                     let customer_id = customer["id"].as_str().unwrap_or("");
                     
-                    // Extract user_id or org_id from customer_id (format: "user_123" or "org_123")
-                    let (user_id, org_id) = if let Some(user_id_str) = customer_id.strip_prefix("user_") {
-                        (user_id_str.parse::<i64>().ok(), None)
-                    } else if let Some(org_id_str) = customer_id.strip_prefix("org_") {
-                        (None, org_id_str.parse::<i64>().ok())
-                    } else {
-                        (None, None)
-                    };
-                    
-                    if user_id.is_some() || org_id.is_some() {
+                    // Use customer_id directly as owner_id (format: "user_123" or "org_123")
+                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
                         let status = subscription["status"].as_str().unwrap_or("active");
                         
                         UpsertSubscriptionCommand {
-                            user_id,
-                            organization_id: org_id,
+                            owner_id: customer_id.to_string(),
                             chargebee_customer_id: customer_id.to_string(),
                             chargebee_subscription_id: subscription["id"].as_str().unwrap_or("").to_string(),
                             status: status.to_string(),
@@ -63,12 +121,126 @@ pub async fn handle_chargebee_webhook(
                         .execute(&state)
                         .await
                         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                        
+                        // Update billing account status based on subscription status
+                        let account_status = match status {
+                            "cancelled" | "non_renewing" => "cancelled",
+                            "active" | "future" => "active",
+                            _ => "active",
+                        };
+                        
+                        UpdateBillingAccountStatusCommand {
+                            owner_id: customer_id.to_string(),
+                            status: account_status.to_string(),
+                        }
+                        .execute(&state)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to update billing account status: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?;
+                    }
+                }
+            }
+        }
+        "payment_failed" => {
+            if let Some(invoice) = event["content"]["invoice"].as_object() {
+                if let Some(customer) = event["content"]["customer"].as_object() {
+                    let customer_id = customer["id"].as_str().unwrap_or("");
+                    
+                    // Use customer_id directly as owner_id (format: "user_123" or "org_123")
+                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
+                        // Update billing account status to failed
+                        UpdateBillingAccountStatusCommand {
+                            owner_id: customer_id.to_string(),
+                            status: "failed".to_string(),
+                        }
+                        .execute(&state)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to update billing account status on payment failure: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?;
+                        
+                        info!("Payment failed for customer {}, invoice {}", 
+                            customer_id, 
+                            invoice["id"].as_str().unwrap_or("")
+                        );
+                    }
+                }
+            }
+        }
+        "payment_succeeded" => {
+            if let Some(invoice) = event["content"]["invoice"].as_object() {
+                if let Some(customer) = event["content"]["customer"].as_object() {
+                    let customer_id = customer["id"].as_str().unwrap_or("");
+                    
+                    // Use customer_id directly as owner_id (format: "user_123" or "org_123")
+                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
+                        // Update billing account status back to active after successful payment
+                        UpdateBillingAccountStatusCommand {
+                            owner_id: customer_id.to_string(),
+                            status: "active".to_string(),
+                        }
+                        .execute(&state)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to update billing account status on payment success: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?;
+                        
+                        info!("Payment succeeded for customer {}, invoice {}", 
+                            customer_id, 
+                            invoice["id"].as_str().unwrap_or("")
+                        );
+                    }
+                }
+            }
+        }
+        "subscription_paused" | "subscription_resumed" => {
+            if let Some(subscription) = event["content"]["subscription"].as_object() {
+                if let Some(customer) = event["content"]["customer"].as_object() {
+                    let customer_id = customer["id"].as_str().unwrap_or("");
+                    
+                    // Use customer_id directly as owner_id (format: "user_123" or "org_123")
+                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
+                        let status = subscription["status"].as_str().unwrap_or("active");
+                        
+                        // Update subscription status
+                        UpsertSubscriptionCommand {
+                            owner_id: customer_id.to_string(),
+                            chargebee_customer_id: customer_id.to_string(),
+                            chargebee_subscription_id: subscription["id"].as_str().unwrap_or("").to_string(),
+                            status: status.to_string(),
+                        }
+                        .execute(&state)
+                        .await
+                        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                        
+                        // Update billing account status
+                        let account_status = match status {
+                            "paused" => "paused",
+                            "active" => "active",
+                            _ => status,
+                        };
+                        
+                        UpdateBillingAccountStatusCommand {
+                            owner_id: customer_id.to_string(),
+                            status: account_status.to_string(),
+                        }
+                        .execute(&state)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to update billing account status: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?;
                     }
                 }
             }
         }
         _ => {
-            // Ignore other events
+            // Log unhandled events for monitoring
+            info!("Received unhandled webhook event: {}", event_type);
         }
     }
     

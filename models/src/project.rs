@@ -12,6 +12,8 @@ pub struct ProjectWithDeployments {
     pub name: String,
     pub image_url: String,
     pub owner_id: Option<String>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub billing_account_id: i64,
     pub deployments: Vec<Deployment>,
 }
 
@@ -24,4 +26,6 @@ pub struct Project {
     pub name: String,
     pub image_url: String,
     pub owner_id: Option<String>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub billing_account_id: i64,
 }

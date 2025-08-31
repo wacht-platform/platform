@@ -258,9 +258,28 @@ pub async fn activate_webhooks(
             description: "Waitlist entry approved".to_string(),
             schema: None,
         },
+        WebhookEventDefinition {
+            name: "execution_context.message".to_string(),
+            description: "Message sent in execution context".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "execution_context.platform_event".to_string(),
+            description: "Platform event occurred in execution context".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "execution_context.platform_function".to_string(),
+            description: "Platform function called in execution context".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "execution_context.user_input_request".to_string(),
+            description: "User input requested in execution context".to_string(),
+            schema: None,
+        },
     ];
 
-    // Convert model events to SDK events
     let sdk_events: Vec<webhooks::WebhookEventDefinition> = platform_events
         .iter()
         .map(|e| webhooks::WebhookEventDefinition {

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::env;
 use thiserror::Error;
+use tracing::debug;
 
 #[derive(Error, Debug)]
 pub enum ChargebeeError {
@@ -36,7 +37,7 @@ impl ChargebeeClient {
         let site = env::var("CHARGEBEE_SITE")
             .map_err(|_| ChargebeeError::ConfigError("CHARGEBEE_SITE not set".to_string()))?;
         
-        let base_url = format!("https://{}.chargebee.com/api/v2", site);
+        let base_url = format!("https://{}/api/v2", site);
         
         let mut headers = HeaderMap::new();
         use base64::{Engine as _, engine::general_purpose};
@@ -144,10 +145,56 @@ impl ChargebeeClient {
     
     // Hosted Page for Checkout
     pub async fn create_checkout_session(&self, params: CreateCheckoutParams) -> ChargebeeResult<JsonValue> {
-        let url = format!("{}/hosted_pages/checkout_new", self.base_url);
+        let url = format!("{}/hosted_pages/checkout_new_for_items", self.base_url);
+        
+        // Build form data
+        let mut form_data = vec![];
+        
+        // Add subscription items
+        for (i, item) in params.subscription_items.iter().enumerate() {
+            form_data.push((format!("subscription_items[item_price_id][{}]", i), item.item_price_id.clone()));
+            if let Some(quantity) = item.quantity {
+                form_data.push((format!("subscription_items[quantity][{}]", i), quantity.to_string()));
+            }
+        }
+        
+        // Add customer info
+        if let Some(id) = &params.customer.id {
+            form_data.push(("customer[id]".to_string(), id.clone()));
+        }
+        form_data.push(("customer[email]".to_string(), params.customer.email.clone()));
+        if let Some(first_name) = &params.customer.first_name {
+            form_data.push(("customer[first_name]".to_string(), first_name.clone()));
+        }
+        if let Some(last_name) = &params.customer.last_name {
+            form_data.push(("customer[last_name]".to_string(), last_name.clone()));
+        }
+        if let Some(company) = &params.customer.company {
+            form_data.push(("customer[company]".to_string(), company.clone()));
+        }
+        if let Some(phone) = &params.customer.phone {
+            form_data.push(("customer[phone]".to_string(), phone.clone()));
+        }
+        
+        // Add billing address
+        if let Some(billing_address) = &params.customer.billing_address {
+            form_data.push(("billing_address[line1]".to_string(), billing_address.line1.clone()));
+            if let Some(line2) = &billing_address.line2 {
+                form_data.push(("billing_address[line2]".to_string(), line2.clone()));
+            }
+            form_data.push(("billing_address[city]".to_string(), billing_address.city.clone()));
+            if let Some(state) = &billing_address.state {
+                form_data.push(("billing_address[state]".to_string(), state.clone()));
+            }
+            form_data.push(("billing_address[zip]".to_string(), billing_address.zip.clone()));
+            form_data.push(("billing_address[country]".to_string(), billing_address.country.clone()));
+        }
+        
+        debug!("Creating checkout session with form data: {:?}", form_data);
+        
         let response = self.client
             .post(&url)
-            .json(&params)
+            .form(&form_data)
             .send()
             .await?;
         
@@ -181,27 +228,74 @@ impl ChargebeeClient {
         self.handle_response(response).await
     }
     
-    // Usage Recording
-    pub async fn record_usage(&self, subscription_id: &str, usage: UsageRecord) -> ChargebeeResult<JsonValue> {
-        let url = format!("{}/subscriptions/{}/add_charge", self.base_url, subscription_id);
+    // Usage Recording for metered billing
+    pub async fn record_usage(&self, subscription_id: &str, item_price_id: &str, quantity: i64, usage_date: Option<i64>) -> ChargebeeResult<JsonValue> {
+        let url = format!("{}/usages", self.base_url);
+        
+        let mut form_data = vec![
+            ("subscription_id".to_string(), subscription_id.to_string()),
+            ("item_price_id".to_string(), item_price_id.to_string()),
+            ("quantity".to_string(), quantity.to_string()),
+        ];
+        
+        if let Some(date) = usage_date {
+            form_data.push(("usage_date".to_string(), date.to_string()));
+        } else {
+            let now = chrono::Utc::now().timestamp();
+            form_data.push(("usage_date".to_string(), now.to_string()));
+        }
+        
         let response = self.client
             .post(&url)
-            .json(&usage)
+            .form(&form_data)
             .send()
             .await?;
         
         self.handle_response(response).await
     }
     
-    // Plans
-    pub async fn list_plans(&self) -> ChargebeeResult<JsonValue> {
-        let url = format!("{}/plans", self.base_url);
+    // Items (Product Catalog 2.0)
+    pub async fn create_item(&self, params: CreateItemParams) -> ChargebeeResult<JsonValue> {
+        let url = format!("{}/items", self.base_url);
+        let response = self.client
+            .post(&url)
+            .json(&params)
+            .send()
+            .await?;
+        self.handle_response(response).await
+    }
+    
+    pub async fn list_items(&self) -> ChargebeeResult<JsonValue> {
+        let url = format!("{}/items", self.base_url);
         let response = self.client.get(&url).send().await?;
         self.handle_response(response).await
     }
     
-    pub async fn get_plan(&self, plan_id: &str) -> ChargebeeResult<JsonValue> {
-        let url = format!("{}/plans/{}", self.base_url, plan_id);
+    pub async fn get_item(&self, item_id: &str) -> ChargebeeResult<JsonValue> {
+        let url = format!("{}/items/{}", self.base_url, item_id);
+        let response = self.client.get(&url).send().await?;
+        self.handle_response(response).await
+    }
+    
+    // Item Prices (Product Catalog 2.0)
+    pub async fn create_item_price(&self, params: CreateItemPriceParams) -> ChargebeeResult<JsonValue> {
+        let url = format!("{}/item_prices", self.base_url);
+        let response = self.client
+            .post(&url)
+            .json(&params)
+            .send()
+            .await?;
+        self.handle_response(response).await
+    }
+    
+    pub async fn list_item_prices(&self) -> ChargebeeResult<JsonValue> {
+        let url = format!("{}/item_prices", self.base_url);
+        let response = self.client.get(&url).send().await?;
+        self.handle_response(response).await
+    }
+    
+    pub async fn get_item_price(&self, item_price_id: &str) -> ChargebeeResult<JsonValue> {
+        let url = format!("{}/item_prices/{}", self.base_url, item_price_id);
         let response = self.client.get(&url).send().await?;
         self.handle_response(response).await
     }
@@ -263,6 +357,18 @@ pub struct CustomerInfo {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub company: Option<String>,
+    pub phone: Option<String>,
+    pub billing_address: Option<BillingAddress>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BillingAddress {
+    pub line1: String,
+    pub line2: Option<String>,
+    pub city: String,
+    pub state: Option<String>,
+    pub zip: String,
+    pub country: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -273,6 +379,10 @@ pub struct UpdateSubscriptionParams {
     pub plan_quantity: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trial_end: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invoice_immediately: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invoice_immediately_min_amount: Option<i64>, // In cents (e.g., 5000 = $50)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -289,12 +399,15 @@ pub struct CreateCustomerParams {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateCheckoutParams {
-    pub subscription: CheckoutSubscription,
+    pub subscription_items: Vec<SubscriptionItem>,
     pub customer: CustomerInfo,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SubscriptionItem {
+    pub item_price_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub redirect_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cancel_url: Option<String>,
+    pub quantity: Option<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -302,6 +415,37 @@ pub struct CheckoutSubscription {
     pub plan_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trial_end: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateItemParams {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    #[serde(rename = "type")]
+    pub item_type: String, // "plan" or "addon" or "charge"
+    pub status: Option<String>, // "active" or "archived"
+    pub item_family_id: Option<String>,
+    pub metadata: Option<JsonValue>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateItemPriceParams {
+    pub id: String,
+    pub item_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub price_type: String, // "tax_exclusive", "tax_inclusive", or "tax_exempt"
+    pub price: Option<i64>, // in cents
+    pub period: Option<i32>, // billing period in months
+    pub period_unit: Option<String>, // "month" or "year"
+    pub trial_period: Option<i32>, // trial period in days
+    pub trial_period_unit: Option<String>, // "day" or "month"
+    pub pricing_model: String, // "flat_fee", "per_unit", "tiered", "volume", "stairstep"
+    pub free_quantity: Option<i32>,
+    pub status: Option<String>, // "active" or "archived"
+    pub currency_code: String, // "USD", "EUR", etc.
+    pub metadata: Option<JsonValue>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

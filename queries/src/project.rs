@@ -98,7 +98,7 @@ impl Query for GetProjectsWithDeploymentQuery {
         let mut query_str = r#"
             SELECT
                 p.id, p.created_at, p.updated_at, p.name, p.image_url,
-                p.owner_id,
+                p.owner_id, p.billing_account_id,
                 d.id as deployment_id, d.created_at as deployment_created_at,
                 d.updated_at as deployment_updated_at,
                 d.maintenance_mode as deployment_maintenance_mode, d.backend_host as deployment_backend_host,
@@ -154,6 +154,7 @@ impl Query for GetProjectsWithDeploymentQuery {
                         updated_at: row.get("updated_at"),
                         name: row.get("name"),
                         owner_id: row.get("owner_id"),
+                        billing_account_id: row.get("billing_account_id"),
                         deployments,
                     },
                 );

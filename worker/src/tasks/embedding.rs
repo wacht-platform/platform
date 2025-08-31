@@ -10,16 +10,6 @@ pub struct ProcessDocumentBatchTask {
     pub batch_size: usize,
 }
 
-impl ProcessDocumentBatchTask {
-    pub fn new(deployment_id: i64, knowledge_base_id: i64, batch_size: usize) -> Self {
-        Self {
-            deployment_id,
-            knowledge_base_id,
-            batch_size,
-        }
-    }
-}
-
 pub async fn process_document_batch_impl(
     deployment_id: i64,
     knowledge_base_id: i64,

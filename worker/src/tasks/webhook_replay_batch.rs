@@ -14,7 +14,7 @@ pub async fn handle_webhook_replay_batch(
     let replay_payload: WebhookReplayBatchPayload = serde_json::from_value(payload)
         .map_err(|e| anyhow::anyhow!("Failed to deserialize webhook replay payload: {}", e))?;
     
-    let (deployment_id, delivery_ids, include_successful) = match replay_payload {
+    let (deployment_id, delivery_ids, _include_successful) = match replay_payload {
         WebhookReplayBatchPayload::ByIds { deployment_id, delivery_ids, include_successful } => {
             // Parse delivery IDs from strings to i64
             let ids: Vec<i64> = delivery_ids

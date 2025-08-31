@@ -546,7 +546,7 @@ impl ContextOrchestrator {
             .rev()
             .find(|c| matches!(c.message_type, ConversationMessageType::UserMessage))
         {
-            if let ConversationContent::UserMessage { message } = &last_user_msg.content {}
+            if let ConversationContent::UserMessage { message: _ } = &last_user_msg.content {}
         }
 
         let mut template_data = json!({

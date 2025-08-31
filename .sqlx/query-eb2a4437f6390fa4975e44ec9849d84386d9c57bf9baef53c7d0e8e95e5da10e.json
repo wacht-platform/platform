@@ -10,38 +10,33 @@
       },
       {
         "ordinal": 1,
-        "name": "user_id",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 2,
-        "name": "organization_id",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 3,
         "name": "chargebee_customer_id",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 2,
         "name": "chargebee_subscription_id",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 5,
+        "ordinal": 3,
         "name": "status",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 6,
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 7,
+        "ordinal": 5,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "billing_account_id",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -54,13 +49,12 @@
     },
     "nullable": [
       false,
-      true,
-      true,
       false,
       false,
       false,
       true,
-      true
+      true,
+      false
     ]
   },
   "hash": "eb2a4437f6390fa4975e44ec9849d84386d9c57bf9baef53c7d0e8e95e5da10e"

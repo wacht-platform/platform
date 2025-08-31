@@ -31,7 +31,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Notify;
 use tokio::sync::{Mutex, mpsc};
-use tracing::{error, warn, info};
+use tracing::{error, warn};
 
 pub async fn agent_stream_handler(
     Extension(ExtractedHost(host)): Extension<ExtractedHost>,
@@ -55,7 +55,7 @@ pub async fn agent_stream_handler(
     let (response, fut) = ws.upgrade().unwrap();
 
     tokio::task::spawn(
-        async move { if let Err(e) = handle_client(fut, state, host, token).await {} },
+        async move { if let Err(_e) = handle_client(fut, state, host, token).await {} },
     );
 
     response.into_response()
@@ -301,7 +301,7 @@ fn handler_websocket_message(frame: Frame, session_state: Arc<Mutex<SessionState
                 Ok(message) => {
                     tokio::spawn(handle_execution_message(message, session_state));
                 }
-                Err(e) => {}
+                Err(_e) => {}
             };
 
             false

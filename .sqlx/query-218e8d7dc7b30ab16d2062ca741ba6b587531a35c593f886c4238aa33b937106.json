@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM subscriptions WHERE user_id = $1",
+  "query": "SELECT id FROM billing_accounts WHERE owner_id = $1",
   "describe": {
     "columns": [
       {
@@ -11,12 +11,12 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Text"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "2378ad37c57281af99eab89f033e01d62927c62b6d0b001a6cd7ae0708d53ff3"
+  "hash": "218e8d7dc7b30ab16d2062ca741ba6b587531a35c593f886c4238aa33b937106"
 }

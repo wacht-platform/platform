@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT * FROM subscriptions\n            WHERE chargebee_subscription_id = $1\n            ",
+  "query": "\n                SELECT * FROM subscriptions WHERE billing_account_id = $1\n                ",
   "describe": {
     "columns": [
       {
@@ -10,55 +10,49 @@
       },
       {
         "ordinal": 1,
-        "name": "user_id",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 2,
-        "name": "organization_id",
-        "type_info": "Int8"
-      },
-      {
-        "ordinal": 3,
         "name": "chargebee_customer_id",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 2,
         "name": "chargebee_subscription_id",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 5,
+        "ordinal": 3,
         "name": "status",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 6,
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 7,
+        "ordinal": 5,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "billing_account_id",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
       false,
-      true,
-      true,
       false,
       false,
       false,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "760f03adb3773dee6b46675bca412cae0f00f0eb6ebaa8f0d928b20ac177f4d8"
+  "hash": "f108b6fc0305cb0ad47b73a6df593ebe0621b22c9be10be390b616e6c1f4557b"
 }

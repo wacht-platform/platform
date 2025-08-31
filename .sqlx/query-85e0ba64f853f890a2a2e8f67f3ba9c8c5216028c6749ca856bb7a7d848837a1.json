@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE subscriptions \n            SET status = $1, updated_at = NOW()\n            WHERE id = $2\n            RETURNING *\n            ",
+  "query": "\n            INSERT INTO subscriptions (\n                id,\n                billing_account_id,\n                chargebee_customer_id,\n                chargebee_subscription_id,\n                status,\n                created_at,\n                updated_at\n            ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())\n            RETURNING *\n            ",
   "describe": {
     "columns": [
       {
@@ -41,8 +41,11 @@
     ],
     "parameters": {
       "Left": [
+        "Int8",
+        "Int8",
         "Varchar",
-        "Int8"
+        "Varchar",
+        "Varchar"
       ]
     },
     "nullable": [
@@ -55,5 +58,5 @@
       false
     ]
   },
-  "hash": "1fb21a03b167d3bac40d408fb7658689778162466e3cc400117fa89c692e071a"
+  "hash": "85e0ba64f853f890a2a2e8f67f3ba9c8c5216028c6749ca856bb7a7d848837a1"
 }

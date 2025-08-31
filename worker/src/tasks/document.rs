@@ -10,15 +10,6 @@ pub struct ProcessDocumentTask {
     pub document_id: i64,
 }
 
-impl ProcessDocumentTask {
-    pub fn new(deployment_id: i64, knowledge_base_id: i64, document_id: i64) -> Self {
-        Self {
-            deployment_id,
-            knowledge_base_id,
-            document_id,
-        }
-    }
-}
 
 pub async fn process_document_impl(
     deployment_id: i64,

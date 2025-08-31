@@ -226,16 +226,29 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             image_url = "".to_string();
         }
 
+        let billing_account_id: i64 = if let Some(ref owner_id) = self.owner_id {
+            sqlx::query_scalar!(
+                "SELECT id FROM billing_accounts WHERE owner_id = $1",
+                owner_id
+            )
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| AppError::Validation("No billing account found".to_string()))?
+        } else {
+            return Err(AppError::Validation("Project must have an owner".to_string()));
+        };
+
         let project_row = sqlx::query!(
             r#"
-            INSERT INTO projects (id, name, image_url, owner_id, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, created_at, updated_at, deleted_at, name, image_url, owner_id
+            INSERT INTO projects (id, name, image_url, owner_id, billing_account_id, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id, created_at, updated_at, deleted_at, name, image_url, owner_id, billing_account_id
             "#,
             project_id,
             self.name,
             image_url,
             self.owner_id.as_deref(),
+            billing_account_id,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
@@ -819,6 +832,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             updated_at: project_row.updated_at,
             name: project_row.name,
             owner_id: project_row.owner_id,
+            billing_account_id,
             deployments: vec![deployment],
         })
     }

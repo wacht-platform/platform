@@ -41,12 +41,12 @@
       {
         "ordinal": 7,
         "name": "expires_at",
-        "type_info": "Text"
+        "type_info": "Timestamp"
       },
       {
         "ordinal": 8,
         "name": "last_active_at",
-        "type_info": "Text"
+        "type_info": "Timestamp"
       },
       {
         "ordinal": 9,
