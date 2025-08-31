@@ -38,7 +38,8 @@ impl AppState {
             .min_connections(1)
             .max_connections(5)
             .connect(&database_url)
-            .await?;
+            .await
+            .unwrap();
 
         let s3_client = S3Client::new(
             &aws_config::defaults(BehaviorVersion::latest())
