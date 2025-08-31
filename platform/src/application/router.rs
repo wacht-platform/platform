@@ -17,6 +17,14 @@ fn health_routes() -> Router<AppState> {
     Router::new().route("/health", get(api::health::check))
 }
 
+fn public_webhook_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/webhooks/chargebee",
+            post(api::billing_webhook::handle_chargebee_webhook),
+        )
+}
+
 fn project_routes() -> Router<AppState> {
     Router::new()
         .route("/projects", get(api::project::get_projects))
@@ -294,10 +302,6 @@ fn billing_routes() -> Router<AppState> {
 fn console_specific_routes() -> Router<AppState> {
     Router::new()
         .route(
-            "/webhooks/chargebee",
-            post(api::billing_webhook::handle_chargebee_webhook),
-        )
-        .route(
             "/webhooks/status",
             get(api::webhook_console::get_webhook_status),
         )
@@ -534,6 +538,7 @@ pub async fn create_console_router(state: AppState) -> Router {
 
     Router::new()
         .merge(health_routes())
+        .merge(public_webhook_routes())
         .merge(protected_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
