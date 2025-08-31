@@ -34,5 +34,8 @@ COPY --from=builder /app/target/release/realtime /app/realtime
 COPY --from=builder /app/target/release/gateway /app/gateway
 
 RUN chmod +x /app/backend
+RUN chmod +x /app/console
+RUN chmod +x /app/realtime
+RUN chmod +x /app/gateway
 
 EXPOSE 3001
