@@ -60,7 +60,8 @@ impl AppState {
             .start_time(
                 chrono::DateTime::<chrono::Utc>::from_str("2025-01-01 00:00:00+0000").unwrap(),
             )
-            .finalize()?;
+            .finalize()
+            .unwrap();
         let redis_client = RedisClient::open(env("REDIS_URL")?)?;
 
         let mut handlebars = handlebars::Handlebars::new();
@@ -79,7 +80,7 @@ impl AppState {
         let clickhouse_service =
             ClickHouseService::new(env("CLICKHOUSE_HOST")?, env("CLICKHOUSE_PASSWORD")?)?;
 
-        let nats_client = async_nats::connect(env("NATS_URL")?).await?;
+        let nats_client = async_nats::connect(env("NATS_URL")?).await.unwrap();
         let nats_jetstream = jetstream::new(nats_client.clone());
 
         Ok(Self {
