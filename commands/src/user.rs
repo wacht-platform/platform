@@ -81,7 +81,7 @@ impl Command for CreateUserCommand {
             self.request.last_name,
             self.request.username.as_deref().unwrap_or(""),
             hashed_password.as_deref(),
-            "", // Empty profile_picture_url, will be updated later if image is provided
+            "", 
             false, // has_profile_picture defaults to false
             "v1",
             false,

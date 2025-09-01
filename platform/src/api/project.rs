@@ -69,7 +69,12 @@ pub async fn create_project(
         return Err((StatusCode::BAD_REQUEST, "Name is required").into());
     }
 
-    let owner_id = auth.organization_id.clone().unwrap_or(auth.user_id.clone());
+    let owner_id = auth
+        .organization_id
+        .clone()
+        .map(|id| format!("org_{id}"))
+        .unwrap_or(format!("user_{}", auth.user_id));
+
     CreateProjectWithStagingDeploymentCommand::new(name, logo_buffer, methods)
         .with_owner(owner_id)
         .execute(&app_state)

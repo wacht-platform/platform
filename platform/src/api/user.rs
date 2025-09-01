@@ -6,7 +6,7 @@ use common::state::AppState;
 
 use commands::{
     AddUserEmailCommand, AddUserPhoneCommand, ApproveWaitlistUserCommand, Command,
-    CreateUserCommand, DeleteUserEmailCommand, DeleteUserPhoneCommand,
+    CreateUserCommand, DeleteUserCommand, DeleteUserEmailCommand, DeleteUserPhoneCommand,
     DeleteUserSocialConnectionCommand, InviteUserCommand, UpdateUserCommand,
     UpdateUserEmailCommand, UpdateUserPasswordCommand, UpdateUserPhoneCommand,
     UpdateUserProfileImageCommand, UploadToCdnCommand,
@@ -720,6 +720,18 @@ pub async fn update_user_password(
     Json(new_password): Json<String>,
 ) -> ApiResult<()> {
     UpdateUserPasswordCommand::new(deployment_id, params.user_id, new_password)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+pub async fn delete_user(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<UserParams>,
+) -> ApiResult<()> {
+    DeleteUserCommand::new(deployment_id, params.user_id)
         .execute(&app_state)
         .await
         .map(Into::into)
