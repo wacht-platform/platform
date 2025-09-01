@@ -510,3 +510,91 @@ impl Command for UpdateUserPasswordCommand {
         Ok(())
     }
 }
+
+pub struct DeleteUserCommand {
+    deployment_id: i64,
+    user_id: i64,
+}
+
+impl DeleteUserCommand {
+    pub fn new(deployment_id: i64, user_id: i64) -> Self {
+        Self {
+            deployment_id,
+            user_id,
+        }
+    }
+}
+
+impl Command for DeleteUserCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let mut tx = app_state.db_pool.begin().await?;
+
+        // First check if user exists and belongs to deployment
+        let exists = sqlx::query!(
+            "SELECT id FROM users WHERE id = $1 AND deployment_id = $2",
+            self.user_id,
+            self.deployment_id
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        if exists.is_none() {
+            return Err(AppError::NotFound("User not found".to_string()));
+        }
+
+        // Delete user email addresses
+        sqlx::query!(
+            "DELETE FROM user_email_addresses WHERE user_id = $1",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // Delete user phone numbers
+        sqlx::query!(
+            "DELETE FROM user_phone_numbers WHERE user_id = $1",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // Delete social connections
+        sqlx::query!(
+            "DELETE FROM social_connections WHERE user_id = $1",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // Delete organization memberships
+        sqlx::query!(
+            "DELETE FROM organization_memberships WHERE user_id = $1",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // Delete workspace memberships
+        sqlx::query!(
+            "DELETE FROM workspace_memberships WHERE user_id = $1",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // Finally delete the user
+        sqlx::query!(
+            "DELETE FROM users WHERE id = $1 AND deployment_id = $2",
+            self.user_id,
+            self.deployment_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+}
