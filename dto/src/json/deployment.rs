@@ -70,6 +70,7 @@ pub struct CreateExecutionContextRequest {
 pub struct ExecuteAgentRequest {
     pub agent_name: String,
     pub message: String,
+    pub images: Option<Vec<crate::json::agent_executor::ImageData>>,
     pub platform_function_result: Option<(String, serde_json::Value)>,
 }
 

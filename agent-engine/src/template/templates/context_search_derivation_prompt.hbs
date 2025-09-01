@@ -10,11 +10,15 @@
     {{#each conversation_history}}
     {
       "role": "{{this.role}}",
+      {{#if this.parts}}
+      "parts": {{json this.parts}}
+      {{else}}
       "parts": [
         {
           "text": "{{this.content}}"
         }
       ]
+      {{/if}}
     },
     {{/each}}
     {

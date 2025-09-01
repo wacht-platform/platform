@@ -546,7 +546,7 @@ impl ContextOrchestrator {
             .rev()
             .find(|c| matches!(c.message_type, ConversationMessageType::UserMessage))
         {
-            if let ConversationContent::UserMessage { message: _ } = &last_user_msg.content {}
+            if let ConversationContent::UserMessage { .. } = &last_user_msg.content {}
         }
 
         let mut template_data = json!({
@@ -1414,7 +1414,7 @@ impl ContextOrchestrator {
 
     fn extract_conversation_content(&self, content: &ConversationContent) -> String {
         match content {
-            ConversationContent::UserMessage { message } => message.clone(),
+            ConversationContent::UserMessage { message, .. } => message.clone(),
             ConversationContent::AssistantAcknowledgment {
                 acknowledgment_message,
                 ..
@@ -1449,7 +1449,7 @@ impl ContextOrchestrator {
             .enumerate()
             .map(|(idx, conv)| {
                 let content = match &conv.content {
-                    ConversationContent::UserMessage { message } => message.clone(),
+                    ConversationContent::UserMessage { message, .. } => message.clone(),
                     ConversationContent::AgentResponse { response, .. } => response.clone(),
                     ConversationContent::AssistantAcknowledgment {
                         acknowledgment_message,

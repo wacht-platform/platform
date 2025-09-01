@@ -220,7 +220,7 @@ impl AgentExecutor {
                 }
             }
             ResumeContext::UserInput(input) => {
-                self.store_user_message(input.clone()).await?;
+                self.store_user_message(input.clone(), None).await?;
 
                 // If we're in a workflow, update the current node's output
                 if let Some(workflow_state) = &mut self.current_workflow_state {
@@ -247,8 +247,12 @@ impl AgentExecutor {
         self.repl().await
     }
 
-    pub async fn execute_with_streaming(&mut self, message: String) -> Result<(), AppError> {
-        let request = ConverseRequest { message };
+    pub async fn execute_with_streaming(
+        &mut self,
+        message: String,
+        images: Option<Vec<dto::json::agent_executor::ImageData>>,
+    ) -> Result<(), AppError> {
+        let request = ConverseRequest { message, images };
         self.run(request).await
     }
 
@@ -263,7 +267,9 @@ impl AgentExecutor {
             || context.status == ExecutionContextStatus::WaitingForInput;
 
         if is_resuming {
-            let user_response = self.store_user_message(request.message.clone()).await?;
+            let user_response = self
+                .store_user_message(request.message.clone(), request.images.clone())
+                .await?;
             self.conversations.push(user_response);
 
             UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
@@ -275,7 +281,7 @@ impl AgentExecutor {
         } else {
             self.user_request = request.message.clone();
 
-            let store_future = self.store_user_message(request.message);
+            let store_future = self.store_user_message(request.message, request.images);
             let context_future = self.get_immediate_context();
 
             let (store_result, context) = tokio::join!(store_future, context_future);
@@ -613,7 +619,7 @@ impl AgentExecutor {
 
     async fn decide_next_step(&mut self) -> Result<StepDecision, AppError> {
         let context = StepDecisionContext {
-            conversation_history: self.get_conversation_history_for_llm(),
+            conversation_history: self.get_conversation_history_for_llm().await,
             user_request: self.user_request.clone(),
             current_objective: self
                 .current_objective
@@ -678,7 +684,7 @@ impl AgentExecutor {
 
     async fn validate_execution(&mut self) -> Result<ValidationResponse, AppError> {
         let context = ValidationContext {
-            conversation_history: self.get_conversation_history_for_llm(),
+            conversation_history: self.get_conversation_history_for_llm().await,
             user_request: self.user_request.clone(),
             current_objective: self
                 .current_objective
@@ -741,7 +747,7 @@ impl AgentExecutor {
         let request_body = render_template_with_prompt(
             AgentTemplates::SUMMARY,
             json!({
-                "conversation_history": self.get_conversation_history_for_llm(),
+                "conversation_history": self.get_conversation_history_for_llm().await,
                 "user_request": self.user_request,
                 "task_results": self.task_results,
                 "available_tools": self.agent.tools.clone(),
@@ -845,7 +851,7 @@ impl AgentExecutor {
         let request_body = render_template_with_prompt(
             AgentTemplates::USER_INPUT_REQUEST,
             json!({
-                "conversation_history": self.get_conversation_history_for_llm(),
+                "conversation_history": self.get_conversation_history_for_llm().await,
                 "current_objective": self.current_objective,
                 "working_memory": self.get_working_memory(),
                 "available_tools": self.agent.tools.clone(),
@@ -1191,7 +1197,7 @@ impl AgentExecutor {
         let request_body = render_template_with_prompt(
             AgentTemplates::PARAMETER_GENERATION,
             json!({
-                "conversation_history": self.get_conversation_history_for_llm(),
+                "conversation_history": self.get_conversation_history_for_llm().await,
                 "tool_name": tool.name,
                 "tool_description": tool.description.as_ref().unwrap_or(&"".to_string()),
                 "parameter_schema": parameter_schema,
@@ -1254,11 +1260,50 @@ impl AgentExecutor {
         command.execute(&self.app_state).await
     }
 
-    async fn store_user_message(&self, message: String) -> Result<ConversationRecord, AppError> {
+    async fn store_user_message(
+        &self,
+        message: String,
+        images: Option<Vec<dto::json::agent_executor::ImageData>>,
+    ) -> Result<ConversationRecord, AppError> {
+        let model_images = if let Some(imgs) = images {
+            let mut uploaded_images = Vec::new();
+
+            for img in imgs {
+                use base64::{engine::general_purpose::STANDARD, Engine};
+                let bytes = STANDARD.decode(&img.data).map_err(|e| {
+                    AppError::BadRequest(format!("Invalid base64 image data: {}", e))
+                })?;
+
+                let file_extension = img.mime_type.split('/').last().unwrap_or("png");
+                let filename = format!(
+                    "agent-images/{}/{}.{}",
+                    self.context_id,
+                    self.app_state.sf.next_id()?,
+                    file_extension
+                );
+
+                let upload_command = commands::UploadToCdnCommand::new(filename.clone(), bytes);
+                let cdn_url = upload_command.execute(&self.app_state).await?;
+
+                uploaded_images.push(models::ImageData {
+                    mime_type: img.mime_type,
+                    url: cdn_url,
+                    size_bytes: Some(img.data.len() as u64),
+                });
+            }
+
+            Some(uploaded_images)
+        } else {
+            None
+        };
+
         let command = CreateConversationCommand::new(
             self.app_state.sf.next_id()? as i64,
             self.context_id,
-            ConversationContent::UserMessage { message },
+            ConversationContent::UserMessage {
+                message,
+                images: model_images,
+            },
             ConversationMessageType::UserMessage,
         );
         let conversation = command.execute(&self.app_state).await?;
@@ -1271,7 +1316,7 @@ impl AgentExecutor {
         Ok(conversation)
     }
 
-    fn get_conversation_history_for_llm(&self) -> Vec<Value> {
+    async fn get_conversation_history_for_llm(&self) -> Vec<Value> {
         let mut history = Vec::new();
         let mut i = 0;
 
@@ -1302,6 +1347,47 @@ impl AgentExecutor {
 
                         i += 2;
                     }
+                }
+                ConversationMessageType::UserMessage => {
+                    if let ConversationContent::UserMessage { message, images } = &conv.content {
+                        let mut parts = vec![json!({
+                            "text": message
+                        })];
+
+                        if let Some(imgs) = images {
+                            let client = reqwest::Client::new();
+                            for img in imgs {
+                                if let Ok(response) = client.get(&img.url).send().await {
+                                    if let Ok(bytes) = response.bytes().await {
+                                        use base64::{engine::general_purpose::STANDARD, Engine};
+                                        let base64_data = STANDARD.encode(&bytes);
+
+                                        parts.push(json!({
+                                            "inline_data": {
+                                                "mime_type": img.mime_type,
+                                                "data": base64_data
+                                            }
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+
+                        history.push(json!({
+                            "role": "user",
+                            "parts": parts,
+                            "timestamp": conv.created_at,
+                            "type": conv.message_type,
+                        }));
+                    } else {
+                        history.push(json!({
+                            "role": "user",
+                            "content": self.extract_conversation_content(&conv.content),
+                            "timestamp": conv.created_at,
+                            "type": conv.message_type,
+                        }));
+                    }
+                    i += 1;
                 }
                 _ => {
                     history.push(json!({
@@ -2100,7 +2186,7 @@ impl AgentExecutor {
 
                 // Start new execution
                 execution_start = idx;
-                if let ConversationContent::UserMessage { message } = &conv.content {
+                if let ConversationContent::UserMessage { message, .. } = &conv.content {
                     current_user_request = message.clone();
                 }
             }

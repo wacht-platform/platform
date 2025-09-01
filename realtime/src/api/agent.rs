@@ -9,17 +9,14 @@ use axum::extract::{Query as QueryParams, State};
 use axum::response::IntoResponse;
 use common::state::AppState;
 use common::utils::jwt::verify_agent_context_token;
-use dto::json::{
-    ExecutionStatusUpdate, SessionConnectedMessage,
-    WebSocketError,
-};
+use dto::json::{ExecutionStatusUpdate, SessionConnectedMessage, WebSocketError};
 use fastwebsockets::FragmentCollector;
 use fastwebsockets::Frame;
 use fastwebsockets::OpCode;
 use fastwebsockets::WebSocketError as FastWebSocketError;
 use fastwebsockets::upgrade;
 use futures::StreamExt;
-use models::{ExecutionContextStatus};
+use models::ExecutionContextStatus;
 use models::{ConversationContent, ConversationRecord};
 use queries::GetRecentConversationsQuery;
 use queries::{GetAiAgentByNameWithFeatures, GetDeploymentWithKeyPairQuery};
@@ -463,7 +460,10 @@ async fn handle_execution_message(
             let _ = sender.send(message);
         }
         WebsocketMessageType::MessageInput(user_message) => {
-            // Send starting status
+            let user_images = message.data.get("images").and_then(|v| {
+                serde_json::from_value::<Vec<dto::json::agent_executor::ImageData>>(v.clone()).ok()
+            });
+
             let status_update = ExecutionStatusUpdate {
                 status: "Starting".to_string(),
             };
@@ -477,6 +477,7 @@ async fn handle_execution_message(
             let execution_request = ExecutionRequest {
                 agent,
                 user_message: Some(user_message),
+                user_images,
                 context_id,
                 platform_function_result: None,
             };
@@ -550,7 +551,8 @@ async fn handle_execution_message(
                             // Create resume request with platform function result
                             let resume_request = ExecutionRequest {
                                 agent,
-                                user_message: None, // No user message for platform function resume
+                                user_message: None,
+                                user_images: None,
                                 context_id,
                                 platform_function_result: Some((
                                     execution_id.clone(),
@@ -584,7 +586,8 @@ async fn handle_execution_message(
             // Resume execution with user input
             let execution_request = ExecutionRequest {
                 agent,
-                user_message: Some(input), // Will be handled as user input in agent handler
+                user_message: Some(input),
+                user_images: None,
                 context_id,
                 platform_function_result: None,
             };

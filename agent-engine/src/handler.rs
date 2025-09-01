@@ -15,6 +15,7 @@ pub struct AgentHandler {
 pub struct ExecutionRequest {
     pub agent: AiAgentWithFeatures,
     pub user_message: Option<String>,
+    pub user_images: Option<Vec<dto::json::agent_executor::ImageData>>,
     pub context_id: i64,
     pub platform_function_result: Option<(String, serde_json::Value)>,
 }
@@ -48,10 +49,11 @@ impl AgentHandler {
 
         let execution_result = match (
             request.user_message,
+            request.user_images,
             request.platform_function_result,
             context.status,
         ) {
-            (_, Some((exec_id, result)), _) => {
+            (_, _, Some((exec_id, result)), _) => {
                 self.resume_agent_execution(
                     &kv,
                     &context_key,
@@ -62,7 +64,7 @@ impl AgentHandler {
                 )
                 .await
             }
-            (Some(input), None, ExecutionContextStatus::WaitingForInput) => {
+            (Some(input), _, None, ExecutionContextStatus::WaitingForInput) => {
                 self.resume_agent_execution(
                     &kv,
                     &context_key,
@@ -73,13 +75,14 @@ impl AgentHandler {
                 )
                 .await
             }
-            (Some(message), None, _) => {
+            (Some(message), images, None, _) => {
                 self.run_agent_execution(
                     &kv,
                     &context_key,
                     execution_id,
                     &mut executor,
                     &message,
+                    images,
                     watch,
                 )
                 .await
@@ -135,6 +138,7 @@ impl AgentHandler {
         execution_id: i64,
         agent_executor: &mut AgentExecutor,
         user_message: &str,
+        user_images: Option<Vec<dto::json::agent_executor::ImageData>>,
         mut watch: async_nats::jetstream::kv::Watch,
     ) -> Result<(), AppError> {
         kv.put(context_key, execution_id.to_string().into())
@@ -142,7 +146,7 @@ impl AgentHandler {
             .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {e}")))?;
 
         tokio::select! {
-            result = agent_executor.execute_with_streaming(user_message.to_string()) => {
+            result = agent_executor.execute_with_streaming(user_message.to_string(), user_images) => {
                 result
             }
             _ = watch_for_cancellation(&mut watch, execution_id) => {

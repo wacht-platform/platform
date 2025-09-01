@@ -80,9 +80,16 @@ pub struct TaskExecutionResult {
     pub error: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ImageData {
+    pub mime_type: String,
+    pub data: String,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ConverseRequest {
     pub message: String,
+    pub images: Option<Vec<ImageData>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

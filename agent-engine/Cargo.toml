@@ -29,3 +29,4 @@ handlebars = "6.2.0"
 tiktoken-rs = "0.5"
 quick-xml = { version = "0.38.0", features = ["serialize"] }
 urlencoding = "2.1"
+base64 = "0.22.1"

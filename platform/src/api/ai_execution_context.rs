@@ -168,6 +168,7 @@ pub async fn execute_agent_async(
     let execution_request = ExecutionRequest {
         agent,
         user_message: Some(request.message),
+        user_images: request.images,
         context_id,
         platform_function_result: request.platform_function_result,
     };

@@ -30,7 +30,7 @@ impl CreateConversationCommand {
 
     fn calculate_token_count(&self) -> Result<i32, AppError> {
         let text = match &self.content {
-            ConversationContent::UserMessage { message } => message.clone(),
+            ConversationContent::UserMessage { message, .. } => message.clone(),
             ConversationContent::AgentResponse { response, .. } => response.clone(),
             ConversationContent::AssistantAcknowledgment {
                 acknowledgment_message,
