@@ -36,7 +36,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             owner_id: None,
         }
     }
-    
+
     pub fn with_owner(mut self, owner_id: String) -> Self {
         self.owner_id = Some(owner_id);
         self
@@ -235,8 +235,15 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             .await?
             .ok_or_else(|| AppError::Validation("No billing account found".to_string()))?
         } else {
-            return Err(AppError::Validation("Project must have an owner".to_string()));
+            return Err(AppError::Validation(
+                "Project must have an owner".to_string(),
+            ));
         };
+
+        let owner_id = self
+            .owner_id
+            .as_deref()
+            .map(|v| v.split("_").last().unwrap());
 
         let project_row = sqlx::query!(
             r#"
@@ -247,7 +254,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             project_id,
             self.name,
             image_url,
-            self.owner_id.as_deref(),
+            owner_id,
             billing_account_id,
             chrono::Utc::now(),
             chrono::Utc::now(),
