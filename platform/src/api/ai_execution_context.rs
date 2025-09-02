@@ -6,9 +6,14 @@ use agent_engine::{AgentHandler, ExecutionRequest};
 use commands::{Command, CreateExecutionContextCommand};
 use common::error::AppError;
 use common::state::AppState;
-use dto::json::deployment::{CreateExecutionContextRequest, ExecuteAgentRequest, ExecuteAgentResponse};
+use dto::json::deployment::{
+    CreateExecutionContextRequest, ExecuteAgentRequest, ExecuteAgentResponse,
+};
 use models::AgentExecutionContext;
-use queries::{GetAiAgentByNameWithFeatures, GetExecutionContextQuery, ListExecutionContextsQuery, Query as QueryTrait};
+use queries::{
+    GetAiAgentByNameWithFeatures, GetExecutionContextQuery, ListExecutionContextsQuery,
+    Query as QueryTrait,
+};
 use serde::Deserialize;
 use tracing::{error, info};
 
@@ -31,6 +36,10 @@ pub async fn create_execution_context(
         command = command.with_title(title);
     }
 
+    if let Some(system_instructions) = request.system_instructions {
+        command = command.with_system_instructions(system_instructions);
+    }
+
     if let Some(context_group) = request.context_group {
         command = command.with_context_group(context_group);
     }
@@ -51,6 +60,10 @@ pub async fn create_execution_context_backend(
 
     if let Some(title) = request.title {
         command = command.with_title(title);
+    }
+
+    if let Some(system_instructions) = request.system_instructions {
+        command = command.with_system_instructions(system_instructions);
     }
 
     if let Some(context_group) = request.context_group {
@@ -149,22 +162,23 @@ pub async fn execute_agent_async(
     Json(request): Json<ExecuteAgentRequest>,
 ) -> ApiResult<ExecuteAgentResponse> {
     let context_id = params.context_id;
-    
-    // Verify context exists and belongs to deployment
+
+    println!("{} {} {}", deployment_id, context_id, request.agent_name);
+
     GetExecutionContextQuery::new(context_id, deployment_id)
         .execute(&app_state)
         .await?;
-    
-    // Get the agent
+
     let agent = GetAiAgentByNameWithFeatures::new(deployment_id, request.agent_name.clone())
         .execute(&app_state)
         .await?;
-    
-    // Generate execution ID
-    let execution_id = app_state.sf.next_id()
-        .map_err(|e| AppError::Internal(format!("Failed to generate execution ID: {}", e)))? as i64;
-    
-    // Create execution request
+
+    let execution_id = app_state
+        .sf
+        .next_id()
+        .map_err(|e| AppError::Internal(format!("Failed to generate execution ID: {}", e)))?
+        as i64;
+
     let execution_request = ExecutionRequest {
         agent,
         user_message: Some(request.message),
@@ -172,14 +186,13 @@ pub async fn execute_agent_async(
         context_id,
         platform_function_result: request.platform_function_result,
     };
-    
-    // Spawn background task to execute the agent
+
     tokio::spawn(async move {
         info!(
             "Starting background execution {} for context {} in deployment {}",
             execution_id, context_id, deployment_id
         );
-        
+
         let handler = AgentHandler::new(app_state);
         match handler.execute_agent_streaming(execution_request).await {
             Ok(_) => {
@@ -189,19 +202,16 @@ pub async fn execute_agent_async(
                 );
             }
             Err(e) => {
-                error!(
-                    "Failed to execute agent for context {}: {}",
-                    context_id, e
-                );
+                error!("Failed to execute agent for context {}: {}", context_id, e);
             }
         }
     });
-    
+
     info!(
         "Started async agent execution {} for context {} in deployment {}",
         execution_id, context_id, deployment_id
     );
-    
+
     Ok(ExecuteAgentResponse {
         execution_id,
         status: "running".to_string(),

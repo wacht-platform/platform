@@ -63,6 +63,7 @@ pub struct ExecuteWorkflowRequest {
 #[derive(Deserialize)]
 pub struct CreateExecutionContextRequest {
     pub title: Option<String>,
+    pub system_instructions: Option<String>,
     pub context_group: Option<String>,
 }
 

@@ -101,6 +101,17 @@ pub struct ApiKey {
     pub revoked_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ApiKeyWithIdentifers {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    pub app_name: String,
+    #[sqlx(json)]
+    pub permissions: Vec<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub is_active: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKeyWithSecret {
     #[serde(flatten)]

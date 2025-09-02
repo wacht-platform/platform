@@ -12,8 +12,7 @@ pub struct AgentExecutionContext {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub title: String,
-    pub current_goal: String,
-    pub tasks: Vec<String>,
+    pub system_instructions: Option<String>,
     pub context_group: Option<String>,
     pub last_activity_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,

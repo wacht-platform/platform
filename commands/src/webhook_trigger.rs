@@ -51,7 +51,7 @@ impl Command for TriggerWebhookEventCommand {
     type Output = TriggerWebhookEventResult;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Get app info first
+        println!("{} {}", self.deployment_id, self.app_name);
         let app_info = query!(
             r#"
             SELECT name
@@ -69,7 +69,6 @@ impl Command for TriggerWebhookEventCommand {
             None => return Err(AppError::NotFound("Webhook app not found".to_string())),
         };
 
-        // Log the webhook event to ClickHouse
         let event_id = app_state.sf.next_id().unwrap();
         let payload_size = self.payload.to_string().len() as i32;
 
@@ -160,9 +159,9 @@ impl Command for TriggerWebhookEventCommand {
             // Queue for delivery
             let delivery = query!(
                 r#"
-                INSERT INTO active_webhook_deliveries 
-                (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, signature, max_attempts) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+                INSERT INTO active_webhook_deliveries
+                (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, signature, max_attempts)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id
                 "#,
                 delivery_id,
@@ -448,9 +447,9 @@ impl Command for ReplayWebhookDeliveryCommand {
         // Create new delivery with reset attempts
         let new_delivery = query!(
             r#"
-            INSERT INTO active_webhook_deliveries 
-            (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, signature, max_attempts, attempts) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0) 
+            INSERT INTO active_webhook_deliveries
+            (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, signature, max_attempts, attempts)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0)
             RETURNING id
             "#,
             new_delivery_id,
@@ -488,4 +487,3 @@ impl Command for ReplayWebhookDeliveryCommand {
         Ok(new_delivery.id)
     }
 }
-

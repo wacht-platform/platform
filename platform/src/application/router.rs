@@ -18,11 +18,10 @@ fn health_routes() -> Router<AppState> {
 }
 
 fn public_webhook_routes() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/webhooks/chargebee",
-            post(api::billing_webhook::handle_chargebee_webhook),
-        )
+    Router::new().route(
+        "/webhooks/chargebee",
+        post(api::billing_webhook::handle_chargebee_webhook),
+    )
 }
 
 fn project_routes() -> Router<AppState> {
@@ -270,34 +269,15 @@ fn billing_routes() -> Router<AppState> {
     Router::new()
         .route(
             "/billing",
-            get(api::billing::get_billing_account)
-                .patch(api::billing::update_billing_account),
+            get(api::billing::get_billing_account).patch(api::billing::update_billing_account),
         )
         .route("/billing/checkout", post(api::billing::create_checkout))
-        .route(
-            "/billing/portal",
-            get(api::billing::get_portal_url),
-        )
-        .route(
-            "/billing/cancel",
-            post(api::billing::cancel_subscription),
-        )
-        .route(
-            "/billing/usage",
-            post(api::billing::record_usage),
-        )
-        .route(
-            "/billing/invoices",
-            get(api::billing::list_invoices),
-        )
-        .route(
-            "/billing/invoices/{id}",
-            get(api::billing::get_invoice),
-        )
-        .route(
-            "/billing/change-plan",
-            post(api::billing::change_plan),
-        )
+        .route("/billing/portal", get(api::billing::get_portal_url))
+        .route("/billing/cancel", post(api::billing::cancel_subscription))
+        .route("/billing/usage", post(api::billing::record_usage))
+        .route("/billing/invoices", get(api::billing::list_invoices))
+        .route("/billing/invoices/{id}", get(api::billing::get_invoice))
+        .route("/billing/change-plan", post(api::billing::change_plan))
 }
 
 fn console_specific_routes() -> Router<AppState> {

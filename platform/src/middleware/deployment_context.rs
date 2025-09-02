@@ -8,7 +8,7 @@ use axum::{
 use chrono::Utc;
 use commands::{Command, api_key::UpdateApiKeyLastUsedCommand};
 use common::state::AppState;
-use queries::{Query, api_key::GetApiKeyByHashQuery};
+use queries::{Query, api_key::GetApiKeyIdentifiersByHashQuery};
 use sha2::{Digest, Sha256};
 
 /// Deployment context that gets injected into request extensions
@@ -24,8 +24,7 @@ pub async fn backend_deployment_middleware(
 ) -> Result<Response, (StatusCode, String)> {
     let api_key = req
         .headers()
-        .get("x-api-key")
-        .or_else(|| req.headers().get("authorization"))
+        .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer ").or(Some(v)));
 
@@ -40,7 +39,7 @@ pub async fn backend_deployment_middleware(
     hasher.update(api_key.as_bytes());
     let key_hash = format!("{:x}", hasher.finalize());
 
-    let key_data = GetApiKeyByHashQuery::new(key_hash)
+    let key_data = GetApiKeyIdentifiersByHashQuery::new(key_hash)
         .execute(&state)
         .await
         .map_err(|e| {
@@ -70,11 +69,11 @@ pub async fn backend_deployment_middleware(
     });
 
     req.extensions_mut().insert(DeploymentContext {
-        deployment_id: key_data.deployment_id,
+        deployment_id: key_data.app_name.parse().unwrap(),
     });
     req.extensions_mut().insert(ApiKeyContext {
         key_id: key_data.id,
-        app_id: key_data.app_id,
+        app_name: key_data.app_name,
         permissions: key_data.permissions,
     });
 

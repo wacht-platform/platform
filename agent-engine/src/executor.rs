@@ -202,9 +202,7 @@ impl AgentExecutor {
                     .send(StreamEvent::ConversationMessage(conversation))
                     .await;
 
-                // If we're in a workflow, update the workflow state
                 if let Some(workflow_state) = &mut self.current_workflow_state {
-                    // Find the node waiting for this execution_id
                     for (key, value) in workflow_state.clone().iter() {
                         if key.ends_with("_output") {
                             if let Some(stored_exec_id) =
@@ -237,13 +235,11 @@ impl AgentExecutor {
             }
         }
 
-        // Update status to running
         UpdateExecutionContextQuery::new(context_id, deployment_id)
             .with_status(ExecutionContextStatus::Running)
             .execute(&app_state)
             .await?;
 
-        // Continue execution from where we left off
         self.repl().await
     }
 
@@ -301,14 +297,11 @@ impl AgentExecutor {
     async fn repl(&mut self) -> Result<(), AppError> {
         // Check if we're resuming a workflow execution
         if let Some(workflow_id) = self.current_workflow_id {
-            // We're in the middle of a workflow - resume it
             let result = self.resume_workflow_execution().await?;
 
-            // Check if workflow is still pending
             let workflow_result: WorkflowExecutionResult = serde_json::from_value(result)?;
 
             if workflow_result.execution_status == "pending" {
-                // Store the pending workflow result
                 let task_execution = WorkflowTaskExecution {
                     execution_type: "workflow".to_string(),
                     workflow_id,
@@ -325,11 +318,9 @@ impl AgentExecutor {
                 )
                 .await?;
 
-                // Workflow is still pending, return early
                 return Ok(());
             }
 
-            // Store the workflow result as a task execution
             let task_execution = WorkflowTaskExecution {
                 execution_type: "workflow".to_string(),
                 workflow_id,
@@ -367,17 +358,8 @@ impl AgentExecutor {
                 return Ok(());
             }
 
-            // Decide next single step based on current state
             let decision = self.decide_next_step().await?;
 
-            // Log the decision for transparency
-            tracing::info!(
-                "Iteration {}: Decided to {:?}",
-                iteration,
-                decision.next_step
-            );
-
-            // Process the single step
             match self.process_decision(decision).await {
                 Ok(should_continue) => {
                     if !should_continue {
@@ -385,10 +367,6 @@ impl AgentExecutor {
                     }
                 }
                 Err(e) => {
-                    // This should rarely happen as gather_context should handle errors internally
-                    tracing::error!("Unexpected error in iteration {}: {}", iteration, e);
-
-                    // Store error in conversation for transparency
                     self.store_conversation(
                         ConversationContent::SystemDecision {
                             step: "error_encountered".to_string(),
@@ -397,9 +375,6 @@ impl AgentExecutor {
                         },
                         ConversationMessageType::SystemDecision,
                     ).await?;
-
-                    // Continue to next iteration - gather_context should handle its own errors
-                    tracing::info!("Continuing after error in iteration {}", iteration);
                 }
             }
         }
@@ -430,7 +405,6 @@ impl AgentExecutor {
             }
 
             NextStep::GatherContext => {
-                // Validate that context_gathering_objective is provided
                 let objective = decision.context_gathering_objective.as_deref();
                 if objective.is_none() {
                     return Err(AppError::Internal(
@@ -669,15 +643,17 @@ impl AgentExecutor {
             .generate_structured_content::<StepDecision>(request_body)
             .await?;
 
-        self.store_conversation(
-            ConversationContent::SystemDecision {
-                step: format!("{:?}", decision.next_step).to_lowercase(),
-                reasoning: decision.reasoning.clone(),
-                confidence: decision.confidence as f32,
-            },
-            ConversationMessageType::SystemDecision,
-        )
-        .await?;
+        if decision.acknowledgment.is_none() {
+            self.store_conversation(
+                ConversationContent::SystemDecision {
+                    step: format!("{:?}", decision.next_step).to_lowercase(),
+                    reasoning: decision.reasoning.clone(),
+                    confidence: decision.confidence as f32,
+                },
+                ConversationMessageType::SystemDecision,
+            )
+            .await?;
+        }
 
         Ok(decision)
     }
@@ -781,8 +757,6 @@ impl AgentExecutor {
     }
 
     async fn deliver_final_response(&mut self) -> Result<(), AppError> {
-        // More flexible response delivery for adaptive iteration
-        // Can be called at any point when we have useful information
         self.generate_and_send_summary().await
     }
 

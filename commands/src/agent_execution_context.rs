@@ -7,7 +7,7 @@ use models::{AgentExecutionContext, AgentExecutionState, ExecutionContextStatus}
 pub struct CreateExecutionContextCommand {
     pub deployment_id: i64,
     pub title: Option<String>,
-    pub current_goal: Option<String>,
+    pub system_instructions: Option<String>,
     pub context_group: Option<String>,
 }
 
@@ -16,7 +16,7 @@ impl CreateExecutionContextCommand {
         Self {
             deployment_id,
             title: None,
-            current_goal: None,
+            system_instructions: None,
             context_group: None,
         }
     }
@@ -26,8 +26,9 @@ impl CreateExecutionContextCommand {
         self
     }
 
-    pub fn with_current_goal(mut self, current_goal: String) -> Self {
-        self.current_goal = Some(current_goal);
+
+    pub fn with_system_instructions(mut self, system_instructions: String) -> Self {
+        self.system_instructions = Some(system_instructions);
         self
     }
 
@@ -47,17 +48,16 @@ impl Command for CreateExecutionContextCommand {
         sqlx::query!(
             r#"
             INSERT INTO agent_execution_contexts
-            (id, created_at, updated_at, deployment_id, title, current_goal, context_group, tasks, last_activity_at, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            (id, created_at, updated_at, deployment_id, title, system_instructions, context_group, last_activity_at, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
             context_id,
             now,
             now,
             self.deployment_id,
             self.title.as_deref().unwrap_or(""),
-            self.current_goal.as_deref().unwrap_or(""),
+            self.system_instructions,
             self.context_group,
-            &Vec::<String>::new(),
             now,
             "idle"
         )
@@ -71,9 +71,8 @@ impl Command for CreateExecutionContextCommand {
             updated_at: now,
             deployment_id: self.deployment_id,
             title: self.title.unwrap_or_default(),
-            current_goal: self.current_goal.unwrap_or_default(),
+            system_instructions: self.system_instructions,
             context_group: self.context_group,
-            tasks: Vec::new(),
             last_activity_at: now,
             completed_at: None,
             execution_state: None,
@@ -85,8 +84,7 @@ impl Command for CreateExecutionContextCommand {
 pub struct UpdateExecutionContextQuery {
     pub context_id: i64,
     pub deployment_id: i64,
-    pub current_goal: Option<String>,
-    pub tasks: Option<Vec<String>>,
+    pub system_instructions: Option<String>,
     pub completed_at: Option<Option<DateTime<Utc>>>,
     pub execution_state: Option<AgentExecutionState>,
     pub status: Option<ExecutionContextStatus>,
@@ -97,21 +95,16 @@ impl UpdateExecutionContextQuery {
         Self {
             context_id,
             deployment_id,
-            current_goal: None,
-            tasks: None,
+            system_instructions: None,
             completed_at: None,
             execution_state: None,
             status: None,
         }
     }
 
-    pub fn with_current_goal(mut self, current_goal: String) -> Self {
-        self.current_goal = Some(current_goal);
-        self
-    }
 
-    pub fn with_tasks(mut self, tasks: Vec<String>) -> Self {
-        self.tasks = Some(tasks);
+    pub fn with_system_instructions(mut self, system_instructions: String) -> Self {
+        self.system_instructions = Some(system_instructions);
         self
     }
 
@@ -137,24 +130,11 @@ impl super::Command for UpdateExecutionContextQuery {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let now = Utc::now();
 
-        if let Some(ref goal) = self.current_goal {
+        if let Some(ref system_instructions) = self.system_instructions {
             sqlx::query!(
-                "UPDATE agent_execution_contexts SET updated_at = $1, last_activity_at = $1, current_goal = $2 WHERE id = $3 AND deployment_id = $4",
+                "UPDATE agent_execution_contexts SET updated_at = $1, last_activity_at = $1, system_instructions = $2 WHERE id = $3 AND deployment_id = $4",
                 now,
-                goal,
-                self.context_id,
-                self.deployment_id
-            )
-            .execute(&app_state.db_pool)
-            .await
-            .map_err(|e| AppError::Database(e))?;
-        }
-
-        if let Some(ref tasks) = self.tasks {
-            sqlx::query!(
-                "UPDATE agent_execution_contexts SET updated_at = $1, last_activity_at = $1, tasks = $2 WHERE id = $3 AND deployment_id = $4",
-                now,
-                tasks,
+                system_instructions,
                 self.context_id,
                 self.deployment_id
             )

@@ -24,7 +24,7 @@ impl super::Query for GetExecutionContextQuery {
         let context = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, deployment_id,
-            title, current_goal, context_group, tasks, last_activity_at, completed_at,
+            title, context_group, system_instructions, last_activity_at, completed_at,
             execution_state, status
             FROM agent_execution_contexts
             WHERE id = $1 AND deployment_id = $2
@@ -49,9 +49,8 @@ impl super::Query for GetExecutionContextQuery {
             updated_at: context.updated_at,
             deployment_id: context.deployment_id,
             title: context.title,
-            current_goal: context.current_goal,
             context_group: context.context_group,
-            tasks: context.tasks.unwrap_or_default(),
+            system_instructions: context.system_instructions,
             last_activity_at: context.last_activity_at,
             completed_at: context.completed_at,
             execution_state,
@@ -110,7 +109,7 @@ impl super::Query for ListExecutionContextsQuery {
         let contexts = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, deployment_id,
-            title, current_goal, context_group, tasks, last_activity_at, completed_at,
+            title, context_group, system_instructions, last_activity_at, completed_at,
             execution_state, status
             FROM agent_execution_contexts
             WHERE deployment_id = $1
@@ -153,9 +152,8 @@ impl super::Query for ListExecutionContextsQuery {
                 updated_at: context.updated_at,
                 deployment_id: context.deployment_id,
                 title: context.title,
-                current_goal: context.current_goal,
                 context_group: context.context_group,
-                tasks: context.tasks.unwrap_or_default(),
+                system_instructions: context.system_instructions,
                 last_activity_at: context.last_activity_at,
                 completed_at: context.completed_at,
                 execution_state,
