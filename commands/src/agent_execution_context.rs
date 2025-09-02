@@ -26,7 +26,6 @@ impl CreateExecutionContextCommand {
         self
     }
 
-
     pub fn with_system_instructions(mut self, system_instructions: String) -> Self {
         self.system_instructions = Some(system_instructions);
         self
@@ -101,7 +100,6 @@ impl UpdateExecutionContextQuery {
             status: None,
         }
     }
-
 
     pub fn with_system_instructions(mut self, system_instructions: String) -> Self {
         self.system_instructions = Some(system_instructions);
@@ -267,12 +265,10 @@ impl Command for UpdateExecutionContextCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let now = Utc::now();
-        
-        // Use COALESCE to update only the fields that are provided
         sqlx::query!(
             r#"
-            UPDATE agent_execution_contexts 
-            SET 
+            UPDATE agent_execution_contexts
+            SET
                 updated_at = $1,
                 last_activity_at = $2,
                 title = COALESCE($3, title),

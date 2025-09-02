@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE agent_execution_contexts\n            SET\n                updated_at = $1,\n                last_activity_at = $2,\n                title = COALESCE($3, title),\n                system_instructions = COALESCE($4, system_instructions),\n                context_group = COALESCE($5, context_group),\n                status = COALESCE($6, status)\n            WHERE id = $7 AND deployment_id = $8\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6fa1ce0a6a421a004c0435c7f89e84782c12fd560676deec23c76784ea8da73b"
+}

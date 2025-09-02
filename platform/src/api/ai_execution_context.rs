@@ -6,8 +6,9 @@ use agent_engine::{AgentHandler, ExecutionRequest};
 use commands::{Command, CreateExecutionContextCommand, UpdateExecutionContextCommand};
 use common::error::AppError;
 use common::state::AppState;
+use dto::json::UpdateExecutionContextRequest;
 use dto::json::deployment::{
-    CreateExecutionContextRequest, UpdateExecutionContextRequest, ExecuteAgentRequest, ExecuteAgentResponse,
+    CreateExecutionContextRequest, ExecuteAgentRequest, ExecuteAgentResponse,
 };
 use models::{AgentExecutionContext, ExecutionContextStatus};
 use queries::{
