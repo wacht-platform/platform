@@ -82,23 +82,18 @@ pub enum ConversationContent {
     UserInputRequest {
         question: String,
         context: String,
-        input_type: String, // "text", "number", "select", "multiselect", "boolean", "date"
-        options: Option<Vec<String>>, // For select/multi-select types
+        input_type: String,
+        options: Option<Vec<String>>,
         default_value: Option<String>,
         placeholder: Option<String>,
     },
     ExecutionSummary {
-        /// The original user message that triggered this execution
         user_message: String,
-        /// Concise summary of the agent's execution
         agent_execution: String,
-        /// Token count for this summary
         token_count: usize,
     },
     PlatformFunctionResult {
-        /// Unique execution ID for this function call
         execution_id: String,
-        /// Result returned from the function
         result: String,
     },
 }

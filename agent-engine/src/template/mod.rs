@@ -87,9 +87,17 @@ pub fn render_template_with_prompt(
     // If we have a system prompt, render it first then inject it into the context
     if let Some(prompt_template) = system_prompt {
         // Render the system prompt with the current context using the global HANDLEBARS
-        let rendered_prompt = HANDLEBARS
+        let mut rendered_prompt = HANDLEBARS
             .render_template(prompt_template, &context)
             .unwrap();
+        
+        // Append custom system instructions if provided in the context
+        if let Some(custom_instructions) = context.get("custom_system_instructions") {
+            if let Some(custom_str) = custom_instructions.as_str() {
+                rendered_prompt.push_str("\n\n");
+                rendered_prompt.push_str(custom_str);
+            }
+        }
 
         if let Some(obj) = context.as_object_mut() {
             obj.insert("system_prompt".to_string(), Value::String(rendered_prompt));

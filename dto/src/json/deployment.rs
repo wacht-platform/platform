@@ -68,6 +68,14 @@ pub struct CreateExecutionContextRequest {
 }
 
 #[derive(Deserialize)]
+pub struct UpdateExecutionContextRequest {
+    pub title: Option<String>,
+    pub system_instructions: Option<String>,
+    pub context_group: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct ExecuteAgentRequest {
     pub agent_name: String,
     pub message: String,

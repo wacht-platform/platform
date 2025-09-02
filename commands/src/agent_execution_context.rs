@@ -219,3 +219,85 @@ impl super::Command for UpdateExecutionContextQuery {
         Ok(())
     }
 }
+
+pub struct UpdateExecutionContextCommand {
+    pub context_id: i64,
+    pub deployment_id: i64,
+    pub title: Option<String>,
+    pub system_instructions: Option<String>,
+    pub context_group: Option<String>,
+    pub status: Option<ExecutionContextStatus>,
+}
+
+impl UpdateExecutionContextCommand {
+    pub fn new(context_id: i64, deployment_id: i64) -> Self {
+        Self {
+            context_id,
+            deployment_id,
+            title: None,
+            system_instructions: None,
+            context_group: None,
+            status: None,
+        }
+    }
+
+    pub fn with_title(mut self, title: String) -> Self {
+        self.title = Some(title);
+        self
+    }
+
+    pub fn with_system_instructions(mut self, system_instructions: String) -> Self {
+        self.system_instructions = Some(system_instructions);
+        self
+    }
+
+    pub fn with_context_group(mut self, context_group: String) -> Self {
+        self.context_group = Some(context_group);
+        self
+    }
+
+    pub fn with_status(mut self, status: ExecutionContextStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+}
+
+impl Command for UpdateExecutionContextCommand {
+    type Output = AgentExecutionContext;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let now = Utc::now();
+        
+        // Use COALESCE to update only the fields that are provided
+        sqlx::query!(
+            r#"
+            UPDATE agent_execution_contexts 
+            SET 
+                updated_at = $1,
+                last_activity_at = $2,
+                title = COALESCE($3, title),
+                system_instructions = COALESCE($4, system_instructions),
+                context_group = COALESCE($5, context_group),
+                status = COALESCE($6, status)
+            WHERE id = $7 AND deployment_id = $8
+            "#,
+            now,
+            now,
+            self.title.as_deref(),
+            self.system_instructions.as_deref(),
+            self.context_group.as_deref(),
+            self.status.as_ref().map(|s| s.to_string()),
+            self.context_id,
+            self.deployment_id
+        )
+        .execute(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        // Fetch and return the updated context
+        use queries::{GetExecutionContextQuery, Query as QueryTrait};
+        GetExecutionContextQuery::new(self.context_id, self.deployment_id)
+            .execute(app_state)
+            .await
+    }
+}

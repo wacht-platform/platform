@@ -487,6 +487,10 @@ fn backend_specific_routes() -> Router<AppState> {
                 .post(api::ai_execution_context::create_execution_context_backend),
         )
         .route(
+            "/ai-execution-contexts/{context_id}",
+            patch(api::ai_execution_context::update_execution_context),
+        )
+        .route(
             "/ai-execution-contexts/{context_id}/execute",
             post(api::ai_execution_context::execute_agent_async),
         )

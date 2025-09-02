@@ -3,13 +3,13 @@ use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use axum::extract::{Json, Path, Query, State};
 
 use agent_engine::{AgentHandler, ExecutionRequest};
-use commands::{Command, CreateExecutionContextCommand};
+use commands::{Command, CreateExecutionContextCommand, UpdateExecutionContextCommand};
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::deployment::{
-    CreateExecutionContextRequest, ExecuteAgentRequest, ExecuteAgentResponse,
+    CreateExecutionContextRequest, UpdateExecutionContextRequest, ExecuteAgentRequest, ExecuteAgentResponse,
 };
-use models::AgentExecutionContext;
+use models::{AgentExecutionContext, ExecutionContextStatus};
 use queries::{
     GetAiAgentByNameWithFeatures, GetExecutionContextQuery, ListExecutionContextsQuery,
     Query as QueryTrait,
@@ -150,6 +150,45 @@ pub async fn get_execution_contexts_backend(
     }
     .into())
 }
+#[derive(Deserialize)]
+pub struct ContextIdParam {
+    pub context_id: i64,
+}
+
+pub async fn update_execution_context(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<ContextIdParam>,
+    Json(request): Json<UpdateExecutionContextRequest>,
+) -> ApiResult<AgentExecutionContext> {
+    let mut command = UpdateExecutionContextCommand::new(params.context_id, deployment_id);
+
+    if let Some(title) = request.title {
+        command = command.with_title(title);
+    }
+
+    if let Some(system_instructions) = request.system_instructions {
+        command = command.with_system_instructions(system_instructions);
+    }
+
+    if let Some(context_group) = request.context_group {
+        command = command.with_context_group(context_group);
+    }
+
+    if let Some(status_str) = request.status {
+        use std::str::FromStr;
+        if let Ok(status) = ExecutionContextStatus::from_str(&status_str) {
+            command = command.with_status(status);
+        }
+    }
+
+    command
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
 #[derive(Deserialize)]
 pub struct ExecuteParams {
     pub context_id: i64,

@@ -88,6 +88,7 @@ pub struct AgentExecutor {
     current_workflow_state: Option<HashMap<String, Value>>,
     current_workflow_node_id: Option<String>,
     current_workflow_execution_path: Vec<String>,
+    system_instructions: Option<String>,
 }
 
 pub struct AgentExecutorBuilder {
@@ -135,11 +136,15 @@ impl AgentExecutorBuilder {
             current_workflow_state: None,
             current_workflow_node_id: None,
             current_workflow_execution_path: Vec::new(),
+            system_instructions: None,
         };
 
         let context = GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
             .execute(&self.app_state)
             .await?;
+
+        // Load system instructions from the execution context
+        executor.system_instructions = context.system_instructions;
 
         if context.status == ExecutionContextStatus::WaitingForInput {
             if let Some(state) = context.execution_state {
@@ -632,9 +637,21 @@ impl AgentExecutor {
             },
         };
 
+        // Convert context to JSON and add custom system instructions if available
+        let mut context_json = serde_json::to_value(&context)?;
+        if let Some(ref sys_instructions) = self.system_instructions {
+            if let Some(obj) = context_json.as_object_mut() {
+                let custom_instructions = format!(
+                    "CUSTOM INSTRUCTIONS FOR THIS CHAT:\n{}", 
+                    sys_instructions
+                );
+                obj.insert("custom_system_instructions".to_string(), json!(custom_instructions));
+            }
+        }
+        
         let request_body = render_template_with_prompt(
             AgentTemplates::STEP_DECISION,
-            serde_json::to_value(&context)?,
+            context_json,
         )
         .map_err(|e| AppError::Internal(format!("Failed to render step decision template: {e}")))?;
 
