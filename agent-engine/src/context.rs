@@ -1197,7 +1197,6 @@ impl ContextOrchestrator {
         let mut successful_docs = Vec::new();
         let mut failed_docs = Vec::new();
 
-        // Fetch chunks for each document ID
         for document_id in &document_ids {
             tracing::info!("Fetching chunks for document_id: {}", document_id);
 

@@ -202,9 +202,6 @@ pub async fn execute_agent_async(
     Json(request): Json<ExecuteAgentRequest>,
 ) -> ApiResult<ExecuteAgentResponse> {
     let context_id = params.context_id;
-
-    println!("{} {} {}", deployment_id, context_id, request.agent_name);
-
     GetExecutionContextQuery::new(context_id, deployment_id)
         .execute(&app_state)
         .await?;

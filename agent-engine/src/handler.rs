@@ -126,7 +126,8 @@ impl AgentHandler {
         let jetstream = self.app_state.nats_jetstream.clone();
         tokio::spawn(async move {
             while let Some(message) = receiver.recv().await {
-                let _ = publish_stream_event(&jetstream, &context_key, deployment_id, message).await;
+                let _ =
+                    publish_stream_event(&jetstream, &context_key, deployment_id, message).await;
             }
         });
     }
@@ -234,19 +235,23 @@ async fn publish_stream_event(
         .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {e}")))?;
 
     let worker_task = dto::json::NatsTaskMessage {
-        task_id: format!("agent_stream_{}_{}", context_key, chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)),
+        task_id: format!(
+            "agent_stream_{}_{}",
+            context_key,
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        ),
         task_type: "agent.stream_log".to_string(),
         payload: serde_json::json!({
-            "context_id": context_key.parse::<i64>().unwrap_or(0),
-            "deployment_id": deployment_id,
+            "context_id": context_key,
+            "deployment_id": deployment_id.to_string(),
             "message_type": message_type,
             "payload": serde_json::from_slice::<serde_json::Value>(&payload).unwrap_or(serde_json::Value::Null),
         }),
     };
-    
+
     let worker_payload = serde_json::to_vec(&worker_task)
         .map_err(|e| AppError::Internal(format!("Failed to serialize worker task: {e}")))?;
-    
+
     jetstream
         .publish("worker.tasks.agent.stream_log", worker_payload.into())
         .await

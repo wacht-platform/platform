@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AgentStreamLogTask {
-    pub context_id: i64,
-    pub deployment_id: i64,
+    pub context_id: String,
+    pub deployment_id: String,
     pub message_type: String,
     pub payload: serde_json::Value,
 }
