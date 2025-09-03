@@ -344,23 +344,16 @@ impl ContextOrchestrator {
             // Update metrics for progress tracking
             let current_progress = search_metrics.update(&derivation.search_query, &results);
 
-            // HARD ENFORCEMENT: Override LLM decision if mandatory stop conditions are met
             let mut forced_stop = false;
 
-            // Condition 1: Perfect loop detection (query similarity >= 0.9)
             if current_progress.query_similarity_score >= 0.9 {
                 forced_stop = true;
-            }
-            // Condition 2: Zero progress for 2+ consecutive iterations
-            else if current_progress.new_sources_this_iteration == 0 && iteration >= 3 {
-                // Check if last 2 iterations had zero progress
+            } else if current_progress.new_sources_this_iteration == 0 && iteration >= 3 {
                 let recent_low_progress = search_metrics.consecutive_zero_progress >= 2;
                 if recent_low_progress {
                     forced_stop = true;
                 }
-            }
-            // Condition 3: Found 15+ documents in listing operation
-            else if results.len() >= 15
+            } else if results.len() >= 15
                 && matches!(
                     derivation.next_action,
                     SearchScope::ListKnowledgeBaseDocuments

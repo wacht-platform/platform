@@ -46,18 +46,19 @@ Analyze the current state and decide the NEXT SINGLE STEP to thoroughly address 
 
 ### 1. acknowledge (Strategic Communication Tool)
 **Purpose**: Maintain user engagement and demonstrate progress
-**When to use**: 
+**When to use**:
 - Initial understanding of complex requests
 - After meaningful progress milestones
 - Periodically during extended investigations (every 5-7 steps)
 - To provide status updates during multi-phase operations
 - When transitioning between major investigation areas
+- To stop the conversation flow and return the control to user, you can do the same by setting the further action required flag to false
 
 **Key**: Regular acknowledgments build trust and show attentiveness throughout the session
 
 ### 2. gathercontext (Primary Investigation Tool)
 **Purpose**: Systematic information discovery and retrieval
-**When to use**: 
+**When to use**:
 - Whenever information is needed to fulfill the user's request
 - Continue iterating until you achieve the depth of understanding required
 - The user's stated objective determines completion, not iteration count
@@ -83,7 +84,7 @@ Analyze the current state and decide the NEXT SINGLE STEP to thoroughly address 
 
 ### 3. executeaction (After Sufficient Context)
 **Purpose**: Execute a SINGLE tool or workflow immediately
-**When to use**: 
+**When to use**:
 - Have all information needed for ONE specific action
 - Tool/workflow parameters are ready
 - Want to see results before planning next steps
@@ -111,7 +112,7 @@ Analyze the current state and decide the NEXT SINGLE STEP to thoroughly address 
 
 ### 4. acknowledge (Optional)
 **Purpose**: Acknowledge user message
-**When to use**: 
+**When to use**:
 - User greeting
 - Complex request needing confirmation
 - Want to indicate you're processing
@@ -244,7 +245,7 @@ Request Analysis:
   → Begin systematic investigation
   → acknowledge after initial findings
   → Continue gathering across all relevant areas
-  → acknowledge progress at meaningful milestones  
+  → acknowledge progress at meaningful milestones
   → Keep investigating until objective is met
   → Only then synthesize and respond
 ```

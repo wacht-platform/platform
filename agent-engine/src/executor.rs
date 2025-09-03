@@ -637,26 +637,25 @@ impl AgentExecutor {
             },
         };
 
-        // Convert context to JSON and add custom system instructions if available
         let mut context_json = serde_json::to_value(&context)?;
         if let Some(ref sys_instructions) = self.system_instructions {
             if let Some(obj) = context_json.as_object_mut() {
-                let custom_instructions = format!(
-                    "CUSTOM INSTRUCTIONS FOR THIS CHAT:\n{}", 
-                    sys_instructions
+                let custom_instructions =
+                    format!("CUSTOM INSTRUCTIONS FOR THIS CHAT:\n{}\n\n\n Make sure you keep these guidelines in mind but always give more weightage to the previous instructions given to you", sys_instructions);
+                obj.insert(
+                    "custom_system_instructions".to_string(),
+                    json!(custom_instructions),
                 );
-                obj.insert("custom_system_instructions".to_string(), json!(custom_instructions));
             }
         }
-        
-        let request_body = render_template_with_prompt(
-            AgentTemplates::STEP_DECISION,
-            context_json,
-        )
-        .map_err(|e| AppError::Internal(format!("Failed to render step decision template: {e}")))?;
+
+        let request_body = render_template_with_prompt(AgentTemplates::STEP_DECISION, context_json)
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to render step decision template: {e}"))
+            })?;
 
         let decision = self
-            .create_main_llm()?
+            .create_strong_llm()?
             .generate_structured_content::<StepDecision>(request_body)
             .await?;
 
@@ -715,7 +714,7 @@ impl AgentExecutor {
         .map_err(|e| AppError::Internal(format!("Failed to render validation template: {e}")))?;
 
         let validation = self
-            .create_main_llm()?
+            .create_weak_llm()?
             .generate_structured_content::<ValidationResponse>(request_body)
             .await?;
 
@@ -751,7 +750,7 @@ impl AgentExecutor {
         .map_err(|e| AppError::Internal(format!("Failed to render summary template: {e}")))?;
 
         let summary = self
-            .create_main_llm()?
+            .create_weak_llm()?
             .generate_structured_content::<Value>(request_body)
             .await?;
 
@@ -854,7 +853,7 @@ impl AgentExecutor {
             AppError::Internal(format!("Failed to render user input request template: {e}"))
         })?;
 
-        self.create_main_llm()?
+        self.create_weak_llm()?
             .generate_structured_content::<serde_json::Value>(request_body)
             .await
     }
@@ -1203,7 +1202,7 @@ impl AgentExecutor {
             ))
         })?;
 
-        self.create_main_llm()?
+        self.create_weak_llm()?
             .generate_structured_content::<ParameterGenerationResponse>(request_body)
             .await
     }
@@ -1428,11 +1427,19 @@ impl AgentExecutor {
         serde_json::to_string(content).unwrap()
     }
 
-    fn create_main_llm(&self) -> Result<GeminiClient, AppError> {
+    fn create_weak_llm(&self) -> Result<GeminiClient, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
         Ok(GeminiClient::new(
             api_key,
             Some("gemini-2.5-flash".to_string()),
+        ))
+    }
+
+    fn create_strong_llm(&self) -> Result<GeminiClient, AppError> {
+        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
+        Ok(GeminiClient::new(
+            api_key,
+            Some("gemini-2.5-pro".to_string()),
         ))
     }
 
@@ -1784,7 +1791,7 @@ impl AgentExecutor {
         })?;
 
         let evaluation = self
-            .create_main_llm()?
+            .create_weak_llm()?
             .generate_structured_content::<TriggerEvaluation>(request_body)
             .await?;
 
@@ -1909,7 +1916,7 @@ impl AgentExecutor {
         };
 
         let request_body = serde_json::to_string(&generation_config)?;
-        let llm = self.create_main_llm()?;
+        let llm = self.create_weak_llm()?;
         let response: Value = llm
             .generate_structured_content(request_body)
             .await
@@ -1981,7 +1988,7 @@ impl AgentExecutor {
         .map_err(|e| AppError::Internal(format!("Failed to render switch case template: {e}")))?;
 
         let evaluation = self
-            .create_main_llm()?
+            .create_weak_llm()?
             .generate_structured_content::<SwitchCaseEvaluation>(request_body)
             .await?;
 
@@ -2333,7 +2340,7 @@ impl AgentExecutor {
         })?;
 
         let summary_response = self
-            .create_main_llm()?
+            .create_weak_llm()?
             .generate_structured_content::<serde_json::Value>(request_body)
             .await
             .map_err(|e| AppError::Internal(format!("Summary generation failed: {e}")))?;
