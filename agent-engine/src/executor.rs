@@ -1429,14 +1429,6 @@ impl AgentExecutor {
         ))
     }
 
-    fn create_strong_llm(&self) -> Result<GeminiClient, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
-        Ok(GeminiClient::new(
-            api_key,
-            Some("gemini-2.5-pro".to_string()),
-        ))
-    }
-
     pub async fn execute_workflow_task(
         &self,
         workflow_call: &WorkflowCall,
