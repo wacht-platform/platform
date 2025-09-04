@@ -321,23 +321,17 @@ impl AgentExecutor {
             )
             .await?;
 
-            // Clear workflow state after completion
             self.current_workflow_id = None;
             self.current_workflow_state = None;
             self.current_workflow_node_id = None;
             self.current_workflow_execution_path = Vec::new();
-
-            // Continue with normal agent flow after workflow completion
         }
 
-        // Adaptive iteration loop - execute one step at a time
         let mut iteration = 0;
         loop {
             iteration += 1;
 
-            // Check iteration limit but be more flexible
             if iteration > MAX_LOOP_ITERATIONS {
-                // Instead of just summarizing, try to deliver what we have
                 self.deliver_final_response().await?;
                 return Ok(());
             }
@@ -410,7 +404,7 @@ impl AgentExecutor {
                 })?;
 
                 self.load_memories_with_directive(directive).await?;
-                Ok(true) // Continue execution
+                Ok(true)
             }
 
             NextStep::ExecuteAction => {
@@ -486,27 +480,24 @@ impl AgentExecutor {
                 match validation_result.next_action {
                     NextAction::Complete => {
                         self.generate_and_send_summary().await?;
-                        Ok(false) // Stop execution
+                        Ok(false)
                     }
-                    NextAction::Continue => {
-                        Ok(true) // Continue iterating
-                    }
+                    NextAction::Continue => Ok(true),
                 }
             }
 
             NextStep::DeliverResponse => {
                 self.generate_and_send_summary().await?;
-                Ok(false) // Stop execution
+                Ok(false)
             }
 
             NextStep::RequestUserInput => {
                 self.request_user_input().await?;
-                Ok(false) // Stop execution
+                Ok(false)
             }
 
             NextStep::ExamineTool => {
                 if let Some(examine_data) = decision.examine_tool {
-                    // Find the tool by name
                     let tool = self
                         .agent
                         .tools
@@ -519,7 +510,6 @@ impl AgentExecutor {
                             ))
                         })?;
 
-                    // Store tool examination as context results
                     self.store_conversation(
                         ConversationContent::ContextResults {
                             query: format!("examine_tool: {}", examine_data.tool_name),
@@ -531,7 +521,7 @@ impl AgentExecutor {
                     )
                     .await?;
 
-                    Ok(true) // Continue execution
+                    Ok(true)
                 } else {
                     Err(AppError::Internal(
                         "Examine tool data missing for examine_tool step".to_string(),
@@ -541,7 +531,6 @@ impl AgentExecutor {
 
             NextStep::ExamineWorkflow => {
                 if let Some(examine_data) = decision.examine_workflow {
-                    // Find the workflow by name
                     let workflow = self
                         .agent
                         .workflows
@@ -554,7 +543,6 @@ impl AgentExecutor {
                             ))
                         })?;
 
-                    // Store workflow examination as context results
                     self.store_conversation(
                         ConversationContent::ContextResults {
                             query: format!("examine_workflow: {}", examine_data.workflow_name),
@@ -566,7 +554,7 @@ impl AgentExecutor {
                     )
                     .await?;
 
-                    Ok(true) // Continue execution
+                    Ok(true)
                 } else {
                     Err(AppError::Internal(
                         "Examine workflow data missing for examine_workflow step".to_string(),
@@ -575,15 +563,13 @@ impl AgentExecutor {
             }
 
             NextStep::Complete => {
-                // Reinforce memories that were loaded during this execution
                 self.reinforce_used_memories().await?;
 
-                // Update status to Idle when execution completes
                 UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
                     .with_status(ExecutionContextStatus::Idle)
                     .execute(&self.app_state)
                     .await?;
-                Ok(false) // Stop execution
+                Ok(false)
             }
         }
     }
@@ -647,7 +633,7 @@ impl AgentExecutor {
             })?;
 
         let decision = self
-            .create_strong_llm()?
+            .create_weak_llm()?
             .generate_structured_content::<StepDecision>(request_body)
             .await?;
 
