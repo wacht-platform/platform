@@ -1167,23 +1167,34 @@ impl AgentExecutor {
         tool: &AiTool,
         parameter_schema: &Value,
     ) -> Result<ParameterGenerationResponse, AppError> {
-        let request_body = render_template_with_prompt(
-            AgentTemplates::PARAMETER_GENERATION,
-            json!({
-                "conversation_history": self.get_conversation_history_for_llm().await,
-                "tool_name": tool.name,
-                "tool_description": tool.description.as_ref().unwrap_or(&"".to_string()),
-                "parameter_schema": parameter_schema,
-                "user_request": self.user_request,
-                "current_objective": self.current_objective,
-                "conversation_insights": self.conversation_insights,
-            }),
-        )
-        .map_err(|e| {
-            AppError::Internal(format!(
-                "Failed to render parameter generation template: {e}"
-            ))
-        })?;
+        let mut context_json = json!({
+            "conversation_history": self.get_conversation_history_for_llm().await,
+            "tool_name": tool.name,
+            "tool_description": tool.description.as_ref().unwrap_or(&"".to_string()),
+            "parameter_schema": parameter_schema,
+            "user_request": self.user_request,
+            "current_objective": self.current_objective,
+            "conversation_insights": self.conversation_insights,
+        });
+
+        if let Some(ref sys_instructions) = self.system_instructions {
+            if let Some(obj) = context_json.as_object_mut() {
+                let custom_instructions =
+                    format!("CUSTOM INSTRUCTIONS FOR THIS CHAT:\n{}\n\n\n Make sure you keep these guidelines in mind but always give more weightage to the previous instructions given to you", sys_instructions);
+                obj.insert(
+                    "custom_system_instructions".to_string(),
+                    json!(custom_instructions),
+                );
+            }
+        }
+
+        let request_body =
+            render_template_with_prompt(AgentTemplates::PARAMETER_GENERATION, context_json)
+                .map_err(|e| {
+                    AppError::Internal(format!(
+                        "Failed to render parameter generation template: {e}"
+                    ))
+                })?;
 
         self.create_weak_llm()?
             .generate_structured_content::<ParameterGenerationResponse>(request_body)
