@@ -71,6 +71,9 @@ impl Command for UploadToKnowledgeBaseBucketCommand {
             .await
             .map_err(|e| AppError::S3(e.to_string()))?;
 
-        Ok(format!("https://wacht-knowledge-base.r2.cloudflarestorage.com/{}", self.file_path))
+        Ok(format!(
+            "https://wacht-knowledge-base.r2.cloudflarestorage.com/{}",
+            self.file_path
+        ))
     }
 }

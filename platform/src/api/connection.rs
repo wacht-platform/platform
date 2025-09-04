@@ -1,7 +1,5 @@
 use crate::{
-    application::{
-        response::{ApiResult, ApiSuccess, PaginatedResponse},
-    },
+    application::response::{ApiResult, ApiSuccess, PaginatedResponse},
     middleware::RequireDeployment,
 };
 use common::state::AppState;

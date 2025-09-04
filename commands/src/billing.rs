@@ -1,7 +1,7 @@
-use models::billing::Subscription;
 use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
+use models::billing::Subscription;
 
 pub struct CreateBillingAccountCommand {
     pub owner_id: String,
@@ -23,7 +23,7 @@ impl Command for CreateBillingAccountCommand {
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
         let id = state.sf.next_id().unwrap() as i64;
-        
+
         sqlx::query!(
             r#"
             INSERT INTO billing_accounts (
@@ -63,7 +63,7 @@ impl Command for CreateBillingAccountCommand {
         )
         .execute(&state.db_pool)
         .await?;
-        
+
         Ok(id)
     }
 }
@@ -89,74 +89,74 @@ impl Command for UpdateBillingAccountCommand {
         let mut query = String::from("UPDATE billing_accounts SET updated_at = NOW()");
         let mut params: Vec<String> = Vec::new();
         let mut param_count = 1;
-        
+
         if let Some(legal_name) = self.legal_name {
             query.push_str(&format!(", legal_name = ${}", param_count));
             params.push(legal_name);
             param_count += 1;
         }
-        
+
         if let Some(billing_email) = self.billing_email {
             query.push_str(&format!(", billing_email = ${}", param_count));
             params.push(billing_email);
             param_count += 1;
         }
-        
+
         if let Some(billing_phone) = self.billing_phone {
             query.push_str(&format!(", billing_phone = ${}", param_count));
             params.push(billing_phone);
             param_count += 1;
         }
-        
+
         if let Some(tax_id) = self.tax_id {
             query.push_str(&format!(", tax_id = ${}", param_count));
             params.push(tax_id);
             param_count += 1;
         }
-        
+
         if let Some(address_line1) = self.address_line1 {
             query.push_str(&format!(", address_line1 = ${}", param_count));
             params.push(address_line1);
             param_count += 1;
         }
-        
+
         if let Some(address_line2) = self.address_line2 {
             query.push_str(&format!(", address_line2 = ${}", param_count));
             params.push(address_line2);
             param_count += 1;
         }
-        
+
         if let Some(city) = self.city {
             query.push_str(&format!(", city = ${}", param_count));
             params.push(city);
             param_count += 1;
         }
-        
+
         if let Some(state) = self.state {
             query.push_str(&format!(", state = ${}", param_count));
             params.push(state);
             param_count += 1;
         }
-        
+
         if let Some(postal_code) = self.postal_code {
             query.push_str(&format!(", postal_code = ${}", param_count));
             params.push(postal_code);
             param_count += 1;
         }
-        
+
         if let Some(country) = self.country {
             query.push_str(&format!(", country = ${}", param_count));
             params.push(country);
             param_count += 1;
         }
-        
+
         query.push_str(&format!(" WHERE id = ${}", param_count));
-        
+
         sqlx::query(&query)
             .bind(self.id)
             .execute(&state.db_pool)
             .await?;
-        
+
         Ok(())
     }
 }
@@ -173,7 +173,7 @@ impl Command for CreateSubscriptionCommand {
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
         let id = state.sf.next_id().unwrap() as i64;
-        
+
         let subscription = sqlx::query_as!(
             Subscription,
             r#"
@@ -196,7 +196,7 @@ impl Command for CreateSubscriptionCommand {
         )
         .fetch_one(&state.db_pool)
         .await?;
-        
+
         Ok(subscription)
     }
 }
@@ -223,7 +223,7 @@ impl Command for UpdateSubscriptionStatusCommand {
         )
         .fetch_one(&state.db_pool)
         .await?;
-        
+
         Ok(subscription)
     }
 }
@@ -248,7 +248,7 @@ impl Command for UpdateBillingAccountStatusCommand {
         )
         .execute(&state.db_pool)
         .await?;
-        
+
         Ok(())
     }
 }
@@ -270,23 +270,23 @@ impl Command for UpsertSubscriptionCommand {
         )
         .fetch_optional(&state.db_pool)
         .await?;
-        
+
         let billing_account_id = match billing_account_id {
             Some(id) => id,
             None => {
                 return Err(AppError::Validation(
-                    "Billing account not found for owner".to_string()
+                    "Billing account not found for owner".to_string(),
                 ));
             }
         };
-        
+
         let existing_id: Option<i64> = sqlx::query_scalar!(
             "SELECT id FROM subscriptions WHERE billing_account_id = $1",
             billing_account_id
         )
         .fetch_optional(&state.db_pool)
         .await?;
-        
+
         let subscription = if let Some(id) = existing_id {
             sqlx::query_as!(
                 Subscription,
@@ -331,7 +331,7 @@ impl Command for UpsertSubscriptionCommand {
             .fetch_one(&state.db_pool)
             .await?
         };
-        
+
         Ok(subscription)
     }
 }

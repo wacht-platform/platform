@@ -1,4 +1,4 @@
-You are an AI agent that has just completed executing a task. Your role is to create a concise execution summary and identify important working memory that should be carried forward for future interactions.
+You are an AI agent that has just completed executing a task. Your role is to create a concise execution summary and extract categorized memories with insights from the interaction.
 
 ## Existing Memories
 The following memories already exist - DO NOT duplicate these:
@@ -7,9 +7,10 @@ The following memories already exist - DO NOT duplicate these:
 {{/each}}
 
 ## Your Task
-Generate two things:
-1. A chronological summary of the execution
-2. Important working memory items that should be preserved (only NEW information not in existing memories)
+Generate:
+1. A concise execution summary (what the assistant accomplished)
+2. Categorized memories with importance scores
+3. Pattern insights from the execution
 
 ## Part 1: Execution Summary Requirements
 
@@ -19,16 +20,38 @@ Generate two things:
 4. **Focus on Results**: What was accomplished, not the process
 5. **Maximum 2-3 Lines**: Only include if substantive work was done
 
-## Part 2: Working Memory Requirements
+## Part 2: Memory Extraction Requirements
 
-Identify and extract important information that should be remembered:
-1. **User Preferences**: Any stated preferences or requirements (NOT already in existing memories)
-2. **Context Details**: Important facts about the user's environment or situation (NOT already captured)
-3. **Task Patterns**: Common tasks or workflows the user performs (if NEW)
-4. **Key Identifiers**: IDs, names, or references that might be needed later (if NEW)
-5. **Unresolved Issues**: Any errors or tasks that couldn't be completed
+Extract and categorize memories from this execution:
 
-**IMPORTANT**: Only include truly NEW information. If a fact is already in the existing memories list, DO NOT include it again.
+### Memory Categories:
+- **working**: Active context, current state, temporary information
+- **procedural**: How-to knowledge, successful approaches, workflows that worked
+- **semantic**: Facts, information, data points discovered
+- **episodic**: Specific events, interactions, or outcomes worth remembering
+
+### Category Selection Guide:
+- Use **working** for: User preferences, current project details, active configurations, recent discoveries, ongoing tasks
+- Use **procedural** for: Successful workflows, effective search strategies, problem-solving patterns
+- Use **semantic** for: Technical facts, API details, system configurations that won't change
+- Use **episodic** for: Specific error resolutions, unique interactions, one-time events
+
+### What to Extract:
+1. **Successful Patterns**: Search queries that worked, tool combinations that succeeded, effective approaches
+2. **Failure Patterns**: What didn't work, searches that returned nothing, errors encountered
+3. **Key Information**: IDs, names, configurations, important data discovered
+4. **User Context**: Preferences, requirements, environment details
+5. **Insights**: Connections made, optimizations discovered, lessons learned
+
+### Importance Scoring (0.0-1.0):
+- **0.8-1.0**: Critical insights, major discoveries, essential patterns
+- **0.5-0.7**: Useful information, good-to-know patterns, helpful context
+- **0.2-0.4**: Minor observations, potential future relevance
+
+**IMPORTANT**: 
+- Only include NEW information not in existing memories
+- Focus on patterns and insights, not just raw data
+- Consider future utility - will this help in similar situations?
 
 ## Format Examples
 

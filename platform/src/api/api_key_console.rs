@@ -6,8 +6,8 @@ use axum::http::StatusCode;
 use wacht::api::api_keys;
 
 use crate::application::response::ApiResult;
-use common::state::AppState;
 use crate::middleware::RequireDeployment;
+use common::state::AppState;
 use dto::json::api_key::{
     ApiKeyStats, ApiKeyStatus, CreateApiKeyRequest, ListApiKeysResponse, RevokeApiKeyRequest,
 };
@@ -50,9 +50,7 @@ pub async fn activate_api_keys(
     let app_name = deployment_id.to_string();
 
     // Check if already exists using SDK
-    let existing = api_keys::get_api_key_app(&app_name)
-        .await
-        .is_ok();
+    let existing = api_keys::get_api_key_app(&app_name).await.is_ok();
 
     if existing {
         return Err((
@@ -74,7 +72,7 @@ pub async fn activate_api_keys(
     let sdk_app = api_keys::create_api_key_app(request)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    
+
     Ok(ApiKeyApp::from(sdk_app).into())
 }
 
@@ -97,7 +95,7 @@ pub async fn deactivate_api_keys(
     api_keys::update_api_key_app(&app_name, request)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    
+
     Ok(().into())
 }
 
@@ -111,10 +109,8 @@ pub async fn get_api_key_stats(
     let sdk_keys = api_keys::list_api_keys(&app_name, Some(true))
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    
-    let keys: Vec<ApiKey> = sdk_keys.into_iter()
-        .map(ApiKey::from)
-        .collect();
+
+    let keys: Vec<ApiKey> = sdk_keys.into_iter().map(ApiKey::from).collect();
 
     let total_keys = keys.len() as i64;
     let active_keys = keys.iter().filter(|k| k.is_active).count() as i64;
@@ -160,10 +156,8 @@ pub async fn list_api_keys(
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
             }
         })?;
-    
-    let keys: Vec<ApiKey> = sdk_keys.into_iter()
-        .map(ApiKey::from)
-        .collect();
+
+    let keys: Vec<ApiKey> = sdk_keys.into_iter().map(ApiKey::from).collect();
 
     Ok(ListApiKeysResponse { keys }.into())
 }
@@ -190,7 +184,7 @@ pub async fn create_api_key(
 
     // Always use default read-only scopes for console-created API keys
     let permissions = models::api_key_permissions::ApiKeyScopeHelper::scopes_to_strings(
-        &models::api_key_permissions::ApiKeyScope::default_scopes()
+        &models::api_key_permissions::ApiKeyScope::default_scopes(),
     );
 
     // Create API key using SDK
@@ -214,7 +208,7 @@ pub async fn create_api_key(
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
             }
         })?;
-    
+
     Ok(ApiKeyWithSecret::from(sdk_key).into())
 }
 
@@ -229,37 +223,31 @@ pub async fn revoke_api_key(
         reason: request.reason,
     };
 
-    api_keys::revoke_api_key(sdk_request)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("404") || e.to_string().contains("Not Found") {
-                (StatusCode::NOT_FOUND, "API key not found".to_string())
-            } else {
-                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-            }
-        })?;
-    
+    api_keys::revoke_api_key(sdk_request).await.map_err(|e| {
+        if e.to_string().contains("404") || e.to_string().contains("Not Found") {
+            (StatusCode::NOT_FOUND, "API key not found".to_string())
+        } else {
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        }
+    })?;
+
     Ok(().into())
 }
 
 // Rotate an API key
-pub async fn rotate_api_key(
-    Path((_, key_id)): Path<(i64, i64)>,
-) -> ApiResult<ApiKeyWithSecret> {
+pub async fn rotate_api_key(Path((_, key_id)): Path<(i64, i64)>) -> ApiResult<ApiKeyWithSecret> {
     // Rotate using SDK
     let sdk_request = api_keys::RotateApiKeyRequest {
         key_id: key_id.to_string(),
     };
 
-    let sdk_key = api_keys::rotate_api_key(sdk_request)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("404") || e.to_string().contains("Not Found") {
-                (StatusCode::NOT_FOUND, "API key not found".to_string())
-            } else {
-                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-            }
-        })?;
-    
+    let sdk_key = api_keys::rotate_api_key(sdk_request).await.map_err(|e| {
+        if e.to_string().contains("404") || e.to_string().contains("Not Found") {
+            (StatusCode::NOT_FOUND, "API key not found".to_string())
+        } else {
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        }
+    })?;
+
     Ok(ApiKeyWithSecret::from(sdk_key).into())
 }

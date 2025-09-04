@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                w.id, w.created_at, w.updated_at, w.name, w.description,\n                w.deployment_id, w.configuration, w.workflow_definition,\n                COALESCE(a.agents_count, 0) as agents_count,\n                e.last_execution_at\n            FROM ai_workflows w\n            LEFT JOIN (\n                SELECT workflow_id, COUNT(*) as agents_count\n                FROM ai_agent_workflows\n                GROUP BY workflow_id\n            ) a ON w.id = a.workflow_id\n            LEFT JOIN (\n                SELECT workflow_id, MAX(created_at) as last_execution_at\n                FROM ai_workflow_executions\n                GROUP BY workflow_id\n            ) e ON w.id = e.workflow_id\n            WHERE w.id = $1 AND w.deployment_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "configuration",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "workflow_definition",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "agents_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_execution_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "5734f8ec3aab556207d08c1c46051933c87a6d422ea64dcf94af860687131061"
+}

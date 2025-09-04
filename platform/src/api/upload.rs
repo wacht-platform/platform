@@ -1,7 +1,4 @@
-use crate::{
-    application::response::ApiResult,
-    middleware::RequireDeployment,
-};
+use crate::{application::response::ApiResult, middleware::RequireDeployment};
 use common::state::AppState;
 
 use commands::{Command, UpdateDeploymentDisplaySettingsCommand, UploadToCdnCommand};

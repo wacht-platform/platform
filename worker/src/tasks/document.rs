@@ -10,7 +10,6 @@ pub struct ProcessDocumentTask {
     pub document_id: i64,
 }
 
-
 pub async fn process_document_impl(
     deployment_id: i64,
     knowledge_base_id: i64,

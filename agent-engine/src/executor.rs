@@ -10,14 +10,15 @@ pub enum ResumeContext {
 }
 use commands::{
     Command, CreateConversationCommand, CreateMemoryCommand, GenerateEmbeddingsCommand,
-    UpdateExecutionContextQuery,
+    UpdateExecutionContextQuery, UpdateMemoryAccessCommand,
 };
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::agent_executor::{
-    ConversationInsights, ConverseRequest, NextStep, ObjectiveDefinition, StepDecision,
-    TaskExecutionResult,
+    ContextGatheringDirective, ConversationInsights, ConverseRequest, MemoryLoadingDirective,
+    MemoryScope, NextStep, ObjectiveDefinition, StepDecision, TaskExecutionResult,
 };
+use dto::json::agent_memory::MemoryCategory;
 use dto::json::agent_responses::{
     ActionsList, ExecutionAction, NextAction, ParameterGenerationResponse, SwitchCaseEvaluation,
     TaskExecution, TaskType, TriggerEvaluation, ValidationResponse,
@@ -38,38 +39,14 @@ use models::{
     UserInputType, WorkflowEdge, WorkflowExecutionState, WorkflowNode, WorkflowNodeType,
 };
 use queries::{
-    GetExecutionContextQuery, GetLLMConversationHistoryQuery, GetMRUMemoriesQuery,
-    GetToolByIdQuery, Query,
+    GetAgentMemoriesQuery, GetExecutionContextQuery, GetLLMConversationHistoryQuery,
+    GetMRUMemoriesQuery, GetSessionMemoriesQuery, GetToolByIdQuery, Query,
+    SearchMemoriesWithDecayQuery,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
 const MAX_LOOP_ITERATIONS: usize = 50;
-
-fn calculate_memory_importance(content: &str) -> f64 {
-    let mut importance: f64 = 0.5;
-
-    let word_count = content.split_whitespace().count();
-    if word_count > 20 {
-        importance += 0.1;
-    }
-    if word_count > 50 {
-        importance += 0.1;
-    }
-
-    // Increase importance for memories with specific identifiers
-    if content.contains("id:") || content.contains("ID:") || content.contains("identifier") {
-        importance += 0.15;
-    }
-
-    // Increase importance for preference-related content
-    if content.contains("prefer") || content.contains("like") || content.contains("want") {
-        importance += 0.1;
-    }
-
-    // Cap at 0.95 to leave room for manual adjustments
-    importance.min(0.95)
-}
 
 pub struct AgentExecutor {
     agent: AiAgentWithFeatures,
@@ -80,6 +57,7 @@ pub struct AgentExecutor {
     tool_executor: ToolExecutor,
     channel: tokio::sync::mpsc::Sender<StreamEvent>,
     memories: Vec<MemoryRecord>,
+    loaded_memory_ids: std::collections::HashSet<i64>, // Track loaded memories for reinforcement
     user_request: String,
     current_objective: Option<ObjectiveDefinition>,
     conversation_insights: Option<ConversationInsights>,
@@ -128,6 +106,7 @@ impl AgentExecutorBuilder {
             user_request: String::new(),
             channel: self.channel,
             memories: Vec::new(),
+            loaded_memory_ids: std::collections::HashSet::new(),
             conversations: Vec::new(),
             current_objective: None,
             conversation_insights: None,
@@ -410,18 +389,28 @@ impl AgentExecutor {
             }
 
             NextStep::GatherContext => {
-                let objective = decision.context_gathering_objective.as_deref();
-                if objective.is_none() {
-                    return Err(AppError::Internal(
-                        "Context gathering objective is required when using gather_context step"
+                let directive = decision.context_gathering_directive.ok_or_else(|| {
+                    AppError::Internal(
+                        "Context gathering directive is required for gathercontext step"
                             .to_string(),
-                    ));
-                }
+                    )
+                })?;
 
-                match self.gather_context(objective).await {
+                match self.gather_context(directive).await {
                     Ok(_) => Ok(true),
                     Err(e) => Err(e),
                 }
+            }
+
+            NextStep::LoadMemory => {
+                let directive = decision.memory_loading_directive.ok_or_else(|| {
+                    AppError::Internal(
+                        "Memory loading directive is required for loadmemory step".to_string(),
+                    )
+                })?;
+
+                self.load_memories_with_directive(directive).await?;
+                Ok(true) // Continue execution
             }
 
             NextStep::ExecuteAction => {
@@ -586,6 +575,9 @@ impl AgentExecutor {
             }
 
             NextStep::Complete => {
+                // Reinforce memories that were loaded during this execution
+                self.reinforce_used_memories().await?;
+
                 // Update status to Idle when execution completes
                 UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
                     .with_status(ExecutionContextStatus::Idle)
@@ -776,28 +768,33 @@ impl AgentExecutor {
         self.generate_and_send_summary().await
     }
 
-    async fn gather_context(&mut self, specific_objective: Option<&str>) -> Result<(), AppError> {
-        // Create a focused objective for context gathering if provided by step decision
-        let context_objective = if let Some(objective) = specific_objective {
-            Some(ObjectiveDefinition {
-                primary_goal: objective.to_string(),
-                success_criteria: vec!["Context gathering completed successfully".to_string()],
-                constraints: vec!["Single-purpose search".to_string()],
-                context_from_history: "Directed by step decision system".to_string(),
-                inferred_intent: objective.to_string(),
-            })
-        } else {
-            self.current_objective.clone()
-        };
+    async fn gather_context(
+        &mut self,
+        directive: ContextGatheringDirective,
+    ) -> Result<(), AppError> {
+        // Create a focused objective from the directive
+        let context_objective = Some(ObjectiveDefinition {
+            primary_goal: directive.objective.clone(),
+            success_criteria: directive
+                .focus_areas
+                .clone()
+                .unwrap_or_else(|| vec!["Find relevant information".to_string()]),
+            constraints: vec![format!("Search pattern: {:?}", directive.pattern)],
+            context_from_history: format!("Pattern-based search: {:?}", directive.pattern),
+            inferred_intent: directive.objective.clone(),
+        });
 
-        // Store the objective for the query field
-        let query_description = specific_objective
-            .unwrap_or("General context gathering")
-            .to_string();
+        // Store pattern context for the orchestrator
+        let query_description = format!("[{:?}] {}", directive.pattern, directive.objective);
 
         let context_results = match self
             .context_orchestrator
-            .gather_context(&self.conversations, &context_objective)
+            .gather_context(
+                &self.conversations,
+                &context_objective,
+                directive.pattern,
+                directive.expected_depth,
+            )
             .await
         {
             Ok(results) => results,
@@ -2101,12 +2098,200 @@ impl AgentExecutor {
         })
     }
 
+    async fn load_memories_with_directive(
+        &mut self,
+        directive: MemoryLoadingDirective,
+    ) -> Result<(), AppError> {
+        tracing::info!(
+            "Loading memories with scope: {:?}, focus: {}, categories: {:?}",
+            directive.scope,
+            directive.focus,
+            directive.categories
+        );
+
+        // Generate embedding for the focus query
+        let embedding = if !directive.focus.is_empty() {
+            match GenerateEmbeddingsCommand::new(vec![directive.focus.clone()])
+                .with_task_type("RETRIEVAL_QUERY".to_string())
+                .execute(&self.app_state)
+                .await
+            {
+                Ok(embeddings) if !embeddings.is_empty() => Some(embeddings[0].clone()),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        // Determine limit based on depth
+        let limit = match directive.depth {
+            dto::json::agent_executor::SearchDepth::Shallow => 20,
+            dto::json::agent_executor::SearchDepth::Moderate => 50,
+            dto::json::agent_executor::SearchDepth::Deep => 100,
+        };
+
+        // Load memories based on scope
+        let memories = match directive.scope {
+            MemoryScope::CurrentSession => {
+                self.load_session_memories(&directive, embedding, limit)
+                    .await?
+            }
+            MemoryScope::CrossSession => {
+                self.load_agent_patterns(&directive, embedding, limit)
+                    .await?
+            }
+            MemoryScope::Universal => {
+                self.load_all_relevant_memories(&directive, embedding, limit)
+                    .await?
+            }
+        };
+
+        tracing::info!("Loaded {} memories", memories.len());
+
+        // Track loaded memory IDs for reinforcement
+        for memory in &memories {
+            self.loaded_memory_ids.insert(memory.id);
+        }
+
+        // Update executor's memory state
+        self.memories = memories;
+
+        Ok(())
+    }
+
     async fn get_mru_memories(&self, limit: usize) -> Result<Vec<MemoryRecord>, AppError> {
         GetMRUMemoriesQuery {
+            context_id: self.context_id,
             limit: limit as i64,
         }
         .execute(&self.app_state)
         .await
+    }
+
+    async fn reinforce_used_memories(&self) -> Result<(), AppError> {
+        if self.loaded_memory_ids.is_empty() {
+            return Ok(());
+        }
+
+        tracing::info!(
+            "Reinforcing {} loaded memories",
+            self.loaded_memory_ids.len()
+        );
+
+        // Update access count for each loaded memory
+        for memory_id in &self.loaded_memory_ids {
+            let command = UpdateMemoryAccessCommand {
+                memory_id: *memory_id,
+            };
+            if let Err(e) = command.execute(&self.app_state).await {
+                tracing::warn!("Failed to reinforce memory {}: {}", memory_id, e);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn load_session_memories(
+        &self,
+        directive: &MemoryLoadingDirective,
+        embedding: Option<Vec<f32>>,
+        limit: i64,
+    ) -> Result<Vec<MemoryRecord>, AppError> {
+        if let Some(embed) = embedding {
+            // Semantic search within current context
+            let results = SearchMemoriesWithDecayQuery {
+                query_embedding: embed,
+                limit,
+                context_id: Some(self.context_id),
+                agent_id: None,
+                categories: Some(directive.categories.clone()),
+            }
+            .execute(&self.app_state)
+            .await?;
+
+            Ok(results.into_iter().map(|r| r.memory).collect())
+        } else {
+            // Just get most recent from this session
+            GetSessionMemoriesQuery {
+                context_id: self.context_id,
+                categories: Some(directive.categories.clone()),
+                limit,
+            }
+            .execute(&self.app_state)
+            .await
+        }
+    }
+
+    async fn load_agent_patterns(
+        &self,
+        directive: &MemoryLoadingDirective,
+        embedding: Option<Vec<f32>>,
+        limit: i64,
+    ) -> Result<Vec<MemoryRecord>, AppError> {
+        if let Some(embed) = embedding {
+            // Semantic search for agent patterns
+            let results = SearchMemoriesWithDecayQuery {
+                query_embedding: embed,
+                limit,
+                context_id: None,
+                agent_id: Some(self.agent.id),
+                categories: Some(directive.categories.clone()),
+            }
+            .execute(&self.app_state)
+            .await?;
+
+            Ok(results.into_iter().map(|r| r.memory).collect())
+        } else {
+            // Get agent's cross-session memories
+            GetAgentMemoriesQuery {
+                agent_id: self.agent.id,
+                categories: Some(directive.categories.clone()),
+                limit,
+            }
+            .execute(&self.app_state)
+            .await
+        }
+    }
+
+    async fn load_all_relevant_memories(
+        &self,
+        directive: &MemoryLoadingDirective,
+        embedding: Option<Vec<f32>>,
+        limit: i64,
+    ) -> Result<Vec<MemoryRecord>, AppError> {
+        if let Some(embed) = embedding {
+            // Search memories that are EITHER context-specific OR agent-specific
+            let results = SearchMemoriesWithDecayQuery {
+                query_embedding: embed,
+                limit,
+                context_id: Some(self.context_id),
+                agent_id: Some(self.agent.id),
+                categories: Some(directive.categories.clone()),
+            }
+            .execute(&self.app_state)
+            .await?;
+
+            Ok(results.into_iter().map(|r| r.memory).collect())
+        } else {
+            // Get both session and agent memories
+            let session_memories = self
+                .load_session_memories(directive, None, limit / 2)
+                .await?;
+            let agent_memories = self.load_agent_patterns(directive, None, limit / 2).await?;
+
+            // Merge and deduplicate
+            let mut all_memories = session_memories;
+            let existing_ids: std::collections::HashSet<i64> =
+                all_memories.iter().map(|m| m.id).collect();
+
+            for memory in agent_memories {
+                if !existing_ids.contains(&memory.id) {
+                    all_memories.push(memory);
+                }
+            }
+
+            Ok(all_memories)
+        }
     }
 
     async fn get_recent_conversations(&self) -> Result<Vec<ConversationRecord>, AppError> {
@@ -2351,59 +2536,93 @@ impl AgentExecutor {
             .unwrap_or("Completed the requested task")
             .to_string();
 
-        // Extract working memory items
-        let working_memory_items = summary_response
-            .get("working_memory")
+        // Extract categorized memories
+        let memories = summary_response
+            .get("memories")
             .and_then(|v| v.as_array())
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str())
-                    .map(String::from)
-                    .collect::<Vec<_>>()
-            })
+            .cloned()
             .unwrap_or_default();
 
-        // Generate embeddings for all working memory items in batch
-        if !working_memory_items.is_empty() {
-            match GenerateEmbeddingsCommand::new(working_memory_items.clone())
+        if !memories.is_empty() {
+            // Collect memory contents for batch embedding generation
+            let memory_contents: Vec<String> = memories
+                .iter()
+                .filter_map(|m| m.get("content").and_then(|c| c.as_str()))
+                .map(String::from)
+                .collect();
+
+            // Generate embeddings for all memories in batch
+            match GenerateEmbeddingsCommand::new(memory_contents.clone())
                 .with_task_type("RETRIEVAL_DOCUMENT".to_string())
                 .execute(&self.app_state)
                 .await
             {
                 Ok(embeddings) => {
-                    if embeddings.len() != working_memory_items.len() {
+                    if embeddings.len() != memories.len() {
+                        tracing::warn!(
+                            "Embedding count mismatch: got {} embeddings for {} memories",
+                            embeddings.len(),
+                            memories.len()
+                        );
                     } else {
-                        for (memory_content, embedding) in
-                            working_memory_items.iter().zip(embeddings.iter())
-                        {
+                        for (memory, embedding) in memories.iter().zip(embeddings.iter()) {
                             if embedding.is_empty() {
                                 continue;
                             }
 
+                            let content =
+                                memory.get("content").and_then(|c| c.as_str()).unwrap_or("");
+
+                            let category = memory
+                                .get("category")
+                                .and_then(|c| c.as_str())
+                                .and_then(MemoryCategory::from_str)
+                                .unwrap_or(MemoryCategory::Working);
+
+                            let importance = memory
+                                .get("importance")
+                                .and_then(|i| i.as_f64())
+                                .unwrap_or(0.5);
+
                             match self.app_state.sf.next_id() {
                                 Ok(id) => {
                                     let memory_id = id as i64;
-                                    let importance = calculate_memory_importance(memory_content);
 
                                     let create_cmd = CreateMemoryCommand {
                                         id: memory_id,
-                                        content: memory_content.to_string(),
+                                        content: content.to_string(),
                                         embedding: embedding.clone(),
-                                        memory_category: "working".to_string(),
+                                        memory_category: category,
                                         creation_context_id: Some(self.context_id),
+                                        agent_id: Some(self.agent.id),
                                         initial_importance: importance,
                                     };
 
-                                    let _ = create_cmd.execute(&self.app_state).await;
+                                    match create_cmd.execute(&self.app_state).await {
+                                        Ok(_) => {
+                                            tracing::debug!(
+                                                "Stored {} memory: {} (importance: {})",
+                                                category.to_string(),
+                                                content,
+                                                importance
+                                            );
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to store memory: {}", e);
+                                        }
+                                    }
                                 }
-                                Err(_) => {}
+                                Err(e) => {
+                                    tracing::error!("Failed to generate memory ID: {}", e);
+                                }
                             }
                         }
                     }
                 }
-                Err(_) => {}
-            };
+                Err(e) => {
+                    tracing::error!("Failed to generate embeddings for memories: {}", e);
+                }
+            }
         }
 
         // Initialize tokenizer with error handling

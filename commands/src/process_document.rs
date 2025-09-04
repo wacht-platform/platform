@@ -40,16 +40,15 @@ impl Command for ProcessDocumentCommand {
         .map_err(|e| AppError::Database(e))?;
 
         // Extract file key from URL (format: kb_id/filename)
-        let url_parts: Vec<&str> = document.file_url
-            .split('/')
-            .collect();
-        
+        let url_parts: Vec<&str> = document.file_url.split('/').collect();
+
         if url_parts.len() < 2 {
             return Err(AppError::Internal("Invalid file URL format".to_string()));
         }
-        
-        let file_key = format!("{}/{}", 
-            url_parts[url_parts.len() - 2], // kb_id  
+
+        let file_key = format!(
+            "{}/{}",
+            url_parts[url_parts.len() - 2], // kb_id
             url_parts[url_parts.len() - 1]  // filename
         );
 
@@ -62,7 +61,7 @@ impl Command for ProcessDocumentCommand {
             .send()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to download file from S3: {}", e)))?;
-        
+
         let file_content = response
             .body
             .collect()
@@ -75,7 +74,7 @@ impl Command for ProcessDocumentCommand {
         let text = app_state
             .text_processing_service
             .extract_text_from_file(&file_content, &document.file_type)?;
-        
+
         let cleaned_text = app_state.text_processing_service.clean_text(&text);
         let chunks = app_state
             .text_processing_service
@@ -103,13 +102,17 @@ impl Command for ProcessDocumentCommand {
             )
             .execute(&app_state.db_pool)
             .await;
-            
+
             return Ok("No chunks created from document".to_string());
         }
 
         // Batch insert chunks
-        let mut tx = app_state.db_pool.begin().await.map_err(|e| AppError::Database(e))?;
-        
+        let mut tx = app_state
+            .db_pool
+            .begin()
+            .await
+            .map_err(|e| AppError::Database(e))?;
+
         for (chunk_index, chunk) in chunks.iter().enumerate() {
             sqlx::query!(
                 r#"
@@ -156,11 +159,8 @@ impl Command for ProcessDocumentCommand {
         .await;
 
         // Dispatch embedding task
-        let dispatch_task = DispatchDocumentBatchTaskCommand::new(
-            self.deployment_id,
-            self.knowledge_base_id,
-            100,
-        );
+        let dispatch_task =
+            DispatchDocumentBatchTaskCommand::new(self.deployment_id, self.knowledge_base_id, 100);
 
         if let Err(e) = dispatch_task.execute(app_state).await {
             tracing::error!("Failed to dispatch embedding processing task: {}", e);
@@ -183,6 +183,10 @@ impl Command for ProcessDocumentCommand {
             .await;
         }
 
-        Ok(format!("Processed document {} into {} chunks", document.title, chunks.len()))
+        Ok(format!(
+            "Processed document {} into {} chunks",
+            document.title,
+            chunks.len()
+        ))
     }
 }

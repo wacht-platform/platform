@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                w.id, w.created_at, w.updated_at,\n                w.name, w.image_url, w.description, w.member_count,\n                w.public_metadata, w.private_metadata, w.organization_id,\n                o.name as \"organization_name?\"\n            FROM workspaces w\n            LEFT JOIN organizations o ON w.organization_id = o.id\n            WHERE w.deployment_id = $1 AND w.id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "member_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "public_metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "private_metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "organization_name?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a0be694d870c6d778fca5d8b7cf3bfc9ba779491e1f9448f7d4de6b614700040"
+}

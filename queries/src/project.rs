@@ -16,35 +16,29 @@ pub struct GetProjectsWithDeploymentQuery {
 
 impl GetProjectsWithDeploymentQuery {
     pub fn new(oid: i64) -> Self {
-        GetProjectsWithDeploymentQuery { 
+        GetProjectsWithDeploymentQuery {
             oid,
             owner_ids: Vec::new(),
         }
     }
-    
+
     pub fn for_owner(owner_id: String) -> Self {
         GetProjectsWithDeploymentQuery {
             oid: 0,
             owner_ids: vec![owner_id],
         }
     }
-    
+
     pub fn for_owners(owner_ids: Vec<String>) -> Self {
-        GetProjectsWithDeploymentQuery {
-            oid: 0,
-            owner_ids,
-        }
+        GetProjectsWithDeploymentQuery { oid: 0, owner_ids }
     }
-    
+
     pub fn for_user_and_organization(user_id: String, org_id: Option<String>) -> Self {
         let mut owner_ids = vec![user_id];
         if let Some(org) = org_id {
             owner_ids.push(org);
         }
-        GetProjectsWithDeploymentQuery {
-            oid: 0,
-            owner_ids,
-        }
+        GetProjectsWithDeploymentQuery { oid: 0, owner_ids }
     }
 }
 
@@ -111,22 +105,24 @@ impl Query for GetProjectsWithDeploymentQuery {
             FROM projects p
             LEFT JOIN deployments d ON p.id = d.project_id AND d.deleted_at IS NULL
         "#.to_string();
-        
+
         // Add ownership filtering
         if !self.owner_ids.is_empty() {
-            let owner_conditions: Vec<String> = self.owner_ids
+            let owner_conditions: Vec<String> = self
+                .owner_ids
                 .iter()
                 .map(|id| format!("'{}'", id.replace("'", "''")))
                 .collect();
-            
-            query_str.push_str(&format!(" WHERE p.owner_id IN ({})", owner_conditions.join(", ")));
+
+            query_str.push_str(&format!(
+                " WHERE p.owner_id IN ({})",
+                owner_conditions.join(", ")
+            ));
         }
-        
+
         query_str.push_str(" ORDER BY p.id DESC");
-        
-        let rows = query(&query_str)
-        .fetch_all(&app_state.db_pool)
-        .await?;
+
+        let rows = query(&query_str).fetch_all(&app_state.db_pool).await?;
 
         let mut projects_map: BTreeMap<i64, ProjectWithDeployments> = BTreeMap::new();
 

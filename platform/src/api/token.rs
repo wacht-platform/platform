@@ -1,12 +1,9 @@
-use crate::{
-    application::response::ApiResult,
-    middleware::RequireDeployment,
-};
-use common::state::AppState;
+use crate::{application::response::ApiResult, middleware::RequireDeployment};
 use axum::{Json, extract::State};
 use commands::{
     Command, GenerateAgentContextTokenCommand, GenerateTokenCommand, GenerateTokenResponse,
 };
+use common::state::AppState;
 use serde::Deserialize;
 
 use dto::json::GenerateUserAgentContextTokenRequest;

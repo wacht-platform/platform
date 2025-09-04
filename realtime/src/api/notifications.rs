@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{error, info, warn};
 
-use common::state::AppState;
 use crate::middleware::host_extractor::ExtractedHost;
+use common::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct NotificationParams {

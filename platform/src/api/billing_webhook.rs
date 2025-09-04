@@ -2,13 +2,13 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
 };
-use common::chargebee::{ChargebeeClient, UpdateSubscriptionParams};
 use commands::{
     Command,
-    billing::{UpsertSubscriptionCommand, UpdateBillingAccountStatusCommand},
+    billing::{UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand},
 };
+use common::chargebee::{ChargebeeClient, UpdateSubscriptionParams};
 use common::state::AppState;
-use tracing::{info, error};
+use tracing::{error, info};
 
 // Webhook endpoint for Chargebee events
 pub async fn handle_chargebee_webhook(
@@ -21,20 +21,19 @@ pub async fn handle_chargebee_webhook(
         .get("X-Chargebee-Signature")
         .and_then(|v| v.to_str().ok())
         .ok_or(StatusCode::UNAUTHORIZED)?;
-    
-    let chargebee = ChargebeeClient::new()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    
+
+    let chargebee = ChargebeeClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
     if !chargebee.verify_webhook_signature(&body, signature) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    
+
     // Parse webhook event
-    let event: serde_json::Value = serde_json::from_str(&body)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
-    
+    let event: serde_json::Value =
+        serde_json::from_str(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+
     let event_type = event["event_type"].as_str().unwrap_or("");
-    
+
     // Handle subscription events
     match event_type {
         "subscription_created" => {
@@ -42,11 +41,11 @@ pub async fn handle_chargebee_webhook(
                 if let Some(customer) = event["content"]["customer"].as_object() {
                     let customer_id = customer["id"].as_str().unwrap_or("");
                     let subscription_id = subscription["id"].as_str().unwrap_or("");
-                    
+
                     // Use customer_id directly as owner_id (format: "user_123" or "org_123")
                     if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
                         let status = subscription["status"].as_str().unwrap_or("active");
-                        
+
                         // Save subscription to database
                         UpsertSubscriptionCommand {
                             owner_id: customer_id.to_string(),
@@ -60,7 +59,7 @@ pub async fn handle_chargebee_webhook(
                             error!("Failed to upsert subscription: {}", e);
                             StatusCode::INTERNAL_SERVER_ERROR
                         })?;
-                        
+
                         // Update billing account status to active
                         UpdateBillingAccountStatusCommand {
                             owner_id: customer_id.to_string(),
@@ -72,29 +71,36 @@ pub async fn handle_chargebee_webhook(
                             error!("Failed to update billing account status: {}", e);
                             StatusCode::INTERNAL_SERVER_ERROR
                         })?;
-                        
+
                         // Set threshold billing for the subscription
                         // $50 threshold for Growth plan, $500 for Enterprise
                         let plan_id = subscription["plan_id"].as_str().unwrap_or("");
                         let threshold = match plan_id {
-                            "growth_monthly" => Some(5000), // $50 in cents
+                            "growth_monthly" => Some(5000),     // $50 in cents
                             "enterprise_custom" => Some(50000), // $500 in cents
                             _ => None,
                         };
-                        
+
                         if let Some(threshold_amount) = threshold {
-                            info!("Setting threshold billing of ${} for subscription {}", threshold_amount / 100, subscription_id);
-                            
-                            if let Err(e) = chargebee.update_subscription(
-                                subscription_id,
-                                UpdateSubscriptionParams {
-                                    plan_id: None,
-                                    plan_quantity: None,
-                                    trial_end: None,
-                                    invoice_immediately: Some(true),
-                                    invoice_immediately_min_amount: Some(threshold_amount),
-                                }
-                            ).await {
+                            info!(
+                                "Setting threshold billing of ${} for subscription {}",
+                                threshold_amount / 100,
+                                subscription_id
+                            );
+
+                            if let Err(e) = chargebee
+                                .update_subscription(
+                                    subscription_id,
+                                    UpdateSubscriptionParams {
+                                        plan_id: None,
+                                        plan_quantity: None,
+                                        trial_end: None,
+                                        invoice_immediately: Some(true),
+                                        invoice_immediately_min_amount: Some(threshold_amount),
+                                    },
+                                )
+                                .await
+                            {
                                 error!("Failed to set threshold billing: {}", e);
                                 // Don't fail the webhook, just log the error
                             }
@@ -107,28 +113,31 @@ pub async fn handle_chargebee_webhook(
             if let Some(subscription) = event["content"]["subscription"].as_object() {
                 if let Some(customer) = event["content"]["customer"].as_object() {
                     let customer_id = customer["id"].as_str().unwrap_or("");
-                    
+
                     // Use customer_id directly as owner_id (format: "user_123" or "org_123")
                     if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
                         let status = subscription["status"].as_str().unwrap_or("active");
-                        
+
                         UpsertSubscriptionCommand {
                             owner_id: customer_id.to_string(),
                             chargebee_customer_id: customer_id.to_string(),
-                            chargebee_subscription_id: subscription["id"].as_str().unwrap_or("").to_string(),
+                            chargebee_subscription_id: subscription["id"]
+                                .as_str()
+                                .unwrap_or("")
+                                .to_string(),
                             status: status.to_string(),
                         }
                         .execute(&state)
                         .await
                         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-                        
+
                         // Update billing account status based on subscription status
                         let account_status = match status {
                             "cancelled" | "non_renewing" => "cancelled",
                             "active" | "future" => "active",
                             _ => "active",
                         };
-                        
+
                         UpdateBillingAccountStatusCommand {
                             owner_id: customer_id.to_string(),
                             status: account_status.to_string(),
@@ -147,7 +156,7 @@ pub async fn handle_chargebee_webhook(
             if let Some(invoice) = event["content"]["invoice"].as_object() {
                 if let Some(customer) = event["content"]["customer"].as_object() {
                     let customer_id = customer["id"].as_str().unwrap_or("");
-                    
+
                     // Use customer_id directly as owner_id (format: "user_123" or "org_123")
                     if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
                         // Update billing account status to failed
@@ -158,12 +167,16 @@ pub async fn handle_chargebee_webhook(
                         .execute(&state)
                         .await
                         .map_err(|e| {
-                            error!("Failed to update billing account status on payment failure: {}", e);
+                            error!(
+                                "Failed to update billing account status on payment failure: {}",
+                                e
+                            );
                             StatusCode::INTERNAL_SERVER_ERROR
                         })?;
-                        
-                        info!("Payment failed for customer {}, invoice {}", 
-                            customer_id, 
+
+                        info!(
+                            "Payment failed for customer {}, invoice {}",
+                            customer_id,
                             invoice["id"].as_str().unwrap_or("")
                         );
                     }
@@ -174,7 +187,7 @@ pub async fn handle_chargebee_webhook(
             if let Some(invoice) = event["content"]["invoice"].as_object() {
                 if let Some(customer) = event["content"]["customer"].as_object() {
                     let customer_id = customer["id"].as_str().unwrap_or("");
-                    
+
                     // Use customer_id directly as owner_id (format: "user_123" or "org_123")
                     if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
                         // Update billing account status back to active after successful payment
@@ -185,12 +198,16 @@ pub async fn handle_chargebee_webhook(
                         .execute(&state)
                         .await
                         .map_err(|e| {
-                            error!("Failed to update billing account status on payment success: {}", e);
+                            error!(
+                                "Failed to update billing account status on payment success: {}",
+                                e
+                            );
                             StatusCode::INTERNAL_SERVER_ERROR
                         })?;
-                        
-                        info!("Payment succeeded for customer {}, invoice {}", 
-                            customer_id, 
+
+                        info!(
+                            "Payment succeeded for customer {}, invoice {}",
+                            customer_id,
                             invoice["id"].as_str().unwrap_or("")
                         );
                     }
@@ -201,29 +218,32 @@ pub async fn handle_chargebee_webhook(
             if let Some(subscription) = event["content"]["subscription"].as_object() {
                 if let Some(customer) = event["content"]["customer"].as_object() {
                     let customer_id = customer["id"].as_str().unwrap_or("");
-                    
+
                     // Use customer_id directly as owner_id (format: "user_123" or "org_123")
                     if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
                         let status = subscription["status"].as_str().unwrap_or("active");
-                        
+
                         // Update subscription status
                         UpsertSubscriptionCommand {
                             owner_id: customer_id.to_string(),
                             chargebee_customer_id: customer_id.to_string(),
-                            chargebee_subscription_id: subscription["id"].as_str().unwrap_or("").to_string(),
+                            chargebee_subscription_id: subscription["id"]
+                                .as_str()
+                                .unwrap_or("")
+                                .to_string(),
                             status: status.to_string(),
                         }
                         .execute(&state)
                         .await
                         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-                        
+
                         // Update billing account status
                         let account_status = match status {
                             "paused" => "paused",
                             "active" => "active",
                             _ => status,
                         };
-                        
+
                         UpdateBillingAccountStatusCommand {
                             owner_id: customer_id.to_string(),
                             status: account_status.to_string(),
@@ -243,6 +263,6 @@ pub async fn handle_chargebee_webhook(
             info!("Received unhandled webhook event: {}", event_type);
         }
     }
-    
+
     Ok(StatusCode::OK)
 }

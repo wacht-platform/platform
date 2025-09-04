@@ -90,7 +90,7 @@ pub fn render_template_with_prompt(
         let mut rendered_prompt = HANDLEBARS
             .render_template(prompt_template, &context)
             .unwrap();
-        
+
         // Append custom system instructions if provided in the context
         if let Some(custom_instructions) = context.get("custom_system_instructions") {
             if let Some(custom_str) = custom_instructions.as_str() {

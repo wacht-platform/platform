@@ -1,7 +1,7 @@
-use models::billing::{BillingAccount, Subscription, BillingAccountWithSubscription};
 use crate::Query;
 use common::error::AppError;
 use common::state::AppState;
+use models::billing::{BillingAccount, BillingAccountWithSubscription, Subscription};
 
 pub struct GetBillingAccountQuery {
     owner_id: String,
@@ -11,13 +11,17 @@ impl GetBillingAccountQuery {
     pub fn new(owner_id: String) -> Self {
         Self { owner_id }
     }
-    
+
     pub fn for_user(user_id: i64) -> Self {
-        Self { owner_id: format!("user_{}", user_id) }
+        Self {
+            owner_id: format!("user_{}", user_id),
+        }
     }
-    
+
     pub fn for_organization(org_id: i64) -> Self {
-        Self { owner_id: format!("org_{}", org_id) }
+        Self {
+            owner_id: format!("org_{}", org_id),
+        }
     }
 }
 
@@ -38,7 +42,7 @@ impl Query for GetBillingAccountQuery {
         )
         .fetch_optional(&state.db_pool)
         .await?;
-        
+
         let billing_account = row.map(|r| BillingAccount {
             id: r.id,
             owner_id: r.owner_id,
@@ -60,7 +64,7 @@ impl Query for GetBillingAccountQuery {
             created_at: r.created_at,
             updated_at: r.updated_at,
         });
-        
+
         if let Some(account) = billing_account {
             // Then get the subscription if it exists
             let subscription = sqlx::query_as!(
@@ -72,7 +76,7 @@ impl Query for GetBillingAccountQuery {
             )
             .fetch_optional(&state.db_pool)
             .await?;
-            
+
             Ok(Some(BillingAccountWithSubscription {
                 billing_account: account,
                 subscription,
@@ -89,7 +93,9 @@ pub struct GetSubscriptionByChargebeeIdQuery {
 
 impl GetSubscriptionByChargebeeIdQuery {
     pub fn new(chargebee_subscription_id: String) -> Self {
-        Self { chargebee_subscription_id }
+        Self {
+            chargebee_subscription_id,
+        }
     }
 }
 
@@ -107,7 +113,7 @@ impl Query for GetSubscriptionByChargebeeIdQuery {
         )
         .fetch_optional(&state.db_pool)
         .await?;
-        
+
         if let Some(sub) = subscription {
             // Then get the billing account
             let row = sqlx::query!(
@@ -122,7 +128,7 @@ impl Query for GetSubscriptionByChargebeeIdQuery {
             )
             .fetch_one(&state.db_pool)
             .await?;
-            
+
             let billing_account = BillingAccount {
                 id: row.id,
                 owner_id: row.owner_id,
@@ -144,7 +150,7 @@ impl Query for GetSubscriptionByChargebeeIdQuery {
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             };
-            
+
             Ok(Some(BillingAccountWithSubscription {
                 billing_account,
                 subscription: Some(sub),

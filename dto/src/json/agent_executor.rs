@@ -1,3 +1,4 @@
+use super::agent_memory::MemoryCategory;
 use super::agent_responses::ExecutionAction;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -13,7 +14,53 @@ pub struct StepDecision {
     pub acknowledgment: Option<AcknowledgmentData>,
     pub examine_tool: Option<ExamineToolData>,
     pub examine_workflow: Option<ExamineWorkflowData>,
-    pub context_gathering_objective: Option<String>,
+    pub context_gathering_directive: Option<ContextGatheringDirective>,
+    pub memory_loading_directive: Option<MemoryLoadingDirective>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ContextGatheringDirective {
+    pub pattern: SearchPattern,
+    pub objective: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focus_areas: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_depth: Option<SearchDepth>,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchPattern {
+    Troubleshooting,
+    Implementation,
+    Analysis,
+    Historical,
+    Exploration,
+    Verification,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchDepth {
+    Shallow,
+    Moderate,
+    Deep,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct MemoryLoadingDirective {
+    pub scope: MemoryScope,
+    pub focus: String,
+    pub categories: Vec<MemoryCategory>,
+    pub depth: SearchDepth,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryScope {
+    CurrentSession, // Only this conversation's memories
+    CrossSession,   // Agent's learned patterns across all conversations
+    Universal,      // Both current + cross-session memories
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -39,6 +86,8 @@ pub enum NextStep {
     Acknowledge,
     #[serde(rename = "gathercontext")]
     GatherContext,
+    #[serde(rename = "loadmemory")]
+    LoadMemory,
     #[serde(rename = "executeaction")]
     ExecuteAction,
     #[serde(rename = "validateprogress")]

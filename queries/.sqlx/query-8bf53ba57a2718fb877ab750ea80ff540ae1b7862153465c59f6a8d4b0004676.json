@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                t.id, t.created_at, t.updated_at, t.name, t.description,\n                t.tool_type, t.deployment_id, t.configuration,\n                COALESCE(a.agents_count, 0) as agents_count\n            FROM ai_tools t\n            LEFT JOIN (\n                SELECT tool_id, COUNT(*) as agents_count\n                FROM ai_agent_tools\n                GROUP BY tool_id\n            ) a ON t.id = a.tool_id\n            WHERE t.id = $1 AND t.deployment_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "tool_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "configuration",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "agents_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "8bf53ba57a2718fb877ab750ea80ff540ae1b7862153465c59f6a8d4b0004676"
+}

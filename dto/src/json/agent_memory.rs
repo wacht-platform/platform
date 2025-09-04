@@ -66,7 +66,7 @@ pub struct CreateMemoryRequest {
     pub initial_importance: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryCategory {
     Procedural,
@@ -82,6 +82,18 @@ impl ToString for MemoryCategory {
             MemoryCategory::Semantic => "semantic".to_string(),
             MemoryCategory::Episodic => "episodic".to_string(),
             MemoryCategory::Working => "working".to_string(),
+        }
+    }
+}
+
+impl MemoryCategory {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "procedural" => Some(MemoryCategory::Procedural),
+            "semantic" => Some(MemoryCategory::Semantic),
+            "episodic" => Some(MemoryCategory::Episodic),
+            "working" => Some(MemoryCategory::Working),
+            _ => None,
         }
     }
 }

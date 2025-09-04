@@ -683,9 +683,10 @@ impl ClickHouseService {
     ) -> Result<WebhookDelivery, AppError> {
         tracing::info!(
             "Getting delivery details for deployment_id={}, delivery_id={}",
-            deployment_id, delivery_id
+            deployment_id,
+            delivery_id
         );
-        
+
         // First, let's check what we have for this delivery
         let check_query = format!(
             "SELECT count(*) as cnt, groupArray(status) as statuses 
@@ -693,9 +694,12 @@ impl ClickHouseService {
              WHERE deployment_id = {} AND delivery_id = {}",
             deployment_id, delivery_id
         );
-        
-        tracing::info!("Checking for delivery existence with query: {}", check_query);
-        
+
+        tracing::info!(
+            "Checking for delivery existence with query: {}",
+            check_query
+        );
+
         let query = format!(
             "SELECT
                 deployment_id,
@@ -723,14 +727,22 @@ impl ClickHouseService {
 
         tracing::info!("Executing query: {}", query);
 
-        match self.client.query(&query).fetch_one::<WebhookDelivery>().await {
+        match self
+            .client
+            .query(&query)
+            .fetch_one::<WebhookDelivery>()
+            .await
+        {
             Ok(delivery) => {
                 tracing::info!("Successfully fetched delivery details");
                 Ok(delivery)
             }
             Err(e) => {
                 tracing::error!("Failed to fetch delivery details: {:?}", e);
-                Err(AppError::Internal(format!("Failed to fetch webhook delivery: {}", e)))
+                Err(AppError::Internal(format!(
+                    "Failed to fetch webhook delivery: {}",
+                    e
+                )))
             }
         }
     }
@@ -743,18 +755,18 @@ impl ClickHouseService {
         include_successful: bool,
     ) -> Result<Vec<i64>, AppError> {
         let end_date = end_date.unwrap_or_else(|| Utc::now());
-        
+
         // Escape values for SQL
         let start_date_str = start_date.format("%Y-%m-%d %H:%M:%S").to_string();
         let end_date_str = end_date.format("%Y-%m-%d %H:%M:%S").to_string();
-        
+
         // Build the query with optional filtering of successful deliveries
         let having_clause = if include_successful {
             String::new() // No filter, include all deliveries
         } else {
             "HAVING final_status != 'success'".to_string()
         };
-        
+
         // Query to get unique delivery IDs
         // We group by delivery_id and take the latest status for each delivery
         let query = format!(
@@ -768,26 +780,26 @@ impl ClickHouseService {
             GROUP BY delivery_id
             {}
             ORDER BY delivery_id DESC",
-            deployment_id,
-            start_date_str,
-            end_date_str,
-            having_clause
+            deployment_id, start_date_str, end_date_str, having_clause
         );
-        
+
         tracing::info!("Fetching deliveries for replay with query: {}", query);
-        
+
         let mut cursor = self.client.query(&query).fetch::<(i64, String)>()?;
         let mut delivery_ids = Vec::new();
-        
+
         while let Some((delivery_id, _status)) = cursor.next().await? {
             delivery_ids.push(delivery_id);
         }
-        
-        tracing::info!("Found {} deliveries to replay (include_successful: {})", 
-            delivery_ids.len(), include_successful);
+
+        tracing::info!(
+            "Found {} deliveries to replay (include_successful: {})",
+            delivery_ids.len(),
+            include_successful
+        );
         Ok(delivery_ids)
     }
-    
+
     pub async fn get_deliveries_by_ids(
         &self,
         deployment_id: i64,
@@ -797,21 +809,21 @@ impl ClickHouseService {
         if delivery_ids.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         // Convert delivery IDs to comma-separated string
         let ids_str = delivery_ids
             .iter()
             .map(|id| id.to_string())
             .collect::<Vec<_>>()
             .join(",");
-        
+
         // Build the query with optional filtering of successful deliveries
         let having_clause = if include_successful {
             String::new() // No filter, include all deliveries
         } else {
             "HAVING final_status != 'success'".to_string()
         };
-        
+
         // Query to get the latest status for each delivery
         let query = format!(
             "SELECT 
@@ -823,22 +835,24 @@ impl ClickHouseService {
             GROUP BY delivery_id
             {}
             ORDER BY delivery_id DESC",
-            deployment_id,
-            ids_str,
-            having_clause
+            deployment_id, ids_str, having_clause
         );
-        
+
         tracing::info!("Fetching deliveries by IDs with query: {}", query);
-        
+
         let mut cursor = self.client.query(&query).fetch::<(i64, String)>()?;
         let mut valid_delivery_ids = Vec::new();
-        
+
         while let Some((delivery_id, _status)) = cursor.next().await? {
             valid_delivery_ids.push(delivery_id);
         }
-        
-        tracing::info!("Found {} deliveries eligible for replay out of {} requested (include_successful: {})", 
-            valid_delivery_ids.len(), delivery_ids.len(), include_successful);
+
+        tracing::info!(
+            "Found {} deliveries eligible for replay out of {} requested (include_successful: {})",
+            valid_delivery_ids.len(),
+            delivery_ids.len(),
+            include_successful
+        );
         Ok(valid_delivery_ids)
     }
 

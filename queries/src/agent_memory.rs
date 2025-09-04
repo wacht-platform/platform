@@ -1,7 +1,8 @@
 use crate::Query;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use common::error::AppError;
 use common::state::AppState;
+use dto::json::agent_memory::MemoryCategory;
 use models::{ConversationRecord, MemoryBoundaries, MemoryRecord};
 use pgvector::HalfVector;
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,7 @@ use sqlx::Row;
 
 #[derive(Debug)]
 pub struct GetMRUMemoriesQuery {
+    pub context_id: i64,
     pub limit: i64,
 }
 
@@ -22,17 +24,18 @@ impl Query for GetMRUMemoriesQuery {
                 id, content, embedding, memory_category,
                 base_temporal_score, access_count,
                 first_accessed_at, last_accessed_at,
-                creation_context_id, last_reinforced_at,
+                creation_context_id, agent_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
                 context_decay_profile,
                 created_at, updated_at
             FROM memories
-            WHERE memory_category = 'working'
+            WHERE creation_context_id = $1
             ORDER BY last_accessed_at DESC
-            LIMIT $1
+            LIMIT $2
             "#,
         )
+        .bind(self.context_id)
         .bind(self.limit)
         .fetch_all(&app_state.db_pool)
         .await
@@ -159,7 +162,9 @@ impl Query for GetLLMConversationHistoryQuery {
 pub struct SearchMemoriesWithDecayQuery {
     pub query_embedding: Vec<f32>,
     pub limit: i64,
-    pub time_range: Option<(DateTime<Utc>, DateTime<Utc>)>,
+    pub context_id: Option<i64>,
+    pub agent_id: Option<i64>,
+    pub categories: Option<Vec<MemoryCategory>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,13 +180,19 @@ impl Query for SearchMemoriesWithDecayQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let embedding = HalfVector::from_f32_slice(&self.query_embedding);
 
+        // Convert categories to strings for SQL
+        let category_strings: Option<Vec<String>> = self
+            .categories
+            .as_ref()
+            .map(|cats| cats.iter().map(|c| c.to_string()).collect());
+
         let results = sqlx::query!(
             r#"
             SELECT
                 id, content, embedding as "embedding: HalfVector", memory_category,
                 base_temporal_score, access_count,
                 first_accessed_at, last_accessed_at,
-                creation_context_id, last_reinforced_at,
+                creation_context_id, agent_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
                 context_decay_profile,
@@ -189,15 +200,20 @@ impl Query for SearchMemoriesWithDecayQuery {
                 1 - (embedding <=> $1) as similarity_score
             FROM memories
             WHERE base_temporal_score > 0.1
-                AND ($3::timestamptz IS NULL OR first_accessed_at >= $3)
-                AND ($4::timestamptz IS NULL OR first_accessed_at <= $4)
+                AND (
+                    ($3::bigint IS NULL AND $4::bigint IS NULL) OR
+                    ($3::bigint IS NOT NULL AND creation_context_id = $3) OR
+                    ($4::bigint IS NOT NULL AND agent_id = $4)
+                )
+                AND ($5::text[] IS NULL OR memory_category = ANY($5))
             ORDER BY (1 - (embedding <=> $1)) * base_temporal_score DESC
             LIMIT $2
             "#,
             &embedding as &HalfVector,
             self.limit,
-            self.time_range.as_ref().map(|(start, _)| *start),
-            self.time_range.as_ref().map(|(_, end)| *end)
+            self.context_id,
+            self.agent_id,
+            category_strings.as_deref()
         )
         .fetch_all(&app_state.db_pool)
         .await
@@ -215,6 +231,7 @@ impl Query for SearchMemoriesWithDecayQuery {
                 first_accessed_at: row.first_accessed_at.unwrap_or_else(|| Utc::now()),
                 last_accessed_at: row.last_accessed_at.unwrap_or_else(|| Utc::now()),
                 creation_context_id: row.creation_context_id,
+                agent_id: row.agent_id,
                 last_reinforced_at: row.last_reinforced_at.unwrap_or_else(|| Utc::now()),
                 semantic_centrality: row.semantic_centrality.unwrap_or(0.0),
                 uniqueness_score: row.uniqueness_score.unwrap_or(0.0),
@@ -313,6 +330,144 @@ impl Query for GetAllMemoryBoundariesQuery {
 
 pub struct GetMemoryBoundariesQuery {
     pub context_id: i64,
+}
+
+// New queries for memory loading with scopes
+
+pub struct GetSessionMemoriesQuery {
+    pub context_id: i64,
+    pub categories: Option<Vec<MemoryCategory>>,
+    pub limit: i64,
+}
+
+impl Query for GetSessionMemoriesQuery {
+    type Output = Vec<MemoryRecord>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let category_strings: Option<Vec<String>> = self
+            .categories
+            .as_ref()
+            .map(|cats| cats.iter().map(|c| c.to_string()).collect());
+
+        let records = sqlx::query_as::<_, MemoryRecord>(
+            r#"
+            SELECT
+                id, content, embedding, memory_category,
+                base_temporal_score, access_count,
+                first_accessed_at, last_accessed_at,
+                creation_context_id, agent_id, last_reinforced_at,
+                semantic_centrality, uniqueness_score,
+                compression_level, compressed_content,
+                context_decay_profile,
+                created_at, updated_at
+            FROM memories
+            WHERE creation_context_id = $1
+                AND ($2::text[] IS NULL OR memory_category = ANY($2))
+            ORDER BY base_temporal_score * (1.0 / (1.0 + EXTRACT(EPOCH FROM (NOW() - last_accessed_at)) / 86400)) DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(self.context_id)
+        .bind(category_strings.as_deref())
+        .bind(self.limit)
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(AppError::from)?;
+
+        Ok(records)
+    }
+}
+
+pub struct GetAgentMemoriesQuery {
+    pub agent_id: i64,
+    pub categories: Option<Vec<MemoryCategory>>,
+    pub limit: i64,
+}
+
+impl Query for GetAgentMemoriesQuery {
+    type Output = Vec<MemoryRecord>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let category_strings: Option<Vec<String>> = self
+            .categories
+            .as_ref()
+            .map(|cats| cats.iter().map(|c| c.to_string()).collect());
+
+        let records = sqlx::query_as::<_, MemoryRecord>(
+            r#"
+            SELECT
+                id, content, embedding, memory_category,
+                base_temporal_score, access_count,
+                first_accessed_at, last_accessed_at,
+                creation_context_id, agent_id, last_reinforced_at,
+                semantic_centrality, uniqueness_score,
+                compression_level, compressed_content,
+                context_decay_profile,
+                created_at, updated_at
+            FROM memories
+            WHERE agent_id = $1
+                AND creation_context_id IS NULL
+                AND ($2::text[] IS NULL OR memory_category = ANY($2))
+            ORDER BY base_temporal_score * semantic_centrality DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(self.agent_id)
+        .bind(category_strings.as_deref())
+        .bind(self.limit)
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(AppError::from)?;
+
+        Ok(records)
+    }
+}
+
+pub struct GetAgentImportantMemoriesQuery {
+    pub agent_id: i64,
+    pub categories: Option<Vec<MemoryCategory>>,
+    pub min_importance: f64,
+    pub limit: i64,
+}
+
+impl Query for GetAgentImportantMemoriesQuery {
+    type Output = Vec<MemoryRecord>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let category_strings: Option<Vec<String>> = self
+            .categories
+            .as_ref()
+            .map(|cats| cats.iter().map(|c| c.to_string()).collect());
+
+        let records = sqlx::query_as::<_, MemoryRecord>(
+            r#"
+            SELECT
+                id, content, embedding, memory_category,
+                base_temporal_score, access_count,
+                first_accessed_at, last_accessed_at,
+                creation_context_id, agent_id, last_reinforced_at,
+                semantic_centrality, uniqueness_score,
+                compression_level, compressed_content,
+                context_decay_profile,
+                created_at, updated_at
+            FROM memories
+            WHERE agent_id = $1
+                AND base_temporal_score >= $2
+                AND ($3::text[] IS NULL OR memory_category = ANY($3))
+            ORDER BY base_temporal_score * uniqueness_score DESC
+            LIMIT $4
+            "#,
+        )
+        .bind(self.agent_id)
+        .bind(self.min_importance)
+        .bind(category_strings.as_deref())
+        .bind(self.limit)
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(AppError::from)?;
+
+        Ok(records)
+    }
 }
 
 impl Query for GetMemoryBoundariesQuery {

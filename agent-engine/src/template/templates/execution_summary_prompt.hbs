@@ -21,7 +21,7 @@
       "role": "user",
       "parts": [
         {
-          "text": "Generate both an execution summary and working memory items from this conversation.\n\n1. Execution Summary: Summarize ONLY what the assistant did or responded with. Do NOT include what the user said (it's already stored). Be extremely concise - use single words for simple interactions (e.g., \"Greeted.\", \"Acknowledged.\", \"Explained X\").\n\n2. Working Memory: Extract important facts, preferences, identifiers, and context that should be remembered for future interactions. Only add NEW information not already captured in existing memories.\n\nProvide both sections clearly separated."
+          "text": "Analyze this execution and extract:\n1. Execution Summary: What the assistant accomplished (be extremely concise)\n2. Memories: Categorized insights with importance scores\n3. Focus on patterns, successful approaches, and learnings that will help in future similar situations"
         }
       ]
     }
@@ -35,16 +35,38 @@
           "type": "STRING",
           "description": "A concise summary of ONLY what the assistant did or said. Never include user messages. Use single words for simple responses like 'Greeted.' or 'Acknowledged.'"
         },
-        "working_memory": {
+        "memories": {
           "type": "ARRAY",
           "items": {
-            "type": "STRING",
-            "description": "A single working memory item - a fact, preference, identifier, or context detail to remember"
+            "type": "OBJECT",
+            "properties": {
+              "content": {
+                "type": "STRING",
+                "description": "The memory content - a pattern, insight, fact, or learning"
+              },
+              "category": {
+                "type": "STRING",
+                "enum": ["procedural", "semantic", "episodic", "working"],
+                "description": "Memory category: procedural (how-to), semantic (facts), episodic (events), working (active context)"
+              },
+              "importance": {
+                "type": "NUMBER",
+                "description": "Importance score from 0.0 to 1.0"
+              },
+              "tags": {
+                "type": "ARRAY",
+                "items": {
+                  "type": "STRING"
+                },
+                "description": "Tags like 'search_pattern', 'tool_usage', 'error_recovery', 'user_preference'"
+              }
+            },
+            "required": ["content", "category", "importance"]
           },
-          "description": "Important facts, preferences, identifiers, and context extracted from the execution that should be remembered for future interactions"
+          "description": "Categorized memories with importance scores extracted from the execution"
         }
       },
-      "required": ["agent_execution", "working_memory"]
+      "required": ["agent_execution", "memories"]
     },
     "temperature": 0.2,
     "maxOutputTokens": 1000

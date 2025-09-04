@@ -86,8 +86,6 @@ pub struct ChunkRange {
 #[serde(rename_all = "snake_case")]
 pub enum SearchScope {
     KnowledgeBase,
-    Experience,
-    Universal,
     ListKnowledgeBaseDocuments,
     ReadKnowledgeBaseDocuments,
     Conversations,

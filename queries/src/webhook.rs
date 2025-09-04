@@ -7,7 +7,8 @@ use dto::json::webhook_requests::{
     WebhookEndpoint, WebhookEndpointSubscription as WebhookEndpointSubscriptionDTO,
 };
 use models::webhook::{
-    PendingDeliveryRow, WebhookApp, WebhookEndpoint as ModelWebhookEndpoint, WebhookEndpointSubscription,
+    PendingDeliveryRow, WebhookApp, WebhookEndpoint as ModelWebhookEndpoint,
+    WebhookEndpointSubscription,
 };
 
 use super::Query;
@@ -221,7 +222,7 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
         self.include_inactive = include;
         self
     }
-    
+
     pub fn with_pagination(mut self, limit: Option<i32>, offset: Option<i32>) -> Self {
         self.limit = limit;
         self.offset = offset;
@@ -235,7 +236,7 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let limit = self.limit.unwrap_or(100) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
-        
+
         let endpoints = match (&self.app_name, self.include_inactive) {
             (Some(app_name), true) => {
                 query_as!(
@@ -366,7 +367,6 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
         Ok(endpoints_with_subs)
     }
 }
-
 
 // Query for getting webhook app by name
 #[derive(Debug, Deserialize)]

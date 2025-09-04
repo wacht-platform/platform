@@ -14,7 +14,7 @@ use models::{
 };
 use queries::{
     FullTextSearchKnowledgeBaseQuery, GetDocumentChunksQuery, GetKnowledgeBaseDocumentsQuery,
-    HybridSearchKnowledgeBaseQuery, Query, SearchConversationsQuery, SearchMemoriesWithDecayQuery,
+    HybridSearchKnowledgeBaseQuery, Query, SearchConversationsQuery,
 };
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -139,7 +139,6 @@ impl SearchMetrics {
                     .unwrap_or(0);
                 format!("kb_{}_{}_chunk_{}", kb_id, document_id, chunk_index)
             }
-            ContextSource::Memory { memory_id, .. } => format!("memory_{}", memory_id),
             ContextSource::Conversation { conversation_id } => format!("conv_{}", conversation_id),
             ContextSource::System => format!("system_{}", result.content.len()),
         }
@@ -212,15 +211,81 @@ impl ContextOrchestrator {
         }
     }
 
+    fn get_pattern_guidance(&self, pattern: dto::json::agent_executor::SearchPattern) -> String {
+        use dto::json::agent_executor::SearchPattern;
+        match pattern {
+            SearchPattern::Troubleshooting => {
+                "Problem-solving mode: Start with symptoms and error messages. Search progression: specific errors → recent failures → configuration changes → known fixes. Goal is finding root cause and solution path."
+            }
+            SearchPattern::Implementation => {
+                "Building mode: Start with requirements and examples. Search progression: official documentation → code samples → API references → integration patterns. Goal is understanding how to build correctly."
+            }
+            SearchPattern::Analysis => {
+                "Investigation mode: Start with system overview. Search progression: architecture → components → interactions → performance metrics. Goal is comprehensive understanding of how things work."
+            }
+            SearchPattern::Historical => {
+                "Timeline reconstruction: Start with recent events. Search progression: latest changes → change history → patterns over time → impact analysis. Goal is understanding evolution and causality."
+            }
+            SearchPattern::Verification => {
+                "Fact-checking mode: Start with specific claims. Search progression: current state → expected state → validation methods → test results. Goal is confirming accuracy with evidence."
+            }
+            SearchPattern::Exploration => {
+                "Discovery mode: Start with broad inventory. Search progression: available resources → categories → popular items → unique capabilities. Goal is mapping the landscape of possibilities."
+            }
+        }.to_string()
+    }
+
+    fn calculate_max_iterations(
+        &self,
+        pattern: dto::json::agent_executor::SearchPattern,
+        expected_depth: Option<dto::json::agent_executor::SearchDepth>,
+    ) -> usize {
+        use dto::json::agent_executor::{SearchDepth, SearchPattern};
+
+        // Base iterations by pattern
+        let base_iterations = match pattern {
+            SearchPattern::Verification => 3, // Quick checks, don't need many
+            SearchPattern::Exploration => 4,  // Broad but shallow
+            SearchPattern::Historical => 5,   // Moderate timeline search
+            SearchPattern::Troubleshooting => 6, // Need to find root cause
+            SearchPattern::Implementation => 7, // Multiple resource types
+            SearchPattern::Analysis => 8,     // Comprehensive understanding
+        };
+
+        // Adjust by depth preference
+        let depth_multiplier = match expected_depth {
+            Some(SearchDepth::Shallow) => 0.5,
+            Some(SearchDepth::Moderate) => 1.0,
+            Some(SearchDepth::Deep) => 1.5,
+            None => 1.0, // Default to moderate
+        };
+
+        // Calculate with bounds
+        let calculated = (base_iterations as f32 * depth_multiplier) as usize;
+        calculated.max(2).min(15) // At least 2, at most 15
+    }
+
     pub async fn gather_context(
         &self,
         conversations: &[ConversationRecord],
         current_objective: &Option<ObjectiveDefinition>,
+        search_pattern: dto::json::agent_executor::SearchPattern,
+        expected_depth: Option<dto::json::agent_executor::SearchDepth>,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
         tracing::info!(
-            "Starting context gathering for agent {} with objective: {:?}",
+            "Starting context gathering for agent {} with objective: {:?}, pattern: {:?}, depth: {:?}",
             self.agent.id,
-            current_objective.as_ref().map(|o| &o.primary_goal)
+            current_objective.as_ref().map(|o| &o.primary_goal),
+            search_pattern,
+            expected_depth
+        );
+
+        let max_iterations = self.calculate_max_iterations(search_pattern, expected_depth);
+        tracing::info!(
+            "Adaptive search depth: max {} iterations for pattern {:?} with depth {:?}",
+            max_iterations,
+            search_pattern,
+            expected_depth
         );
 
         let mut all_results = Vec::new();
@@ -242,6 +307,9 @@ impl ContextOrchestrator {
                     current_objective,
                     &previous_searches,
                     progress_data.as_ref(),
+                    search_pattern,
+                    iteration,
+                    max_iterations,
                 )
                 .await?;
 
@@ -409,8 +477,14 @@ impl ContextOrchestrator {
 
             previous_searches.push(search_record);
 
-            // Only safety limit to prevent infinite loops - trust LLM agent otherwise
-            if iteration >= 10 {
+            // Use adaptive max iterations based on pattern and depth
+            if iteration >= max_iterations {
+                tracing::info!(
+                    "Reached max iterations ({}) for pattern {:?} with depth {:?}",
+                    max_iterations,
+                    search_pattern,
+                    expected_depth
+                );
                 break;
             }
 
@@ -532,6 +606,9 @@ impl ContextOrchestrator {
         current_objective: &Option<ObjectiveDefinition>,
         previous_searches: &[Value],
         progress_data: Option<&Value>,
+        search_pattern: dto::json::agent_executor::SearchPattern,
+        iteration: usize,
+        max_iterations: usize,
     ) -> Result<ContextSearchDerivation, AppError> {
         // Log the last user message
         if let Some(last_user_msg) = conversations
@@ -549,6 +626,11 @@ impl ContextOrchestrator {
             "has_previous_searches": !previous_searches.is_empty(),
             "previous_search_count": previous_searches.len(),
             "previous_search_results": previous_searches,
+            "search_pattern": format!("{:?}", search_pattern).to_lowercase(),
+            "pattern_guidance": self.get_pattern_guidance(search_pattern),
+            "current_iteration": iteration,
+            "max_iterations": max_iterations,
+            "iterations_remaining": max_iterations.saturating_sub(iteration),
         });
 
         // Add progress data if available
@@ -602,23 +684,6 @@ impl ContextOrchestrator {
                 });
 
                 self.execute_knowledge_base_search(query, kb_ids, max_results, &filters)
-                    .await
-            }
-            SearchScope::Experience => {
-                tracing::info!(
-                    "Memory Search - Query: '{}', Time Range: {:?}",
-                    query,
-                    filters.time_range
-                );
-                self.search_memories(query, max_results, &filters).await
-            }
-            SearchScope::Universal => {
-                tracing::info!(
-                    "Universal Search - Query: '{}', Mode: {:?}, Combining KB + Memory results",
-                    query,
-                    filters.search_mode
-                );
-                self.execute_universal_search(query, max_results, &filters)
                     .await
             }
             SearchScope::ListKnowledgeBaseDocuments => {
@@ -761,26 +826,6 @@ impl ContextOrchestrator {
         Ok(results)
     }
 
-    async fn execute_universal_search(
-        &self,
-        query: &str,
-        max_results: usize,
-        filters: &ContextFilters,
-    ) -> Result<Vec<ContextSearchResult>, AppError> {
-        let mut all_results = Vec::new();
-
-        let kb_results = self
-            .execute_knowledge_base_search(query, None, max_results, filters)
-            .await?;
-        all_results.extend(kb_results);
-
-        let memory_results = self.search_memories(query, max_results, filters).await?;
-        all_results.extend(memory_results);
-
-        let final_results = self.sort_and_limit_results(all_results, max_results);
-        Ok(final_results)
-    }
-
     async fn generate_embedding(&self, query: &str) -> Result<Vec<f32>, AppError> {
         let embedding_result = GenerateEmbeddingCommand::new(query.to_string())
             .with_task_type("RETRIEVAL_QUERY".to_string())
@@ -919,45 +964,6 @@ impl ContextOrchestrator {
                     "search_mode": "hybrid",
                     "vector_weight": vector_weight,
                     "text_weight": text_weight,
-                }),
-            })
-            .collect())
-    }
-
-    async fn search_memories(
-        &self,
-        query: &str,
-        max_results: usize,
-        filters: &ContextFilters,
-    ) -> Result<Vec<ContextSearchResult>, AppError> {
-        let query_embedding = self.generate_embedding(query).await?;
-
-        let time_range = filters.time_range.as_ref().map(|tr| (tr.start, tr.end));
-
-        let results = SearchMemoriesWithDecayQuery {
-            query_embedding,
-            limit: max_results as i64,
-            time_range,
-        }
-        .execute(&self.app_state)
-        .await?;
-
-        Ok(results
-            .into_iter()
-            .map(|m| ContextSearchResult {
-                source: ContextSource::Memory {
-                    memory_id: m.memory.id,
-                    category: m.memory.memory_category.clone(),
-                },
-                content: m.memory.content.clone(),
-                relevance_score: m.decay_adjusted_score,
-                metadata: json!({
-                    "memory_category": m.memory.memory_category,
-                    "created_at": m.memory.created_at,
-                    "similarity_score": m.similarity_score,
-                    "decay_adjusted_score": m.decay_adjusted_score,
-                    "query": query,
-                    "search_mode": "memory_vector",
                 }),
             })
             .collect())
@@ -1336,20 +1342,6 @@ impl ContextOrchestrator {
         Ok(all_results)
     }
 
-    fn sort_and_limit_results(
-        &self,
-        mut results: Vec<ContextSearchResult>,
-        limit: usize,
-    ) -> Vec<ContextSearchResult> {
-        results.sort_by(|a, b| {
-            b.relevance_score
-                .partial_cmp(&a.relevance_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        results.truncate(limit);
-        results
-    }
-
     fn deduplicate_results(&self, results: Vec<ContextSearchResult>) -> Vec<ContextSearchResult> {
         let mut unique_results = Vec::new();
         let mut seen_items = HashSet::new();
@@ -1363,9 +1355,6 @@ impl ContextOrchestrator {
                         .and_then(|v| v.as_i64())
                         .unwrap_or(0);
                     format!("kb_{kb_id}_doc_{document_id}_chunk_{chunk_index}")
-                }
-                ContextSource::Memory { memory_id, .. } => {
-                    format!("memory_{memory_id}")
                 }
                 ContextSource::Conversation { conversation_id } => {
                     format!("conversation_{conversation_id}")

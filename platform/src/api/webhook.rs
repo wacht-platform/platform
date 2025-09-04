@@ -15,21 +15,16 @@ use commands::{
     webhook_endpoint::{
         CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, UpdateWebhookEndpointCommand,
     },
-    webhook_trigger::{
-        BatchTriggerWebhookEventsCommand, TriggerWebhookEventCommand,
-    },
+    webhook_trigger::{BatchTriggerWebhookEventsCommand, TriggerWebhookEventCommand},
 };
 use common::state::AppState;
 use dto::clickhouse::webhook::{WebhookDelivery, WebhookDeliveryListResponse};
-use dto::json::webhook_requests::{
-    WebhookEndpoint as WebhookEndpointDto, *
-};
+use dto::json::webhook_requests::{WebhookEndpoint as WebhookEndpointDto, *};
 use models::webhook::{WebhookApp, WebhookEndpoint, WebhookEventTrigger};
 use queries::{
     Query as QueryTrait,
     webhook::{
-        GetWebhookAppsQuery,
-        GetWebhookEndpointsWithSubscriptionsQuery, GetWebhookEventsQuery,
+        GetWebhookAppsQuery, GetWebhookEndpointsWithSubscriptionsQuery, GetWebhookEventsQuery,
     },
 };
 
@@ -141,7 +136,7 @@ pub async fn get_webhook_events(
     let model_events = GetWebhookEventsQuery::new(deployment_id, app_name)
         .execute(&app_state)
         .await?;
-    
+
     // Convert model events to SDK format
     let events: Vec<wacht::api::webhooks::WebhookAppEvent> = model_events
         .into_iter()
@@ -239,9 +234,9 @@ pub async fn update_webhook_endpoint(
         max_retries: request.max_retries,
         timeout_seconds: request.timeout_seconds,
         is_active: request.is_active,
-        subscriptions: request.subscriptions.map(|subs| {
-            subs.into_iter().map(Into::into).collect()
-        }),
+        subscriptions: request
+            .subscriptions
+            .map(|subs| subs.into_iter().map(Into::into).collect()),
     };
 
     let endpoint = command.execute(&app_state).await?;
@@ -330,38 +325,46 @@ pub async fn replay_webhook_delivery(
     Json(request): Json<ReplayWebhookDeliveryRequest>,
 ) -> ApiResult<ReplayWebhookDeliveryResponse> {
     use dto::json::nats::{NatsTaskMessage, WebhookReplayBatchPayload};
-    
+
     // Create strongly typed task payload based on request type
     let task_payload = match request {
-        ReplayWebhookDeliveryRequest::ByIds { delivery_ids, include_successful } => {
-            WebhookReplayBatchPayload::ByIds {
-                deployment_id,
-                delivery_ids,
-                include_successful,
-            }
-        }
-        ReplayWebhookDeliveryRequest::ByDateRange { start_date, end_date, include_successful } => {
-            WebhookReplayBatchPayload::ByDateRange {
-                deployment_id,
-                start_date,
-                end_date,
-                include_successful,
-            }
-        }
+        ReplayWebhookDeliveryRequest::ByIds {
+            delivery_ids,
+            include_successful,
+        } => WebhookReplayBatchPayload::ByIds {
+            deployment_id,
+            delivery_ids,
+            include_successful,
+        },
+        ReplayWebhookDeliveryRequest::ByDateRange {
+            start_date,
+            end_date,
+            include_successful,
+        } => WebhookReplayBatchPayload::ByDateRange {
+            deployment_id,
+            start_date,
+            end_date,
+            include_successful,
+        },
     };
-    
-    let task_payload_json = serde_json::to_value(task_payload)
-        .map_err(|e| (
+
+    let task_payload_json = serde_json::to_value(task_payload).map_err(|e| {
+        (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to serialize task payload: {}", e),
-        ))?;
-    
+        )
+    })?;
+
     let task_message = NatsTaskMessage {
         task_type: "webhook.replay_batch".to_string(),
-        task_id: format!("webhook-replay-batch-{}-{}", deployment_id, chrono::Utc::now().timestamp()),
+        task_id: format!(
+            "webhook-replay-batch-{}-{}",
+            deployment_id,
+            chrono::Utc::now().timestamp()
+        ),
         payload: task_payload_json,
     };
-    
+
     // Queue to NATS for background processing
     app_state
         .nats_client
@@ -403,9 +406,9 @@ pub async fn get_webhook_delivery_details(
 
     // Check if status=pending to look in PostgreSQL instead of ClickHouse
     let status = params.get("status").map(|s| s.as_str());
-    
+
     let delivery = if status == Some("pending") {
-        // Check PostgreSQL for active/pending deliveries  
+        // Check PostgreSQL for active/pending deliveries
         queries::webhook::GetPendingWebhookDeliveryQuery::new(deployment_id, delivery_id)
             .execute(&app_state)
             .await?
@@ -418,12 +421,15 @@ pub async fn get_webhook_delivery_details(
     };
 
     // Fetch payload from S3 if available
-    let payload = if !delivery.payload_s3_key.is_empty() 
-        && !delivery.payload_s3_key.starts_with("endpoint-") {
-        commands::webhook_storage::RetrieveWebhookPayloadCommand::new(delivery.payload_s3_key.clone())
-            .execute(&app_state)
-            .await
-            .ok()
+    let payload = if !delivery.payload_s3_key.is_empty()
+        && !delivery.payload_s3_key.starts_with("endpoint-")
+    {
+        commands::webhook_storage::RetrieveWebhookPayloadCommand::new(
+            delivery.payload_s3_key.clone(),
+        )
+        .execute(&app_state)
+        .await
+        .ok()
     } else {
         None
     };
@@ -454,8 +460,6 @@ pub async fn get_webhook_delivery_details(
 
     Ok(delivery_details.into())
 }
-
-
 
 pub async fn reactivate_webhook_endpoint(
     State(app_state): State<AppState>,
@@ -641,18 +645,18 @@ pub async fn get_app_webhook_deliveries(
     let has_more = delivery_rows.len() > limit as usize;
     let mut deliveries: Vec<WebhookDeliveryListResponse> =
         delivery_rows.into_iter().map(|row| row.into()).collect();
-    
+
     if has_more {
         deliveries.truncate(limit as usize);
     }
 
     tracing::info!("Returning {} deliveries", deliveries.len());
 
-    Ok(PaginatedResponse { 
-        data: deliveries, 
+    Ok(PaginatedResponse {
+        data: deliveries,
         has_more,
         limit: Some(limit),
         offset: Some(offset),
-    }.into())
+    }
+    .into())
 }
-

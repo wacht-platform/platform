@@ -2,8 +2,8 @@ use commands::{Command, GenerateEmbeddingsCommand, SearchKnowledgeBaseEmbeddings
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::{
-    ApiToolResult, ToolKnowledgeBaseSearchResult, KnowledgeBaseToolResult, PlatformEventResult,
-    PlatformFunctionData, PlatformFunctionResult, StreamEvent,
+    ApiToolResult, KnowledgeBaseToolResult, PlatformEventResult, PlatformFunctionData,
+    PlatformFunctionResult, StreamEvent, ToolKnowledgeBaseSearchResult,
 };
 use models::HttpMethod;
 use models::{AiTool, AiToolConfiguration};
@@ -39,7 +39,9 @@ impl ToolExecutor {
     ) -> Result<Value, AppError> {
         match &tool.configuration {
             AiToolConfiguration::Api(config) => {
-                let result = self.execute_api_tool(tool, config, &execution_params).await?;
+                let result = self
+                    .execute_api_tool(tool, config, &execution_params)
+                    .await?;
                 Ok(serde_json::to_value(result)?)
             }
             AiToolConfiguration::KnowledgeBase(config) => {
@@ -92,7 +94,6 @@ impl ToolExecutor {
         let mut url = config.endpoint.clone();
         let mut query_params = HashMap::new();
 
-
         for (key, value) in &url_params {
             let placeholder = format!("{{{key}}}");
             if url.contains(&placeholder) {
@@ -101,7 +102,6 @@ impl ToolExecutor {
                 query_params.insert(key.clone(), value.clone());
             }
         }
-
 
         let client = reqwest::Client::new();
 
@@ -121,8 +121,7 @@ impl ToolExecutor {
             }
         }
 
-        if !query_params.is_empty() {
-        }
+        if !query_params.is_empty() {}
         request_builder = request_builder.query(&query_params);
 
         match config.method {
@@ -228,7 +227,6 @@ impl ToolExecutor {
 
         // Emit the platform function event via WebSocket if channel is available
         if let Some(channel) = &self.channel {
-
             let event = StreamEvent::PlatformFunction(
                 config.function_name.clone(),
                 serde_json::to_value(&function_data)?,

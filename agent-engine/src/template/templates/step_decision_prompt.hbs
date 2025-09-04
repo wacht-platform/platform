@@ -140,9 +140,33 @@
           },
           "required": ["workflow_name"]
         },
-        "context_gathering_objective": {
-          "type": "STRING",
-          "description": "MANDATORY when next_step is gathercontext - you MUST provide this field. Specific objective for context gathering (e.g., 'List all available documents', 'Find error patterns in system logs', 'Read authentication configuration files'). This should be a focused, single-purpose instruction that context gathering can complete and return control to step decision."
+        "context_gathering_directive": {
+          "type": "OBJECT",
+          "description": "MANDATORY when next_step is gathercontext. Structured directive for intelligent context gathering.",
+          "properties": {
+            "pattern": {
+              "type": "STRING",
+              "enum": ["troubleshooting", "implementation", "analysis", "historical", "exploration", "verification"],
+              "description": "The search pattern based on user's request type"
+            },
+            "objective": {
+              "type": "STRING",
+              "description": "Specific goal for this context gathering (e.g., 'Find authentication errors in logs', 'Gather user management documentation')"
+            },
+            "focus_areas": {
+              "type": "ARRAY",
+              "items": {"type": "STRING"},
+              "description": "Key areas to prioritize (e.g., ['error logs', 'recent changes', 'configuration'])",
+              "nullable": true
+            },
+            "expected_depth": {
+              "type": "STRING",
+              "enum": ["shallow", "moderate", "deep"],
+              "description": "How thorough the search should be based on request complexity",
+              "nullable": true
+            }
+          },
+          "required": ["pattern", "objective"]
         }
       },
       "required": ["next_step", "reasoning", "confidence"]

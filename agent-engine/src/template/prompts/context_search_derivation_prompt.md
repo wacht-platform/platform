@@ -32,19 +32,27 @@ No knowledge bases available
 {{/if}}
 {{/if}}
 
+## Search Pattern Detected: {{search_pattern}}
+
+### Pattern Guidance
+{{pattern_guidance}}
+
+### Iteration Budget
+- Current iteration: {{current_iteration}}/{{max_iterations}}
+- Remaining iterations: {{iterations_remaining}}
+- Plan your searches wisely - you have a limited budget based on the pattern and depth requirements
+
 ## Your Task
 
-Determine what information to search for next. You can search multiple times to build complete context.
+Follow the pattern guidance above to determine what information to search for next. The pattern helps you prioritize and sequence your searches effectively. Be mindful of your iteration budget.
 
 ### Search Scopes
 
 1. **knowledge_base** - Search document content (semantic/keyword/hybrid)
-2. **experience** - Search memories and past interactions
-3. **universal** - Search all sources combined
-4. **list_knowledge_base_documents** - List available documents
-5. **read_knowledge_base_documents** - Read specific document by ID
-6. **conversations** - Search recent conversation history
-7. **complete** - Stop searching, sufficient context gathered
+2. **list_knowledge_base_documents** - List available documents
+3. **read_knowledge_base_documents** - Read specific document by ID
+4. **conversations** - Search recent conversation history
+5. **complete** - Stop searching, sufficient context gathered
 
 ### Key Guidelines
 

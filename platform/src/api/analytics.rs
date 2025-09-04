@@ -6,9 +6,9 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use common::state::AppState;
 use crate::middleware::RequireDeployment;
 use common::clickhouse::RecentSignup;
+use common::state::AppState;
 
 #[derive(Deserialize)]
 pub struct AnalyticsQuery {

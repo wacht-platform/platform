@@ -82,7 +82,7 @@ pub struct WebhookEndpointSubscription {
 #[derive(Debug, Serialize)]
 pub struct ListWebhookEndpointsResponse {
     pub endpoints: Vec<WebhookEndpoint>,
-    pub count: usize,  // Number of items in this response
+    pub count: usize, // Number of items in this response
     pub limit: i32,
     pub offset: i32,
     pub has_more: bool,
@@ -352,7 +352,7 @@ pub struct WebhookDeliveryResponse {
 #[derive(Debug, Serialize)]
 pub struct GetWebhookDeliveriesResponse {
     pub deliveries: Vec<crate::clickhouse::webhook::WebhookDeliveryListResponse>,
-    pub count: usize,  // Number of items in this response
+    pub count: usize, // Number of items in this response
     pub limit: i32,
     pub offset: i32,
     pub has_more: bool,
@@ -382,4 +382,3 @@ pub struct WebhookDeliveryDetails {
     pub timestamp: DateTime<Utc>,
     pub payload: Option<Value>,
 }
-

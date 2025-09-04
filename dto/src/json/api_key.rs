@@ -124,7 +124,10 @@ impl CreateApiKeyRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct RevokeApiKeyRequest {
-    #[serde(default, deserialize_with = "deserialize_string_or_number_to_option_i64")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string_or_number_to_option_i64"
+    )]
     pub key_id: Option<i64>, // Optional for backend API (passed in body)
     pub reason: Option<String>,
 }
@@ -141,33 +144,35 @@ where
     D: serde::Deserializer<'de>,
 {
     use serde::de;
-    
+
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum StringOrNumber {
         String(String),
         Number(i64),
     }
-    
+
     match StringOrNumber::deserialize(deserializer)? {
         StringOrNumber::String(s) => s.parse::<i64>().map_err(de::Error::custom),
         StringOrNumber::Number(n) => Ok(n),
     }
 }
 
-fn deserialize_string_or_number_to_option_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+fn deserialize_string_or_number_to_option_i64<'de, D>(
+    deserializer: D,
+) -> Result<Option<i64>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     use serde::de;
-    
+
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum StringOrNumber {
         String(String),
         Number(i64),
     }
-    
+
     Option::<StringOrNumber>::deserialize(deserializer)?
         .map(|value| match value {
             StringOrNumber::String(s) => s.parse::<i64>().map_err(de::Error::custom),

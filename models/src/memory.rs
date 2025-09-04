@@ -17,6 +17,7 @@ pub struct MemoryRecord {
     pub first_accessed_at: DateTime<Utc>,
     pub last_accessed_at: DateTime<Utc>,
     pub creation_context_id: Option<i64>,
+    pub agent_id: Option<i64>,
     pub last_reinforced_at: DateTime<Utc>,
     pub semantic_centrality: f64,
     pub uniqueness_score: f64,

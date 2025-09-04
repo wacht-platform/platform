@@ -57,11 +57,15 @@ impl Command for ProcessDocumentBatchCommand {
 
         // Process embeddings in batches of 100
         let mut total_processed = 0;
-        let mut documents_with_embeddings: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        let mut documents_with_embeddings: std::collections::HashSet<i64> =
+            std::collections::HashSet::new();
 
         for chunk_batch in pending_chunks.chunks(100) {
-            let chunk_texts: Vec<String> = chunk_batch.iter().map(|chunk| chunk.content.clone()).collect();
-            
+            let chunk_texts: Vec<String> = chunk_batch
+                .iter()
+                .map(|chunk| chunk.content.clone())
+                .collect();
+
             // Generate embeddings for this batch
             let embeddings_command = GenerateEmbeddingsCommand::new(chunk_texts);
             let embeddings = match embeddings_command.execute(app_state).await {
@@ -75,7 +79,7 @@ impl Command for ProcessDocumentBatchCommand {
             // Update chunks with embeddings
             for (chunk, embedding) in chunk_batch.iter().zip(embeddings.into_iter()) {
                 let embedding_vector = HalfVector::from_f32_slice(&embedding);
-                
+
                 match sqlx::query(
                     "UPDATE knowledge_base_document_chunks SET embedding = $1, updated_at = $2 WHERE document_id = $3 AND chunk_index = $4"
                 )
@@ -125,17 +129,19 @@ impl Command for ProcessDocumentBatchCommand {
                     document_id
                 )
                 .execute(&app_state.db_pool)
-                .await {
-                    error!("Failed to update document {} status to completed: {}", document_id, e);
+                .await
+                {
+                    error!(
+                        "Failed to update document {} status to completed: {}",
+                        document_id, e
+                    );
                 }
             }
         }
 
         Ok(format!(
             "Processed embeddings for {} chunks across {} documents",
-            total_processed,
-            documents_count
+            total_processed, documents_count
         ))
     }
 }
-

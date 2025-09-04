@@ -2,9 +2,7 @@ use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
 use serde::Deserialize;
 
-use crate::application::{
-    response::{ApiResult, PaginatedResponse},
-};
+use crate::application::response::{ApiResult, PaginatedResponse};
 use common::state::AppState;
 
 use commands::{Command, CreateAiToolCommand, DeleteAiToolCommand, UpdateAiToolCommand};

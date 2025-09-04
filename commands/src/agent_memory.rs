@@ -2,6 +2,7 @@ use crate::Command;
 use chrono::Utc;
 use common::error::AppError;
 use common::state::AppState;
+use dto::json::agent_memory::MemoryCategory;
 use models::MemoryRecord;
 use pgvector::HalfVector;
 
@@ -10,8 +11,9 @@ pub struct CreateMemoryCommand {
     pub id: i64,
     pub content: String,
     pub embedding: Vec<f32>,
-    pub memory_category: String, // "procedural", "semantic", "episodic"
+    pub memory_category: MemoryCategory,
     pub creation_context_id: Option<i64>,
+    pub agent_id: Option<i64>,
     pub initial_importance: f64,
 }
 
@@ -31,7 +33,7 @@ impl Command for CreateMemoryCommand {
             INSERT INTO memories (
                 id, content, embedding, memory_category,
                 base_temporal_score, access_count, first_accessed_at, last_accessed_at,
-                creation_context_id, last_reinforced_at,
+                creation_context_id, agent_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
                 context_decay_profile,
@@ -39,7 +41,7 @@ impl Command for CreateMemoryCommand {
             ) VALUES (
                 $1, $2, $3, $4,
                 $5, 0, $6, $6,
-                $7, $6,
+                $7, $8, $6,
                 0.0, 0.0,
                 0, NULL,
                 '{}',
@@ -51,10 +53,11 @@ impl Command for CreateMemoryCommand {
         .bind(self.id)
         .bind(self.content)
         .bind(embedding)
-        .bind(self.memory_category)
+        .bind(self.memory_category.to_string())
         .bind(self.initial_importance)
         .bind(now)
         .bind(self.creation_context_id)
+        .bind(self.agent_id)
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(AppError::from)?;

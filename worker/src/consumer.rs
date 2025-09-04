@@ -409,8 +409,8 @@ impl NatsConsumer {
             "agent.stream_log".to_string(),
             Box::new(|payload, app_state| {
                 Box::pin(async move {
-                    let task: agent::AgentStreamLogTask = serde_json::from_value(payload)
-                        .map_err(|e| {
+                    let task: agent::AgentStreamLogTask =
+                        serde_json::from_value(payload).map_err(|e| {
                             TaskError::Permanent(format!(
                                 "Failed to deserialize agent stream log task: {}",
                                 e

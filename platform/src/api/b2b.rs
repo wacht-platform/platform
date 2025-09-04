@@ -39,7 +39,6 @@ pub struct WorkspaceRoleParams {
 }
 
 use crate::application::{response::ApiResult, response::PaginatedResponse};
-use common::state::AppState;
 use commands::{
     AddOrganizationMemberCommand, Command, CreateOrganizationCommand,
     CreateOrganizationRoleCommand, CreateWorkspaceCommand, CreateWorkspaceRoleCommand,
@@ -49,6 +48,7 @@ use commands::{
     UpdateOrganizationRoleCommand, UpdateWorkspaceCommand, UpdateWorkspaceRoleCommand,
     UploadToCdnCommand,
 };
+use common::state::AppState;
 use dto::{
     json::{
         b2b::{
@@ -814,11 +814,15 @@ pub async fn remove_organization_member(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OrganizationMemberParams>,
 ) -> ApiResult<()> {
-    RemoveOrganizationMemberCommand::new(deployment_id, params.organization_id, params.membership_id)
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    RemoveOrganizationMemberCommand::new(
+        deployment_id,
+        params.organization_id,
+        params.membership_id,
+    )
+    .execute(&app_state)
+    .await
+    .map(Into::into)
+    .map_err(Into::into)
 }
 
 pub async fn create_organization_role(
