@@ -1415,7 +1415,7 @@ impl ContextOrchestrator {
 
     async fn search_conversations(
         &self,
-        _query: &str, // Query not used for conversation search currently
+        _query: &str,
         max_results: usize,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
         let conversations = SearchConversationsQuery {
@@ -1438,7 +1438,7 @@ impl ContextOrchestrator {
                     } => {
                         format!("Acknowledgment: {acknowledgment_message}")
                     }
-                    ConversationContent::AssistantTaskExecution { task_execution, .. } => {
+                    ConversationContent::ActionExecutionResult { task_execution, .. } => {
                         format!("Task execution: {task_execution}")
                     }
                     ConversationContent::ContextResults {

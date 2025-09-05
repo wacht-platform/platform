@@ -293,12 +293,12 @@ impl AgentExecutor {
                 };
 
                 self.store_conversation(
-                    ConversationContent::AssistantTaskExecution {
+                    ConversationContent::ActionExecutionResult {
                         task_execution: serde_json::to_value(&task_execution)?,
                         execution_status: "pending".to_string(),
                         blocking_reason: None,
                     },
-                    ConversationMessageType::AssistantTaskExecution,
+                    ConversationMessageType::ActionExecutionResult,
                 )
                 .await?;
 
@@ -312,12 +312,12 @@ impl AgentExecutor {
             };
 
             self.store_conversation(
-                ConversationContent::AssistantTaskExecution {
+                ConversationContent::ActionExecutionResult {
                     task_execution: serde_json::to_value(&task_execution)?,
                     execution_status: workflow_result.execution_status,
                     blocking_reason: None,
                 },
-                ConversationMessageType::AssistantTaskExecution,
+                ConversationMessageType::ActionExecutionResult,
             )
             .await?;
 
@@ -449,6 +449,28 @@ impl AgentExecutor {
                             "completed"
                         };
 
+                    // Store the task result for tracking completed actions
+                    if execution_status == "completed" {
+                        let task_type_str = match action.action_type {
+                            TaskType::ToolCall => "tool_call",
+                            TaskType::WorkflowCall => "workflow_call",
+                        };
+                        let task_id = format!(
+                            "{}_{}",
+                            task_type_str,
+                            chrono::Utc::now().timestamp_millis()
+                        );
+
+                        let task_result = TaskExecutionResult {
+                            task_id: task_id.clone(),
+                            status: "completed".to_string(),
+                            output: Some(result.clone()),
+                            error: None,
+                        };
+
+                        self.task_results.insert(task_id, task_result);
+                    }
+
                     let execution = TaskExecution {
                         approach: format!("Direct execution: {}", action.purpose),
                         actions: ActionsList {
@@ -459,12 +481,12 @@ impl AgentExecutor {
                     };
 
                     self.store_conversation(
-                        ConversationContent::AssistantTaskExecution {
+                        ConversationContent::ActionExecutionResult {
                             task_execution: serde_json::to_value(&execution)?,
                             execution_status: execution_status.to_string(),
                             blocking_reason: None,
                         },
-                        ConversationMessageType::AssistantTaskExecution,
+                        ConversationMessageType::ActionExecutionResult,
                     )
                     .await?;
 

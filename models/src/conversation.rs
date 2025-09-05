@@ -18,7 +18,7 @@ pub enum ConversationMessageType {
     AssistantAcknowledgment,
     AssistantIdeation,
     AssistantActionPlanning,
-    AssistantTaskExecution,
+    ActionExecutionResult,
     AssistantValidation,
     SystemDecision,
     ContextResults,
@@ -52,12 +52,7 @@ pub enum ConversationContent {
         user_input_request: Option<String>,
         execution_plan: Value,
     },
-    AssistantActionPlanning {
-        task_execution: Value,
-        execution_status: String,
-        blocking_reason: Option<String>,
-    },
-    AssistantTaskExecution {
+    ActionExecutionResult {
         task_execution: Value,
         execution_status: String,
         blocking_reason: Option<String>,
@@ -122,7 +117,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             "assistant_acknowledgment" => ConversationMessageType::AssistantAcknowledgment,
             "assistant_ideation" => ConversationMessageType::AssistantIdeation,
             "assistant_action_planning" => ConversationMessageType::AssistantActionPlanning,
-            "assistant_task_execution" => ConversationMessageType::AssistantTaskExecution,
+            "action_execution_result" => ConversationMessageType::ActionExecutionResult,
             "assistant_validation" => ConversationMessageType::AssistantValidation,
             "system_decision" => ConversationMessageType::SystemDecision,
             "context_results" => ConversationMessageType::ContextResults,

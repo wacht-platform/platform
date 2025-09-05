@@ -89,7 +89,7 @@ impl Command for CreateConversationCommand {
             ConversationMessageType::AssistantAcknowledgment => "assistant_acknowledgment",
             ConversationMessageType::AssistantIdeation => "assistant_ideation",
             ConversationMessageType::AssistantActionPlanning => "assistant_action_planning",
-            ConversationMessageType::AssistantTaskExecution => "assistant_task_execution",
+            ConversationMessageType::ActionExecutionResult => "action_execution_result",
             ConversationMessageType::AssistantValidation => "assistant_validation",
             ConversationMessageType::SystemDecision => "system_decision",
             ConversationMessageType::ContextResults => "context_results",
