@@ -604,14 +604,8 @@ fn create_verification_variables(
     variables.insert("app_name".to_string(), app_name);
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert(
-        "verification_code".to_string(),
-        verification_code.to_string(),
-    );
-    variables.insert(
-        "verification_code.expires_in_minutes".to_string(),
-        "15".to_string(),
-    );
+    variables.insert("code".to_string(), verification_code.to_string());
+    variables.insert("code.expires_in_minutes".to_string(), "15".to_string());
 
     variables
 }
