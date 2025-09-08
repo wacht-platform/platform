@@ -58,7 +58,7 @@ pub async fn send_otp_sms(
     let clean_country_code = country_code.trim_start_matches('+');
 
     let url = format!(
-        "https://cpaas.messagecentral.com/verification/v3/send?countryCode={}&customerId={}&flowType=SMS&mobileNumber={}",
+        "https://cpaas.messagecentral.com/verification/v3/send?countryCode={}&customerId={}&flowType=SMS&mobileNumber={}&otpLength=6",
         clean_country_code, customer_id, clean_phone
     );
 
