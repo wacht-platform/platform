@@ -23,7 +23,7 @@ pub struct SMSOTPTask {
 #[derive(Deserialize)]
 struct MessageCentralSendResponse {
     #[serde(rename = "responseCode")]
-    response_code: String,
+    response_code: u32,  // Number at top level
     message: String,
     data: Option<MessageCentralSendData>,
     #[serde(rename = "errorMessage")]
@@ -35,7 +35,7 @@ struct MessageCentralSendData {
     #[serde(rename = "verificationId")]
     verification_id: String,
     #[serde(rename = "responseCode")]
-    response_code: String,
+    response_code: String,  // String inside data
     #[serde(rename = "errorMessage")]
     error_message: Option<String>,
 }
@@ -77,6 +77,8 @@ pub async fn send_otp_sms(
 
     let status = response.status();
     let response_text = response.text().await?;
+    
+    info!("MessageCentral API response: Status: {}, Body: {}", status, response_text);
 
     if !status.is_success() {
         error!("MessageCentral API error: {} - {}", status, response_text);
@@ -86,7 +88,7 @@ pub async fn send_otp_sms(
     let mc_response: MessageCentralSendResponse = serde_json::from_str(&response_text)
         .map_err(|e| anyhow!("Failed to parse MessageCentral response: {} - Response: {}", e, response_text))?;
 
-    if mc_response.response_code != "200" {
+    if mc_response.response_code != 200 {
         error!(
             "MessageCentral error: {} - {}",
             mc_response.response_code, mc_response.message
@@ -112,6 +114,8 @@ pub async fn send_otp_sms(
             "user_id": user_id,
             "country_code": country_code
         });
+        
+        info!("Storing verification with key: {}", cache_key);
         
         let mut conn = app_state.redis_client.get_connection()
             .map_err(|e| anyhow!("Failed to get Redis connection: {}", e))?;
