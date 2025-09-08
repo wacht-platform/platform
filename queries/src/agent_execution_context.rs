@@ -65,6 +65,7 @@ pub struct ListExecutionContextsQuery {
     pub offset: Option<u32>,
     pub status_filter: Option<String>,
     pub context_group_filter: Option<String>,
+    pub title_search: Option<String>,
 }
 
 impl ListExecutionContextsQuery {
@@ -75,6 +76,7 @@ impl ListExecutionContextsQuery {
             offset: None,
             status_filter: None,
             context_group_filter: None,
+            title_search: None,
         }
     }
 
@@ -97,6 +99,11 @@ impl ListExecutionContextsQuery {
         self.context_group_filter = Some(context_group);
         self
     }
+
+    pub fn with_title_search(mut self, title: String) -> Self {
+        self.title_search = Some(title);
+        self
+    }
 }
 
 impl super::Query for ListExecutionContextsQuery {
@@ -106,56 +113,65 @@ impl super::Query for ListExecutionContextsQuery {
         let limit = self.limit.unwrap_or(50) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
-        let contexts = sqlx::query!(
-            r#"
-            SELECT id, created_at, updated_at, deployment_id,
-            title, context_group, system_instructions, last_activity_at, completed_at,
-            execution_state, status
-            FROM agent_execution_contexts
-            WHERE deployment_id = $1
-            ORDER BY last_activity_at DESC
-            LIMIT $2 OFFSET $3
-            "#,
-            self.deployment_id,
-            limit,
-            offset
-        )
-        .fetch_all(&app_state.db_pool)
-        .await
-        .map_err(|e| AppError::Database(e))?;
+        // Use SQLx query builder for dynamic queries
+        let mut query = sqlx::QueryBuilder::new(
+            "SELECT id, created_at, updated_at, deployment_id, 
+             title, context_group, system_instructions, last_activity_at, completed_at,
+             execution_state, status 
+             FROM agent_execution_contexts 
+             WHERE deployment_id = "
+        );
+        
+        query.push_bind(self.deployment_id);
+        
+        if let Some(ref title_search) = self.title_search {
+            query.push(" AND title ILIKE '%' || ");
+            query.push_bind(title_search);
+            query.push(" || '%'");
+        }
+        
+        if let Some(ref status_filter) = self.status_filter {
+            query.push(" AND status = ");
+            query.push_bind(status_filter);
+        }
+        
+        if let Some(ref context_group_filter) = self.context_group_filter {
+            query.push(" AND context_group = ");
+            query.push_bind(context_group_filter);
+        }
+        
+        query.push(" ORDER BY last_activity_at DESC LIMIT ");
+        query.push_bind(limit);
+        query.push(" OFFSET ");
+        query.push_bind(offset);
+        
+        let rows = query.build()
+            .fetch_all(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
 
         let mut result = Vec::new();
-        for context in contexts {
-            let status = ExecutionContextStatus::from_str(&context.status).unwrap_or_default();
+        for row in rows {
+            use sqlx::Row;
+            
+            let status_str: String = row.get("status");
+            let status = ExecutionContextStatus::from_str(&status_str).unwrap_or_default();
 
-            // Apply filters
-            if let Some(ref status_filter) = self.status_filter {
-                if &context.status != status_filter {
-                    continue;
-                }
-            }
-
-            if let Some(ref context_group_filter) = self.context_group_filter {
-                if context.context_group.as_deref() != Some(context_group_filter) {
-                    continue;
-                }
-            }
-
-            let execution_state = context
-                .execution_state
+            let execution_state: Option<serde_json::Value> = row.get("execution_state");
+            let execution_state = execution_state
                 .as_ref()
                 .and_then(|s| serde_json::from_value::<AgentExecutionState>(s.clone()).ok());
 
             result.push(AgentExecutionContext {
-                id: context.id,
-                created_at: context.created_at,
-                updated_at: context.updated_at,
-                deployment_id: context.deployment_id,
-                title: context.title,
-                context_group: context.context_group,
-                system_instructions: context.system_instructions,
-                last_activity_at: context.last_activity_at,
-                completed_at: context.completed_at,
+                id: row.get("id"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+                deployment_id: row.get("deployment_id"),
+                title: row.get("title"),
+                context_group: row.get("context_group"),
+                system_instructions: row.get("system_instructions"),
+                last_activity_at: row.get("last_activity_at"),
+                completed_at: row.get("completed_at"),
                 execution_state,
                 status,
             });

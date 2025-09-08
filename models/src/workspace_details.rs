@@ -19,7 +19,6 @@ pub struct WorkspaceDetails {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub organization_id: i64,
     pub organization_name: String,
-    pub members: Vec<WorkspaceMemberDetails>,
     pub roles: Vec<WorkspaceRole>,
 }
 

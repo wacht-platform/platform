@@ -272,16 +272,17 @@ impl NatsConsumer {
         );
 
         task_handlers.insert(
-            "sms.send".to_string(),
+            "sms.send_otp".to_string(),
             Box::new(|payload, app_state| {
                 Box::pin(async move {
-                    let task: sms::SMSTask = serde_json::from_value(payload).map_err(|e| {
-                        TaskError::Permanent(format!("Failed to deserialize task: {}", e))
+                    let task: sms::SMSOTPTask = serde_json::from_value(payload).map_err(|e| {
+                        TaskError::Permanent(format!("Failed to deserialize SMS OTP task: {}", e))
                     })?;
-                    sms::send_sms_by_type(
-                        &task.task_type,
+                    sms::send_otp_sms(
                         task.deployment_id,
                         &task.phone_number,
+                        task.user_id,
+                        &task.country_code,
                         &app_state,
                     )
                     .await

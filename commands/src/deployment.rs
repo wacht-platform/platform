@@ -709,6 +709,16 @@ impl Command for UpdateDeploymentB2bSettingsCommand {
             query_builder.push_bind(workspaces_per_org_count);
         }
 
+        if let Some(workspace_permissions) = self.settings.workspace_permissions {
+            query_builder.push(", workspace_permissions = ");
+            query_builder.push_bind(workspace_permissions);
+        }
+
+        if let Some(organization_permissions) = self.settings.organization_permissions {
+            query_builder.push(", organization_permissions = ");
+            query_builder.push_bind(organization_permissions);
+        }
+
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 

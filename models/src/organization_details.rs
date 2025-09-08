@@ -16,7 +16,6 @@ pub struct OrganizationDetails {
     pub member_count: i64,
     pub public_metadata: Value,
     pub private_metadata: Value,
-    pub members: Vec<OrganizationMemberDetails>,
     pub roles: Vec<OrganizationRole>,
     pub workspaces: Vec<Workspace>,
 }

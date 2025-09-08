@@ -372,6 +372,7 @@ impl Command for AddUserPhoneCommand {
             updated_at: now,
             user_id: self.user_id,
             phone_number: self.request.phone_number,
+            country_code: String::new(),
             verified,
             verified_at: now,
         })
@@ -558,6 +559,7 @@ impl Command for UpdateUserPhoneCommand {
             updated_at: row.updated_at,
             user_id: row.user_id.unwrap_or(self.user_id),
             phone_number: row.phone_number,
+            country_code: String::new(),
             verified: row.verified,
             verified_at: row.verified_at.unwrap_or_else(|| chrono::Utc::now()),
         })

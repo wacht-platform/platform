@@ -93,6 +93,7 @@ pub struct ActiveUserListQueryParams {
     )]
     pub sort_order: Option<SortOrder>,
     pub limit: Option<usize>,
+    pub search: Option<String>,
 }
 
 impl Default for ActiveUserListQueryParams {
@@ -102,6 +103,7 @@ impl Default for ActiveUserListQueryParams {
             sort_key: Some(ActiveUserListSortKey::CreatedAt),
             sort_order: Some(SortOrder::Desc),
             limit: Some(10),
+            search: None,
         }
     }
 }

@@ -32,6 +32,12 @@ pub struct WorkspaceParams {
 }
 
 #[derive(Deserialize)]
+pub struct PaginationParams {
+    pub offset: Option<i64>,
+    pub limit: Option<i32>,
+}
+
+#[derive(Deserialize)]
 pub struct WorkspaceRoleParams {
     pub deployment_id: i64,
     pub workspace_id: i64,
@@ -63,11 +69,11 @@ use dto::{
 use models::{DeploymentOrganizationRole, DeploymentWorkspaceRole};
 use models::{
     Organization, OrganizationDetails, OrganizationMemberDetails, OrganizationRole, Workspace,
-    WorkspaceDetails, WorkspaceRole, WorkspaceWithOrganizationName,
+    WorkspaceDetails, WorkspaceMemberDetails, WorkspaceRole, WorkspaceWithOrganizationName,
 };
 use queries::{
     DeploymentOrganizationListQuery, DeploymentWorkspaceListQuery, GetOrganizationDetailsQuery,
-    GetWorkspaceDetailsQuery,
+    GetOrganizationMembersQuery, GetWorkspaceDetailsQuery, GetWorkspaceMembersQuery,
 };
 use queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery, Query};
 
@@ -179,6 +185,52 @@ pub async fn get_workspace_details(
         .await
         .map(Into::into)
         .map_err(Into::into)
+}
+
+pub async fn get_organization_members(
+    State(app_state): State<AppState>,
+    RequireDeployment(_): RequireDeployment,
+    Path(params): Path<OrganizationParams>,
+    QueryParams(pagination): QueryParams<PaginationParams>,
+) -> ApiResult<PaginatedResponse<OrganizationMemberDetails>> {
+    let limit = pagination.limit.unwrap_or(20);
+    let offset = pagination.offset.unwrap_or(0);
+    
+    let (members, has_more) = GetOrganizationMembersQuery::new(params.organization_id)
+        .offset(offset)
+        .limit(limit)
+        .execute(&app_state)
+        .await?;
+    
+    Ok(PaginatedResponse {
+        data: members,
+        has_more,
+        limit: Some(limit as i32),
+        offset: Some(offset as i32),
+    }.into())
+}
+
+pub async fn get_workspace_members(
+    State(app_state): State<AppState>,
+    RequireDeployment(_): RequireDeployment,
+    Path(params): Path<WorkspaceParams>,
+    QueryParams(pagination): QueryParams<PaginationParams>,
+) -> ApiResult<PaginatedResponse<WorkspaceMemberDetails>> {
+    let limit = pagination.limit.unwrap_or(20);
+    let offset = pagination.offset.unwrap_or(0);
+    
+    let (members, has_more) = GetWorkspaceMembersQuery::new(params.workspace_id)
+        .offset(offset)
+        .limit(limit)
+        .execute(&app_state)
+        .await?;
+    
+    Ok(PaginatedResponse {
+        data: members,
+        has_more,
+        limit: Some(limit as i32),
+        offset: Some(offset as i32),
+    }.into())
 }
 
 pub async fn create_organization(

@@ -42,6 +42,24 @@ impl Command for DeleteOrganizationCommand {
             return Err(AppError::NotFound("Organization not found".to_string()));
         }
 
+        // Clear references to workspace memberships in signins table
+        sqlx::query!(
+            "UPDATE signins SET active_workspace_membership_id = NULL WHERE active_workspace_membership_id IN (SELECT id FROM workspace_memberships WHERE organization_id = $1)",
+            self.organization_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        // Delete workspace membership roles first (junction table)
+        sqlx::query!(
+            "DELETE FROM workspace_membership_roles WHERE workspace_membership_id IN (SELECT id FROM workspace_memberships WHERE organization_id = $1)",
+            self.organization_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
         // Delete workspace memberships for this organization
         sqlx::query!(
             "DELETE FROM workspace_memberships WHERE organization_id = $1",
@@ -63,6 +81,15 @@ impl Command for DeleteOrganizationCommand {
         // Delete all workspaces for this organization
         sqlx::query!(
             "DELETE FROM workspaces WHERE organization_id = $1",
+            self.organization_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        // Clear references to organization memberships in signins table
+        sqlx::query!(
+            "UPDATE signins SET active_organization_membership_id = NULL WHERE active_organization_membership_id IN (SELECT id FROM organization_memberships WHERE organization_id = $1)",
             self.organization_id
         )
         .execute(&mut *tx)

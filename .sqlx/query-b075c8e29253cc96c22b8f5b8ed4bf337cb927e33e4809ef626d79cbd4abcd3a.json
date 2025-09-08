@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, created_at, updated_at, user_id,\n                phone_number, verified, verified_at\n            FROM user_phone_numbers\n            WHERE user_id = $1\n            ",
+  "query": "\n            SELECT\n                id, created_at, updated_at, user_id,\n                phone_number, country_code, verified, verified_at\n            FROM user_phone_numbers\n            WHERE user_id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -30,11 +30,16 @@
       },
       {
         "ordinal": 5,
+        "name": "country_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
         "name": "verified",
         "type_info": "Bool"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "verified_at",
         "type_info": "Timestamptz"
       }
@@ -51,8 +56,9 @@
       true,
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "1918f571e780117637dba7f11372e38d7da056a47fca5ae3f4fdc7475ff0125d"
+  "hash": "b075c8e29253cc96c22b8f5b8ed4bf337cb927e33e4809ef626d79cbd4abcd3a"
 }

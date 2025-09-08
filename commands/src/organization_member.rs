@@ -280,7 +280,15 @@ impl Command for RemoveOrganizationMemberCommand {
             ));
         }
 
-        // Delete membership (this should cascade to role associations)
+        // First, delete role associations explicitly
+        sqlx::query!(
+            "DELETE FROM organization_membership_roles WHERE organization_membership_id = $1",
+            self.membership_id
+        )
+        .execute(&app_state.db_pool)
+        .await?;
+
+        // Delete membership
         sqlx::query!(
             "DELETE FROM organization_memberships WHERE id = $1",
             self.membership_id

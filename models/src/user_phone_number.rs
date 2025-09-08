@@ -9,6 +9,7 @@ pub struct UserPhoneNumber {
     pub updated_at: DateTime<Utc>,
     pub user_id: i64,
     pub phone_number: String,
+    pub country_code: String,
     pub verified: bool,
     pub verified_at: DateTime<Utc>,
 }

@@ -14,6 +14,7 @@ pub struct DeploymentActiveUserListQuery {
     sort_order: Option<String>,
     limit: i32,
     deployment_id: i64,
+    search: Option<String>,
 }
 
 impl DeploymentActiveUserListQuery {
@@ -24,6 +25,7 @@ impl DeploymentActiveUserListQuery {
             sort_order: None,
             limit: 10,
             deployment_id: id,
+            search: None,
         }
     }
 
@@ -41,6 +43,10 @@ impl DeploymentActiveUserListQuery {
 
     pub fn sort_order(self, sort_order: Option<String>) -> Self {
         Self { sort_order, ..self }
+    }
+
+    pub fn search(self, search: Option<String>) -> Self {
+        Self { search, ..self }
     }
 }
 
@@ -136,7 +142,38 @@ impl Query for DeploymentActiveUserListQuery {
             WHERE u.deployment_id = "#,
         );
 
+        // Using push_bind for parameterized queries - safe from SQL injection
         query_builder.push_bind(self.deployment_id);
+        query_builder.push(" AND u.deleted_at IS NULL");
+
+        // Add search filter if provided - using parameterized bindings
+        if let Some(search_term) = &self.search {
+            let trimmed_search = search_term.trim();
+            if !trimmed_search.is_empty() {
+                // Build the ILIKE pattern safely
+                let search_pattern = format!("%{}%", trimmed_search);
+                
+                query_builder.push(" AND (");
+                
+                // First name search - parameterized
+                query_builder.push("u.first_name ILIKE ");
+                query_builder.push_bind(search_pattern.clone());
+                
+                query_builder.push(" OR ");
+                
+                // Last name search - parameterized  
+                query_builder.push("u.last_name ILIKE ");
+                query_builder.push_bind(search_pattern.clone());
+                
+                query_builder.push(" OR ");
+                
+                // Username search - parameterized
+                query_builder.push("u.username ILIKE ");
+                query_builder.push_bind(search_pattern);
+                
+                query_builder.push(")");
+            }
+        }
 
         query_builder.push(" ORDER BY ");
 
@@ -314,7 +351,7 @@ impl Query for GetUserDetailsQuery {
             r#"
             SELECT
                 id, created_at, updated_at, user_id,
-                phone_number, verified, verified_at
+                phone_number, country_code, verified, verified_at
             FROM user_phone_numbers
             WHERE user_id = $1
             "#,
@@ -331,6 +368,7 @@ impl Query for GetUserDetailsQuery {
                 updated_at: row.updated_at,
                 user_id: row.user_id.unwrap_or(self.user_id),
                 phone_number: row.phone_number,
+                country_code: row.country_code,
                 verified: row.verified,
                 verified_at: row.verified_at.unwrap_or_else(|| chrono::Utc::now()),
             })

@@ -213,6 +213,8 @@ pub struct DeploymentB2bSettingsUpdates {
     pub limit_workspace_creation_per_org: Option<bool>,
     pub org_creation_per_user_count: Option<i32>,
     pub workspaces_per_org_count: Option<i32>,
+    pub workspace_permissions: Option<Vec<String>>,
+    pub organization_permissions: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Default)]

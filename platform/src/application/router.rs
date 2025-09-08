@@ -146,8 +146,13 @@ fn base_deployment_routes() -> Router<AppState> {
             patch(api::b2b::update_workspace_role).delete(api::b2b::delete_workspace_role),
         )
         .route(
+            "/workspaces/{workspace_id}/members",
+            get(api::b2b::get_workspace_members),
+        )
+        .route(
             "/organizations/{organization_id}/members",
-            post(api::b2b::add_organization_member),
+            get(api::b2b::get_organization_members)
+                .post(api::b2b::add_organization_member),
         )
         .route(
             "/organizations/{organization_id}/members/{membership_id}",
@@ -502,7 +507,9 @@ pub async fn create_console_router(state: AppState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    println!("tes");
     wacht::init_from_env().await.unwrap();
+    println!("tes");
 
     use wacht::middleware::AuthLayer;
     let auth_layer = AuthLayer::new();

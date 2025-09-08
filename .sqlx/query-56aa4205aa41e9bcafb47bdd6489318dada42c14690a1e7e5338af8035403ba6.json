@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                wm.id, wm.created_at, wm.updated_at,\n                wm.workspace_id, wm.user_id,\n                u.first_name, u.last_name, u.username,\n                u.created_at as user_created_at,\n                e.email_address as \"primary_email_address?\",\n                p.phone_number as \"primary_phone_number?\",\n                COALESCE(\n                    ARRAY_AGG(\n                        DISTINCT jsonb_build_object(\n                            'id', wrole.id::text,\n                            'created_at', wrole.created_at,\n                            'updated_at', wrole.updated_at,\n                            'name', wrole.name,\n                            'permissions', wrole.permissions,\n                            'is_deployment_level', CASE WHEN wrole.workspace_id IS NULL THEN true ELSE false END\n                        )\n                    ) FILTER (WHERE wrole.id IS NOT NULL),\n                    ARRAY[]::jsonb[]\n                ) as \"roles!\"\n            FROM workspace_memberships wm\n            JOIN users u ON wm.user_id = u.id AND u.deleted_at IS NULL\n            LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id\n            LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id\n            LEFT JOIN workspace_membership_roles wmr ON wmr.workspace_membership_id = wm.id\n            LEFT JOIN workspace_roles wrole ON wmr.workspace_role_id = wrole.id\n            WHERE wm.workspace_id = $1 AND wm.deleted_at IS NULL\n            GROUP BY wm.id, wm.created_at, wm.updated_at, wm.workspace_id, wm.user_id,\n                     u.first_name, u.last_name, u.username, u.created_at,\n                     e.email_address, p.phone_number\n            ORDER BY wm.created_at DESC\n            LIMIT $2 OFFSET $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "workspace_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "first_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "last_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "username",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "user_created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "primary_email_address?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "primary_phone_number?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "roles!",
+        "type_info": "JsonbArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "56aa4205aa41e9bcafb47bdd6489318dada42c14690a1e7e5338af8035403ba6"
+}

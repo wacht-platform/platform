@@ -5873,6 +5873,7 @@ dependencies = [
  "futures",
  "models",
  "queries",
+ "redis",
  "reqwest",
  "serde",
  "serde_json",

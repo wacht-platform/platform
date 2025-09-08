@@ -305,26 +305,6 @@ impl Query for GetOrganizationDetailsQuery {
         .fetch_one(&app_state.db_pool)
         .await?;
 
-        // Get organization members with user details
-        let member_rows = sqlx::query!(
-            r#"
-            SELECT
-                om.id, om.created_at, om.updated_at,
-                om.organization_id, om.user_id,
-                u.first_name, u.last_name, u.username,
-                u.created_at as user_created_at,
-                e.email_address as "primary_email_address?",
-                p.phone_number as "primary_phone_number?"
-            FROM organization_memberships om
-            JOIN users u ON om.user_id = u.id
-            LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id
-            LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id
-            WHERE om.organization_id = $1
-            "#,
-            self.organization_id
-        )
-        .fetch_all(&app_state.db_pool)
-        .await?;
 
         // Get organization roles with permissions (both deployment-level and organization-specific)
         let role_rows = sqlx::query!(
@@ -352,28 +332,6 @@ impl Query for GetOrganizationDetailsQuery {
             })
             .collect();
 
-        // Build member details (simplified - in real implementation, you'd need to join with role assignments)
-        let members: Vec<OrganizationMemberDetails> = member_rows
-            .into_iter()
-            .map(|row| OrganizationMemberDetails {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                organization_id: row.organization_id,
-                user_id: row.user_id,
-                roles: vec![], // Simplified for now - would need async context to fetch roles
-                first_name: row.first_name,
-                last_name: row.last_name,
-                username: if row.username.is_empty() {
-                    None
-                } else {
-                    Some(row.username)
-                },
-                primary_email_address: row.primary_email_address,
-                primary_phone_number: row.primary_phone_number,
-                user_created_at: row.user_created_at,
-            })
-            .collect();
 
         // Get organization workspaces
         let workspace_rows = sqlx::query!(
@@ -416,7 +374,6 @@ impl Query for GetOrganizationDetailsQuery {
             member_count: org_row.member_count,
             public_metadata: org_row.public_metadata,
             private_metadata: org_row.private_metadata,
-            members,
             roles,
             workspaces,
         })
@@ -459,26 +416,6 @@ impl Query for GetWorkspaceDetailsQuery {
         .fetch_one(&app_state.db_pool)
         .await?;
 
-        // Get workspace members with user details
-        let member_rows = sqlx::query!(
-            r#"
-            SELECT
-                wm.id, wm.created_at, wm.updated_at,
-                wm.workspace_id, wm.user_id,
-                u.first_name, u.last_name, u.username,
-                u.created_at as user_created_at,
-                e.email_address as "primary_email_address?",
-                p.phone_number as "primary_phone_number?"
-            FROM workspace_memberships wm
-            JOIN users u ON wm.user_id = u.id
-            LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id
-            LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id
-            WHERE wm.workspace_id = $1
-            "#,
-            self.workspace_id
-        )
-        .fetch_all(&app_state.db_pool)
-        .await?;
 
         // Get workspace roles with permissions (both deployment-level and workspace-specific)
         let role_rows = sqlx::query!(
@@ -506,27 +443,6 @@ impl Query for GetWorkspaceDetailsQuery {
             })
             .collect();
 
-        let members: Vec<WorkspaceMemberDetails> = member_rows
-            .into_iter()
-            .map(|row| WorkspaceMemberDetails {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                workspace_id: row.workspace_id,
-                user_id: row.user_id,
-                roles: vec![],
-                first_name: row.first_name,
-                last_name: row.last_name,
-                username: if row.username.is_empty() {
-                    None
-                } else {
-                    Some(row.username)
-                },
-                primary_email_address: row.primary_email_address,
-                primary_phone_number: row.primary_phone_number,
-                user_created_at: row.user_created_at,
-            })
-            .collect();
 
         Ok(WorkspaceDetails {
             id: workspace_row.id,
@@ -540,8 +456,227 @@ impl Query for GetWorkspaceDetailsQuery {
             private_metadata: workspace_row.private_metadata,
             organization_id: workspace_row.organization_id,
             organization_name: workspace_row.organization_name.unwrap_or_default(),
-            members,
             roles,
         })
+    }
+}
+
+pub struct GetOrganizationMembersQuery {
+    organization_id: i64,
+    offset: i64,
+    limit: i32,
+}
+
+impl GetOrganizationMembersQuery {
+    pub fn new(organization_id: i64) -> Self {
+        Self {
+            organization_id,
+            offset: 0,
+            limit: 20,
+        }
+    }
+
+    pub fn offset(mut self, offset: i64) -> Self {
+        self.offset = offset;
+        self
+    }
+
+    pub fn limit(mut self, limit: i32) -> Self {
+        self.limit = limit;
+        self
+    }
+}
+
+impl Query for GetOrganizationMembersQuery {
+    type Output = (Vec<OrganizationMemberDetails>, bool);
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Get organization members with user details and their roles
+        let member_rows = sqlx::query!(
+            r#"
+            SELECT
+                om.id, om.created_at, om.updated_at,
+                om.organization_id, om.user_id,
+                u.first_name, u.last_name, u.username,
+                u.created_at as user_created_at,
+                e.email_address as "primary_email_address?",
+                p.phone_number as "primary_phone_number?",
+                COALESCE(
+                    ARRAY_AGG(
+                        DISTINCT jsonb_build_object(
+                            'id', orole.id::text,
+                            'created_at', orole.created_at,
+                            'updated_at', orole.updated_at,
+                            'name', orole.name,
+                            'permissions', orole.permissions,
+                            'is_deployment_level', CASE WHEN orole.organization_id IS NULL THEN true ELSE false END
+                        )
+                    ) FILTER (WHERE orole.id IS NOT NULL),
+                    ARRAY[]::jsonb[]
+                ) as "roles!"
+            FROM organization_memberships om
+            JOIN users u ON om.user_id = u.id AND u.deleted_at IS NULL
+            LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id
+            LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id
+            LEFT JOIN organization_membership_roles omr ON omr.organization_membership_id = om.id
+            LEFT JOIN organization_roles orole ON omr.organization_role_id = orole.id
+            WHERE om.organization_id = $1 AND om.deleted_at IS NULL
+            GROUP BY om.id, om.created_at, om.updated_at, om.organization_id, om.user_id,
+                     u.first_name, u.last_name, u.username, u.created_at,
+                     e.email_address, p.phone_number
+            ORDER BY om.created_at DESC
+            LIMIT $2 OFFSET $3
+            "#,
+            self.organization_id,
+            (self.limit + 1) as i64,
+            self.offset
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
+        let has_more = member_rows.len() > self.limit as usize;
+        let members: Vec<OrganizationMemberDetails> = member_rows
+            .into_iter()
+            .take(self.limit as usize)
+            .map(|row| {
+                let roles: Vec<OrganizationRole> = row.roles
+                    .iter()
+                    .filter_map(|role_json| {
+                        serde_json::from_value::<OrganizationRole>(role_json.clone()).ok()
+                    })
+                    .collect();
+
+                OrganizationMemberDetails {
+                    id: row.id,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                    organization_id: row.organization_id,
+                    user_id: row.user_id,
+                    roles,
+                    first_name: row.first_name,
+                    last_name: row.last_name,
+                    username: if row.username.is_empty() {
+                        None
+                    } else {
+                        Some(row.username)
+                    },
+                    primary_email_address: row.primary_email_address,
+                    primary_phone_number: row.primary_phone_number,
+                    user_created_at: row.user_created_at,
+                }
+            })
+            .collect();
+
+        Ok((members, has_more))
+    }
+}
+
+pub struct GetWorkspaceMembersQuery {
+    workspace_id: i64,
+    offset: i64,
+    limit: i32,
+}
+
+impl GetWorkspaceMembersQuery {
+    pub fn new(workspace_id: i64) -> Self {
+        Self {
+            workspace_id,
+            offset: 0,
+            limit: 20,
+        }
+    }
+
+    pub fn offset(mut self, offset: i64) -> Self {
+        self.offset = offset;
+        self
+    }
+
+    pub fn limit(mut self, limit: i32) -> Self {
+        self.limit = limit;
+        self
+    }
+}
+
+impl Query for GetWorkspaceMembersQuery {
+    type Output = (Vec<WorkspaceMemberDetails>, bool);
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Get workspace members with user details and their roles
+        let member_rows = sqlx::query!(
+            r#"
+            SELECT
+                wm.id, wm.created_at, wm.updated_at,
+                wm.workspace_id, wm.user_id,
+                u.first_name, u.last_name, u.username,
+                u.created_at as user_created_at,
+                e.email_address as "primary_email_address?",
+                p.phone_number as "primary_phone_number?",
+                COALESCE(
+                    ARRAY_AGG(
+                        DISTINCT jsonb_build_object(
+                            'id', wrole.id::text,
+                            'created_at', wrole.created_at,
+                            'updated_at', wrole.updated_at,
+                            'name', wrole.name,
+                            'permissions', wrole.permissions,
+                            'is_deployment_level', CASE WHEN wrole.workspace_id IS NULL THEN true ELSE false END
+                        )
+                    ) FILTER (WHERE wrole.id IS NOT NULL),
+                    ARRAY[]::jsonb[]
+                ) as "roles!"
+            FROM workspace_memberships wm
+            JOIN users u ON wm.user_id = u.id AND u.deleted_at IS NULL
+            LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id
+            LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id
+            LEFT JOIN workspace_membership_roles wmr ON wmr.workspace_membership_id = wm.id
+            LEFT JOIN workspace_roles wrole ON wmr.workspace_role_id = wrole.id
+            WHERE wm.workspace_id = $1 AND wm.deleted_at IS NULL
+            GROUP BY wm.id, wm.created_at, wm.updated_at, wm.workspace_id, wm.user_id,
+                     u.first_name, u.last_name, u.username, u.created_at,
+                     e.email_address, p.phone_number
+            ORDER BY wm.created_at DESC
+            LIMIT $2 OFFSET $3
+            "#,
+            self.workspace_id,
+            (self.limit + 1) as i64,
+            self.offset
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
+        let has_more = member_rows.len() > self.limit as usize;
+        let members: Vec<WorkspaceMemberDetails> = member_rows
+            .into_iter()
+            .take(self.limit as usize)
+            .map(|row| {
+                let roles: Vec<WorkspaceRole> = row.roles
+                    .iter()
+                    .filter_map(|role_json| {
+                        serde_json::from_value::<WorkspaceRole>(role_json.clone()).ok()
+                    })
+                    .collect();
+
+                WorkspaceMemberDetails {
+                    id: row.id,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                    workspace_id: row.workspace_id,
+                    user_id: row.user_id,
+                    roles,
+                    first_name: row.first_name,
+                    last_name: row.last_name,
+                    username: if row.username.is_empty() {
+                        None
+                    } else {
+                        Some(row.username)
+                    },
+                    primary_email_address: row.primary_email_address,
+                    primary_phone_number: row.primary_phone_number,
+                    user_created_at: row.user_created_at,
+                }
+            })
+            .collect();
+
+        Ok((members, has_more))
     }
 }

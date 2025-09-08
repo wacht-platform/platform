@@ -61,7 +61,7 @@ impl Default for DeploymentEmailTemplate {
                 template_name: "Verification Code".to_string(),
                 template_from: "verification".to_string(),
                 template_reply_to: "".to_string(),
-                template_subject: "Your verification code for {{app_name}}".to_string(),
+                template_subject: "{{code}} is your verification code for {{app_name}}".to_string(),
                 template_data: r#"
         <div style="padding: 48px 32px; background-color: #f9fafb;">
             <div style="text-align: center; margin-bottom: 32px; font-size: 32px; line-height: 1.4;">
