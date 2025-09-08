@@ -36,7 +36,7 @@ pub async fn log_agent_stream_message(
         webhook_payload,
     );
 
-    trigger_command.execute(app_state).await.unwrap();
+    trigger_command.execute(app_state).await?;
 
     Ok(format!(
         "Processed {} message for context {}",

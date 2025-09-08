@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use reqwest;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use tracing::{error, info};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -45,7 +44,6 @@ use common::state::AppState;
 pub async fn send_otp_sms(
     deployment_id: u64,
     phone_number: &str,
-    user_id: u64,
     country_code: &str,
     app_state: &AppState,
 ) -> Result<String> {
@@ -62,10 +60,6 @@ pub async fn send_otp_sms(
         clean_country_code, customer_id, clean_phone
     );
 
-    info!(
-        "Sending OTP SMS to +{}{} for user {} in deployment {}",
-        clean_country_code, clean_phone, user_id, deployment_id
-    );
 
     let client = reqwest::Client::new();
     let response = client
@@ -77,8 +71,6 @@ pub async fn send_otp_sms(
 
     let status = response.status();
     let response_text = response.text().await?;
-    
-    info!("MessageCentral API response: Status: {}, Body: {}", status, response_text);
 
     if !status.is_success() {
         error!("MessageCentral API error: {} - {}", status, response_text);
@@ -109,13 +101,6 @@ pub async fn send_otp_sms(
 
         // Store verification ID in cache for later verification
         let cache_key = format!("sms_verification:{}:{}", deployment_id, phone_number);
-        let verification_data = json!({
-            "verification_id": data.verification_id,
-            "user_id": user_id,
-            "country_code": country_code
-        });
-        
-        info!("Storing verification with key: {}", cache_key);
         
         let mut conn = app_state.redis_client.get_connection()
             .map_err(|e| anyhow!("Failed to get Redis connection: {}", e))?;
@@ -123,7 +108,7 @@ pub async fn send_otp_sms(
         redis::cmd("SETEX")
             .arg(&cache_key)
             .arg(600) // 10 minutes expiry
-            .arg(serde_json::to_string(&verification_data)?)
+            .arg(&data.verification_id)
             .query::<()>(&mut conn)
             .map_err(|e| anyhow!("Failed to store verification data: {}", e))?;
 

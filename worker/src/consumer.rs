@@ -281,7 +281,6 @@ impl NatsConsumer {
                     sms::send_otp_sms(
                         task.deployment_id,
                         &task.phone_number,
-                        task.user_id,
                         &task.country_code,
                         &app_state,
                     )
