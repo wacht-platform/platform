@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::time::Duration;
 
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3::Client as S3Client;
@@ -35,8 +36,10 @@ impl AppState {
     pub async fn new_from_env() -> Result<Self, Box<dyn Error>> {
         let database_url = env("DATABASE_URL")?;
         let pool = PgPoolOptions::new()
-            .min_connections(1)
-            .max_connections(5)
+            .min_connections(5)
+            .acquire_timeout(Duration::from_secs(30))
+            .max_lifetime(Some(Duration::from_secs(150)))
+            .max_connections(50)
             .connect(&database_url)
             .await?;
 
