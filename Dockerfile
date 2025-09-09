@@ -32,6 +32,6 @@ COPY --from=builder /app/target/release/backend-api /app/backend
 COPY --from=builder /app/target/release/console-api /app/console
 COPY --from=builder /app/target/release/realtime /app/realtime
 COPY --from=builder /app/target/release/gateway /app/gateway
-
+COPY --from=builder /app/target/release/worker /app/worker
 
 EXPOSE 3001
