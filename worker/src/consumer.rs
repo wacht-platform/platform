@@ -400,7 +400,17 @@ impl NatsConsumer {
                         &app_state,
                     )
                     .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
+                    .map_err(|e| {
+                        let error_str = e.to_string().to_lowercase();
+                        // Retry on query timeouts and pool exhaustion
+                        if error_str.contains("query_wait_timeout") 
+                            || error_str.contains("pool timed out while waiting")
+                            || error_str.contains("timeout") {
+                            TaskError::RetryWithDelay(Duration::from_secs(10))
+                        } else {
+                            TaskError::Permanent(e.to_string())
+                        }
+                    })
                 })
             }),
         );
@@ -458,18 +468,6 @@ impl NatsConsumer {
 
         let stream = self.jetstream.get_stream("worker_tasks").await?;
 
-        if std::env::var("CLEAR_QUEUE_ON_STARTUP").unwrap_or_default() == "true" {
-            warn!("CLEAR_QUEUE_ON_STARTUP is enabled - purging all messages");
-            match stream.purge().await {
-                Ok(info) => {
-                    info!("Purged {} messages from queue", info.purged);
-                }
-                Err(e) => {
-                    error!("Failed to purge queue: {}", e);
-                }
-            }
-        }
-
         let consumer = match stream
             .create_consumer(consumer::pull::Config {
                 durable_name: Some("worker-processor".to_string()),
@@ -488,7 +486,7 @@ impl NatsConsumer {
         let messages = consumer.messages().await?.take(5000);
 
         messages
-            .for_each_concurrent(5000, async |message| {
+            .for_each_concurrent(1000, async |message| {
                 if message.is_err() {
                     error!("Error getting message: {}", message.err().unwrap());
                     return;
