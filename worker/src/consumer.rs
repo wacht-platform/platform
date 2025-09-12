@@ -403,9 +403,10 @@ impl NatsConsumer {
                     .map_err(|e| {
                         let error_str = e.to_string().to_lowercase();
                         // Retry on query timeouts and pool exhaustion
-                        if error_str.contains("query_wait_timeout") 
+                        if error_str.contains("query_wait_timeout")
                             || error_str.contains("pool timed out while waiting")
-                            || error_str.contains("timeout") {
+                            || error_str.contains("timeout")
+                        {
                             TaskError::RetryWithDelay(Duration::from_secs(10))
                         } else {
                             TaskError::Permanent(e.to_string())

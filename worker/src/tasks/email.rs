@@ -959,9 +959,9 @@ fn create_magic_link_variables(
     variables.insert("app_name".to_string(), app_name);
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("magic_link".to_string(), magic_link.to_string());
+    variables.insert("action_url".to_string(), magic_link.to_string());
     variables.insert(
-        "magic_link.expires_in_minutes".to_string(),
+        "link.expires_in_minutes".to_string(),
         "15".to_string(),
     );
 
