@@ -33,7 +33,7 @@ pub async fn generate_token(
 pub struct GenerateAgentContextTokenRequest {
     pub user_id: i64,
     pub audience: Option<String>,
-    pub validity_hours: Option<u32>, // Optional validity in hours, defaults to 24
+    pub validity_hours: Option<u32>,
 }
 
 pub async fn generate_agent_context_token(
