@@ -1,14 +1,15 @@
 [workspace]
-resolver = "2"
 members = [
     "agent-engine",
-    "realtime",
-    "platform",
-    "worker",
+    "commands",
+    "common",
+    "dto",
     "gateway",
     "models",
-    "dto",
-    "commands",
+    "oauth-relay",
+    "platform",
     "queries",
-    "common",
+    "realtime",
+    "worker",
 ]
+resolver = "2"

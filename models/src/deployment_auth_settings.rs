@@ -6,7 +6,7 @@ use sqlx::postgres::PgTypeInfo;
 
 use crate::error::AppError;
 
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum FirstFactor {
     EmailPassword,
@@ -77,7 +77,7 @@ impl ToString for SecondFactor {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum SecondFactorPolicy {
     None,
@@ -304,7 +304,7 @@ impl Default for PasskeySettings {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MultiSessionSupport {
     pub enabled: bool,
     pub max_accounts_per_session: i64,

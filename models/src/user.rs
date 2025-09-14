@@ -143,7 +143,6 @@ pub struct User {
     pub deployment_id: i64,
     pub public_metadata: Value,
     pub private_metadata: Value,
-    pub otp_secret: String,
     pub backup_codes: Vec<String>,
 }
 

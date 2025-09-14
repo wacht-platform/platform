@@ -36,6 +36,5 @@ pub struct UserDetails {
 
     // Authentication
     pub has_password: bool,
-    pub has_otp: bool,
     pub has_backup_codes: bool,
 }

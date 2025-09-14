@@ -3,11 +3,11 @@ use serde_json::Value;
 
 use models::{
     CountryRestrictions, CustomSigningKey, DarkModeSettings, DeploymentRestrictionsSignUpMode,
-    LightModeSettings, MultiSessionSupport, OauthCredentials, SecondFactorPolicy,
+    FirstFactor, LightModeSettings, MultiSessionSupport, OauthCredentials, SecondFactorPolicy,
     SocialConnectionProvider,
 };
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct PartialEmailSettings {
     pub enabled: Option<bool>,
     pub required: Option<bool>,
@@ -16,7 +16,7 @@ pub struct PartialEmailSettings {
     pub magic_link_verification_allowed: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct PartialPhoneSettings {
     pub enabled: Option<bool>,
     pub required: Option<bool>,
@@ -25,7 +25,7 @@ pub struct PartialPhoneSettings {
     pub whatsapp_verification_allowed: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct PartialUsernameSettings {
     pub enabled: Option<bool>,
     pub required: Option<bool>,
@@ -33,7 +33,7 @@ pub struct PartialUsernameSettings {
     pub max_length: Option<u8>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct PartialPasswordSettings {
     pub enabled: Option<bool>,
     pub min_length: Option<u8>,
@@ -43,7 +43,7 @@ pub struct PartialPasswordSettings {
     pub require_special: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct PartialNameSettings {
     pub first_name_enabled: Option<bool>,
     pub first_name_required: Option<bool>,
@@ -51,25 +51,25 @@ pub struct PartialNameSettings {
     pub last_name_required: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct PartialEmailLinkSettings {
     pub enabled: Option<bool>,
     pub require_same_device: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct PartialPasskeySettings {
     pub enabled: Option<bool>,
     pub allow_autofill: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct PartialIndividualAuthSettings {
     pub enabled: Option<bool>,
     pub required: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct PartialAuthenticationFactorSettings {
     pub email_password_enabled: Option<bool>,
     pub username_password_enabled: Option<bool>,
@@ -115,7 +115,7 @@ pub struct SocialConnectionSettings {
     pub enabled: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct DeploymentAuthSettingsUpdates {
     pub email: Option<PartialEmailSettings>,
     pub phone: Option<PartialPhoneSettings>,
@@ -124,6 +124,7 @@ pub struct DeploymentAuthSettingsUpdates {
     pub name: Option<PartialNameSettings>,
     pub authentication_factors: Option<PartialAuthenticationFactorSettings>,
     pub second_factor_policy: Option<SecondFactorPolicy>,
+    pub first_factor: Option<FirstFactor>,
     pub backup_code: Option<PartialIndividualAuthSettings>,
     pub web3_wallet: Option<PartialIndividualAuthSettings>,
     pub multi_session_support: Option<MultiSessionSupport>,

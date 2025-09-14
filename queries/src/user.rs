@@ -300,7 +300,7 @@ impl Query for GetUserDetailsQuery {
                 u.schema_version, u.disabled, u.second_factor_policy,
                 u.active_organization_membership_id, u.active_workspace_membership_id,
                 u.deployment_id, u.public_metadata, u.private_metadata,
-                u.password, u.otp_secret, u.backup_codes,
+                u.password, u.backup_codes,
                 e.email_address as primary_email_address,
                 p.phone_number as "primary_phone_number?"
             FROM users u
@@ -434,7 +434,6 @@ impl Query for GetUserDetailsQuery {
             social_connections,
             has_password: user_row.password.is_some()
                 && !user_row.password.unwrap_or_default().is_empty(),
-            has_otp: !user_row.otp_secret.is_empty(),
             has_backup_codes: user_row.backup_codes.is_some()
                 && !user_row.backup_codes.unwrap_or_default().is_empty(),
         };

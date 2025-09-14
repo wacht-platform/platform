@@ -799,6 +799,7 @@ impl AgentExecutor {
             .context_orchestrator
             .gather_context(
                 &self.conversations,
+                &self.memories,
                 &context_objective,
                 directive.pattern,
                 directive.expected_depth,

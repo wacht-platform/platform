@@ -64,6 +64,9 @@ pub async fn update_deployment_auth_settings(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentAuthSettingsUpdates>,
 ) -> ApiResult<()> {
+    // Debug: Log the raw JSON received
+    println!("API received auth settings updates: {}", serde_json::to_string_pretty(&updates).unwrap_or_else(|_| "Failed to serialize".to_string()));
+    
     UpdateDeploymentAuthSettingsCommand::new(deployment_id, updates)
         .execute(&app_state)
         .await

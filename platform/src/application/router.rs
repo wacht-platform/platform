@@ -151,8 +151,7 @@ fn base_deployment_routes() -> Router<AppState> {
         )
         .route(
             "/organizations/{organization_id}/members",
-            get(api::b2b::get_organization_members)
-                .post(api::b2b::add_organization_member),
+            get(api::b2b::get_organization_members).post(api::b2b::add_organization_member),
         )
         .route(
             "/organizations/{organization_id}/members/{membership_id}",
@@ -483,20 +482,20 @@ fn backend_specific_routes() -> Router<AppState> {
         )
         .route("/token", post(api::token::generate_token))
         .route(
-            "/token/agent-context",
+            "/token/agent",
             post(api::token::generate_agent_context_token),
         )
         .route(
-            "/ai-execution-contexts",
+            "/agent-execution-contexts",
             get(api::ai_execution_context::get_execution_contexts_backend)
                 .post(api::ai_execution_context::create_execution_context_backend),
         )
         .route(
-            "/ai-execution-contexts/{context_id}",
+            "/agent-execution-contexts/{context_id}",
             patch(api::ai_execution_context::update_execution_context),
         )
         .route(
-            "/ai-execution-contexts/{context_id}/execute",
+            "/agent-execution-contexts/{context_id}/execute",
             post(api::ai_execution_context::execute_agent_async),
         )
 }

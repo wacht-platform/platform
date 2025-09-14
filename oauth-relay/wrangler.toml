@@ -1,0 +1,12 @@
+name = "oauth-relay"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-01-01"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+# OAuth relay service for staging deployments
+# Redirects OAuth callbacks to the appropriate staging environment
+[[routes]]
+pattern = "ssocallback.wacht.services"
+custom_domain = true

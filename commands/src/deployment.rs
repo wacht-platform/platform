@@ -69,8 +69,14 @@ impl UpdateDeploymentAuthSettingsCommand {
 fn build_partial_json<T: serde::Serialize>(data: Option<&T>) -> Option<Value> {
     data.and_then(|d| match serde_json::to_value(d) {
         Ok(Value::Object(map)) => {
+            // Debug logging
+            println!("build_partial_json input map: {:?}", map);
+            
             let filtered_map: Map<String, Value> =
                 map.into_iter().filter(|(_, v)| !v.is_null()).collect();
+            
+            println!("build_partial_json filtered map: {:?}", filtered_map);
+            
             if filtered_map.is_empty() {
                 None
             } else {
@@ -86,6 +92,9 @@ impl Command for UpdateDeploymentAuthSettingsCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Debug log the incoming updates
+        println!("Received auth settings updates: {:?}", self.updates);
+        
         let mut text_updates: Vec<(&str, String)> = Vec::new();
         let mut int_updates: Vec<(&str, i64)> = Vec::new();
         let mut jsonb_merges: Vec<(&str, Value)> = Vec::new();
@@ -194,6 +203,10 @@ impl Command for UpdateDeploymentAuthSettingsCommand {
 
         if let Some(policy) = self.updates.second_factor_policy {
             text_updates.push(("second_factor_policy", policy.to_string()));
+        }
+
+        if let Some(factor) = self.updates.first_factor {
+            text_updates.push(("first_factor", factor.to_string()));
         }
 
         if let Some(session) = &self.updates.multi_session_support {

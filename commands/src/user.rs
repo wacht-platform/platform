@@ -6,7 +6,7 @@ use crate::{Command, SendEmailCommand};
 use common::error::AppError;
 use common::state::AppState;
 use common::utils::{
-    security::{PasswordHasher, TotpGenerator},
+    security::PasswordHasher,
     validation::UserValidator,
 };
 use dto::json::{CreateUserRequest, InviteUserRequest, UpdateUserRequest};
@@ -63,16 +63,14 @@ impl Command for CreateUserCommand {
             None
         };
 
-        let otp_secret = TotpGenerator::generate_secret()?;
-
         sqlx::query!(
             r#"
             INSERT INTO users (
                 id, created_at, updated_at, first_name, last_name, username,
                 password, profile_picture_url, has_profile_picture, schema_version, disabled, second_factor_policy,
-                deployment_id, public_metadata, private_metadata, otp_secret, backup_codes, backup_codes_generated
+                deployment_id, public_metadata, private_metadata, backup_codes, backup_codes_generated
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             "#,
             user_id,
             now,
@@ -81,7 +79,7 @@ impl Command for CreateUserCommand {
             self.request.last_name,
             self.request.username.as_deref().unwrap_or(""),
             hashed_password.as_deref(),
-            "", 
+            "",
             false, // has_profile_picture defaults to false
             "v1",
             false,
@@ -89,7 +87,6 @@ impl Command for CreateUserCommand {
             self.deployment_id,
             json!({}),
             json!({}),
-            otp_secret,
             &Vec::<String>::new(),
             false // backup_codes_generated defaults to false
         )

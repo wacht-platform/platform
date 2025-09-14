@@ -268,6 +268,7 @@ impl ContextOrchestrator {
     pub async fn gather_context(
         &self,
         conversations: &[ConversationRecord],
+        memories: &[models::MemoryRecord],
         current_objective: &Option<ObjectiveDefinition>,
         search_pattern: dto::json::agent_executor::SearchPattern,
         expected_depth: Option<dto::json::agent_executor::SearchDepth>,
@@ -304,6 +305,7 @@ impl ContextOrchestrator {
             let derivation = self
                 .derive_search_strategy(
                     conversations,
+                    memories,
                     current_objective,
                     &previous_searches,
                     progress_data.as_ref(),
@@ -603,6 +605,7 @@ impl ContextOrchestrator {
     async fn derive_search_strategy(
         &self,
         conversations: &[ConversationRecord],
+        memories: &[models::MemoryRecord],
         current_objective: &Option<ObjectiveDefinition>,
         previous_searches: &[Value],
         progress_data: Option<&Value>,
@@ -621,6 +624,7 @@ impl ContextOrchestrator {
 
         let mut template_data = json!({
             "conversation_history": self.format_conversation_history(conversations),
+            "memories": self.format_memories_for_template(memories),
             "current_objective": current_objective,
             "available_knowledge_bases": self.agent.knowledge_bases.clone(),
             "has_previous_searches": !previous_searches.is_empty(),
@@ -727,8 +731,6 @@ impl ContextOrchestrator {
                 let vector_weight = 0.7;
                 let text_weight = 0.3;
 
-                let weight_sum = vector_weight + text_weight;
-                if (weight_sum - 1.0_f32).abs() > 0.001 {}
 
                 SearchMode::Hybrid {
                     vector_weight,
@@ -1411,6 +1413,21 @@ impl ContextOrchestrator {
             api_key,
             Some("gemini-2.5-pro".to_string()),
         ))
+    }
+
+    fn format_memories_for_template(&self, memories: &[models::MemoryRecord]) -> Vec<Value> {
+        memories
+            .iter()
+            .map(|mem| {
+                json!({
+                    "content": mem.content.clone(),
+                    "importance": mem.base_temporal_score,
+                    "category": format!("{:?}", mem.memory_category),
+                    "access_count": mem.access_count,
+                    "last_accessed": mem.last_accessed_at,
+                })
+            })
+            .collect()
     }
 
     async fn search_conversations(

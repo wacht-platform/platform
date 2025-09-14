@@ -527,7 +527,6 @@ pub async fn send_waitlist_approval_impl(
         phone_numbers: vec![],
         social_connections: vec![],
         has_password: false,
-        has_otp: false,
         has_backup_codes: false,
     };
 

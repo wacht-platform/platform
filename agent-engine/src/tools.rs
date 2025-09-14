@@ -121,8 +121,9 @@ impl ToolExecutor {
             }
         }
 
-        if !query_params.is_empty() {}
-        request_builder = request_builder.query(&query_params);
+        if !query_params.is_empty() {
+            request_builder = request_builder.query(&query_params);
+        }
 
         match config.method {
             HttpMethod::POST | HttpMethod::PUT | HttpMethod::PATCH => {
