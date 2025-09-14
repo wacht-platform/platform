@@ -272,7 +272,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         let hostname = format!("{}-{}", random_name, count);
 
-        let backend_host = format!("{}.backend-api.services", hostname);
+        let backend_host = format!("{}.frontend-api.services", hostname);
         let frontend_host = format!("{}.wacht.tech", hostname);
         let mut publishable_key = String::from("pk_test_");
 
