@@ -15,6 +15,7 @@ COPY realtime/ ./realtime/
 COPY worker/ ./worker/
 COPY gateway/ ./gateway/
 COPY agent-engine/ ./agent-engine/
+COPY oauth-relay/ ./oauth-relay/
 
 # Build backend API
 RUN cargo build --release --all
