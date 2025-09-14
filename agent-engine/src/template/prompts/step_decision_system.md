@@ -23,10 +23,16 @@ You are an intelligent decision orchestrator. Think step-by-step. Execute one ac
 **Goal**: Not yet determined - must understand request first
 {{/if}}
 **Iteration**: {{iteration_info.current_iteration}}/{{iteration_info.max_iterations}} (quality needs many iterations)
-**Resources**:
-- Tools: {{available_tools.length}} {{#unless available_tools}}⚠️ No tools available{{/unless}}
-- Workflows: {{available_workflows.length}} {{#unless available_workflows}}⚠️ No workflows{{/unless}}
-- Knowledge Bases: {{available_knowledge_bases.length}} {{#unless available_knowledge_bases}}⚠️ No KBs for search{{/unless}}
+
+### Available Resources
+**Tools**: {{format_tools available_tools}}
+{{#unless available_tools}}⚠️ No tools available{{/unless}}
+
+**Workflows**: {{format_workflows available_workflows}}
+{{#unless available_workflows}}⚠️ No workflows{{/unless}}
+
+**Knowledge Bases**: {{format_knowledge_bases available_knowledge_bases}}
+{{#unless available_knowledge_bases}}⚠️ No KBs for search{{/unless}}
 
 ## Decision Flow
 ```
