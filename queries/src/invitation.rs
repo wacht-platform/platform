@@ -20,7 +20,7 @@ impl Query for GetDeploymentInvitationQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let row = sqlx::query!(
             r#"
-            SELECT id, created_at, updated_at, deployment_id, first_name, last_name, email_address, expiry
+            SELECT id, created_at, updated_at, deployment_id, first_name, last_name, email_address, token, expiry
             FROM deployment_invitations
             WHERE id = $1
             "#,
@@ -37,6 +37,7 @@ impl Query for GetDeploymentInvitationQuery {
             first_name: row.first_name.unwrap_or_default(),
             last_name: row.last_name.unwrap_or_default(),
             email_address: row.email_address.unwrap_or_default(),
+            token: row.token,
             expiry: row.expiry.unwrap_or_else(|| chrono::Utc::now()),
         };
 

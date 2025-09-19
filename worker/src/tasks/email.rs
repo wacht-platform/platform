@@ -467,12 +467,19 @@ pub async fn send_deployment_invite_impl(
         .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
 
-    let variables = create_workspace_invite_variables(
+    let mut variables = create_workspace_invite_variables(
         &inviter_details,
         &deployment_settings,
         &workspace_name,
         Some(&invitation),
     );
+
+    let frontend_host = deployment_settings.frontend_host.clone();
+    let action_url = format!(
+        "https://{}/sign-up?invite_token={}",
+        frontend_host, invitation.token
+    );
+    variables.insert("action_url".to_string(), action_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -530,8 +537,15 @@ pub async fn send_waitlist_approval_impl(
         has_backup_codes: false,
     };
 
-    let variables =
+    let mut variables =
         create_waitlist_invite_variables(&user_details, &deployment_settings, Some(&invitation));
+
+    let frontend_host = deployment_settings.frontend_host.clone();
+    let action_url = format!(
+        "https://{}/sign-up?invite_token={}",
+        frontend_host, invitation.token
+    );
+    variables.insert("action_url".to_string(), action_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -959,10 +973,7 @@ fn create_magic_link_variables(
     variables.insert("app_logo".to_string(), app_logo);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("action_url".to_string(), magic_link.to_string());
-    variables.insert(
-        "link.expires_in_minutes".to_string(),
-        "15".to_string(),
-    );
+    variables.insert("link.expires_in_minutes".to_string(), "15".to_string());
 
     variables
 }

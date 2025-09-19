@@ -229,7 +229,7 @@ impl Query for DeploymentInvitationQuery {
                 i.id, i.created_at, i.updated_at,
                 i.first_name, i.last_name,
                 i.email_address, i.deployment_id,
-                i.expiry
+                i.token, i.expiry
             FROM deployment_invitations i
             WHERE i.deployment_id = "#,
         );
@@ -266,6 +266,7 @@ impl Query for DeploymentInvitationQuery {
                 last_name: row.get("last_name"),
                 deployment_id: row.get("deployment_id"),
                 email_address: row.get("email_address"),
+                token: row.get("token"),
                 expiry: row.get("expiry"),
             })
             .collect();

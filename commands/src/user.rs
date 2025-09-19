@@ -208,13 +208,21 @@ impl Command for InviteUserCommand {
         let expiry = now + Duration::days(expiry_days);
         let invitation_id = app_state.sf.next_id()? as i64;
 
+        // Generate secure token - must be done before any await
+        let token = {
+            use rand::Rng;
+            let mut rng = rand::rng();
+            let token_bytes: Vec<u8> = (0..32).map(|_| rng.random::<u8>()).collect();
+            hex::encode(token_bytes)
+        };
+
         sqlx::query!(
             r#"
             INSERT INTO deployment_invitations (
                 id, created_at, updated_at, deployment_id,
-                first_name, last_name, email_address, expiry
+                first_name, last_name, email_address, token, expiry
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
             invitation_id,
             now,
@@ -223,6 +231,7 @@ impl Command for InviteUserCommand {
             self.request.first_name,
             self.request.last_name,
             self.request.email_address,
+            token,
             expiry
         )
         .execute(&app_state.db_pool)
@@ -240,6 +249,7 @@ impl Command for InviteUserCommand {
             "invitation.expires_in_days".to_string(),
             expiry_days.to_string(),
         );
+        variables.insert("invitation_token".to_string(), token.clone());
 
         SendEmailCommand::new(
             self.deployment_id,
@@ -258,6 +268,7 @@ impl Command for InviteUserCommand {
             first_name: self.request.first_name,
             last_name: self.request.last_name,
             email_address: self.request.email_address,
+            token,
             expiry,
         };
 
@@ -308,13 +319,21 @@ impl Command for ApproveWaitlistUserCommand {
         let last_name = waitlist_user.last_name.unwrap_or_default();
         let email_address = waitlist_user.email_address.unwrap_or_default();
 
+        // Generate secure token for waitlist approval - must be done before any await
+        let token = {
+            use rand::Rng;
+            let mut rng = rand::rng();
+            let token_bytes: Vec<u8> = (0..32).map(|_| rng.random::<u8>()).collect();
+            hex::encode(token_bytes)
+        };
+
         sqlx::query!(
             r#"
             INSERT INTO deployment_invitations (
                 id, created_at, updated_at, deployment_id,
-                first_name, last_name, email_address, expiry
+                first_name, last_name, email_address, token, expiry
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
             invitation_id,
             now,
@@ -323,6 +342,7 @@ impl Command for ApproveWaitlistUserCommand {
             first_name,
             last_name,
             email_address,
+            token.clone(),
             expiry
         )
         .execute(&mut *tx)
@@ -337,6 +357,7 @@ impl Command for ApproveWaitlistUserCommand {
         variables.insert("first_name".to_string(), first_name.clone());
         variables.insert("last_name".to_string(), last_name.clone());
         variables.insert("invitation.expires_in_days".to_string(), "7".to_string());
+        variables.insert("invitation_token".to_string(), token.clone());
 
         SendEmailCommand::new(
             self.deployment_id,
@@ -364,6 +385,7 @@ impl Command for ApproveWaitlistUserCommand {
             first_name: first_name.clone(),
             last_name: last_name.clone(),
             email_address: email_address.clone(),
+            token,
             expiry,
         };
 
