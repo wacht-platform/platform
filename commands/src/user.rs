@@ -5,10 +5,7 @@ use std::collections::HashMap;
 use crate::{Command, SendEmailCommand};
 use common::error::AppError;
 use common::state::AppState;
-use common::utils::{
-    security::PasswordHasher,
-    validation::UserValidator,
-};
+use common::utils::{security::PasswordHasher, validation::UserValidator};
 use dto::json::{CreateUserRequest, InviteUserRequest, UpdateUserRequest};
 use models::{DeploymentInvitation, UserDetails, UserWithIdentifiers};
 use queries::{GetDeploymentAuthSettingsQuery, Query};
@@ -208,7 +205,6 @@ impl Command for InviteUserCommand {
         let expiry = now + Duration::days(expiry_days);
         let invitation_id = app_state.sf.next_id()? as i64;
 
-        // Generate secure token - must be done before any await
         let token = {
             use rand::Rng;
             let mut rng = rand::rng();
