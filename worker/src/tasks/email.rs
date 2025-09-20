@@ -80,8 +80,9 @@ pub struct WaitlistSignupTask {
 pub struct OrganizationMembershipInviteTask {
     pub deployment_id: u64,
     pub recipient: String,
-    pub inviter_user_id: u64,
-    pub organization_id: u64,
+    pub inviter_name: String,
+    pub organization_name: String,
+    pub invite_link: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -388,32 +389,37 @@ pub async fn send_waitlist_signup_email_impl(
 pub async fn send_organization_membership_invite_impl(
     deployment_id: u64,
     recipient: &str,
-    inviter_user_id: u64,
-    organization_id: u64,
+    inviter_name: &str,
+    organization_name: &str,
+    invite_link: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-    // Fetch inviter user details
-    let inviter_details = GetUserDetailsQuery::new(deployment_id as i64, inviter_user_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch inviter user details: {}", e))?;
-
     // Fetch deployment settings
     let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
         .execute(&app_state)
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    // Fetch organization name
-    let organization_name = fetch_organization_name(&app_state, organization_id)
-        .await
-        .unwrap_or_else(|_| "Organization".to_string());
+    // Create variables directly without needing UserDetails
+    let mut variables = HashMap::new();
 
-    let variables = create_organization_invite_variables(
-        &inviter_details,
-        &deployment_settings,
-        &organization_name,
-    );
+    let app_name = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.app_name.clone())
+        .unwrap_or_else(|| "Your App".to_string());
+    let app_logo = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone())
+        .unwrap_or_else(|| "".to_string());
+
+    variables.insert("app_name".to_string(), app_name);
+    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("first_name".to_string(), inviter_name.split_whitespace().next().unwrap_or("").to_string());
+    variables.insert("organization_name".to_string(), organization_name.to_string());
+    variables.insert("inviter_name".to_string(), inviter_name.to_string());
+    variables.insert("action_url".to_string(), invite_link.to_string());
 
     let command = SendEmailCommand::new(
         deployment_id as i64,

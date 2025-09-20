@@ -219,8 +219,9 @@ impl NatsConsumer {
                     email::send_organization_membership_invite_impl(
                         task.deployment_id,
                         &task.recipient,
-                        task.inviter_user_id,
-                        task.organization_id,
+                        &task.inviter_name,
+                        &task.organization_name,
+                        &task.invite_link,
                         &app_state,
                     )
                     .await

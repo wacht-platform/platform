@@ -22,10 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = application::console_router(app_state).await;
 
-    println!("starting to listen on port");
-
     let port = std::env::var("CONSOLE_API_PORT").unwrap_or_else(|_| "3001".to_string());
-    println!("starting to listen on port {}", port);
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
 
     tracing::info!("Console API listening on port {}", port);

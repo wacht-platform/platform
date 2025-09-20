@@ -84,10 +84,7 @@ impl AppState {
             ClickHouseService::new(env("CLICKHOUSE_HOST")?, env("CLICKHOUSE_PASSWORD")?)?;
 
         let nats_client = async_nats::connect(env("NATS_URL")?).await?;
-        println!("connected nats");
-
         let nats_jetstream = jetstream::new(nats_client.clone());
-        println!("connected jetstream");
 
         Ok(Self {
             db_pool: pool,

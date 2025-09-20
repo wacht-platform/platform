@@ -506,9 +506,7 @@ pub async fn create_console_router(state: AppState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    println!("tes");
     wacht::init_from_env().await.unwrap();
-    println!("tes");
 
     use wacht::middleware::AuthLayer;
     let auth_layer = AuthLayer::new();

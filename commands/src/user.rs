@@ -559,6 +559,14 @@ impl Command for DeleteUserCommand {
             return Err(AppError::NotFound("User not found".to_string()));
         }
 
+        // Delete social connections first (they reference email addresses)
+        sqlx::query!(
+            "DELETE FROM social_connections WHERE user_id = $1",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
         // Delete user email addresses
         sqlx::query!(
             "DELETE FROM user_email_addresses WHERE user_id = $1",
@@ -570,14 +578,6 @@ impl Command for DeleteUserCommand {
         // Delete user phone numbers
         sqlx::query!(
             "DELETE FROM user_phone_numbers WHERE user_id = $1",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        // Delete social connections
-        sqlx::query!(
-            "DELETE FROM social_connections WHERE user_id = $1",
             self.user_id
         )
         .execute(&mut *tx)
