@@ -416,10 +416,21 @@ pub async fn send_organization_membership_invite_impl(
 
     variables.insert("app_name".to_string(), app_name);
     variables.insert("app_logo".to_string(), app_logo);
-    variables.insert("first_name".to_string(), inviter_name.split_whitespace().next().unwrap_or("").to_string());
-    variables.insert("organization_name".to_string(), organization_name.to_string());
+    variables.insert(
+        "first_name".to_string(),
+        inviter_name
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_string(),
+    );
+    variables.insert(
+        "organization_name".to_string(),
+        organization_name.to_string(),
+    );
     variables.insert("inviter_name".to_string(), inviter_name.to_string());
     variables.insert("action_url".to_string(), invite_link.to_string());
+    variables.insert("invitation.expires_in_days".to_string(), "7".to_string());
 
     let command = SendEmailCommand::new(
         deployment_id as i64,

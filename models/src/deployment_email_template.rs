@@ -38,16 +38,16 @@ impl Default for DeploymentEmailTemplate {
                 template_name: "Organization Invitation".to_string(),
                 template_from: "invitations".to_string(),
                 template_reply_to: "".to_string(),
-                template_subject: "Invitation to join {{app_name}}".to_string(),
+                template_subject: "{{inviter_name}} invited you to join {{organization_name}} on {{app_name}}".to_string(),
                 template_data: r#"
         <div style="padding: 48px 32px; background-color: #f9fafb;">
             <div style="text-align: center; margin-bottom: 32px; font-size: 32px; line-height: 1.4;">
                 {{image app_logo}}
             </div>
             <div style="background-color: #ffffff; border-radius: 0px; padding: 32px 32px 48px 32px; margin: 0; text-align: left; box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.1);">
-                <h1 style="color: #000000; text-align: left; margin-top: 0; margin-bottom: 16px; font-weight: 500; font-size: 28px; line-height: 36px;">You're Invited to Join {{app_name}}</h1>
+                <h1 style="color: #000000; text-align: left; margin-top: 0; margin-bottom: 16px; font-weight: 500; font-size: 28px; line-height: 36px;">You're Invited to Join {{organization_name}}</h1>
                 <p style="text-align: left; font-size: 16px; color: #000000; font-weight: normal; line-height: 26px;">
-                    You have been invited to join {{app_name}}. Click the button below to accept the invitation.
+                    <strong>{{inviter_name}}</strong> has invited you to join <strong>{{organization_name}}</strong> on {{app_name}}. Click the button below to accept the invitation and get started.
                 </p>
                  <p style="margin-top: 16px; text-align: left; font-size: 16px; color: #000000; font-weight: normal; line-height: 26px;">
                     This invitation will expire in {{invitation.expires_in_days}} days.

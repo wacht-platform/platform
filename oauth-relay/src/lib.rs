@@ -63,11 +63,7 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
     let state_data = match state.split('.').next() {
         Some(data) => data,
         None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                "Invalid state format",
-            )
-                .into_response();
+            return (StatusCode::BAD_REQUEST, "Invalid state format").into_response();
         }
     };
 
@@ -75,53 +71,38 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
     let decoded_bytes = match URL_SAFE_NO_PAD.decode(state_data) {
         Ok(bytes) => bytes,
         Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                "Failed to decode state parameter",
-            )
-                .into_response();
+            return (StatusCode::BAD_REQUEST, "Failed to decode state parameter").into_response();
         }
     };
 
     let decoded_str = match String::from_utf8(decoded_bytes) {
         Ok(s) => s,
         Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                "Invalid state encoding",
-            )
-                .into_response();
+            return (StatusCode::BAD_REQUEST, "Invalid state encoding").into_response();
         }
     };
 
     // Parse the pipe-delimited state data
-    // Format for sign_in: action|attempt_id|redirect_uri|timestamp
-    // Format for connect_social: action|user_id|session_id|provider|redirect_uri|timestamp
     let parts: Vec<&str> = decoded_str.split('|').collect();
-    
-    // Extract redirect URI based on action type
-    let redirect_uri = if parts.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Invalid state data format",
-        )
-            .into_response();
-    } else if parts[0] == "sign_in" && parts.len() >= 4 {
-        // For sign_in: redirect_uri is at index 2
-        parts[2]
-    } else if parts[0] == "connect_social" && parts.len() >= 6 {
-        // For connect_social: redirect_uri is at index 4
+
+    let frontend_host = if parts.is_empty() {
+        return (StatusCode::BAD_REQUEST, "Invalid state data format").into_response();
+    } else if parts[0] == "sign_in" && parts.len() >= 5 {
         parts[4]
+    } else if parts[0] == "connect_social" && parts.len() >= 7 {
+        parts[6]
     } else {
         return (
             StatusCode::BAD_REQUEST,
-            "Unable to extract redirect URI from state",
+            "Unable to extract frontend host from state",
         )
             .into_response();
     };
 
+    let redirect_uri = format!("https://{}/sso-callback", frontend_host);
+
     // Validate that the redirect URI is a valid URL
-    let target_url = match Url::parse(redirect_uri) {
+    let target_url = match Url::parse(&redirect_uri) {
         Ok(url) => url,
         Err(_) => {
             return (
@@ -134,10 +115,11 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
 
     // Security check: Ensure the target uses HTTPS (allow HTTP only for localhost)
     if target_url.scheme() != "https" {
-        let is_localhost = target_url.host_str()
+        let is_localhost = target_url
+            .host_str()
             .map(|h| h == "localhost" || h == "127.0.0.1" || h == "::1")
             .unwrap_or(false);
-        
+
         if !is_localhost {
             return (
                 StatusCode::BAD_REQUEST,
@@ -149,29 +131,32 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
 
     // Build the redirect URL with OAuth parameters
     let mut redirect_url = target_url;
-    
+
     // Clear any existing query parameters from the host URL
     redirect_url.set_query(None);
-    
+
     // Add OAuth parameters to the redirect URL
     let mut query_pairs = vec![];
-    
+
     if let Some(ref code) = params.code {
         query_pairs.push(format!("code={}", urlencoding::encode(code)));
     }
-    
+
     if let Some(ref state) = params.state {
         query_pairs.push(format!("state={}", urlencoding::encode(state)));
     }
-    
+
     if let Some(ref error) = params.error {
         query_pairs.push(format!("error={}", urlencoding::encode(error)));
     }
-    
+
     if let Some(ref error_desc) = params.error_description {
-        query_pairs.push(format!("error_description={}", urlencoding::encode(error_desc)));
+        query_pairs.push(format!(
+            "error_description={}",
+            urlencoding::encode(error_desc)
+        ));
     }
-    
+
     if !query_pairs.is_empty() {
         redirect_url.set_query(Some(&query_pairs.join("&")));
     }

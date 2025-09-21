@@ -209,7 +209,7 @@ impl Command for InviteUserCommand {
             use rand::Rng;
             let mut rng = rand::rng();
             let token_bytes: Vec<u8> = (0..32).map(|_| rng.random::<u8>()).collect();
-            hex::encode(token_bytes)
+            format!("dep.{}", hex::encode(token_bytes))
         };
 
         sqlx::query!(
@@ -320,7 +320,7 @@ impl Command for ApproveWaitlistUserCommand {
             use rand::Rng;
             let mut rng = rand::rng();
             let token_bytes: Vec<u8> = (0..32).map(|_| rng.random::<u8>()).collect();
-            hex::encode(token_bytes)
+            format!("dep.{}", hex::encode(token_bytes))
         };
 
         sqlx::query!(
