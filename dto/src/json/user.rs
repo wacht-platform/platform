@@ -47,6 +47,7 @@ pub struct UpdateEmailRequest {
 #[derive(Serialize, Deserialize)]
 pub struct AddPhoneRequest {
     pub phone_number: String,
+    pub country_code: String,
     pub verified: Option<bool>,
     pub is_primary: Option<bool>,
 }

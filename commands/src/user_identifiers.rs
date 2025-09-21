@@ -339,9 +339,9 @@ impl Command for AddUserPhoneCommand {
             r#"
             INSERT INTO user_phone_numbers (
                 id, created_at, updated_at, user_id, can_use_for_second_factor,
-                phone_number, verified, verified_at, deployment_id
+                phone_number, country_code, verified, verified_at, deployment_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             "#,
             phone_id,
             now,
@@ -349,6 +349,7 @@ impl Command for AddUserPhoneCommand {
             self.user_id,
             false,
             self.request.phone_number,
+            self.request.country_code,
             verified,
             if verified { Some(now) } else { None },
             self.deployment_id,
@@ -372,7 +373,7 @@ impl Command for AddUserPhoneCommand {
             updated_at: now,
             user_id: self.user_id,
             phone_number: self.request.phone_number,
-            country_code: String::new(),
+            country_code: self.request.country_code,
             verified,
             verified_at: now,
         })

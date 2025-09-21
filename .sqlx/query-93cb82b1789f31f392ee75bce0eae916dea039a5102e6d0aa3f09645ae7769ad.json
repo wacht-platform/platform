@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_phone_numbers (\n                id, created_at, updated_at, user_id, can_use_for_second_factor,\n                phone_number, country_code, verified, verified_at, deployment_id\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Bool",
+        "Text",
+        "Varchar",
+        "Bool",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "93cb82b1789f31f392ee75bce0eae916dea039a5102e6d0aa3f09645ae7769ad"
+}

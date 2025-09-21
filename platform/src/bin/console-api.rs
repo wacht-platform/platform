@@ -17,9 +17,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let app_state = AppState::new_from_env().await?;
-
-    println!("starting to initialize");
-
     let app = application::console_router(app_state).await;
 
     let port = std::env::var("CONSOLE_API_PORT").unwrap_or_else(|_| "3001".to_string());
