@@ -46,6 +46,7 @@ pub mod webhook_endpoint;
 pub mod webhook_storage;
 pub mod webhook_subscription;
 pub mod webhook_trigger;
+pub mod workspace_member;
 mod workspace_role;
 pub use agent_execution_context::*;
 pub use create_organization::*;
@@ -63,6 +64,7 @@ pub use update_organization::*;
 pub use update_workspace::*;
 pub use user::*;
 pub use user_identifiers::*;
+pub use workspace_member::*;
 pub use workspace_role::*;
 
 pub use agent_memory::*;

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO workspace_memberships (\n                id, created_at, updated_at, workspace_id, organization_id,\n                organization_membership_id, user_id\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cdc7069a4c25757a1e21e04c72e31173199ce93ee98b2ce44fbcdfc394664b7f"
+}

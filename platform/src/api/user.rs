@@ -629,10 +629,10 @@ pub async fn approve_waitlist_user(
 pub async fn add_user_email(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(user_id): Path<i64>,
+    Path(params): Path<UserParams>,
     Json(request): Json<AddEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    AddUserEmailCommand::new(deployment_id, user_id, request)
+    AddUserEmailCommand::new(deployment_id, params.user_id, request)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -667,10 +667,10 @@ pub async fn delete_user_email(
 pub async fn add_user_phone(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(user_id): Path<i64>,
+    Path(params): Path<UserParams>,
     Json(request): Json<AddPhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    AddUserPhoneCommand::new(deployment_id, user_id, request)
+    AddUserPhoneCommand::new(deployment_id, params.user_id, request)
         .execute(&app_state)
         .await
         .map(Into::into)

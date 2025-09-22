@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM workspace_membership_roles\n            WHERE workspace_membership_id IN (\n                SELECT id FROM workspace_memberships\n                WHERE organization_membership_id = $1\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc788b4abf650daf09522eb3a7b88db0616e5bb544555c2fd027156f0709cdf0"
+}

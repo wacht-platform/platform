@@ -32,6 +32,13 @@ pub struct WorkspaceParams {
 }
 
 #[derive(Deserialize)]
+pub struct WorkspaceMemberParams {
+    pub deployment_id: i64,
+    pub workspace_id: i64,
+    pub membership_id: i64,
+}
+
+#[derive(Deserialize)]
 pub struct PaginationParams {
     pub offset: Option<i64>,
     pub limit: Option<i32>,
@@ -46,20 +53,20 @@ pub struct WorkspaceRoleParams {
 
 use crate::application::{response::ApiResult, response::PaginatedResponse};
 use commands::{
-    AddOrganizationMemberCommand, Command, CreateOrganizationCommand,
+    AddOrganizationMemberCommand, AddWorkspaceMemberCommand, Command, CreateOrganizationCommand,
     CreateOrganizationRoleCommand, CreateWorkspaceCommand, CreateWorkspaceRoleCommand,
     DeleteOrganizationCommand, DeleteOrganizationRoleCommand, DeleteWorkspaceCommand,
-    DeleteWorkspaceRoleCommand, RemoveOrganizationMemberCommand,
+    DeleteWorkspaceRoleCommand, RemoveOrganizationMemberCommand, RemoveWorkspaceMemberCommand,
     UpdateDeploymentB2bSettingsCommand, UpdateOrganizationCommand, UpdateOrganizationMemberCommand,
-    UpdateOrganizationRoleCommand, UpdateWorkspaceCommand, UpdateWorkspaceRoleCommand,
+    UpdateOrganizationRoleCommand, UpdateWorkspaceCommand, UpdateWorkspaceMemberCommand, UpdateWorkspaceRoleCommand,
     UploadToCdnCommand,
 };
 use common::state::AppState;
 use dto::{
     json::{
         b2b::{
-            AddOrganizationMemberRequest, CreateOrganizationRoleRequest,
-            CreateWorkspaceRoleRequest, UpdateOrganizationMemberRequest,
+            AddOrganizationMemberRequest, AddWorkspaceMemberRequest, CreateOrganizationRoleRequest,
+            CreateWorkspaceRoleRequest, UpdateOrganizationMemberRequest, UpdateWorkspaceMemberRequest,
             UpdateOrganizationRoleRequest, UpdateWorkspaceRoleRequest,
         },
         deployment_settings::DeploymentB2bSettingsUpdates,
@@ -831,12 +838,12 @@ pub async fn add_organization_member(
     Path(params): Path<OrganizationParams>,
     Json(request): Json<AddOrganizationMemberRequest>,
 ) -> ApiResult<OrganizationMemberDetails> {
-    AddOrganizationMemberCommand::new(
+    AddOrganizationMemberCommand {
         deployment_id,
-        params.organization_id,
-        request.user_id,
-        request.role_ids,
-    )
+        organization_id: params.organization_id,
+        user_id: request.user_id,
+        role_ids: request.role_ids,
+    }
     .execute(&app_state)
     .await
     .map(Into::into)
@@ -849,12 +856,12 @@ pub async fn update_organization_member(
     Path(params): Path<OrganizationMemberParams>,
     Json(request): Json<UpdateOrganizationMemberRequest>,
 ) -> ApiResult<()> {
-    UpdateOrganizationMemberCommand::new(
+    UpdateOrganizationMemberCommand {
         deployment_id,
-        params.organization_id,
-        params.membership_id,
-        request.role_ids,
-    )
+        organization_id: params.organization_id,
+        membership_id: params.membership_id,
+        role_ids: request.role_ids,
+    }
     .execute(&app_state)
     .await
     .map(Into::into)
@@ -866,11 +873,11 @@ pub async fn remove_organization_member(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OrganizationMemberParams>,
 ) -> ApiResult<()> {
-    RemoveOrganizationMemberCommand::new(
+    RemoveOrganizationMemberCommand {
         deployment_id,
-        params.organization_id,
-        params.membership_id,
-    )
+        organization_id: params.organization_id,
+        membership_id: params.membership_id,
+    }
     .execute(&app_state)
     .await
     .map(Into::into)
@@ -974,4 +981,55 @@ pub async fn delete_workspace_role(
         .await
         .map(Into::into)
         .map_err(Into::into)
+}
+
+// Workspace Member Management
+pub async fn add_workspace_member(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<WorkspaceParams>,
+    Json(request): Json<AddWorkspaceMemberRequest>,
+) -> ApiResult<WorkspaceMemberDetails> {
+    AddWorkspaceMemberCommand {
+        deployment_id,
+        workspace_id: params.workspace_id,
+        user_id: request.user_id,
+        role_ids: request.role_ids,
+    }
+    .execute(&app_state)
+    .await
+    .map(Into::into)
+    .map_err(Into::into)
+}
+
+pub async fn update_workspace_member(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<WorkspaceMemberParams>,
+    Json(request): Json<UpdateWorkspaceMemberRequest>,
+) -> ApiResult<()> {
+    UpdateWorkspaceMemberCommand {
+        deployment_id,
+        workspace_id: params.workspace_id,
+        membership_id: params.membership_id,
+        role_ids: request.role_ids,
+    }
+    .execute(&app_state)
+    .await?;
+    Ok(().into())
+}
+
+pub async fn remove_workspace_member(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<WorkspaceMemberParams>,
+) -> ApiResult<()> {
+    RemoveWorkspaceMemberCommand {
+        deployment_id,
+        workspace_id: params.workspace_id,
+        membership_id: params.membership_id,
+    }
+    .execute(&app_state)
+    .await?;
+    Ok(().into())
 }

@@ -147,7 +147,11 @@ fn base_deployment_routes() -> Router<AppState> {
         )
         .route(
             "/workspaces/{workspace_id}/members",
-            get(api::b2b::get_workspace_members),
+            get(api::b2b::get_workspace_members).post(api::b2b::add_workspace_member),
+        )
+        .route(
+            "/workspaces/{workspace_id}/members/{membership_id}",
+            patch(api::b2b::update_workspace_member).delete(api::b2b::remove_workspace_member),
         )
         .route(
             "/organizations/{organization_id}/members",

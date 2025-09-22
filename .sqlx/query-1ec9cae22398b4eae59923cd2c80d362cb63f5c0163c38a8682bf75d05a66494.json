@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT wr.id, wr.name, wr.permissions\n            FROM workspace_membership_roles wmr\n            JOIN workspace_roles wr ON wmr.workspace_role_id = wr.id\n            WHERE wmr.workspace_membership_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "permissions",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1ec9cae22398b4eae59923cd2c80d362cb63f5c0163c38a8682bf75d05a66494"
+}

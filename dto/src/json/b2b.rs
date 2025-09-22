@@ -78,3 +78,18 @@ pub struct UpdateWorkspaceRoleRequest {
     pub name: Option<String>,
     pub permissions: Option<Vec<String>>,
 }
+
+// Workspace member models
+#[derive(Deserialize)]
+pub struct AddWorkspaceMemberRequest {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub user_id: i64,
+    #[serde(with = "models::utils::serde::vec_i64_as_string")]
+    pub role_ids: Vec<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateWorkspaceMemberRequest {
+    #[serde(with = "models::utils::serde::vec_i64_as_string")]
+    pub role_ids: Vec<i64>,
+}

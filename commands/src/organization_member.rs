@@ -13,16 +13,6 @@ pub struct AddOrganizationMemberCommand {
     pub role_ids: Vec<i64>,
 }
 
-impl AddOrganizationMemberCommand {
-    pub fn new(deployment_id: i64, organization_id: i64, user_id: i64, role_ids: Vec<i64>) -> Self {
-        Self {
-            deployment_id,
-            organization_id,
-            user_id,
-            role_ids,
-        }
-    }
-}
 
 impl Command for AddOrganizationMemberCommand {
     type Output = OrganizationMemberDetails;
@@ -182,21 +172,6 @@ pub struct UpdateOrganizationMemberCommand {
     pub role_ids: Vec<i64>,
 }
 
-impl UpdateOrganizationMemberCommand {
-    pub fn new(
-        deployment_id: i64,
-        organization_id: i64,
-        membership_id: i64,
-        role_ids: Vec<i64>,
-    ) -> Self {
-        Self {
-            deployment_id,
-            organization_id,
-            membership_id,
-            role_ids,
-        }
-    }
-}
 
 impl Command for UpdateOrganizationMemberCommand {
     type Output = ();
@@ -251,15 +226,6 @@ pub struct RemoveOrganizationMemberCommand {
     pub membership_id: i64,
 }
 
-impl RemoveOrganizationMemberCommand {
-    pub fn new(deployment_id: i64, organization_id: i64, membership_id: i64) -> Self {
-        Self {
-            deployment_id,
-            organization_id,
-            membership_id,
-        }
-    }
-}
 
 impl Command for RemoveOrganizationMemberCommand {
     type Output = ();
@@ -280,7 +246,42 @@ impl Command for RemoveOrganizationMemberCommand {
             ));
         }
 
-        // First, delete role associations explicitly
+        // Clear both organization and workspace membership references in signins
+        sqlx::query!(
+            r#"
+            UPDATE signins
+            SET active_organization_membership_id = NULL,
+                active_workspace_membership_id = NULL
+            WHERE active_organization_membership_id = $1
+            "#,
+            self.membership_id
+        )
+        .execute(&app_state.db_pool)
+        .await?;
+
+        // Delete workspace membership role associations
+        sqlx::query!(
+            r#"
+            DELETE FROM workspace_membership_roles
+            WHERE workspace_membership_id IN (
+                SELECT id FROM workspace_memberships
+                WHERE organization_membership_id = $1
+            )
+            "#,
+            self.membership_id
+        )
+        .execute(&app_state.db_pool)
+        .await?;
+
+        // Delete all workspace memberships tied to this organization membership
+        sqlx::query!(
+            "DELETE FROM workspace_memberships WHERE organization_membership_id = $1",
+            self.membership_id
+        )
+        .execute(&app_state.db_pool)
+        .await?;
+
+        // Delete role associations
         sqlx::query!(
             "DELETE FROM organization_membership_roles WHERE organization_membership_id = $1",
             self.membership_id
