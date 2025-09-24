@@ -546,7 +546,6 @@ impl Command for DeleteUserCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let mut tx = app_state.db_pool.begin().await?;
 
-        // First check if user exists and belongs to deployment
         let exists = sqlx::query!(
             "SELECT id FROM users WHERE id = $1 AND deployment_id = $2",
             self.user_id,
@@ -559,7 +558,6 @@ impl Command for DeleteUserCommand {
             return Err(AppError::NotFound("User not found".to_string()));
         }
 
-        // Delete social connections first (they reference email addresses)
         sqlx::query!(
             "DELETE FROM social_connections WHERE user_id = $1",
             self.user_id
@@ -567,7 +565,6 @@ impl Command for DeleteUserCommand {
         .execute(&mut *tx)
         .await?;
 
-        // Delete user email addresses
         sqlx::query!(
             "DELETE FROM user_email_addresses WHERE user_id = $1",
             self.user_id
@@ -575,7 +572,6 @@ impl Command for DeleteUserCommand {
         .execute(&mut *tx)
         .await?;
 
-        // Delete user phone numbers
         sqlx::query!(
             "DELETE FROM user_phone_numbers WHERE user_id = $1",
             self.user_id
@@ -583,7 +579,13 @@ impl Command for DeleteUserCommand {
         .execute(&mut *tx)
         .await?;
 
-        // Delete organization memberships
+        sqlx::query!(
+            "DELETE FROM organization_membership_roles WHERE organization_membership_id IN (SELECT id FROM organization_memberships WHERE user_id = $1)",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
         sqlx::query!(
             "DELETE FROM organization_memberships WHERE user_id = $1",
             self.user_id
@@ -591,7 +593,13 @@ impl Command for DeleteUserCommand {
         .execute(&mut *tx)
         .await?;
 
-        // Delete workspace memberships
+        sqlx::query!(
+            "DELETE FROM workspace_membership_roles WHERE workspace_membership_id IN (SELECT id FROM workspace_memberships WHERE user_id = $1)",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
         sqlx::query!(
             "DELETE FROM workspace_memberships WHERE user_id = $1",
             self.user_id
@@ -599,7 +607,6 @@ impl Command for DeleteUserCommand {
         .execute(&mut *tx)
         .await?;
 
-        // Finally delete the user
         sqlx::query!(
             "DELETE FROM users WHERE id = $1 AND deployment_id = $2",
             self.user_id,

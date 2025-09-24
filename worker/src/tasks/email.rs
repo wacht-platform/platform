@@ -8,8 +8,7 @@ use models::{
 };
 use queries::{
     Query, deployment::GetDeploymentWithSettingsQuery, invitation::GetDeploymentInvitationQuery,
-    organization::GetOrganizationNameQuery, signin::GetSignInQuery, user::GetUserDetailsQuery,
-    workspace::GetWorkspaceNameQuery,
+    signin::GetSignInQuery, user::GetUserDetailsQuery, workspace::GetWorkspaceNameQuery,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -596,16 +595,6 @@ async fn fetch_deployment_invitation(
         .map_err(|e| format!("Failed to fetch deployment invitation: {}", e))
 }
 
-async fn fetch_organization_name(
-    app_state: &AppState,
-    organization_id: u64,
-) -> Result<String, String> {
-    GetOrganizationNameQuery::new(organization_id as i64)
-        .execute(app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch organization name: {}", e))
-}
-
 async fn fetch_workspace_name(app_state: &AppState, workspace_id: u64) -> Result<String, String> {
     GetWorkspaceNameQuery::new(workspace_id as i64)
         .execute(app_state)
@@ -888,39 +877,6 @@ fn create_waitlist_invite_variables(
     } else {
         variables.insert("invitation.expires_in_days".to_string(), "7".to_string());
     }
-
-    variables
-}
-
-fn create_organization_invite_variables(
-    user: &UserDetails,
-    deployment: &DeploymentWithSettings,
-    organization_name: &str,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
-
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
-    variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert(
-        "organization_name".to_string(),
-        organization_name.to_string(),
-    );
-    variables.insert(
-        "inviter_name".to_string(),
-        format!("{} {}", user.first_name, user.last_name),
-    );
 
     variables
 }

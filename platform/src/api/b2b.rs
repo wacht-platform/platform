@@ -58,16 +58,17 @@ use commands::{
     DeleteOrganizationCommand, DeleteOrganizationRoleCommand, DeleteWorkspaceCommand,
     DeleteWorkspaceRoleCommand, RemoveOrganizationMemberCommand, RemoveWorkspaceMemberCommand,
     UpdateDeploymentB2bSettingsCommand, UpdateOrganizationCommand, UpdateOrganizationMemberCommand,
-    UpdateOrganizationRoleCommand, UpdateWorkspaceCommand, UpdateWorkspaceMemberCommand, UpdateWorkspaceRoleCommand,
-    UploadToCdnCommand,
+    UpdateOrganizationRoleCommand, UpdateWorkspaceCommand, UpdateWorkspaceMemberCommand,
+    UpdateWorkspaceRoleCommand, UploadToCdnCommand,
 };
 use common::state::AppState;
 use dto::{
     json::{
         b2b::{
             AddOrganizationMemberRequest, AddWorkspaceMemberRequest, CreateOrganizationRoleRequest,
-            CreateWorkspaceRoleRequest, UpdateOrganizationMemberRequest, UpdateWorkspaceMemberRequest,
-            UpdateOrganizationRoleRequest, UpdateWorkspaceRoleRequest,
+            CreateWorkspaceRoleRequest, UpdateOrganizationMemberRequest,
+            UpdateOrganizationRoleRequest, UpdateWorkspaceMemberRequest,
+            UpdateWorkspaceRoleRequest,
         },
         deployment_settings::DeploymentB2bSettingsUpdates,
     },
@@ -202,19 +203,20 @@ pub async fn get_organization_members(
 ) -> ApiResult<PaginatedResponse<OrganizationMemberDetails>> {
     let limit = pagination.limit.unwrap_or(20);
     let offset = pagination.offset.unwrap_or(0);
-    
+
     let (members, has_more) = GetOrganizationMembersQuery::new(params.organization_id)
         .offset(offset)
         .limit(limit)
         .execute(&app_state)
         .await?;
-    
+
     Ok(PaginatedResponse {
         data: members,
         has_more,
         limit: Some(limit as i32),
         offset: Some(offset as i32),
-    }.into())
+    }
+    .into())
 }
 
 pub async fn get_workspace_members(
@@ -225,19 +227,20 @@ pub async fn get_workspace_members(
 ) -> ApiResult<PaginatedResponse<WorkspaceMemberDetails>> {
     let limit = pagination.limit.unwrap_or(20);
     let offset = pagination.offset.unwrap_or(0);
-    
+
     let (members, has_more) = GetWorkspaceMembersQuery::new(params.workspace_id)
         .offset(offset)
         .limit(limit)
         .execute(&app_state)
         .await?;
-    
+
     Ok(PaginatedResponse {
         data: members,
         has_more,
         limit: Some(limit as i32),
         offset: Some(offset as i32),
-    }.into())
+    }
+    .into())
 }
 
 pub async fn create_organization(
@@ -684,7 +687,6 @@ pub async fn update_organization(
     let mut public_metadata: Option<serde_json::Value> = None;
     let mut private_metadata: Option<serde_json::Value> = None;
 
-    // Parse multipart form data
     while let Some(field) = multipart
         .next_field()
         .await
@@ -879,9 +881,9 @@ pub async fn remove_organization_member(
         membership_id: params.membership_id,
     }
     .execute(&app_state)
-    .await
-    .map(Into::into)
-    .map_err(Into::into)
+    .await?;
+
+    Ok(().into())
 }
 
 pub async fn create_organization_role(

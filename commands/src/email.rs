@@ -36,10 +36,16 @@ impl Command for SendEmailCommand {
             .execute(app_state)
             .await?;
 
-        // Get deployment info to determine mail_from_host
         let deployment = sqlx::query!(
             "SELECT mail_from_host FROM deployments WHERE id = $1",
             self.deployment_id
+        )
+        .fetch_one(&app_state.db_pool)
+        .await?;
+
+        let display_settings = sqlx::query!(
+            "SELECT app_name from deployment_ui_settings where deployment_id = $1",
+            self.deployment_id,
         )
         .fetch_one(&app_state.db_pool)
         .await?;
@@ -54,7 +60,6 @@ impl Command for SendEmailCommand {
             .render_template(&template.template_data, &self.variables)
             .map_err(|e| AppError::BadRequest(format!("Failed to render body: {}", e)))?;
 
-        // Create a simple text version by stripping HTML tags (basic implementation)
         let body_text = body_html
             .replace("<br>", "\n")
             .replace("<br/>", "\n")
@@ -65,15 +70,16 @@ impl Command for SendEmailCommand {
             .replace("</h2>", "\n\n")
             .replace("</h3>", "\n\n");
 
-        // Remove remaining HTML tags (simple regex replacement)
         let body_text = regex::Regex::new(r"<[^>]*>")
             .unwrap()
             .replace_all(&body_text, "")
             .to_string();
 
-        let from_email = format!("{}@{}", template.template_from, deployment.mail_from_host);
+        let from_email = format!(
+            "{} <{}@{}>",
+            display_settings.app_name, template.template_from, deployment.mail_from_host
+        );
 
-        // Send email via Postmark
         match app_state
             .postmark_service
             .send_email(
