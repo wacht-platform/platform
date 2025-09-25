@@ -69,14 +69,9 @@ impl UpdateDeploymentAuthSettingsCommand {
 fn build_partial_json<T: serde::Serialize>(data: Option<&T>) -> Option<Value> {
     data.and_then(|d| match serde_json::to_value(d) {
         Ok(Value::Object(map)) => {
-            // Debug logging
-            println!("build_partial_json input map: {:?}", map);
-            
             let filtered_map: Map<String, Value> =
                 map.into_iter().filter(|(_, v)| !v.is_null()).collect();
-            
-            println!("build_partial_json filtered map: {:?}", filtered_map);
-            
+
             if filtered_map.is_empty() {
                 None
             } else {
@@ -94,7 +89,7 @@ impl Command for UpdateDeploymentAuthSettingsCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         // Debug log the incoming updates
         println!("Received auth settings updates: {:?}", self.updates);
-        
+
         let mut text_updates: Vec<(&str, String)> = Vec::new();
         let mut int_updates: Vec<(&str, i64)> = Vec::new();
         let mut jsonb_merges: Vec<(&str, Value)> = Vec::new();
@@ -969,7 +964,6 @@ impl Command for GenerateTokenCommand {
     type Output = GenerateTokenResponse;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Get deployment with keypair
         let deployment = sqlx::query!(
             r#"
             SELECT d.id, d.backend_host, dk.private_key
@@ -983,10 +977,9 @@ impl Command for GenerateTokenCommand {
         .await?
         .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
 
-        // Get session with active sign-in data
         let session_data = sqlx::query!(
             r#"
-            SELECT 
+            SELECT
                 s.id as session_id,
                 si.user_id,
                 si.active_organization_membership_id,
@@ -1001,22 +994,19 @@ impl Command for GenerateTokenCommand {
         .await?
         .ok_or_else(|| AppError::NotFound("Session not found or no active sign-in".to_string()))?;
 
-        // Ensure user_id exists
         let user_id = session_data
             .user_id
             .ok_or_else(|| AppError::BadRequest("Sign-in has no associated user".to_string()))?;
 
-        // Get user details
         let user_details = GetUserDetailsQuery::new(self.deployment_id, user_id)
             .execute(app_state)
             .await?;
 
-        // Get organization permissions and roles if active organization membership exists
         let (organization_id, organization_permissions, organization_details, organization_roles) =
             if let Some(org_membership_id) = session_data.active_organization_membership_id {
                 let org_data = sqlx::query!(
                 r#"
-                SELECT 
+                SELECT
                     om.organization_id,
                     o.name as organization_name,
                     array(
@@ -1075,7 +1065,7 @@ impl Command for GenerateTokenCommand {
             if let Some(workspace_membership_id) = session_data.active_workspace_membership_id {
                 let workspace_data = sqlx::query!(
                 r#"
-                SELECT 
+                SELECT
                     wm.workspace_id,
                     w.name as workspace_name,
                     array(
@@ -1129,9 +1119,7 @@ impl Command for GenerateTokenCommand {
                 (None, None, None, vec![])
             };
 
-        // Get JWT template
         let template = if self.template_name == "default" {
-            // Use default template settings
             DeploymentJwtTemplate {
                 id: 0,
                 created_at: Utc::now(),
@@ -1146,9 +1134,9 @@ impl Command for GenerateTokenCommand {
         } else {
             let row = sqlx::query!(
                 r#"
-                SELECT id, created_at, updated_at, deployment_id, name, 
-                       token_lifetime, allowed_clock_skew, 
-                       custom_signing_key, 
+                SELECT id, created_at, updated_at, deployment_id, name,
+                       token_lifetime, allowed_clock_skew,
+                       custom_signing_key,
                        template
                 FROM deployment_jwt_templates
                 WHERE deployment_id = $1 AND name = $2
@@ -1181,15 +1169,11 @@ impl Command for GenerateTokenCommand {
                 template.token_lifetime as i64 + template.allowed_clock_skew as i64,
             );
 
-        // Build handlebars context - matching Go implementation which passes ActiveSignin data
         let handlebars_context = json!({
-            // Top level signin fields
             "id": self.session_id.to_string(),
             "user_id": user_id,
             "active_organization_membership_id": session_data.active_organization_membership_id,
             "active_workspace_membership_id": session_data.active_workspace_membership_id,
-
-            // User object embedded in signin
             "user": {
                 "id": user_details.id,
                 "created_at": user_details.created_at.to_rfc3339(),
@@ -1206,8 +1190,6 @@ impl Command for GenerateTokenCommand {
                 "email_addresses": user_details.email_addresses,
                 "phone_numbers": user_details.phone_numbers,
             },
-
-            // Active organization membership with roles
             "active_organization_membership": if session_data.active_organization_membership_id.is_some() {
                 json!({
                     "id": session_data.active_organization_membership_id,
@@ -1218,8 +1200,6 @@ impl Command for GenerateTokenCommand {
             } else {
                 json!(null)
             },
-
-            // Active workspace membership with roles
             "active_workspace_membership": if session_data.active_workspace_membership_id.is_some() {
                 json!({
                     "id": session_data.active_workspace_membership_id,
@@ -1232,14 +1212,10 @@ impl Command for GenerateTokenCommand {
             },
         });
 
-        // Build token claims
         let mut custom_claims = HashMap::new();
 
-        // Parse and apply custom template if provided
         if !template.template.is_null() {
-            // Check if template is a string (handlebars template)
             if let Some(template_str) = template.template.as_str() {
-                // Render handlebars template
                 let rendered = app_state
                     .handlebars
                     .render_template(template_str, &handlebars_context)
@@ -1247,7 +1223,6 @@ impl Command for GenerateTokenCommand {
                         AppError::BadRequest(format!("Failed to render template: {}", e))
                     })?;
 
-                // Parse rendered JSON into custom claims
                 let parsed: Value = serde_json::from_str(&rendered).map_err(|e| {
                     AppError::BadRequest(format!("Template must render valid JSON: {}", e))
                 })?;
@@ -1256,14 +1231,12 @@ impl Command for GenerateTokenCommand {
                     custom_claims = obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 }
             } else if template.template.is_object() {
-                // Legacy: direct JSON object
                 if let Some(obj) = template.template.as_object() {
                     custom_claims = obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 }
             }
         }
 
-        // Merge standard claims with custom claims
         let mut all_claims = custom_claims;
         all_claims.insert(
             "iss".to_string(),
@@ -1287,20 +1260,16 @@ impl Command for GenerateTokenCommand {
             all_claims.insert("workspace_permissions".to_string(), json!(perms));
         }
 
-        // Determine signing algorithm and key
         let (algorithm, signing_key) = if let Some(custom_key) = &template.custom_signing_key {
-            // Use custom signing key
             if custom_key.enabled && !custom_key.key.is_empty() {
                 (custom_key.algorithm.as_str(), custom_key.key.clone())
             } else {
                 ("ES256", deployment.private_key.clone())
             }
         } else {
-            // Use deployment's default key
             ("ES256", deployment.private_key)
         };
 
-        // Sign the token with all claims
         let token = sign_token(all_claims, &algorithm, &signing_key)?;
 
         Ok(GenerateTokenResponse {
@@ -1313,8 +1282,8 @@ impl Command for GenerateTokenCommand {
 pub struct GenerateAgentContextTokenCommand {
     deployment_id: i64,
     user_id: i64,
-    audience: Option<String>, // Optional audience (context group) for the token
-    validity_hours: u32,      // Token validity in hours
+    audience: Option<String>,
+    validity_hours: u32,
 }
 
 impl GenerateAgentContextTokenCommand {
@@ -1323,7 +1292,7 @@ impl GenerateAgentContextTokenCommand {
             deployment_id,
             user_id,
             audience,
-            validity_hours: 24, // Default to 24 hours
+            validity_hours: 24,
         }
     }
 
@@ -1337,7 +1306,6 @@ impl Command for GenerateAgentContextTokenCommand {
     type Output = GenerateTokenResponse;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Get deployment key pair
         let deployment = sqlx::query!(
             r#"
             SELECT d.backend_host, kp.private_key as "private_key?"
@@ -1358,7 +1326,6 @@ impl Command for GenerateAgentContextTokenCommand {
         let now = Utc::now();
         let exp = now + Duration::hours(self.validity_hours as i64);
 
-        // Build claims for agent context token
         let mut claims = HashMap::new();
         claims.insert(
             "iss".to_string(),
@@ -1367,14 +1334,12 @@ impl Command for GenerateAgentContextTokenCommand {
         claims.insert("sub".to_string(), json!(self.user_id.to_string()));
         claims.insert("iat".to_string(), json!(now.timestamp()));
         claims.insert("exp".to_string(), json!(exp.timestamp()));
-        claims.insert("scope".to_string(), json!("agent_context")); // Important: Add the agent_context scope
+        claims.insert("scope".to_string(), json!("agent_context"));
 
-        // Add audience if provided
         if let Some(audience) = self.audience {
             claims.insert("aud".to_string(), json!(audience));
         }
 
-        // Sign with ES256 (default algorithm)
         let token = sign_token(claims, "ES256", &private_key)?;
 
         Ok(GenerateTokenResponse {

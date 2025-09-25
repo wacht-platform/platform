@@ -24,17 +24,13 @@ pub struct UserDetails {
     pub deployment_id: i64,
     pub public_metadata: Value,
     pub private_metadata: Value,
-
-    // Primary identifiers
+    pub primary_email_address_id: Option<String>,
     pub primary_email_address: Option<String>,
+    pub primary_phone_number_id: Option<String>,
     pub primary_phone_number: Option<String>,
-
-    // All identifiers
     pub email_addresses: Vec<UserEmailAddress>,
     pub phone_numbers: Vec<UserPhoneNumber>,
     pub social_connections: Vec<SocialConnection>,
-
-    // Authentication
     pub has_password: bool,
     pub has_backup_codes: bool,
 }

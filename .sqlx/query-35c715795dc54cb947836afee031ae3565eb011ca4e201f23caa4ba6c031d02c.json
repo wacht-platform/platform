@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM social_connections WHERE user_id = $1 AND user_email_address_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "35c715795dc54cb947836afee031ae3565eb011ca4e201f23caa4ba6c031d02c"
+}

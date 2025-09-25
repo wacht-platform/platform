@@ -457,19 +457,16 @@ pub async fn send_deployment_invite_impl(
     workspace_id: Option<u64>,
     app_state: &AppState,
 ) -> Result<String, String> {
-    // Fetch inviter user details
     let inviter_details = GetUserDetailsQuery::new(deployment_id as i64, inviter_user_id as i64)
         .execute(&app_state)
         .await
         .map_err(|e| format!("Failed to fetch inviter user details: {}", e))?;
 
-    // Fetch deployment settings
     let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
         .execute(&app_state)
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    // Fetch workspace name if workspace_id is provided
     let workspace_name = if let Some(ws_id) = workspace_id {
         fetch_workspace_name(&app_state, ws_id)
             .await
@@ -478,7 +475,6 @@ pub async fn send_deployment_invite_impl(
         "Workspace".to_string()
     };
 
-    // Fetch invitation details
     let invitation = fetch_deployment_invitation(&app_state, deployment_invitation_id)
         .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
@@ -522,7 +518,6 @@ pub async fn send_waitlist_approval_impl(
         .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
 
-    // Fetch deployment settings
     let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
         .execute(&app_state)
         .await
@@ -545,6 +540,8 @@ pub async fn send_waitlist_approval_impl(
         public_metadata: serde_json::Value::Null,
         private_metadata: serde_json::Value::Null,
         primary_email_address: Some(invitation.email_address.clone()),
+        primary_email_address_id: None,
+        primary_phone_number_id: None,
         primary_phone_number: None,
         email_addresses: vec![],
         phone_numbers: vec![],

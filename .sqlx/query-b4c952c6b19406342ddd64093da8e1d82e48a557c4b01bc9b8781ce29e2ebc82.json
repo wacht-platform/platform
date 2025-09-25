@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT id, created_at, updated_at, deployment_id, name, \n                       token_lifetime, allowed_clock_skew, \n                       custom_signing_key, \n                       template\n                FROM deployment_jwt_templates\n                WHERE deployment_id = $1 AND name = $2\n                ",
+  "query": "\n                SELECT id, created_at, updated_at, deployment_id, name,\n                       token_lifetime, allowed_clock_skew,\n                       custom_signing_key,\n                       template\n                FROM deployment_jwt_templates\n                WHERE deployment_id = $1 AND name = $2\n                ",
   "describe": {
     "columns": [
       {
@@ -67,5 +67,5 @@
       false
     ]
   },
-  "hash": "1ce5d47b56a99d912fa1346b48929b2ade002d7835a9d05d9576f8f193d3bee4"
+  "hash": "b4c952c6b19406342ddd64093da8e1d82e48a557c4b01bc9b8781ce29e2ebc82"
 }

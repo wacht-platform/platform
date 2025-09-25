@@ -142,35 +142,29 @@ impl Query for DeploymentActiveUserListQuery {
             WHERE u.deployment_id = "#,
         );
 
-        // Using push_bind for parameterized queries - safe from SQL injection
         query_builder.push_bind(self.deployment_id);
         query_builder.push(" AND u.deleted_at IS NULL");
 
-        // Add search filter if provided - using parameterized bindings
         if let Some(search_term) = &self.search {
             let trimmed_search = search_term.trim();
             if !trimmed_search.is_empty() {
-                // Build the ILIKE pattern safely
                 let search_pattern = format!("%{}%", trimmed_search);
-                
+
                 query_builder.push(" AND (");
-                
-                // First name search - parameterized
+
                 query_builder.push("u.first_name ILIKE ");
                 query_builder.push_bind(search_pattern.clone());
-                
+
                 query_builder.push(" OR ");
-                
-                // Last name search - parameterized  
+
                 query_builder.push("u.last_name ILIKE ");
                 query_builder.push_bind(search_pattern.clone());
-                
+
                 query_builder.push(" OR ");
-                
-                // Username search - parameterized
+
                 query_builder.push("u.username ILIKE ");
                 query_builder.push_bind(search_pattern);
-                
+
                 query_builder.push(")");
             }
         }
@@ -300,6 +294,7 @@ impl Query for GetUserDetailsQuery {
                 u.first_name, u.last_name, u.username, u.profile_picture_url,
                 u.schema_version, u.disabled, u.second_factor_policy,
                 u.active_organization_membership_id, u.active_workspace_membership_id,
+                u.primary_email_address_id, u.primary_phone_number_id,
                 u.deployment_id, u.public_metadata, u.private_metadata,
                 u.password, u.backup_codes,
                 e.email_address as primary_email_address,
@@ -430,6 +425,8 @@ impl Query for GetUserDetailsQuery {
             private_metadata: user_row.private_metadata,
             primary_email_address: user_row.primary_email_address,
             primary_phone_number: user_row.primary_phone_number,
+            primary_email_address_id: user_row.primary_email_address_id.map(|id| id.to_string()),
+            primary_phone_number_id: user_row.primary_phone_number_id.map(|id| id.to_string()),
             email_addresses,
             phone_numbers,
             social_connections,

@@ -642,10 +642,10 @@ pub async fn add_user_email(
 pub async fn update_user_email(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((user_id, email_id)): Path<(i64, i64)>,
+    Path(params): Path<UserEmailParams>,
     Json(request): Json<UpdateEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    UpdateUserEmailCommand::new(deployment_id, user_id, email_id, request)
+    UpdateUserEmailCommand::new(deployment_id, params.user_id, params.email_id, request)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -660,8 +660,9 @@ pub async fn delete_user_email(
     DeleteUserEmailCommand::new(params.user_id, params.email_id)
         .execute(&app_state)
         .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .unwrap();
+
+    Ok(().into())
 }
 
 pub async fn add_user_phone(

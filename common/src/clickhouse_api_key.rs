@@ -13,9 +13,9 @@ pub struct ApiKeyUsageEvent {
     pub key_id: i64,
     pub key_prefix: String,
     pub key_suffix: String,
-    pub endpoint: String, // API endpoint accessed
-    pub method: String,   // HTTP method (GET, POST, etc.)
-    pub status: String,   // 'success', 'failed', 'rate_limited', 'expired'
+    pub endpoint: String,
+    pub method: String,
+    pub status: String,
     pub http_status_code: i32,
     pub response_time_ms: i32,
     pub request_size_bytes: i32,
@@ -69,7 +69,6 @@ pub struct ApiKeyUsageByKey {
 
 impl ClickHouseService {
     pub async fn init_api_key_tables(&self) -> Result<(), AppError> {
-        // Create API key usage events table (local)
         let query = r#"
             CREATE TABLE IF NOT EXISTS api_key_usage_local ON CLUSTER 'wacht_prod' (
                 deployment_id Int64,
@@ -109,7 +108,6 @@ impl ClickHouseService {
 
         self.client.query(query).execute().await?;
 
-        // Create distributed table for API key usage
         let query = r#"
             CREATE TABLE IF NOT EXISTS api_key_usage ON CLUSTER 'wacht_prod' (
                 deployment_id Int64,
@@ -140,7 +138,6 @@ impl ClickHouseService {
 
         self.client.query(query).execute().await?;
 
-        // Create materialized view for hourly metrics
         let query = r#"
             CREATE MATERIALIZED VIEW IF NOT EXISTS api_key_metrics_hourly ON CLUSTER 'wacht_prod'
             ENGINE = ReplicatedSummingMergeTree('/clickhouse/tables/{shard}/api_key_metrics_hourly', '{replica}')
@@ -172,7 +169,6 @@ impl ClickHouseService {
 
         self.client.query(query).execute().await?;
 
-        // Create materialized view for daily metrics
         let query = r#"
             CREATE MATERIALIZED VIEW IF NOT EXISTS api_key_metrics_daily ON CLUSTER 'wacht_prod'
             ENGINE = ReplicatedSummingMergeTree('/clickhouse/tables/{shard}/api_key_metrics_daily', '{replica}')
@@ -204,7 +200,6 @@ impl ClickHouseService {
 
         self.client.query(query).execute().await?;
 
-        // Create materialized view for endpoint statistics
         let query = r#"
             CREATE MATERIALIZED VIEW IF NOT EXISTS api_key_endpoint_stats ON CLUSTER 'wacht_prod'
             ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/api_key_endpoint_stats', '{replica}')
@@ -226,7 +221,6 @@ impl ClickHouseService {
 
         self.client.query(query).execute().await?;
 
-        // Create materialized view for per-key usage statistics
         let query = r#"
             CREATE MATERIALIZED VIEW IF NOT EXISTS api_key_usage_by_key ON CLUSTER 'wacht_prod'
             ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/api_key_usage_by_key', '{replica}')
@@ -252,7 +246,6 @@ impl ClickHouseService {
         Ok(())
     }
 
-    // Insert API key usage event
     pub async fn insert_api_key_usage(&self, event: ApiKeyUsageEvent) -> Result<(), AppError> {
         let mut insert = self.client.insert("api_key_usage")?;
         insert.write(&event).await?;
@@ -260,7 +253,6 @@ impl ClickHouseService {
         Ok(())
     }
 
-    // Batch insert API key usage events
     pub async fn insert_api_key_usage_batch(
         &self,
         events: Vec<ApiKeyUsageEvent>,
@@ -277,7 +269,6 @@ impl ClickHouseService {
         Ok(())
     }
 
-    // Get API key statistics for a deployment
     pub async fn get_api_key_stats(
         &self,
         deployment_id: i64,
@@ -340,7 +331,6 @@ impl ClickHouseService {
         })
     }
 
-    // Get top endpoints by API key usage
     pub async fn get_top_endpoints(
         &self,
         deployment_id: i64,
@@ -376,7 +366,6 @@ impl ClickHouseService {
         Ok(result)
     }
 
-    // Get usage by individual API keys
     pub async fn get_usage_by_keys(
         &self,
         deployment_id: i64,
@@ -409,7 +398,6 @@ impl ClickHouseService {
         Ok(result)
     }
 
-    // Get time series data for API key usage
     pub async fn get_api_key_timeseries(
         &self,
         deployment_id: i64,

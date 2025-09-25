@@ -114,40 +114,8 @@ impl Command for UpdateUserEmailCommand {
     type Output = UserEmailAddress;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        if let Some(is_primary) = self.request.is_primary {
-            if is_primary {
-                sqlx::query!(
-                    "UPDATE user_email_addresses SET is_primary = false WHERE user_id = $1",
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-        }
-
-        match (
-            &self.request.email,
-            self.request.verified,
-            self.request.is_primary,
-        ) {
-            (Some(email), Some(verified), Some(is_primary)) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE user_email_addresses
-                    SET updated_at = NOW(), email_address = $1, verified = $2, is_primary = $3,
-                        verified_at = CASE WHEN $2 = true THEN NOW() ELSE verified_at END
-                    WHERE id = $4 AND user_id = $5
-                    "#,
-                    email,
-                    verified,
-                    is_primary,
-                    self.email_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (Some(email), Some(verified), None) => {
+        match (&self.request.email, self.request.verified) {
+            (Some(email), Some(verified)) => {
                 sqlx::query!(
                     r#"
                     UPDATE user_email_addresses
@@ -163,38 +131,7 @@ impl Command for UpdateUserEmailCommand {
                 .execute(&app_state.db_pool)
                 .await?;
             }
-            (Some(email), None, Some(is_primary)) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE user_email_addresses
-                    SET updated_at = NOW(), email_address = $1, is_primary = $2
-                    WHERE id = $3 AND user_id = $4
-                    "#,
-                    email,
-                    is_primary,
-                    self.email_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, Some(verified), Some(is_primary)) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE user_email_addresses
-                    SET updated_at = NOW(), verified = $1, is_primary = $2,
-                        verified_at = CASE WHEN $1 = true THEN NOW() ELSE verified_at END
-                    WHERE id = $3 AND user_id = $4
-                    "#,
-                    verified,
-                    is_primary,
-                    self.email_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (Some(email), None, None) => {
+            (Some(email), None) => {
                 sqlx::query!(
                     r#"
                     UPDATE user_email_addresses
@@ -208,7 +145,7 @@ impl Command for UpdateUserEmailCommand {
                 .execute(&app_state.db_pool)
                 .await?;
             }
-            (None, Some(verified), None) => {
+            (None, Some(verified)) => {
                 sqlx::query!(
                     r#"
                     UPDATE user_email_addresses
@@ -223,33 +160,21 @@ impl Command for UpdateUserEmailCommand {
                 .execute(&app_state.db_pool)
                 .await?;
             }
-            (None, None, Some(is_primary)) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE user_email_addresses
-                    SET updated_at = NOW(), is_primary = $1
-                    WHERE id = $2 AND user_id = $3
-                    "#,
-                    is_primary,
-                    self.email_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, None, None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE user_email_addresses
-                    SET updated_at = NOW()
-                    WHERE id = $1 AND user_id = $2
-                    "#,
-                    self.email_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
+            (None, None) => (),
+        }
+
+        if let Some(true) = self.request.is_primary {
+            sqlx::query!(
+                r#"
+                UPDATE users
+                SET primary_email_address_id = $1
+                WHERE id = $2
+                "#,
+                self.email_id,
+                self.user_id
+            )
+            .execute(&app_state.db_pool)
+            .await?;
         }
 
         let row = sqlx::query!(
@@ -297,19 +222,30 @@ impl Command for DeleteUserEmailCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let mut tx = app_state.db_pool.begin().await?;
+
+        sqlx::query!(
+            "DELETE FROM social_connections WHERE user_id = $1 AND user_email_address_id = $2",
+            self.user_id,
+            self.email_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
         sqlx::query!(
             "DELETE FROM user_email_addresses WHERE id = $1 AND user_id = $2",
             self.email_id,
             self.user_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *tx)
         .await?;
+
+        tx.commit().await?;
 
         Ok(())
     }
 }
 
-// Phone Number Commands
 pub struct AddUserPhoneCommand {
     deployment_id: i64,
     user_id: i64,
@@ -400,10 +336,8 @@ impl Command for UpdateUserPhoneCommand {
     type Output = UserPhoneNumber;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Handle primary phone logic first
         if let Some(is_primary) = self.request.is_primary {
             if is_primary {
-                // Update user's primary phone
                 sqlx::query!(
                     "UPDATE users SET primary_phone_number_id = $1 WHERE id = $2",
                     self.phone_id,
@@ -414,7 +348,6 @@ impl Command for UpdateUserPhoneCommand {
             }
         }
 
-        // Update the phone with provided fields
         match (
             &self.request.phone_number,
             self.request.verified,
@@ -511,7 +444,6 @@ impl Command for UpdateUserPhoneCommand {
                 .await?;
             }
             (None, None, Some(_)) => {
-                // Just update the timestamp (primary was already handled above)
                 sqlx::query!(
                     r#"
                     UPDATE user_phone_numbers
@@ -525,7 +457,6 @@ impl Command for UpdateUserPhoneCommand {
                 .await?;
             }
             (None, None, None) => {
-                // Just update the timestamp
                 sqlx::query!(
                     r#"
                     UPDATE user_phone_numbers
@@ -540,7 +471,6 @@ impl Command for UpdateUserPhoneCommand {
             }
         }
 
-        // Fetch and return the updated phone
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, user_id,
