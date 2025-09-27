@@ -12,7 +12,7 @@
         "Text",
         "Text",
         "Text",
-        "Varchar",
+        "Text",
         "Timestamptz"
       ]
     },

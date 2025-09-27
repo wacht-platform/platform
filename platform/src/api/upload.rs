@@ -12,7 +12,7 @@ use axum::{
 pub async fn upload_image(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(image_type): Path<String>,
+    Path((_, image_type)): Path<(i64, String)>,
     mut multipart: Multipart,
 ) -> ApiResult<UploadResult> {
     let mut image_buffer: Vec<u8> = Vec::new();
