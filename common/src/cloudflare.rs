@@ -1,12 +1,7 @@
 use crate::error::AppError;
 use models::{DnsRecord, DomainVerificationRecords};
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize)]
-pub struct CreateCustomHostnameRequest {
-    pub hostname: String,
-    pub custom_origin_server: String,
-}
+use serde::Deserialize;
+use serde_json::json;
 
 #[derive(Deserialize)]
 pub struct CloudflareResponse<T> {
@@ -58,17 +53,18 @@ impl CloudflareService {
             self.zone_id
         );
 
-        let request_body = CreateCustomHostnameRequest {
-            hostname: hostname.to_string(),
-            custom_origin_server: origin_server.to_string(),
-        };
-
         let response = self
             .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
-            .json(&request_body)
+            .json(&json!({
+                "hostname": hostname,
+                "custom_origin_server": origin_server,
+                "ssl": json!({
+                    "method": "http"
+                })
+            }))
             .send()
             .await
             .map_err(|e| AppError::External(format!("Cloudflare API request failed: {}", e)))?;
