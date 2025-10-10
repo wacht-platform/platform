@@ -41,10 +41,6 @@ fn project_routes() -> Router<AppState> {
             "/project/{project_id}/deployment/{deployment_id}",
             delete(api::project::delete_deployment),
         )
-        .route(
-            "/deployment/{deployment_id}/verify-dns",
-            post(api::project::verify_deployment_dns_records),
-        )
 }
 
 fn ai_context_routes() -> Router<AppState> {
@@ -290,6 +286,10 @@ fn billing_routes() -> Router<AppState> {
 
 fn console_specific_routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/verify-dns",
+            post(api::project::verify_deployment_dns_records),
+        )
         .route(
             "/webhooks/status",
             get(api::webhook_console::get_webhook_status),
