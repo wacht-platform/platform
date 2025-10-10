@@ -1130,7 +1130,6 @@ impl CreateProductionDeploymentCommand {
         frontend_host: String,
         app_name: String,
     ) -> DeploymentUISettings {
-        // Ensure frontend_host has https:// protocol
         let frontend_url = if frontend_host.starts_with("https://") {
             frontend_host
         } else {

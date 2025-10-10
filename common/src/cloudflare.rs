@@ -73,6 +73,9 @@ impl CloudflareService {
             .await
             .map_err(|e| AppError::External(format!("Cloudflare API request failed: {}", e)))?;
 
+        println!("{:?}", response.text().await.unwrap());
+        panic!("failed to so stuff");
+
         let cloudflare_response: CloudflareResponse<CustomHostname> =
             response.json().await.map_err(|e| {
                 AppError::External(format!("Failed to parse Cloudflare response: {}", e))
