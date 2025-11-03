@@ -13,7 +13,7 @@ pub enum SignInAttemptStep {
     PasswordResetCompletion,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Session {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

@@ -34,15 +34,22 @@ pub struct WebhookRetryTask {
     pub deployment_id: i64,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct WebhookEventTask {
+    pub deployment_id: i64,
+    pub event_type: String,
+    pub event_payload: serde_json::Value,
+    pub triggered_at: chrono::DateTime<Utc>,
+}
+
 #[derive(Debug)]
 pub enum DeliveryResult {
     Success,
     Failed,
     NotFound,
-    RetryAfter(std::time::Duration), // Add retry with delay
+    RetryAfter(std::time::Duration),
 }
 
-// HTTP status codes we need
 const STATUS_REQUEST_TIMEOUT: u16 = 408;
 const STATUS_TOO_MANY_REQUESTS: u16 = 429;
 const STATUS_INTERNAL_SERVER_ERROR: u16 = 500;
@@ -52,7 +59,6 @@ pub async fn process_webhook_delivery(
     deployment_id: i64,
     app_state: &AppState,
 ) -> Result<DeliveryResult> {
-    // Get delivery details using command
     let command = GetActiveDeliveryCommand { delivery_id };
     let delivery = match command.execute(app_state).await? {
         Some(d) => d,
@@ -62,19 +68,10 @@ pub async fn process_webhook_delivery(
         }
     };
 
-    info!(
-        "Processing webhook delivery {} (attempt {}/{})",
-        delivery_id,
-        delivery.attempts + 1,
-        delivery.max_attempts
-    );
-
-    // Retrieve payload from S3
     let payload = RetrieveWebhookPayloadCommand::new(delivery.payload_s3_key.clone())
         .execute(app_state)
         .await?;
 
-    // Build HTTP request using reqwest from shared dependencies
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(
             delivery.timeout_seconds as u64,
@@ -84,7 +81,6 @@ pub async fn process_webhook_delivery(
 
     let mut request = client.post(&delivery.url).json(&payload);
 
-    // Generate and add signature header
     let signature = webhook::generate_hmac_signature(&delivery.signing_secret, &payload);
 
     request = request
@@ -92,7 +88,6 @@ pub async fn process_webhook_delivery(
         .header("X-Webhook-Event", &delivery.event_name)
         .header("X-Webhook-Delivery", delivery_id.to_string());
 
-    // Add custom headers
     if let Some(headers) = &delivery.headers {
         if let Some(headers_obj) = headers.as_object() {
             for (key, value) in headers_obj {
@@ -103,7 +98,6 @@ pub async fn process_webhook_delivery(
         }
     }
 
-    // Make the request
     let start = Instant::now();
     let result = request.send().await;
     let duration = start.elapsed();
@@ -115,18 +109,9 @@ pub async fn process_webhook_delivery(
             let response_body = response.text().await.ok();
 
             if status.is_success() {
-                info!(
-                    "Successfully delivered webhook {} to {} ({}ms)",
-                    delivery_id,
-                    delivery.url,
-                    duration.as_millis()
-                );
-
-                // Log success to ClickHouse with payload
                 let ch_delivery = WebhookDelivery {
                     deployment_id,
                     delivery_id,
-
                     app_name: delivery.app_name.clone(),
                     endpoint_id: delivery.endpoint_id,
                     endpoint_url: delivery.url.clone(),
@@ -152,7 +137,6 @@ pub async fn process_webhook_delivery(
                     warn!("Failed to log successful delivery to ClickHouse: {}", e);
                 }
 
-                // Delete from active queue using command
                 DeleteActiveDeliveryCommand { delivery_id }
                     .execute(app_state)
                     .await?;
@@ -164,11 +148,9 @@ pub async fn process_webhook_delivery(
                     delivery_id, status
                 );
 
-                // Check if this will be retried
                 let will_retry = (delivery.attempts + 1) < delivery.max_attempts
                     && (status_code >= 500 || status_code == 408 || status_code == 429);
 
-                // Log failure to ClickHouse with payload
                 let ch_delivery = WebhookDelivery {
                     deployment_id,
                     delivery_id,
@@ -219,12 +201,7 @@ pub async fn process_webhook_delivery(
             }
         }
         Err(e) => {
-            error!("Failed to deliver webhook {}: {}", delivery_id, e);
-
-            // Network errors are typically retryable
             let will_retry = (delivery.attempts + 1) < delivery.max_attempts;
-
-            // Log error to ClickHouse with payload
             let ch_delivery = WebhookDelivery {
                 deployment_id,
                 delivery_id,

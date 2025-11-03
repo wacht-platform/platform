@@ -1,0 +1,203 @@
+use chrono::Utc;
+use commands::{Command, webhook_trigger::TriggerWebhookEventCommand};
+use common::state::AppState;
+use queries::{
+    Query,
+    b2b::{GetOrganizationDetailsQuery, GetWorkspaceDetailsQuery},
+    signin::GetSessionWithSignInsQuery,
+    user::{GetUserAuthenticatorQuery, GetUserDetailsQuery},
+};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tracing::info;
+
+use crate::consumer::TaskError;
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct WebhookEventTask {
+    pub deployment_id: i64,
+    pub event_type: String,
+    pub event_payload: serde_json::Value,
+    pub triggered_at: chrono::DateTime<Utc>,
+}
+
+pub async fn trigger_webhook_event(
+    task: WebhookEventTask,
+    app_state: &AppState,
+) -> Result<String, TaskError> {
+    info!(
+        "Processing webhook event '{}' for deployment {}",
+        task.event_type, task.deployment_id
+    );
+
+    let enriched_payload =
+        enrich_webhook_payload(task.event_payload.clone(), task.deployment_id, app_state).await?;
+
+    let console_deployment_id = std::env::var("CONSOLE_DEPLOYMENT_ID")
+        .map_err(|_| TaskError::Permanent("CONSOLE_DEPLOYMENT_ID not set".to_string()))?
+        .parse::<i64>()
+        .map_err(|_| TaskError::Permanent("Invalid CONSOLE_DEPLOYMENT_ID".to_string()))?;
+
+    let trigger_command = TriggerWebhookEventCommand::new(
+        console_deployment_id,
+        task.deployment_id.to_string(),
+        task.event_type.clone(),
+        enriched_payload,
+    );
+
+    trigger_command
+        .execute(app_state)
+        .await
+        .map_err(|e| TaskError::Permanent(format!("Failed to trigger webhook event: {}", e)))?;
+
+    Ok(format!(
+        "Webhook event '{}' triggered for deployment {}",
+        task.event_type, task.deployment_id
+    ))
+}
+
+async fn enrich_webhook_payload(
+    payload: Value,
+    deployment_id: i64,
+    app_state: &AppState,
+) -> Result<Value, TaskError> {
+    let entity_id = payload.get("entity_id").and_then(|v| v.as_i64());
+    let entity_type = payload.get("entity_type").and_then(|v| v.as_str());
+
+    let (Some(entity_id), Some(entity_type)) = (entity_id, entity_type) else {
+        return Ok(payload);
+    };
+
+    info!("Enriching payload for {}:{}", entity_type, entity_id);
+
+    match entity_type {
+        "user" => enrich_user_payload(entity_id, payload, deployment_id, app_state).await,
+        "organization" => {
+            enrich_organization_payload(entity_id, payload, deployment_id, app_state).await
+        }
+        "workspace" => enrich_workspace_payload(entity_id, payload, deployment_id, app_state).await,
+        "session" => enrich_session_payload(entity_id, payload, app_state).await,
+        "user_authenticator" => enrich_authenticator_payload(entity_id, payload, app_state).await,
+        "user_email" | "user_phone" => {
+            enrich_user_payload(entity_id, payload, deployment_id, app_state).await
+        }
+        _ => Ok(payload),
+    }
+}
+
+async fn enrich_user_payload(
+    user_id: i64,
+    mut payload: Value,
+    deployment_id: i64,
+    app_state: &AppState,
+) -> Result<Value, TaskError> {
+    let query = GetUserDetailsQuery::new(deployment_id, user_id);
+    let user_details = query
+        .execute(app_state)
+        .await
+        .map_err(|e| TaskError::Permanent(format!("Failed to load user {}: {}", user_id, e)))?;
+
+    let user_json = serde_json::to_value(&user_details)
+        .map_err(|e| TaskError::Permanent(format!("Failed to serialize user: {}", e)))?;
+
+    if let Value::Object(ref mut map) = payload {
+        if let Value::Object(user_map) = user_json {
+            map.extend(user_map);
+        }
+    }
+
+    Ok(payload)
+}
+
+async fn enrich_organization_payload(
+    org_id: i64,
+    mut payload: Value,
+    deployment_id: i64,
+    app_state: &AppState,
+) -> Result<Value, TaskError> {
+    let query = GetOrganizationDetailsQuery::new(deployment_id, org_id);
+    let org_details = query.execute(app_state).await.map_err(|e| {
+        TaskError::Permanent(format!("Failed to load organization {}: {}", org_id, e))
+    })?;
+
+    let org_json = serde_json::to_value(&org_details)
+        .map_err(|e| TaskError::Permanent(format!("Failed to serialize organization: {}", e)))?;
+
+    if let Value::Object(ref mut map) = payload {
+        if let Value::Object(org_map) = org_json {
+            map.extend(org_map);
+        }
+    }
+
+    Ok(payload)
+}
+
+async fn enrich_workspace_payload(
+    workspace_id: i64,
+    mut payload: Value,
+    deployment_id: i64,
+    app_state: &AppState,
+) -> Result<Value, TaskError> {
+    let query = GetWorkspaceDetailsQuery::new(deployment_id, workspace_id);
+    let workspace_details = query.execute(app_state).await.map_err(|e| {
+        TaskError::Permanent(format!("Failed to load workspace {}: {}", workspace_id, e))
+    })?;
+
+    let workspace_json = serde_json::to_value(&workspace_details)
+        .map_err(|e| TaskError::Permanent(format!("Failed to serialize workspace: {}", e)))?;
+
+    if let Value::Object(ref mut map) = payload {
+        if let Value::Object(workspace_map) = workspace_json {
+            map.extend(workspace_map);
+        }
+    }
+
+    Ok(payload)
+}
+
+async fn enrich_session_payload(
+    session_id: i64,
+    mut payload: Value,
+    app_state: &AppState,
+) -> Result<Value, TaskError> {
+    let query = GetSessionWithSignInsQuery::new(session_id);
+    let session_data = query.execute(app_state).await.map_err(|e| {
+        TaskError::Permanent(format!("Failed to load session {}: {}", session_id, e))
+    })?;
+
+    let session_json = serde_json::to_value(&session_data)
+        .map_err(|e| TaskError::Permanent(format!("Failed to serialize session: {}", e)))?;
+
+    if let Value::Object(ref mut map) = payload {
+        if let Value::Object(session_map) = session_json {
+            map.extend(session_map);
+        }
+    }
+
+    Ok(payload)
+}
+
+async fn enrich_authenticator_payload(
+    user_id: i64,
+    mut payload: Value,
+    app_state: &AppState,
+) -> Result<Value, TaskError> {
+    let query = GetUserAuthenticatorQuery::new(user_id);
+    let authenticator = query.execute(app_state).await.map_err(|e| {
+        TaskError::Permanent(format!(
+            "Failed to load authenticator for user {}: {}",
+            user_id, e
+        ))
+    })?;
+
+    let auth_json = serde_json::to_value(&authenticator)
+        .map_err(|e| TaskError::Permanent(format!("Failed to serialize authenticator: {}", e)))?;
+
+    if let Value::Object(ref mut map) = payload {
+        if let Value::Object(auth_map) = auth_json {
+            map.extend(auth_map);
+        }
+    }
+
+    Ok(payload)
+}

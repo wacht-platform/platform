@@ -495,3 +495,39 @@ impl Query for DeploymentWaitlistQuery {
         Ok(waitlist_users)
     }
 }
+
+pub struct GetUserAuthenticatorQuery {
+    user_id: i64,
+}
+
+impl GetUserAuthenticatorQuery {
+    pub fn new(user_id: i64) -> Self {
+        Self { user_id }
+    }
+}
+
+impl Query for GetUserAuthenticatorQuery {
+    type Output = models::UserAuthenticator;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT id, created_at, updated_at, user_id, totp_secret, otp_url
+            FROM user_authenticators
+            WHERE user_id = $1 AND deleted_at IS NULL
+            "#,
+            self.user_id
+        )
+        .fetch_one(&app_state.db_pool)
+        .await?;
+
+        Ok(models::UserAuthenticator {
+            id: row.id,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            user_id: row.user_id.unwrap_or(0),
+            totp_secret: row.totp_secret,
+            otp_url: row.otp_url,
+        })
+    }
+}

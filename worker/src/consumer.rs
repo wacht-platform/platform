@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use crate::tasks::{agent, document, email, embedding, sms, token, webhook, webhook_replay_batch};
+use crate::tasks::{agent, document, email, embedding, sms, token, webhook, webhook_event, webhook_replay_batch};
 use dto::json::NatsTaskMessage;
 
 #[derive(Debug)]
@@ -327,7 +327,6 @@ impl NatsConsumer {
                     .await
                     .map_err(|e| TaskError::Permanent(e.to_string()))?;
 
-                    // Check if we need to retry with delay
                     match result {
                         webhook::DeliveryResult::RetryAfter(duration) => {
                             Err(TaskError::RetryWithDelay(duration))
@@ -403,7 +402,6 @@ impl NatsConsumer {
                     .await
                     .map_err(|e| {
                         let error_str = e.to_string().to_lowercase();
-                        // Retry on query timeouts and pool exhaustion
                         if error_str.contains("query_wait_timeout")
                             || error_str.contains("pool timed out while waiting")
                             || error_str.contains("timeout")
@@ -454,6 +452,22 @@ impl NatsConsumer {
                     )
                     .await
                     .map_err(|e| TaskError::Permanent(e.to_string()))
+                })
+            }),
+        );
+
+        task_handlers.insert(
+            "webhook.event".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: webhook_event::WebhookEventTask = serde_json::from_value(payload)
+                        .map_err(|e| {
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize webhook event task: {}",
+                                e
+                            ))
+                        })?;
+                    webhook_event::trigger_webhook_event(task, &app_state).await
                 })
             }),
         );

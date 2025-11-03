@@ -206,6 +206,66 @@ pub async fn activate_webhooks(
             schema: None,
         },
         WebhookEventDefinition {
+            name: "workspace.member.role.updated".to_string(),
+            description: "Workspace member role changed".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.invitation.created".to_string(),
+            description: "Organization invitation sent".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.invitation.accepted".to_string(),
+            description: "Organization invitation accepted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.invitation.revoked".to_string(),
+            description: "Organization invitation revoked".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.invitation.created".to_string(),
+            description: "Workspace invitation sent".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.invitation.accepted".to_string(),
+            description: "Workspace invitation accepted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.invitation.revoked".to_string(),
+            description: "Workspace invitation revoked".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.phone.added".to_string(),
+            description: "Phone number added to user account".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.phone.verified".to_string(),
+            description: "User phone number verified".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.phone.removed".to_string(),
+            description: "Phone number removed from user account".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.email.added".to_string(),
+            description: "Email address added to user account".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.email.removed".to_string(),
+            description: "Email address removed from user account".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
             name: "api_key.created".to_string(),
             description: "API key created".to_string(),
             schema: None,
