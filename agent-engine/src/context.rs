@@ -731,7 +731,6 @@ impl ContextOrchestrator {
                 let vector_weight = 0.7;
                 let text_weight = 0.3;
 
-
                 SearchMode::Hybrid {
                     vector_weight,
                     text_weight,
@@ -1411,7 +1410,7 @@ impl ContextOrchestrator {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
         Ok(GeminiClient::new(
             api_key,
-            Some("gemini-2.5-pro".to_string()),
+            Some("gemini-2.5-flash".to_string()),
         ))
     }
 

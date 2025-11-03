@@ -1448,7 +1448,7 @@ impl AgentExecutor {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
         Ok(GeminiClient::new(
             api_key,
-            Some("gemini-2.5-flash".to_string()),
+            Some("gemini-2.5-flash-lite".to_string()),
         ))
     }
 
@@ -2121,7 +2121,6 @@ impl AgentExecutor {
             directive.categories
         );
 
-        // Generate embedding for the focus query
         let embedding = if !directive.focus.is_empty() {
             match GenerateEmbeddingsCommand::new(vec![directive.focus.clone()])
                 .with_task_type("RETRIEVAL_QUERY".to_string())
@@ -2135,14 +2134,12 @@ impl AgentExecutor {
             None
         };
 
-        // Determine limit based on depth
         let limit = match directive.depth {
             dto::json::agent_executor::SearchDepth::Shallow => 20,
             dto::json::agent_executor::SearchDepth::Moderate => 50,
             dto::json::agent_executor::SearchDepth::Deep => 100,
         };
 
-        // Load memories based on scope
         let memories = match directive.scope {
             MemoryScope::CurrentSession => {
                 self.load_session_memories(&directive, embedding, limit)
@@ -2190,7 +2187,6 @@ impl AgentExecutor {
             self.loaded_memory_ids.len()
         );
 
-        // Update access count for each loaded memory
         for memory_id in &self.loaded_memory_ids {
             let command = UpdateMemoryAccessCommand {
                 memory_id: *memory_id,
@@ -2223,7 +2219,6 @@ impl AgentExecutor {
 
             Ok(results.into_iter().map(|r| r.memory).collect())
         } else {
-            // Just get most recent from this session
             GetSessionMemoriesQuery {
                 context_id: self.context_id,
                 categories: Some(directive.categories.clone()),
@@ -2254,7 +2249,6 @@ impl AgentExecutor {
 
             Ok(results.into_iter().map(|r| r.memory).collect())
         } else {
-            // Get agent's cross-session memories
             GetAgentMemoriesQuery {
                 agent_id: self.agent.id,
                 categories: Some(directive.categories.clone()),
@@ -2272,7 +2266,6 @@ impl AgentExecutor {
         limit: i64,
     ) -> Result<Vec<MemoryRecord>, AppError> {
         if let Some(embed) = embedding {
-            // Search memories that are EITHER context-specific OR agent-specific
             let results = SearchMemoriesWithDecayQuery {
                 query_embedding: embed,
                 limit,
@@ -2285,13 +2278,11 @@ impl AgentExecutor {
 
             Ok(results.into_iter().map(|r| r.memory).collect())
         } else {
-            // Get both session and agent memories
             let session_memories = self
                 .load_session_memories(directive, None, limit / 2)
                 .await?;
             let agent_memories = self.load_agent_patterns(directive, None, limit / 2).await?;
 
-            // Merge and deduplicate
             let mut all_memories = session_memories;
             let existing_ids: std::collections::HashSet<i64> =
                 all_memories.iter().map(|m| m.id).collect();
@@ -2362,24 +2353,20 @@ impl AgentExecutor {
             current_execution_start
         );
 
-        // Group conversations by execution boundaries
-        let mut executions: Vec<(usize, usize, String)> = Vec::new(); // (start_idx, end_idx, user_request)
+        let mut executions: Vec<(usize, usize, String)> = Vec::new();
         let mut current_user_request = String::new();
         let mut execution_start = 0;
 
         for (idx, conv) in self.conversations.iter().enumerate() {
-            // Skip if we're in the current execution
             if idx >= current_execution_start {
                 break;
             }
 
             if matches!(conv.message_type, ConversationMessageType::UserMessage) {
-                // If we have a previous execution, save it
                 if idx > 0 {
                     executions.push((execution_start, idx, current_user_request.clone()));
                 }
 
-                // Start new execution
                 execution_start = idx;
                 if let ConversationContent::UserMessage { message, .. } = &conv.content {
                     current_user_request = message.clone();
@@ -2387,7 +2374,6 @@ impl AgentExecutor {
             }
         }
 
-        // Add the last execution before current
         if execution_start < current_execution_start && !current_user_request.is_empty() {
             executions.push((
                 execution_start,
@@ -2401,11 +2387,9 @@ impl AgentExecutor {
             executions.len()
         );
 
-        // Process executions from oldest to newest until we've compressed enough tokens
         let mut compressed_tokens = 0;
 
         for (exec_idx, (start_idx, end_idx, user_request)) in executions.iter().enumerate() {
-            // Check if we've compressed enough
             if compressed_tokens >= tokens_to_compress {
                 tracing::info!(
                     "Compressed {} tokens (target was {}), stopping",
@@ -2415,7 +2399,6 @@ impl AgentExecutor {
                 break;
             }
 
-            // Skip if this execution is already summarized
             let already_summarized = self.conversations[*start_idx..*end_idx]
                 .iter()
                 .any(|msg| matches!(msg.message_type, ConversationMessageType::ExecutionSummary));
@@ -2520,7 +2503,6 @@ impl AgentExecutor {
     ) -> Result<usize, AppError> {
         use tiktoken_rs::cl100k_base;
 
-        // Prepare existing memories for context
         let existing_memories: Vec<String> =
             self.memories.iter().map(|m| m.content.clone()).collect();
 
