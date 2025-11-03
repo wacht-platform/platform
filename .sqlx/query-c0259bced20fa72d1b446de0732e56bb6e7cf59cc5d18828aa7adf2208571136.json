@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, created_at, updated_at, session_id, user_id, \n                   active_organization_membership_id, active_workspace_membership_id,\n                   expires_at, last_active_at, ip_address, browser, device,\n                   city, region, region_code, country, country_code\n            FROM signins\n            WHERE id = $1 AND deleted_at IS NULL\n            ",
+  "query": "\n            SELECT id, created_at, updated_at, session_id, user_id,\n                   active_organization_membership_id, active_workspace_membership_id,\n                   expires_at, last_active_at, ip_address, browser, device,\n                   city, region, region_code, country, country_code\n            FROM signins\n            WHERE id = $1 AND deleted_at IS NULL\n            ",
   "describe": {
     "columns": [
       {
@@ -114,5 +114,5 @@
       true
     ]
   },
-  "hash": "504fd6edb2d62061a91d897a927077e9cef513d288f45e15cf9e8b6b2d591beb"
+  "hash": "c0259bced20fa72d1b446de0732e56bb6e7cf59cc5d18828aa7adf2208571136"
 }
