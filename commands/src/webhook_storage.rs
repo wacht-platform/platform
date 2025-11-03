@@ -35,18 +35,15 @@ impl Command for StoreWebhookPayloadCommand {
             std::env::var("WEBHOOK_BUCKET").unwrap_or_else(|_| "webhooks".to_string())
         });
 
-        // Generate S3 key with date-based partitioning and snowflake ID
         let key = format!(
             "webhooks/{}/{}.json",
             Utc::now().format("%Y/%m/%d"),
             app_state.sf.next_id().unwrap()
         );
 
-        // Serialize payload to JSON
         let json_bytes = serde_json::to_vec(&self.payload)
             .map_err(|e| AppError::Internal(format!("Failed to serialize payload: {}", e)))?;
 
-        // Upload to S3
         tracing::debug!(
             "Uploading webhook payload to S3: bucket={}, key={}",
             bucket,
@@ -70,10 +67,9 @@ impl Command for StoreWebhookPayloadCommand {
                     key,
                     e
                 );
-                AppError::Internal(format!("Failed to upload to S3: {}", e))
+                AppError::Internal(format!("Failed to upload to S3: {:?}", e))
             })?;
 
-        // Return just the key, not the full S3 URI
         Ok(key)
     }
 }
