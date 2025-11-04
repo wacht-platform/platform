@@ -122,7 +122,6 @@ impl AgentExecutorBuilder {
             .execute(&self.app_state)
             .await?;
 
-        // Load system instructions from the execution context
         executor.system_instructions = context.system_instructions;
 
         if context.status == ExecutionContextStatus::WaitingForInput {
@@ -279,7 +278,6 @@ impl AgentExecutor {
     }
 
     async fn repl(&mut self) -> Result<(), AppError> {
-        // Check if we're resuming a workflow execution
         if let Some(workflow_id) = self.current_workflow_id {
             let result = self.resume_workflow_execution().await?;
 
@@ -1408,6 +1406,8 @@ impl AgentExecutor {
             }
         }
 
+        println!("{:?}", history);
+
         history
     }
 
@@ -1448,7 +1448,7 @@ impl AgentExecutor {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
         Ok(GeminiClient::new(
             api_key,
-            Some("gemini-2.5-flash-lite-preview-09-2025".to_string()),
+            Some("gemini-2.5-flash-preview-09-2025".to_string()),
         ))
     }
 
