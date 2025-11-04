@@ -202,8 +202,6 @@ impl AgentExecutor {
             }
             ResumeContext::UserInput(input) => {
                 self.store_user_message(input.clone(), None).await?;
-
-                // If we're in a workflow, update the current node's output
                 if let Some(workflow_state) = &mut self.current_workflow_state {
                     if let Some(node_id) = &self.current_workflow_node_id {
                         let node_output_key = format!("{}_output", node_id);
@@ -236,43 +234,18 @@ impl AgentExecutor {
     }
 
     pub async fn run(&mut self, request: ConverseRequest) -> Result<(), AppError> {
-        // Check current execution context status
-        let context = GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-            .execute(&self.app_state)
-            .await?;
+        self.user_request = request.message.clone();
 
-        let is_resuming = self.current_objective.is_some()
-            || self.current_workflow_id.is_some()
-            || context.status == ExecutionContextStatus::WaitingForInput;
+        let store_future = self.store_user_message(request.message, request.images);
+        let context_future = self.get_immediate_context();
 
-        if is_resuming {
-            let user_response = self
-                .store_user_message(request.message.clone(), request.images.clone())
-                .await?;
-            self.conversations.push(user_response);
+        let (_, context) = tokio::join!(store_future, context_future);
+        let context = context?;
 
-            UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                .with_status(ExecutionContextStatus::Running)
-                .execute(&self.app_state)
-                .await?;
+        self.conversations = context.conversations;
+        self.memories = context.memories;
 
-            self.repl().await?;
-        } else {
-            self.user_request = request.message.clone();
-
-            let store_future = self.store_user_message(request.message, request.images);
-            let context_future = self.get_immediate_context();
-
-            let (store_result, context) = tokio::join!(store_future, context_future);
-            let user_message = store_result?;
-            let context = context?;
-
-            self.conversations = context.conversations;
-            self.conversations.push(user_message);
-            self.memories = context.memories;
-
-            self.repl().await?;
-        }
+        self.repl().await?;
 
         Ok(())
     }
@@ -2659,7 +2632,6 @@ impl AgentExecutor {
     }
 
     fn restore_from_state(&mut self, state: AgentExecutionState) -> Result<(), AppError> {
-        // Restore task results
         self.task_results = state
             .task_results
             .into_iter()
@@ -2669,8 +2641,6 @@ impl AgentExecutor {
                     .map(|result| (k, result))
             })
             .collect();
-
-        // Restore other state
 
         if let Some(objective) = state.current_objective {
             self.current_objective = serde_json::from_value(objective).ok();
