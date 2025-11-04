@@ -13,6 +13,7 @@ use common::state::AppState;
 use common::utils::webhook;
 use dto::clickhouse::webhook::WebhookDelivery;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::time::Instant;
 use tracing::{error, info, warn};
 
@@ -72,6 +73,13 @@ pub async fn process_webhook_delivery(
         .execute(app_state)
         .await?;
 
+    let webhook_data = json!({
+        "event_type": delivery.event_name,
+        "payload": payload,
+        "created_at": delivery.created_at.to_rfc3339(),
+        "app_name": delivery.app_name,
+    });
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(
             delivery.timeout_seconds as u64,
@@ -79,13 +87,12 @@ pub async fn process_webhook_delivery(
         .user_agent("Wacht-Webhook/1.0")
         .build()?;
 
-    let mut request = client.post(&delivery.url).json(&payload);
+    let mut request = client.post(&delivery.url).json(&webhook_data);
 
-    let signature = webhook::generate_hmac_signature(&delivery.signing_secret, &payload);
+    let signature = webhook::generate_hmac_signature(&delivery.signing_secret, &webhook_data);
 
     request = request
         .header("X-Webhook-Signature", signature)
-        .header("X-Webhook-Event", &delivery.event_name)
         .header("X-Webhook-Delivery", delivery_id.to_string());
 
     if let Some(headers) = &delivery.headers {
@@ -264,17 +271,14 @@ async fn handle_delivery_failure(
     status_code: Option<u16>,
     app_state: &AppState,
 ) -> Result<DeliveryResult> {
-    // Check if we should retry
     let should_retry = new_attempts < max_attempts
         && status_code.map_or(true, |s| {
-            // Retry on 5xx errors and timeouts
             s >= STATUS_INTERNAL_SERVER_ERROR
                 || s == STATUS_REQUEST_TIMEOUT
                 || s == STATUS_TOO_MANY_REQUESTS
         });
 
     if should_retry {
-        // Calculate next retry time with exponential backoff
         let next_retry = calculate_next_retry(new_attempts);
         let retry_delay = (next_retry - Utc::now()).num_seconds().max(1) as u64;
 
@@ -283,7 +287,6 @@ async fn handle_delivery_failure(
             delivery_id, next_retry, retry_delay
         );
 
-        // Update attempts in database
         UpdateDeliveryAttemptsCommand {
             delivery_id,
             new_attempts,
@@ -292,7 +295,6 @@ async fn handle_delivery_failure(
         .execute(app_state)
         .await?;
 
-        // Return retry delay so consumer can NAK with delay
         return Ok(DeliveryResult::RetryAfter(std::time::Duration::from_secs(
             retry_delay,
         )));
@@ -302,18 +304,15 @@ async fn handle_delivery_failure(
             delivery_id
         );
 
-        // Delete from active queue using command
         DeleteActiveDeliveryCommand { delivery_id }
             .execute(app_state)
             .await?;
 
-        // Check if we should auto-deactivate the endpoint using command
         if new_attempts >= max_attempts {
             let failure_count = IncrementEndpointFailuresCommand { endpoint_id }
                 .execute(app_state)
                 .await?;
 
-            // Auto-deactivate if threshold reached
             const DEACTIVATION_THRESHOLD: i64 = 10;
             if failure_count >= DEACTIVATION_THRESHOLD {
                 warn!(
@@ -321,17 +320,14 @@ async fn handle_delivery_failure(
                     endpoint_id, failure_count
                 );
 
-                // Deactivate the endpoint using command
                 DeactivateEndpointCommand { endpoint_id }
                     .execute(app_state)
                     .await?;
 
-                // Clear the failure counter using command
                 ClearEndpointFailuresCommand { endpoint_id }
                     .execute(app_state)
                     .await?;
 
-                // Log deactivation event to ClickHouse
                 let ch_delivery = WebhookDelivery {
                     deployment_id,
                     delivery_id: app_state.sf.next_id().unwrap() as i64,
@@ -364,21 +360,17 @@ async fn handle_delivery_failure(
                     warn!("Failed to log endpoint deactivation to ClickHouse: {}", e);
                 }
 
-                // TODO: Send notification to customer about endpoint deactivation
                 info!(
                     "Endpoint {} for app {} has been auto-deactivated. Customer should be notified.",
                     endpoint_id, app_name
                 );
             }
         }
-
-        // Don't log to ClickHouse here - already logged with correct status in the main handler
     }
 
     Ok(DeliveryResult::Failed)
 }
 
-// Batch processing for efficiency
 pub async fn process_webhook_batch(
     delivery_ids: Vec<i64>,
     deployment_id: i64,
@@ -398,7 +390,6 @@ pub async fn process_webhook_batch(
     let mut failed = 0;
     let mut not_found = 0;
 
-    // Process deliveries in parallel chunks
     const PARALLEL_LIMIT: usize = 50;
 
     for chunk in delivery_ids.chunks(PARALLEL_LIMIT) {
@@ -412,14 +403,13 @@ pub async fn process_webhook_batch(
             handles.push(handle);
         }
 
-        // Wait for chunk to complete
         for handle in handles {
             match handle.await {
                 Ok(Ok(result)) => match result {
                     DeliveryResult::Success => successful += 1,
                     DeliveryResult::Failed => failed += 1,
                     DeliveryResult::NotFound => not_found += 1,
-                    DeliveryResult::RetryAfter(_) => failed += 1, // Count as failed for batch stats
+                    DeliveryResult::RetryAfter(_) => failed += 1,
                 },
                 Ok(Err(e)) => {
                     error!("Webhook delivery error: {}", e);
@@ -451,7 +441,6 @@ pub async fn process_webhook_retry(
         delivery_id, deployment_id
     );
 
-    // Execute the replay command which handles all the logic
     let new_delivery_id = ReplayWebhookDeliveryCommand {
         delivery_id,
         deployment_id,

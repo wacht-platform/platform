@@ -35,18 +35,15 @@ impl Command for StoreWebhookPayloadCommand {
             std::env::var("WEBHOOK_BUCKET").unwrap_or_else(|_| "webhooks".to_string())
         });
 
-        // Generate S3 key with date-based partitioning and snowflake ID
         let key = format!(
             "webhooks/{}/{}.json",
             Utc::now().format("%Y/%m/%d"),
             app_state.sf.next_id().unwrap()
         );
 
-        // Serialize payload to JSON
         let json_bytes = serde_json::to_vec(&self.payload)
             .map_err(|e| AppError::Internal(format!("Failed to serialize payload: {}", e)))?;
 
-        // Upload to S3
         tracing::debug!(
             "Uploading webhook payload to S3: bucket={}, key={}",
             bucket,
@@ -70,10 +67,9 @@ impl Command for StoreWebhookPayloadCommand {
                     key,
                     e
                 );
-                AppError::Internal(format!("Failed to upload to S3: {}", e))
+                AppError::Internal(format!("Failed to upload to S3: {:?}", e))
             })?;
 
-        // Return just the key, not the full S3 URI
         Ok(key)
     }
 }
@@ -106,15 +102,8 @@ impl Command for RetrieveWebhookPayloadCommand {
             std::env::var("WEBHOOK_BUCKET").unwrap_or_else(|_| "webhooks".to_string())
         });
 
-        // Use the key directly (no longer expecting s3:// prefix)
         let key = &self.s3_key;
 
-        // Get object from S3
-        tracing::info!(
-            "Fetching webhook payload from S3: bucket={}, key={}",
-            bucket,
-            key
-        );
         let response = app_state
             .s3_client
             .get_object()
@@ -132,7 +121,6 @@ impl Command for RetrieveWebhookPayloadCommand {
                 AppError::Internal(format!("Failed to get object from S3: {}", e))
             })?;
 
-        // Collect body bytes
         let body = response
             .body
             .collect()
@@ -140,7 +128,6 @@ impl Command for RetrieveWebhookPayloadCommand {
             .map_err(|e| AppError::Internal(format!("Failed to read S3 object body: {}", e)))?
             .into_bytes();
 
-        // Parse JSON directly (no decompression needed)
         serde_json::from_slice(&body)
             .map_err(|e| AppError::Internal(format!("Failed to parse JSON payload: {}", e)))
     }
