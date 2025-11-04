@@ -248,7 +248,7 @@ fn base_deployment_routes() -> Router<AppState> {
             "/ai-knowledge-bases/{kb_id}/documents",
             get(api::ai_knowledge_base::get_knowledge_base_documents)
                 .post(api::ai_knowledge_base::upload_knowledge_base_document)
-                .layer(DefaultBodyLimit::max(10 * 1024 * 1024)), // 10MB limit
+                .layer(DefaultBodyLimit::max(20 * 1024 * 1024)),
         )
         .route(
             "/ai-knowledge-bases/{kb_id}/documents/{document_id}",
@@ -565,7 +565,6 @@ pub async fn create_frontend_router(state: AppState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Frontend API doesn't have any specific routes currently
     Router::new()
         .merge(health_routes())
         .with_state(state)
