@@ -248,7 +248,7 @@ fn base_deployment_routes() -> Router<AppState> {
             "/ai-knowledge-bases/{kb_id}/documents",
             get(api::ai_knowledge_base::get_knowledge_base_documents)
                 .post(api::ai_knowledge_base::upload_knowledge_base_document)
-                .layer(DefaultBodyLimit::max(20 * 1024 * 1024)),
+                .layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
         )
         .route(
             "/ai-knowledge-bases/{kb_id}/documents/{document_id}",
