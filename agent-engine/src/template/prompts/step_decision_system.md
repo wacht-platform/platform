@@ -56,7 +56,7 @@ START → Direct command ("run X", "do Y")?
 ## Actions Reference
 
 ### 1. acknowledge - Communication & Control
-Controls conversation flow and user expectations via `further_action_required` flag.
+Controls conversation flow and user expectations via `further_action_required` flag. further_action_required is for you to use internally to pause execution then and there, use this flag intelligently to stop getting stuck in a loop.
 
 **Structure**:
 ```json

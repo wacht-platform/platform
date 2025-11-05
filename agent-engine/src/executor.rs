@@ -57,7 +57,7 @@ pub struct AgentExecutor {
     tool_executor: ToolExecutor,
     channel: tokio::sync::mpsc::Sender<StreamEvent>,
     memories: Vec<MemoryRecord>,
-    loaded_memory_ids: std::collections::HashSet<i64>, // Track loaded memories for reinforcement
+    loaded_memory_ids: std::collections::HashSet<i64>,
     user_request: String,
     current_objective: Option<ObjectiveDefinition>,
     conversation_insights: Option<ConversationInsights>,
@@ -122,7 +122,6 @@ impl AgentExecutorBuilder {
             .execute(&self.app_state)
             .await?;
 
-        // Load system instructions from the execution context
         executor.system_instructions = context.system_instructions;
 
         if context.status == ExecutionContextStatus::WaitingForInput {
@@ -203,8 +202,6 @@ impl AgentExecutor {
             }
             ResumeContext::UserInput(input) => {
                 self.store_user_message(input.clone(), None).await?;
-
-                // If we're in a workflow, update the current node's output
                 if let Some(workflow_state) = &mut self.current_workflow_state {
                     if let Some(node_id) = &self.current_workflow_node_id {
                         let node_output_key = format!("{}_output", node_id);
@@ -237,49 +234,21 @@ impl AgentExecutor {
     }
 
     pub async fn run(&mut self, request: ConverseRequest) -> Result<(), AppError> {
-        // Check current execution context status
-        let context = GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-            .execute(&self.app_state)
+        self.user_request = request.message.clone();
+
+        self.store_user_message(request.message, request.images)
             .await?;
+        let context = self.get_immediate_context().await?;
 
-        let is_resuming = self.current_objective.is_some()
-            || self.current_workflow_id.is_some()
-            || context.status == ExecutionContextStatus::WaitingForInput;
+        self.conversations = context.conversations;
+        self.memories = context.memories;
 
-        if is_resuming {
-            let user_response = self
-                .store_user_message(request.message.clone(), request.images.clone())
-                .await?;
-            self.conversations.push(user_response);
-
-            UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                .with_status(ExecutionContextStatus::Running)
-                .execute(&self.app_state)
-                .await?;
-
-            self.repl().await?;
-        } else {
-            self.user_request = request.message.clone();
-
-            let store_future = self.store_user_message(request.message, request.images);
-            let context_future = self.get_immediate_context();
-
-            let (store_result, context) = tokio::join!(store_future, context_future);
-            let user_message = store_result?;
-            let context = context?;
-
-            self.conversations = context.conversations;
-            self.conversations.push(user_message);
-            self.memories = context.memories;
-
-            self.repl().await?;
-        }
+        self.repl().await?;
 
         Ok(())
     }
 
     async fn repl(&mut self) -> Result<(), AppError> {
-        // Check if we're resuming a workflow execution
         if let Some(workflow_id) = self.current_workflow_id {
             let result = self.resume_workflow_execution().await?;
 
@@ -449,7 +418,6 @@ impl AgentExecutor {
                             "completed"
                         };
 
-                    // Store the task result for tracking completed actions
                     if execution_status == "completed" {
                         let task_type_str = match action.action_type {
                             TaskType::ToolCall => "tool_call",
@@ -763,7 +731,6 @@ impl AgentExecutor {
         )
         .await?;
 
-        // Update status to Idle after delivering response
         UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
             .with_status(ExecutionContextStatus::Idle)
             .execute(&self.app_state)
@@ -780,7 +747,6 @@ impl AgentExecutor {
         &mut self,
         directive: ContextGatheringDirective,
     ) -> Result<(), AppError> {
-        // Create a focused objective from the directive
         let context_objective = Some(ObjectiveDefinition {
             primary_goal: directive.objective.clone(),
             success_criteria: directive
@@ -792,7 +758,6 @@ impl AgentExecutor {
             inferred_intent: directive.objective.clone(),
         });
 
-        // Store pattern context for the orchestrator
         let query_description = format!("[{:?}] {}", directive.pattern, directive.objective);
 
         let context_results = match self
@@ -812,7 +777,6 @@ impl AgentExecutor {
                     "Context gathering encountered an issue: {}. Continuing with partial results.",
                     e
                 );
-                // Return empty results rather than propagating the error
                 vec![]
             }
         };
@@ -835,7 +799,6 @@ impl AgentExecutor {
         let input_request = self.generate_user_input_request().await?;
         let content = self.parse_user_input_request(&input_request)?;
 
-        // Save the current execution state before pausing for input
         self.save_execution_state_for_input(&input_request).await?;
 
         self.store_conversation(content, ConversationMessageType::UserInputRequest)
@@ -1408,6 +1371,8 @@ impl AgentExecutor {
             }
         }
 
+        println!("{:?}", history);
+
         history
     }
 
@@ -1448,7 +1413,7 @@ impl AgentExecutor {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
         Ok(GeminiClient::new(
             api_key,
-            Some("gemini-2.5-flash-lite".to_string()),
+            Some("gemini-2.5-flash-preview-09-2025".to_string()),
         ))
     }
 
@@ -1518,10 +1483,8 @@ impl AgentExecutor {
             )
             .await?;
 
-        // Check if workflow execution was paused for platform function
         if let Some(status) = output.get("status").and_then(|s| s.as_str()) {
             if status == "pending" {
-                // Workflow paused, return with pending status
                 let result = WorkflowExecutionResult {
                     workflow_id: workflow.id,
                     workflow_name: workflow.name.clone(),
@@ -1573,10 +1536,8 @@ impl AgentExecutor {
 
             let output = result?;
 
-            // Check if this node returned a pending platform function
             if let Some(status) = output.get("status").and_then(|s| s.as_str()) {
                 if status == "pending" {
-                    // Don't continue to next nodes - return the pending result
                     return Ok(output);
                 }
             }
@@ -2056,7 +2017,6 @@ impl AgentExecutor {
         &self,
         config: &UserInputNodeConfig,
     ) -> Result<Value, AppError> {
-        // Send user input request via channel
         {
             let user_input_request = ConversationContent::UserInputRequest {
                 question: config.prompt.clone(),
@@ -2079,7 +2039,6 @@ impl AgentExecutor {
             let _ = self.channel.send(event).await;
         }
 
-        // Return a pending status that will pause the workflow
         let result = UserInputNodeResult {
             status: "pending".to_string(),
             node_type: "user_input".to_string(),
@@ -2157,12 +2116,10 @@ impl AgentExecutor {
 
         tracing::info!("Loaded {} memories", memories.len());
 
-        // Track loaded memory IDs for reinforcement
         for memory in &memories {
             self.loaded_memory_ids.insert(memory.id);
         }
 
-        // Update executor's memory state
         self.memories = memories;
 
         Ok(())
@@ -2206,7 +2163,6 @@ impl AgentExecutor {
         limit: i64,
     ) -> Result<Vec<MemoryRecord>, AppError> {
         if let Some(embed) = embedding {
-            // Semantic search within current context
             let results = SearchMemoriesWithDecayQuery {
                 query_embedding: embed,
                 limit,
@@ -2236,7 +2192,6 @@ impl AgentExecutor {
         limit: i64,
     ) -> Result<Vec<MemoryRecord>, AppError> {
         if let Some(embed) = embedding {
-            // Semantic search for agent patterns
             let results = SearchMemoriesWithDecayQuery {
                 query_embedding: embed,
                 limit,
@@ -2312,8 +2267,8 @@ impl AgentExecutor {
     }
 
     async fn check_and_generate_summaries(&mut self) -> Result<(), AppError> {
-        const TOKEN_THRESHOLD: usize = 100_000; // 100K tokens - trigger threshold
-        const TARGET_TOKENS: usize = 80_000; // 80K tokens - target after compression
+        const TOKEN_THRESHOLD: usize = 100_000;
+        const TARGET_TOKENS: usize = 80_000;
 
         let total_uncompressed_tokens: usize = self
             .conversations
@@ -2322,16 +2277,13 @@ impl AgentExecutor {
             .map(|conv| conv.token_count as usize)
             .sum();
 
-        // Only generate summaries if we exceed the threshold
         if total_uncompressed_tokens >= TOKEN_THRESHOLD {
-            // Find the start of the current execution (last user message)
             let current_execution_start = self
                 .conversations
                 .iter()
                 .rposition(|msg| matches!(msg.message_type, ConversationMessageType::UserMessage))
                 .unwrap_or(self.conversations.len());
 
-            // Calculate how many tokens we need to compress
             let tokens_to_compress = total_uncompressed_tokens - TARGET_TOKENS;
 
             self.apply_sliding_window_compression(tokens_to_compress, current_execution_start)
@@ -2530,7 +2482,6 @@ impl AgentExecutor {
             .unwrap_or("Completed the requested task")
             .to_string();
 
-        // Extract categorized memories
         let memories = summary_response
             .get("memories")
             .and_then(|v| v.as_array())
@@ -2538,14 +2489,12 @@ impl AgentExecutor {
             .unwrap_or_default();
 
         if !memories.is_empty() {
-            // Collect memory contents for batch embedding generation
             let memory_contents: Vec<String> = memories
                 .iter()
                 .filter_map(|m| m.get("content").and_then(|c| c.as_str()))
                 .map(String::from)
                 .collect();
 
-            // Generate embeddings for all memories in batch
             match GenerateEmbeddingsCommand::new(memory_contents.clone())
                 .with_task_type("RETRIEVAL_DOCUMENT".to_string())
                 .execute(&self.app_state)
@@ -2619,20 +2568,17 @@ impl AgentExecutor {
             }
         }
 
-        // Initialize tokenizer with error handling
         let token_count = match cl100k_base() {
             Ok(bpe) => {
                 let full_summary = format!("User: {user_request}\nAgent: {agent_execution}");
                 bpe.encode_with_special_tokens(&full_summary).len()
             }
             Err(_e) => {
-                // Estimate token count as a fallback (roughly 4 chars per token)
                 let full_summary = format!("User: {user_request}\nAgent: {agent_execution}");
                 full_summary.len() / 4
             }
         };
 
-        // Store the execution summary
         match self.app_state.sf.next_id() {
             Ok(id) => {
                 let command = CreateConversationCommand::new(
@@ -2659,7 +2605,6 @@ impl AgentExecutor {
     }
 
     fn restore_from_state(&mut self, state: AgentExecutionState) -> Result<(), AppError> {
-        // Restore task results
         self.task_results = state
             .task_results
             .into_iter()
@@ -2670,8 +2615,6 @@ impl AgentExecutor {
             })
             .collect();
 
-        // Restore other state
-
         if let Some(objective) = state.current_objective {
             self.current_objective = serde_json::from_value(objective).ok();
         }
@@ -2680,7 +2623,6 @@ impl AgentExecutor {
             self.conversation_insights = serde_json::from_value(insights).ok();
         }
 
-        // Restore workflow state if we were in the middle of workflow execution
         if let Some(workflow_state) = state.workflow_state {
             self.current_workflow_id = Some(workflow_state.workflow_id);
             self.current_workflow_state = Some(workflow_state.workflow_state);
@@ -2695,7 +2637,6 @@ impl AgentExecutor {
         &mut self,
         input_request: &Value,
     ) -> Result<(), AppError> {
-        // Extract request info from the generated input request
         let question = input_request
             .get("question")
             .and_then(|v| v.as_str())
@@ -2742,7 +2683,6 @@ impl AgentExecutor {
             placeholder,
         };
 
-        // Create the execution state
         let execution_state = AgentExecutionState {
             task_results: self
                 .task_results
@@ -2761,7 +2701,6 @@ impl AgentExecutor {
             pending_input_request: Some(user_input_state),
         };
 
-        // Update the execution context with the state
         UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
             .with_execution_state(execution_state)
             .with_status(ExecutionContextStatus::WaitingForInput)
@@ -2790,7 +2729,6 @@ impl AgentExecutor {
     }
 
     pub async fn resume_workflow_execution(&mut self) -> Result<Value, AppError> {
-        // Get the workflow we were executing
         let workflow_id = self.current_workflow_id.ok_or_else(|| {
             AppError::Internal("No workflow ID found in resume state".to_string())
         })?;
