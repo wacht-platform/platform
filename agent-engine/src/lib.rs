@@ -6,7 +6,7 @@ pub mod template;
 pub mod tools;
 
 pub use context::ContextOrchestrator;
-pub use executor::{AgentExecutor, AgentExecutorBuilder, ResumeContext};
+pub use executor::{AgentExecutor, ResumeContext};
 pub use gemini::GeminiClient;
 pub use handler::{AgentHandler, ExecutionRequest};
 pub use tools::ToolExecutor;

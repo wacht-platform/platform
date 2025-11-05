@@ -158,14 +158,6 @@ impl AgentExecutor {
         self.conversations = immediate_context.conversations;
         self.memories = immediate_context.memories;
 
-        let exec_context = GetExecutionContextQuery::new(context_id, deployment_id)
-            .execute(&app_state)
-            .await?;
-
-        if let Some(state) = exec_context.execution_state {
-            self.restore_from_state(state)?;
-        }
-
         match resume_context {
             ResumeContext::PlatformFunction(execution_id, result) => {
                 let conversation = self
@@ -201,7 +193,7 @@ impl AgentExecutor {
                 }
             }
             ResumeContext::UserInput(input) => {
-                self.store_user_message(input.clone(), None).await?;
+                let conversation = self.store_user_message(input.clone(), None).await?;
                 if let Some(workflow_state) = &mut self.current_workflow_state {
                     if let Some(node_id) = &self.current_workflow_node_id {
                         let node_output_key = format!("{}_output", node_id);
@@ -212,6 +204,12 @@ impl AgentExecutor {
                         workflow_state
                             .insert(node_output_key, serde_json::to_value(&user_input_output)?);
                     }
+                } else {
+                    self.conversations.push(conversation.clone());
+                    let _ = self
+                        .channel
+                        .send(StreamEvent::ConversationMessage(conversation))
+                        .await;
                 }
             }
         }
