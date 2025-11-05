@@ -236,11 +236,9 @@ impl AgentExecutor {
     pub async fn run(&mut self, request: ConverseRequest) -> Result<(), AppError> {
         self.user_request = request.message.clone();
 
-        let store_future = self.store_user_message(request.message, request.images);
-        let context_future = self.get_immediate_context();
-
-        let (_, context) = tokio::join!(store_future, context_future);
-        let context = context?;
+        self.store_user_message(request.message, request.images)
+            .await?;
+        let context = self.get_immediate_context().await?;
 
         self.conversations = context.conversations;
         self.memories = context.memories;
