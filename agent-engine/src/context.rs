@@ -79,8 +79,7 @@ impl SearchMetrics {
 
         // Track result overlap
         let mut overlap_percentage = 0.0;
-        if !self.result_overlap_tracking.is_empty() {
-            let last_results = self.result_overlap_tracking.last().unwrap();
+        if let Some(last_results) = self.result_overlap_tracking.last() {
             let intersection = current_sources.intersection(last_results).count();
             if !current_sources.is_empty() {
                 overlap_percentage = (intersection as f32 / current_sources.len() as f32) * 100.0;
@@ -745,10 +744,17 @@ impl ContextOrchestrator {
                     start: now - Duration::hours(1),
                     end: now,
                 }),
-                "today" => Some(TimeRange {
-                    start: now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc(),
-                    end: now,
-                }),
+                "today" => {
+                    let start_of_day = now
+                        .date_naive()
+                        .and_hms_opt(0, 0, 0)
+                        .map(|dt| dt.and_utc())
+                        .unwrap_or_else(|| now - Duration::hours(24));
+                    Some(TimeRange {
+                        start: start_of_day,
+                        end: now,
+                    })
+                }
                 "last_week" => Some(TimeRange {
                     start: now - Duration::weeks(1),
                     end: now,

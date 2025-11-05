@@ -88,8 +88,7 @@ pub fn render_template_with_prompt(
     if let Some(prompt_template) = system_prompt {
         // Render the system prompt with the current context using the global HANDLEBARS
         let mut rendered_prompt = HANDLEBARS
-            .render_template(prompt_template, &context)
-            .unwrap();
+            .render_template(prompt_template, &context)?;
 
         // Append custom system instructions if provided in the context
         if let Some(custom_instructions) = context.get("custom_system_instructions") {

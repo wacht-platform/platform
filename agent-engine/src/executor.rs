@@ -381,20 +381,35 @@ impl AgentExecutor {
                     let execution_status =
                         if let Some(status) = result.get("status").and_then(|s| s.as_str()) {
                             if status == "pending" {
+                                let task_results: Result<HashMap<String, Value>, _> = self
+                                    .task_results
+                                    .iter()
+                                    .map(|(k, v)| {
+                                        serde_json::to_value(v)
+                                            .map(|val| (k.clone(), val))
+                                            .map_err(|e| AppError::Internal(format!("Failed to serialize task result: {}", e)))
+                                    })
+                                    .collect();
+                                let task_results = task_results?;
+
+                                let current_objective = self
+                                    .current_objective
+                                    .as_ref()
+                                    .map(|o| serde_json::to_value(o))
+                                    .transpose()
+                                    .map_err(|e| AppError::Internal(format!("Failed to serialize objective: {}", e)))?;
+
+                                let conversation_insights = self
+                                    .conversation_insights
+                                    .as_ref()
+                                    .map(|c| serde_json::to_value(c))
+                                    .transpose()
+                                    .map_err(|e| AppError::Internal(format!("Failed to serialize insights: {}", e)))?;
+
                                 let execution_state = AgentExecutionState {
-                                    task_results: self
-                                        .task_results
-                                        .iter()
-                                        .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
-                                        .collect(),
-                                    current_objective: self
-                                        .current_objective
-                                        .as_ref()
-                                        .map(|o| serde_json::to_value(o).unwrap()),
-                                    conversation_insights: self
-                                        .conversation_insights
-                                        .as_ref()
-                                        .map(|c| serde_json::to_value(c).unwrap()),
+                                    task_results,
+                                    current_objective,
+                                    conversation_insights,
                                     workflow_state: None,
                                     pending_input_request: None,
                                 };
@@ -563,40 +578,64 @@ impl AgentExecutor {
     }
 
     async fn decide_next_step(&mut self) -> Result<StepDecision, AppError> {
+        let current_objective = self
+            .current_objective
+            .as_ref()
+            .map(|o| serde_json::to_value(o))
+            .transpose()
+            .map_err(|e| AppError::Internal(format!("Failed to serialize objective: {}", e)))?;
+
+        let conversation_insights = self
+            .conversation_insights
+            .as_ref()
+            .map(|c| serde_json::to_value(c))
+            .transpose()
+            .map_err(|e| AppError::Internal(format!("Failed to serialize insights: {}", e)))?;
+
+        let task_results: Result<HashMap<String, Value>, _> = self
+            .task_results
+            .iter()
+            .map(|(k, v)| {
+                serde_json::to_value(v)
+                    .map(|val| (k.clone(), val))
+                    .map_err(|e| AppError::Internal(format!("Failed to serialize task result: {}", e)))
+            })
+            .collect();
+        let task_results = task_results?;
+
+        let available_tools: Result<Vec<Value>, _> = self
+            .agent
+            .tools
+            .iter()
+            .map(|t| serde_json::to_value(t).map_err(|e| AppError::Internal(format!("Failed to serialize tool: {}", e))))
+            .collect();
+        let available_tools = available_tools?;
+
+        let available_workflows: Result<Vec<Value>, _> = self
+            .agent
+            .workflows
+            .iter()
+            .map(|w| serde_json::to_value(w).map_err(|e| AppError::Internal(format!("Failed to serialize workflow: {}", e))))
+            .collect();
+        let available_workflows = available_workflows?;
+
+        let available_knowledge_bases: Result<Vec<Value>, _> = self
+            .agent
+            .knowledge_bases
+            .iter()
+            .map(|kb| serde_json::to_value(kb).map_err(|e| AppError::Internal(format!("Failed to serialize KB: {}", e))))
+            .collect();
+        let available_knowledge_bases = available_knowledge_bases?;
+
         let context = StepDecisionContext {
             conversation_history: self.get_conversation_history_for_llm().await,
             user_request: self.user_request.clone(),
-            current_objective: self
-                .current_objective
-                .as_ref()
-                .map(|o| serde_json::to_value(o).unwrap()),
-            conversation_insights: self
-                .conversation_insights
-                .as_ref()
-                .map(|c| serde_json::to_value(c).unwrap()),
-            task_results: self
-                .task_results
-                .iter()
-                .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
-                .collect(),
-            available_tools: self
-                .agent
-                .tools
-                .iter()
-                .map(|t| serde_json::to_value(t).unwrap())
-                .collect(),
-            available_workflows: self
-                .agent
-                .workflows
-                .iter()
-                .map(|w| serde_json::to_value(w).unwrap())
-                .collect(),
-            available_knowledge_bases: self
-                .agent
-                .knowledge_bases
-                .iter()
-                .map(|kb| serde_json::to_value(kb).unwrap())
-                .collect(),
+            current_objective,
+            conversation_insights,
+            task_results,
+            available_tools,
+            available_workflows,
+            available_knowledge_bases,
             iteration_info: dto::json::IterationInfo {
                 current_iteration: 1,
                 max_iterations: MAX_LOOP_ITERATIONS,
@@ -641,36 +680,56 @@ impl AgentExecutor {
     }
 
     async fn validate_execution(&mut self) -> Result<ValidationResponse, AppError> {
+        let current_objective = self
+            .current_objective
+            .as_ref()
+            .map(|o| serde_json::to_value(o))
+            .transpose()
+            .map_err(|e| AppError::Internal(format!("Failed to serialize objective: {}", e)))?;
+
+        let task_results: Result<HashMap<String, Value>, _> = self
+            .task_results
+            .iter()
+            .map(|(k, v)| {
+                serde_json::to_value(v)
+                    .map(|val| (k.clone(), val))
+                    .map_err(|e| AppError::Internal(format!("Failed to serialize task result: {}", e)))
+            })
+            .collect();
+        let task_results = task_results?;
+
+        let available_tools: Result<Vec<Value>, _> = self
+            .agent
+            .tools
+            .iter()
+            .map(|t| serde_json::to_value(t).map_err(|e| AppError::Internal(format!("Failed to serialize tool: {}", e))))
+            .collect();
+        let available_tools = available_tools?;
+
+        let available_workflows: Result<Vec<Value>, _> = self
+            .agent
+            .workflows
+            .iter()
+            .map(|w| serde_json::to_value(w).map_err(|e| AppError::Internal(format!("Failed to serialize workflow: {}", e))))
+            .collect();
+        let available_workflows = available_workflows?;
+
+        let available_knowledge_bases: Result<Vec<Value>, _> = self
+            .agent
+            .knowledge_bases
+            .iter()
+            .map(|kb| serde_json::to_value(kb).map_err(|e| AppError::Internal(format!("Failed to serialize KB: {}", e))))
+            .collect();
+        let available_knowledge_bases = available_knowledge_bases?;
+
         let context = ValidationContext {
             conversation_history: self.get_conversation_history_for_llm().await,
             user_request: self.user_request.clone(),
-            current_objective: self
-                .current_objective
-                .as_ref()
-                .map(|o| serde_json::to_value(o).unwrap()),
-            task_results: self
-                .task_results
-                .iter()
-                .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
-                .collect(),
-            available_tools: self
-                .agent
-                .tools
-                .iter()
-                .map(|t| serde_json::to_value(t).unwrap())
-                .collect(),
-            available_workflows: self
-                .agent
-                .workflows
-                .iter()
-                .map(|w| serde_json::to_value(w).unwrap())
-                .collect(),
-            available_knowledge_bases: self
-                .agent
-                .knowledge_bases
-                .iter()
-                .map(|kb| serde_json::to_value(kb).unwrap())
-                .collect(),
+            current_objective,
+            task_results,
+            available_tools,
+            available_workflows,
+            available_knowledge_bases,
         };
 
         let request_body = render_template_with_prompt(
@@ -720,9 +779,15 @@ impl AgentExecutor {
             .generate_structured_content::<Value>(request_body)
             .await?;
 
+        let response = summary
+            .get("response")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::Internal("LLM summary response missing 'response' field or not a string".to_string()))?
+            .to_string();
+
         self.store_conversation(
             ConversationContent::AgentResponse {
-                response: summary.get("response").unwrap().as_str().unwrap().into(),
+                response,
                 context_used: Default::default(),
             },
             ConversationMessageType::AgentResponse,
@@ -1369,7 +1434,7 @@ impl AgentExecutor {
             }
         }
 
-        println!("{:?}", history);
+        tracing::debug!("Conversation history for LLM: {} messages", history.len());
 
         history
     }
@@ -1404,7 +1469,10 @@ impl AgentExecutor {
     }
 
     fn extract_conversation_content(&self, content: &ConversationContent) -> String {
-        serde_json::to_string(content).unwrap()
+        serde_json::to_string(content).unwrap_or_else(|_| {
+            tracing::warn!("Failed to serialize conversation content, using fallback");
+            format!("{:?}", content)
+        })
     }
 
     fn create_weak_llm(&self) -> Result<GeminiClient, AppError> {
@@ -2681,20 +2749,35 @@ impl AgentExecutor {
             placeholder,
         };
 
+        let task_results: Result<HashMap<String, Value>, _> = self
+            .task_results
+            .iter()
+            .map(|(k, v)| {
+                serde_json::to_value(v)
+                    .map(|val| (k.clone(), val))
+                    .map_err(|e| AppError::Internal(format!("Failed to serialize task result: {}", e)))
+            })
+            .collect();
+        let task_results = task_results?;
+
+        let current_objective = self
+            .current_objective
+            .as_ref()
+            .map(|o| serde_json::to_value(o))
+            .transpose()
+            .map_err(|e| AppError::Internal(format!("Failed to serialize objective: {}", e)))?;
+
+        let conversation_insights = self
+            .conversation_insights
+            .as_ref()
+            .map(|c| serde_json::to_value(c))
+            .transpose()
+            .map_err(|e| AppError::Internal(format!("Failed to serialize insights: {}", e)))?;
+
         let execution_state = AgentExecutionState {
-            task_results: self
-                .task_results
-                .iter()
-                .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
-                .collect(),
-            current_objective: self
-                .current_objective
-                .as_ref()
-                .map(|o| serde_json::to_value(o).unwrap()),
-            conversation_insights: self
-                .conversation_insights
-                .as_ref()
-                .map(|c| serde_json::to_value(c).unwrap()),
+            task_results,
+            current_objective,
+            conversation_insights,
             workflow_state: self.get_current_workflow_state(),
             pending_input_request: Some(user_input_state),
         };
