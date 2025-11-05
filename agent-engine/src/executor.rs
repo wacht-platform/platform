@@ -406,11 +406,42 @@ impl AgentExecutor {
                                     .transpose()
                                     .map_err(|e| AppError::Internal(format!("Failed to serialize insights: {}", e)))?;
 
+                                // Extract workflow state if this is a workflow execution that paused
+                                let workflow_state_data = if let Some(workflow_id) = result.get("workflow_id").and_then(|v| v.as_i64()) {
+                                    if let Some(output) = result.get("output") {
+                                        // Extract workflow context from the pending output
+                                        if let (Some(node_id), Some(state), Some(path)) = (
+                                            output.get("current_node_id").and_then(|v| v.as_str()),
+                                            output.get("workflow_state"),
+                                            output.get("execution_path")
+                                        ) {
+                                            let workflow_state_map: HashMap<String, Value> = serde_json::from_value(state.clone())
+                                                .map_err(|e| AppError::Internal(format!("Failed to deserialize workflow state: {}", e)))?;
+
+                                            let execution_path: Vec<String> = serde_json::from_value(path.clone())
+                                                .map_err(|e| AppError::Internal(format!("Failed to deserialize execution path: {}", e)))?;
+
+                                            Some(WorkflowExecutionState {
+                                                workflow_id,
+                                                workflow_state: workflow_state_map,
+                                                current_node_id: node_id.to_string(),
+                                                execution_path,
+                                            })
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                };
+
                                 let execution_state = AgentExecutionState {
                                     task_results,
                                     current_objective,
                                     conversation_insights,
-                                    workflow_state: None,
+                                    workflow_state: workflow_state_data,
                                     pending_input_request: None,
                                 };
 
@@ -1546,6 +1577,7 @@ impl AgentExecutor {
                 workflow_state,
                 channel.clone(),
                 0,
+                Vec::new(),
             )
             .await?;
 
@@ -1580,6 +1612,7 @@ impl AgentExecutor {
         mut workflow_state: HashMap<String, Value>,
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
         depth: usize,
+        execution_path: Vec<String>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, AppError>> + Send + 'a>>
     {
         Box::pin(async move {
@@ -1597,6 +1630,7 @@ impl AgentExecutor {
                     &mut workflow_state,
                     channel.clone(),
                     depth,
+                    execution_path.clone(),
                 )
                 .await;
 
@@ -1604,7 +1638,12 @@ impl AgentExecutor {
 
             if let Some(status) = output.get("status").and_then(|s| s.as_str()) {
                 if status == "pending" {
-                    return Ok(output);
+                    // Augment pending output with workflow context for resume
+                    let mut pending_result = output.as_object().cloned().unwrap_or_default();
+                    pending_result.insert("current_node_id".to_string(), json!(node.id));
+                    pending_result.insert("workflow_state".to_string(), json!(workflow_state));
+                    pending_result.insert("execution_path".to_string(), json!(execution_path));
+                    return Ok(json!(pending_result));
                 }
             }
 
@@ -1624,6 +1663,7 @@ impl AgentExecutor {
                 depth,
                 output,
                 next_edges,
+                execution_path,
             )
             .await
         })
@@ -1637,6 +1677,7 @@ impl AgentExecutor {
         workflow_state: &mut HashMap<String, Value>,
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
         depth: usize,
+        execution_path: Vec<String>,
     ) -> Result<Value, AppError> {
         match node_type {
             WorkflowNodeType::Trigger(config) => {
@@ -1650,6 +1691,7 @@ impl AgentExecutor {
                     workflow_state,
                     channel,
                     depth,
+                    execution_path,
                 )
                 .await
             }
@@ -1674,6 +1716,7 @@ impl AgentExecutor {
         depth: usize,
         output: Value,
         next_edges: Vec<&WorkflowEdge>,
+        execution_path: Vec<String>,
     ) -> Result<Value, AppError> {
         if node.node_type.type_name() == "Switch" {
             return self
@@ -1685,6 +1728,7 @@ impl AgentExecutor {
                     depth,
                     output,
                     next_edges,
+                    execution_path,
                 )
                 .await;
         }
@@ -1700,6 +1744,7 @@ impl AgentExecutor {
                     depth,
                     output,
                     next_edges[0],
+                    execution_path,
                 )
                 .await
             }
@@ -1719,6 +1764,7 @@ impl AgentExecutor {
         depth: usize,
         output: Value,
         next_edges: Vec<&WorkflowEdge>,
+        execution_path: Vec<String>,
     ) -> Result<Value, AppError> {
         let matched_case = match output.get("matched_case") {
             Some(case) => case,
@@ -1739,7 +1785,7 @@ impl AgentExecutor {
 
         match matching_edge {
             Some(edge) => self
-                .execute_edge(all_nodes, all_edges, workflow_state, channel, depth, edge)
+                .execute_edge(all_nodes, all_edges, workflow_state, channel, depth, edge, execution_path)
                 .await
                 .or(Ok(output)),
             None => Ok(output),
@@ -1755,8 +1801,9 @@ impl AgentExecutor {
         depth: usize,
         output: Value,
         edge: &WorkflowEdge,
+        execution_path: Vec<String>,
     ) -> Result<Value, AppError> {
-        self.execute_edge(all_nodes, all_edges, workflow_state, channel, depth, edge)
+        self.execute_edge(all_nodes, all_edges, workflow_state, channel, depth, edge, execution_path)
             .await
             .or(Ok(output))
     }
@@ -1769,11 +1816,15 @@ impl AgentExecutor {
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
         depth: usize,
         edge: &WorkflowEdge,
+        mut execution_path: Vec<String>,
     ) -> Result<Value, AppError> {
         let next_node = all_nodes
             .iter()
             .find(|n| n.id == edge.target)
             .ok_or_else(|| AppError::Internal(format!("Target node {} not found", edge.target)))?;
+
+        // Add next node to execution path
+        execution_path.push(next_node.id.clone());
 
         self.execute_node_recursive(
             next_node,
@@ -1782,6 +1833,7 @@ impl AgentExecutor {
             workflow_state,
             channel,
             depth + 1,
+            execution_path,
         )
         .await
     }
@@ -1864,6 +1916,7 @@ impl AgentExecutor {
         workflow_state: &mut HashMap<String, Value>,
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
         depth: usize,
+        execution_path: Vec<String>,
     ) -> Result<Value, AppError> {
         let max_retries = if config.enable_retry {
             config.max_retries
@@ -1880,6 +1933,7 @@ impl AgentExecutor {
                     workflow_state,
                     channel.clone(),
                     depth,
+                    execution_path.clone(),
                 )
                 .await;
 
@@ -1912,6 +1966,7 @@ impl AgentExecutor {
         workflow_state: &mut HashMap<String, Value>,
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
         depth: usize,
+        execution_path: Vec<String>,
     ) -> Result<Value, AppError> {
         let mut last_result = json!({});
 
@@ -1921,6 +1976,9 @@ impl AgentExecutor {
                 .find(|n| n.id == *node_id)
                 .ok_or_else(|| AppError::Internal(format!("Node {node_id} not found")))?;
 
+            let mut current_path = execution_path.clone();
+            current_path.push(node_id.clone());
+
             last_result = self
                 .execute_node_recursive(
                     node,
@@ -1929,6 +1987,7 @@ impl AgentExecutor {
                     workflow_state.clone(),
                     channel.clone(),
                     depth + 1,
+                    current_path,
                 )
                 .await?;
         }
@@ -2869,6 +2928,7 @@ impl AgentExecutor {
                                 self.current_workflow_execution_path.len(),
                                 node_output.clone(),
                                 next_edges,
+                                self.current_workflow_execution_path.clone(),
                             )
                             .await;
                     }
