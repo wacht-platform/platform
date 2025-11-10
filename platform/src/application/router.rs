@@ -267,6 +267,10 @@ fn base_deployment_routes() -> Router<AppState> {
             "/analytics/recent-signups",
             get(api::analytics::get_recent_signups),
         )
+        .route(
+            "/analytics/recent-signins",
+            get(api::analytics::get_recent_signins),
+        )
 }
 
 fn billing_routes() -> Router<AppState> {

@@ -132,3 +132,19 @@ pub async fn get_recent_signups(
 
     Ok(Json(RecentSignupsResponse { signups }))
 }
+
+pub async fn get_recent_signins(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Query(query): Query<RecentSignupsQuery>,
+) -> Result<Json<RecentSignupsResponse>, StatusCode> {
+    let limit = query.limit.unwrap_or(10);
+
+    let signins = app_state
+        .clickhouse_service
+        .get_recent_signins(deployment_id, limit)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(RecentSignupsResponse { signups: signins }))
+}

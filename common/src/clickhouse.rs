@@ -250,4 +250,30 @@ impl ClickHouseService {
             })
             .collect())
     }
+
+    pub async fn get_recent_signins(
+        &self,
+        deployment_id: i64,
+        limit: i32,
+    ) -> Result<Vec<RecentSignup>, AppError> {
+        let query = "SELECT user_name, user_email, auth_method, timestamp FROM user_events WHERE deployment_id = ? AND event_type = 'signin' ORDER BY timestamp DESC LIMIT ?";
+
+        let rows = self
+            .client
+            .query(query)
+            .bind(deployment_id)
+            .bind(limit)
+            .fetch_all::<RecentSignupRow>()
+            .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| RecentSignup {
+                name: row.user_name,
+                email: row.user_email,
+                method: row.auth_method,
+                date: row.timestamp,
+            })
+            .collect())
+    }
 }
