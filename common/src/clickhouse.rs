@@ -15,7 +15,7 @@ pub struct UserEvent {
     pub user_id: Option<i64>,
     pub event_type: String,
     pub user_name: Option<String>,
-    pub user_email: Option<String>,
+    pub user_identifier: Option<String>,
     pub auth_method: Option<String>,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
@@ -38,7 +38,7 @@ pub struct RecentSignup {
 #[derive(Serialize, Deserialize, Row)]
 struct RecentSignupRow {
     user_name: Option<String>,
-    user_email: Option<String>,
+    user_identifier: Option<String>,
     auth_method: Option<String>,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     timestamp: DateTime<Utc>,
@@ -72,6 +72,18 @@ impl ClickHouseService {
     }
 
     async fn create_user_events_table(&self) -> Result<(), AppError> {
+        let drop_distributed_query = r#"
+            DROP TABLE IF EXISTS user_events ON CLUSTER 'wacht_prod';
+        "#;
+
+        self.client.query(drop_distributed_query).execute().await?;
+
+        let drop_local_query = r#"
+            DROP TABLE IF EXISTS user_events_local ON CLUSTER 'wacht_prod';
+        "#;
+
+        self.client.query(drop_local_query).execute().await?;
+
         let query = r#"
             -- Create replicated local table on all nodes
             CREATE TABLE IF NOT EXISTS user_events_local ON CLUSTER 'wacht_prod' (
@@ -79,7 +91,7 @@ impl ClickHouseService {
                 user_id Nullable(Int64),
                 event_type LowCardinality(String),
                 user_name Nullable(String),
-                user_email Nullable(String),
+                user_identifier Nullable(String),
                 auth_method LowCardinality(Nullable(String)),
                 timestamp DateTime64(6, 'UTC'),
                 ip_address Nullable(String),
@@ -108,7 +120,7 @@ impl ClickHouseService {
                 user_id Nullable(Int64),
                 event_type String,
                 user_name Nullable(String),
-                user_email Nullable(String),
+                user_identifier Nullable(String),
                 auth_method Nullable(String),
                 timestamp DateTime64(6, 'UTC'),
                 ip_address Nullable(String)
@@ -230,7 +242,7 @@ impl ClickHouseService {
         deployment_id: i64,
         limit: i32,
     ) -> Result<Vec<RecentSignup>, AppError> {
-        let query = "SELECT user_name, user_email, auth_method, timestamp FROM user_events WHERE deployment_id = ? AND event_type = 'signup' ORDER BY timestamp DESC LIMIT ?";
+        let query = "SELECT user_name, user_identifier, auth_method, timestamp FROM user_events WHERE deployment_id = ? AND event_type = 'signup' ORDER BY timestamp DESC LIMIT ?";
 
         let rows = self
             .client
@@ -244,7 +256,7 @@ impl ClickHouseService {
             .into_iter()
             .map(|row| RecentSignup {
                 name: row.user_name,
-                email: row.user_email,
+                email: row.user_identifier,
                 method: row.auth_method,
                 date: row.timestamp,
             })
@@ -256,7 +268,7 @@ impl ClickHouseService {
         deployment_id: i64,
         limit: i32,
     ) -> Result<Vec<RecentSignup>, AppError> {
-        let query = "SELECT user_name, user_email, auth_method, timestamp FROM user_events WHERE deployment_id = ? AND event_type = 'signin' ORDER BY timestamp DESC LIMIT ?";
+        let query = "SELECT user_name, user_identifier, auth_method, timestamp FROM user_events WHERE deployment_id = ? AND event_type = 'signin' ORDER BY timestamp DESC LIMIT ?";
 
         let rows = self
             .client
@@ -270,7 +282,7 @@ impl ClickHouseService {
             .into_iter()
             .map(|row| RecentSignup {
                 name: row.user_name,
-                email: row.user_email,
+                email: row.user_identifier,
                 method: row.auth_method,
                 date: row.timestamp,
             })
