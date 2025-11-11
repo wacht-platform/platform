@@ -72,18 +72,6 @@ impl ClickHouseService {
     }
 
     async fn create_user_events_table(&self) -> Result<(), AppError> {
-        let drop_distributed_query = r#"
-            DROP TABLE IF EXISTS user_events ON CLUSTER 'wacht_prod';
-        "#;
-
-        self.client.query(drop_distributed_query).execute().await?;
-
-        let drop_local_query = r#"
-            DROP TABLE IF EXISTS user_events_local ON CLUSTER 'wacht_prod';
-        "#;
-
-        self.client.query(drop_local_query).execute().await?;
-
         let query = r#"
             -- Create replicated local table on all nodes
             CREATE TABLE IF NOT EXISTS user_events_local ON CLUSTER 'wacht_prod' (
