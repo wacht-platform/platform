@@ -33,10 +33,12 @@ impl GetProjectsWithDeploymentQuery {
         GetProjectsWithDeploymentQuery { oid: 0, owner_ids }
     }
 
-    pub fn for_user_and_organization(user_id: String, org_id: Option<String>) -> Self {
-        let mut owner_ids = vec![user_id];
-        if let Some(org) = org_id {
-            owner_ids.push(org);
+    pub fn for_user_or_organization(user_id: String, org_id: Option<String>) -> Self {
+        let mut owner_ids = Vec::new();
+        if let Some(org_id) = org_id {
+            owner_ids.push(org_id);
+        } else {
+            owner_ids.push(user_id);
         }
         GetProjectsWithDeploymentQuery { oid: 0, owner_ids }
     }

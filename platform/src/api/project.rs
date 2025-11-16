@@ -20,7 +20,7 @@ pub async fn get_projects(
     State(app_state): State<AppState>,
     RequireAuth(auth): RequireAuth,
 ) -> ApiResult<PaginatedResponse<ProjectWithDeployments>> {
-    let projects = GetProjectsWithDeploymentQuery::for_user_and_organization(
+    let projects = GetProjectsWithDeploymentQuery::for_user_or_organization(
         auth.user_id,
         auth.organization_id,
     )
@@ -127,7 +127,7 @@ pub async fn delete_project(
     RequireAuth(auth): RequireAuth,
     Path(id): Path<i64>,
 ) -> ApiResult<()> {
-    let projects = GetProjectsWithDeploymentQuery::for_user_and_organization(
+    let projects = GetProjectsWithDeploymentQuery::for_user_or_organization(
         auth.user_id.clone(),
         auth.organization_id.clone(),
     )
