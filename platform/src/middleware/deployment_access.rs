@@ -66,11 +66,15 @@ pub async fn deployment_access_middleware(
 
     let has_access = match &deployment_with_project.project_owner_id {
         Some(owner_id) => {
-            owner_id == &auth_context.user_id
-                || auth_context
-                    .organization_id
-                    .as_ref()
-                    .map_or(false, |org_id| owner_id == org_id)
+            if auth_context.organization_id.is_some() {
+                owner_id == &auth_context.user_id
+                    || auth_context
+                        .organization_id
+                        .as_ref()
+                        .map_or(false, |org_id| owner_id == org_id)
+            } else {
+                owner_id == &auth_context.user_id
+            }
         }
         None => {
             warn!(
