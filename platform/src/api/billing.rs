@@ -10,7 +10,7 @@ use commands::{
     },
 };
 use common::chargebee::{
-    BillingAddress, ChargebeeClient, CreateCheckoutParams, CustomerInfo, SubscriptionItem,
+    ChargebeeClient, CreateCheckoutParams, CustomerInfo, SubscriptionItem,
     UpdateSubscriptionParams,
 };
 use common::state::AppState;
@@ -30,12 +30,6 @@ pub struct CreateCheckoutRequest {
     pub billing_email: String,
     pub billing_phone: Option<String>,
     pub tax_id: Option<String>,
-    pub address_line1: String,
-    pub address_line2: Option<String>,
-    pub city: String,
-    pub state: Option<String>,
-    pub postal_code: String,
-    pub country: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -122,12 +116,12 @@ pub async fn create_checkout(
             billing_email: req.billing_email.clone(),
             billing_phone: req.billing_phone.clone(),
             tax_id: req.tax_id.clone(),
-            address_line1: req.address_line1.clone(),
-            address_line2: req.address_line2.clone(),
-            city: req.city.clone(),
-            state: req.state.clone(),
-            postal_code: req.postal_code.clone(),
-            country: req.country.clone(),
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
         };
 
         command.execute(&state).await.map_err(|e| {
@@ -153,14 +147,7 @@ pub async fn create_checkout(
             last_name: None,
             company: None,
             phone: req.billing_phone.clone(),
-            billing_address: Some(BillingAddress {
-                line1: req.address_line1,
-                line2: req.address_line2,
-                city: req.city,
-                state: req.state,
-                zip: req.postal_code,
-                country: req.country,
-            }),
+            billing_address: None, // Let Chargebee collect this
         },
     };
 

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE billing_accounts \n            SET \n                legal_name = COALESCE($1, legal_name),\n                billing_email = COALESCE($2, billing_email),\n                billing_phone = COALESCE($3, billing_phone),\n                address_line1 = COALESCE($4, address_line1),\n                address_line2 = COALESCE($5, address_line2),\n                city = COALESCE($6, city),\n                state = COALESCE($7, state),\n                postal_code = COALESCE($8, postal_code),\n                country = COALESCE($9, country),\n                updated_at = NOW()\n            WHERE owner_id = $10\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7d8013ded64b8af8a15b20606ef474dd17005e1abae4f1ba1acb57a293b99201"
+}

@@ -4,7 +4,7 @@ use axum::{
 };
 use commands::{
     Command,
-    billing::{UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand, UpsertInvoiceCommand},
+    billing::{UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand, UpsertInvoiceCommand, UpdateBillingAccountFromWebhookCommand},
 };
 use common::chargebee::{ChargebeeClient, UpdateSubscriptionParams};
 use common::state::AppState;
@@ -12,7 +12,7 @@ use tracing::{error, info};
 
 // Webhook endpoint for Chargebee events
 pub async fn handle_chargebee_webhook(
-    State(state): State<AppState>,
+    State(app_state): State<AppState>,
     headers: HeaderMap,
     body: String,
 ) -> Result<StatusCode, StatusCode> {
@@ -36,6 +36,72 @@ pub async fn handle_chargebee_webhook(
 
     // Handle subscription events
     match event_type {
+        "customer_created" | "customer_changed" => {
+            if let Some(customer) = event["content"]["customer"].as_object() {
+                let customer_id = customer["id"].as_str().unwrap_or("");
+
+                if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
+                    // Extract customer details
+                    let first_name = customer["first_name"].as_str().map(|s| s.to_string());
+                    let last_name = customer["last_name"].as_str().map(|s| s.to_string());
+                    let company = customer["company"].as_str().map(|s| s.to_string());
+                    let email = customer["email"].as_str().map(|s| s.to_string());
+                    let phone = customer["phone"].as_str().map(|s| s.to_string());
+
+                    // Construct full name from first and last name
+                    let legal_name = match (first_name, last_name) {
+                        (Some(first), Some(last)) => Some(format!("{} {}", first, last)),
+                        (Some(first), None) => Some(first),
+                        (None, Some(last)) => Some(last),
+                        (None, None) => company.clone(),
+                    };
+
+                    // Extract billing address
+                    let billing_address = customer["billing_address"].as_object();
+                    let address_line1 = billing_address
+                        .and_then(|addr| addr["line1"].as_str())
+                        .map(|s| s.to_string());
+                    let address_line2 = billing_address
+                        .and_then(|addr| addr["line2"].as_str())
+                        .map(|s| s.to_string());
+                    let city = billing_address
+                        .and_then(|addr| addr["city"].as_str())
+                        .map(|s| s.to_string());
+                    let state = billing_address
+                        .and_then(|addr| addr["state"].as_str())
+                        .map(|s| s.to_string());
+                    let postal_code = billing_address
+                        .and_then(|addr| addr["zip"].as_str())
+                        .map(|s| s.to_string());
+                    let country = billing_address
+                        .and_then(|addr| addr["country"].as_str())
+                        .map(|s| s.to_string());
+
+                    // Update billing account with customer data from Chargebee
+                    UpdateBillingAccountFromWebhookCommand {
+                        owner_id: customer_id.to_string(),
+                        legal_name,
+                        billing_email: email,
+                        billing_phone: phone,
+                        company,
+                        address_line1,
+                        address_line2,
+                        city,
+                        state,
+                        postal_code,
+                        country,
+                    }
+                    .execute(&app_state)
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to update billing account from webhook: {}", e);
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?;
+
+                    info!("Updated billing account {} from Chargebee customer data", customer_id);
+                }
+            }
+        }
         "subscription_created" => {
             if let Some(subscription) = event["content"]["subscription"].as_object() {
                 if let Some(customer) = event["content"]["customer"].as_object() {
@@ -53,7 +119,7 @@ pub async fn handle_chargebee_webhook(
                             chargebee_subscription_id: subscription_id.to_string(),
                             status: status.to_string(),
                         }
-                        .execute(&state)
+                        .execute(&app_state)
                         .await
                         .map_err(|e| {
                             error!("Failed to upsert subscription: {}", e);
@@ -65,7 +131,7 @@ pub async fn handle_chargebee_webhook(
                             owner_id: customer_id.to_string(),
                             status: "active".to_string(),
                         }
-                        .execute(&state)
+                        .execute(&app_state)
                         .await
                         .map_err(|e| {
                             error!("Failed to update billing account status: {}", e);
@@ -127,7 +193,7 @@ pub async fn handle_chargebee_webhook(
                                 .to_string(),
                             status: status.to_string(),
                         }
-                        .execute(&state)
+                        .execute(&app_state)
                         .await
                         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -142,7 +208,7 @@ pub async fn handle_chargebee_webhook(
                             owner_id: customer_id.to_string(),
                             status: account_status.to_string(),
                         }
-                        .execute(&state)
+                        .execute(&app_state)
                         .await
                         .map_err(|e| {
                             error!("Failed to update billing account status: {}", e);
@@ -164,7 +230,7 @@ pub async fn handle_chargebee_webhook(
                             owner_id: customer_id.to_string(),
                             status: "failed".to_string(),
                         }
-                        .execute(&state)
+                        .execute(&app_state)
                         .await
                         .map_err(|e| {
                             error!(
@@ -195,7 +261,7 @@ pub async fn handle_chargebee_webhook(
                             owner_id: customer_id.to_string(),
                             status: "active".to_string(),
                         }
-                        .execute(&state)
+                        .execute(&app_state)
                         .await
                         .map_err(|e| {
                             error!(
@@ -262,7 +328,7 @@ pub async fn handle_chargebee_webhook(
                             period_end,
                             metadata: serde_json::json!({}),
                         }
-                        .execute(&state)
+                        .execute(&app_state)
                         .await
                         .map_err(|e| {
                             error!("Failed to upsert invoice: {}", e);
@@ -293,7 +359,7 @@ pub async fn handle_chargebee_webhook(
                                 .to_string(),
                             status: status.to_string(),
                         }
-                        .execute(&state)
+                        .execute(&app_state)
                         .await
                         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -308,7 +374,7 @@ pub async fn handle_chargebee_webhook(
                             owner_id: customer_id.to_string(),
                             status: account_status.to_string(),
                         }
-                        .execute(&state)
+                        .execute(&app_state)
                         .await
                         .map_err(|e| {
                             error!("Failed to update billing account status: {}", e);

@@ -14,12 +14,12 @@ pub struct CreateBillingAccountCommand {
     pub billing_email: String,
     pub billing_phone: Option<String>,
     pub tax_id: Option<String>,
-    pub address_line1: String,
+    pub address_line1: Option<String>,
     pub address_line2: Option<String>,
-    pub city: String,
+    pub city: Option<String>,
     pub state: Option<String>,
-    pub postal_code: String,
-    pub country: String,
+    pub postal_code: Option<String>,
+    pub country: Option<String>,
 }
 
 impl Command for CreateBillingAccountCommand {
@@ -58,12 +58,12 @@ impl Command for CreateBillingAccountCommand {
             self.billing_email,
             self.billing_phone,
             self.tax_id,
-            self.address_line1,
+            self.address_line1.as_deref().unwrap_or(""),
             self.address_line2,
-            self.city,
+            self.city.as_deref().unwrap_or(""),
             self.state,
-            self.postal_code,
-            self.country
+            self.postal_code.as_deref().unwrap_or(""),
+            self.country.as_deref().unwrap_or("US")
         )
         .execute(&state.db_pool)
         .await?;
@@ -78,6 +78,20 @@ pub struct UpdateBillingAccountCommand {
     pub billing_email: Option<String>,
     pub billing_phone: Option<String>,
     pub tax_id: Option<String>,
+    pub address_line1: Option<String>,
+    pub address_line2: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub postal_code: Option<String>,
+    pub country: Option<String>,
+}
+
+pub struct UpdateBillingAccountFromWebhookCommand {
+    pub owner_id: String,
+    pub legal_name: Option<String>,
+    pub billing_email: Option<String>,
+    pub billing_phone: Option<String>,
+    pub company: Option<String>,
     pub address_line1: Option<String>,
     pub address_line2: Option<String>,
     pub city: Option<String>,
@@ -248,6 +262,46 @@ impl Command for UpdateBillingAccountStatusCommand {
             WHERE owner_id = $2
             "#,
             self.status,
+            self.owner_id
+        )
+        .execute(&state.db_pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+impl Command for UpdateBillingAccountFromWebhookCommand {
+    type Output = ();
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        // Simple approach: just update all fields that are provided
+        // Use COALESCE to keep existing values if new value is NULL
+        sqlx::query!(
+            r#"
+            UPDATE billing_accounts 
+            SET 
+                legal_name = COALESCE($1, legal_name),
+                billing_email = COALESCE($2, billing_email),
+                billing_phone = COALESCE($3, billing_phone),
+                address_line1 = COALESCE($4, address_line1),
+                address_line2 = COALESCE($5, address_line2),
+                city = COALESCE($6, city),
+                state = COALESCE($7, state),
+                postal_code = COALESCE($8, postal_code),
+                country = COALESCE($9, country),
+                updated_at = NOW()
+            WHERE owner_id = $10
+            "#,
+            self.legal_name,
+            self.billing_email,
+            self.billing_phone,
+            self.address_line1,
+            self.address_line2,
+            self.city,
+            self.state,
+            self.postal_code,
+            self.country,
             self.owner_id
         )
         .execute(&state.db_pool)
