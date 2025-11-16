@@ -1,0 +1,154 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE billing_invoices SET\n                    amount_due_cents = $1,\n                    amount_paid_cents = $2,\n                    currency = $3,\n                    status = $4,\n                    invoice_pdf_url = $5,\n                    hosted_invoice_url = $6,\n                    invoice_number = $7,\n                    due_date = $8,\n                    paid_at = $9,\n                    period_start = $10,\n                    period_end = $11,\n                    metadata = $12,\n                    updated_at = NOW()\n                WHERE id = $13\n                RETURNING\n                    id, created_at, updated_at, billing_account_id, subscription_id,\n                    chargebee_invoice_id, chargebee_customer_id, amount_due_cents,\n                    amount_paid_cents, currency, status as \"status: InvoiceStatus\",\n                    invoice_pdf_url, hosted_invoice_url, invoice_number, due_date,\n                    paid_at, period_start, period_end, attempt_count, next_payment_attempt,\n                    metadata\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "billing_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "subscription_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "chargebee_invoice_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "chargebee_customer_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "amount_due_cents",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "amount_paid_cents",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "currency",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "status: InvoiceStatus",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "invoice_pdf_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "hosted_invoice_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "invoice_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "due_date",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "paid_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "period_start",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "period_end",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "attempt_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 19,
+        "name": "next_payment_attempt",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 20,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Jsonb",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "eeae09085788e1acc139861d1ecb740c0120350e4a0ecb790336ecbb12805722"
+}

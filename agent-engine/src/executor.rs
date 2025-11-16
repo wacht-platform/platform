@@ -1412,7 +1412,7 @@ impl AgentExecutor {
         Ok(GeminiClient::new(
             api_key,
             Some("gemini-2.5-flash-preview-09-2025".to_string()),
-        ))
+        ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
     }
 
     pub async fn execute_workflow_task(

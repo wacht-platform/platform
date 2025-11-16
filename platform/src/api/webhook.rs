@@ -1,5 +1,6 @@
 use axum::extract::{Json, Path, Query, State};
 use axum::http::StatusCode;
+use chrono::{Datelike, Utc};
 use models::webhook_analytics::{WebhookAnalyticsResult, WebhookTimeseriesResult};
 use queries::GetWebhookAppByNameQuery;
 use queries::webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery};
@@ -275,6 +276,30 @@ pub async fn trigger_webhook_event(
     }
 
     let result = command.execute(&app_state).await?;
+
+    tokio::spawn({
+        let redis = app_state.redis_client.clone();
+        async move {
+            if let Ok(mut conn) = redis.get_multiplexed_async_connection().await {
+                let now = Utc::now();
+                let period = format!("{}-{:02}", now.year(), now.month());
+                let prefix = format!("billing:{}:deployment:{}", period, deployment_id);
+
+                let mut pipe = redis::pipe();
+                pipe.atomic()
+                    .zincr(&format!("{}:metrics", prefix), "webhooks", 1)
+                    .ignore()
+                    .expire(&format!("{}:metrics", prefix), 5184000)
+                    .ignore()
+                    .zincr(&format!("billing:{}:dirty_deployments", period), deployment_id, 1)
+                    .ignore()
+                    .expire(&format!("billing:{}:dirty_deployments", period), 5184000)
+                    .ignore();
+
+                let _: Result<(), redis::RedisError> = pipe.query_async(&mut conn).await;
+            }
+        }
+    });
 
     Ok(TriggerWebhookEventResponse {
         delivery_ids: result.delivery_ids,

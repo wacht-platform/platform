@@ -3,6 +3,7 @@ use common::error::AppError;
 use common::state::AppState;
 use models::billing::{BillingAccount, BillingAccountWithSubscription, Subscription};
 
+
 pub struct GetBillingAccountQuery {
     owner_id: String,
 }
@@ -160,3 +161,4 @@ impl Query for GetSubscriptionByChargebeeIdQuery {
         }
     }
 }
+

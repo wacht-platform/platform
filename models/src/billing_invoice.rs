@@ -59,17 +59,17 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for InvoiceStatus {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DeploymentInvoice {
+pub struct BillingInvoice {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub deployment_id: i64,
+    pub billing_account_id: i64,
     #[serde(with = "crate::utils::serde::i64_as_string_option")]
     pub subscription_id: Option<i64>,
-    pub stripe_invoice_id: String,
-    pub stripe_customer_id: String,
+    pub chargebee_invoice_id: String,
+    pub chargebee_customer_id: String,
     pub amount_due_cents: i64,
     pub amount_paid_cents: i64,
     pub currency: String,
@@ -86,7 +86,7 @@ pub struct DeploymentInvoice {
     pub metadata: Value,
 }
 
-impl DeploymentInvoice {
+impl BillingInvoice {
     pub fn amount_due_in_currency_unit(&self) -> f64 {
         self.amount_due_cents as f64 / 100.0
     }

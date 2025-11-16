@@ -4,7 +4,7 @@ use axum::{
 };
 use commands::{
     Command,
-    billing::{UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand},
+    billing::{UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand, UpsertInvoiceCommand},
 };
 use common::chargebee::{ChargebeeClient, UpdateSubscriptionParams};
 use common::state::AppState;
@@ -210,6 +210,66 @@ pub async fn handle_chargebee_webhook(
                             customer_id,
                             invoice["id"].as_str().unwrap_or("")
                         );
+                    }
+                }
+            }
+        }
+        "invoice_generated" | "invoice_updated" => {
+            if let Some(invoice) = event["content"]["invoice"].as_object() {
+                if let Some(customer) = event["content"]["customer"].as_object() {
+                    let customer_id = customer["id"].as_str().unwrap_or("");
+
+                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
+                        let invoice_id = invoice["id"].as_str().unwrap_or("").to_string();
+                        let amount_due = invoice["amount_due"].as_i64().unwrap_or(0);
+                        let amount_paid = invoice["amount_paid"].as_i64().unwrap_or(0);
+                        let currency = invoice["currency_code"].as_str().unwrap_or("USD").to_string();
+                        let status = invoice["status"].as_str().unwrap_or("open").to_string();
+                        let invoice_number = invoice["number"].as_str().map(|s| s.to_string());
+                        let invoice_pdf_url = invoice["invoice_pdf"].as_str().map(|s| s.to_string());
+                        let hosted_invoice_url = invoice["hosted_invoice_url"].as_str().map(|s| s.to_string());
+
+                        // Parse dates
+                        let due_date = invoice["due_date"].as_i64().map(|ts| {
+                            chrono::DateTime::from_timestamp(ts, 0).unwrap()
+                        });
+                        let paid_at = invoice["paid_at"].as_i64().map(|ts| {
+                            chrono::DateTime::from_timestamp(ts, 0).unwrap()
+                        });
+                        let period_start = invoice["line_items"].as_array()
+                            .and_then(|items| items.get(0))
+                            .and_then(|item| item["date_from"].as_i64())
+                            .map(|ts| chrono::DateTime::from_timestamp(ts, 0).unwrap());
+                        let period_end = invoice["line_items"].as_array()
+                            .and_then(|items| items.get(0))
+                            .and_then(|item| item["date_to"].as_i64())
+                            .map(|ts| chrono::DateTime::from_timestamp(ts, 0).unwrap());
+
+                        UpsertInvoiceCommand {
+                            owner_id: customer_id.to_string(),
+                            chargebee_invoice_id: invoice_id,
+                            chargebee_customer_id: customer_id.to_string(),
+                            amount_due_cents: amount_due,
+                            amount_paid_cents: amount_paid,
+                            currency,
+                            status,
+                            invoice_pdf_url,
+                            hosted_invoice_url,
+                            invoice_number,
+                            due_date,
+                            paid_at,
+                            period_start,
+                            period_end,
+                            metadata: serde_json::json!({}),
+                        }
+                        .execute(&state)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to upsert invoice: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?;
+
+                        info!("Invoice {} saved for customer {}", invoice["id"].as_str().unwrap_or(""), customer_id);
                     }
                 }
             }

@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod analytics;
+pub mod billing;
 pub mod document;
 pub mod email;
 pub mod embedding;

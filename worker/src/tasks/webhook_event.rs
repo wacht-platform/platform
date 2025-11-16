@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Datelike, Utc};
 use commands::{Command, webhook_trigger::TriggerWebhookEventCommand};
 use common::state::AppState;
 use queries::{
@@ -49,6 +49,8 @@ pub async fn trigger_webhook_event(
         .execute(app_state)
         .await
         .map_err(|e| TaskError::Permanent(format!("Failed to trigger webhook event: {}", e)))?;
+
+    track_webhook_billing(task.deployment_id, &app_state.redis_client).await;
 
     Ok(format!(
         "Webhook event '{}' triggered for deployment {}",
@@ -200,4 +202,25 @@ async fn enrich_authenticator_payload(
     }
 
     Ok(payload)
+}
+
+async fn track_webhook_billing(deployment_id: i64, redis_client: &redis::Client) {
+    if let Ok(mut conn) = redis_client.get_multiplexed_async_connection().await {
+        let now = Utc::now();
+        let period = format!("{}-{:02}", now.year(), now.month());
+        let prefix = format!("billing:{}:deployment:{}", period, deployment_id);
+
+        let mut pipe = redis::pipe();
+        pipe.atomic()
+            .zincr(&format!("{}:metrics", prefix), "webhooks", 1)
+            .ignore()
+            .expire(&format!("{}:metrics", prefix), 5184000)
+            .ignore()
+            .zincr(&format!("billing:{}:dirty_deployments", period), deployment_id, 1)
+            .ignore()
+            .expire(&format!("{}:metrics", prefix), 5184000)
+            .ignore();
+
+        let _: Result<(), redis::RedisError> = pipe.query_async(&mut conn).await;
+    }
 }

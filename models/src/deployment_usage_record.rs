@@ -14,7 +14,7 @@ pub struct DeploymentUsageRecord {
     pub metric_name: String,
     pub quantity: i64,
     pub timestamp: DateTime<Utc>,
-    pub stripe_usage_record_id: Option<String>,
+    pub chargebee_usage_record_id: Option<String>,
     pub billing_period_start: DateTime<Utc>,
     pub billing_period_end: DateTime<Utc>,
     pub metadata: Value,
@@ -45,8 +45,8 @@ impl DeploymentUsageRecord {
         now >= self.billing_period_start && now <= self.billing_period_end
     }
 
-    pub fn is_synced_to_stripe(&self) -> bool {
-        self.stripe_usage_record_id.is_some()
+    pub fn is_synced_to_chargebee(&self) -> bool {
+        self.chargebee_usage_record_id.is_some()
     }
 }
 

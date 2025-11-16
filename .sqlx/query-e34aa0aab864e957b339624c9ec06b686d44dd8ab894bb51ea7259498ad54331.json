@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO billing_sync_runs (from_event_id, to_event_id, status)\n             VALUES ($1, 0, 'running')\n             RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e34aa0aab864e957b339624c9ec06b686d44dd8ab894bb51ea7259498ad54331"
+}

@@ -1,7 +1,11 @@
 use crate::Command;
+use chrono::{DateTime, NaiveDate, Utc};
 use common::error::AppError;
 use common::state::AppState;
 use models::billing::Subscription;
+use models::billing_invoice::{BillingInvoice, InvoiceStatus};
+use rust_decimal::Decimal;
+use serde_json::Value;
 
 pub struct CreateBillingAccountCommand {
     pub owner_id: String,
@@ -333,5 +337,231 @@ impl Command for UpsertSubscriptionCommand {
         };
 
         Ok(subscription)
+    }
+}
+
+pub struct UpsertInvoiceCommand {
+    pub owner_id: String,
+    pub chargebee_invoice_id: String,
+    pub chargebee_customer_id: String,
+    pub amount_due_cents: i64,
+    pub amount_paid_cents: i64,
+    pub currency: String,
+    pub status: String,
+    pub invoice_pdf_url: Option<String>,
+    pub hosted_invoice_url: Option<String>,
+    pub invoice_number: Option<String>,
+    pub due_date: Option<DateTime<Utc>>,
+    pub paid_at: Option<DateTime<Utc>>,
+    pub period_start: Option<DateTime<Utc>>,
+    pub period_end: Option<DateTime<Utc>>,
+    pub metadata: Value,
+}
+
+impl Command for UpsertInvoiceCommand {
+    type Output = BillingInvoice;
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        // Get billing account ID from owner_id
+        let billing_account_id: Option<i64> = sqlx::query_scalar!(
+            "SELECT id FROM billing_accounts WHERE owner_id = $1",
+            self.owner_id
+        )
+        .fetch_optional(&state.db_pool)
+        .await?;
+
+        let billing_account_id = billing_account_id
+            .ok_or_else(|| AppError::Validation("Billing account not found".to_string()))?;
+
+        // Get subscription ID
+        let subscription_id: Option<i64> = sqlx::query_scalar!(
+            "SELECT id FROM subscriptions WHERE billing_account_id = $1",
+            billing_account_id
+        )
+        .fetch_optional(&state.db_pool)
+        .await?;
+
+        let status: InvoiceStatus = self.status.parse()
+            .map_err(|e| AppError::Validation(format!("Invalid invoice status: {}", e)))?;
+
+        // Check if invoice exists
+        let existing_id: Option<i64> = sqlx::query_scalar!(
+            "SELECT id FROM billing_invoices WHERE chargebee_invoice_id = $1",
+            self.chargebee_invoice_id
+        )
+        .fetch_optional(&state.db_pool)
+        .await?;
+
+        let invoice = if let Some(id) = existing_id {
+            // Update existing invoice
+            sqlx::query_as!(
+                BillingInvoice,
+                r#"
+                UPDATE billing_invoices SET
+                    amount_due_cents = $1,
+                    amount_paid_cents = $2,
+                    currency = $3,
+                    status = $4,
+                    invoice_pdf_url = $5,
+                    hosted_invoice_url = $6,
+                    invoice_number = $7,
+                    due_date = $8,
+                    paid_at = $9,
+                    period_start = $10,
+                    period_end = $11,
+                    metadata = $12,
+                    updated_at = NOW()
+                WHERE id = $13
+                RETURNING
+                    id, created_at, updated_at, billing_account_id, subscription_id,
+                    chargebee_invoice_id, chargebee_customer_id, amount_due_cents,
+                    amount_paid_cents, currency, status as "status: InvoiceStatus",
+                    invoice_pdf_url, hosted_invoice_url, invoice_number, due_date,
+                    paid_at, period_start, period_end, attempt_count, next_payment_attempt,
+                    metadata
+                "#,
+                self.amount_due_cents,
+                self.amount_paid_cents,
+                self.currency,
+                status.to_string(),
+                self.invoice_pdf_url,
+                self.hosted_invoice_url,
+                self.invoice_number,
+                self.due_date,
+                self.paid_at,
+                self.period_start,
+                self.period_end,
+                self.metadata,
+                id
+            )
+            .fetch_one(&state.db_pool)
+            .await?
+        } else {
+            // Insert new invoice
+            let id = state.sf.next_id().unwrap() as i64;
+            sqlx::query_as!(
+                BillingInvoice,
+                r#"
+                INSERT INTO billing_invoices (
+                    id, billing_account_id, subscription_id, chargebee_invoice_id,
+                    chargebee_customer_id, amount_due_cents, amount_paid_cents,
+                    currency, status, invoice_pdf_url, hosted_invoice_url,
+                    invoice_number, due_date, paid_at, period_start, period_end,
+                    attempt_count, metadata, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 0, $17, NOW(), NOW())
+                RETURNING
+                    id, created_at, updated_at, billing_account_id, subscription_id,
+                    chargebee_invoice_id, chargebee_customer_id, amount_due_cents,
+                    amount_paid_cents, currency, status as "status: InvoiceStatus",
+                    invoice_pdf_url, hosted_invoice_url, invoice_number, due_date,
+                    paid_at, period_start, period_end, attempt_count, next_payment_attempt,
+                    metadata
+                "#,
+                id,
+                billing_account_id,
+                subscription_id,
+                self.chargebee_invoice_id,
+                self.chargebee_customer_id,
+                self.amount_due_cents,
+                self.amount_paid_cents,
+                self.currency,
+                status.to_string(),
+                self.invoice_pdf_url,
+                self.hosted_invoice_url,
+                self.invoice_number,
+                self.due_date,
+                self.paid_at,
+                self.period_start,
+                self.period_end,
+                self.metadata
+            )
+            .fetch_one(&state.db_pool)
+            .await?
+        };
+
+        Ok(invoice)
+    }
+}
+
+pub struct CreateBillingSyncRunCommand {
+    pub from_event_id: i64,
+}
+
+impl Command for CreateBillingSyncRunCommand {
+    type Output = i64;
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        let rec = sqlx::query!(
+            "INSERT INTO billing_sync_runs (from_event_id, to_event_id, status)
+             VALUES ($1, 0, 'running')
+             RETURNING id",
+            self.from_event_id
+        )
+        .fetch_one(&state.db_pool)
+        .await?;
+
+        Ok(rec.id)
+    }
+}
+
+pub struct CompleteBillingSyncRunCommand {
+    pub sync_run_id: i64,
+    pub events_processed: i64,
+    pub deployments_affected: i32,
+}
+
+impl Command for CompleteBillingSyncRunCommand {
+    type Output = ();
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query!(
+            "UPDATE billing_sync_runs
+             SET completed_at = NOW(),
+                 events_processed = $2,
+                 deployments_affected = $3,
+                 status = 'completed'
+             WHERE id = $1",
+            self.sync_run_id,
+            self.events_processed,
+            self.deployments_affected
+        )
+        .execute(&state.db_pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+pub struct UpsertUsageSnapshotCommand {
+    pub deployment_id: i64,
+    pub billing_period: NaiveDate,
+    pub metric_name: String,
+    pub quantity: i64,
+    pub cost_cents: Option<Decimal>,
+}
+
+impl Command for UpsertUsageSnapshotCommand {
+    type Output = ();
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query!(
+            "INSERT INTO billing_usage_snapshots
+             (deployment_id, billing_period, metric_name, quantity, cost_cents, min_event_id, max_event_id)
+             VALUES ($1, $2, $3, $4, $5, 0, 0)
+             ON CONFLICT (deployment_id, billing_period, metric_name)
+             DO UPDATE SET
+                quantity = billing_usage_snapshots.quantity + $4,
+                cost_cents = COALESCE(billing_usage_snapshots.cost_cents, 0) + COALESCE($5, 0),
+                updated_at = NOW()",
+            self.deployment_id,
+            self.billing_period,
+            self.metric_name,
+            self.quantity,
+            self.cost_cents
+        )
+        .execute(&state.db_pool)
+        .await?;
+
+        Ok(())
     }
 }

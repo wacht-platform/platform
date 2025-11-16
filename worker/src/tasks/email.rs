@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono;
+use chrono::{self, Datelike, Utc};
 use commands::{Command, email::SendEmailCommand};
 use common::state::AppState;
 use models::{
@@ -132,6 +132,8 @@ pub async fn send_verification_email_impl(
         .await
         .map_err(|e| format!("Failed to send verification email: {}", e))?;
 
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+
     Ok(format!("verification_email_sent_{}", deployment_id))
 }
 
@@ -167,6 +169,8 @@ pub async fn send_password_reset_email_impl(
         .await
         .map_err(|e| format!("Failed to send password reset email: {}", e))?;
 
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+
     Ok(format!("password_reset_email_sent_{}", deployment_id))
 }
 
@@ -200,6 +204,8 @@ pub async fn send_magic_link_email_impl(
         .execute(&app_state)
         .await
         .map_err(|e| format!("Failed to send magic link email: {}", e))?;
+
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
 
     Ok(format!("magic_link_email_sent_{}", deployment_id))
 }
@@ -241,6 +247,8 @@ pub async fn send_signin_notification_email_impl(
         .await
         .map_err(|e| format!("Failed to send signin notification email: {}", e))?;
 
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+
     Ok(format!("signin_notification_email_sent_{}", deployment_id))
 }
 
@@ -277,6 +285,8 @@ pub async fn send_email_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to send email change notification: {}", e))?;
 
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+
     Ok(format!("email_change_notification_sent_{}", deployment_id))
 }
 
@@ -309,6 +319,8 @@ pub async fn send_password_change_notification_impl(
         .execute(&app_state)
         .await
         .map_err(|e| format!("Failed to send password change notification: {}", e))?;
+
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
 
     Ok(format!(
         "password_change_notification_sent_{}",
@@ -346,6 +358,8 @@ pub async fn send_password_remove_notification_impl(
         .await
         .map_err(|e| format!("Failed to send password remove notification: {}", e))?;
 
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+
     Ok(format!(
         "password_remove_notification_sent_{}",
         deployment_id
@@ -381,6 +395,8 @@ pub async fn send_waitlist_signup_email_impl(
         .execute(&app_state)
         .await
         .map_err(|e| format!("Failed to send waitlist signup email: {}", e))?;
+
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
 
     Ok(format!("waitlist_signup_email_sent_{}", deployment_id))
 }
@@ -443,6 +459,8 @@ pub async fn send_organization_membership_invite_impl(
         .await
         .map_err(|e| format!("Failed to send organization invite email: {}", e))?;
 
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+
     Ok(format!(
         "organization_membership_invite_sent_{}",
         deployment_id
@@ -504,6 +522,8 @@ pub async fn send_deployment_invite_impl(
         .execute(&app_state)
         .await
         .map_err(|e| format!("Failed to send workspace invite email: {}", e))?;
+
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
 
     Ok(format!("deployment_invite_sent_{}", deployment_id))
 }
@@ -571,6 +591,8 @@ pub async fn send_waitlist_approval_impl(
         .execute(&app_state)
         .await
         .map_err(|e| format!("Failed to send waitlist invite email: {}", e))?;
+
+    track_email_billing(deployment_id as i64, &app_state.redis_client).await;
 
     Ok(format!("waitlist_approval_sent_{}", deployment_id))
 }
@@ -946,4 +968,25 @@ fn create_magic_link_variables(
     variables.insert("link.expires_in_minutes".to_string(), "15".to_string());
 
     variables
+}
+
+async fn track_email_billing(deployment_id: i64, redis_client: &redis::Client) {
+    if let Ok(mut conn) = redis_client.get_multiplexed_async_connection().await {
+        let now = Utc::now();
+        let period = format!("{}-{:02}", now.year(), now.month());
+        let prefix = format!("billing:{}:deployment:{}", period, deployment_id);
+
+        let mut pipe = redis::pipe();
+        pipe.atomic()
+            .zincr(&format!("{}:metrics", prefix), "emails", 1)
+            .ignore()
+            .expire(&format!("{}:metrics", prefix), 5184000)
+            .ignore()
+            .zincr(&format!("billing:{}:dirty_deployments", period), deployment_id, 1)
+            .ignore()
+            .expire(&format!("billing:{}:dirty_deployments", period), 5184000)
+            .ignore();
+
+        let _: Result<(), redis::RedisError> = pipe.query_async(&mut conn).await;
+    }
 }

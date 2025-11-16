@@ -16,3 +16,4 @@ tracing = "0.1"
 pgvector = { version = "0.4.1", features = ["sqlx", "serde", "halfvec"] }
 half = "2.4"
 clickhouse = { version = "0.13.3", features = ["chrono"] }
+rust_decimal = "1.36"

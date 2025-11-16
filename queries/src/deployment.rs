@@ -874,7 +874,7 @@ impl Query for GetDeploymentWithProjectQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let row = sqlx::query!(
             r#"
-            SELECT 
+            SELECT
                 d.id as deployment_id,
                 d.project_id,
                 p.owner_id as project_owner_id
@@ -892,5 +892,37 @@ impl Query for GetDeploymentWithProjectQuery {
             project_id: r.project_id,
             project_owner_id: r.project_owner_id,
         }))
+    }
+}
+
+pub struct GetDeploymentChargebeeSubscriptionIdQuery {
+    pub deployment_id: i64,
+}
+
+impl GetDeploymentChargebeeSubscriptionIdQuery {
+    pub fn new(deployment_id: i64) -> Self {
+        Self { deployment_id }
+    }
+}
+
+impl Query for GetDeploymentChargebeeSubscriptionIdQuery {
+    type Output = Option<String>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT s.chargebee_subscription_id
+            FROM deployments d
+            JOIN projects p ON d.project_id = p.id
+            JOIN billing_accounts ba ON p.billing_account_id = ba.id
+            LEFT JOIN subscriptions s ON ba.id = s.billing_account_id
+            WHERE d.id = $1
+            "#,
+            self.deployment_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
+        Ok(row.and_then(|r| Some(r.chargebee_subscription_id)))
     }
 }

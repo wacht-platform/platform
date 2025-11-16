@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use crate::tasks::{agent, analytics, document, email, embedding, sms, token, webhook, webhook_event, webhook_replay_batch};
+use crate::tasks::{agent, analytics, billing, document, email, embedding, sms, token, webhook, webhook_event, webhook_replay_batch};
 use dto::json::NatsTaskMessage;
 
 #[derive(Debug)]
@@ -484,6 +484,24 @@ impl NatsConsumer {
                             ))
                         })?;
                     analytics::store_analytics_event_impl(task, &app_state)
+                        .await
+                        .map_err(|e| TaskError::Permanent(e.to_string()))
+                })
+            }),
+        );
+
+        task_handlers.insert(
+            "billing.event".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: billing::BillingEventTask = serde_json::from_value(payload)
+                        .map_err(|e| {
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize billing event task: {}",
+                                e
+                            ))
+                        })?;
+                    billing::process_billing_event(task, &app_state)
                         .await
                         .map_err(|e| TaskError::Permanent(e.to_string()))
                 })

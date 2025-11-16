@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use chrono::{Datelike, Utc};
 use reqwest;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
@@ -112,6 +113,8 @@ pub async fn send_otp_sms(
             .query::<()>(&mut conn)
             .map_err(|e| anyhow!("Failed to store verification data: {}", e))?;
 
+        track_sms_billing(deployment_id, &country_code, &phone_number, &app_state).await;
+
         info!(
             "SMS OTP sent successfully. Verification ID: {}",
             data.verification_id
@@ -119,5 +122,38 @@ pub async fn send_otp_sms(
         Ok(format!("SMS sent with verification ID: {}", data.verification_id))
     } else {
         Err(anyhow!("No data in MessageCentral response"))
+    }
+}
+
+async fn track_sms_billing(deployment_id: u64, country_code: &str, _phone_number: &str, app_state: &common::state::AppState) {
+    use queries::{GetSmsPricingQuery, Query};
+
+    let cost_cents: f64 = GetSmsPricingQuery::new(country_code.to_string())
+        .execute(app_state)
+        .await
+        .ok()
+        .flatten()
+        .map(|d| d.to_string().parse::<f64>().unwrap_or(0.495))
+        .unwrap_or(0.495);
+
+    if let Ok(mut conn) = app_state.redis_client.get_multiplexed_async_connection().await {
+        let now = Utc::now();
+        let period = format!("{}-{:02}", now.year(), now.month());
+        let prefix = format!("billing:{}:deployment:{}", period, deployment_id);
+
+        let mut pipe = redis::pipe();
+        pipe.atomic()
+            .zincr(&format!("{}:metrics", prefix), "sms_count", 1)
+            .ignore()
+            .zincr(&format!("{}:metrics", prefix), "sms_cost_cents", cost_cents as i64)
+            .ignore()
+            .expire(&format!("{}:metrics", prefix), 5184000)
+            .ignore()
+            .zincr(&format!("billing:{}:dirty_deployments", period), deployment_id as i64, 1)
+            .ignore()
+            .expire(&format!("billing:{}:dirty_deployments", period), 5184000)
+            .ignore();
+
+        let _: Result<(), redis::RedisError> = pipe.query_async(&mut conn).await;
     }
 }

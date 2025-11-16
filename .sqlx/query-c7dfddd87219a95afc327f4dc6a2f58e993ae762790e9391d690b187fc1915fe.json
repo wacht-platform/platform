@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO billing_usage_snapshots\n             (deployment_id, billing_period, metric_name, quantity, cost_cents, min_event_id, max_event_id)\n             VALUES ($1, $2, $3, $4, $5, 0, 0)\n             ON CONFLICT (deployment_id, billing_period, metric_name)\n             DO UPDATE SET\n                quantity = billing_usage_snapshots.quantity + $4,\n                cost_cents = COALESCE(billing_usage_snapshots.cost_cents, 0) + COALESCE($5, 0),\n                updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Date",
+        "Text",
+        "Int8",
+        "Numeric"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c7dfddd87219a95afc327f4dc6a2f58e993ae762790e9391d690b187fc1915fe"
+}

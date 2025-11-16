@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE billing_sync_runs\n             SET completed_at = NOW(),\n                 events_processed = $2,\n                 deployments_affected = $3,\n                 status = 'completed'\n             WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "782687c5970efec4501c89dc428d72f36c05e525e8c1b3d2800d565e40a7cbda"
+}
