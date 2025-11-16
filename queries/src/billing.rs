@@ -1,8 +1,10 @@
 use crate::Query;
+use chrono::NaiveDate;
 use common::error::AppError;
 use common::state::AppState;
 use models::billing::{BillingAccount, BillingAccountWithSubscription, Subscription};
-
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 pub struct GetBillingAccountQuery {
     owner_id: String,
@@ -33,7 +35,7 @@ impl Query for GetBillingAccountQuery {
         // First get the billing account
         let row = sqlx::query!(
             r#"
-            SELECT 
+            SELECT
                 id, owner_id, owner_type, legal_name, tax_id, billing_email, billing_phone,
                 address_line1, address_line2, city, state, postal_code, country, status,
                 payment_method_status, currency, locale, created_at, updated_at
@@ -119,7 +121,7 @@ impl Query for GetSubscriptionByChargebeeIdQuery {
             // Then get the billing account
             let row = sqlx::query!(
                 r#"
-                SELECT 
+                SELECT
                     id, owner_id, owner_type, legal_name, tax_id, billing_email, billing_phone,
                     address_line1, address_line2, city, state, postal_code, country, status,
                     payment_method_status, currency, locale, created_at, updated_at
@@ -162,3 +164,53 @@ impl Query for GetSubscriptionByChargebeeIdQuery {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UsageSnapshot {
+    pub metric_name: String,
+    pub quantity: i64,
+    pub cost_cents: Option<Decimal>,
+}
+
+pub struct GetDeploymentUsageQuery {
+    pub deployment_id: i64,
+    pub billing_period: NaiveDate,
+}
+
+impl GetDeploymentUsageQuery {
+    pub fn new(deployment_id: i64, billing_period: NaiveDate) -> Self {
+        Self {
+            deployment_id,
+            billing_period,
+        }
+    }
+}
+
+impl Query for GetDeploymentUsageQuery {
+    type Output = Vec<UsageSnapshot>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT metric_name, quantity, cost_cents
+            FROM billing_usage_snapshots
+            WHERE deployment_id = $1 AND billing_period = $2
+            ORDER BY metric_name
+            "#,
+            self.deployment_id,
+            self.billing_period
+        )
+        .fetch_all(&state.db_pool)
+        .await?;
+
+        let snapshots = rows
+            .into_iter()
+            .map(|r| UsageSnapshot {
+                metric_name: r.metric_name,
+                quantity: r.quantity,
+                cost_cents: r.cost_cents,
+            })
+            .collect();
+
+        Ok(snapshots)
+    }
+}

@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT metric_name, quantity, cost_cents\n            FROM billing_usage_snapshots\n            WHERE deployment_id = $1 AND billing_period = $2\n            ORDER BY metric_name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "metric_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "quantity",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "cost_cents",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "0d3149ca6306b4edd96f847d1ffb5df33d4c9771f47382c9ff01e78b5b9bbc08"
+}

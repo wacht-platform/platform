@@ -1,4 +1,5 @@
 use axum::{extract::State, http::StatusCode, response::Json};
+use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
@@ -14,8 +15,13 @@ use common::chargebee::{
 };
 use common::state::AppState;
 use models::billing::BillingAccountWithSubscription;
-use queries::{Query as QueryTrait, billing::GetBillingAccountQuery};
+use queries::{
+    Query as QueryTrait,
+    billing::{GetBillingAccountQuery, GetDeploymentUsageQuery, UsageSnapshot},
+};
 use wacht::middleware::RequireAuth;
+
+use crate::middleware::RequireDeployment;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCheckoutRequest {
@@ -430,4 +436,34 @@ pub async fn change_plan(
         })?;
 
     Ok(StatusCode::OK)
+}
+
+// Get current usage metrics from billing_usage_snapshots
+#[derive(Debug, Serialize)]
+pub struct UsageResponse {
+    pub snapshots: Vec<UsageSnapshot>,
+    pub billing_period: String,
+}
+
+pub async fn get_current_usage(
+    State(state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+) -> Result<Json<UsageResponse>, StatusCode> {
+    // Get current billing period
+    let now = chrono::Utc::now();
+    let billing_period = chrono::NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let snapshots = GetDeploymentUsageQuery::new(deployment_id, billing_period)
+        .execute(&state)
+        .await
+        .map_err(|e| {
+            error!("Failed to get deployment usage: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(Json(UsageResponse {
+        snapshots,
+        billing_period: format!("{}-{:02}", now.year(), now.month()),
+    }))
 }

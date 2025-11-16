@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT \n                    id, owner_id, owner_type, legal_name, tax_id, billing_email, billing_phone,\n                    address_line1, address_line2, city, state, postal_code, country, status,\n                    payment_method_status, currency, locale, created_at, updated_at\n                FROM billing_accounts WHERE id = $1\n                ",
+  "query": "\n                SELECT\n                    id, owner_id, owner_type, legal_name, tax_id, billing_email, billing_phone,\n                    address_line1, address_line2, city, state, postal_code, country, status,\n                    payment_method_status, currency, locale, created_at, updated_at\n                FROM billing_accounts WHERE id = $1\n                ",
   "describe": {
     "columns": [
       {
@@ -126,5 +126,5 @@
       true
     ]
   },
-  "hash": "78f8e244fb1bb361c57817a34343756ac1c083a17ce16615da6394128d3ab950"
+  "hash": "f908c48be62104d7188c475fe5c5cd8afa1afe7f72952e5f8ae0d8248d9aba3e"
 }
