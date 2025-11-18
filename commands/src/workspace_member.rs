@@ -110,6 +110,7 @@ impl Command for AddWorkspaceMemberCommand {
                 wm.created_at,
                 wm.updated_at,
                 wm.user_id,
+                wm.public_metadata,
                 u.first_name,
                 u.last_name,
                 u.username,
@@ -158,6 +159,7 @@ impl Command for AddWorkspaceMemberCommand {
             updated_at: member.updated_at,
             workspace_id: self.workspace_id,
             user_id: member.user_id,
+            public_metadata: member.public_metadata.clone(),
             first_name: member.first_name,
             last_name: member.last_name,
             username: if member.username.is_empty() {
@@ -181,6 +183,7 @@ pub struct UpdateWorkspaceMemberCommand {
     pub workspace_id: i64,
     pub membership_id: i64,
     pub role_ids: Vec<i64>,
+    pub public_metadata: Option<serde_json::Value>,
 }
 
 
@@ -227,6 +230,17 @@ impl Command for UpdateWorkspaceMemberCommand {
                 "#,
                 self.membership_id,
                 *role_id
+            )
+            .execute(&app_state.db_pool)
+            .await?;
+        }
+
+        // Update public_metadata if provided
+        if let Some(metadata) = self.public_metadata {
+            sqlx::query!(
+                "UPDATE workspace_memberships SET public_metadata = $1, updated_at = NOW() WHERE id = $2",
+                metadata,
+                self.membership_id
             )
             .execute(&app_state.db_pool)
             .await?;

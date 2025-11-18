@@ -31,6 +31,7 @@ pub struct OrganizationMemberDetails {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub user_id: i64,
     pub roles: Vec<OrganizationRole>,
+    pub public_metadata: Value,
 
     // User details
     pub first_name: String,

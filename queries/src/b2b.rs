@@ -497,6 +497,7 @@ impl Query for GetOrganizationMembersQuery {
             SELECT
                 om.id, om.created_at, om.updated_at,
                 om.organization_id, om.user_id,
+                om.public_metadata,
                 u.first_name, u.last_name, u.username,
                 u.created_at as user_created_at,
                 e.email_address as "primary_email_address?",
@@ -522,7 +523,7 @@ impl Query for GetOrganizationMembersQuery {
             LEFT JOIN organization_roles orole ON omr.organization_role_id = orole.id
             WHERE om.organization_id = $1 AND om.deleted_at IS NULL
             GROUP BY om.id, om.created_at, om.updated_at, om.organization_id, om.user_id,
-                     u.first_name, u.last_name, u.username, u.created_at,
+                     om.public_metadata, u.first_name, u.last_name, u.username, u.created_at,
                      e.email_address, p.phone_number
             ORDER BY om.created_at DESC
             LIMIT $2 OFFSET $3
@@ -553,6 +554,7 @@ impl Query for GetOrganizationMembersQuery {
                     organization_id: row.organization_id,
                     user_id: row.user_id,
                     roles,
+                    public_metadata: row.public_metadata.clone(),
                     first_name: row.first_name,
                     last_name: row.last_name,
                     username: if row.username.is_empty() {
@@ -607,6 +609,7 @@ impl Query for GetWorkspaceMembersQuery {
             SELECT
                 wm.id, wm.created_at, wm.updated_at,
                 wm.workspace_id, wm.user_id,
+                wm.public_metadata,
                 u.first_name, u.last_name, u.username,
                 u.created_at as user_created_at,
                 e.email_address as "primary_email_address?",
@@ -632,7 +635,7 @@ impl Query for GetWorkspaceMembersQuery {
             LEFT JOIN workspace_roles wrole ON wmr.workspace_role_id = wrole.id
             WHERE wm.workspace_id = $1 AND wm.deleted_at IS NULL
             GROUP BY wm.id, wm.created_at, wm.updated_at, wm.workspace_id, wm.user_id,
-                     u.first_name, u.last_name, u.username, u.created_at,
+                     wm.public_metadata, u.first_name, u.last_name, u.username, u.created_at,
                      e.email_address, p.phone_number
             ORDER BY wm.created_at DESC
             LIMIT $2 OFFSET $3
@@ -663,6 +666,7 @@ impl Query for GetWorkspaceMembersQuery {
                     workspace_id: row.workspace_id,
                     user_id: row.user_id,
                     roles,
+                    public_metadata: row.public_metadata.clone(),
                     first_name: row.first_name,
                     last_name: row.last_name,
                     username: if row.username.is_empty() {

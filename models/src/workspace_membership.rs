@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::WorkspaceRole;
 
@@ -12,4 +13,5 @@ pub struct WorkspaceMembership {
     pub workspace_id: i64,
     pub user_id: i64,
     pub roles: Vec<WorkspaceRole>,
+    pub public_metadata: Value,
 }

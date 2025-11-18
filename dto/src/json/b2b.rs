@@ -51,6 +51,7 @@ pub struct AddOrganizationMemberRequest {
 pub struct UpdateOrganizationMemberRequest {
     #[serde(with = "models::utils::serde::vec_i64_as_string")]
     pub role_ids: Vec<i64>,
+    pub public_metadata: Option<serde_json::Value>,
 }
 
 // Organization role models
@@ -92,4 +93,5 @@ pub struct AddWorkspaceMemberRequest {
 pub struct UpdateWorkspaceMemberRequest {
     #[serde(with = "models::utils::serde::vec_i64_as_string")]
     pub role_ids: Vec<i64>,
+    pub public_metadata: Option<serde_json::Value>,
 }

@@ -100,6 +100,7 @@ impl Command for AddOrganizationMemberCommand {
             SELECT
                 om.id, om.created_at, om.updated_at,
                 om.organization_id, om.user_id,
+                om.public_metadata,
                 u.first_name, u.last_name, u.username,
                 u.created_at as user_created_at,
                 e.email_address as "primary_email_address?",
@@ -121,6 +122,7 @@ impl Command for AddOrganizationMemberCommand {
             updated_at: member_details.updated_at,
             organization_id: member_details.organization_id,
             user_id: member_details.user_id,
+            public_metadata: member_details.public_metadata.clone(),
             roles: {
                 // Get organization roles for this member via membership roles junction table
                 let role_rows = sqlx::query!(
@@ -170,6 +172,7 @@ pub struct UpdateOrganizationMemberCommand {
     pub organization_id: i64,
     pub membership_id: i64,
     pub role_ids: Vec<i64>,
+    pub public_metadata: Option<serde_json::Value>,
 }
 
 
@@ -210,6 +213,17 @@ impl Command for UpdateOrganizationMemberCommand {
                 self.membership_id,
                 role_id,
                 self.organization_id
+            )
+            .execute(&app_state.db_pool)
+            .await?;
+        }
+
+        // Update public_metadata if provided
+        if let Some(metadata) = self.public_metadata {
+            sqlx::query!(
+                "UPDATE organization_memberships SET public_metadata = $1, updated_at = NOW() WHERE id = $2",
+                metadata,
+                self.membership_id
             )
             .execute(&app_state.db_pool)
             .await?;

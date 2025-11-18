@@ -1,0 +1,96 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                om.id, om.created_at, om.updated_at,\n                om.organization_id, om.user_id,\n                om.public_metadata,\n                u.first_name, u.last_name, u.username,\n                u.created_at as user_created_at,\n                e.email_address as \"primary_email_address?\",\n                p.phone_number as \"primary_phone_number?\",\n                COALESCE(\n                    ARRAY_AGG(\n                        DISTINCT jsonb_build_object(\n                            'id', orole.id::text,\n                            'created_at', orole.created_at,\n                            'updated_at', orole.updated_at,\n                            'name', orole.name,\n                            'permissions', orole.permissions,\n                            'is_deployment_level', CASE WHEN orole.organization_id IS NULL THEN true ELSE false END\n                        )\n                    ) FILTER (WHERE orole.id IS NOT NULL),\n                    ARRAY[]::jsonb[]\n                ) as \"roles!\"\n            FROM organization_memberships om\n            JOIN users u ON om.user_id = u.id AND u.deleted_at IS NULL\n            LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id\n            LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id\n            LEFT JOIN organization_membership_roles omr ON omr.organization_membership_id = om.id\n            LEFT JOIN organization_roles orole ON omr.organization_role_id = orole.id\n            WHERE om.organization_id = $1 AND om.deleted_at IS NULL\n            GROUP BY om.id, om.created_at, om.updated_at, om.organization_id, om.user_id,\n                     om.public_metadata, u.first_name, u.last_name, u.username, u.created_at,\n                     e.email_address, p.phone_number\n            ORDER BY om.created_at DESC\n            LIMIT $2 OFFSET $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "public_metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "first_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "username",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "user_created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "primary_email_address?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "primary_phone_number?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "roles!",
+        "type_info": "JsonbArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "9d9772aba62b6d1947c4e8434feb3d8cea84d3dd4272529c7a0ef4c694ec8f11"
+}

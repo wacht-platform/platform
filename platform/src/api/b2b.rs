@@ -863,6 +863,7 @@ pub async fn update_organization_member(
         organization_id: params.organization_id,
         membership_id: params.membership_id,
         role_ids: request.role_ids,
+        public_metadata: request.public_metadata,
     }
     .execute(&app_state)
     .await
@@ -1015,6 +1016,7 @@ pub async fn update_workspace_member(
         workspace_id: params.workspace_id,
         membership_id: params.membership_id,
         role_ids: request.role_ids,
+        public_metadata: request.public_metadata,
     }
     .execute(&app_state)
     .await?;
