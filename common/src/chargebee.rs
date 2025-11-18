@@ -40,7 +40,13 @@ impl ChargebeeClient {
         let site = env::var("CHARGEBEE_SITE")
             .map_err(|_| ChargebeeError::ConfigError("CHARGEBEE_SITE not set".to_string()))?;
 
-        let base_url = format!("https://{}/api/v2", site);
+        let site_url = if site.contains(".chargebee.com") {
+            site
+        } else {
+            format!("{}.chargebee.com", site)
+        };
+
+        let base_url = format!("https://{}/api/v2", site_url);
 
         let mut headers = HeaderMap::new();
         use base64::{Engine as _, engine::general_purpose};
@@ -127,18 +133,13 @@ impl ChargebeeClient {
     pub async fn create_portal_session(
         &self,
         customer_id: &str,
-        redirect_url: Option<String>,
     ) -> ChargebeeResult<JsonValue> {
         let url = format!("{}/portal_sessions", self.base_url);
-        let mut params = serde_json::json!({
+        let params = serde_json::json!({
             "customer": {
                 "id": customer_id
             }
         });
-
-        if let Some(redirect) = redirect_url {
-            params["redirect_url"] = serde_json::json!(redirect);
-        }
 
         let response = self.client.post(&url).json(&params).send().await?;
 
@@ -213,6 +214,9 @@ impl ChargebeeClient {
             ));
         }
 
+        if let Some(currency) = &params.currency_code {
+            form_data.push(("currency_code".to_string(), currency.clone()));
+        }
         debug!("Creating checkout session with form data: {:?}", form_data);
 
         let response = self.client.post(&url).form(&form_data).send().await?;
@@ -425,6 +429,8 @@ pub struct CreateCustomerParams {
 pub struct CreateCheckoutParams {
     pub subscription_items: Vec<SubscriptionItem>,
     pub customer: CustomerInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency_code: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

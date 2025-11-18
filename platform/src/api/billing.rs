@@ -10,8 +10,7 @@ use commands::{
     },
 };
 use common::chargebee::{
-    ChargebeeClient, CreateCheckoutParams, CustomerInfo, SubscriptionItem,
-    UpdateSubscriptionParams,
+    ChargebeeClient, CreateCheckoutParams, CustomerInfo, SubscriptionItem, UpdateSubscriptionParams,
 };
 use common::state::AppState;
 use models::billing::BillingAccountWithSubscription;
@@ -32,10 +31,8 @@ pub struct CreateCheckoutRequest {
     pub tax_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct CheckoutResponse {
-    pub checkout_url: String,
-}
+// Return the raw hosted page object for Chargebee.js
+pub type CheckoutResponse = serde_json::Value;
 
 #[derive(Debug, Serialize)]
 pub struct PortalResponse {
@@ -135,9 +132,15 @@ pub async fn create_checkout(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    let item_price_id = if req.plan_id.ends_with("_inr") {
+        req.plan_id.clone()
+    } else {
+        format!("{}_inr", req.plan_id)
+    };
+
     let params = CreateCheckoutParams {
         subscription_items: vec![SubscriptionItem {
-            item_price_id: req.plan_id,
+            item_price_id,
             quantity: Some(1),
         }],
         customer: CustomerInfo {
@@ -147,8 +150,9 @@ pub async fn create_checkout(
             last_name: None,
             company: None,
             phone: req.billing_phone.clone(),
-            billing_address: None, // Let Chargebee collect this
+            billing_address: None,
         },
+        currency_code: Some("INR".to_string()),
     };
 
     let response = chargebee
@@ -159,12 +163,11 @@ pub async fn create_checkout(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let url = response["hosted_page"]["url"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let hosted_page = response
+        .get("hosted_page")
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Json(CheckoutResponse { checkout_url: url }))
+    Ok(Json(hosted_page.clone()))
 }
 
 pub async fn update_billing_account(
@@ -227,7 +230,7 @@ pub async fn get_portal_url(
     let chargebee = ChargebeeClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let response = chargebee
-        .create_portal_session(&subscription.chargebee_customer_id, None)
+        .create_portal_session(&subscription.chargebee_customer_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
