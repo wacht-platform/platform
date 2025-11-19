@@ -147,7 +147,7 @@ fn base_deployment_routes() -> Router<AppState> {
         )
         .route(
             "/workspaces/{workspace_id}/members/{membership_id}",
-            patch(api::b2b::update_workspace_member).delete(api::b2b::remove_workspace_member),
+            delete(api::b2b::remove_workspace_member),
         )
         .route(
             "/organizations/{organization_id}/members",
@@ -155,8 +155,7 @@ fn base_deployment_routes() -> Router<AppState> {
         )
         .route(
             "/organizations/{organization_id}/members/{membership_id}",
-            patch(api::b2b::update_organization_member)
-                .delete(api::b2b::remove_organization_member),
+            delete(api::b2b::remove_organization_member),
         )
         .route(
             "/organizations/{organization_id}/roles",
@@ -282,7 +281,10 @@ fn billing_routes() -> Router<AppState> {
         .route("/billing/checkout", post(api::billing::create_checkout))
         .route("/billing/portal", get(api::billing::get_portal_url))
         .route("/billing/cancel", post(api::billing::cancel_subscription))
-        .route("/billing/usage", get(api::billing::get_current_usage).post(api::billing::record_usage))
+        .route(
+            "/billing/usage",
+            get(api::billing::get_current_usage).post(api::billing::record_usage),
+        )
         .route("/billing/invoices", get(api::billing::list_invoices))
         .route("/billing/invoices/{id}", get(api::billing::get_invoice))
         .route("/billing/change-plan", post(api::billing::change_plan))
@@ -388,6 +390,14 @@ fn console_specific_routes() -> Router<AppState> {
 
 fn backend_specific_routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/organizations/{organization_id}/members/{membership_id}",
+            patch(api::b2b::update_organization_member),
+        )
+        .route(
+            "/workspaces/{workspace_id}/members/{membership_id}",
+            patch(api::b2b::update_workspace_member),
+        )
         .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
         .route("/webhooks/apps", post(api::webhook::create_webhook_app))
         .route(
