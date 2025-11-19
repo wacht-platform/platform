@@ -49,7 +49,7 @@ pub struct AddOrganizationMemberRequest {
 
 #[derive(Deserialize)]
 pub struct UpdateOrganizationMemberRequest {
-    #[serde(with = "models::utils::serde::option_vec_i64_as_string", skip_serializing_if = "Option::is_none")]
+    #[serde(with = "models::utils::serde::option_vec_i64_as_string", default)]
     pub role_ids: Option<Vec<i64>>,
     pub public_metadata: Option<serde_json::Value>,
 }
@@ -91,7 +91,7 @@ pub struct AddWorkspaceMemberRequest {
 
 #[derive(Deserialize)]
 pub struct UpdateWorkspaceMemberRequest {
-    #[serde(with = "models::utils::serde::option_vec_i64_as_string", skip_serializing_if = "Option::is_none")]
+    #[serde(with = "models::utils::serde::option_vec_i64_as_string", default)]
     pub role_ids: Option<Vec<i64>>,
     pub public_metadata: Option<serde_json::Value>,
 }

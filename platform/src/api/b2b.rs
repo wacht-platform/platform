@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::middleware::RequireDeployment;
 use axum::Json;
 use axum::extract::{Multipart, Path, Query as QueryParams, State};
@@ -7,33 +9,38 @@ use serde::Deserialize;
 // Path parameter structs for nested routes
 #[derive(Deserialize)]
 pub struct OrganizationParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub organization_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct OrganizationMemberParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub organization_id: i64,
     pub membership_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct OrganizationRoleParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub organization_id: i64,
     pub role_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct WorkspaceParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub workspace_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct WorkspaceMemberParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub workspace_id: i64,
     pub membership_id: i64,
 }
@@ -46,7 +53,8 @@ pub struct PaginationParams {
 
 #[derive(Deserialize)]
 pub struct WorkspaceRoleParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub workspace_id: i64,
     pub role_id: i64,
 }

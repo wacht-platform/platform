@@ -28,16 +28,19 @@ use axum::{
     extract::{Path, State},
 };
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Deserialize)]
 pub struct EmailTemplateParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub template_name: DeploymentNameParams,
 }
 
 #[derive(Deserialize)]
 pub struct JWTTemplateParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub id: i64,
 }
 

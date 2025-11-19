@@ -33,38 +33,44 @@ use axum::{
     http::StatusCode,
 };
 use serde::Deserialize;
+use std::collections::HashMap;
 
 // Path parameter structs for nested routes
 #[derive(Deserialize)]
 pub struct UserParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub user_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct UserEmailParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub user_id: i64,
     pub email_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct UserPhoneParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub user_id: i64,
     pub phone_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct UserSocialParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub user_id: i64,
     pub connection_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct WaitlistUserParams {
-    pub deployment_id: i64,
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
     pub waitlist_user_id: i64,
 }
 
