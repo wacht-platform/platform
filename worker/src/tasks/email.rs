@@ -103,22 +103,15 @@ pub struct WaitlistApprovalTask {
 pub async fn send_verification_email_impl(
     deployment_id: u64,
     recipient: &str,
-    user_id: u64,
     verification_code: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-    let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch user details: {}", e))?;
-
     let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
         .execute(&app_state)
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let variables =
-        create_verification_variables(&user_details, &deployment_settings, verification_code);
+    let variables = create_verification_variables(&deployment_settings, verification_code);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -622,7 +615,6 @@ async fn fetch_workspace_name(app_state: &AppState, workspace_id: u64) -> Result
 }
 
 fn create_verification_variables(
-    user: &UserDetails,
     deployment: &DeploymentWithSettings,
     verification_code: &str,
 ) -> HashMap<String, String> {
@@ -641,7 +633,6 @@ fn create_verification_variables(
 
     variables.insert("app_name".to_string(), app_name);
     variables.insert("app_logo".to_string(), app_logo);
-    variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("code".to_string(), verification_code.to_string());
     variables.insert("code.expires_in_minutes".to_string(), "15".to_string());
 
@@ -982,7 +973,11 @@ async fn track_email_billing(deployment_id: i64, redis_client: &redis::Client) {
             .ignore()
             .expire(&format!("{}:metrics", prefix), 5184000)
             .ignore()
-            .zincr(&format!("billing:{}:dirty_deployments", period), deployment_id, 1)
+            .zincr(
+                &format!("billing:{}:dirty_deployments", period),
+                deployment_id,
+                1,
+            )
             .ignore()
             .expire(&format!("billing:{}:dirty_deployments", period), 5184000)
             .ignore();

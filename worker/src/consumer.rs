@@ -7,7 +7,10 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use crate::tasks::{agent, analytics, billing, document, email, embedding, sms, token, webhook, webhook_event, webhook_replay_batch};
+use crate::tasks::{
+    agent, analytics, billing, document, email, embedding, sms, token, webhook, webhook_event,
+    webhook_replay_batch,
+};
 use dto::json::NatsTaskMessage;
 
 #[derive(Debug)]
@@ -53,7 +56,6 @@ impl NatsConsumer {
                     email::send_verification_email_impl(
                         task.deployment_id,
                         &task.recipient,
-                        task.user_id,
                         &task.verification_code,
                         &app_state,
                     )
@@ -494,8 +496,8 @@ impl NatsConsumer {
             "billing.event".to_string(),
             Box::new(|payload, app_state| {
                 Box::pin(async move {
-                    let task: billing::BillingEventTask = serde_json::from_value(payload)
-                        .map_err(|e| {
+                    let task: billing::BillingEventTask =
+                        serde_json::from_value(payload).map_err(|e| {
                             TaskError::Permanent(format!(
                                 "Failed to deserialize billing event task: {}",
                                 e
