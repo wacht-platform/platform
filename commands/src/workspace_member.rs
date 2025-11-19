@@ -12,12 +12,10 @@ pub struct AddWorkspaceMemberCommand {
     pub role_ids: Vec<i64>,
 }
 
-
 impl Command for AddWorkspaceMemberCommand {
     type Output = WorkspaceMemberDetails;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-
         // First check if workspace exists and belongs to deployment
         let workspace = sqlx::query!(
             "SELECT id, organization_id FROM workspaces WHERE id = $1 AND deployment_id = $2",
@@ -39,7 +37,7 @@ impl Command for AddWorkspaceMemberCommand {
         .await?;
 
         let org_membership = org_membership.ok_or(AppError::BadRequest(
-            "User must be a member of the organization first".to_string()
+            "User must be a member of the organization first".to_string(),
         ))?;
 
         // Check if membership already exists
@@ -182,17 +180,14 @@ pub struct UpdateWorkspaceMemberCommand {
     pub deployment_id: i64,
     pub workspace_id: i64,
     pub membership_id: i64,
-    pub role_ids: Vec<i64>,
+    pub role_ids: Option<Vec<i64>>,
     pub public_metadata: Option<serde_json::Value>,
 }
-
 
 impl Command for UpdateWorkspaceMemberCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-
-        // Verify membership exists and belongs to this workspace
         let membership = sqlx::query!(
             r#"
             SELECT wm.id
@@ -213,29 +208,28 @@ impl Command for UpdateWorkspaceMemberCommand {
             ));
         }
 
-        // Delete existing roles
-        sqlx::query!(
-            "DELETE FROM workspace_membership_roles WHERE workspace_membership_id = $1",
-            self.membership_id
-        )
-        .execute(&app_state.db_pool)
-        .await?;
-
-        // Add new roles
-        for role_id in &self.role_ids {
+        if let Some(role_ids) = self.role_ids {
             sqlx::query!(
-                r#"
-                INSERT INTO workspace_membership_roles (workspace_membership_id, workspace_role_id)
-                VALUES ($1, $2)
-                "#,
-                self.membership_id,
-                *role_id
+                "DELETE FROM workspace_membership_roles WHERE workspace_membership_id = $1",
+                self.membership_id
             )
             .execute(&app_state.db_pool)
             .await?;
+
+            for role_id in role_ids {
+                sqlx::query!(
+                    r#"
+                INSERT INTO workspace_membership_roles (workspace_membership_id, workspace_role_id)
+                VALUES ($1, $2)
+                "#,
+                    self.membership_id,
+                    role_id
+                )
+                .execute(&app_state.db_pool)
+                .await?;
+            }
         }
 
-        // Update public_metadata if provided
         if let Some(metadata) = self.public_metadata {
             sqlx::query!(
                 "UPDATE workspace_memberships SET public_metadata = $1, updated_at = NOW() WHERE id = $2",
@@ -257,13 +251,10 @@ pub struct RemoveWorkspaceMemberCommand {
     pub membership_id: i64,
 }
 
-
 impl Command for RemoveWorkspaceMemberCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-
-        // Verify membership exists and belongs to this workspace
         let membership = sqlx::query!(
             r#"
             SELECT wm.id
@@ -284,7 +275,6 @@ impl Command for RemoveWorkspaceMemberCommand {
             ));
         }
 
-        // Clear workspace membership reference in signins
         sqlx::query!(
             "UPDATE signins SET active_workspace_membership_id = NULL WHERE active_workspace_membership_id = $1",
             self.membership_id
@@ -292,7 +282,6 @@ impl Command for RemoveWorkspaceMemberCommand {
         .execute(&app_state.db_pool)
         .await?;
 
-        // Delete role associations
         sqlx::query!(
             "DELETE FROM workspace_membership_roles WHERE workspace_membership_id = $1",
             self.membership_id
@@ -300,7 +289,6 @@ impl Command for RemoveWorkspaceMemberCommand {
         .execute(&app_state.db_pool)
         .await?;
 
-        // Delete membership
         sqlx::query!(
             "DELETE FROM workspace_memberships WHERE id = $1",
             self.membership_id
@@ -308,7 +296,6 @@ impl Command for RemoveWorkspaceMemberCommand {
         .execute(&app_state.db_pool)
         .await?;
 
-        // Update workspace member count
         sqlx::query!(
             "UPDATE workspaces SET member_count = member_count - 1 WHERE id = $1",
             self.workspace_id

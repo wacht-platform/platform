@@ -13,7 +13,6 @@ pub struct AddOrganizationMemberCommand {
     pub role_ids: Vec<i64>,
 }
 
-
 impl Command for AddOrganizationMemberCommand {
     type Output = OrganizationMemberDetails;
 
@@ -171,16 +170,14 @@ pub struct UpdateOrganizationMemberCommand {
     pub deployment_id: i64,
     pub organization_id: i64,
     pub membership_id: i64,
-    pub role_ids: Vec<i64>,
+    pub role_ids: Option<Vec<i64>>,
     pub public_metadata: Option<serde_json::Value>,
 }
-
 
 impl Command for UpdateOrganizationMemberCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Check if membership exists
         let membership_exists = sqlx::query!(
             "SELECT id FROM organization_memberships WHERE id = $1 AND organization_id = $2",
             self.membership_id,
@@ -195,17 +192,16 @@ impl Command for UpdateOrganizationMemberCommand {
             ));
         }
 
-        // Remove existing role associations
-        sqlx::query!(
-            "DELETE FROM organization_membership_roles WHERE organization_membership_id = $1",
-            self.membership_id
-        )
-        .execute(&app_state.db_pool)
-        .await?;
-
-        // Add new role associations
-        for role_id in &self.role_ids {
+        if let Some(role_ids) = self.role_ids {
             sqlx::query!(
+                "DELETE FROM organization_membership_roles WHERE organization_membership_id = $1",
+                self.membership_id
+            )
+            .execute(&app_state.db_pool)
+            .await?;
+
+            for role_id in role_ids {
+                sqlx::query!(
                 r#"
                 INSERT INTO organization_membership_roles (organization_membership_id, organization_role_id, organization_id)
                 VALUES ($1, $2, $3)
@@ -216,9 +212,9 @@ impl Command for UpdateOrganizationMemberCommand {
             )
             .execute(&app_state.db_pool)
             .await?;
+            }
         }
 
-        // Update public_metadata if provided
         if let Some(metadata) = self.public_metadata {
             sqlx::query!(
                 "UPDATE organization_memberships SET public_metadata = $1, updated_at = NOW() WHERE id = $2",
@@ -239,7 +235,6 @@ pub struct RemoveOrganizationMemberCommand {
     pub organization_id: i64,
     pub membership_id: i64,
 }
-
 
 impl Command for RemoveOrganizationMemberCommand {
     type Output = ();

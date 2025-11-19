@@ -68,6 +68,40 @@ pub mod vec_i64_as_string {
     }
 }
 
+pub mod option_vec_i64_as_string {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &Option<Vec<i64>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(vec) => {
+                let string_vec: Vec<String> = vec.iter().map(|v| v.to_string()).collect();
+                string_vec.serialize(serializer)
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<i64>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt = Option::<Vec<String>>::deserialize(deserializer)?;
+        match opt {
+            Some(string_vec) => {
+                let result: Result<Vec<i64>, _> = string_vec
+                    .into_iter()
+                    .map(|s| s.parse::<i64>().map_err(serde::de::Error::custom))
+                    .collect();
+                result.map(Some)
+            }
+            None => Ok(None),
+        }
+    }
+}
+
 // Helper function for optional i64 serialization
 pub use i64_as_string_option::serialize as serialize_option_i64_as_string;
 
