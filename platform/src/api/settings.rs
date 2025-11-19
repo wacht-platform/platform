@@ -29,11 +29,16 @@ use axum::{
 };
 use serde::Deserialize;
 
-// Path parameter struct for email template routes
 #[derive(Deserialize)]
 pub struct EmailTemplateParams {
     pub deployment_id: i64,
     pub template_name: DeploymentNameParams,
+}
+
+#[derive(Deserialize)]
+pub struct JWTTemplateParams {
+    pub deployment_id: i64,
+    pub id: i64,
 }
 
 pub async fn get_deployment_with_settings(
@@ -64,9 +69,6 @@ pub async fn update_deployment_auth_settings(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentAuthSettingsUpdates>,
 ) -> ApiResult<()> {
-    // Debug: Log the raw JSON received
-    println!("API received auth settings updates: {}", serde_json::to_string_pretty(&updates).unwrap_or_else(|_| "Failed to serialize".to_string()));
-    
     UpdateDeploymentAuthSettingsCommand::new(deployment_id, updates)
         .execute(&app_state)
         .await
@@ -118,10 +120,10 @@ pub async fn create_deployment_jwt_template(
 pub async fn update_deployment_jwt_template(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(id): Path<i64>,
+    Path(params): Path<JWTTemplateParams>,
     Json(updates): Json<PartialDeploymentJwtTemplate>,
 ) -> ApiResult<DeploymentJwtTemplate> {
-    UpdateDeploymentJwtTemplateCommand::new(deployment_id, id, updates)
+    UpdateDeploymentJwtTemplateCommand::new(deployment_id, params.id, updates)
         .execute(&app_state)
         .await
         .map(Into::into)
@@ -131,9 +133,9 @@ pub async fn update_deployment_jwt_template(
 pub async fn delete_deployment_jwt_template(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(id): Path<i64>,
+    Path(params): Path<JWTTemplateParams>,
 ) -> ApiResult<()> {
-    DeleteDeploymentJwtTemplateCommand::new(deployment_id, id)
+    DeleteDeploymentJwtTemplateCommand::new(deployment_id, params.id)
         .execute(&app_state)
         .await
         .map(Into::into)
