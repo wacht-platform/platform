@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
@@ -9,7 +7,7 @@ pub struct SendEmailCommand {
     deployment_id: i64,
     template_name: String,
     to_email: String,
-    variables: HashMap<String, String>,
+    variables: serde_json::Value,
 }
 
 impl SendEmailCommand {
@@ -17,7 +15,7 @@ impl SendEmailCommand {
         deployment_id: i64,
         template_name: String,
         to_email: String,
-        variables: HashMap<String, String>,
+        variables: serde_json::Value,
     ) -> Self {
         Self {
             deployment_id,

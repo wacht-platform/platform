@@ -1,6 +1,5 @@
 use chrono::{Duration, Utc};
 use serde_json::json;
-use std::collections::HashMap;
 
 use crate::{Command, SendEmailCommand};
 use common::error::AppError;
@@ -233,19 +232,20 @@ impl Command for InviteUserCommand {
         .execute(&app_state.db_pool)
         .await?;
 
-        let mut variables = HashMap::new();
-        variables.insert("app_name".to_string(), "Your App".to_string());
-        variables.insert(
-            "app_logo".to_string(),
-            "https://via.placeholder.com/150".to_string(),
-        );
-        variables.insert("first_name".to_string(), self.request.first_name.clone());
-        variables.insert("last_name".to_string(), self.request.last_name.clone());
-        variables.insert(
-            "invitation.expires_in_days".to_string(),
-            expiry_days.to_string(),
-        );
-        variables.insert("invitation_token".to_string(), token.clone());
+        let variables = serde_json::json!({
+            "app": {
+                "name": "Your App",
+                "logo": "https://via.placeholder.com/150"
+            },
+            "user": {
+                "first_name": self.request.first_name.clone(),
+                "last_name": self.request.last_name.clone()
+            },
+            "invitation": {
+                "expires_in_days": expiry_days.to_string(),
+                "token": token.clone()
+            }
+        });
 
         SendEmailCommand::new(
             self.deployment_id,
@@ -344,16 +344,20 @@ impl Command for ApproveWaitlistUserCommand {
         .execute(&mut *tx)
         .await?;
 
-        let mut variables = HashMap::new();
-        variables.insert("app_name".to_string(), "Your App".to_string());
-        variables.insert(
-            "app_logo".to_string(),
-            "https://via.placeholder.com/150".to_string(),
-        );
-        variables.insert("first_name".to_string(), first_name.clone());
-        variables.insert("last_name".to_string(), last_name.clone());
-        variables.insert("invitation.expires_in_days".to_string(), "7".to_string());
-        variables.insert("invitation_token".to_string(), token.clone());
+        let variables = serde_json::json!({
+            "app": {
+                "name": "Your App",
+                "logo": "https://via.placeholder.com/150"
+            },
+            "user": {
+                "first_name": first_name.clone(),
+                "last_name": last_name.clone()
+            },
+            "invitation": {
+                "expires_in_days": "7",
+                "token": token.clone()
+            }
+        });
 
         SendEmailCommand::new(
             self.deployment_id,

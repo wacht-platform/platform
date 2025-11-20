@@ -11,7 +11,6 @@ use queries::{
     signin::GetSignInQuery, user::GetUserDetailsQuery, workspace::GetWorkspaceNameQuery,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use base64::{Engine as _, prelude::BASE64_STANDARD};
 
 async fn get_app_logo_content(deployment: &DeploymentWithSettings) -> String {
@@ -63,6 +62,8 @@ pub struct VerificationEmailTask {
     pub recipient: String,
     pub user_id: u64,
     pub verification_code: String,
+    pub ip_address: String,
+    pub user_agent: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -71,6 +72,8 @@ pub struct PasswordResetEmailTask {
     pub recipient: String,
     pub user_id: u64,
     pub reset_code: String,
+    pub ip_address: String,
+    pub user_agent: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -148,6 +151,8 @@ pub async fn send_verification_email_impl(
     deployment_id: u64,
     recipient: &str,
     verification_code: &str,
+    ip_address: &str,
+    user_agent: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
     let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
@@ -156,7 +161,7 @@ pub async fn send_verification_email_impl(
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
     let app_logo_content = get_app_logo_content(&deployment_settings).await;
-    let variables = create_verification_variables(&deployment_settings, verification_code, app_logo_content);
+    let variables = create_verification_variables(&deployment_settings, verification_code, ip_address, user_agent, app_logo_content);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -180,6 +185,8 @@ pub async fn send_password_reset_email_impl(
     recipient: &str,
     user_id: u64,
     reset_code: &str,
+    ip_address: &str,
+    user_agent: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
     let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
@@ -194,7 +201,7 @@ pub async fn send_password_reset_email_impl(
 
     let app_logo_content = get_app_logo_content(&deployment_settings).await;
     let variables =
-        create_password_reset_variables(&user_details, &deployment_settings, reset_code, app_logo_content);
+        create_password_reset_variables(&user_details, &deployment_settings, reset_code, ip_address, user_agent, app_logo_content);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -461,9 +468,6 @@ pub async fn send_organization_membership_invite_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    // Create variables directly without needing UserDetails
-    let mut variables = HashMap::new();
-
     let app_name = deployment_settings
         .ui_settings
         .as_ref()
@@ -471,24 +475,25 @@ pub async fn send_organization_membership_invite_impl(
         .unwrap_or_else(|| "Your App".to_string());
     let app_logo = get_app_logo_content(&deployment_settings).await;
 
+    let first_name = inviter_name
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_string();
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
-    variables.insert(
-        "first_name".to_string(),
-        inviter_name
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .to_string(),
-    );
-    variables.insert(
-        "organization_name".to_string(),
-        organization_name.to_string(),
-    );
-    variables.insert("inviter_name".to_string(), inviter_name.to_string());
-    variables.insert("action_url".to_string(), invite_link.to_string());
-    variables.insert("invitation.expires_in_days".to_string(), "7".to_string());
+    let variables = serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo
+        },
+        "inviter_name": inviter_name,
+        "first_name": first_name,
+        "organization_name": organization_name,
+        "action_url": invite_link,
+        "invitation": {
+            "expires_in_days": "7"
+        }
+    });
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -554,7 +559,10 @@ pub async fn send_deployment_invite_impl(
         "https://{}/sign-up?invite_token={}",
         frontend_host, invitation.token
     );
-    variables.insert("action_url".to_string(), action_url);
+    
+    if let serde_json::Value::Object(ref mut map) = variables {
+        map.insert("action_url".to_string(), serde_json::Value::String(action_url));
+    }
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -624,7 +632,10 @@ pub async fn send_waitlist_approval_impl(
         "https://{}/sign-up?invite_token={}",
         frontend_host, invitation.token
     );
-    variables.insert("action_url".to_string(), action_url);
+    
+    if let serde_json::Value::Object(ref mut map) = variables {
+        map.insert("action_url".to_string(), serde_json::Value::String(action_url));
+    }
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -670,48 +681,89 @@ async fn fetch_workspace_name(app_state: &AppState, workspace_id: u64) -> Result
 fn create_verification_variables(
     deployment: &DeploymentWithSettings,
     verification_code: &str,
+    ip_address: &str,
+    user_agent: &str,
     app_logo_content: String,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
+) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo_content);
-    variables.insert("code".to_string(), verification_code.to_string());
-    variables.insert("code.expires_in_minutes".to_string(), "15".to_string());
+    let device_info = if !user_agent.is_empty() {
+        format!("{} (IP: {})", user_agent, ip_address)
+    } else {
+        format!("IP: {}", ip_address)
+    };
 
-    variables
+    serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_content
+        },
+        "code": {
+            "value": verification_code,
+            "expires_in_minutes": "15"
+        },
+        "device": {
+            "info": device_info,
+            "ip_address": ip_address,
+            "user_agent": user_agent
+        }
+    })
 }
 
 fn create_password_reset_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     reset_code: &str,
+    ip_address: &str,
+    user_agent: &str,
     app_logo_content: String,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
+) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo_content);
-    variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("reset_code".to_string(), reset_code.to_string());
-    variables.insert(
-        "reset_code.expires_in_minutes".to_string(),
-        "15".to_string(),
-    );
+    let device_info = if !user_agent.is_empty() {
+        format!("{} (IP: {})", user_agent, ip_address)
+    } else {
+        format!("IP: {}", ip_address)
+    };
 
-    variables
+    serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_content
+        },
+        "user": {
+            "id": user.id.to_string(),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": format!("{} {}", user.first_name, user.last_name),
+            "username": user.username,
+            "email": user.primary_email_address,
+            "phone": user.primary_phone_number,
+            "profile_picture_url": user.profile_picture_url,
+            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            "disabled": user.disabled,
+            "has_password": user.has_password,
+            "public_metadata": user.public_metadata,
+            "private_metadata": user.private_metadata
+        },
+        "code": {
+            "value": reset_code,
+            "expires_in_minutes": "15"
+        },
+        "device": {
+            "info": device_info,
+            "ip_address": ip_address,
+            "user_agent": user_agent
+        }
+    })
 }
 
 fn create_signin_notification_variables(
@@ -719,38 +771,36 @@ fn create_signin_notification_variables(
     deployment: &DeploymentWithSettings,
     signin: Option<&SignIn>,
     app_logo_content: String,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
+) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo_content);
-    variables.insert("first_name".to_string(), user.first_name.clone());
+    let mut json_value = serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_content
+        },
+        "user": {
+            "id": user.id.to_string(),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": format!("{} {}", user.first_name, user.last_name),
+            "username": user.username,
+            "email": user.primary_email_address,
+            "phone": user.primary_phone_number,
+            "profile_picture_url": user.profile_picture_url,
+            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            "disabled": user.disabled,
+            "has_password": user.has_password,
+            "public_metadata": user.public_metadata,
+            "private_metadata": user.private_metadata
+        }
+    });
 
     if let Some(signin) = signin {
-        variables.insert(
-            "signin_time".to_string(),
-            signin
-                .created_at
-                .format("%Y-%m-%d %H:%M:%S UTC")
-                .to_string(),
-        );
-        variables.insert(
-            "device_name".to_string(),
-            if signin.device.is_empty() {
-                "Unknown Device".to_string()
-            } else {
-                signin.device.clone()
-            },
-        );
-        variables.insert("browser".to_string(), signin.browser.clone());
-        variables.insert("ip_address".to_string(), signin.ip_address.clone());
-
         let location = if !signin.city.is_empty() && !signin.country.is_empty() {
             format!("{}, {}", signin.city, signin.country)
         } else if !signin.region.is_empty() && !signin.country.is_empty() {
@@ -760,15 +810,40 @@ fn create_signin_notification_variables(
         } else {
             "Unknown Location".to_string()
         };
-        variables.insert("location".to_string(), location);
+
+        let device_name = if signin.device.is_empty() {
+            "Unknown Device".to_string()
+        } else {
+            signin.device.clone()
+        };
+
+        let device_info = format!("{} (IP: {})", device_name, signin.ip_address);
+
+        json_value["signin"] = serde_json::json!({
+            "time": signin.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            "location": location
+        });
+
+        json_value["device"] = serde_json::json!({
+            "info": device_info,
+            "name": device_name,
+            "browser": signin.browser,
+            "ip_address": signin.ip_address
+        });
     } else {
-        variables.insert("device_name".to_string(), "Unknown Device".to_string());
-        variables.insert("location".to_string(), "Unknown Location".to_string());
-        variables.insert("browser".to_string(), "Unknown Browser".to_string());
-        variables.insert("ip_address".to_string(), "Unknown IP".to_string());
+        json_value["device"] = serde_json::json!({
+            "info": "Unknown Device",
+            "name": "Unknown Device",
+            "browser": "Unknown Browser",
+            "ip_address": "Unknown IP"
+        });
+        json_value["signin"] = serde_json::json!({
+            "time": "",
+            "location": "Unknown Location"
+        });
     }
 
-    variables
+    json_value
 }
 
 fn create_email_change_variables(
@@ -777,99 +852,140 @@ fn create_email_change_variables(
     old_email: &str,
     new_email: &str,
     app_logo_content: String,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
+) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo_content);
-    variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("old_email".to_string(), old_email.to_string());
-    variables.insert("new_email".to_string(), new_email.to_string());
-
-    variables
+    serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_content
+        },
+        "user": {
+            "id": user.id.to_string(),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": format!("{} {}", user.first_name, user.last_name),
+            "username": user.username,
+            "email": user.primary_email_address,
+            "phone": user.primary_phone_number,
+            "profile_picture_url": user.profile_picture_url,
+            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            "disabled": user.disabled,
+            "has_password": user.has_password,
+            "public_metadata": user.public_metadata,
+            "private_metadata": user.private_metadata
+        },
+        "old_email": old_email,
+        "new_email": new_email
+    })
 }
 
 fn create_password_change_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     app_logo_content: String,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
+) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo_content);
-    variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert(
-        "change_time".to_string(),
-        chrono::Utc::now()
-            .format("%Y-%m-%d %H:%M:%S UTC")
-            .to_string(),
-    );
-
-    variables
+    serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_content
+        },
+        "user": {
+            "id": user.id.to_string(),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": format!("{} {}", user.first_name, user.last_name),
+            "username": user.username,
+            "email": user.primary_email_address,
+            "phone": user.primary_phone_number,
+            "profile_picture_url": user.profile_picture_url,
+            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            "disabled": user.disabled,
+            "has_password": user.has_password,
+            "public_metadata": user.public_metadata,
+            "private_metadata": user.private_metadata
+        },
+        "change_time": chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string()
+    })
 }
 
 fn create_password_remove_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     app_logo_content: String,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
+) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo_content);
-    variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert(
-        "removal_time".to_string(),
-        chrono::Utc::now()
-            .format("%Y-%m-%d %H:%M:%S UTC")
-            .to_string(),
-    );
-
-    variables
+    serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_content
+        },
+        "user": {
+            "id": user.id.to_string(),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": format!("{} {}", user.first_name, user.last_name),
+            "username": user.username,
+            "email": user.primary_email_address,
+            "phone": user.primary_phone_number,
+            "profile_picture_url": user.profile_picture_url,
+            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            "disabled": user.disabled,
+            "has_password": user.has_password,
+            "public_metadata": user.public_metadata,
+            "private_metadata": user.private_metadata
+        },
+        "removal_time": chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string()
+    })
 }
 
 fn create_waitlist_signup_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     app_logo_content: String,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
+) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo_content);
-    variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("last_name".to_string(), user.last_name.clone());
-    variables.insert(
-        "email_address".to_string(),
-        user.primary_email_address.clone().unwrap_or_default(),
-    );
-
-    variables
+    serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_content
+        },
+        "user": {
+            "id": user.id.to_string(),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": format!("{} {}", user.first_name, user.last_name),
+            "username": user.username,
+            "email": user.primary_email_address,
+            "phone": user.primary_phone_number,
+            "profile_picture_url": user.profile_picture_url,
+            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            "disabled": user.disabled,
+            "has_password": user.has_password,
+            "public_metadata": user.public_metadata,
+            "private_metadata": user.private_metadata
+        }
+    })
 }
 
 fn create_waitlist_invite_variables(
@@ -877,39 +993,48 @@ fn create_waitlist_invite_variables(
     deployment: &DeploymentWithSettings,
     invitation: Option<&DeploymentInvitation>,
     app_logo_content: String,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
+) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo_content);
-    variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("last_name".to_string(), user.last_name.clone());
-    variables.insert(
-        "email_address".to_string(),
-        user.primary_email_address.clone().unwrap_or_default(),
-    );
-
-    if let Some(invitation) = invitation {
+    let (expires_in_days, expiry_date) = if let Some(invitation) = invitation {
         let days_until_expiry = (invitation.expiry - chrono::Utc::now()).num_days();
-        variables.insert(
-            "invitation.expires_in_days".to_string(),
+        (
             days_until_expiry.max(0).to_string(),
-        );
-        variables.insert(
-            "invitation_expiry".to_string(),
             invitation.expiry.format("%Y-%m-%d").to_string(),
-        );
+        )
     } else {
-        variables.insert("invitation.expires_in_days".to_string(), "7".to_string());
-    }
+        ("7".to_string(), "".to_string())
+    };
 
-    variables
+    serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_content
+        },
+        "user": {
+            "id": user.id.to_string(),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": format!("{} {}", user.first_name, user.last_name),
+            "username": user.username,
+            "email": user.primary_email_address,
+            "phone": user.primary_phone_number,
+            "profile_picture_url": user.profile_picture_url,
+            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            "disabled": user.disabled,
+            "has_password": user.has_password,
+            "public_metadata": user.public_metadata,
+            "private_metadata": user.private_metadata
+        },
+        "invitation": {
+            "expires_in_days": expires_in_days,
+            "expiry": expiry_date
+        }
+    })
 }
 
 fn create_workspace_invite_variables(
@@ -918,37 +1043,50 @@ fn create_workspace_invite_variables(
     workspace_name: &str,
     invitation: Option<&DeploymentInvitation>,
     app_logo_content: String,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
+) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo_content);
-    variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("workspace_name".to_string(), workspace_name.to_string());
-    variables.insert(
-        "inviter_name".to_string(),
-        format!("{} {}", user.first_name, user.last_name),
-    );
-
-    if let Some(invitation) = invitation {
+    let (expires_in_days, expiry_date) = if let Some(invitation) = invitation {
         let days_until_expiry = (invitation.expiry - chrono::Utc::now()).num_days();
-        variables.insert(
-            "invitation.expires_in_days".to_string(),
+        (
             days_until_expiry.max(0).to_string(),
-        );
-        variables.insert(
-            "invitation_expiry".to_string(),
             invitation.expiry.format("%Y-%m-%d").to_string(),
-        );
-    }
+        )
+    } else {
+        ("7".to_string(), "".to_string())
+    };
 
-    variables
+    serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_content
+        },
+        "user": {
+            "id": user.id.to_string(),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": format!("{} {}", user.first_name, user.last_name),
+            "username": user.username,
+            "email": user.primary_email_address,
+            "phone": user.primary_phone_number,
+            "profile_picture_url": user.profile_picture_url,
+            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            "disabled": user.disabled,
+            "has_password": user.has_password,
+            "public_metadata": user.public_metadata,
+            "private_metadata": user.private_metadata
+        },
+        "workspace_name": workspace_name,
+        "inviter_name": format!("{} {}", user.first_name, user.last_name),
+        "invitation": {
+            "expires_in_days": expires_in_days,
+            "expiry": expiry_date
+        }
+    })
 }
 
 fn create_magic_link_variables(
@@ -956,22 +1094,38 @@ fn create_magic_link_variables(
     deployment: &DeploymentWithSettings,
     magic_link: &str,
     app_logo_content: String,
-) -> HashMap<String, String> {
-    let mut variables = HashMap::new();
-
+) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
 
-    variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo_content);
-    variables.insert("first_name".to_string(), user.first_name.clone());
-    variables.insert("action_url".to_string(), magic_link.to_string());
-    variables.insert("link.expires_in_minutes".to_string(), "15".to_string());
-
-    variables
+    serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_content
+        },
+        "user": {
+            "id": user.id.to_string(),
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "full_name": format!("{} {}", user.first_name, user.last_name),
+            "username": user.username,
+            "email": user.primary_email_address,
+            "phone": user.primary_phone_number,
+            "profile_picture_url": user.profile_picture_url,
+            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            "disabled": user.disabled,
+            "has_password": user.has_password,
+            "public_metadata": user.public_metadata,
+            "private_metadata": user.private_metadata
+        },
+        "action_url": magic_link,
+        "link": {
+            "expires_in_minutes": "15"
+        }
+    })
 }
 
 async fn track_email_billing(deployment_id: i64, redis_client: &redis::Client) {

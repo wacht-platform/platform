@@ -57,6 +57,8 @@ impl NatsConsumer {
                         task.deployment_id,
                         &task.recipient,
                         &task.verification_code,
+                        &task.ip_address,
+                        &task.user_agent,
                         &app_state,
                     )
                     .await
@@ -78,6 +80,8 @@ impl NatsConsumer {
                         &task.recipient,
                         task.user_id,
                         &task.reset_code,
+                        &task.ip_address,
+                        &task.user_agent,
                         &app_state,
                     )
                     .await
