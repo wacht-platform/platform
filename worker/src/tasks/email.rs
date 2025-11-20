@@ -12,6 +12,50 @@ use queries::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use base64::{Engine as _, prelude::BASE64_STANDARD};
+
+async fn get_app_logo_content(deployment: &DeploymentWithSettings) -> String {
+    let app_name = deployment
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.app_name.clone())
+        .unwrap_or_else(|| "Your App".to_string());
+
+    let logo_url = deployment
+        .ui_settings
+        .as_ref()
+        .and_then(|ui| {
+            let url = ui.logo_image_url.clone();
+            if url.is_empty() {
+                None
+            } else {
+                Some(url)
+            }
+        });
+
+    if let Some(url) = logo_url {
+        match reqwest::get(&url).await {
+            Ok(response) => {
+                let mime_type = response
+                    .headers()
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("image/png")
+                    .to_string();
+
+                if let Ok(bytes) = response.bytes().await {
+                    let base64_str = BASE64_STANDARD.encode(&bytes);
+                    return format!("data:{};base64,{}", mime_type, base64_str);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch logo image: {}", e);
+            }
+        }
+    }
+
+    app_name
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VerificationEmailTask {
@@ -111,7 +155,8 @@ pub async fn send_verification_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let variables = create_verification_variables(&deployment_settings, verification_code);
+    let app_logo_content = get_app_logo_content(&deployment_settings).await;
+    let variables = create_verification_variables(&deployment_settings, verification_code, app_logo_content);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -147,8 +192,9 @@ pub async fn send_password_reset_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
+    let app_logo_content = get_app_logo_content(&deployment_settings).await;
     let variables =
-        create_password_reset_variables(&user_details, &deployment_settings, reset_code);
+        create_password_reset_variables(&user_details, &deployment_settings, reset_code, app_logo_content);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -184,7 +230,8 @@ pub async fn send_magic_link_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let variables = create_magic_link_variables(&user_details, &deployment_settings, magic_link);
+    let app_logo_content = get_app_logo_content(&deployment_settings).await;
+    let variables = create_magic_link_variables(&user_details, &deployment_settings, magic_link, app_logo_content);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -222,10 +269,12 @@ pub async fn send_signin_notification_email_impl(
 
     let signin_details = fetch_signin_details(&app_state, signin_id).await.ok();
 
+    let app_logo_content = get_app_logo_content(&deployment_settings).await;
     let variables = create_signin_notification_variables(
         &user_details,
         &deployment_settings,
         signin_details.as_ref(),
+        app_logo_content,
     );
 
     let command = SendEmailCommand::new(
@@ -263,8 +312,9 @@ pub async fn send_email_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
+    let app_logo_content = get_app_logo_content(&deployment_settings).await;
     let variables =
-        create_email_change_variables(&user_details, &deployment_settings, old_email, new_email);
+        create_email_change_variables(&user_details, &deployment_settings, old_email, new_email, app_logo_content);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -299,7 +349,8 @@ pub async fn send_password_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let variables = create_password_change_variables(&user_details, &deployment_settings);
+    let app_logo_content = get_app_logo_content(&deployment_settings).await;
+    let variables = create_password_change_variables(&user_details, &deployment_settings, app_logo_content);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -337,7 +388,8 @@ pub async fn send_password_remove_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let variables = create_password_remove_variables(&user_details, &deployment_settings);
+    let app_logo_content = get_app_logo_content(&deployment_settings).await;
+    let variables = create_password_remove_variables(&user_details, &deployment_settings, app_logo_content);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -375,7 +427,8 @@ pub async fn send_waitlist_signup_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let variables = create_waitlist_signup_variables(&user_details, &deployment_settings);
+    let app_logo_content = get_app_logo_content(&deployment_settings).await;
+    let variables = create_waitlist_signup_variables(&user_details, &deployment_settings, app_logo_content);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -416,11 +469,8 @@ pub async fn send_organization_membership_invite_impl(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment_settings
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
+    let app_logo = get_app_logo_content(&deployment_settings).await;
+
 
     variables.insert("app_name".to_string(), app_name);
     variables.insert("app_logo".to_string(), app_logo);
@@ -490,11 +540,13 @@ pub async fn send_deployment_invite_impl(
         .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
 
+    let app_logo_content = get_app_logo_content(&deployment_settings).await;
     let mut variables = create_workspace_invite_variables(
         &inviter_details,
         &deployment_settings,
         &workspace_name,
         Some(&invitation),
+        app_logo_content,
     );
 
     let frontend_host = deployment_settings.frontend_host.clone();
@@ -563,8 +615,9 @@ pub async fn send_waitlist_approval_impl(
         has_backup_codes: false,
     };
 
+    let app_logo_content = get_app_logo_content(&deployment_settings).await;
     let mut variables =
-        create_waitlist_invite_variables(&user_details, &deployment_settings, Some(&invitation));
+        create_waitlist_invite_variables(&user_details, &deployment_settings, Some(&invitation), app_logo_content);
 
     let frontend_host = deployment_settings.frontend_host.clone();
     let action_url = format!(
@@ -617,6 +670,7 @@ async fn fetch_workspace_name(app_state: &AppState, workspace_id: u64) -> Result
 fn create_verification_variables(
     deployment: &DeploymentWithSettings,
     verification_code: &str,
+    app_logo_content: String,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
@@ -625,14 +679,9 @@ fn create_verification_variables(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("app_logo".to_string(), app_logo_content);
     variables.insert("code".to_string(), verification_code.to_string());
     variables.insert("code.expires_in_minutes".to_string(), "15".to_string());
 
@@ -643,6 +692,7 @@ fn create_password_reset_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     reset_code: &str,
+    app_logo_content: String,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
@@ -651,14 +701,9 @@ fn create_password_reset_variables(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("app_logo".to_string(), app_logo_content);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("reset_code".to_string(), reset_code.to_string());
     variables.insert(
@@ -673,6 +718,7 @@ fn create_signin_notification_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     signin: Option<&SignIn>,
+    app_logo_content: String,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
@@ -681,14 +727,9 @@ fn create_signin_notification_variables(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("app_logo".to_string(), app_logo_content);
     variables.insert("first_name".to_string(), user.first_name.clone());
 
     if let Some(signin) = signin {
@@ -735,6 +776,7 @@ fn create_email_change_variables(
     deployment: &DeploymentWithSettings,
     old_email: &str,
     new_email: &str,
+    app_logo_content: String,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
@@ -743,14 +785,9 @@ fn create_email_change_variables(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("app_logo".to_string(), app_logo_content);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("old_email".to_string(), old_email.to_string());
     variables.insert("new_email".to_string(), new_email.to_string());
@@ -761,6 +798,7 @@ fn create_email_change_variables(
 fn create_password_change_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
+    app_logo_content: String,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
@@ -769,14 +807,9 @@ fn create_password_change_variables(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("app_logo".to_string(), app_logo_content);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert(
         "change_time".to_string(),
@@ -791,6 +824,7 @@ fn create_password_change_variables(
 fn create_password_remove_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
+    app_logo_content: String,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
@@ -799,14 +833,9 @@ fn create_password_remove_variables(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("app_logo".to_string(), app_logo_content);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert(
         "removal_time".to_string(),
@@ -821,6 +850,7 @@ fn create_password_remove_variables(
 fn create_waitlist_signup_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
+    app_logo_content: String,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
@@ -829,14 +859,9 @@ fn create_waitlist_signup_variables(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("app_logo".to_string(), app_logo_content);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("last_name".to_string(), user.last_name.clone());
     variables.insert(
@@ -851,6 +876,7 @@ fn create_waitlist_invite_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     invitation: Option<&DeploymentInvitation>,
+    app_logo_content: String,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
@@ -859,14 +885,9 @@ fn create_waitlist_invite_variables(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("app_logo".to_string(), app_logo_content);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("last_name".to_string(), user.last_name.clone());
     variables.insert(
@@ -896,6 +917,7 @@ fn create_workspace_invite_variables(
     deployment: &DeploymentWithSettings,
     workspace_name: &str,
     invitation: Option<&DeploymentInvitation>,
+    app_logo_content: String,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
@@ -904,14 +926,9 @@ fn create_workspace_invite_variables(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("app_logo".to_string(), app_logo_content);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("workspace_name".to_string(), workspace_name.to_string());
     variables.insert(
@@ -938,6 +955,7 @@ fn create_magic_link_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     magic_link: &str,
+    app_logo_content: String,
 ) -> HashMap<String, String> {
     let mut variables = HashMap::new();
 
@@ -946,14 +964,9 @@ fn create_magic_link_variables(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.logo_image_url.clone())
-        .unwrap_or_else(|| "".to_string());
 
     variables.insert("app_name".to_string(), app_name);
-    variables.insert("app_logo".to_string(), app_logo);
+    variables.insert("app_logo".to_string(), app_logo_content);
     variables.insert("first_name".to_string(), user.first_name.clone());
     variables.insert("action_url".to_string(), magic_link.to_string());
     variables.insert("link.expires_in_minutes".to_string(), "15".to_string());
