@@ -512,10 +512,8 @@ impl Command for UpdateDeploymentJwtTemplateCommand {
             query_builder.push_bind(allowed_clock_skew);
         }
 
-        if let Some(custom_signing_key) = &self.template.custom_signing_key {
-            query_builder.push(", custom_signing_key = ");
-            query_builder.push_bind(serde_json::to_value(custom_signing_key).unwrap());
-        }
+        query_builder.push(", custom_signing_key = ");
+        query_builder.push_bind(serde_json::to_value(&self.template.custom_signing_key).unwrap());
 
         if let Some(template) = &self.template.template {
             query_builder.push(", template = ");
