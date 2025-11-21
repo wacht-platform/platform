@@ -621,6 +621,8 @@ pub async fn send_waitlist_approval_impl(
         social_connections: vec![],
         has_password: false,
         has_backup_codes: false,
+        availability: "available".to_string(),
+        last_password_reset_at: None,
     };
 
     let app_logo_content = get_app_logo_content(&deployment_settings).await;

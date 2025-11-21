@@ -293,6 +293,7 @@ impl Query for GetUserDetailsQuery {
                 u.id, u.created_at, u.updated_at,
                 u.first_name, u.last_name, u.username, u.profile_picture_url,
                 u.schema_version, u.disabled, u.second_factor_policy,
+                u.availability, u.last_password_reset_at,
                 u.active_organization_membership_id, u.active_workspace_membership_id,
                 u.primary_email_address_id, u.primary_phone_number_id,
                 u.deployment_id, u.public_metadata, u.private_metadata,
@@ -418,6 +419,8 @@ impl Query for GetUserDetailsQuery {
                 &user_row.second_factor_policy,
             )
             .unwrap_or(models::SecondFactorPolicy::Optional),
+            availability: user_row.availability,
+            last_password_reset_at: user_row.last_password_reset_at,
             active_organization_membership_id: user_row.active_organization_membership_id,
             active_workspace_membership_id: user_row.active_workspace_membership_id,
             deployment_id: user_row.deployment_id,

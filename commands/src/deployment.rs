@@ -12,7 +12,7 @@ use dto::json::{
     PartialDeploymentJwtTemplate,
 };
 use models::{DeploymentJwtTemplate, DeploymentSocialConnection, SocialConnectionProvider};
-use queries::{Query, user::GetUserDetailsQuery};
+
 
 use chrono::{Duration, Utc};
 use redis::AsyncCommands;
@@ -975,147 +975,142 @@ impl Command for GenerateTokenCommand {
         .await?
         .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
 
-        let session_data = sqlx::query!(
+        let handlebars_context = sqlx::query!(
             r#"
-            SELECT
-                s.id as session_id,
-                si.user_id,
-                si.active_organization_membership_id,
-                si.active_workspace_membership_id
+            SELECT json_build_object(
+                'id', asi.id::text,
+                'session_id', asi.session_id::text,
+                'user_id', asi.user_id::text,
+                'active_organization_membership_id', asi.active_organization_membership_id::text,
+                'active_workspace_membership_id', asi.active_workspace_membership_id::text,
+                'expires_at', to_char(asi.expires_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                'last_active_at', to_char(asi.last_active_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                'ip_address', asi.ip_address,
+                'browser', asi.browser,
+                'device', asi.device,
+                'city', asi.city,
+                'region', asi.region,
+                'region_code', asi.region_code,
+                'country', asi.country,
+                'country_code', asi.country_code,
+                'user', (
+                    SELECT json_build_object(
+                        'id', u.id::text,
+                        'created_at', to_char(u.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                        'updated_at', to_char(u.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                        'first_name', u.first_name,
+                        'last_name', u.last_name,
+                        'username', u.username,
+                        'has_profile_picture', u.has_profile_picture,
+                        'profile_picture_url', u.profile_picture_url,
+                        'availability', u.availability,
+                        'last_password_reset_at', to_char(u.last_password_reset_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                        'schema_version', u.schema_version,
+                        'disabled', u.disabled,
+                        'primary_email_address_id', u.primary_email_address_id::text,
+                        'primary_phone_number_id', u.primary_phone_number_id::text,
+                        'second_factor_policy', u.second_factor_policy,
+                        'active_organization_membership_id', u.active_organization_membership_id::text,
+                        'active_workspace_membership_id', u.active_workspace_membership_id::text,
+                        'public_metadata', u.public_metadata,
+                        'backup_codes_generated', u.backup_codes_generated,
+                        'primary_email_address', CASE
+                            WHEN u.primary_email_address_id IS NOT NULL
+                            THEN (SELECT json_build_object(
+                                'id', pe.id::text,
+                                'email_address', pe.email_address,
+                                'is_primary', pe.is_primary,
+                                'verified', pe.verified,
+                                'verified_at', to_char(pe.verified_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                                'verification_strategy', pe.verification_strategy
+                            ) FROM user_email_addresses pe WHERE pe.id = u.primary_email_address_id)
+                            ELSE NULL
+                        END,
+                        'primary_phone_number', CASE
+                            WHEN u.primary_phone_number_id IS NOT NULL
+                            THEN (SELECT json_build_object(
+                                'id', pp.id::text,
+                                'phone_number', pp.phone_number,
+                                'verified', pp.verified,
+                                'verified_at', to_char(pp.verified_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+                            ) FROM user_phone_numbers pp WHERE pp.id = u.primary_phone_number_id)
+                            ELSE NULL
+                        END
+                    )
+                    FROM users u WHERE u.id = asi.user_id
+                ),
+                'active_organization_membership', CASE WHEN asi.active_organization_membership_id IS NOT NULL THEN (
+                    SELECT json_build_object(
+                        'id', om.id::text,
+                        'organization_id', om.organization_id::text,
+                        'user_id', om.user_id::text,
+                        'public_metadata', om.public_metadata,
+                        'organization', (
+                            SELECT json_build_object(
+                                'id', o.id::text,
+                                'name', o.name,
+                                'image_url', o.image_url,
+                                'description', o.description,
+                                'member_count', o.member_count,
+                                'public_metadata', o.public_metadata
+                            ) FROM organizations o WHERE o.id = om.organization_id
+                        ),
+                        'roles', COALESCE((
+                            SELECT json_agg(
+                                json_build_object(
+                                    'id', or_role.id::text,
+                                    'name', or_role.name,
+                                    'permissions', or_role.permissions
+                                )
+                            )
+                            FROM organization_membership_roles omr
+                            JOIN organization_roles or_role ON omr.organization_role_id = or_role.id
+                            WHERE omr.organization_membership_id = om.id
+                        ), '[]'::json)
+                    )
+                    FROM organization_memberships om WHERE om.id = asi.active_organization_membership_id
+                ) ELSE NULL END,
+                'active_workspace_membership', CASE WHEN asi.active_workspace_membership_id IS NOT NULL THEN (
+                    SELECT json_build_object(
+                        'id', wm.id::text,
+                        'workspace_id', wm.workspace_id::text,
+                        'user_id', wm.user_id::text,
+                        'public_metadata', wm.public_metadata,
+                        'workspace', (
+                            SELECT json_build_object(
+                                'id', w.id::text,
+                                'name', w.name,
+                                'image_url', w.image_url,
+                                'description', w.description,
+                                'member_count', w.member_count,
+                                'public_metadata', w.public_metadata
+                            ) FROM workspaces w WHERE w.id = wm.workspace_id
+                        ),
+                        'roles', COALESCE((
+                            SELECT json_agg(
+                                json_build_object(
+                                    'id', wr_role.id::text,
+                                    'name', wr_role.name,
+                                    'permissions', wr_role.permissions
+                                )
+                            )
+                            FROM workspace_membership_roles wmr
+                            JOIN workspace_roles wr_role ON wmr.workspace_role_id = wr_role.id
+                            WHERE wmr.workspace_membership_id = wm.id
+                        ), '[]'::json)
+                    )
+                    FROM workspace_memberships wm WHERE wm.id = asi.active_workspace_membership_id
+                ) ELSE NULL END
+            ) as "context!"
             FROM sessions s
-            JOIN signins si ON s.active_signin_id = si.id
+            JOIN signins asi ON s.active_signin_id = asi.id
             WHERE s.id = $1
             "#,
             self.session_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_one(&app_state.db_pool)
         .await?
-        .ok_or_else(|| AppError::NotFound("Session not found or no active sign-in".to_string()))?;
-
-        let user_id = session_data
-            .user_id
-            .ok_or_else(|| AppError::BadRequest("Sign-in has no associated user".to_string()))?;
-
-        let user_details = GetUserDetailsQuery::new(self.deployment_id, user_id)
-            .execute(app_state)
-            .await?;
-
-        let (organization_id, organization_permissions, organization_details, organization_roles) =
-            if let Some(org_membership_id) = session_data.active_organization_membership_id {
-                let org_data = sqlx::query!(
-                r#"
-                SELECT
-                    om.organization_id,
-                    o.name as organization_name,
-                    array(
-                        SELECT DISTINCT perm
-                        FROM organization_memberships om2
-                        JOIN organization_membership_roles omr2 ON om2.id = omr2.organization_membership_id
-                        JOIN organization_roles orr2 ON omr2.organization_role_id = orr2.id
-                        CROSS JOIN LATERAL unnest(orr2.permissions) AS perm
-                        WHERE om2.id = $1
-                    ) as permissions,
-                    array(
-                        SELECT json_build_object(
-                            'id', orr.id::text,
-                            'name', orr.name,
-                            'permissions', orr.permissions
-                        )
-                        FROM organization_membership_roles omr
-                        JOIN organization_roles orr ON omr.organization_role_id = orr.id
-                        WHERE omr.organization_membership_id = $1
-                    ) as roles
-                FROM organization_memberships om
-                JOIN organizations o ON om.organization_id = o.id
-                WHERE om.id = $1
-                "#,
-                org_membership_id
-            )
-            .fetch_optional(&app_state.db_pool)
-            .await?;
-
-                if let Some(data) = org_data {
-                    let details = json!({
-                        "id": data.organization_id.to_string(),
-                        "name": data.organization_name,
-                    });
-                    let roles: Vec<Value> = data
-                        .roles
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter_map(|r| serde_json::from_value(r).ok())
-                        .collect();
-                    (
-                        Some(data.organization_id),
-                        data.permissions,
-                        Some(details),
-                        roles,
-                    )
-                } else {
-                    (None, None, None, vec![])
-                }
-            } else {
-                (None, None, None, vec![])
-            };
-
-        // Get workspace permissions and roles if active workspace membership exists
-        let (workspace_id, workspace_permissions, workspace_details, workspace_roles) =
-            if let Some(workspace_membership_id) = session_data.active_workspace_membership_id {
-                let workspace_data = sqlx::query!(
-                r#"
-                SELECT
-                    wm.workspace_id,
-                    w.name as workspace_name,
-                    array(
-                        SELECT DISTINCT perm
-                        FROM workspace_memberships wm2
-                        JOIN workspace_membership_roles wmr2 ON wm2.id = wmr2.workspace_membership_id
-                        JOIN workspace_roles wr2 ON wmr2.workspace_role_id = wr2.id
-                        CROSS JOIN LATERAL unnest(wr2.permissions) AS perm
-                        WHERE wm2.id = $1
-                    ) as permissions,
-                    array(
-                        SELECT json_build_object(
-                            'id', wr.id::text,
-                            'name', wr.name,
-                            'permissions', wr.permissions
-                        )
-                        FROM workspace_membership_roles wmr
-                        JOIN workspace_roles wr ON wmr.workspace_role_id = wr.id
-                        WHERE wmr.workspace_membership_id = $1
-                    ) as roles
-                FROM workspace_memberships wm
-                JOIN workspaces w ON wm.workspace_id = w.id
-                WHERE wm.id = $1
-                "#,
-                workspace_membership_id
-            )
-            .fetch_optional(&app_state.db_pool)
-            .await?;
-
-                if let Some(data) = workspace_data {
-                    let details = json!({
-                        "id": data.workspace_id.to_string(),
-                        "name": data.workspace_name,
-                    });
-                    let roles: Vec<Value> = data
-                        .roles
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter_map(|r| serde_json::from_value(r).ok())
-                        .collect();
-                    (
-                        Some(data.workspace_id),
-                        data.permissions,
-                        Some(details),
-                        roles,
-                    )
-                } else {
-                    (None, None, None, vec![])
-                }
-            } else {
-                (None, None, None, vec![])
-            };
+        .context;
 
         let template = if self.template_name == "default" {
             DeploymentJwtTemplate {
@@ -1167,48 +1162,7 @@ impl Command for GenerateTokenCommand {
                 template.token_lifetime as i64 + template.allowed_clock_skew as i64,
             );
 
-        let handlebars_context = json!({
-            "id": self.session_id.to_string(),
-            "user_id": user_id,
-            "active_organization_membership_id": session_data.active_organization_membership_id,
-            "active_workspace_membership_id": session_data.active_workspace_membership_id,
-            "user": {
-                "id": user_details.id,
-                "created_at": user_details.created_at.to_rfc3339(),
-                "updated_at": user_details.updated_at.to_rfc3339(),
-                "first_name": user_details.first_name,
-                "last_name": user_details.last_name,
-                "username": user_details.username,
-                "profile_picture_url": user_details.profile_picture_url,
-                "disabled": user_details.disabled,
-                "primary_email_address": user_details.primary_email_address,
-                "primary_phone_number": user_details.primary_phone_number,
-                "public_metadata": user_details.public_metadata,
-                "private_metadata": user_details.private_metadata,
-                "email_addresses": user_details.email_addresses,
-                "phone_numbers": user_details.phone_numbers,
-            },
-            "active_organization_membership": if session_data.active_organization_membership_id.is_some() {
-                json!({
-                    "id": session_data.active_organization_membership_id,
-                    "organization_id": organization_id,
-                    "organization": organization_details,
-                    "roles": organization_roles,
-                })
-            } else {
-                json!(null)
-            },
-            "active_workspace_membership": if session_data.active_workspace_membership_id.is_some() {
-                json!({
-                    "id": session_data.active_workspace_membership_id,
-                    "workspace_id": workspace_id,
-                    "workspace": workspace_details,
-                    "roles": workspace_roles,
-                })
-            } else {
-                json!(null)
-            },
-        });
+
 
         let mut custom_claims = HashMap::new();
 
@@ -1228,9 +1182,24 @@ impl Command for GenerateTokenCommand {
                 if let Some(obj) = parsed.as_object() {
                     custom_claims = obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 }
-            } else if template.template.is_object() {
-                if let Some(obj) = template.template.as_object() {
-                    custom_claims = obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            } else if let Some(obj) = template.template.as_object() {
+                for (k, v) in obj {
+                    if let Some(s) = v.as_str() {
+                        let rendered = app_state
+                            .handlebars
+                            .render_template(s, &handlebars_context)
+                            .map_err(|e| {
+                                AppError::BadRequest(format!("Failed to render template value for key {}: {}", k, e))
+                            })?;
+                        // Try to parse as JSON if it looks like JSON, otherwise keep as string
+                        if let Ok(parsed_val) = serde_json::from_str::<Value>(&rendered) {
+                             custom_claims.insert(k.clone(), parsed_val);
+                        } else {
+                             custom_claims.insert(k.clone(), json!(rendered));
+                        }
+                    } else {
+                        custom_claims.insert(k.clone(), v.clone());
+                    }
                 }
             }
         }
@@ -1240,22 +1209,59 @@ impl Command for GenerateTokenCommand {
             "iss".to_string(),
             json!(format!("https://{}", deployment.backend_host)),
         );
-        all_claims.insert("sub".to_string(), json!(user_id.to_string()));
+        let user_id = handlebars_context["user_id"]
+            .as_str()
+            .ok_or_else(|| AppError::Internal("User ID missing from context".to_string()))?;
+
+        all_claims.insert("sub".to_string(), json!(user_id));
         all_claims.insert("iat".to_string(), json!(now.timestamp()));
         all_claims.insert("exp".to_string(), json!(exp.timestamp()));
         all_claims.insert("session_id".to_string(), json!(self.session_id.to_string()));
 
-        if let Some(org_id) = organization_id {
-            all_claims.insert("organization".to_string(), json!(org_id.to_string()));
+        if let Some(org) = handlebars_context["active_organization_membership"].as_object() {
+            if let Some(org_id) = org["organization_id"].as_str() {
+                all_claims.insert("organization".to_string(), json!(org_id));
+            }
+            
+            if let Some(roles) = org["roles"].as_array() {
+                let mut perms = Vec::new();
+                for role in roles {
+                    if let Some(role_perms) = role["permissions"].as_array() {
+                        for p in role_perms {
+                            if let Some(p_str) = p.as_str() {
+                                perms.push(p_str.to_string());
+                            }
+                        }
+                    }
+                }
+                // Deduplicate permissions
+                perms.sort();
+                perms.dedup();
+                all_claims.insert("organization_permissions".to_string(), json!(perms));
+            }
         }
-        if let Some(perms) = organization_permissions {
-            all_claims.insert("organization_permissions".to_string(), json!(perms));
-        }
-        if let Some(ws_id) = workspace_id {
-            all_claims.insert("workspace".to_string(), json!(ws_id.to_string()));
-        }
-        if let Some(perms) = workspace_permissions {
-            all_claims.insert("workspace_permissions".to_string(), json!(perms));
+
+        if let Some(ws) = handlebars_context["active_workspace_membership"].as_object() {
+            if let Some(ws_id) = ws["workspace_id"].as_str() {
+                all_claims.insert("workspace".to_string(), json!(ws_id));
+            }
+
+            if let Some(roles) = ws["roles"].as_array() {
+                let mut perms = Vec::new();
+                for role in roles {
+                    if let Some(role_perms) = role["permissions"].as_array() {
+                        for p in role_perms {
+                            if let Some(p_str) = p.as_str() {
+                                perms.push(p_str.to_string());
+                            }
+                        }
+                    }
+                }
+                // Deduplicate permissions
+                perms.sort();
+                perms.dedup();
+                all_claims.insert("workspace_permissions".to_string(), json!(perms));
+            }
         }
 
         let (algorithm, signing_key) = if let Some(custom_key) = &template.custom_signing_key {

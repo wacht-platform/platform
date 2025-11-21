@@ -19,6 +19,8 @@ pub struct UserDetails {
     pub schema_version: SchemaVersion,
     pub disabled: bool,
     pub second_factor_policy: SecondFactorPolicy,
+    pub availability: String,
+    pub last_password_reset_at: Option<DateTime<Utc>>,
     pub active_organization_membership_id: Option<i64>,
     pub active_workspace_membership_id: Option<i64>,
     pub deployment_id: i64,
