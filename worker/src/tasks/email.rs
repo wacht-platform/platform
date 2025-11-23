@@ -43,6 +43,10 @@ async fn get_app_logo_content(deployment: &DeploymentWithSettings) -> String {
                     .to_string();
 
                 if let Ok(bytes) = response.bytes().await {
+                    let mime_type = infer::get(&bytes)
+                        .map(|kind| kind.mime_type())
+                        .unwrap_or(&mime_type);
+
                     let base64_str = BASE64_STANDARD.encode(&bytes);
                     return format!("data:{};base64,{}", mime_type, base64_str);
                 }

@@ -27,3 +27,5 @@ reqwest = { version = "0.12", features = ["json"] }
 redis = "0.29.5"
 rust_decimal = "1.36"
 base64 = "0.22"
+infer = "0.15"
+
