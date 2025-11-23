@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                UPDATE billing_invoices SET\n                    amount_due_cents = $1,\n                    amount_paid_cents = $2,\n                    currency = $3,\n                    status = $4,\n                    invoice_pdf_url = $5,\n                    hosted_invoice_url = $6,\n                    invoice_number = $7,\n                    due_date = $8,\n                    paid_at = $9,\n                    period_start = $10,\n                    period_end = $11,\n                    metadata = $12,\n                    updated_at = NOW()\n                WHERE id = $13\n                RETURNING\n                    id, created_at, updated_at, billing_account_id, subscription_id,\n                    chargebee_invoice_id, chargebee_customer_id, amount_due_cents,\n                    amount_paid_cents, currency, status as \"status: InvoiceStatus\",\n                    invoice_pdf_url, hosted_invoice_url, invoice_number, due_date,\n                    paid_at, period_start, period_end, attempt_count, next_payment_attempt,\n                    metadata\n                ",
+  "query": "\n                INSERT INTO billing_invoices (\n                    id, billing_account_id, subscription_id, provider_payment_id,\n                    provider_customer_id, amount_due_cents, amount_paid_cents,\n                    currency, status, invoice_pdf_url, hosted_invoice_url,\n                    invoice_number, due_date, paid_at, period_start, period_end,\n                    attempt_count, metadata, created_at, updated_at\n                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 0, $17, NOW(), NOW())\n                RETURNING\n                    id, created_at, updated_at, billing_account_id, subscription_id,\n                    provider_payment_id, provider_customer_id, amount_due_cents,\n                    amount_paid_cents, currency, status as \"status: InvoiceStatus\",\n                    invoice_pdf_url, hosted_invoice_url, invoice_number, due_date,\n                    paid_at, period_start, period_end, attempt_count, next_payment_attempt,\n                    metadata\n                ",
   "describe": {
     "columns": [
       {
@@ -30,12 +30,12 @@
       },
       {
         "ordinal": 5,
-        "name": "chargebee_invoice_id",
+        "name": "provider_payment_id",
         "type_info": "Text"
       },
       {
         "ordinal": 6,
-        "name": "chargebee_customer_id",
+        "name": "provider_customer_id",
         "type_info": "Text"
       },
       {
@@ -113,6 +113,11 @@
       "Left": [
         "Int8",
         "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8",
         "Text",
         "Text",
         "Text",
@@ -122,8 +127,7 @@
         "Timestamptz",
         "Timestamptz",
         "Timestamptz",
-        "Jsonb",
-        "Int8"
+        "Jsonb"
       ]
     },
     "nullable": [
@@ -150,5 +154,5 @@
       false
     ]
   },
-  "hash": "eeae09085788e1acc139861d1ecb740c0120350e4a0ecb790336ecbb12805722"
+  "hash": "b0526e3e2eeae16664958faaea6f186f9e80009e41072d151a00debb7cb9b150"
 }

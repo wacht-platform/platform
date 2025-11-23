@@ -4,391 +4,449 @@ use axum::{
 };
 use commands::{
     Command,
-    billing::{UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand, UpsertInvoiceCommand, UpdateBillingAccountFromWebhookCommand},
+    billing::{UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand, UpsertInvoiceCommand},
 };
-use common::chargebee::{ChargebeeClient, UpdateSubscriptionParams};
+use common::dodo::DodoClient;
 use common::state::AppState;
-use tracing::{error, info};
+use queries::{Query, billing::GetBillingAccountByProviderCustomerIdQuery};
+use tracing::{error, info, warn};
 
-// Webhook endpoint for Chargebee events
-pub async fn handle_chargebee_webhook(
+pub async fn handle_dodo_webhook(
     State(app_state): State<AppState>,
     headers: HeaderMap,
     body: String,
 ) -> Result<StatusCode, StatusCode> {
-    // Verify webhook signature
-    let signature = headers
-        .get("X-Chargebee-Signature")
+    let webhook_id = headers
+        .get("webhook-id")
         .and_then(|v| v.to_str().ok())
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+        .unwrap_or("");
 
-    let chargebee = ChargebeeClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let webhook_signature = headers
+        .get("webhook-signature")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
 
-    if !chargebee.verify_webhook_signature(&body, signature) {
+    let webhook_timestamp = headers
+        .get("webhook-timestamp")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if !dodo.verify_webhook(
+        &body,
+        webhook_signature,
+        webhook_timestamp,
+    ) {
+        warn!("Invalid webhook signature for webhook_id: {}", webhook_id);
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // Parse webhook event
     let event: serde_json::Value =
         serde_json::from_str(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let event_type = event["event_type"].as_str().unwrap_or("");
+    let event_type = event["type"].as_str().unwrap_or("");
+    let data = &event["data"];
 
-    // Handle subscription events
+    info!("Received Dodo webhook: {} (id: {})", event_type, webhook_id);
+
     match event_type {
-        "customer_created" | "customer_changed" => {
-            if let Some(customer) = event["content"]["customer"].as_object() {
-                let customer_id = customer["id"].as_str().unwrap_or("");
-
-                if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
-                    // Extract customer details
-                    let first_name = customer["first_name"].as_str().map(|s| s.to_string());
-                    let last_name = customer["last_name"].as_str().map(|s| s.to_string());
-                    let company = customer["company"].as_str().map(|s| s.to_string());
-                    let email = customer["email"].as_str().map(|s| s.to_string());
-                    let phone = customer["phone"].as_str().map(|s| s.to_string());
-
-                    // Construct full name from first and last name
-                    let legal_name = match (first_name, last_name) {
-                        (Some(first), Some(last)) => Some(format!("{} {}", first, last)),
-                        (Some(first), None) => Some(first),
-                        (None, Some(last)) => Some(last),
-                        (None, None) => company.clone(),
-                    };
-
-                    // Extract billing address
-                    let billing_address = customer["billing_address"].as_object();
-                    let address_line1 = billing_address
-                        .and_then(|addr| addr["line1"].as_str())
-                        .map(|s| s.to_string());
-                    let address_line2 = billing_address
-                        .and_then(|addr| addr["line2"].as_str())
-                        .map(|s| s.to_string());
-                    let city = billing_address
-                        .and_then(|addr| addr["city"].as_str())
-                        .map(|s| s.to_string());
-                    let state = billing_address
-                        .and_then(|addr| addr["state"].as_str())
-                        .map(|s| s.to_string());
-                    let postal_code = billing_address
-                        .and_then(|addr| addr["zip"].as_str())
-                        .map(|s| s.to_string());
-                    let country = billing_address
-                        .and_then(|addr| addr["country"].as_str())
-                        .map(|s| s.to_string());
-
-                    // Update billing account with customer data from Chargebee
-                    UpdateBillingAccountFromWebhookCommand {
-                        owner_id: customer_id.to_string(),
-                        legal_name,
-                        billing_email: email,
-                        billing_phone: phone,
-                        company,
-                        address_line1,
-                        address_line2,
-                        city,
-                        state,
-                        postal_code,
-                        country,
-                    }
-                    .execute(&app_state)
-                    .await
-                    .map_err(|e| {
-                        error!("Failed to update billing account from webhook: {}", e);
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    })?;
-
-                    info!("Updated billing account {} from Chargebee customer data", customer_id);
-                }
-            }
+        "subscription.active" => {
+            handle_subscription_active(&app_state, data).await?;
         }
-        "subscription_created" => {
-            if let Some(subscription) = event["content"]["subscription"].as_object() {
-                if let Some(customer) = event["content"]["customer"].as_object() {
-                    let customer_id = customer["id"].as_str().unwrap_or("");
-                    let subscription_id = subscription["id"].as_str().unwrap_or("");
-
-                    // Use customer_id directly as owner_id (format: "user_123" or "org_123")
-                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
-                        let status = subscription["status"].as_str().unwrap_or("active");
-
-                        // Save subscription to database
-                        UpsertSubscriptionCommand {
-                            owner_id: customer_id.to_string(),
-                            chargebee_customer_id: customer_id.to_string(),
-                            chargebee_subscription_id: subscription_id.to_string(),
-                            status: status.to_string(),
-                        }
-                        .execute(&app_state)
-                        .await
-                        .map_err(|e| {
-                            error!("Failed to upsert subscription: {}", e);
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        })?;
-
-                        // Update billing account status to active
-                        UpdateBillingAccountStatusCommand {
-                            owner_id: customer_id.to_string(),
-                            status: "active".to_string(),
-                        }
-                        .execute(&app_state)
-                        .await
-                        .map_err(|e| {
-                            error!("Failed to update billing account status: {}", e);
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        })?;
-
-                        // Set threshold billing for the subscription
-                        // $50 threshold for Growth plan, $500 for Enterprise
-                        let plan_id = subscription["plan_id"].as_str().unwrap_or("");
-                        let threshold = match plan_id {
-                            "growth_monthly" => Some(5000),     // $50 in cents
-                            "enterprise_custom" => Some(50000), // $500 in cents
-                            _ => None,
-                        };
-
-                        if let Some(threshold_amount) = threshold {
-                            info!(
-                                "Setting threshold billing of ${} for subscription {}",
-                                threshold_amount / 100,
-                                subscription_id
-                            );
-
-                            if let Err(e) = chargebee
-                                .update_subscription(
-                                    subscription_id,
-                                    UpdateSubscriptionParams {
-                                        plan_id: None,
-                                        plan_quantity: None,
-                                        trial_end: None,
-                                        invoice_immediately: Some(true),
-                                        invoice_immediately_min_amount: Some(threshold_amount),
-                                    },
-                                )
-                                .await
-                            {
-                                error!("Failed to set threshold billing: {}", e);
-                                // Don't fail the webhook, just log the error
-                            }
-                        }
-                    }
-                }
-            }
+        "subscription.renewed" => {
+            handle_subscription_renewed(&app_state, data).await?;
         }
-        "subscription_changed" | "subscription_cancelled" | "subscription_reactivated" => {
-            if let Some(subscription) = event["content"]["subscription"].as_object() {
-                if let Some(customer) = event["content"]["customer"].as_object() {
-                    let customer_id = customer["id"].as_str().unwrap_or("");
-
-                    // Use customer_id directly as owner_id (format: "user_123" or "org_123")
-                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
-                        let status = subscription["status"].as_str().unwrap_or("active");
-
-                        UpsertSubscriptionCommand {
-                            owner_id: customer_id.to_string(),
-                            chargebee_customer_id: customer_id.to_string(),
-                            chargebee_subscription_id: subscription["id"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string(),
-                            status: status.to_string(),
-                        }
-                        .execute(&app_state)
-                        .await
-                        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-                        // Update billing account status based on subscription status
-                        let account_status = match status {
-                            "cancelled" | "non_renewing" => "cancelled",
-                            "active" | "future" => "active",
-                            _ => "active",
-                        };
-
-                        UpdateBillingAccountStatusCommand {
-                            owner_id: customer_id.to_string(),
-                            status: account_status.to_string(),
-                        }
-                        .execute(&app_state)
-                        .await
-                        .map_err(|e| {
-                            error!("Failed to update billing account status: {}", e);
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        })?;
-                    }
-                }
-            }
+        "subscription.plan_changed" => {
+            handle_subscription_plan_changed(&app_state, data).await?;
         }
-        "payment_failed" => {
-            if let Some(invoice) = event["content"]["invoice"].as_object() {
-                if let Some(customer) = event["content"]["customer"].as_object() {
-                    let customer_id = customer["id"].as_str().unwrap_or("");
-
-                    // Use customer_id directly as owner_id (format: "user_123" or "org_123")
-                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
-                        // Update billing account status to failed
-                        UpdateBillingAccountStatusCommand {
-                            owner_id: customer_id.to_string(),
-                            status: "failed".to_string(),
-                        }
-                        .execute(&app_state)
-                        .await
-                        .map_err(|e| {
-                            error!(
-                                "Failed to update billing account status on payment failure: {}",
-                                e
-                            );
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        })?;
-
-                        info!(
-                            "Payment failed for customer {}, invoice {}",
-                            customer_id,
-                            invoice["id"].as_str().unwrap_or("")
-                        );
-                    }
-                }
-            }
+        "subscription.cancelled" => {
+            handle_subscription_cancelled(&app_state, data).await?;
         }
-        "payment_succeeded" => {
-            if let Some(invoice) = event["content"]["invoice"].as_object() {
-                if let Some(customer) = event["content"]["customer"].as_object() {
-                    let customer_id = customer["id"].as_str().unwrap_or("");
-
-                    // Use customer_id directly as owner_id (format: "user_123" or "org_123")
-                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
-                        // Update billing account status back to active after successful payment
-                        UpdateBillingAccountStatusCommand {
-                            owner_id: customer_id.to_string(),
-                            status: "active".to_string(),
-                        }
-                        .execute(&app_state)
-                        .await
-                        .map_err(|e| {
-                            error!(
-                                "Failed to update billing account status on payment success: {}",
-                                e
-                            );
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        })?;
-
-                        info!(
-                            "Payment succeeded for customer {}, invoice {}",
-                            customer_id,
-                            invoice["id"].as_str().unwrap_or("")
-                        );
-                    }
-                }
-            }
+        "subscription.on_hold" => {
+            handle_subscription_on_hold(&app_state, data).await?;
         }
-        "invoice_generated" | "invoice_updated" => {
-            if let Some(invoice) = event["content"]["invoice"].as_object() {
-                if let Some(customer) = event["content"]["customer"].as_object() {
-                    let customer_id = customer["id"].as_str().unwrap_or("");
-
-                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
-                        let invoice_id = invoice["id"].as_str().unwrap_or("").to_string();
-                        let amount_due = invoice["amount_due"].as_i64().unwrap_or(0);
-                        let amount_paid = invoice["amount_paid"].as_i64().unwrap_or(0);
-                        let currency = invoice["currency_code"].as_str().unwrap_or("USD").to_string();
-                        let status = invoice["status"].as_str().unwrap_or("open").to_string();
-                        let invoice_number = invoice["number"].as_str().map(|s| s.to_string());
-                        let invoice_pdf_url = invoice["invoice_pdf"].as_str().map(|s| s.to_string());
-                        let hosted_invoice_url = invoice["hosted_invoice_url"].as_str().map(|s| s.to_string());
-
-                        // Parse dates
-                        let due_date = invoice["due_date"].as_i64().map(|ts| {
-                            chrono::DateTime::from_timestamp(ts, 0).unwrap()
-                        });
-                        let paid_at = invoice["paid_at"].as_i64().map(|ts| {
-                            chrono::DateTime::from_timestamp(ts, 0).unwrap()
-                        });
-                        let period_start = invoice["line_items"].as_array()
-                            .and_then(|items| items.get(0))
-                            .and_then(|item| item["date_from"].as_i64())
-                            .map(|ts| chrono::DateTime::from_timestamp(ts, 0).unwrap());
-                        let period_end = invoice["line_items"].as_array()
-                            .and_then(|items| items.get(0))
-                            .and_then(|item| item["date_to"].as_i64())
-                            .map(|ts| chrono::DateTime::from_timestamp(ts, 0).unwrap());
-
-                        UpsertInvoiceCommand {
-                            owner_id: customer_id.to_string(),
-                            chargebee_invoice_id: invoice_id,
-                            chargebee_customer_id: customer_id.to_string(),
-                            amount_due_cents: amount_due,
-                            amount_paid_cents: amount_paid,
-                            currency,
-                            status,
-                            invoice_pdf_url,
-                            hosted_invoice_url,
-                            invoice_number,
-                            due_date,
-                            paid_at,
-                            period_start,
-                            period_end,
-                            metadata: serde_json::json!({}),
-                        }
-                        .execute(&app_state)
-                        .await
-                        .map_err(|e| {
-                            error!("Failed to upsert invoice: {}", e);
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        })?;
-
-                        info!("Invoice {} saved for customer {}", invoice["id"].as_str().unwrap_or(""), customer_id);
-                    }
-                }
-            }
+        "subscription.failed" => {
+            handle_subscription_failed(&app_state, data).await?;
         }
-        "subscription_paused" | "subscription_resumed" => {
-            if let Some(subscription) = event["content"]["subscription"].as_object() {
-                if let Some(customer) = event["content"]["customer"].as_object() {
-                    let customer_id = customer["id"].as_str().unwrap_or("");
-
-                    // Use customer_id directly as owner_id (format: "user_123" or "org_123")
-                    if customer_id.starts_with("user_") || customer_id.starts_with("org_") {
-                        let status = subscription["status"].as_str().unwrap_or("active");
-
-                        // Update subscription status
-                        UpsertSubscriptionCommand {
-                            owner_id: customer_id.to_string(),
-                            chargebee_customer_id: customer_id.to_string(),
-                            chargebee_subscription_id: subscription["id"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string(),
-                            status: status.to_string(),
-                        }
-                        .execute(&app_state)
-                        .await
-                        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-                        // Update billing account status
-                        let account_status = match status {
-                            "paused" => "paused",
-                            "active" => "active",
-                            _ => status,
-                        };
-
-                        UpdateBillingAccountStatusCommand {
-                            owner_id: customer_id.to_string(),
-                            status: account_status.to_string(),
-                        }
-                        .execute(&app_state)
-                        .await
-                        .map_err(|e| {
-                            error!("Failed to update billing account status: {}", e);
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        })?;
-                    }
-                }
-            }
+        "subscription.expired" => {
+            handle_subscription_expired(&app_state, data).await?;
+        }
+        "payment.succeeded" => {
+            handle_payment_succeeded(&app_state, data).await?;
+        }
+        "payment.failed" => {
+            handle_payment_failed(&app_state, data).await?;
         }
         _ => {
-            // Log unhandled events for monitoring
             info!("Received unhandled webhook event: {}", event_type);
         }
     }
 
     Ok(StatusCode::OK)
+}
+
+fn get_customer_id(data: &serde_json::Value) -> &str {
+    data["customer"]["customer_id"].as_str().unwrap_or("")
+}
+
+async fn handle_subscription_active(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
+    let customer_id = get_customer_id(data);
+    let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+    let status = data["status"].as_str().unwrap_or("active");
+
+    if customer_id.is_empty() || subscription_id.is_empty() {
+        warn!("Missing customer_id or subscription_id in subscription webhook");
+        return Ok(());
+    }
+
+    let owner_id = extract_owner_id(app_state, customer_id, data).await;
+
+    if owner_id.is_empty() {
+        warn!("Could not determine owner_id from customer_id: {}", customer_id);
+        return Ok(());
+    }
+
+    UpsertSubscriptionCommand {
+        owner_id: owner_id.clone(),
+        provider_customer_id: customer_id.to_string(),
+        provider_subscription_id: subscription_id.to_string(),
+        status: status.to_string(),
+    }
+    .execute(app_state)
+    .await
+    .map_err(|e| {
+        error!("Failed to upsert subscription: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    UpdateBillingAccountStatusCommand {
+        owner_id: owner_id.clone(),
+        status: "active".to_string(),
+    }
+    .execute(app_state)
+    .await
+    .map_err(|e| {
+        error!("Failed to update billing account status: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    info!("Subscription {} activated for owner {}", subscription_id, owner_id);
+
+    Ok(())
+}
+
+async fn handle_subscription_renewed(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
+    let customer_id = get_customer_id(data);
+    let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+
+    let owner_id = extract_owner_id(app_state, customer_id, data).await;
+
+    if !owner_id.is_empty() {
+        UpsertSubscriptionCommand {
+            owner_id: owner_id.clone(),
+            provider_customer_id: customer_id.to_string(),
+            provider_subscription_id: subscription_id.to_string(),
+            status: "active".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update subscription on renewal: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        info!("Subscription {} renewed for owner {}", subscription_id, owner_id);
+    }
+
+    Ok(())
+}
+
+async fn handle_subscription_plan_changed(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
+    let customer_id = get_customer_id(data);
+    let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+    let new_product_id = data["product_id"].as_str().unwrap_or("");
+
+    let owner_id = extract_owner_id(app_state, customer_id, data).await;
+
+    info!(
+        "Plan changed for subscription {} to product {} (owner: {})",
+        subscription_id, new_product_id, owner_id
+    );
+
+    Ok(())
+}
+
+async fn handle_subscription_cancelled(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
+    let customer_id = get_customer_id(data);
+    let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+
+    let owner_id = extract_owner_id(app_state, customer_id, data).await;
+
+    if !owner_id.is_empty() {
+        UpsertSubscriptionCommand {
+            owner_id: owner_id.clone(),
+            provider_customer_id: customer_id.to_string(),
+            provider_subscription_id: subscription_id.to_string(),
+            status: "cancelled".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update subscription status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        UpdateBillingAccountStatusCommand {
+            owner_id: owner_id.clone(),
+            status: "cancelled".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update billing account status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        info!("Subscription {} cancelled for owner {}", subscription_id, owner_id);
+    }
+
+    Ok(())
+}
+
+async fn handle_subscription_on_hold(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
+    let customer_id = get_customer_id(data);
+    let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+
+    let owner_id = extract_owner_id(app_state, customer_id, data).await;
+
+    if !owner_id.is_empty() {
+        UpsertSubscriptionCommand {
+            owner_id: owner_id.clone(),
+            provider_customer_id: customer_id.to_string(),
+            provider_subscription_id: subscription_id.to_string(),
+            status: "on_hold".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update subscription status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        UpdateBillingAccountStatusCommand {
+            owner_id: owner_id.clone(),
+            status: "paused".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update billing account status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        info!("Subscription {} on hold for owner {}", subscription_id, owner_id);
+    }
+
+    Ok(())
+}
+
+async fn handle_subscription_failed(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
+    let customer_id = get_customer_id(data);
+    let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+
+    let owner_id = extract_owner_id(app_state, customer_id, data).await;
+
+    if !owner_id.is_empty() {
+        UpsertSubscriptionCommand {
+            owner_id: owner_id.clone(),
+            provider_customer_id: customer_id.to_string(),
+            provider_subscription_id: subscription_id.to_string(),
+            status: "failed".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update subscription status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        UpdateBillingAccountStatusCommand {
+            owner_id: owner_id.clone(),
+            status: "failed".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update billing account status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        info!("Subscription {} failed for owner {}", subscription_id, owner_id);
+    }
+
+    Ok(())
+}
+
+async fn handle_subscription_expired(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
+    let customer_id = get_customer_id(data);
+    let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+
+    let owner_id = extract_owner_id(app_state, customer_id, data).await;
+
+    if !owner_id.is_empty() {
+        UpsertSubscriptionCommand {
+            owner_id: owner_id.clone(),
+            provider_customer_id: customer_id.to_string(),
+            provider_subscription_id: subscription_id.to_string(),
+            status: "expired".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update subscription status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        UpdateBillingAccountStatusCommand {
+            owner_id: owner_id.clone(),
+            status: "expired".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update billing account status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        info!("Subscription {} expired for owner {}", subscription_id, owner_id);
+    }
+
+    Ok(())
+}
+
+async fn handle_payment_succeeded(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
+    let customer_id = get_customer_id(data);
+    let payment_id = data["payment_id"].as_str().unwrap_or("");
+    let amount = data["total_amount"].as_i64().unwrap_or(0);
+    let currency = data["currency"].as_str().unwrap_or("USD");
+
+    let owner_id = extract_owner_id(app_state, customer_id, data).await;
+
+    if !owner_id.is_empty() {
+        UpdateBillingAccountStatusCommand {
+            owner_id: owner_id.clone(),
+            status: "active".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update billing account status on payment success: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        UpsertInvoiceCommand {
+            owner_id: owner_id.clone(),
+            provider_payment_id: payment_id.to_string(),
+            provider_customer_id: customer_id.to_string(),
+            amount_due_cents: amount,
+            amount_paid_cents: amount,
+            currency: currency.to_string(),
+            status: "paid".to_string(),
+            invoice_pdf_url: data["payment_link"].as_str().map(|s| s.to_string()),
+            hosted_invoice_url: None,
+            invoice_number: None,
+            due_date: None,
+            paid_at: Some(chrono::Utc::now()),
+            period_start: None,
+            period_end: None,
+            metadata: serde_json::json!({}),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to upsert invoice: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        info!("Payment {} succeeded for owner {}", payment_id, owner_id);
+    }
+
+    Ok(())
+}
+
+async fn handle_payment_failed(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
+    let customer_id = get_customer_id(data);
+    let payment_id = data["payment_id"].as_str().unwrap_or("");
+
+    let owner_id = extract_owner_id(app_state, customer_id, data).await;
+
+    if !owner_id.is_empty() {
+        UpdateBillingAccountStatusCommand {
+            owner_id: owner_id.clone(),
+            status: "payment_failed".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update billing account status on payment failure: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        info!("Payment {} failed for owner {}", payment_id, owner_id);
+    }
+
+    Ok(())
+}
+
+async fn extract_owner_id(app_state: &AppState, customer_id: &str, data: &serde_json::Value) -> String {
+    if let Some(metadata) = data["metadata"].as_object() {
+        if let Some(owner_id) = metadata.get("owner_id").and_then(|v| v.as_str()) {
+            return owner_id.to_string();
+        }
+    }
+
+    if let Some(customer_metadata) = data["customer"]["metadata"].as_object() {
+        if let Some(owner_id) = customer_metadata.get("owner_id").and_then(|v| v.as_str()) {
+            return owner_id.to_string();
+        }
+    }
+
+    if !customer_id.is_empty() {
+        if let Ok(Some(owner_id)) = GetBillingAccountByProviderCustomerIdQuery::new(customer_id)
+            .execute(app_state)
+            .await
+        {
+            return owner_id;
+        }
+    }
+
+    String::new()
 }

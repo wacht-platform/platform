@@ -36,7 +36,7 @@ impl Query for GetBillingAccountQuery {
         let row = sqlx::query!(
             r#"
             SELECT
-                id, owner_id, owner_type, legal_name, tax_id, billing_email, billing_phone,
+                id, owner_id, owner_type, provider_customer_id, legal_name, tax_id, billing_email, billing_phone,
                 address_line1, address_line2, city, state, postal_code, country, status,
                 payment_method_status, currency, locale, created_at, updated_at
             FROM billing_accounts WHERE owner_id = $1
@@ -50,6 +50,7 @@ impl Query for GetBillingAccountQuery {
             id: r.id,
             owner_id: r.owner_id,
             owner_type: r.owner_type,
+            provider_customer_id: r.provider_customer_id,
             legal_name: r.legal_name,
             tax_id: r.tax_id,
             billing_email: r.billing_email,
@@ -90,39 +91,37 @@ impl Query for GetBillingAccountQuery {
     }
 }
 
-pub struct GetSubscriptionByChargebeeIdQuery {
-    chargebee_subscription_id: String,
+pub struct GetSubscriptionByProviderIdQuery {
+    provider_subscription_id: String,
 }
 
-impl GetSubscriptionByChargebeeIdQuery {
-    pub fn new(chargebee_subscription_id: String) -> Self {
+impl GetSubscriptionByProviderIdQuery {
+    pub fn new(provider_subscription_id: String) -> Self {
         Self {
-            chargebee_subscription_id,
+            provider_subscription_id,
         }
     }
 }
 
-impl Query for GetSubscriptionByChargebeeIdQuery {
+impl Query for GetSubscriptionByProviderIdQuery {
     type Output = Option<BillingAccountWithSubscription>;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        // First get the subscription
         let subscription = sqlx::query_as!(
             Subscription,
             r#"
-            SELECT * FROM subscriptions WHERE chargebee_subscription_id = $1
+            SELECT * FROM subscriptions WHERE provider_subscription_id = $1
             "#,
-            &self.chargebee_subscription_id
+            &self.provider_subscription_id
         )
         .fetch_optional(&state.db_pool)
         .await?;
 
         if let Some(sub) = subscription {
-            // Then get the billing account
             let row = sqlx::query!(
                 r#"
                 SELECT
-                    id, owner_id, owner_type, legal_name, tax_id, billing_email, billing_phone,
+                    id, owner_id, owner_type, provider_customer_id, legal_name, tax_id, billing_email, billing_phone,
                     address_line1, address_line2, city, state, postal_code, country, status,
                     payment_method_status, currency, locale, created_at, updated_at
                 FROM billing_accounts WHERE id = $1
@@ -136,6 +135,7 @@ impl Query for GetSubscriptionByChargebeeIdQuery {
                 id: row.id,
                 owner_id: row.owner_id,
                 owner_type: row.owner_type,
+                provider_customer_id: row.provider_customer_id,
                 legal_name: row.legal_name,
                 tax_id: row.tax_id,
                 billing_email: row.billing_email,
@@ -161,6 +161,48 @@ impl Query for GetSubscriptionByChargebeeIdQuery {
         } else {
             Ok(None)
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProviderSubscriptionInfo {
+    pub provider_customer_id: String,
+    pub provider_subscription_id: String,
+}
+
+pub struct GetDeploymentProviderSubscriptionQuery {
+    deployment_id: i64,
+}
+
+impl GetDeploymentProviderSubscriptionQuery {
+    pub fn new(deployment_id: i64) -> Self {
+        Self { deployment_id }
+    }
+}
+
+impl Query for GetDeploymentProviderSubscriptionQuery {
+    type Output = Option<ProviderSubscriptionInfo>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT s.provider_customer_id, s.provider_subscription_id
+            FROM deployments d
+            JOIN projects p ON d.project_id = p.id
+            JOIN billing_accounts ba ON p.billing_account_id = ba.id
+            JOIN subscriptions s ON s.billing_account_id = ba.id
+            WHERE d.id = $1 AND s.status = 'active'
+            LIMIT 1
+            "#,
+            self.deployment_id
+        )
+        .fetch_optional(&state.db_pool)
+        .await?;
+
+        Ok(row.map(|r| ProviderSubscriptionInfo {
+            provider_customer_id: r.provider_customer_id,
+            provider_subscription_id: r.provider_subscription_id,
+        }))
     }
 }
 
@@ -212,5 +254,114 @@ impl Query for GetDeploymentUsageQuery {
             .collect();
 
         Ok(snapshots)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DodoProduct {
+    pub id: i32,
+    pub plan_name: String,
+    pub product_id: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub base_price_cents: i32,
+    pub is_active: bool,
+}
+
+pub struct GetDodoProductQuery {
+    plan_name: String,
+}
+
+impl GetDodoProductQuery {
+    pub fn new(plan_name: impl Into<String>) -> Self {
+        Self {
+            plan_name: plan_name.into(),
+        }
+    }
+}
+
+impl Query for GetDodoProductQuery {
+    type Output = Option<DodoProduct>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT id, plan_name, product_id, display_name, description, base_price_cents, is_active
+            FROM dodo_products
+            WHERE plan_name = $1 AND is_active = true
+            "#,
+            &self.plan_name
+        )
+        .fetch_optional(&state.db_pool)
+        .await?;
+
+        Ok(row.map(|r| DodoProduct {
+            id: r.id,
+            plan_name: r.plan_name,
+            product_id: r.product_id,
+            display_name: r.display_name,
+            description: r.description,
+            base_price_cents: r.base_price_cents,
+            is_active: r.is_active,
+        }))
+    }
+}
+
+pub struct GetBillingAccountByProviderCustomerIdQuery {
+    provider_customer_id: String,
+}
+
+impl GetBillingAccountByProviderCustomerIdQuery {
+    pub fn new(provider_customer_id: impl Into<String>) -> Self {
+        Self {
+            provider_customer_id: provider_customer_id.into(),
+        }
+    }
+}
+
+impl Query for GetBillingAccountByProviderCustomerIdQuery {
+    type Output = Option<String>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        let owner_id = sqlx::query_scalar!(
+            "SELECT owner_id FROM billing_accounts WHERE provider_customer_id = $1",
+            &self.provider_customer_id
+        )
+        .fetch_optional(&state.db_pool)
+        .await?;
+
+        Ok(owner_id)
+    }
+}
+
+pub struct GetAllDodoProductsQuery;
+
+impl Query for GetAllDodoProductsQuery {
+    type Output = Vec<DodoProduct>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT id, plan_name, product_id, display_name, description, base_price_cents, is_active
+            FROM dodo_products
+            WHERE is_active = true
+            ORDER BY base_price_cents ASC
+            "#
+        )
+        .fetch_all(&state.db_pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| DodoProduct {
+                id: r.id,
+                plan_name: r.plan_name,
+                product_id: r.product_id,
+                display_name: r.display_name,
+                description: r.description,
+                base_price_cents: r.base_price_cents,
+                is_active: r.is_active,
+            })
+            .collect())
     }
 }

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT s.provider_subscription_id\n            FROM deployments d\n            JOIN projects p ON d.project_id = p.id\n            JOIN billing_accounts ba ON p.billing_account_id = ba.id\n            LEFT JOIN subscriptions s ON ba.id = s.billing_account_id\n            WHERE d.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider_subscription_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8338d34c3e59b5daaaf9443d5b7a540855ac5312abc69c9afea59785419073bd"
+}

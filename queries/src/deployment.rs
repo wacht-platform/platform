@@ -911,7 +911,7 @@ impl Query for GetDeploymentChargebeeSubscriptionIdQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let row = sqlx::query!(
             r#"
-            SELECT s.chargebee_subscription_id
+            SELECT s.provider_subscription_id
             FROM deployments d
             JOIN projects p ON d.project_id = p.id
             JOIN billing_accounts ba ON p.billing_account_id = ba.id
@@ -923,6 +923,6 @@ impl Query for GetDeploymentChargebeeSubscriptionIdQuery {
         .fetch_optional(&app_state.db_pool)
         .await?;
 
-        Ok(row.and_then(|r| Some(r.chargebee_subscription_id)))
+        Ok(row.and_then(|r| Some(r.provider_subscription_id)))
     }
 }

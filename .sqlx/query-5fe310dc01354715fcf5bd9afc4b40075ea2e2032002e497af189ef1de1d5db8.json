@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                UPDATE subscriptions SET\n                    chargebee_customer_id = $1,\n                    chargebee_subscription_id = $2,\n                    status = $3,\n                    updated_at = NOW()\n                WHERE id = $4\n                RETURNING *\n                ",
+  "query": "\n                UPDATE subscriptions SET\n                    provider_customer_id = $1,\n                    provider_subscription_id = $2,\n                    status = $3,\n                    updated_at = NOW()\n                WHERE id = $4\n                RETURNING *\n                ",
   "describe": {
     "columns": [
       {
@@ -10,12 +10,12 @@
       },
       {
         "ordinal": 1,
-        "name": "chargebee_customer_id",
+        "name": "provider_customer_id",
         "type_info": "Varchar"
       },
       {
         "ordinal": 2,
-        "name": "chargebee_subscription_id",
+        "name": "provider_subscription_id",
         "type_info": "Varchar"
       },
       {
@@ -57,5 +57,5 @@
       false
     ]
   },
-  "hash": "eb2a4437f6390fa4975e44ec9849d84386d9c57bf9baef53c7d0e8e95e5da10e"
+  "hash": "5fe310dc01354715fcf5bd9afc4b40075ea2e2032002e497af189ef1de1d5db8"
 }

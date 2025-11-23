@@ -92,14 +92,6 @@ impl Command for AddWorkspaceMemberCommand {
             .await?;
         }
 
-        // Update workspace member count
-        sqlx::query!(
-            "UPDATE workspaces SET member_count = member_count + 1 WHERE id = $1",
-            self.workspace_id
-        )
-        .execute(&app_state.db_pool)
-        .await?;
-
         // Fetch and return the full member details
         let member = sqlx::query!(
             r#"
@@ -292,13 +284,6 @@ impl Command for RemoveWorkspaceMemberCommand {
         sqlx::query!(
             "DELETE FROM workspace_memberships WHERE id = $1",
             self.membership_id
-        )
-        .execute(&app_state.db_pool)
-        .await?;
-
-        sqlx::query!(
-            "UPDATE workspaces SET member_count = member_count - 1 WHERE id = $1",
-            self.workspace_id
         )
         .execute(&app_state.db_pool)
         .await?;

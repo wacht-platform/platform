@@ -68,8 +68,8 @@ pub struct BillingInvoice {
     pub billing_account_id: i64,
     #[serde(with = "crate::utils::serde::i64_as_string_option")]
     pub subscription_id: Option<i64>,
-    pub chargebee_invoice_id: String,
-    pub chargebee_customer_id: String,
+    pub provider_payment_id: String,
+    pub provider_customer_id: String,
     pub amount_due_cents: i64,
     pub amount_paid_cents: i64,
     pub currency: String,

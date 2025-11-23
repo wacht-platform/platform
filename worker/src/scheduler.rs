@@ -26,7 +26,7 @@ impl JobScheduler {
                 interval.tick().await;
                 info!("Running billing sync job...");
 
-                match jobs::billing_sync::sync_redis_to_postgres_and_chargebee(&billing_state).await {
+                match jobs::billing_sync::sync_redis_to_postgres_and_dodo(&billing_state).await {
                     Ok(result) => {
                         info!("Billing sync completed: {}", result);
                     }

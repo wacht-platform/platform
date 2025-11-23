@@ -19,8 +19,8 @@ fn health_routes() -> Router<AppState> {
 
 fn public_webhook_routes() -> Router<AppState> {
     Router::new().route(
-        "/webhooks/chargebee",
-        post(api::billing_webhook::handle_chargebee_webhook),
+        "/webhooks/dodo",
+        post(api::billing_webhook::handle_dodo_webhook),
     )
 }
 
@@ -278,6 +278,7 @@ fn billing_routes() -> Router<AppState> {
             "/billing",
             get(api::billing::get_billing_account).patch(api::billing::update_billing_account),
         )
+        .route("/billing/plans", get(api::billing::get_plans))
         .route("/billing/checkout", post(api::billing::create_checkout))
         .route("/billing/portal", get(api::billing::get_portal_url))
         .route("/billing/cancel", post(api::billing::cancel_subscription))

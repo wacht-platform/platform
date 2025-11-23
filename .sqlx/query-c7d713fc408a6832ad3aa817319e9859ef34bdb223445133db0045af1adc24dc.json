@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM billing_invoices WHERE chargebee_invoice_id = $1",
+  "query": "SELECT id FROM billing_invoices WHERE provider_payment_id = $1",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       false
     ]
   },
-  "hash": "e5004227c0dff800969c63b8c65a6c1227291a2e26dd11f1da1253c2999f2ee5"
+  "hash": "c7d713fc408a6832ad3aa817319e9859ef34bdb223445133db0045af1adc24dc"
 }

@@ -5,18 +5,17 @@ use tracing::error;
 
 use commands::{
     Command,
-    billing::{
-        CreateBillingAccountCommand, UpdateBillingAccountCommand, UpdateSubscriptionStatusCommand,
-    },
+    billing::{CreateBillingAccountCommand, UpdateBillingAccountCommand, SetProviderCustomerIdCommand},
 };
-use common::chargebee::{
-    ChargebeeClient, CreateCheckoutParams, CustomerInfo, SubscriptionItem, UpdateSubscriptionParams,
+use common::dodo::{
+    DodoClient, CreateCheckoutParams, ProductCartItem, CheckoutCustomer, ChangePlanParams,
+    CreateCustomerParams,
 };
 use common::state::AppState;
 use models::billing::BillingAccountWithSubscription;
 use queries::{
     Query as QueryTrait,
-    billing::{GetBillingAccountQuery, GetDeploymentUsageQuery, UsageSnapshot},
+    billing::{GetBillingAccountQuery, GetDeploymentUsageQuery, GetDodoProductQuery, GetAllDodoProductsQuery, DodoProduct, UsageSnapshot},
 };
 use wacht::middleware::RequireAuth;
 
@@ -24,15 +23,19 @@ use crate::middleware::RequireDeployment;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCheckoutRequest {
-    pub plan_id: String,
+    pub plan_name: String,
     pub legal_name: String,
     pub billing_email: String,
     pub billing_phone: Option<String>,
     pub tax_id: Option<String>,
+    pub return_url: String,
 }
 
-// Return the raw hosted page object for Chargebee.js
-pub type CheckoutResponse = serde_json::Value;
+#[derive(Debug, Serialize)]
+pub struct CheckoutResponse {
+    pub checkout_id: String,
+    pub checkout_url: String,
+}
 
 #[derive(Debug, Serialize)]
 pub struct PortalResponse {
@@ -105,8 +108,42 @@ pub async fn create_checkout(
         }
     }
 
-    if existing.is_none() {
-        let command = CreateBillingAccountCommand {
+    let dodo = DodoClient::new().map_err(|e| {
+        error!("Failed to create Dodo client: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let provider_customer_id = if let Some(ref account) = existing {
+        if let Some(ref cid) = account.billing_account.provider_customer_id {
+            cid.clone()
+        } else {
+            let customer = dodo
+                .create_customer(CreateCustomerParams {
+                    email: req.billing_email.clone(),
+                    name: Some(req.legal_name.clone()),
+                    metadata: Some(serde_json::json!({ "owner_id": owner_id })),
+                })
+                .await
+                .map_err(|e| {
+                    error!("Failed to create Dodo customer: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            SetProviderCustomerIdCommand {
+                owner_id: owner_id.clone(),
+                provider_customer_id: customer.customer_id.clone(),
+            }
+            .execute(&state)
+            .await
+            .map_err(|e| {
+                error!("Failed to save provider customer id: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+            customer.customer_id
+        }
+    } else {
+        CreateBillingAccountCommand {
             owner_id: owner_id.clone(),
             owner_type: owner_type.to_string(),
             legal_name: req.legal_name.clone(),
@@ -119,43 +156,71 @@ pub async fn create_checkout(
             state: None,
             postal_code: None,
             country: None,
-        };
-
-        command.execute(&state).await.map_err(|e| {
+        }
+        .execute(&state)
+        .await
+        .map_err(|e| {
             error!("Failed to create billing account: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    }
 
-    let chargebee = ChargebeeClient::new().map_err(|e| {
-        error!("Failed to create Chargebee client: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+        let customer = dodo
+            .create_customer(CreateCustomerParams {
+                email: req.billing_email.clone(),
+                name: Some(req.legal_name.clone()),
+                metadata: Some(serde_json::json!({ "owner_id": owner_id })),
+            })
+            .await
+            .map_err(|e| {
+                error!("Failed to create Dodo customer: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
-    let item_price_id = if req.plan_id.ends_with("_inr") {
-        req.plan_id.clone()
-    } else {
-        format!("{}_inr", req.plan_id)
+        SetProviderCustomerIdCommand {
+            owner_id: owner_id.clone(),
+            provider_customer_id: customer.customer_id.clone(),
+        }
+        .execute(&state)
+        .await
+        .map_err(|e| {
+            error!("Failed to save provider customer id: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        customer.customer_id
     };
+
+    let product = GetDodoProductQuery::new(&req.plan_name)
+        .execute(&state)
+        .await
+        .map_err(|e| {
+            error!("Failed to get product: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            error!("Product not found for plan: {}", req.plan_name);
+            StatusCode::NOT_FOUND
+        })?;
 
     let params = CreateCheckoutParams {
-        subscription_items: vec![SubscriptionItem {
-            item_price_id,
-            quantity: Some(1),
+        product_cart: vec![ProductCartItem {
+            product_id: product.product_id,
+            quantity: 1,
         }],
-        customer: CustomerInfo {
-            id: Some(owner_id.clone()),
-            email: req.billing_email,
-            first_name: Some(req.legal_name),
-            last_name: None,
-            company: None,
-            phone: req.billing_phone.clone(),
-            billing_address: None,
-        },
-        currency_code: Some("INR".to_string()),
+        return_url: req.return_url,
+        customer: Some(CheckoutCustomer {
+            customer_id: Some(provider_customer_id),
+            email: Some(req.billing_email),
+            name: Some(req.legal_name),
+        }),
+        metadata: Some(serde_json::json!({
+            "owner_id": owner_id,
+            "owner_type": owner_type,
+        })),
+        discount_code: None,
     };
 
-    let response = chargebee
+    let checkout = dodo
         .create_checkout_session(params)
         .await
         .map_err(|e| {
@@ -163,11 +228,10 @@ pub async fn create_checkout(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let hosted_page = response
-        .get("hosted_page")
-        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(hosted_page.clone()))
+    Ok(Json(CheckoutResponse {
+        checkout_id: checkout.checkout_id,
+        checkout_url: checkout.checkout_url,
+    }))
 }
 
 pub async fn update_billing_account(
@@ -225,21 +289,24 @@ pub async fn get_portal_url(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let subscription = account.subscription.ok_or(StatusCode::NOT_FOUND)?;
+    let provider_customer_id = account
+        .billing_account
+        .provider_customer_id
+        .ok_or(StatusCode::NOT_FOUND)?;
 
-    let chargebee = ChargebeeClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let response = chargebee
-        .create_portal_session(&subscription.chargebee_customer_id)
+    let portal = dodo
+        .create_portal_session(&provider_customer_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            error!("Failed to create portal session: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
-    let url = response["portal_session"]["access_url"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-
-    Ok(Json(PortalResponse { portal_url: url }))
+    Ok(Json(PortalResponse {
+        portal_url: portal.url,
+    }))
 }
 
 pub async fn cancel_subscription(
@@ -260,29 +327,22 @@ pub async fn cancel_subscription(
 
     let subscription = account.subscription.ok_or(StatusCode::NOT_FOUND)?;
 
-    let chargebee = ChargebeeClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    chargebee
-        .cancel_subscription(&subscription.chargebee_subscription_id, true)
+    dodo.cancel_subscription(&subscription.provider_subscription_id, "cancelled")
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    UpdateSubscriptionStatusCommand {
-        subscription_id: subscription.id,
-        status: "cancelled".to_string(),
-    }
-    .execute(&state)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            error!("Failed to cancel subscription: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(StatusCode::OK)
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RecordUsageRequest {
-    pub item_price_id: String,
+    pub event_name: String,
     pub quantity: i64,
-    pub usage_date: Option<i64>, // Unix timestamp
 }
 
 pub async fn record_usage(
@@ -296,7 +356,7 @@ pub async fn record_usage(
         format!("user_{}", auth.user_id)
     };
 
-    let account = GetBillingAccountQuery::new(owner_id)
+    let account = GetBillingAccountQuery::new(owner_id.clone())
         .execute(&state)
         .await
         .map_err(|e| {
@@ -305,30 +365,34 @@ pub async fn record_usage(
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let subscription = account.subscription.ok_or(StatusCode::NOT_FOUND)?;
+    let provider_customer_id = account
+        .billing_account
+        .provider_customer_id
+        .ok_or(StatusCode::NOT_FOUND)?;
 
-    let chargebee = ChargebeeClient::new().map_err(|e| {
-        error!("Failed to create Chargebee client: {}", e);
+    let dodo = DodoClient::new().map_err(|e| {
+        error!("Failed to create Dodo client: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    chargebee
-        .record_usage(
-            &subscription.chargebee_subscription_id,
-            &req.item_price_id,
-            req.quantity,
-            req.usage_date,
-        )
-        .await
-        .map_err(|e| {
-            error!("Failed to record usage: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let event_id = format!("{}_{}", owner_id, chrono::Utc::now().timestamp_millis());
+
+    dodo.ingest_usage_events(
+        &provider_customer_id,
+        &req.event_name,
+        req.quantity,
+        &event_id,
+        false,
+    )
+    .await
+    .map_err(|e| {
+        error!("Failed to record usage: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(StatusCode::OK)
 }
 
-// Invoice endpoints
 pub async fn list_invoices(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
@@ -345,45 +409,43 @@ pub async fn list_invoices(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if let Some(account) = account {
-        if let Some(subscription) = account.subscription {
-            let chargebee =
-                ChargebeeClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if let Some(provider_customer_id) = account.billing_account.provider_customer_id {
+            let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-            let invoices = chargebee
-                .list_invoices(Some(&subscription.chargebee_subscription_id), Some(20))
+            let payments = dodo
+                .list_payments(Some(&provider_customer_id))
                 .await
                 .map_err(|e| {
-                    error!("Failed to list invoices: {}", e);
+                    error!("Failed to list payments: {}", e);
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
 
-            return Ok(Json(invoices));
+            return Ok(Json(serde_json::json!({ "items": payments.items })));
         }
     }
 
-    // Return empty list if no subscription
-    Ok(Json(serde_json::json!({ "list": [] })))
+    Ok(Json(serde_json::json!({ "items": [] })))
 }
 
 pub async fn get_invoice(
     State(_state): State<AppState>,
     RequireAuth(_auth): RequireAuth,
-    axum::extract::Path(invoice_id): axum::extract::Path<String>,
+    axum::extract::Path(payment_id): axum::extract::Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let chargebee = ChargebeeClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let invoice = chargebee.get_invoice(&invoice_id).await.map_err(|e| {
+    let invoice = dodo.get_payment_invoice(&payment_id).await.map_err(|e| {
         error!("Failed to get invoice: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    Ok(Json(invoice))
+    Ok(Json(serde_json::to_value(invoice).unwrap_or_default()))
 }
 
-// Plan change endpoint
 #[derive(Debug, Deserialize)]
 pub struct ChangePlanRequest {
-    pub new_plan_id: String,
+    pub plan_name: String,
+    pub proration_mode: Option<String>,
 }
 
 pub async fn change_plan(
@@ -405,30 +467,50 @@ pub async fn change_plan(
 
     let subscription = account.subscription.ok_or(StatusCode::NOT_FOUND)?;
 
-    let chargebee = ChargebeeClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Update subscription with new plan
-    chargebee
-        .update_subscription(
-            &subscription.chargebee_subscription_id,
-            UpdateSubscriptionParams {
-                plan_id: Some(req.new_plan_id),
-                plan_quantity: None,
-                trial_end: None,
-                invoice_immediately: Some(false), // Prorate at end of billing cycle
-                invoice_immediately_min_amount: None,
-            },
-        )
+    let product = GetDodoProductQuery::new(&req.plan_name)
+        .execute(&state)
         .await
         .map_err(|e| {
-            error!("Failed to change plan: {}", e);
+            error!("Failed to get product: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            error!("Product not found for plan: {}", req.plan_name);
+            StatusCode::NOT_FOUND
         })?;
+
+    let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    dodo.change_plan(
+        &subscription.provider_subscription_id,
+        ChangePlanParams {
+            product_id: product.product_id,
+            proration_mode: req.proration_mode,
+        },
+    )
+    .await
+    .map_err(|e| {
+        error!("Failed to change plan: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(StatusCode::OK)
 }
 
-// Get current usage metrics from billing_usage_snapshots
+pub async fn get_plans(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<DodoProduct>>, StatusCode> {
+    let products = GetAllDodoProductsQuery
+        .execute(&state)
+        .await
+        .map_err(|e| {
+            error!("Failed to get plans: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(Json(products))
+}
+
 #[derive(Debug, Serialize)]
 pub struct UsageResponse {
     pub snapshots: Vec<UsageSnapshot>,
@@ -439,7 +521,6 @@ pub async fn get_current_usage(
     State(state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> Result<Json<UsageResponse>, StatusCode> {
-    // Get current billing period
     let now = chrono::Utc::now();
     let billing_period = chrono::NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;

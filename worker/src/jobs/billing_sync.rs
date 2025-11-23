@@ -6,24 +6,34 @@ use commands::{
         CompleteBillingSyncRunCommand, CreateBillingSyncRunCommand, UpsertUsageSnapshotCommand,
     },
 };
-use common::{ChargebeeClient, state::AppState};
-use queries::{GetDeploymentChargebeeSubscriptionIdQuery, Query};
+use common::{DodoClient, state::AppState};
+use queries::{GetDeploymentProviderSubscriptionQuery, Query};
 use redis::AsyncCommands as _;
-use rust_decimal::Decimal;
-use std::str::FromStr;
 use tracing::{error, info, warn};
 
-/// Job: Sync Redis → PostgreSQL + Chargebee
-///
-/// This job runs periodically (every 5-15 minutes) to:
-/// 1. Get dirty deployments from Redis (those with billing activity)
-/// 2. Calculate deltas (current usage - last synced usage)
-/// 3. Sync deltas to PostgreSQL and Chargebee
-/// 4. Clear dirty deployments
-///
-/// Uses Lua script for atomic read-calculate-update operations
-pub async fn sync_redis_to_postgres_and_chargebee(app_state: &AppState) -> Result<String> {
-    info!("[BILLING SYNC] Starting Redis → PostgreSQL + Chargebee sync");
+struct MetricConfig {
+    event_name: &'static str,
+    use_last_aggregation: bool,
+}
+
+fn get_metric_config(metric: &str) -> MetricConfig {
+    match metric {
+        "mau" => MetricConfig { event_name: "users.active", use_last_aggregation: true },
+        "mao" => MetricConfig { event_name: "organizations.active", use_last_aggregation: true },
+        "maw" => MetricConfig { event_name: "workspaces.active", use_last_aggregation: true },
+        "storage" => MetricConfig { event_name: "storage.used", use_last_aggregation: false },
+        "emails" => MetricConfig { event_name: "emails.sent", use_last_aggregation: false },
+        "webhooks" => MetricConfig { event_name: "webhooks.sent", use_last_aggregation: false },
+        "ai_tokens_input" => MetricConfig { event_name: "ai.tokens.input", use_last_aggregation: false },
+        "ai_tokens_output" => MetricConfig { event_name: "ai.tokens.output", use_last_aggregation: false },
+        "sms_cost" => MetricConfig { event_name: "sms.cost", use_last_aggregation: false },
+        "api_checks" => MetricConfig { event_name: "api.checks", use_last_aggregation: false },
+        _ => MetricConfig { event_name: "unknown", use_last_aggregation: false },
+    }
+}
+
+pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<String> {
+    info!("[BILLING SYNC] Starting Redis → PostgreSQL + Dodo sync");
 
     let mut redis = app_state
         .redis_client
@@ -61,11 +71,11 @@ pub async fn sync_redis_to_postgres_and_chargebee(app_state: &AppState) -> Resul
 
     let mut total_units_synced = 0i64;
 
-    let chargebee_client = match ChargebeeClient::new() {
+    let dodo_client = match DodoClient::new() {
         Ok(client) => Some(client),
         Err(e) => {
             warn!(
-                "[BILLING SYNC] Chargebee not configured or failed to initialize: {}. Syncing to PostgreSQL only.",
+                "[BILLING SYNC] Dodo not configured: {}. Syncing to PostgreSQL only.",
                 e
             );
             None
@@ -80,7 +90,7 @@ pub async fn sync_redis_to_postgres_and_chargebee(app_state: &AppState) -> Resul
             &billing_period,
             billing_period_date,
             &dirty_key,
-            chargebee_client.as_ref(),
+            dodo_client.as_ref(),
         )
         .await
         {
@@ -121,7 +131,6 @@ pub async fn sync_redis_to_postgres_and_chargebee(app_state: &AppState) -> Resul
     ))
 }
 
-/// Sync a single deployment
 async fn sync_deployment(
     redis: &mut redis::aio::MultiplexedConnection,
     app_state: &AppState,
@@ -129,7 +138,7 @@ async fn sync_deployment(
     billing_period: &str,
     billing_period_date: NaiveDate,
     dirty_key: &str,
-    chargebee_client: Option<&ChargebeeClient>,
+    dodo_client: Option<&DodoClient>,
 ) -> Result<i64> {
     let prefix = format!("billing:{}:deployment:{}", billing_period, *deployment_id);
 
@@ -146,8 +155,9 @@ async fn sync_deployment(
         local webhooks_current = tonumber(redis.call('ZSCORE', metrics_key, 'webhooks') or 0)
         local ai_input_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_tokens_input') or 0)
         local ai_output_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_tokens_output') or 0)
-        local sms_count_current = tonumber(redis.call('ZSCORE', metrics_key, 'sms_count') or 0)
         local sms_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'sms_cost_cents') or 0)
+        local storage_current = tonumber(redis.call('ZSCORE', metrics_key, 'storage_gb') or 0)
+        local api_checks_current = tonumber(redis.call('ZSCORE', metrics_key, 'api_checks') or 0)
 
         local last_synced_key = prefix .. ':last_synced'
         local mau_last = tonumber(redis.call('ZSCORE', last_synced_key, 'mau') or 0)
@@ -158,8 +168,9 @@ async fn sync_deployment(
         local webhooks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'webhooks') or 0)
         local ai_input_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_tokens_input') or 0)
         local ai_output_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_tokens_output') or 0)
-        local sms_count_last = tonumber(redis.call('ZSCORE', last_synced_key, 'sms_count') or 0)
         local sms_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'sms_cost_cents') or 0)
+        local storage_last = tonumber(redis.call('ZSCORE', last_synced_key, 'storage_gb') or 0)
+        local api_checks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'api_checks') or 0)
 
         local mau_delta = mau_current - mau_last
         local mao_delta = mao_current - mao_last
@@ -169,8 +180,9 @@ async fn sync_deployment(
         local webhooks_delta = webhooks_current - webhooks_last
         local ai_input_delta = ai_input_current - ai_input_last
         local ai_output_delta = ai_output_current - ai_output_last
-        local sms_count_delta = sms_count_current - sms_count_last
         local sms_cost_delta = sms_cost_current - sms_cost_last
+        local storage_delta = storage_current - storage_last
+        local api_checks_delta = api_checks_current - api_checks_last
 
         redis.call('ZADD', last_synced_key, mau_current, 'mau')
         redis.call('ZADD', last_synced_key, mao_current, 'mao')
@@ -180,256 +192,143 @@ async fn sync_deployment(
         redis.call('ZADD', last_synced_key, webhooks_current, 'webhooks')
         redis.call('ZADD', last_synced_key, ai_input_current, 'ai_tokens_input')
         redis.call('ZADD', last_synced_key, ai_output_current, 'ai_tokens_output')
-        redis.call('ZADD', last_synced_key, sms_count_current, 'sms_count')
         redis.call('ZADD', last_synced_key, sms_cost_current, 'sms_cost_cents')
+        redis.call('ZADD', last_synced_key, storage_current, 'storage_gb')
+        redis.call('ZADD', last_synced_key, api_checks_current, 'api_checks')
         redis.call('EXPIRE', last_synced_key, 5184000)
 
         return {
-            tostring(mau_delta),
-            tostring(mao_delta),
-            tostring(maw_delta),
-            tostring(projects_delta),
-            tostring(emails_delta),
-            tostring(webhooks_delta),
-            tostring(ai_input_delta),
-            tostring(ai_output_delta),
-            tostring(sms_count_delta),
-            tostring(sms_cost_delta)
+            tostring(mau_current), tostring(mau_delta),
+            tostring(mao_current), tostring(mao_delta),
+            tostring(maw_current), tostring(maw_delta),
+            tostring(projects_current), tostring(projects_delta),
+            tostring(emails_current), tostring(emails_delta),
+            tostring(webhooks_current), tostring(webhooks_delta),
+            tostring(ai_input_current), tostring(ai_input_delta),
+            tostring(ai_output_current), tostring(ai_output_delta),
+            tostring(sms_cost_current), tostring(sms_cost_delta),
+            tostring(storage_current), tostring(storage_delta),
+            tostring(api_checks_current), tostring(api_checks_delta)
         }
     "#;
 
     let script = redis::Script::new(lua_script);
     let results: Vec<String> = script.arg(&prefix).invoke_async(redis).await?;
 
-    let mau_delta: i64 = results[0].parse()?;
-    let mao_delta: i64 = results[1].parse()?;
-    let maw_delta: i64 = results[2].parse()?;
-    let projects_delta: i64 = results[3].parse()?;
-    let emails_delta: i64 = results[4].parse()?;
-    let webhooks_delta: i64 = results[5].parse()?;
-    let ai_input_delta: i64 = results[6].parse()?;
-    let ai_output_delta: i64 = results[7].parse()?;
-    let sms_count_delta: i64 = results[8].parse()?;
-    let sms_cost_delta: Decimal = Decimal::from_str(&results[9])?;
+    let metrics = vec![
+        ("mau", results[0].parse::<i64>().unwrap_or(0), results[1].parse::<i64>().unwrap_or(0)),
+        ("mao", results[2].parse::<i64>().unwrap_or(0), results[3].parse::<i64>().unwrap_or(0)),
+        ("maw", results[4].parse::<i64>().unwrap_or(0), results[5].parse::<i64>().unwrap_or(0)),
+        ("projects", results[6].parse::<i64>().unwrap_or(0), results[7].parse::<i64>().unwrap_or(0)),
+        ("emails", results[8].parse::<i64>().unwrap_or(0), results[9].parse::<i64>().unwrap_or(0)),
+        ("webhooks", results[10].parse::<i64>().unwrap_or(0), results[11].parse::<i64>().unwrap_or(0)),
+        ("ai_tokens_input", results[12].parse::<i64>().unwrap_or(0), results[13].parse::<i64>().unwrap_or(0)),
+        ("ai_tokens_output", results[14].parse::<i64>().unwrap_or(0), results[15].parse::<i64>().unwrap_or(0)),
+        ("sms_cost", results[16].parse::<i64>().unwrap_or(0), results[17].parse::<i64>().unwrap_or(0)),
+        ("storage", results[18].parse::<i64>().unwrap_or(0), results[19].parse::<i64>().unwrap_or(0)),
+        ("api_checks", results[20].parse::<i64>().unwrap_or(0), results[21].parse::<i64>().unwrap_or(0)),
+    ];
 
     let mut total_units_synced = 0i64;
 
-    if mau_delta > 0 {
-        total_units_synced += mau_delta;
+    for (metric_name, _current, delta) in &metrics {
+        if *delta <= 0 {
+            continue;
+        }
+
+        total_units_synced += delta;
+
         UpsertUsageSnapshotCommand {
             deployment_id: *deployment_id,
             billing_period: billing_period_date,
-            metric_name: "mau".to_string(),
-            quantity: mau_delta,
+            metric_name: metric_name.to_string(),
+            quantity: *delta,
             cost_cents: None,
         }
         .execute(app_state)
         .await?;
     }
 
-    if mao_delta > 0 {
-        total_units_synced += mao_delta;
-        UpsertUsageSnapshotCommand {
-            deployment_id: *deployment_id,
-            billing_period: billing_period_date,
-            metric_name: "mao".to_string(),
-            quantity: mao_delta,
-            cost_cents: None,
-        }
-        .execute(app_state)
-        .await?;
-    }
-
-    if maw_delta > 0 {
-        total_units_synced += maw_delta;
-        UpsertUsageSnapshotCommand {
-            deployment_id: *deployment_id,
-            billing_period: billing_period_date,
-            metric_name: "maw".to_string(),
-            quantity: maw_delta,
-            cost_cents: None,
-        }
-        .execute(app_state)
-        .await?;
-    }
-
-    if projects_delta > 0 {
-        total_units_synced += projects_delta;
-        UpsertUsageSnapshotCommand {
-            deployment_id: *deployment_id,
-            billing_period: billing_period_date,
-            metric_name: "projects".to_string(),
-            quantity: projects_delta,
-            cost_cents: None,
-        }
-        .execute(app_state)
-        .await?;
-    }
-
-    if emails_delta > 0 {
-        total_units_synced += emails_delta;
-        UpsertUsageSnapshotCommand {
-            deployment_id: *deployment_id,
-            billing_period: billing_period_date,
-            metric_name: "emails".to_string(),
-            quantity: emails_delta,
-            cost_cents: None,
-        }
-        .execute(app_state)
-        .await?;
-    }
-
-    if webhooks_delta > 0 {
-        total_units_synced += webhooks_delta;
-        UpsertUsageSnapshotCommand {
-            deployment_id: *deployment_id,
-            billing_period: billing_period_date,
-            metric_name: "webhooks".to_string(),
-            quantity: webhooks_delta,
-            cost_cents: None,
-        }
-        .execute(app_state)
-        .await?;
-    }
-
-    if ai_input_delta > 0 {
-        total_units_synced += ai_input_delta;
-        UpsertUsageSnapshotCommand {
-            deployment_id: *deployment_id,
-            billing_period: billing_period_date,
-            metric_name: "ai_tokens_input".to_string(),
-            quantity: ai_input_delta,
-            cost_cents: None,
-        }
-        .execute(app_state)
-        .await?;
-    }
-
-    if ai_output_delta > 0 {
-        total_units_synced += ai_output_delta;
-        UpsertUsageSnapshotCommand {
-            deployment_id: *deployment_id,
-            billing_period: billing_period_date,
-            metric_name: "ai_tokens_output".to_string(),
-            quantity: ai_output_delta,
-            cost_cents: None,
-        }
-        .execute(app_state)
-        .await?;
-    }
-
-    if sms_count_delta > 0 {
-        total_units_synced += sms_count_delta;
-        UpsertUsageSnapshotCommand {
-            deployment_id: *deployment_id,
-            billing_period: billing_period_date,
-            metric_name: "sms".to_string(),
-            quantity: sms_count_delta,
-            cost_cents: Some(sms_cost_delta),
-        }
-        .execute(app_state)
-        .await?;
-    }
-
-    if let Some(cb_client) = chargebee_client {
-        sync_to_chargebee(
-            cb_client,
-            app_state,
-            *deployment_id,
-            billing_period_date,
-            mau_delta,
-            mao_delta,
-            maw_delta,
-            projects_delta,
-            emails_delta,
-            webhooks_delta,
-            sms_count_delta,
-        )
-        .await;
+    if let Some(dodo) = dodo_client {
+        sync_to_dodo(dodo, app_state, *deployment_id, &metrics).await;
     }
 
     if total_units_synced > 0 {
         let _: () = redis
             .zincr(dirty_key, *deployment_id, -(total_units_synced as f64))
             .await?;
-
-        let _: f64 = redis
-            .zscore::<&str, i64, f64>(dirty_key, *deployment_id)
-            .await?;
     }
 
     Ok(total_units_synced)
 }
 
-/// Sync usage metrics to Chargebee
-async fn sync_to_chargebee(
-    chargebee_client: &ChargebeeClient,
+async fn sync_to_dodo(
+    dodo_client: &DodoClient,
     app_state: &AppState,
     deployment_id: i64,
-    billing_period: NaiveDate,
-    mau_delta: i64,
-    mao_delta: i64,
-    maw_delta: i64,
-    projects_delta: i64,
-    emails_delta: i64,
-    webhooks_delta: i64,
-    sms_delta: i64,
+    metrics: &[(&str, i64, i64)],
 ) {
-    let subscription_id = match GetDeploymentChargebeeSubscriptionIdQuery::new(deployment_id)
+    let subscription_info = match GetDeploymentProviderSubscriptionQuery::new(deployment_id)
         .execute(app_state)
         .await
     {
-        Ok(Some(sub_id)) => sub_id,
+        Ok(Some(info)) => info,
         Ok(None) => {
             info!(
-                "[CHARGEBEE] Deployment {} has no Chargebee subscription configured",
+                "[DODO] Deployment {} has no subscription configured",
                 deployment_id
             );
             return;
         }
         Err(e) => {
             error!(
-                "[CHARGEBEE] Failed to fetch deployment {}: {}",
+                "[DODO] Failed to fetch deployment {}: {}",
                 deployment_id, e
             );
             return;
         }
     };
 
-    let usage_date = billing_period
-        .and_hms_opt(0, 0, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp();
+    let customer_id = subscription_info.provider_customer_id;
 
-    let metrics = vec![
-        ("mau", mau_delta),
-        ("mao", mao_delta),
-        ("maw", maw_delta),
-        ("projects", projects_delta),
-        ("emails", emails_delta),
-        ("webhooks", webhooks_delta),
-        ("sms", sms_delta),
-    ];
+    for (metric_name, current, delta) in metrics {
+        if *delta <= 0 {
+            continue;
+        }
 
-    for (metric_name, delta) in metrics {
-        if delta > 0 {
-            match chargebee_client
-                .record_usage(&subscription_id, metric_name, delta, Some(usage_date))
-                .await
-            {
-                Ok(_) => {
-                    info!(
-                        "[CHARGEBEE] ✅ Synced {} {} for deployment {}",
-                        delta, metric_name, deployment_id
-                    );
-                }
-                Err(e) => {
-                    error!(
-                        "[CHARGEBEE] ❌ Failed to sync {} for deployment {}: {}",
-                        metric_name, deployment_id, e
-                    );
-                }
+        let config = get_metric_config(metric_name);
+        if config.event_name == "unknown" {
+            continue;
+        }
+
+        let value_to_send = if config.use_last_aggregation {
+            *current
+        } else {
+            *delta
+        };
+
+        let event_id = format!(
+            "{}_{}_{}",
+            deployment_id,
+            metric_name,
+            chrono::Utc::now().timestamp_millis()
+        );
+
+        match dodo_client
+            .ingest_usage_events(&customer_id, config.event_name, value_to_send, &event_id, config.use_last_aggregation)
+            .await
+        {
+            Ok(_) => {
+                info!(
+                    "[DODO] ✅ Synced {}={} (delta={}) for deployment {}",
+                    config.event_name, value_to_send, delta, deployment_id
+                );
+            }
+            Err(e) => {
+                error!(
+                    "[DODO] ❌ Failed to sync {} for deployment {}: {}",
+                    config.event_name, deployment_id, e
+                );
             }
         }
     }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT\n                    id, owner_id, owner_type, legal_name, tax_id, billing_email, billing_phone,\n                    address_line1, address_line2, city, state, postal_code, country, status,\n                    payment_method_status, currency, locale, created_at, updated_at\n                FROM billing_accounts WHERE id = $1\n                ",
+  "query": "\n                SELECT\n                    id, owner_id, owner_type, provider_customer_id, legal_name, tax_id, billing_email, billing_phone,\n                    address_line1, address_line2, city, state, postal_code, country, status,\n                    payment_method_status, currency, locale, created_at, updated_at\n                FROM billing_accounts WHERE id = $1\n                ",
   "describe": {
     "columns": [
       {
@@ -20,81 +20,86 @@
       },
       {
         "ordinal": 3,
-        "name": "legal_name",
+        "name": "provider_customer_id",
         "type_info": "Varchar"
       },
       {
         "ordinal": 4,
-        "name": "tax_id",
+        "name": "legal_name",
         "type_info": "Varchar"
       },
       {
         "ordinal": 5,
-        "name": "billing_email",
+        "name": "tax_id",
         "type_info": "Varchar"
       },
       {
         "ordinal": 6,
-        "name": "billing_phone",
+        "name": "billing_email",
         "type_info": "Varchar"
       },
       {
         "ordinal": 7,
-        "name": "address_line1",
+        "name": "billing_phone",
         "type_info": "Varchar"
       },
       {
         "ordinal": 8,
-        "name": "address_line2",
+        "name": "address_line1",
         "type_info": "Varchar"
       },
       {
         "ordinal": 9,
-        "name": "city",
+        "name": "address_line2",
         "type_info": "Varchar"
       },
       {
         "ordinal": 10,
-        "name": "state",
+        "name": "city",
         "type_info": "Varchar"
       },
       {
         "ordinal": 11,
-        "name": "postal_code",
+        "name": "state",
         "type_info": "Varchar"
       },
       {
         "ordinal": 12,
-        "name": "country",
+        "name": "postal_code",
         "type_info": "Varchar"
       },
       {
         "ordinal": 13,
-        "name": "status",
+        "name": "country",
         "type_info": "Varchar"
       },
       {
         "ordinal": 14,
-        "name": "payment_method_status",
+        "name": "status",
         "type_info": "Varchar"
       },
       {
         "ordinal": 15,
-        "name": "currency",
+        "name": "payment_method_status",
         "type_info": "Varchar"
       },
       {
         "ordinal": 16,
-        "name": "locale",
+        "name": "currency",
         "type_info": "Varchar"
       },
       {
         "ordinal": 17,
+        "name": "locale",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 18,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -108,6 +113,7 @@
       false,
       false,
       false,
+      true,
       false,
       true,
       false,
@@ -126,5 +132,5 @@
       true
     ]
   },
-  "hash": "f908c48be62104d7188c475fe5c5cd8afa1afe7f72952e5f8ae0d8248d9aba3e"
+  "hash": "ae00848af73391266bb0bc849bfc6d3dfa800aa893fb1e310a3eca3c92f39b1e"
 }

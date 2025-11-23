@@ -85,14 +85,6 @@ impl Command for AddOrganizationMemberCommand {
             .await?;
         }
 
-        // Update organization member count
-        sqlx::query!(
-            "UPDATE organizations SET member_count = member_count + 1 WHERE id = $1",
-            self.organization_id
-        )
-        .execute(&app_state.db_pool)
-        .await?;
-
         // Fetch and return the complete member details
         let member_details = sqlx::query!(
             r#"
@@ -302,14 +294,6 @@ impl Command for RemoveOrganizationMemberCommand {
         sqlx::query!(
             "DELETE FROM organization_memberships WHERE id = $1",
             self.membership_id
-        )
-        .execute(&app_state.db_pool)
-        .await?;
-
-        // Update organization member count
-        sqlx::query!(
-            "UPDATE organizations SET member_count = member_count - 1 WHERE id = $1",
-            self.organization_id
         )
         .execute(&app_state.db_pool)
         .await?;

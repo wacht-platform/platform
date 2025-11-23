@@ -181,8 +181,8 @@ impl Command for UpdateBillingAccountCommand {
 
 pub struct CreateSubscriptionCommand {
     pub billing_account_id: i64,
-    pub chargebee_customer_id: String,
-    pub chargebee_subscription_id: String,
+    pub provider_customer_id: String,
+    pub provider_subscription_id: String,
     pub status: String,
 }
 
@@ -198,8 +198,8 @@ impl Command for CreateSubscriptionCommand {
             INSERT INTO subscriptions (
                 id,
                 billing_account_id,
-                chargebee_customer_id,
-                chargebee_subscription_id,
+                provider_customer_id,
+                provider_subscription_id,
                 status,
                 created_at,
                 updated_at
@@ -208,8 +208,8 @@ impl Command for CreateSubscriptionCommand {
             "#,
             id,
             self.billing_account_id,
-            self.chargebee_customer_id,
-            self.chargebee_subscription_id,
+            self.provider_customer_id,
+            self.provider_subscription_id,
             self.status
         )
         .fetch_one(&state.db_pool)
@@ -257,11 +257,36 @@ impl Command for UpdateBillingAccountStatusCommand {
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
         sqlx::query!(
             r#"
-            UPDATE billing_accounts 
+            UPDATE billing_accounts
             SET status = $1, updated_at = NOW()
             WHERE owner_id = $2
             "#,
             self.status,
+            self.owner_id
+        )
+        .execute(&state.db_pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+pub struct SetProviderCustomerIdCommand {
+    pub owner_id: String,
+    pub provider_customer_id: String,
+}
+
+impl Command for SetProviderCustomerIdCommand {
+    type Output = ();
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query!(
+            r#"
+            UPDATE billing_accounts
+            SET provider_customer_id = $1, updated_at = NOW()
+            WHERE owner_id = $2
+            "#,
+            self.provider_customer_id,
             self.owner_id
         )
         .execute(&state.db_pool)
@@ -313,8 +338,8 @@ impl Command for UpdateBillingAccountFromWebhookCommand {
 
 pub struct UpsertSubscriptionCommand {
     pub owner_id: String,
-    pub chargebee_customer_id: String,
-    pub chargebee_subscription_id: String,
+    pub provider_customer_id: String,
+    pub provider_subscription_id: String,
     pub status: String,
 }
 
@@ -350,15 +375,15 @@ impl Command for UpsertSubscriptionCommand {
                 Subscription,
                 r#"
                 UPDATE subscriptions SET
-                    chargebee_customer_id = $1,
-                    chargebee_subscription_id = $2,
+                    provider_customer_id = $1,
+                    provider_subscription_id = $2,
                     status = $3,
                     updated_at = NOW()
                 WHERE id = $4
                 RETURNING *
                 "#,
-                self.chargebee_customer_id,
-                self.chargebee_subscription_id,
+                self.provider_customer_id,
+                self.provider_subscription_id,
                 self.status,
                 id
             )
@@ -372,8 +397,8 @@ impl Command for UpsertSubscriptionCommand {
                 INSERT INTO subscriptions (
                     id,
                     billing_account_id,
-                    chargebee_customer_id,
-                    chargebee_subscription_id,
+                    provider_customer_id,
+                    provider_subscription_id,
                     status,
                     created_at,
                     updated_at
@@ -382,8 +407,8 @@ impl Command for UpsertSubscriptionCommand {
                 "#,
                 id,
                 billing_account_id,
-                self.chargebee_customer_id,
-                self.chargebee_subscription_id,
+                self.provider_customer_id,
+                self.provider_subscription_id,
                 self.status
             )
             .fetch_one(&state.db_pool)
@@ -396,8 +421,8 @@ impl Command for UpsertSubscriptionCommand {
 
 pub struct UpsertInvoiceCommand {
     pub owner_id: String,
-    pub chargebee_invoice_id: String,
-    pub chargebee_customer_id: String,
+    pub provider_payment_id: String,
+    pub provider_customer_id: String,
     pub amount_due_cents: i64,
     pub amount_paid_cents: i64,
     pub currency: String,
@@ -416,7 +441,6 @@ impl Command for UpsertInvoiceCommand {
     type Output = BillingInvoice;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        // Get billing account ID from owner_id
         let billing_account_id: Option<i64> = sqlx::query_scalar!(
             "SELECT id FROM billing_accounts WHERE owner_id = $1",
             self.owner_id
@@ -427,7 +451,6 @@ impl Command for UpsertInvoiceCommand {
         let billing_account_id = billing_account_id
             .ok_or_else(|| AppError::Validation("Billing account not found".to_string()))?;
 
-        // Get subscription ID
         let subscription_id: Option<i64> = sqlx::query_scalar!(
             "SELECT id FROM subscriptions WHERE billing_account_id = $1",
             billing_account_id
@@ -438,16 +461,14 @@ impl Command for UpsertInvoiceCommand {
         let status: InvoiceStatus = self.status.parse()
             .map_err(|e| AppError::Validation(format!("Invalid invoice status: {}", e)))?;
 
-        // Check if invoice exists
         let existing_id: Option<i64> = sqlx::query_scalar!(
-            "SELECT id FROM billing_invoices WHERE chargebee_invoice_id = $1",
-            self.chargebee_invoice_id
+            "SELECT id FROM billing_invoices WHERE provider_payment_id = $1",
+            self.provider_payment_id
         )
         .fetch_optional(&state.db_pool)
         .await?;
 
         let invoice = if let Some(id) = existing_id {
-            // Update existing invoice
             sqlx::query_as!(
                 BillingInvoice,
                 r#"
@@ -468,7 +489,7 @@ impl Command for UpsertInvoiceCommand {
                 WHERE id = $13
                 RETURNING
                     id, created_at, updated_at, billing_account_id, subscription_id,
-                    chargebee_invoice_id, chargebee_customer_id, amount_due_cents,
+                    provider_payment_id, provider_customer_id, amount_due_cents,
                     amount_paid_cents, currency, status as "status: InvoiceStatus",
                     invoice_pdf_url, hosted_invoice_url, invoice_number, due_date,
                     paid_at, period_start, period_end, attempt_count, next_payment_attempt,
@@ -491,21 +512,20 @@ impl Command for UpsertInvoiceCommand {
             .fetch_one(&state.db_pool)
             .await?
         } else {
-            // Insert new invoice
             let id = state.sf.next_id().unwrap() as i64;
             sqlx::query_as!(
                 BillingInvoice,
                 r#"
                 INSERT INTO billing_invoices (
-                    id, billing_account_id, subscription_id, chargebee_invoice_id,
-                    chargebee_customer_id, amount_due_cents, amount_paid_cents,
+                    id, billing_account_id, subscription_id, provider_payment_id,
+                    provider_customer_id, amount_due_cents, amount_paid_cents,
                     currency, status, invoice_pdf_url, hosted_invoice_url,
                     invoice_number, due_date, paid_at, period_start, period_end,
                     attempt_count, metadata, created_at, updated_at
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 0, $17, NOW(), NOW())
                 RETURNING
                     id, created_at, updated_at, billing_account_id, subscription_id,
-                    chargebee_invoice_id, chargebee_customer_id, amount_due_cents,
+                    provider_payment_id, provider_customer_id, amount_due_cents,
                     amount_paid_cents, currency, status as "status: InvoiceStatus",
                     invoice_pdf_url, hosted_invoice_url, invoice_number, due_date,
                     paid_at, period_start, period_end, attempt_count, next_payment_attempt,
@@ -514,8 +534,8 @@ impl Command for UpsertInvoiceCommand {
                 id,
                 billing_account_id,
                 subscription_id,
-                self.chargebee_invoice_id,
-                self.chargebee_customer_id,
+                self.provider_payment_id,
+                self.provider_customer_id,
                 self.amount_due_cents,
                 self.amount_paid_cents,
                 self.currency,

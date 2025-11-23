@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE billing_accounts\n            SET provider_customer_id = $1, updated_at = NOW()\n            WHERE owner_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f47017dc3459264be265f5bda2ca885f9abc5e408077eeb44c397a3d3a919b93"
+}

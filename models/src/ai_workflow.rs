@@ -44,6 +44,33 @@ pub struct WorkflowConfiguration {
     pub max_retries: Option<u32>,
     #[serde(default)]
     pub retry_delay_seconds: Option<u32>,
+    #[serde(default)]
+    pub enable_logging: bool,
+    #[serde(default)]
+    pub enable_metrics: bool,
+    #[serde(default)]
+    pub variables: HashMap<String, WorkflowVariable>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct WorkflowVariable {
+    pub name: String,
+    pub value_type: VariableType,
+    #[serde(default)]
+    pub default_value: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub required: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum VariableType {
+    String,
+    Number,
+    Boolean,
+    Object,
+    Array,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -254,6 +281,9 @@ impl Default for WorkflowConfiguration {
             timeout_seconds: Some(300), // 5 minutes
             max_retries: Some(3),
             retry_delay_seconds: Some(5),
+            enable_logging: true,
+            enable_metrics: true,
+            variables: HashMap::new(),
         }
     }
 }

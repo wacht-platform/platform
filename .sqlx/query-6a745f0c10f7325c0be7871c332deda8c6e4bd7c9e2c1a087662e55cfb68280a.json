@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO subscriptions (\n                id,\n                billing_account_id,\n                chargebee_customer_id,\n                chargebee_subscription_id,\n                status,\n                created_at,\n                updated_at\n            ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())\n            RETURNING *\n            ",
+  "query": "\n                INSERT INTO subscriptions (\n                    id,\n                    billing_account_id,\n                    provider_customer_id,\n                    provider_subscription_id,\n                    status,\n                    created_at,\n                    updated_at\n                ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())\n                RETURNING *\n                ",
   "describe": {
     "columns": [
       {
@@ -10,12 +10,12 @@
       },
       {
         "ordinal": 1,
-        "name": "chargebee_customer_id",
+        "name": "provider_customer_id",
         "type_info": "Varchar"
       },
       {
         "ordinal": 2,
-        "name": "chargebee_subscription_id",
+        "name": "provider_subscription_id",
         "type_info": "Varchar"
       },
       {
@@ -58,5 +58,5 @@
       false
     ]
   },
-  "hash": "85e0ba64f853f890a2a2e8f67f3ba9c8c5216028c6749ca856bb7a7d848837a1"
+  "hash": "6a745f0c10f7325c0be7871c332deda8c6e4bd7c9e2c1a087662e55cfb68280a"
 }
