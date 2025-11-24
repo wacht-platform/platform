@@ -11,54 +11,6 @@ use queries::{
     signin::GetSignInQuery, user::GetUserDetailsQuery, workspace::GetWorkspaceNameQuery,
 };
 use serde::{Deserialize, Serialize};
-use base64::{Engine as _, prelude::BASE64_STANDARD};
-
-async fn get_app_logo_content(deployment: &DeploymentWithSettings) -> String {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
-
-    let logo_url = deployment
-        .ui_settings
-        .as_ref()
-        .and_then(|ui| {
-            let url = ui.logo_image_url.clone();
-            if url.is_empty() {
-                None
-            } else {
-                Some(url)
-            }
-        });
-
-    if let Some(url) = logo_url {
-        match reqwest::get(&url).await {
-            Ok(response) => {
-                let mime_type = response
-                    .headers()
-                    .get(reqwest::header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("image/png")
-                    .to_string();
-
-                if let Ok(bytes) = response.bytes().await {
-                    let mime_type = infer::get(&bytes)
-                        .map(|kind| kind.mime_type())
-                        .unwrap_or(&mime_type);
-
-                    let base64_str = BASE64_STANDARD.encode(&bytes);
-                    return format!("data:{};base64,{}", mime_type, base64_str);
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Failed to fetch logo image: {}", e);
-            }
-        }
-    }
-
-    app_name
-}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VerificationEmailTask {
@@ -164,8 +116,8 @@ pub async fn send_verification_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_content = get_app_logo_content(&deployment_settings).await;
-    let variables = create_verification_variables(&deployment_settings, verification_code, ip_address, user_agent, app_logo_content);
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
+    let variables = create_verification_variables(&deployment_settings, verification_code, ip_address, user_agent, app_logo_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -203,9 +155,9 @@ pub async fn send_password_reset_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_content = get_app_logo_content(&deployment_settings).await;
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
     let variables =
-        create_password_reset_variables(&user_details, &deployment_settings, reset_code, ip_address, user_agent, app_logo_content);
+        create_password_reset_variables(&user_details, &deployment_settings, reset_code, ip_address, user_agent, app_logo_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -241,8 +193,8 @@ pub async fn send_magic_link_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_content = get_app_logo_content(&deployment_settings).await;
-    let variables = create_magic_link_variables(&user_details, &deployment_settings, magic_link, app_logo_content);
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
+    let variables = create_magic_link_variables(&user_details, &deployment_settings, magic_link, app_logo_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -280,12 +232,12 @@ pub async fn send_signin_notification_email_impl(
 
     let signin_details = fetch_signin_details(&app_state, signin_id).await.ok();
 
-    let app_logo_content = get_app_logo_content(&deployment_settings).await;
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
     let variables = create_signin_notification_variables(
         &user_details,
         &deployment_settings,
         signin_details.as_ref(),
-        app_logo_content,
+        app_logo_url,
     );
 
     let command = SendEmailCommand::new(
@@ -323,9 +275,9 @@ pub async fn send_email_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_content = get_app_logo_content(&deployment_settings).await;
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
     let variables =
-        create_email_change_variables(&user_details, &deployment_settings, old_email, new_email, app_logo_content);
+        create_email_change_variables(&user_details, &deployment_settings, old_email, new_email, app_logo_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -360,8 +312,8 @@ pub async fn send_password_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_content = get_app_logo_content(&deployment_settings).await;
-    let variables = create_password_change_variables(&user_details, &deployment_settings, app_logo_content);
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
+    let variables = create_password_change_variables(&user_details, &deployment_settings, app_logo_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -399,8 +351,8 @@ pub async fn send_password_remove_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_content = get_app_logo_content(&deployment_settings).await;
-    let variables = create_password_remove_variables(&user_details, &deployment_settings, app_logo_content);
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
+    let variables = create_password_remove_variables(&user_details, &deployment_settings, app_logo_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -438,8 +390,8 @@ pub async fn send_waitlist_signup_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_content = get_app_logo_content(&deployment_settings).await;
-    let variables = create_waitlist_signup_variables(&user_details, &deployment_settings, app_logo_content);
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
+    let variables = create_waitlist_signup_variables(&user_details, &deployment_settings, app_logo_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -477,7 +429,7 @@ pub async fn send_organization_membership_invite_impl(
         .as_ref()
         .map(|ui| ui.app_name.clone())
         .unwrap_or_else(|| "Your App".to_string());
-    let app_logo = get_app_logo_content(&deployment_settings).await;
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
 
     let first_name = inviter_name
         .split_whitespace()
@@ -488,7 +440,7 @@ pub async fn send_organization_membership_invite_impl(
     let variables = serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo
+            "logo": app_logo_url
         },
         "inviter_name": inviter_name,
         "first_name": first_name,
@@ -549,13 +501,13 @@ pub async fn send_deployment_invite_impl(
         .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
 
-    let app_logo_content = get_app_logo_content(&deployment_settings).await;
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
     let mut variables = create_workspace_invite_variables(
         &inviter_details,
         &deployment_settings,
         &workspace_name,
         Some(&invitation),
-        app_logo_content,
+        app_logo_url,
     );
 
     let frontend_host = deployment_settings.frontend_host.clone();
@@ -629,9 +581,9 @@ pub async fn send_waitlist_approval_impl(
         last_password_reset_at: None,
     };
 
-    let app_logo_content = get_app_logo_content(&deployment_settings).await;
+    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
     let mut variables =
-        create_waitlist_invite_variables(&user_details, &deployment_settings, Some(&invitation), app_logo_content);
+        create_waitlist_invite_variables(&user_details, &deployment_settings, Some(&invitation), app_logo_url);
 
     let frontend_host = deployment_settings.frontend_host.clone();
     let action_url = format!(
@@ -689,7 +641,7 @@ fn create_verification_variables(
     verification_code: &str,
     ip_address: &str,
     user_agent: &str,
-    app_logo_content: String,
+    app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
@@ -706,7 +658,7 @@ fn create_verification_variables(
     serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo_content
+            "logo": app_logo_url
         },
         "code": {
             "value": verification_code,
@@ -726,7 +678,7 @@ fn create_password_reset_variables(
     reset_code: &str,
     ip_address: &str,
     user_agent: &str,
-    app_logo_content: String,
+    app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
@@ -743,7 +695,7 @@ fn create_password_reset_variables(
     serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo_content
+            "logo": app_logo_url
         },
         "user": {
             "id": user.id.to_string(),
@@ -776,7 +728,7 @@ fn create_signin_notification_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     signin: Option<&SignIn>,
-    app_logo_content: String,
+    app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
@@ -787,7 +739,7 @@ fn create_signin_notification_variables(
     let mut json_value = serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo_content
+            "logo": app_logo_url
         },
         "user": {
             "id": user.id.to_string(),
@@ -857,7 +809,7 @@ fn create_email_change_variables(
     deployment: &DeploymentWithSettings,
     old_email: &str,
     new_email: &str,
-    app_logo_content: String,
+    app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
@@ -868,7 +820,7 @@ fn create_email_change_variables(
     serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo_content
+            "logo": app_logo_url
         },
         "user": {
             "id": user.id.to_string(),
@@ -893,7 +845,7 @@ fn create_email_change_variables(
 fn create_password_change_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
-    app_logo_content: String,
+    app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
@@ -904,7 +856,7 @@ fn create_password_change_variables(
     serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo_content
+            "logo": app_logo_url
         },
         "user": {
             "id": user.id.to_string(),
@@ -928,7 +880,7 @@ fn create_password_change_variables(
 fn create_password_remove_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
-    app_logo_content: String,
+    app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
@@ -939,7 +891,7 @@ fn create_password_remove_variables(
     serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo_content
+            "logo": app_logo_url
         },
         "user": {
             "id": user.id.to_string(),
@@ -963,7 +915,7 @@ fn create_password_remove_variables(
 fn create_waitlist_signup_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
-    app_logo_content: String,
+    app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
@@ -974,7 +926,7 @@ fn create_waitlist_signup_variables(
     serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo_content
+            "logo": app_logo_url
         },
         "user": {
             "id": user.id.to_string(),
@@ -998,7 +950,7 @@ fn create_waitlist_invite_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     invitation: Option<&DeploymentInvitation>,
-    app_logo_content: String,
+    app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
@@ -1019,7 +971,7 @@ fn create_waitlist_invite_variables(
     serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo_content
+            "logo": app_logo_url
         },
         "user": {
             "id": user.id.to_string(),
@@ -1048,7 +1000,7 @@ fn create_workspace_invite_variables(
     deployment: &DeploymentWithSettings,
     workspace_name: &str,
     invitation: Option<&DeploymentInvitation>,
-    app_logo_content: String,
+    app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
@@ -1069,7 +1021,7 @@ fn create_workspace_invite_variables(
     serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo_content
+            "logo": app_logo_url
         },
         "user": {
             "id": user.id.to_string(),
@@ -1099,7 +1051,7 @@ fn create_magic_link_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     magic_link: &str,
-    app_logo_content: String,
+    app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = deployment
         .ui_settings
@@ -1110,7 +1062,7 @@ fn create_magic_link_variables(
     serde_json::json!({
         "app": {
             "name": app_name,
-            "logo": app_logo_content
+            "logo": app_logo_url
         },
         "user": {
             "id": user.id.to_string(),

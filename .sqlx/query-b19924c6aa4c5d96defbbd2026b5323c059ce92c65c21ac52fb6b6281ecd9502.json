@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE deployments\n            SET email_provider = $1,\n                custom_smtp_config = $2,\n                updated_at = NOW()\n            WHERE id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Jsonb",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b19924c6aa4c5d96defbbd2026b5323c059ce92c65c21ac52fb6b6281ecd9502"
+}

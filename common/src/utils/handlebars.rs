@@ -11,28 +11,24 @@ impl handlebars::HelperDef for ImageHelper {
         _: &mut RenderContext,
         out: &mut dyn Output,
     ) -> HelperResult {
-        let value = h
-            .param(0)
-            .and_then(|v| v.value().as_str())
-            .ok_or_else(|| handlebars::RenderErrorReason::InvalidParamType("Expected string param"))?;
+        let url = h.param(0).and_then(|v| v.value().as_str());
+        let alt_name = h.param(1).and_then(|v| v.value().as_str()).unwrap_or("Logo");
 
-        if value.starts_with("http") || value.starts_with("data:image") {
-            out.write(
-                format!(
-                    "<img src=\"{}\" alt=\"image\" style=\"width: 48px; height: 48px; object-fit: contain;\" />",
-                    value
-                )
-                .as_str(),
-            )?;
-        } else {
-            out.write(
-                format!(
+        match url {
+            Some(src) if !src.is_empty() => {
+                out.write(&format!(
+                    "<img src=\"{}\" alt=\"{} Logo\" style=\"max-width:84px; width:84px; object-fit: contain;\" />",
+                    src, alt_name
+                ))?;
+            }
+            _ => {
+                out.write(&format!(
                     "<span style=\"font-size: 20px; font-weight: 700; color: #000000;\">{}</span>",
-                    handlebars::html_escape(value)
-                )
-                .as_str(),
-            )?;
+                    alt_name
+                ))?;
+            }
         }
+
         Ok(())
     }
 }
@@ -43,35 +39,53 @@ mod tests {
     use handlebars::Handlebars;
 
     #[test]
-    fn test_image_helper_url() {
+    fn test_image_helper_with_url_and_alt() {
         let mut handlebars = Handlebars::new();
         handlebars.register_helper("image", Box::new(ImageHelper));
 
         let result = handlebars
-            .render_template("{{image url}}", &serde_json::json!({"url": "https://example.com/logo.png"}))
+            .render_template(
+                "{{image app.logo app.name}}",
+                &serde_json::json!({"app": {"logo": "https://example.com/logo.png", "name": "MyApp"}}),
+            )
             .unwrap();
-        assert_eq!(result, "<img src=\"https://example.com/logo.png\" alt=\"image\" style=\"width: 60px; height: 60px; object-fit: contain;\" />");
+        assert_eq!(
+            result,
+            "<img src=\"https://example.com/logo.png\" alt=\"MyApp Logo\" style=\"max-width:84px; width:84px; object-fit: contain;\" />"
+        );
     }
 
     #[test]
-    fn test_image_helper_base64() {
+    fn test_image_helper_no_url_fallback_to_text() {
         let mut handlebars = Handlebars::new();
         handlebars.register_helper("image", Box::new(ImageHelper));
 
         let result = handlebars
-            .render_template("{{image url}}", &serde_json::json!({"url": "data:image/png;base64,abc"}))
+            .render_template(
+                "{{image app.logo app.name}}",
+                &serde_json::json!({"app": {"logo": null, "name": "MyApp"}}),
+            )
             .unwrap();
-        assert_eq!(result, "<img src=\"data:image/png;base64,abc\" alt=\"image\" style=\"width: 60px; height: 60px; object-fit: contain;\" />");
+        assert_eq!(
+            result,
+            "<span style=\"font-size: 20px; font-weight: 700; color: #000000;\">MyApp</span>"
+        );
     }
 
     #[test]
-    fn test_image_helper_text() {
+    fn test_image_helper_empty_url_fallback_to_text() {
         let mut handlebars = Handlebars::new();
         handlebars.register_helper("image", Box::new(ImageHelper));
 
         let result = handlebars
-            .render_template("{{image name}}", &serde_json::json!({"name": "MyApp"}))
+            .render_template(
+                "{{image app.logo app.name}}",
+                &serde_json::json!({"app": {"logo": "", "name": "MyApp"}}),
+            )
             .unwrap();
-        assert_eq!(result, "<span style=\"font-size: 20px; font-weight: 700; color: #000000;\">MyApp</span>");
+        assert_eq!(
+            result,
+            "<span style=\"font-size: 20px; font-weight: 700; color: #000000;\">MyApp</span>"
+        );
     }
 }

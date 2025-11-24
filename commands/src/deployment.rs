@@ -725,6 +725,21 @@ impl Command for UpdateDeploymentB2bSettingsCommand {
             query_builder.push_bind(organization_permissions);
         }
 
+        if let Some(ip_allowlist_per_workspace_enabled) = self.settings.ip_allowlist_per_workspace_enabled {
+            query_builder.push(", ip_allowlist_per_workspace_enabled = ");
+            query_builder.push_bind(ip_allowlist_per_workspace_enabled);
+        }
+
+        if let Some(enforce_mfa_per_org_enabled) = self.settings.enforce_mfa_per_org_enabled {
+            query_builder.push(", enforce_mfa_per_org_enabled = ");
+            query_builder.push_bind(enforce_mfa_per_org_enabled);
+        }
+
+        if let Some(enforce_mfa_per_workspace_enabled) = self.settings.enforce_mfa_per_workspace_enabled {
+            query_builder.push(", enforce_mfa_per_workspace_enabled = ");
+            query_builder.push_bind(enforce_mfa_per_workspace_enabled);
+        }
+
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 

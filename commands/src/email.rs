@@ -1,6 +1,8 @@
 use crate::Command;
 use common::error::AppError;
+use common::smtp::{SmtpConfig, SmtpService};
 use common::state::AppState;
+use models::{CustomSmtpConfig, EmailProvider};
 use queries::{GetEmailTemplateByNameQuery, Query};
 
 pub struct SendEmailCommand {
@@ -35,7 +37,10 @@ impl Command for SendEmailCommand {
             .await?;
 
         let deployment = sqlx::query!(
-            "SELECT mail_from_host FROM deployments WHERE id = $1",
+            r#"
+            SELECT mail_from_host, email_provider, custom_smtp_config
+            FROM deployments WHERE id = $1
+            "#,
             self.deployment_id
         )
         .fetch_one(&app_state.db_pool)
@@ -58,25 +63,67 @@ impl Command for SendEmailCommand {
             .render_template(&template.template_data, &self.variables)
             .map_err(|e| AppError::BadRequest(format!("Failed to render body: {}", e)))?;
 
-        let body_text = body_html
-            .replace("<br>", "\n")
-            .replace("<br/>", "\n")
-            .replace("<br />", "\n")
-            .replace("</p>", "\n\n")
-            .replace("</div>", "\n")
-            .replace("</h1>", "\n\n")
-            .replace("</h2>", "\n\n")
-            .replace("</h3>", "\n\n");
-
-        let body_text = regex::Regex::new(r"<[^>]*>")
-            .unwrap()
-            .replace_all(&body_text, "")
-            .to_string();
+        let body_text = html2text::from_read(body_html.as_bytes(), 80)
+            .unwrap_or_else(|_| body_html.clone());
 
         let from_email = format!(
             "{} <{}@{}>",
             display_settings.app_name, template.template_from, deployment.mail_from_host
         );
+
+        let email_provider = EmailProvider::from(deployment.email_provider);
+
+        let smtp_config: Option<CustomSmtpConfig> = deployment
+            .custom_smtp_config
+            .and_then(|v| serde_json::from_value(v).ok());
+
+        if email_provider == EmailProvider::CustomSmtp {
+            if let Some(config) = &smtp_config {
+                if config.verified {
+                    let decrypted_password = app_state
+                        .encryption_service
+                        .decrypt(&config.password)
+                        .map_err(|e| {
+                            tracing::error!("Failed to decrypt SMTP password: {}", e);
+                            e
+                        })?;
+
+                    let smtp_service = SmtpService::new(SmtpConfig {
+                        host: config.host.clone(),
+                        port: config.port,
+                        username: config.username.clone(),
+                        password: decrypted_password,
+                        from_email: config.from_email.clone(),
+                        use_tls: config.use_tls,
+                    });
+
+                    let smtp_from_email = format!(
+                        "{} <{}>",
+                        display_settings.app_name, config.from_email
+                    );
+
+                    match smtp_service
+                        .send_email(&smtp_from_email, &self.to_email, &subject, &body_html, Some(&body_text))
+                        .await
+                    {
+                        Ok(_) => {
+                            tracing::info!(
+                                "Email sent successfully via custom SMTP: {} -> {}",
+                                smtp_from_email,
+                                self.to_email
+                            );
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to send via custom SMTP, falling back to Postmark: {}",
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        }
 
         match app_state
             .postmark_service

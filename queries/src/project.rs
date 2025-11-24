@@ -84,6 +84,17 @@ impl GetProjectsWithDeploymentQuery {
             email_verification_records: row
                 .get::<Option<serde_json::Value>, _>("deployment_email_verification_records")
                 .and_then(|v| serde_json::from_value(v).ok()),
+            email_provider: row
+                .get::<Option<String>, _>("deployment_email_provider")
+                .map(models::EmailProvider::from)
+                .unwrap_or_default(),
+            custom_smtp_config: row
+                .get::<Option<serde_json::Value>, _>("deployment_custom_smtp_config")
+                .and_then(|v| serde_json::from_value(v).ok())
+                .map(|mut c: models::CustomSmtpConfig| {
+                    c.password = String::new();
+                    c
+                }),
         }
     }
 }
@@ -103,7 +114,9 @@ impl Query for GetProjectsWithDeploymentQuery {
                 d.project_id as deployment_project_id, d.mode as deployment_mode,
                 d.mail_from_host as deployment_mail_from_host,
                 d.domain_verification_records::jsonb as deployment_domain_verification_records,
-                d.email_verification_records::jsonb as deployment_email_verification_records
+                d.email_verification_records::jsonb as deployment_email_verification_records,
+                d.email_provider as deployment_email_provider,
+                d.custom_smtp_config::jsonb as deployment_custom_smtp_config
             FROM projects p
             LEFT JOIN deployments d ON p.id = d.project_id AND d.deleted_at IS NULL
         "#.to_string();

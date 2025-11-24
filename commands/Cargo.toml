@@ -32,5 +32,6 @@ zstd = "0.13"
 reqwest = { version = "0.12", features = ["json"] }
 url = "2.5"
 regex = "1.10.2"
+html2text = "0.16"
 rcgen = "0.13"
 rust_decimal = "1.36"

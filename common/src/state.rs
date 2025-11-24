@@ -12,8 +12,8 @@ use std::env::var as env;
 use std::error::Error;
 
 use crate::{
-    ClickHouseService, CloudflareService, DnsVerificationService, PostmarkService,
-    TextProcessingService,
+    ClickHouseService, CloudflareService, DnsVerificationService, EncryptionService,
+    PostmarkService, TextProcessingService,
 };
 
 #[derive(Clone)]
@@ -30,6 +30,7 @@ pub struct AppState {
     pub clickhouse_service: ClickHouseService,
     pub nats_client: NatsClient,
     pub nats_jetstream: NatsJetStream,
+    pub encryption_service: EncryptionService,
 }
 
 impl AppState {
@@ -86,6 +87,8 @@ impl AppState {
         let nats_client = async_nats::connect(env("NATS_URL")?).await?;
         let nats_jetstream = jetstream::new(nats_client.clone());
 
+        let encryption_service = EncryptionService::new(&env("SMTP_ENCRYPTION_KEY")?)?;
+
         Ok(Self {
             db_pool: pool,
             s3_client,
@@ -99,6 +102,7 @@ impl AppState {
             clickhouse_service,
             nats_client,
             nats_jetstream,
+            encryption_service,
         })
     }
 }

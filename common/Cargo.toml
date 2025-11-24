@@ -49,3 +49,5 @@ pulldown-cmark = "0.12.2"
 pdf-extract = "0.7.9"
 quick-xml = { version = "0.37.2", features = ["serialize"] }
 rust_decimal = "1.36"
+aes-gcm = "0.10"
+lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls", "smtp-transport", "builder"] }

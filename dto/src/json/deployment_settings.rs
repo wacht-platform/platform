@@ -216,6 +216,9 @@ pub struct DeploymentB2bSettingsUpdates {
     pub workspaces_per_org_count: Option<i32>,
     pub workspace_permissions: Option<Vec<String>>,
     pub organization_permissions: Option<Vec<String>>,
+    pub ip_allowlist_per_workspace_enabled: Option<bool>,
+    pub enforce_mfa_per_org_enabled: Option<bool>,
+    pub enforce_mfa_per_workspace_enabled: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -247,4 +250,29 @@ pub struct DeploymentDisplaySettingsUpdates {
     pub after_create_organization_redirect_url: Option<String>,
     pub waitlist_page_url: Option<String>,
     pub support_page_url: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SmtpConfigRequest {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub from_email: String,
+    #[serde(default = "default_use_tls")]
+    pub use_tls: bool,
+}
+
+fn default_use_tls() -> bool {
+    true
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SmtpConfigResponse {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub from_email: String,
+    pub use_tls: bool,
+    pub verified: bool,
 }

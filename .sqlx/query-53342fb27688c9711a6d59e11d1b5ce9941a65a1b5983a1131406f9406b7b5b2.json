@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT mail_from_host, email_provider, custom_smtp_config\n            FROM deployments WHERE id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mail_from_host",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "email_provider",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "custom_smtp_config",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "53342fb27688c9711a6d59e11d1b5ce9941a65a1b5983a1131406f9406b7b5b2"
+}

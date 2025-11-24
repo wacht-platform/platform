@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT email_provider, custom_smtp_config\n            FROM deployments\n            WHERE id = $1 AND deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email_provider",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "custom_smtp_config",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "bc97c3bf634237d1003be1280646a1cb4aa66273cacbf95aad7fd14ab071b18e"
+}

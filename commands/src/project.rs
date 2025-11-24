@@ -2,13 +2,14 @@ use common::error::AppError;
 use common::state::AppState;
 use common::{utils::name::generate_random_name, validators::ProjectValidator};
 use models::{
-    AuthFactorsEnabled, DarkModeSettings, Deployment, DeploymentAuthSettings,
+    AuthFactorsEnabled, CustomSmtpConfig, DarkModeSettings, Deployment, DeploymentAuthSettings,
     DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate,
     DeploymentKeyPair, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
-    DeploymentSmsTemplate, DeploymentUISettings, DeploymentWorkspaceRole, EmailSettings,
-    EmailVerificationRecords, FirstFactor, IndividualAuthSettings, LightModeSettings,
-    OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments, SecondFactorPolicy,
-    SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus,
+    DeploymentSmsTemplate, DeploymentUISettings, DeploymentWorkspaceRole, EmailProvider,
+    EmailSettings, EmailVerificationRecords, FirstFactor, IndividualAuthSettings,
+    LightModeSettings, OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments,
+    SecondFactorPolicy, SocialConnectionProvider, UsernameSettings, VerificationPolicy,
+    VerificationStatus,
 };
 
 use base64::{Engine, prelude::BASE64_STANDARD};
@@ -830,6 +831,8 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             mail_from_host: deployment_row.mail_from_host,
             domain_verification_records: None,
             email_verification_records: None,
+            email_provider: EmailProvider::default(),
+            custom_smtp_config: None,
         };
 
         Ok(ProjectWithDeployments {
@@ -1705,6 +1708,8 @@ impl Command for CreateStagingDeploymentCommand {
             mail_from_host: deployment_row.mail_from_host,
             domain_verification_records: None,
             email_verification_records: None,
+            email_provider: EmailProvider::default(),
+            custom_smtp_config: None,
         })
     }
 }
@@ -1792,7 +1797,8 @@ impl Command for CreateProductionDeploymentCommand {
             RETURNING id, created_at, updated_at, deleted_at,
                      maintenance_mode, backend_host, frontend_host, publishable_key, project_id, mode, mail_from_host,
                      domain_verification_records::jsonb as domain_verification_records,
-                     email_verification_records::jsonb as email_verification_records
+                     email_verification_records::jsonb as email_verification_records,
+                     email_provider, custom_smtp_config::jsonb as custom_smtp_config
             "#,
             app_state.sf.next_id()? as i64,
             self.project_id,
@@ -2414,6 +2420,14 @@ impl Command for CreateProductionDeploymentCommand {
             mail_from_host: deployment_row.mail_from_host,
             domain_verification_records: Some(updated_domain_verification_records),
             email_verification_records: Some(email_verification_records),
+            email_provider: EmailProvider::from(deployment_row.email_provider),
+            custom_smtp_config: deployment_row
+                .custom_smtp_config
+                .and_then(|v| serde_json::from_value(v).ok())
+                .map(|mut c: CustomSmtpConfig| {
+                    c.password = String::new();
+                    c
+                }),
         })
     }
 }
@@ -2439,7 +2453,8 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
                    maintenance_mode, backend_host, frontend_host, publishable_key,
                    project_id, mode, mail_from_host,
                    domain_verification_records::jsonb as domain_verification_records,
-                   email_verification_records::jsonb as email_verification_records
+                   email_verification_records::jsonb as email_verification_records,
+                   email_provider, custom_smtp_config::jsonb as custom_smtp_config
             FROM deployments
             WHERE id = $1 AND deleted_at IS NULL
             "#,
@@ -2555,7 +2570,7 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
         Ok(Deployment {
             id: deployment_row.id,
             created_at: deployment_row.created_at,
-            updated_at: chrono::Utc::now(), // Use current time since we just updated
+            updated_at: chrono::Utc::now(),
             maintenance_mode: deployment_row.maintenance_mode,
             backend_host: deployment_row.backend_host,
             frontend_host: deployment_row.frontend_host,
@@ -2565,6 +2580,14 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
             mail_from_host: deployment_row.mail_from_host,
             domain_verification_records: Some(domain_verification_records),
             email_verification_records: Some(email_verification_records),
+            email_provider: EmailProvider::from(deployment_row.email_provider),
+            custom_smtp_config: deployment_row
+                .custom_smtp_config
+                .and_then(|v| serde_json::from_value(v).ok())
+                .map(|mut c: CustomSmtpConfig| {
+                    c.password = String::new();
+                    c
+                }),
         })
     }
 }
@@ -2814,7 +2837,8 @@ impl Command for DeleteDeploymentCommand {
             SELECT id, created_at, updated_at, maintenance_mode, backend_host, frontend_host,
                    publishable_key, project_id, mode, mail_from_host,
                    domain_verification_records::jsonb as domain_verification_records,
-                   email_verification_records::jsonb as email_verification_records
+                   email_verification_records::jsonb as email_verification_records,
+                   email_provider, custom_smtp_config::jsonb as custom_smtp_config
             FROM deployments
             WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
             "#,
@@ -2864,6 +2888,14 @@ impl Command for DeleteDeploymentCommand {
             email_verification_records: deployment_row
                 .email_verification_records
                 .and_then(|data| serde_json::from_value(data).ok()),
+            email_provider: EmailProvider::from(deployment_row.email_provider),
+            custom_smtp_config: deployment_row
+                .custom_smtp_config
+                .and_then(|v| serde_json::from_value(v).ok())
+                .map(|mut c: CustomSmtpConfig| {
+                    c.password = String::new();
+                    c
+                }),
         };
 
         if let Err(e) = self

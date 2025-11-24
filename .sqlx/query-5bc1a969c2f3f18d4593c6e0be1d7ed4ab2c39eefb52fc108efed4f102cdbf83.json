@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, created_at, updated_at, maintenance_mode, backend_host, frontend_host,\n                   publishable_key, project_id, mode, mail_from_host,\n                   domain_verification_records::jsonb as domain_verification_records,\n                   email_verification_records::jsonb as email_verification_records\n            FROM deployments\n            WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL\n            ",
+  "query": "\n            SELECT id, created_at, updated_at, maintenance_mode, backend_host, frontend_host,\n                   publishable_key, project_id, mode, mail_from_host,\n                   domain_verification_records::jsonb as domain_verification_records,\n                   email_verification_records::jsonb as email_verification_records,\n                   email_provider, custom_smtp_config::jsonb as custom_smtp_config\n            FROM deployments\n            WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL\n            ",
   "describe": {
     "columns": [
       {
@@ -62,6 +62,16 @@
         "ordinal": 11,
         "name": "email_verification_records",
         "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "email_provider",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "custom_smtp_config",
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {
@@ -82,8 +92,10 @@
       false,
       false,
       true,
+      true,
+      false,
       true
     ]
   },
-  "hash": "eae0603c8a631faef159a1e2a08c68b81971640c31d99ab8dae0ab789040a582"
+  "hash": "5bc1a969c2f3f18d4593c6e0be1d7ed4ab2c39eefb52fc108efed4f102cdbf83"
 }

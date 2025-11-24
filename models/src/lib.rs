@@ -6,7 +6,7 @@ mod deployment_email_template;
 mod deployment_invitation;
 mod deployment_jwt_template;
 mod deployment_keypair;
-mod deployment_org_settings;
+
 mod deployment_restrictions;
 mod deployment_sms_template;
 mod deployment_social_connection;

@@ -6,14 +6,17 @@ use common::state::AppState;
 
 use commands::{
     Command, CreateDeploymentJwtTemplateCommand, DeleteDeploymentJwtTemplateCommand,
+    GetDeploymentSmtpConfigCommand, RemoveDeploymentSmtpConfigCommand,
     UpdateDeploymentAuthSettingsCommand, UpdateDeploymentDisplaySettingsCommand,
     UpdateDeploymentEmailTemplateCommand, UpdateDeploymentJwtTemplateCommand,
-    UpdateDeploymentRestrictionsCommand,
+    UpdateDeploymentRestrictionsCommand, UpdateDeploymentSmtpConfigCommand,
+    VerifySmtpConnectionCommand,
 };
 use dto::{
     json::{
         DeploymentAuthSettingsUpdates, DeploymentDisplaySettingsUpdates,
         DeploymentRestrictionsUpdates, NewDeploymentJwtTemplate, PartialDeploymentJwtTemplate,
+        SmtpConfigRequest, SmtpConfigResponse,
     },
     params::deployment::DeploymentNameParams,
 };
@@ -164,6 +167,95 @@ pub async fn update_deployment_email_template(
     Json(template): Json<EmailTemplate>,
 ) -> ApiResult<EmailTemplate> {
     UpdateDeploymentEmailTemplateCommand::new(deployment_id, params.template_name, template)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+pub async fn get_smtp_config(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+) -> ApiResult<Option<SmtpConfigResponse>> {
+    let config = GetDeploymentSmtpConfigCommand::new(deployment_id)
+        .execute(&app_state)
+        .await?;
+
+    Ok(config
+        .map(|c| SmtpConfigResponse {
+            host: c.host,
+            port: c.port,
+            username: c.username,
+            from_email: c.from_email,
+            use_tls: c.use_tls,
+            verified: c.verified,
+        })
+        .into())
+}
+
+pub async fn verify_smtp_connection(
+    State(app_state): State<AppState>,
+    RequireDeployment(_deployment_id): RequireDeployment,
+    Json(config): Json<SmtpConfigRequest>,
+) -> ApiResult<()> {
+    VerifySmtpConnectionCommand::new(
+        config.host,
+        config.port,
+        config.username,
+        config.password,
+        config.from_email,
+        config.use_tls,
+    )
+    .execute(&app_state)
+    .await
+    .map(Into::into)
+    .map_err(Into::into)
+}
+
+pub async fn update_smtp_config(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Json(config): Json<SmtpConfigRequest>,
+) -> ApiResult<SmtpConfigResponse> {
+    VerifySmtpConnectionCommand::new(
+        config.host.clone(),
+        config.port,
+        config.username.clone(),
+        config.password.clone(),
+        config.from_email.clone(),
+        config.use_tls,
+    )
+    .execute(&app_state)
+    .await?;
+
+    let result = UpdateDeploymentSmtpConfigCommand::new(
+        deployment_id,
+        config.host,
+        config.port,
+        config.username,
+        config.password,
+        config.from_email,
+        config.use_tls,
+    )
+    .execute(&app_state)
+    .await?;
+
+    Ok(SmtpConfigResponse {
+        host: result.host,
+        port: result.port,
+        username: result.username,
+        from_email: result.from_email,
+        use_tls: result.use_tls,
+        verified: result.verified,
+    }
+    .into())
+}
+
+pub async fn remove_smtp_config(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+) -> ApiResult<()> {
+    RemoveDeploymentSmtpConfigCommand::new(deployment_id)
         .execute(&app_state)
         .await
         .map(Into::into)

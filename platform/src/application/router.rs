@@ -387,6 +387,16 @@ fn console_specific_routes() -> Router<AppState> {
             "/token/user-agent-context",
             post(api::token::generate_user_agent_context_token),
         )
+        .route(
+            "/settings/email-provider/smtp",
+            get(api::settings::get_smtp_config)
+                .post(api::settings::update_smtp_config)
+                .delete(api::settings::remove_smtp_config),
+        )
+        .route(
+            "/settings/email-provider/smtp/verify",
+            post(api::settings::verify_smtp_connection),
+        )
 }
 
 fn backend_specific_routes() -> Router<AppState> {

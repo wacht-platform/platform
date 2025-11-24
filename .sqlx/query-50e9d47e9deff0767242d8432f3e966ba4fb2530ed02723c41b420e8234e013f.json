@@ -1,0 +1,730 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                deployments.id,\n                deployments.created_at,\n                deployments.updated_at,\n                deployments.maintenance_mode,\n                deployments.backend_host,\n                deployments.frontend_host,\n                deployments.publishable_key,\n                deployments.mode,\n                deployments.mail_from_host,\n                deployments.domain_verification_records::jsonb as domain_verification_records,\n                deployments.email_verification_records::jsonb as email_verification_records,\n                deployments.email_provider,\n                deployments.custom_smtp_config::jsonb as custom_smtp_config,\n\n                deployment_auth_settings.id as \"auth_settings_id?\",\n                deployment_auth_settings.created_at as \"auth_settings_created_at?\",\n                deployment_auth_settings.updated_at as \"auth_settings_updated_at?\",\n                deployment_auth_settings.email_address::jsonb as \"email_address?\",\n                deployment_auth_settings.phone_number::jsonb as \"phone_number?\",\n                deployment_auth_settings.username::jsonb as username,\n                deployment_auth_settings.first_name::jsonb as first_name,\n                deployment_auth_settings.last_name::jsonb as last_name,\n                deployment_auth_settings.password::jsonb as password,\n                deployment_auth_settings.auth_factors_enabled::jsonb as auth_factors_enabled,\n                deployment_auth_settings.verification_policy::jsonb as verification_policy,\n                deployment_auth_settings.second_factor_policy::text as second_factor_policy,\n                deployment_auth_settings.first_factor::text as first_factor,\n                deployment_auth_settings.passkey::jsonb as passkey,\n                deployment_auth_settings.magic_link::jsonb as magic_link,\n                deployment_auth_settings.multi_session_support::jsonb as multi_session_support,\n                deployment_auth_settings.session_token_lifetime,\n                deployment_auth_settings.session_validity_period,\n                deployment_auth_settings.session_inactive_timeout,\n\n                deployment_ui_settings.id as \"ui_settings_id?\",\n                deployment_ui_settings.created_at as \"ui_settings_created_at?\",\n                deployment_ui_settings.updated_at as \"ui_settings_updated_at?\",\n                deployment_ui_settings.app_name,\n                deployment_ui_settings.tos_page_url,\n                deployment_ui_settings.sign_in_page_url,\n                deployment_ui_settings.sign_up_page_url,\n                deployment_ui_settings.after_sign_out_one_page_url,\n                deployment_ui_settings.after_sign_out_all_page_url,\n                deployment_ui_settings.favicon_image_url,\n                deployment_ui_settings.logo_image_url,\n                deployment_ui_settings.privacy_policy_url,\n                deployment_ui_settings.signup_terms_statement,\n                deployment_ui_settings.signup_terms_statement_shown,\n                deployment_ui_settings.light_mode_settings,\n                deployment_ui_settings.dark_mode_settings,\n                deployment_ui_settings.after_logo_click_url,\n                deployment_ui_settings.organization_profile_url,\n                deployment_ui_settings.create_organization_url,\n                deployment_ui_settings.default_user_profile_image_url,\n                deployment_ui_settings.default_organization_profile_image_url,\n                deployment_ui_settings.default_workspace_profile_image_url,\n                deployment_ui_settings.use_initials_for_user_profile_image,\n                deployment_ui_settings.use_initials_for_organization_profile_image,\n                deployment_ui_settings.after_signup_redirect_url,\n                deployment_ui_settings.after_signin_redirect_url,\n                deployment_ui_settings.user_profile_url,\n                deployment_ui_settings.after_create_organization_redirect_url,\n                deployment_ui_settings.waitlist_page_url,\n                deployment_ui_settings.support_page_url,\n\n                deployment_b2b_settings.id as \"b2b_settings_id?\",\n                deployment_b2b_settings.created_at as \"b2b_settings_created_at?\",\n                deployment_b2b_settings.updated_at as \"b2b_settings_updated_at?\",\n                deployment_b2b_settings.organizations_enabled as \"b2b_settings_organizations_enabled?\",\n                deployment_b2b_settings.workspaces_enabled as \"b2b_settings_workspaces_enabled?\",\n                deployment_b2b_settings.ip_allowlist_per_org_enabled as \"b2b_settings_ip_allowlist_per_org_enabled?\",\n                deployment_b2b_settings.max_allowed_org_members as \"b2b_settings_max_allowed_org_members?\",\n                deployment_b2b_settings.max_allowed_workspace_members as \"b2b_settings_max_allowed_workspace_members?\",\n                deployment_b2b_settings.allow_org_deletion as \"b2b_settings_allow_org_deletion?\",\n                deployment_b2b_settings.allow_workspace_deletion as \"b2b_settings_allow_workspace_deletion?\",\n                deployment_b2b_settings.custom_org_role_enabled as \"b2b_settings_custom_org_role_enabled?\",\n                deployment_b2b_settings.custom_workspace_role_enabled as \"b2b_settings_custom_workspace_role_enabled?\",\n                deployment_b2b_settings.limit_org_creation_per_user as \"b2b_settings_limit_org_creation_per_user?\",\n                deployment_b2b_settings.limit_workspace_creation_per_org as \"b2b_settings_limit_workspace_creation_per_org?\",\n                deployment_b2b_settings.org_creation_per_user_count as \"b2b_settings_org_creation_per_user_count?\",\n                deployment_b2b_settings.workspaces_per_org_count as \"b2b_settings_workspaces_per_org_count?\",\n                deployment_b2b_settings.allow_users_to_create_orgs as \"b2b_settings_allow_users_to_create_orgs?\",\n                deployment_b2b_settings.max_orgs_per_user as \"b2b_settings_max_orgs_per_user?\",\n                deployment_b2b_settings.default_workspace_creator_role_id as \"b2b_settings_default_workspace_creator_role_id?\",\n                deployment_b2b_settings.default_workspace_member_role_id as \"b2b_settings_default_workspace_member_role_id?\",\n                deployment_b2b_settings.default_org_creator_role_id as \"b2b_settings_default_org_creator_role_id?\",\n                deployment_b2b_settings.default_org_member_role_id as \"b2b_settings_default_org_member_role_id?\",\n                deployment_b2b_settings.workspace_permissions as \"b2b_settings_workspace_permissions?\",\n                deployment_b2b_settings.organization_permissions as \"b2b_settings_organization_permissions?\",\n                deployment_b2b_settings.ip_allowlist_per_workspace_enabled as \"b2b_settings_ip_allowlist_per_workspace_enabled?\",\n                deployment_b2b_settings.enforce_mfa_per_org_enabled as \"b2b_settings_enforce_mfa_per_org_enabled?\",\n                deployment_b2b_settings.enforce_mfa_per_workspace_enabled as \"b2b_settings_enforce_mfa_per_workspace_enabled?\",\n\n                deployment_default_workspace_creator_role.created_at as \"default_workspace_creator_role_created_at?\",\n                deployment_default_workspace_creator_role.updated_at as \"default_workspace_creator_role_updated_at?\",\n                deployment_default_workspace_creator_role.name as \"default_workspace_creator_role_name?\",\n                deployment_default_workspace_creator_role.permissions as \"default_workspace_creator_role_permissions?\",\n\n                deployment_default_workspace_member_role.created_at as \"default_workspace_member_role_created_at?\",\n                deployment_default_workspace_member_role.updated_at as \"default_workspace_member_role_updated_at?\",\n                deployment_default_workspace_member_role.name as \"default_workspace_member_role_name?\",\n                deployment_default_workspace_member_role.permissions as \"default_workspace_member_role_permissions?\",\n\n                deployment_default_org_creator_role.created_at as \"default_org_creator_role_created_at?\",\n                deployment_default_org_creator_role.updated_at as \"default_org_creator_role_updated_at?\",\n                deployment_default_org_creator_role.name as \"default_org_creator_role_name?\",\n                deployment_default_org_creator_role.permissions as \"default_org_creator_role_permissions?\",\n\n                deployment_default_org_member_role.created_at as \"default_org_member_role_created_at?\",\n                deployment_default_org_member_role.updated_at as \"default_org_member_role_updated_at?\",\n                deployment_default_org_member_role.name as \"default_org_member_role_name?\",\n                deployment_default_org_member_role.permissions as \"default_org_member_role_permissions?\",\n\n                deployment_restrictions.id as \"restrictions_id?\",\n                deployment_restrictions.created_at as \"restrictions_created_at?\",\n                deployment_restrictions.updated_at as \"restrictions_updated_at?\",\n                deployment_restrictions.allowlist_enabled,\n                deployment_restrictions.blocklist_enabled,\n                deployment_restrictions.block_subaddresses,\n                deployment_restrictions.block_disposable_emails,\n                deployment_restrictions.block_voip_numbers,\n                deployment_restrictions.country_restrictions,\n                deployment_restrictions.banned_keywords,\n                deployment_restrictions.allowlisted_resources,\n                deployment_restrictions.blocklisted_resources,\n                deployment_restrictions.sign_up_mode,\n                deployment_restrictions.waitlist_collect_names\n\n            FROM deployments\n            LEFT JOIN deployment_auth_settings\n                ON deployments.id = deployment_auth_settings.deployment_id\n            LEFT JOIN deployment_ui_settings\n                ON deployments.id = deployment_ui_settings.deployment_id\n            LEFT JOIN deployment_restrictions\n                ON deployments.id = deployment_restrictions.deployment_id\n            LEFT JOIN deployment_b2b_settings\n                ON deployments.id = deployment_b2b_settings.deployment_id\n            LEFT JOIN workspace_roles AS deployment_default_workspace_creator_role\n                ON deployment_default_workspace_creator_role.id = deployment_b2b_settings.default_workspace_creator_role_id\n            LEFT JOIN workspace_roles AS deployment_default_workspace_member_role\n                ON deployment_default_workspace_member_role.id = deployment_b2b_settings.default_workspace_member_role_id\n            LEFT JOIN organization_roles AS deployment_default_org_creator_role\n                ON deployment_default_org_creator_role.id = deployment_b2b_settings.default_org_creator_role_id\n            LEFT JOIN organization_roles AS deployment_default_org_member_role\n                ON deployment_default_org_member_role.id = deployment_b2b_settings.default_org_member_role_id\n            WHERE deployments.id = $1 AND deployments.deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "maintenance_mode",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "backend_host",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "frontend_host",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "publishable_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "mail_from_host",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "domain_verification_records",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "email_verification_records",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "email_provider",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "custom_smtp_config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 13,
+        "name": "auth_settings_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "auth_settings_created_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "auth_settings_updated_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "email_address?",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 17,
+        "name": "phone_number?",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 18,
+        "name": "username",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 19,
+        "name": "first_name",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 20,
+        "name": "last_name",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 21,
+        "name": "password",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 22,
+        "name": "auth_factors_enabled",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 23,
+        "name": "verification_policy",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 24,
+        "name": "second_factor_policy",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 25,
+        "name": "first_factor",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 26,
+        "name": "passkey",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 27,
+        "name": "magic_link",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 28,
+        "name": "multi_session_support",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 29,
+        "name": "session_token_lifetime",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 30,
+        "name": "session_validity_period",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 31,
+        "name": "session_inactive_timeout",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 32,
+        "name": "ui_settings_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 33,
+        "name": "ui_settings_created_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 34,
+        "name": "ui_settings_updated_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 35,
+        "name": "app_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 36,
+        "name": "tos_page_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 37,
+        "name": "sign_in_page_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 38,
+        "name": "sign_up_page_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 39,
+        "name": "after_sign_out_one_page_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 40,
+        "name": "after_sign_out_all_page_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 41,
+        "name": "favicon_image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 42,
+        "name": "logo_image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 43,
+        "name": "privacy_policy_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 44,
+        "name": "signup_terms_statement",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 45,
+        "name": "signup_terms_statement_shown",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 46,
+        "name": "light_mode_settings",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 47,
+        "name": "dark_mode_settings",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 48,
+        "name": "after_logo_click_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 49,
+        "name": "organization_profile_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 50,
+        "name": "create_organization_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 51,
+        "name": "default_user_profile_image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 52,
+        "name": "default_organization_profile_image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 53,
+        "name": "default_workspace_profile_image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 54,
+        "name": "use_initials_for_user_profile_image",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 55,
+        "name": "use_initials_for_organization_profile_image",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 56,
+        "name": "after_signup_redirect_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 57,
+        "name": "after_signin_redirect_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 58,
+        "name": "user_profile_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 59,
+        "name": "after_create_organization_redirect_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 60,
+        "name": "waitlist_page_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 61,
+        "name": "support_page_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 62,
+        "name": "b2b_settings_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 63,
+        "name": "b2b_settings_created_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 64,
+        "name": "b2b_settings_updated_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 65,
+        "name": "b2b_settings_organizations_enabled?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 66,
+        "name": "b2b_settings_workspaces_enabled?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 67,
+        "name": "b2b_settings_ip_allowlist_per_org_enabled?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 68,
+        "name": "b2b_settings_max_allowed_org_members?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 69,
+        "name": "b2b_settings_max_allowed_workspace_members?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 70,
+        "name": "b2b_settings_allow_org_deletion?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 71,
+        "name": "b2b_settings_allow_workspace_deletion?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 72,
+        "name": "b2b_settings_custom_org_role_enabled?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 73,
+        "name": "b2b_settings_custom_workspace_role_enabled?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 74,
+        "name": "b2b_settings_limit_org_creation_per_user?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 75,
+        "name": "b2b_settings_limit_workspace_creation_per_org?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 76,
+        "name": "b2b_settings_org_creation_per_user_count?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 77,
+        "name": "b2b_settings_workspaces_per_org_count?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 78,
+        "name": "b2b_settings_allow_users_to_create_orgs?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 79,
+        "name": "b2b_settings_max_orgs_per_user?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 80,
+        "name": "b2b_settings_default_workspace_creator_role_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 81,
+        "name": "b2b_settings_default_workspace_member_role_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 82,
+        "name": "b2b_settings_default_org_creator_role_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 83,
+        "name": "b2b_settings_default_org_member_role_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 84,
+        "name": "b2b_settings_workspace_permissions?",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 85,
+        "name": "b2b_settings_organization_permissions?",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 86,
+        "name": "b2b_settings_ip_allowlist_per_workspace_enabled?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 87,
+        "name": "b2b_settings_enforce_mfa_per_org_enabled?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 88,
+        "name": "b2b_settings_enforce_mfa_per_workspace_enabled?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 89,
+        "name": "default_workspace_creator_role_created_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 90,
+        "name": "default_workspace_creator_role_updated_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 91,
+        "name": "default_workspace_creator_role_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 92,
+        "name": "default_workspace_creator_role_permissions?",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 93,
+        "name": "default_workspace_member_role_created_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 94,
+        "name": "default_workspace_member_role_updated_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 95,
+        "name": "default_workspace_member_role_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 96,
+        "name": "default_workspace_member_role_permissions?",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 97,
+        "name": "default_org_creator_role_created_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 98,
+        "name": "default_org_creator_role_updated_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 99,
+        "name": "default_org_creator_role_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 100,
+        "name": "default_org_creator_role_permissions?",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 101,
+        "name": "default_org_member_role_created_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 102,
+        "name": "default_org_member_role_updated_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 103,
+        "name": "default_org_member_role_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 104,
+        "name": "default_org_member_role_permissions?",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 105,
+        "name": "restrictions_id?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 106,
+        "name": "restrictions_created_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 107,
+        "name": "restrictions_updated_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 108,
+        "name": "allowlist_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 109,
+        "name": "blocklist_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 110,
+        "name": "block_subaddresses",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 111,
+        "name": "block_disposable_emails",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 112,
+        "name": "block_voip_numbers",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 113,
+        "name": "country_restrictions",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 114,
+        "name": "banned_keywords",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 115,
+        "name": "allowlisted_resources",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 116,
+        "name": "blocklisted_resources",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 117,
+        "name": "sign_up_mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 118,
+        "name": "waitlist_collect_names",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "50e9d47e9deff0767242d8432f3e966ba4fb2530ed02723c41b420e8234e013f"
+}

@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use super::{
     DeploymentAuthSettings, DeploymentB2bSettingsWithRoles, DeploymentRestrictions,
@@ -40,6 +41,44 @@ pub struct EmailVerificationRecords {
     pub postmark_domain_id: Option<i64>,
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EmailProvider {
+    #[default]
+    Postmark,
+    CustomSmtp,
+}
+
+impl fmt::Display for EmailProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EmailProvider::Postmark => write!(f, "postmark"),
+            EmailProvider::CustomSmtp => write!(f, "custom_smtp"),
+        }
+    }
+}
+
+impl From<String> for EmailProvider {
+    fn from(value: String) -> Self {
+        match value.to_lowercase().as_str() {
+            "custom_smtp" => EmailProvider::CustomSmtp,
+            _ => EmailProvider::Postmark,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct CustomSmtpConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    #[serde(skip_serializing)]
+    pub password: String,
+    pub from_email: String,
+    pub use_tls: bool,
+    pub verified: bool,
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum DeploymentMode {
@@ -73,6 +112,9 @@ pub struct Deployment {
     pub mode: DeploymentMode,
     pub domain_verification_records: Option<DomainVerificationRecords>,
     pub email_verification_records: Option<EmailVerificationRecords>,
+    #[serde(default)]
+    pub email_provider: EmailProvider,
+    pub custom_smtp_config: Option<CustomSmtpConfig>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -93,4 +135,7 @@ pub struct DeploymentWithSettings {
     pub restrictions: Option<DeploymentRestrictions>,
     pub domain_verification_records: Option<DomainVerificationRecords>,
     pub email_verification_records: Option<EmailVerificationRecords>,
+    #[serde(default)]
+    pub email_provider: EmailProvider,
+    pub custom_smtp_config: Option<CustomSmtpConfig>,
 }

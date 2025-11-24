@@ -105,6 +105,8 @@ impl Query for GetDeploymentWithSettingsQuery {
                 deployments.mail_from_host,
                 deployments.domain_verification_records::jsonb as domain_verification_records,
                 deployments.email_verification_records::jsonb as email_verification_records,
+                deployments.email_provider,
+                deployments.custom_smtp_config::jsonb as custom_smtp_config,
 
                 deployment_auth_settings.id as "auth_settings_id?",
                 deployment_auth_settings.created_at as "auth_settings_created_at?",
@@ -181,6 +183,9 @@ impl Query for GetDeploymentWithSettingsQuery {
                 deployment_b2b_settings.default_org_member_role_id as "b2b_settings_default_org_member_role_id?",
                 deployment_b2b_settings.workspace_permissions as "b2b_settings_workspace_permissions?",
                 deployment_b2b_settings.organization_permissions as "b2b_settings_organization_permissions?",
+                deployment_b2b_settings.ip_allowlist_per_workspace_enabled as "b2b_settings_ip_allowlist_per_workspace_enabled?",
+                deployment_b2b_settings.enforce_mfa_per_org_enabled as "b2b_settings_enforce_mfa_per_org_enabled?",
+                deployment_b2b_settings.enforce_mfa_per_workspace_enabled as "b2b_settings_enforce_mfa_per_workspace_enabled?",
 
                 deployment_default_workspace_creator_role.created_at as "default_workspace_creator_role_created_at?",
                 deployment_default_workspace_creator_role.updated_at as "default_workspace_creator_role_updated_at?",
@@ -403,6 +408,13 @@ impl Query for GetDeploymentWithSettingsQuery {
                     max_orgs_per_user: row.b2b_settings_max_orgs_per_user.unwrap(),
                     workspace_permissions: row.b2b_settings_workspace_permissions,
                     organization_permissions: row.b2b_settings_organization_permissions,
+                    ip_allowlist_per_workspace_enabled: row
+                        .b2b_settings_ip_allowlist_per_workspace_enabled
+                        .unwrap(),
+                    enforce_mfa_per_org_enabled: row.b2b_settings_enforce_mfa_per_org_enabled.unwrap(),
+                    enforce_mfa_per_workspace_enabled: row
+                        .b2b_settings_enforce_mfa_per_workspace_enabled
+                        .unwrap(),
                 };
                 Some(DeploymentB2bSettingsWithRoles {
                     settings: b2b_settings,
@@ -458,6 +470,14 @@ impl Query for GetDeploymentWithSettingsQuery {
             email_verification_records: row
                 .email_verification_records
                 .and_then(|v| serde_json::from_value(v).ok()),
+            email_provider: models::EmailProvider::from(row.email_provider),
+            custom_smtp_config: row
+                .custom_smtp_config
+                .and_then(|v| serde_json::from_value(v).ok())
+                .map(|mut c: models::CustomSmtpConfig| {
+                    c.password = String::new();
+                    c
+                }),
         })
     }
 }

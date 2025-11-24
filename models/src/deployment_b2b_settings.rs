@@ -31,6 +31,9 @@ pub struct DeploymentB2bSettings {
     pub default_org_member_role_id: i64,
     pub workspace_permissions: Option<Vec<String>>,
     pub organization_permissions: Option<Vec<String>>,
+    pub ip_allowlist_per_workspace_enabled: bool,
+    pub enforce_mfa_per_org_enabled: bool,
+    pub enforce_mfa_per_workspace_enabled: bool,
 }
 
 impl Default for DeploymentB2bSettings {
@@ -61,6 +64,9 @@ impl Default for DeploymentB2bSettings {
             max_orgs_per_user: 0,
             workspace_permissions: None,
             organization_permissions: None,
+            ip_allowlist_per_workspace_enabled: false,
+            enforce_mfa_per_org_enabled: false,
+            enforce_mfa_per_workspace_enabled: false,
         }
     }
 }
