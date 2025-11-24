@@ -101,8 +101,12 @@ impl Command for UpdateDeploymentSmtpConfigCommand {
             verified: true,
         };
 
-        let config_json = serde_json::to_value(&config)
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
+        let mut config_json =
+            serde_json::to_value(&config).map_err(|e| AppError::Serialization(e.to_string()))?;
+
+        if let Some(obj) = config_json.as_object_mut() {
+            obj.insert("password".to_string(), serde_json::Value::String(encrypted_password.clone()));
+        }
 
         sqlx::query!(
             r#"
@@ -118,10 +122,6 @@ impl Command for UpdateDeploymentSmtpConfigCommand {
         )
         .execute(&app_state.db_pool)
         .await?;
-
-        crate::ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute(app_state)
-            .await?;
 
         tracing::info!(
             "Updated SMTP config for deployment {}: {}:{}",
