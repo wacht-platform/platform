@@ -7,8 +7,8 @@ use common::state::AppState;
 use commands::{
     AddUserEmailCommand, AddUserPhoneCommand, ApproveWaitlistUserCommand, Command,
     CreateUserCommand, DeleteUserCommand, DeleteUserEmailCommand, DeleteUserPhoneCommand,
-    DeleteUserSocialConnectionCommand, InviteUserCommand, UpdateUserCommand,
-    UpdateUserEmailCommand, UpdateUserPasswordCommand, UpdateUserPhoneCommand,
+    DeleteUserSocialConnectionCommand, GenerateImpersonationTokenCommand, InviteUserCommand,
+    UpdateUserCommand, UpdateUserEmailCommand, UpdateUserPasswordCommand, UpdateUserPhoneCommand,
     UpdateUserProfileImageCommand, UploadToCdnCommand,
 };
 use dto::{
@@ -740,6 +740,18 @@ pub async fn delete_user(
     Path(params): Path<UserParams>,
 ) -> ApiResult<()> {
     DeleteUserCommand::new(deployment_id, params.user_id)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+pub async fn impersonate_user(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<UserParams>,
+) -> ApiResult<commands::GenerateImpersonationTokenResponse> {
+    GenerateImpersonationTokenCommand::new(deployment_id, params.user_id)
         .execute(&app_state)
         .await
         .map(Into::into)

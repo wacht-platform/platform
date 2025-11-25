@@ -624,3 +624,122 @@ impl Command for DeleteUserCommand {
         Ok(())
     }
 }
+
+// Impersonation
+use crypto::x509::ParsePkcs8PrivateKey;
+use josekit::jws::{JwsHeader, ES256};
+use josekit::jwt::{self, JwtPayload};
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ImpersonationTokenClaims {
+    pub user_id: i64,
+    pub deployment_id: i64,
+    #[serde(rename = "type")]
+    pub token_type: String,
+}
+
+pub struct GenerateImpersonationTokenCommand {
+    deployment_id: i64,
+    user_id: i64,
+}
+
+impl GenerateImpersonationTokenCommand {
+    pub fn new(deployment_id: i64, user_id: i64) -> Self {
+        Self {
+            deployment_id,
+            user_id,
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GenerateImpersonationTokenResponse {
+    pub token: String,
+    pub redirect_url: String,
+}
+
+impl Command for GenerateImpersonationTokenCommand {
+    type Output = GenerateImpersonationTokenResponse;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Get deployment keypair
+        let keypair = sqlx::query!(
+            r#"
+            SELECT private_key, public_key, frontend_host
+            FROM deployment_keypairs dk
+            JOIN deployments d ON d.id = dk.deployment_id
+            WHERE dk.deployment_id = $1
+            "#,
+            self.deployment_id
+        )
+        .fetch_one(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to get deployment keypair: {}", e)))?;
+
+        // Verify user exists and is not disabled
+        let user = sqlx::query!(
+            r#"
+            SELECT id, disabled
+            FROM users
+            WHERE id = $1 AND deployment_id = $2
+            "#,
+            self.user_id,
+            self.deployment_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch user: {}", e)))?
+        .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+        if user.disabled {
+            return Err(AppError::BadRequest("Cannot impersonate disabled user".to_string()));
+        }
+
+        // Parse private key
+        let private_key_pem = keypair.private_key
+            .ok_or_else(|| AppError::Internal("Missing private key".to_string()))?;
+        
+        let private_key = ES256
+            .key_pair_from_pem(&private_key_pem)
+            .map_err(|e| AppError::Internal(format!("Failed to parse private key: {}", e)))?;
+
+        // Create JWT payload
+        let mut payload = JwtPayload::new();
+        payload.set_subject(&self.user_id.to_string());
+        payload.set_issued_at(&Utc::now());
+        payload.set_expires_at(&(Utc::now() + Duration::minutes(10)));
+        
+        // Add custom claims
+        payload.set_claim("user_id", Some(serde_json::json!(self.user_id)))
+            .map_err(|e| AppError::Internal(format!("Failed to set user_id claim: {}", e)))?;
+        payload.set_claim("deployment_id", Some(serde_json::json!(self.deployment_id)))
+            .map_err(|e| AppError::Internal(format!("Failed to set deployment_id claim: {}", e)))?;
+        payload.set_claim("type", Some(serde_json::json!("impersonation")))
+            .map_err(|e| AppError::Internal(format!("Failed to set type claim: {}", e)))?;
+
+        // Sign the token
+        let signer = ES256.signer_from_pem(&private_key_pem)
+            .map_err(|e| AppError::Internal(format!("Failed to create signer: {}", e)))?;
+        
+        let mut header = JwsHeader::new();
+        header.set_token_type("JWT");
+        
+        let token = jwt::encode_with_signer(&payload, &header, &signer)
+            .map_err(|e| AppError::Internal(format!("Failed to encode JWT: {}", e)))?;
+
+        // Generate redirect URL
+        let frontend_host = keypair.frontend_host
+            .ok_or_else(|| AppError::Internal("Missing frontend host".to_string()))?;
+        
+        let redirect_url = format!(
+            "https://{}?impersonation_token={}",
+            frontend_host,
+            urlencoding::encode(&token)
+        );
+
+        Ok(GenerateImpersonationTokenResponse {
+            token,
+            redirect_url,
+        })
+    }
+}
