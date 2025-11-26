@@ -733,7 +733,7 @@ impl Command for GenerateImpersonationTokenCommand {
         let frontend_host = keypair.frontend_host;
 
         let redirect_url = format!(
-            "https://{}?impersonation_token={}",
+            "https://{}/sign-in?impersonation_token={}",
             frontend_host,
             urlencoding::encode(&token)
         );
