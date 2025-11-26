@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT billing_account_id\n            FROM projects\n            WHERE id = (SELECT project_id FROM deployments WHERE id = $1)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "billing_account_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ef8df6d838d10f5d0c011cb9a067d2375eabd9365e05cddf68970037e5ae518f"
+}

@@ -1143,6 +1143,7 @@ dependencies = [
  "hex",
  "hmac",
  "html2text",
+ "josekit",
  "jsonwebtoken",
  "models",
  "pgvector",
@@ -1161,6 +1162,7 @@ dependencies = [
  "totp-rs",
  "tracing",
  "url",
+ "urlencoding",
  "zstd",
 ]
 
@@ -2755,6 +2757,24 @@ checksum = "38f262f097c174adebe41eb73d66ae9c06b2844fb0da69969647bbddd9b0538a"
 dependencies = [
  "getrandom 0.3.2",
  "libc",
+]
+
+[[package]]
+name = "josekit"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54b85e2125819afc4fd2ae57416207e792c7e12797858e5db2a6c6f24a166829"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "flate2",
+ "once_cell",
+ "openssl",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "time",
 ]
 
 [[package]]
@@ -4748,6 +4768,7 @@ version = "1.0.140"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "ryu",
@@ -5943,9 +5964,9 @@ checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 
 [[package]]
 name = "wacht"
-version = "0.0.1-alpha.4"
+version = "0.0.1-alpha.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fa10da48d1c8d444f423ef7615adb03d7cc594bb9c714434e74e3bbd491cbbd"
+checksum = "949c49d0ce18d49228ee83a2b5af91eea36f47fca3f530d67fa7899c2e411b61"
 dependencies = [
  "axum",
  "chrono",

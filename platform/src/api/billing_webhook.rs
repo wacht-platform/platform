@@ -96,6 +96,7 @@ async fn handle_subscription_active(
 ) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+    let product_id = data["product_id"].as_str().map(|s| s.to_string());
     let status = data["status"].as_str().unwrap_or("active");
 
     if customer_id.is_empty() || subscription_id.is_empty() {
@@ -114,6 +115,7 @@ async fn handle_subscription_active(
         owner_id: owner_id.clone(),
         provider_customer_id: customer_id.to_string(),
         provider_subscription_id: subscription_id.to_string(),
+        product_id,
         status: status.to_string(),
     }
     .execute(app_state)
@@ -145,6 +147,7 @@ async fn handle_subscription_renewed(
 ) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+    let product_id = data["product_id"].as_str().map(|s| s.to_string());
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
@@ -153,6 +156,7 @@ async fn handle_subscription_renewed(
             owner_id: owner_id.clone(),
             provider_customer_id: customer_id.to_string(),
             provider_subscription_id: subscription_id.to_string(),
+            product_id,
             status: "active".to_string(),
         }
         .execute(app_state)
@@ -192,6 +196,7 @@ async fn handle_subscription_cancelled(
 ) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+    let product_id = data["product_id"].as_str().map(|s| s.to_string());
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
@@ -200,6 +205,7 @@ async fn handle_subscription_cancelled(
             owner_id: owner_id.clone(),
             provider_customer_id: customer_id.to_string(),
             provider_subscription_id: subscription_id.to_string(),
+            product_id,
             status: "cancelled".to_string(),
         }
         .execute(app_state)
@@ -232,6 +238,7 @@ async fn handle_subscription_on_hold(
 ) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+    let product_id = data["product_id"].as_str().map(|s| s.to_string());
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
@@ -240,6 +247,7 @@ async fn handle_subscription_on_hold(
             owner_id: owner_id.clone(),
             provider_customer_id: customer_id.to_string(),
             provider_subscription_id: subscription_id.to_string(),
+            product_id,
             status: "on_hold".to_string(),
         }
         .execute(app_state)
@@ -272,6 +280,7 @@ async fn handle_subscription_failed(
 ) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+    let product_id = data["product_id"].as_str().map(|s| s.to_string());
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
@@ -280,6 +289,7 @@ async fn handle_subscription_failed(
             owner_id: owner_id.clone(),
             provider_customer_id: customer_id.to_string(),
             provider_subscription_id: subscription_id.to_string(),
+            product_id,
             status: "failed".to_string(),
         }
         .execute(app_state)
@@ -312,6 +322,7 @@ async fn handle_subscription_expired(
 ) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
+    let product_id = data["product_id"].as_str().map(|s| s.to_string());
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
@@ -320,6 +331,7 @@ async fn handle_subscription_expired(
             owner_id: owner_id.clone(),
             provider_customer_id: customer_id.to_string(),
             provider_subscription_id: subscription_id.to_string(),
+            product_id,
             status: "expired".to_string(),
         }
         .execute(app_state)

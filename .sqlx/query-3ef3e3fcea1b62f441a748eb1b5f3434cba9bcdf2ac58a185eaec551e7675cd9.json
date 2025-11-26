@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                k.id as key_id,\n                k.deployment_id,\n                k.app_id,\n                k.name as key_name,\n                k.is_active,\n                k.expires_at,\n                k.permissions as \"permissions: serde_json::Value\",\n                a.name as app_name,\n                a.rate_limits as \"rate_limits: serde_json::Value\"\n            FROM api_keys k\n            INNER JOIN api_key_apps a ON k.app_id = a.id\n            WHERE k.key_hash = $1\n                AND k.is_active = true\n                AND a.is_active = true\n                AND a.deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "key_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "permissions: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "app_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "rate_limits: serde_json::Value",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "3ef3e3fcea1b62f441a748eb1b5f3434cba9bcdf2ac58a185eaec551e7675cd9"
+}

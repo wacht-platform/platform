@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use models::api_key::{ApiKey, ApiKeyApp};
+use models::api_key::{ApiKey, ApiKeyApp, RateLimit};
 use models::api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -48,10 +48,7 @@ pub struct ListApiKeyAppsResponse {
 pub struct CreateApiKeyAppRequest {
     pub name: String,
     pub description: Option<String>,
-    pub rate_limit_per_minute: Option<i32>,
-    pub rate_limit_per_hour: Option<i32>,
-    pub rate_limit_per_day: Option<i32>,
-    pub rate_limit_mode: Option<String>,
+    pub rate_limits: Option<Vec<RateLimit>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,10 +56,7 @@ pub struct UpdateApiKeyAppRequest {
     pub name: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
-    pub rate_limit_per_minute: Option<i32>,
-    pub rate_limit_per_hour: Option<i32>,
-    pub rate_limit_per_day: Option<i32>,
-    pub rate_limit_mode: Option<String>,
+    pub rate_limits: Option<Vec<RateLimit>>,
 }
 
 // =====================================================

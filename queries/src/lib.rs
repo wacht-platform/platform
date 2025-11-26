@@ -33,6 +33,7 @@ pub mod ai_tool;
 pub mod ai_workflow;
 pub mod billing;
 pub mod hybrid_search;
+pub mod plan_access;
 pub use agent_execution_context::*;
 pub use ai_agent::*;
 pub use ai_knowledge_base::*;

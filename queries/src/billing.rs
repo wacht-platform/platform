@@ -74,7 +74,8 @@ impl Query for GetBillingAccountQuery {
             let subscription = sqlx::query_as!(
                 Subscription,
                 r#"
-                SELECT * FROM subscriptions WHERE billing_account_id = $1
+                SELECT id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, created_at, updated_at
+                FROM subscriptions WHERE billing_account_id = $1
                 "#,
                 account.id
             )
@@ -110,7 +111,8 @@ impl Query for GetSubscriptionByProviderIdQuery {
         let subscription = sqlx::query_as!(
             Subscription,
             r#"
-            SELECT * FROM subscriptions WHERE provider_subscription_id = $1
+            SELECT id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, created_at, updated_at
+            FROM subscriptions WHERE provider_subscription_id = $1
             "#,
             &self.provider_subscription_id
         )

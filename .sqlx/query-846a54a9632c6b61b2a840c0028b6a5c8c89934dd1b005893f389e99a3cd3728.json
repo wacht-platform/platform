@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM api_key_apps WHERE deployment_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",
+  "query": "SELECT id, deployment_id, name, description, is_active,\n                   rate_limits as \"rate_limits: serde_json::Value\",\n                   created_at, updated_at, deleted_at\n                   FROM api_key_apps WHERE deployment_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -30,38 +30,23 @@
       },
       {
         "ordinal": 5,
-        "name": "rate_limit_per_minute",
-        "type_info": "Int4"
+        "name": "rate_limits: serde_json::Value",
+        "type_info": "Jsonb"
       },
       {
         "ordinal": 6,
-        "name": "rate_limit_per_hour",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "deleted_at",
         "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 10,
-        "name": "rate_limit_per_day",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 11,
-        "name": "rate_limit_mode",
-        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -78,11 +63,8 @@
       true,
       true,
       true,
-      true,
-      true,
-      true,
       true
     ]
   },
-  "hash": "e6aa0912f180d9b66828db28e547a02ef825ca16397f8dce26cc39fc17af950a"
+  "hash": "846a54a9632c6b61b2a840c0028b6a5c8c89934dd1b005893f389e99a3cd3728"
 }

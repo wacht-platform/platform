@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT * FROM subscriptions WHERE provider_subscription_id = $1\n            ",
+  "query": "\n                SELECT id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, created_at, updated_at\n                FROM subscriptions WHERE billing_account_id = $1\n                ",
   "describe": {
     "columns": [
       {
@@ -10,38 +10,43 @@
       },
       {
         "ordinal": 1,
+        "name": "billing_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
         "name": "provider_customer_id",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "provider_subscription_id",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
+        "name": "product_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
         "name": "status",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 6,
-        "name": "billing_account_id",
-        "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
@@ -50,9 +55,10 @@
       false,
       false,
       true,
+      false,
       true,
-      false
+      true
     ]
   },
-  "hash": "371671bb408402c0d7efc58d92a0b24e113404d84cc723d82ab21856f69cbad4"
+  "hash": "8007937c6dec96daa7d962e4afe7d02f78db134db450ba593c51ee201e6b6cdd"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM api_key_apps WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
+  "query": "\n            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limits)\n            VALUES ($1, $2, $3, $4, $5)\n            RETURNING id, deployment_id, name, description, is_active,\n                      rate_limits as \"rate_limits: serde_json::Value\",\n                      created_at, updated_at, deleted_at\n            ",
   "describe": {
     "columns": [
       {
@@ -30,44 +30,32 @@
       },
       {
         "ordinal": 5,
-        "name": "rate_limit_per_minute",
-        "type_info": "Int4"
+        "name": "rate_limits: serde_json::Value",
+        "type_info": "Jsonb"
       },
       {
         "ordinal": 6,
-        "name": "rate_limit_per_hour",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "deleted_at",
         "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 10,
-        "name": "rate_limit_per_day",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 11,
-        "name": "rate_limit_mode",
-        "type_info": "Varchar"
       }
     ],
     "parameters": {
       "Left": [
         "Int8",
-        "Int8"
+        "Int8",
+        "Varchar",
+        "Text",
+        "Jsonb"
       ]
     },
     "nullable": [
@@ -79,11 +67,8 @@
       true,
       true,
       true,
-      true,
-      true,
-      true,
       true
     ]
   },
-  "hash": "d9257f0d87f02f2098c4b00e2aeca970e4683e45914a9db69aab1bb85779a7a1"
+  "hash": "ee0f1c97bfbe4c4ce5d5c0658680193f8eae0ae40e17040113a07d761a927f13"
 }

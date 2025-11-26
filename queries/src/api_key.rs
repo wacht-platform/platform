@@ -28,7 +28,10 @@ impl Query for GetApiKeyAppsQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let apps = if self.include_inactive {
             let recs = sqlx::query!(
-                "SELECT * FROM api_key_apps WHERE deployment_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",
+                r#"SELECT id, deployment_id, name, description, is_active,
+                   rate_limits as "rate_limits: serde_json::Value",
+                   created_at, updated_at, deleted_at
+                   FROM api_key_apps WHERE deployment_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC"#,
                 self.deployment_id
             )
             .fetch_all(&app_state.db_pool)
@@ -41,12 +44,9 @@ impl Query for GetApiKeyAppsQuery {
                     name: rec.name,
                     description: rec.description,
                     is_active: rec.is_active.unwrap_or(true),
-                    rate_limit_per_minute: rec.rate_limit_per_minute,
-                    rate_limit_per_hour: rec.rate_limit_per_hour,
-                    rate_limit_per_day: rec.rate_limit_per_day,
-                    rate_limit_mode: rec
-                        .rate_limit_mode
-                        .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+                    rate_limits: rec.rate_limits
+                        .and_then(|v| serde_json::from_value(v).ok())
+                        .unwrap_or_default(),
                     created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
                     updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
                     deleted_at: rec.deleted_at,
@@ -54,7 +54,10 @@ impl Query for GetApiKeyAppsQuery {
                 .collect()
         } else {
             let recs = sqlx::query!(
-                "SELECT * FROM api_key_apps WHERE deployment_id = $1 AND is_active = true AND deleted_at IS NULL ORDER BY created_at DESC",
+                r#"SELECT id, deployment_id, name, description, is_active,
+                   rate_limits as "rate_limits: serde_json::Value",
+                   created_at, updated_at, deleted_at
+                   FROM api_key_apps WHERE deployment_id = $1 AND is_active = true AND deleted_at IS NULL ORDER BY created_at DESC"#,
                 self.deployment_id
             )
             .fetch_all(&app_state.db_pool)
@@ -67,12 +70,9 @@ impl Query for GetApiKeyAppsQuery {
                     name: rec.name,
                     description: rec.description,
                     is_active: rec.is_active.unwrap_or(true),
-                    rate_limit_per_minute: rec.rate_limit_per_minute,
-                    rate_limit_per_hour: rec.rate_limit_per_hour,
-                    rate_limit_per_day: rec.rate_limit_per_day,
-                    rate_limit_mode: rec
-                        .rate_limit_mode
-                        .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+                    rate_limits: rec.rate_limits
+                        .and_then(|v| serde_json::from_value(v).ok())
+                        .unwrap_or_default(),
                     created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
                     updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
                     deleted_at: rec.deleted_at,
@@ -94,7 +94,10 @@ impl Query for GetApiKeyAppByIdQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
-            "SELECT * FROM api_key_apps WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
+            r#"SELECT id, deployment_id, name, description, is_active,
+               rate_limits as "rate_limits: serde_json::Value",
+               created_at, updated_at, deleted_at
+               FROM api_key_apps WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL"#,
             self.app_id,
             self.deployment_id
         )
@@ -107,12 +110,9 @@ impl Query for GetApiKeyAppByIdQuery {
             name: rec.name,
             description: rec.description,
             is_active: rec.is_active.unwrap_or(true),
-            rate_limit_per_minute: rec.rate_limit_per_minute,
-            rate_limit_per_hour: rec.rate_limit_per_hour,
-            rate_limit_per_day: rec.rate_limit_per_day,
-            rate_limit_mode: rec
-                .rate_limit_mode
-                .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+            rate_limits: rec.rate_limits
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default(),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,
@@ -139,7 +139,10 @@ impl Query for GetApiKeyAppByNameQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
-            "SELECT * FROM api_key_apps WHERE deployment_id = $1 AND name = $2 AND deleted_at IS NULL",
+            r#"SELECT id, deployment_id, name, description, is_active,
+               rate_limits as "rate_limits: serde_json::Value",
+               created_at, updated_at, deleted_at
+               FROM api_key_apps WHERE deployment_id = $1 AND name = $2 AND deleted_at IS NULL"#,
             self.deployment_id,
             self.name
         )
@@ -152,12 +155,9 @@ impl Query for GetApiKeyAppByNameQuery {
             name: rec.name,
             description: rec.description,
             is_active: rec.is_active.unwrap_or(true),
-            rate_limit_per_minute: rec.rate_limit_per_minute,
-            rate_limit_per_hour: rec.rate_limit_per_hour,
-            rate_limit_per_day: rec.rate_limit_per_day,
-            rate_limit_mode: rec
-                .rate_limit_mode
-                .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+            rate_limits: rec.rate_limits
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default(),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,

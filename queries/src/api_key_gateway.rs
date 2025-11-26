@@ -2,12 +2,11 @@ use super::Query;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
 use common::state::AppState;
+use models::api_key::RateLimit;
 use serde::{Deserialize, Serialize};
 
-/// Optimized query for the gateway - gets all needed data in a single query
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKeyGatewayData {
-    // API Key fields
     pub key_id: i64,
     pub deployment_id: i64,
     pub app_id: i64,
@@ -15,13 +14,8 @@ pub struct ApiKeyGatewayData {
     pub is_active: bool,
     pub expires_at: Option<DateTime<Utc>>,
     pub permissions: Vec<String>,
-
-    // API Key App fields
     pub app_name: String,
-    pub rate_limit_per_minute: Option<i32>,
-    pub rate_limit_per_hour: Option<i32>,
-    pub rate_limit_per_day: Option<i32>,
-    pub rate_limit_mode: Option<String>,
+    pub rate_limits: Vec<RateLimit>,
 }
 
 pub struct GetApiKeyGatewayDataQuery {
@@ -40,7 +34,7 @@ impl Query for GetApiKeyGatewayDataQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
             r#"
-            SELECT 
+            SELECT
                 k.id as key_id,
                 k.deployment_id,
                 k.app_id,
@@ -49,14 +43,11 @@ impl Query for GetApiKeyGatewayDataQuery {
                 k.expires_at,
                 k.permissions as "permissions: serde_json::Value",
                 a.name as app_name,
-                a.rate_limit_per_minute,
-                a.rate_limit_per_hour,
-                a.rate_limit_per_day,
-                a.rate_limit_mode
+                a.rate_limits as "rate_limits: serde_json::Value"
             FROM api_keys k
             INNER JOIN api_key_apps a ON k.app_id = a.id
-            WHERE k.key_hash = $1 
-                AND k.is_active = true 
+            WHERE k.key_hash = $1
+                AND k.is_active = true
                 AND a.is_active = true
                 AND a.deleted_at IS NULL
             "#,
@@ -75,10 +66,8 @@ impl Query for GetApiKeyGatewayDataQuery {
             permissions: serde_json::from_value(r.permissions.unwrap_or(serde_json::json!([])))
                 .unwrap_or_default(),
             app_name: r.app_name,
-            rate_limit_per_minute: r.rate_limit_per_minute,
-            rate_limit_per_hour: r.rate_limit_per_hour,
-            rate_limit_per_day: r.rate_limit_per_day,
-            rate_limit_mode: r.rate_limit_mode,
+            rate_limits: serde_json::from_value(r.rate_limits.unwrap_or(serde_json::json!([])))
+                .unwrap_or_else(|_| vec![]),
         }))
     }
 }

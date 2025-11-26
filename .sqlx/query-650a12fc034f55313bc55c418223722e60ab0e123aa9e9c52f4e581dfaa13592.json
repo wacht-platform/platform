@@ -37,6 +37,11 @@
         "ordinal": 6,
         "name": "billing_account_id",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "product_id",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -55,7 +60,8 @@
       false,
       true,
       true,
-      false
+      false,
+      true
     ]
   },
   "hash": "650a12fc034f55313bc55c418223722e60ab0e123aa9e9c52f4e581dfaa13592"

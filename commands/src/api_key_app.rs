@@ -1,16 +1,13 @@
 use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
-use models::api_key::ApiKeyApp;
+use models::api_key::{ApiKeyApp, RateLimit};
 
 pub struct CreateApiKeyAppCommand {
     pub deployment_id: i64,
     pub name: String,
     pub description: Option<String>,
-    pub rate_limit_per_minute: Option<i32>,
-    pub rate_limit_per_hour: Option<i32>,
-    pub rate_limit_per_day: Option<i32>,
-    pub rate_limit_mode: Option<String>,
+    pub rate_limits: Vec<RateLimit>,
 }
 
 impl CreateApiKeyAppCommand {
@@ -19,10 +16,7 @@ impl CreateApiKeyAppCommand {
             deployment_id,
             name,
             description: None,
-            rate_limit_per_minute: None,
-            rate_limit_per_hour: None,
-            rate_limit_per_day: None,
-            rate_limit_mode: None,
+            rate_limits: vec![],
         }
     }
 
@@ -31,25 +25,8 @@ impl CreateApiKeyAppCommand {
         self
     }
 
-    pub fn with_rate_limits(mut self, per_minute: i32, per_hour: i32, per_day: i32) -> Self {
-        self.rate_limit_per_minute = Some(per_minute);
-        self.rate_limit_per_hour = Some(per_hour);
-        self.rate_limit_per_day = Some(per_day);
-        self
-    }
-
-    pub fn with_rate_limit_per_minute(mut self, per_minute: i32) -> Self {
-        self.rate_limit_per_minute = Some(per_minute);
-        self
-    }
-
-    pub fn with_rate_limit_per_hour(mut self, per_hour: i32) -> Self {
-        self.rate_limit_per_hour = Some(per_hour);
-        self
-    }
-
-    pub fn with_rate_limit_per_day(mut self, per_day: i32) -> Self {
-        self.rate_limit_per_day = Some(per_day);
+    pub fn with_rate_limits(mut self, rate_limits: Vec<RateLimit>) -> Self {
+        self.rate_limits = rate_limits;
         self
     }
 }
@@ -58,23 +35,24 @@ impl Command for CreateApiKeyAppCommand {
     type Output = ApiKeyApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Generate Snowflake ID
         let app_id = app_state.sf.next_id()? as i64;
+
+        let rate_limits_json = serde_json::to_value(&self.rate_limits)
+            .map_err(|e| AppError::Internal(format!("Failed to serialize rate limits: {}", e)))?;
 
         let rec = sqlx::query!(
             r#"
-            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode, created_at, updated_at, deleted_at
+            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limits)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, deployment_id, name, description, is_active,
+                      rate_limits as "rate_limits: serde_json::Value",
+                      created_at, updated_at, deleted_at
             "#,
             app_id,
             self.deployment_id,
             self.name,
             self.description,
-            self.rate_limit_per_minute,
-            self.rate_limit_per_hour,
-            self.rate_limit_per_day,
-            self.rate_limit_mode
+            rate_limits_json
         )
         .fetch_one(&app_state.db_pool)
         .await?;
@@ -85,12 +63,9 @@ impl Command for CreateApiKeyAppCommand {
             name: rec.name,
             description: rec.description,
             is_active: rec.is_active.unwrap_or(true),
-            rate_limit_per_minute: rec.rate_limit_per_minute,
-            rate_limit_per_hour: rec.rate_limit_per_hour,
-            rate_limit_per_day: rec.rate_limit_per_day,
-            rate_limit_mode: rec
-                .rate_limit_mode
-                .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+            rate_limits: rec.rate_limits
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default(),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,
@@ -104,40 +79,39 @@ pub struct UpdateApiKeyAppCommand {
     pub name: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
-    pub rate_limit_per_minute: Option<i32>,
-    pub rate_limit_per_hour: Option<i32>,
-    pub rate_limit_per_day: Option<i32>,
-    pub rate_limit_mode: Option<String>,
+    pub rate_limits: Option<Vec<RateLimit>>,
 }
 
 impl Command for UpdateApiKeyAppCommand {
     type Output = ApiKeyApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let rate_limits_json = self.rate_limits
+            .as_ref()
+            .map(|rl| serde_json::to_value(rl))
+            .transpose()
+            .map_err(|e| AppError::Internal(format!("Failed to serialize rate limits: {}", e)))?;
+
         let rec = sqlx::query!(
             r#"
             UPDATE api_key_apps
-            SET 
+            SET
                 name = COALESCE($3, name),
                 description = COALESCE($4, description),
                 is_active = COALESCE($5, is_active),
-                rate_limit_per_minute = COALESCE($6, rate_limit_per_minute),
-                rate_limit_per_hour = COALESCE($7, rate_limit_per_hour),
-                rate_limit_per_day = COALESCE($8, rate_limit_per_day),
-                rate_limit_mode = COALESCE($9, rate_limit_mode),
+                rate_limits = COALESCE($6, rate_limits),
                 updated_at = NOW()
             WHERE id = $1 AND deployment_id = $2
-            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode, created_at, updated_at, deleted_at
+            RETURNING id, deployment_id, name, description, is_active,
+                      rate_limits as "rate_limits: serde_json::Value",
+                      created_at, updated_at, deleted_at
             "#,
             self.app_id,
             self.deployment_id,
             self.name,
             self.description,
             self.is_active,
-            self.rate_limit_per_minute,
-            self.rate_limit_per_hour,
-            self.rate_limit_per_day,
-            self.rate_limit_mode
+            rate_limits_json
         )
         .fetch_one(&app_state.db_pool)
         .await?;
@@ -148,12 +122,9 @@ impl Command for UpdateApiKeyAppCommand {
             name: rec.name,
             description: rec.description,
             is_active: rec.is_active.unwrap_or(true),
-            rate_limit_per_minute: rec.rate_limit_per_minute,
-            rate_limit_per_hour: rec.rate_limit_per_hour,
-            rate_limit_per_day: rec.rate_limit_per_day,
-            rate_limit_mode: rec
-                .rate_limit_mode
-                .and_then(|s| models::api_key::RateLimitMode::from_str(&s)),
+            rate_limits: rec.rate_limits
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default(),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,

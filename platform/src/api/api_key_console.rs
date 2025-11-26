@@ -60,13 +60,18 @@ pub async fn activate_api_keys(
             .into());
     }
 
-    // Create API key app using SDK
+    // Create API key app using SDK with default rate limits
     let request = api_keys::CreateApiKeyAppRequest {
         name: app_name,
         description: Some(format!("API keys for deployment {}", deployment_id)),
-        rate_limit_per_minute: Some(60),
-        rate_limit_per_hour: Some(1000),
-        rate_limit_per_day: Some(10000),
+        rate_limits: Some(vec![
+            api_keys::RateLimit {
+                unit: api_keys::RateLimitUnit::Minute,
+                duration: 1,
+                max_requests: 100,
+                mode: Some(api_keys::RateLimitMode::PerKey),
+            }
+        ]),
     };
 
     let sdk_app = api_keys::create_api_key_app(request)
@@ -87,9 +92,7 @@ pub async fn deactivate_api_keys(
         name: None,
         description: None,
         is_active: Some(false),
-        rate_limit_per_minute: None,
-        rate_limit_per_hour: None,
-        rate_limit_per_day: None,
+        rate_limits: None,
     };
 
     api_keys::update_api_key_app(&app_name, request)

@@ -62,6 +62,7 @@ pub mod notification;
 // Billing models
 pub mod billing;
 pub mod billing_invoice;
+pub mod plan_features;
 
 pub use deployment::*;
 pub use deployment_auth_settings::*;

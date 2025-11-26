@@ -59,19 +59,9 @@ pub async fn create_api_key_app(
         command = command.with_description(description);
     }
 
-    if let Some(per_minute) = request.rate_limit_per_minute {
-        command = command.with_rate_limit_per_minute(per_minute);
+    if let Some(rate_limits) = request.rate_limits {
+        command = command.with_rate_limits(rate_limits);
     }
-
-    if let Some(per_hour) = request.rate_limit_per_hour {
-        command = command.with_rate_limit_per_hour(per_hour);
-    }
-
-    if let Some(per_day) = request.rate_limit_per_day {
-        command = command.with_rate_limit_per_day(per_day);
-    }
-
-    command.rate_limit_mode = request.rate_limit_mode;
 
     let app = command.execute(&app_state).await?;
     Ok(app.into())
@@ -83,7 +73,6 @@ pub async fn update_api_key_app(
     Path(app_name): Path<String>,
     Json(request): Json<UpdateApiKeyAppRequest>,
 ) -> ApiResult<ApiKeyApp> {
-    // First get the app by name to find its ID
     let app = GetApiKeyAppByNameQuery::new(deployment_id, app_name)
         .execute(&app_state)
         .await?
@@ -95,10 +84,7 @@ pub async fn update_api_key_app(
         name: request.name,
         description: request.description,
         is_active: request.is_active,
-        rate_limit_per_minute: request.rate_limit_per_minute,
-        rate_limit_per_hour: request.rate_limit_per_hour,
-        rate_limit_per_day: request.rate_limit_per_day,
-        rate_limit_mode: request.rate_limit_mode,
+        rate_limits: request.rate_limits,
     };
 
     let app = command.execute(&app_state).await?;

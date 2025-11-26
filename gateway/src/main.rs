@@ -460,13 +460,6 @@ async fn check_limit(
         }
     }
 
-    // Parse rate limit mode
-    let rate_limit_mode = key_data
-        .rate_limit_mode
-        .as_deref()
-        .and_then(RateLimitMode::from_str)
-        .unwrap_or_default();
-
     // Get client IP - prefer custom header from user's backend, fall back to connection IP
     // X-Original-Client-IP is the header that the user's backend should set with their end-user's IP
     let client_ip = headers
@@ -490,23 +483,19 @@ async fn check_limit(
 
     // Build rate limit checks based on configured limits
     let mut limits = Vec::new();
-    if let Some(limit) = key_data.rate_limit_per_minute {
-        limits.push((limit as u32, 60i64));
-    }
-    if let Some(limit) = key_data.rate_limit_per_hour {
-        limits.push((limit as u32, 3600i64));
-    }
-    if let Some(limit) = key_data.rate_limit_per_day {
-        limits.push((limit as u32, 86400i64));
+    for rate_limit in &key_data.rate_limits {
+        let window_seconds = rate_limit.window_seconds();
+        let rate_limit_mode = rate_limit.effective_mode();
+        limits.push((rate_limit.max_requests as u32, window_seconds, rate_limit_mode));
     }
 
     // If no limits configured, use a default
     if limits.is_empty() {
-        limits.push((1000, 3600)); // Default: 1000 requests per hour
+        limits.push((100, 60, RateLimitMode::PerKey));
     }
 
     // Check all rate limits
-    for (limit, window) in limits.iter() {
+    for (limit, window, rate_limit_mode) in limits.iter() {
         // Build the rate limit key based on the mode
         let key = match rate_limit_mode {
             RateLimitMode::PerKey => {

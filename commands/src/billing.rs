@@ -340,6 +340,7 @@ pub struct UpsertSubscriptionCommand {
     pub owner_id: String,
     pub provider_customer_id: String,
     pub provider_subscription_id: String,
+    pub product_id: Option<String>,
     pub status: String,
 }
 
@@ -377,13 +378,15 @@ impl Command for UpsertSubscriptionCommand {
                 UPDATE subscriptions SET
                     provider_customer_id = $1,
                     provider_subscription_id = $2,
-                    status = $3,
+                    product_id = $3,
+                    status = $4,
                     updated_at = NOW()
-                WHERE id = $4
+                WHERE id = $5
                 RETURNING *
                 "#,
                 self.provider_customer_id,
                 self.provider_subscription_id,
+                self.product_id,
                 self.status,
                 id
             )
@@ -399,16 +402,18 @@ impl Command for UpsertSubscriptionCommand {
                     billing_account_id,
                     provider_customer_id,
                     provider_subscription_id,
+                    product_id,
                     status,
                     created_at,
                     updated_at
-                ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
                 RETURNING *
                 "#,
                 id,
                 billing_account_id,
                 self.provider_customer_id,
                 self.provider_subscription_id,
+                self.product_id,
                 self.status
             )
             .fetch_one(&state.db_pool)

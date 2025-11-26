@@ -34,6 +34,7 @@ pub struct Subscription {
     pub billing_account_id: i64,
     pub provider_customer_id: String,
     pub provider_subscription_id: String,
+    pub product_id: Option<String>,
     pub status: String,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,

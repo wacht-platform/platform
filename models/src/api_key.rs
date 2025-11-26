@@ -48,6 +48,79 @@ impl Default for RateLimitMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text")]
+#[sqlx(rename_all = "snake_case")]
+pub enum RateLimitUnit {
+    #[sqlx(rename = "second")]
+    Second,
+    #[sqlx(rename = "minute")]
+    Minute,
+    #[sqlx(rename = "hour")]
+    Hour,
+    #[sqlx(rename = "day")]
+    Day,
+}
+
+impl RateLimitUnit {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Second => "second",
+            Self::Minute => "minute",
+            Self::Hour => "hour",
+            Self::Day => "day",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "second" => Some(Self::Second),
+            "minute" => Some(Self::Minute),
+            "hour" => Some(Self::Hour),
+            "day" => Some(Self::Day),
+            _ => None,
+        }
+    }
+
+    /// Convert duration in this unit to seconds
+    pub fn to_seconds(&self, duration: i32) -> i64 {
+        match self {
+            Self::Second => duration as i64,
+            Self::Minute => duration as i64 * 60,
+            Self::Hour => duration as i64 * 3600,
+            Self::Day => duration as i64 * 86400,
+        }
+    }
+}
+
+impl fmt::Display for RateLimitUnit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RateLimit {
+    pub unit: RateLimitUnit,
+    pub duration: i32,
+    pub max_requests: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<RateLimitMode>,
+}
+
+impl RateLimit {
+    /// Calculate the window in seconds for this rate limit
+    pub fn window_seconds(&self) -> i64 {
+        self.unit.to_seconds(self.duration)
+    }
+
+    /// Get the effective rate limit mode (defaults to PerKey if not set)
+    pub fn effective_mode(&self) -> RateLimitMode {
+        self.mode.unwrap_or_default()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ApiKeyApp {
     #[serde(with = "crate::utils::serde::i64_as_string")]
@@ -57,21 +130,26 @@ pub struct ApiKeyApp {
     pub name: String,
     pub description: Option<String>,
     pub is_active: bool,
-    pub rate_limit_per_minute: Option<i32>,
-    pub rate_limit_per_hour: Option<i32>,
-    pub rate_limit_per_day: Option<i32>,
-    #[sqlx(rename = "rate_limit_mode")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub rate_limit_mode: Option<RateLimitMode>,
+    #[sqlx(json)]
+    pub rate_limits: Vec<RateLimit>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
 impl ApiKeyApp {
-    /// Get the effective rate limit mode (defaults to PerKey if not set)
-    pub fn get_rate_limit_mode(&self) -> RateLimitMode {
-        self.rate_limit_mode.unwrap_or_default()
+    /// Get default rate limits if none are configured
+    pub fn effective_rate_limits(&self) -> Vec<RateLimit> {
+        if self.rate_limits.is_empty() {
+            vec![RateLimit {
+                unit: RateLimitUnit::Minute,
+                duration: 1,
+                max_requests: 100,
+                mode: Some(RateLimitMode::PerKey),
+            }]
+        } else {
+            self.rate_limits.clone()
+        }
     }
 }
 
@@ -135,19 +213,33 @@ pub struct ApiKeyScope {
 // Conversions from SDK types to model types
 impl From<wacht::api::api_keys::ApiKeyApp> for ApiKeyApp {
     fn from(sdk_app: wacht::api::api_keys::ApiKeyApp) -> Self {
+        let rate_limits = sdk_app
+            .rate_limits
+            .into_iter()
+            .map(|sdk_limit| RateLimit {
+                unit: match sdk_limit.unit {
+                    wacht::api::api_keys::RateLimitUnit::Second => RateLimitUnit::Second,
+                    wacht::api::api_keys::RateLimitUnit::Minute => RateLimitUnit::Minute,
+                    wacht::api::api_keys::RateLimitUnit::Hour => RateLimitUnit::Hour,
+                    wacht::api::api_keys::RateLimitUnit::Day => RateLimitUnit::Day,
+                },
+                duration: sdk_limit.duration,
+                max_requests: sdk_limit.max_requests,
+                mode: sdk_limit.mode.map(|m| match m {
+                    wacht::api::api_keys::RateLimitMode::PerKey => RateLimitMode::PerKey,
+                    wacht::api::api_keys::RateLimitMode::PerIp => RateLimitMode::PerIp,
+                    wacht::api::api_keys::RateLimitMode::PerKeyAndIp => RateLimitMode::PerKeyAndIp,
+                }),
+            })
+            .collect();
+
         Self {
             id: sdk_app.id.parse().unwrap_or(0),
             deployment_id: sdk_app.deployment_id.parse().unwrap_or(0),
             name: sdk_app.name,
             description: sdk_app.description,
             is_active: sdk_app.is_active,
-            rate_limit_per_minute: sdk_app.rate_limit_per_minute,
-            rate_limit_per_hour: sdk_app.rate_limit_per_hour,
-            rate_limit_per_day: sdk_app.rate_limit_per_day,
-            rate_limit_mode: sdk_app.rate_limit_mode.map(|m| match m {
-                wacht::api::api_keys::RateLimitMode::PerKey => RateLimitMode::PerKey,
-                wacht::api::api_keys::RateLimitMode::PerApp => RateLimitMode::PerIp, // Note: SDK uses PerApp, models use PerIp
-            }),
+            rate_limits,
             created_at: sdk_app.created_at,
             updated_at: sdk_app.updated_at,
             deleted_at: None,

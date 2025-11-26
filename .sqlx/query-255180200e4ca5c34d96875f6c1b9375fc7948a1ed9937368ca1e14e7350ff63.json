@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            RETURNING id, deployment_id, name, description, is_active, rate_limit_per_minute, rate_limit_per_hour, rate_limit_per_day, rate_limit_mode, created_at, updated_at, deleted_at\n            ",
+  "query": "\n            UPDATE api_key_apps\n            SET\n                name = COALESCE($3, name),\n                description = COALESCE($4, description),\n                is_active = COALESCE($5, is_active),\n                rate_limits = COALESCE($6, rate_limits),\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING id, deployment_id, name, description, is_active,\n                      rate_limits as \"rate_limits: serde_json::Value\",\n                      created_at, updated_at, deleted_at\n            ",
   "describe": {
     "columns": [
       {
@@ -30,36 +30,21 @@
       },
       {
         "ordinal": 5,
-        "name": "rate_limit_per_minute",
-        "type_info": "Int4"
+        "name": "rate_limits: serde_json::Value",
+        "type_info": "Jsonb"
       },
       {
         "ordinal": 6,
-        "name": "rate_limit_per_hour",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 7,
-        "name": "rate_limit_per_day",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 8,
-        "name": "rate_limit_mode",
-        "type_info": "Varchar"
-      },
-      {
-        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 8,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
@@ -70,10 +55,8 @@
         "Int8",
         "Varchar",
         "Text",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Varchar"
+        "Bool",
+        "Jsonb"
       ]
     },
     "nullable": [
@@ -85,11 +68,8 @@
       true,
       true,
       true,
-      true,
-      true,
-      true,
       true
     ]
   },
-  "hash": "03d6defecf632b1404912f8c2c92f1d237168b673f7657fafadb4187d8cddf4e"
+  "hash": "255180200e4ca5c34d96875f6c1b9375fc7948a1ed9937368ca1e14e7350ff63"
 }

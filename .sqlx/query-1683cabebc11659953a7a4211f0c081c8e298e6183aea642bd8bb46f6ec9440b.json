@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                UPDATE subscriptions SET\n                    provider_customer_id = $1,\n                    provider_subscription_id = $2,\n                    status = $3,\n                    updated_at = NOW()\n                WHERE id = $4\n                RETURNING *\n                ",
+  "query": "\n            SELECT id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, created_at, updated_at\n            FROM subscriptions WHERE provider_subscription_id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -10,41 +10,43 @@
       },
       {
         "ordinal": 1,
+        "name": "billing_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
         "name": "provider_customer_id",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "provider_subscription_id",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
+        "name": "product_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
         "name": "status",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 6,
-        "name": "billing_account_id",
-        "type_info": "Int8"
       }
     ],
     "parameters": {
       "Left": [
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Int8"
+        "Text"
       ]
     },
     "nullable": [
@@ -53,9 +55,10 @@
       false,
       false,
       true,
+      false,
       true,
-      false
+      true
     ]
   },
-  "hash": "5fe310dc01354715fcf5bd9afc4b40075ea2e2032002e497af189ef1de1d5db8"
+  "hash": "1683cabebc11659953a7a4211f0c081c8e298e6183aea642bd8bb46f6ec9440b"
 }
