@@ -709,12 +709,11 @@ impl Command for GenerateImpersonationTokenCommand {
         payload.set_issued_at(&now);
         payload.set_expires_at(&expires);
 
-        // Add custom claims
         payload
-            .set_claim("user_id", Some(serde_json::json!(self.user_id)))
+            .set_claim("user_id", Some(serde_json::json!(self.user_id.to_string())))
             .map_err(|e| AppError::Internal(format!("Failed to set user_id claim: {}", e)))?;
         payload
-            .set_claim("deployment_id", Some(serde_json::json!(self.deployment_id)))
+            .set_claim("deployment_id", Some(serde_json::json!(self.deployment_id.to_string())))
             .map_err(|e| AppError::Internal(format!("Failed to set deployment_id claim: {}", e)))?;
         payload
             .set_claim("type", Some(serde_json::json!("impersonation")))
