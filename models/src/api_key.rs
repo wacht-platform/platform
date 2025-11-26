@@ -119,6 +119,42 @@ impl RateLimit {
     pub fn effective_mode(&self) -> RateLimitMode {
         self.mode.unwrap_or_default()
     }
+
+    /// Validate that the rate limit window is within supported bounds
+    pub fn validate(&self) -> Result<(), String> {
+        if self.duration <= 0 {
+            return Err("Duration must be positive".to_string());
+        }
+
+        if self.max_requests <= 0 {
+            return Err("Max requests must be positive".to_string());
+        }
+
+        match self.unit {
+            RateLimitUnit::Second => {
+                if self.duration > 60 {
+                    return Err("Second-based limits cannot exceed 60 seconds".to_string());
+                }
+            }
+            RateLimitUnit::Minute => {
+                if self.duration > 60 {
+                    return Err("Minute-based limits cannot exceed 60 minutes".to_string());
+                }
+            }
+            RateLimitUnit::Hour => {
+                if self.duration > 24 {
+                    return Err("Hour-based limits cannot exceed 24 hours".to_string());
+                }
+            }
+            RateLimitUnit::Day => {
+                if self.duration != 1 {
+                    return Err("Day-based limits must be exactly 1 day".to_string());
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

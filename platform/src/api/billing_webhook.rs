@@ -34,11 +34,15 @@ pub async fn handle_dodo_webhook(
     let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if !dodo.verify_webhook(
+        webhook_id,
+        webhook_timestamp,
         &body,
         webhook_signature,
-        webhook_timestamp,
     ) {
-        warn!("Invalid webhook signature for webhook_id: {}", webhook_id);
+        warn!(
+            "Invalid webhook signature for webhook_id: {}. Timestamp: {}, Signature: {}, Body length: {}",
+            webhook_id, webhook_timestamp, webhook_signature, body.len()
+        );
         return Err(StatusCode::UNAUTHORIZED);
     }
 

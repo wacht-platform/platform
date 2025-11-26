@@ -25,9 +25,16 @@ impl CreateApiKeyAppCommand {
         self
     }
 
-    pub fn with_rate_limits(mut self, rate_limits: Vec<RateLimit>) -> Self {
-        self.rate_limits = rate_limits;
-        self
+    pub fn with_rate_limits(self, rate_limits: Vec<RateLimit>) -> Result<Self, AppError> {
+        for limit in &rate_limits {
+            limit.validate()
+                .map_err(|e| AppError::BadRequest(format!("Invalid rate limit: {}", e)))?;
+        }
+
+        Ok(Self {
+            rate_limits,
+            ..self
+        })
     }
 }
 
@@ -86,6 +93,13 @@ impl Command for UpdateApiKeyAppCommand {
     type Output = ApiKeyApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        if let Some(ref rate_limits) = self.rate_limits {
+            for limit in rate_limits {
+                limit.validate()
+                    .map_err(|e| AppError::BadRequest(format!("Invalid rate limit: {}", e)))?;
+            }
+        }
+
         let rate_limits_json = self.rate_limits
             .as_ref()
             .map(|rl| serde_json::to_value(rl))

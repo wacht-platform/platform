@@ -73,13 +73,8 @@ pub async fn process_webhook_delivery(
         .execute(app_state)
         .await?;
 
-    let webhook_data = json!({
-        "event_type": delivery.event_name,
-        "payload": payload,
-        "created_at": delivery.created_at.to_rfc3339(),
-        "app_name": delivery.app_name,
-    });
-
+    // Send payload as-is per Standard Webhooks specification
+    // The payload should already contain type, timestamp, and data fields
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(
             delivery.timeout_seconds as u64,
@@ -87,13 +82,16 @@ pub async fn process_webhook_delivery(
         .user_agent("Wacht-Webhook/1.0")
         .build()?;
 
-    let mut request = client.post(&delivery.url).json(&webhook_data);
+    let mut request = client.post(&delivery.url).json(&payload);
 
-    let signature = webhook::generate_hmac_signature(&delivery.signing_secret, &webhook_data);
-
+    // Use Standard Webhooks headers
     request = request
-        .header("X-Webhook-Signature", signature)
-        .header("X-Webhook-Delivery", delivery_id.to_string());
+        .header("webhook-id", delivery.webhook_id.clone())
+        .header("webhook-timestamp", delivery.webhook_timestamp.to_string())
+        .header(
+            "webhook-signature",
+            delivery.signature.as_ref().unwrap_or(&String::new()),
+        );
 
     if let Some(headers) = &delivery.headers {
         if let Some(headers_obj) = headers.as_object() {
@@ -114,6 +112,60 @@ pub async fn process_webhook_delivery(
             let status = response.status();
             let status_code = status.as_u16();
             let response_body = response.text().await.ok();
+
+            if status_code == 410 {
+                warn!(
+                    "Endpoint {} returned 410 Gone, permanently disabling endpoint",
+                    delivery.url
+                );
+
+                let ch_delivery = WebhookDelivery {
+                    deployment_id,
+                    delivery_id,
+                    app_name: delivery.app_name.clone(),
+                    endpoint_id: delivery.endpoint_id,
+                    endpoint_url: delivery.url.clone(),
+                    event_name: delivery.event_name.clone(),
+                    status: "endpoint_disabled".to_string(),
+                    http_status_code: Some(410),
+                    response_time_ms: Some(duration.as_millis() as i32),
+                    attempt_number: delivery.attempts + 1,
+                    max_attempts: delivery.max_attempts,
+                    error_message: Some(
+                        "Endpoint returned 410 Gone - permanently disabled".to_string(),
+                    ),
+                    filtered_reason: None,
+                    payload_s3_key: delivery.payload_s3_key.clone(),
+                    response_body: response_body.clone(),
+                    response_headers: None,
+                    timestamp: Utc::now(),
+                };
+
+                if let Err(e) = app_state
+                    .clickhouse_service
+                    .insert_webhook_delivery(&ch_delivery)
+                    .await
+                {
+                    warn!("Failed to log 410 Gone delivery to ClickHouse: {}", e);
+                }
+
+                DeleteActiveDeliveryCommand { delivery_id }
+                    .execute(app_state)
+                    .await?;
+
+                DeactivateEndpointCommand {
+                    endpoint_id: delivery.endpoint_id,
+                }
+                .execute(app_state)
+                .await?;
+
+                info!(
+                    "Endpoint {} (ID: {}) has been permanently disabled due to 410 Gone response",
+                    delivery.url, delivery.endpoint_id
+                );
+
+                return Ok(DeliveryResult::Failed);
+            }
 
             if status.is_success() {
                 let ch_delivery = WebhookDelivery {

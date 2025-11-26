@@ -8,7 +8,8 @@ use crate::webhook_delivery::ClearEndpointFailuresCommand;
 use crate::webhook_storage::StoreWebhookPayloadCommand;
 use common::error::AppError;
 use common::state::AppState;
-use common::utils::webhook::generate_hmac_signature;
+use common::utils::ssrf::validate_webhook_url;
+use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookEvent;
 use dto::json::nats::NatsTaskMessage;
 use models::WebhookEndpoint;
@@ -69,9 +70,13 @@ impl Command for CreateWebhookEndpointCommand {
     type Output = WebhookEndpoint;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Validate URL
+        // Validate URL format
         url::Url::parse(&self.url)
             .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
+
+        // Validate URL for SSRF protection
+        validate_webhook_url(&self.url)
+            .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
 
         // Verify app exists
         let app_exists = query!(
@@ -174,6 +179,10 @@ impl Command for UpdateWebhookEndpointCommand {
         if let Some(ref url) = self.url {
             url::Url::parse(url)
                 .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
+
+            // Validate URL for SSRF protection
+            validate_webhook_url(url)
+                .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
         }
 
         let mut tx = app_state.db_pool.begin().await?;
@@ -411,13 +420,20 @@ impl Command for TestWebhookEndpointCommand {
         }
 
         // Create delivery in active_webhook_deliveries and let worker process it
-        let signature = generate_hmac_signature(&endpoint.signing_secret, &self.test_payload);
+        let webhook_id = format!("msg_{}", delivery_id);
+        let webhook_timestamp = now.timestamp();
+        let signature = generate_webhook_signature(
+            &endpoint.signing_secret,
+            &webhook_id,
+            webhook_timestamp,
+            &self.test_payload
+        );
 
         query!(
             r#"
             INSERT INTO active_webhook_deliveries
-            (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, signature, max_attempts, attempts)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, 0)
+            (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, webhook_id, webhook_timestamp, signature, max_attempts, attempts)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, 0)
             "#,
             delivery_id,
             self.endpoint_id,
@@ -426,6 +442,8 @@ impl Command for TestWebhookEndpointCommand {
             "test.webhook",
             payload_s3_key,
             payload_size,
+            webhook_id,
+            webhook_timestamp,
             signature
         )
         .execute(&app_state.db_pool)

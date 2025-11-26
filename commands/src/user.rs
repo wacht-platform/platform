@@ -700,6 +700,8 @@ impl Command for GenerateImpersonationTokenCommand {
         // Create JWT payload
         let mut payload = JwtPayload::new();
         payload.set_subject(&self.user_id.to_string());
+        
+        payload.set_issuer(&format!("https://{}", keypair.frontend_host));
 
         let now = std::time::SystemTime::now();
         let expires = now + std::time::Duration::from_secs(600);

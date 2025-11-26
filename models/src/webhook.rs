@@ -79,6 +79,8 @@ pub struct ActiveWebhookDelivery {
     pub event_name: String,
     pub payload_s3_key: String,
     pub payload_size_bytes: i32,
+    pub webhook_id: String,
+    pub webhook_timestamp: i64,
     pub signature: Option<String>,
     pub attempts: i32,
     pub max_attempts: i32,

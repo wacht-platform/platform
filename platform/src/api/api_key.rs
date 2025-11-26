@@ -60,7 +60,8 @@ pub async fn create_api_key_app(
     }
 
     if let Some(rate_limits) = request.rate_limits {
-        command = command.with_rate_limits(rate_limits);
+        command = command.with_rate_limits(rate_limits)
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
     }
 
     let app = command.execute(&app_state).await?;

@@ -5,7 +5,7 @@ use sqlx::query;
 
 use common::error::AppError;
 use common::state::AppState;
-use common::utils::webhook::generate_hmac_signature;
+use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::{WebhookDelivery, WebhookEvent};
 use dto::json::nats::NatsTaskMessage;
 use models::webhook::WebhookEventTrigger;
@@ -150,18 +150,25 @@ impl Command for TriggerWebhookEventCommand {
                 }
             }
 
-            // Generate HMAC signature
-            let signature = generate_hmac_signature(&endpoint.signing_secret, &self.payload);
-
-            // Generate Snowflake ID for delivery
+            // Generate Snowflake ID for delivery (used as webhook_id)
             let delivery_id = app_state.sf.next_id()? as i64;
+            let webhook_id = format!("msg_{}", delivery_id);
+            let webhook_timestamp = Utc::now().timestamp();
+
+            // Generate Standard Webhooks signature
+            let signature = generate_webhook_signature(
+                &endpoint.signing_secret,
+                &webhook_id,
+                webhook_timestamp,
+                &self.payload
+            );
 
             // Queue for delivery
             let delivery = query!(
                 r#"
                 INSERT INTO active_webhook_deliveries
-                (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, signature, max_attempts)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, webhook_id, webhook_timestamp, signature, max_attempts)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 RETURNING id
                 "#,
                 delivery_id,
@@ -171,6 +178,8 @@ impl Command for TriggerWebhookEventCommand {
                 self.event_name,
                 payload_s3_key,
                 self.payload.to_string().len() as i32,
+                webhook_id,
+                webhook_timestamp,
                 signature,
                 endpoint.max_retries
             )

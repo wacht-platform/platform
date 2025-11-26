@@ -225,21 +225,37 @@ impl DodoClient {
 
     // ==================== Webhooks ====================
 
-    pub fn verify_webhook(&self, payload: &str, signature: &str, timestamp: &str) -> bool {
+    pub fn verify_webhook(&self, webhook_id: &str, timestamp: &str, payload: &str, signature: &str) -> bool {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
 
         if self.webhook_secret.is_empty() {
+            debug!("Webhook secret is empty");
             return false;
         }
 
+        // Standard Webhooks format: "v1,base64_signature" or "v1a,base64_signature"
+        // Extract the actual signature after the version prefix
+        let actual_signature = if let Some(sig) = signature.strip_prefix("v1,") {
+            sig
+        } else if let Some(sig) = signature.strip_prefix("v1a,") {
+            sig
+        } else {
+            // No version prefix, use signature as-is
+            signature
+        };
+
         type HmacSha256 = Hmac<Sha256>;
 
-        let signed_payload = format!("{}.{}", timestamp, payload);
+        // Dodo uses Standard Webhooks format: webhook-id.timestamp.payload
+        let signed_payload = format!("{}.{}.{}", webhook_id, timestamp, payload);
 
         let mut mac = match HmacSha256::new_from_slice(self.webhook_secret.as_bytes()) {
             Ok(m) => m,
-            Err(_) => return false,
+            Err(e) => {
+                debug!("Failed to create HMAC: {:?}", e);
+                return false;
+            }
         };
 
         mac.update(signed_payload.as_bytes());
@@ -249,7 +265,15 @@ impl DodoClient {
             result.into_bytes(),
         );
 
-        expected == signature
+        debug!(
+            "Webhook verification - Expected: {}, Received: {} (original: {}), Match: {}",
+            expected,
+            actual_signature,
+            signature,
+            expected == actual_signature
+        );
+
+        expected == actual_signature
     }
 
     async fn handle_response<T: for<'de> Deserialize<'de>>(
