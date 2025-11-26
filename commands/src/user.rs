@@ -695,12 +695,7 @@ impl Command for GenerateImpersonationTokenCommand {
             ));
         }
 
-        // Parse private key
         let private_key_pem = keypair.private_key;
-
-        let private_key = ES256
-            .key_pair_from_pem(&private_key_pem)
-            .map_err(|e| AppError::Internal(format!("Failed to parse private key: {}", e)))?;
 
         // Create JWT payload
         let mut payload = JwtPayload::new();
