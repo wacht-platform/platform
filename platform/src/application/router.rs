@@ -59,6 +59,10 @@ fn base_deployment_routes() -> Router<AppState> {
         .route("/users/{user_id}", patch(api::user::update_user))
         .route("/users/{user_id}", delete(api::user::delete_user))
         .route(
+            "/users/{user_id}/impersonate",
+            post(api::user::impersonate_user),
+        )
+        .route(
             "/users/{user_id}/password",
             patch(api::user::update_user_password),
         )
