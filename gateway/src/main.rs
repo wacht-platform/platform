@@ -6,13 +6,16 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use common::state::AppState;
 use dotenvy::dotenv;
 use futures::StreamExt;
 use models::api_key::RateLimitMode;
 use moka::future::Cache;
-use queries::{Query as QueryTrait, api_key_gateway::GetApiKeyGatewayDataQuery};
+use queries::{
+    Query as QueryTrait,
+    api_key_gateway::{ApiKeyGatewayData, GetApiKeyGatewayDataQuery},
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{net::SocketAddr, sync::Arc, time::Duration};

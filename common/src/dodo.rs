@@ -1,6 +1,12 @@
-use reqwest::{Client, header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue}};
+use base64::Engine;
+use hmac::{Hmac, Mac};
+use reqwest::{
+    Client,
+    header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use sha2::Sha256;
 use std::env;
 use thiserror::Error;
 use tracing::debug;
@@ -34,7 +40,11 @@ impl DodoClient {
         let api_key = env::var("DODO_API_KEY")
             .map_err(|_| DodoError::ConfigError("DODO_API_KEY not set".to_string()))?;
 
-        let webhook_secret = env::var("DODO_WEBHOOK_SECRET").unwrap_or_default();
+        let webhook_secret = env::var("DODO_WEBHOOK_SECRET")
+            .unwrap_or_default()
+            .strip_prefix("whsec_")
+            .unwrap_or_default()
+            .to_string();
 
         let base_url = env::var("DODO_API_URL")
             .unwrap_or_else(|_| "https://live.dodopayments.com".to_string());
@@ -45,10 +55,7 @@ impl DodoClient {
             HeaderValue::from_str(&format!("Bearer {}", api_key))
                 .map_err(|_| DodoError::ConfigError("Invalid API key format".to_string()))?,
         );
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
         let client = Client::builder().default_headers(headers).build()?;
 
@@ -94,7 +101,10 @@ impl DodoClient {
         subscription_id: &str,
         params: ChangePlanParams,
     ) -> DodoResult<Subscription> {
-        let url = format!("{}/subscriptions/{}/change-plan", self.base_url, subscription_id);
+        let url = format!(
+            "{}/subscriptions/{}/change-plan",
+            self.base_url, subscription_id
+        );
         let response = self.client.post(&url).json(&params).send().await?;
         self.handle_response(response).await
     }
@@ -120,7 +130,10 @@ impl DodoClient {
         &self,
         subscription_id: &str,
     ) -> DodoResult<PaymentMethodUpdateResponse> {
-        let url = format!("{}/subscriptions/{}/update-payment-method", self.base_url, subscription_id);
+        let url = format!(
+            "{}/subscriptions/{}/update-payment-method",
+            self.base_url, subscription_id
+        );
         let response = self.client.post(&url).send().await?;
         self.handle_response(response).await
     }
@@ -129,7 +142,10 @@ impl DodoClient {
         &self,
         subscription_id: &str,
     ) -> DodoResult<UsageHistoryResponse> {
-        let url = format!("{}/subscriptions/{}/usage-history", self.base_url, subscription_id);
+        let url = format!(
+            "{}/subscriptions/{}/usage-history",
+            self.base_url, subscription_id
+        );
         let response = self.client.get(&url).send().await?;
         self.handle_response(response).await
     }
@@ -159,7 +175,10 @@ impl DodoClient {
     }
 
     pub async fn create_portal_session(&self, customer_id: &str) -> DodoResult<PortalSession> {
-        let url = format!("{}/customers/{}/customer-portal/session", self.base_url, customer_id);
+        let url = format!(
+            "{}/customers/{}/customer-portal/session",
+            self.base_url, customer_id
+        );
         let response = self.client.post(&url).send().await?;
         self.handle_response(response).await
     }
@@ -206,7 +225,10 @@ impl DodoClient {
         self.handle_response(response).await
     }
 
-    pub async fn list_payments(&self, customer_id: Option<&str>) -> DodoResult<ListPaymentsResponse> {
+    pub async fn list_payments(
+        &self,
+        customer_id: Option<&str>,
+    ) -> DodoResult<ListPaymentsResponse> {
         let mut url = format!("{}/payments", self.base_url);
 
         if let Some(cid) = customer_id {
@@ -225,10 +247,13 @@ impl DodoClient {
 
     // ==================== Webhooks ====================
 
-    pub fn verify_webhook(&self, webhook_id: &str, timestamp: &str, payload: &str, signature: &str) -> bool {
-        use hmac::{Hmac, Mac};
-        use sha2::Sha256;
-
+    pub fn verify_webhook(
+        &self,
+        webhook_id: &str,
+        timestamp: &str,
+        payload: &str,
+        signature: &str,
+    ) -> bool {
         if self.webhook_secret.is_empty() {
             debug!("Webhook secret is empty");
             return false;
@@ -236,21 +261,22 @@ impl DodoClient {
 
         // Standard Webhooks format: "v1,base64_signature" or "v1a,base64_signature"
         // Extract the actual signature after the version prefix
-        let actual_signature = if let Some(sig) = signature.strip_prefix("v1,") {
-            sig
-        } else if let Some(sig) = signature.strip_prefix("v1a,") {
-            sig
-        } else {
-            // No version prefix, use signature as-is
-            signature
-        };
+        let actual_signature = signature.strip_prefix("v1,").unwrap_or_default();
 
         type HmacSha256 = Hmac<Sha256>;
 
         // Dodo uses Standard Webhooks format: webhook-id.timestamp.payload
         let signed_payload = format!("{}.{}.{}", webhook_id, timestamp, payload);
 
-        let mut mac = match HmacSha256::new_from_slice(self.webhook_secret.as_bytes()) {
+        let key = match base64::engine::general_purpose::STANDARD.decode(&self.webhook_secret) {
+            Ok(k) => k,
+            Err(e) => {
+                debug!("Failed to base64-decode webhook secret: {:?}", e);
+                return false;
+            }
+        };
+
+        let mut mac = match HmacSha256::new_from_slice(&key) {
             Ok(m) => m,
             Err(e) => {
                 debug!("Failed to create HMAC: {:?}", e);
@@ -285,7 +311,10 @@ impl DodoClient {
 
         if status.is_success() {
             serde_json::from_str(&body).map_err(|e| {
-                DodoError::InvalidResponse(format!("Failed to parse response: {} - Body: {}", e, body))
+                DodoError::InvalidResponse(format!(
+                    "Failed to parse response: {} - Body: {}",
+                    e, body
+                ))
             })
         } else {
             let error_msg = if let Ok(json) = serde_json::from_str::<JsonValue>(&body) {
@@ -298,7 +327,10 @@ impl DodoClient {
                 body
             };
 
-            Err(DodoError::ApiError(format!("Status {}: {}", status, error_msg)))
+            Err(DodoError::ApiError(format!(
+                "Status {}: {}",
+                status, error_msg
+            )))
         }
     }
 }
