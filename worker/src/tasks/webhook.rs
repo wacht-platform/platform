@@ -10,10 +10,8 @@ use commands::{
     webhook_storage::RetrieveWebhookPayloadCommand,
 };
 use common::state::AppState;
-use common::utils::webhook;
 use dto::clickhouse::webhook::WebhookDelivery;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::time::Instant;
 use tracing::{error, info, warn};
 

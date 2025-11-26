@@ -322,6 +322,8 @@ impl Command for ReplayWebhookDeliveryCommand {
             event_name,
             payload_s3_key,
             payload_size_bytes,
+            webhook_id,
+            webhook_timestamp,
             signature,
             max_attempts,
             app_name,
@@ -331,6 +333,8 @@ impl Command for ReplayWebhookDeliveryCommand {
             String,
             String,
             i32,
+            String,
+            i64,
             Option<String>,
             i32,
             String,
@@ -410,8 +414,17 @@ impl Command for ReplayWebhookDeliveryCommand {
                 )));
             }
 
-            // Generate new HMAC signature
-            let signature = Some(generate_hmac_signature(&endpoint.signing_secret, &payload));
+            // Generate webhook_id and timestamp for Standard Webhooks
+            let webhook_id = format!("msg_{}", app_state.sf.next_id()?);
+            let webhook_timestamp = Utc::now().timestamp();
+
+            // Generate new signature with webhook_id and timestamp
+            let signature = Some(generate_webhook_signature(
+                &endpoint.signing_secret,
+                &webhook_id,
+                webhook_timestamp,
+                &payload
+            ));
             let payload_size_bytes =
                 serde_json::to_string(&payload).unwrap_or_default().len() as i32;
             let max_attempts = endpoint.max_retries.unwrap_or(5);
@@ -423,6 +436,8 @@ impl Command for ReplayWebhookDeliveryCommand {
                 event_name,
                 payload_s3_key,
                 payload_size_bytes,
+                webhook_id,
+                webhook_timestamp,
                 signature,
                 max_attempts,
                 app_name,
@@ -457,8 +472,8 @@ impl Command for ReplayWebhookDeliveryCommand {
         let new_delivery = query!(
             r#"
             INSERT INTO active_webhook_deliveries
-            (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, signature, max_attempts, attempts)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0)
+            (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, webhook_id, webhook_timestamp, signature, max_attempts, attempts)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0)
             RETURNING id
             "#,
             new_delivery_id,
@@ -468,6 +483,8 @@ impl Command for ReplayWebhookDeliveryCommand {
             event_name.clone(),
             payload_s3_key,
             payload_size_bytes,
+            webhook_id,
+            webhook_timestamp,
             signature,
             max_attempts
         )

@@ -15,128 +15,180 @@ use moka::future::Cache;
 use queries::{Query as QueryTrait, api_key_gateway::GetApiKeyGatewayDataQuery};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
+
+const BITS_PER_BUCKET: u32 = 16;
+const BUCKETS_PER_U64: usize = 4;
+const MAX_BUCKET_VALUE: u32 = 0xFFFF;
+const BUCKET_MASK: u64 = 0xFFFF;
+
+const SECONDS_BUCKETS: usize = 60;
+const MINUTES_BUCKETS: usize = 60;
+const HOURS_BUCKETS: usize = 24;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct BucketedWindow {
-    buckets: HashMap<i64, u32>, // bucket_id -> request count
-    bucket_size: i64,           // Size of each bucket in seconds
-    window_seconds: i64,        // Total window duration
-    max_requests: u32,          // Maximum requests allowed in window
+    seconds: Box<[u64]>,
+    minutes: Box<[u64]>,
+    hours: Box<[u64]>,
+    max_requests: u32,
+    last_second: i64,
+    last_minute: i64,
+    last_hour: i64,
 }
 
 impl BucketedWindow {
-    fn new(max_requests: u32, window_seconds: i64) -> Self {
-        // Choose bucket size based on window duration
-        let bucket_size = Self::choose_bucket_size(window_seconds);
+    fn new(max_requests: u32, _window_seconds: i64) -> Self {
+        let seconds_u64s = (SECONDS_BUCKETS + BUCKETS_PER_U64 - 1) / BUCKETS_PER_U64;
+        let minutes_u64s = (MINUTES_BUCKETS + BUCKETS_PER_U64 - 1) / BUCKETS_PER_U64;
+        let hours_u64s = (HOURS_BUCKETS + BUCKETS_PER_U64 - 1) / BUCKETS_PER_U64;
 
         Self {
-            buckets: HashMap::new(),
-            bucket_size,
-            window_seconds,
+            seconds: vec![0u64; seconds_u64s].into_boxed_slice(),
+            minutes: vec![0u64; minutes_u64s].into_boxed_slice(),
+            hours: vec![0u64; hours_u64s].into_boxed_slice(),
             max_requests,
+            last_second: 0,
+            last_minute: 0,
+            last_hour: 0,
         }
     }
 
-    fn choose_bucket_size(window_seconds: i64) -> i64 {
-        match window_seconds {
-            0..=60 => 4,       // ≤1 min: 4-second buckets (15 buckets max)
-            61..=300 => 10,    // ≤5 min: 10-second buckets (30 buckets max)
-            301..=3600 => 30,  // ≤1 hour: 30-second buckets (120 buckets max)
-            3601..=7200 => 60, // ≤2 hours: 1-minute buckets (120 buckets max)
-            _ => 300,          // >2 hours: 5-minute buckets
+    fn get_bucket(buffer: &[u64], index: usize) -> u32 {
+        let word_index = index / BUCKETS_PER_U64;
+        let bit_offset = (index % BUCKETS_PER_U64) * BITS_PER_BUCKET as usize;
+        ((buffer[word_index] >> bit_offset) & BUCKET_MASK) as u32
+    }
+
+    fn set_bucket(buffer: &mut [u64], index: usize, value: u32) {
+        let word_index = index / BUCKETS_PER_U64;
+        let bit_offset = (index % BUCKETS_PER_U64) * BITS_PER_BUCKET as usize;
+
+        buffer[word_index] &= !(BUCKET_MASK << bit_offset);
+        buffer[word_index] |= ((value as u64) & BUCKET_MASK) << bit_offset;
+    }
+
+    fn increment_bucket(buffer: &mut [u64], index: usize) {
+        let current = Self::get_bucket(buffer, index);
+        if current < MAX_BUCKET_VALUE {
+            Self::set_bucket(buffer, index, current + 1);
+        }
+    }
+
+    fn rollup_seconds_to_minutes(&mut self, now: i64) {
+        let current_minute = now / 60;
+        if current_minute > self.last_minute {
+            let mut sum = 0u32;
+            for i in 0..SECONDS_BUCKETS {
+                sum += Self::get_bucket(&self.seconds, i);
+            }
+
+            let minute_idx = (current_minute % MINUTES_BUCKETS as i64) as usize;
+            Self::set_bucket(&mut self.minutes, minute_idx, sum);
+
+            self.seconds.fill(0);
+            self.last_minute = current_minute;
+        }
+    }
+
+    fn rollup_minutes_to_hours(&mut self, now: i64) {
+        let current_hour = now / 3600;
+        if current_hour > self.last_hour {
+            let mut sum = 0u32;
+            for i in 0..MINUTES_BUCKETS {
+                sum += Self::get_bucket(&self.minutes, i);
+            }
+
+            let hour_idx = (current_hour % HOURS_BUCKETS as i64) as usize;
+            Self::set_bucket(&mut self.hours, hour_idx, sum);
+
+            self.minutes.fill(0);
+            self.last_hour = current_hour;
         }
     }
 
     fn try_add_request(&mut self) -> (bool, u32) {
         let now = Utc::now().timestamp();
-        let current_bucket = now / self.bucket_size;
 
-        // Calculate how many buckets to look back
-        let buckets_in_window = (self.window_seconds / self.bucket_size) + 1; // +1 for partial buckets
-
-        // Count requests in the current window
-        let mut total = 0;
-        let oldest_bucket = current_bucket - buckets_in_window + 1;
-
-        // Clean old buckets while counting
-        self.buckets.retain(|&bucket_id, &mut count| {
-            if bucket_id >= oldest_bucket {
-                if bucket_id <= current_bucket {
-                    total += count;
-                }
-                true // Keep this bucket
-            } else {
-                false // Remove old bucket
-            }
-        });
-
-        // Check if we can add a new request
-        if total < self.max_requests {
-            *self.buckets.entry(current_bucket).or_insert(0) += 1;
-            (true, self.max_requests - total - 1)
-        } else {
-            (false, 0)
+        if self.last_second == 0 {
+            self.last_second = now;
+            self.last_minute = now / 60;
+            self.last_hour = now / 3600;
         }
+
+        self.rollup_seconds_to_minutes(now);
+        self.rollup_minutes_to_hours(now);
+
+        let second_idx = (now % SECONDS_BUCKETS as i64) as usize;
+        Self::increment_bucket(&mut self.seconds, second_idx);
+
+        self.last_second = now;
+
+        (true, 0)
     }
 
-    fn seconds_until_next_available(&self) -> u32 {
+    fn check_window(&self, window_seconds: i64, limit: u32) -> (bool, u32, u32) {
         let now = Utc::now().timestamp();
-        let current_bucket = now / self.bucket_size;
-        let buckets_in_window = (self.window_seconds / self.bucket_size) + 1;
 
-        // Count current total
-        let mut total = 0;
-        let oldest_bucket = current_bucket - buckets_in_window + 1;
-
-        for (&bucket_id, &count) in &self.buckets {
-            if bucket_id >= oldest_bucket && bucket_id <= current_bucket {
-                total += count;
+        let total = if window_seconds <= 60 {
+            let lookback = window_seconds.min(SECONDS_BUCKETS as i64);
+            let mut sum = 0u32;
+            for i in 0..lookback as usize {
+                let idx = ((now - i as i64) % SECONDS_BUCKETS as i64) as usize;
+                sum += Self::get_bucket(&self.seconds, idx);
             }
-        }
-
-        if total < self.max_requests {
-            return 0;
-        }
-
-        // Find the oldest bucket with requests
-        let mut oldest_with_requests = None;
-        for bucket_id in oldest_bucket..=current_bucket {
-            if let Some(&count) = self.buckets.get(&bucket_id) {
-                if count > 0 {
-                    oldest_with_requests = Some(bucket_id);
-                    break;
-                }
+            sum
+        } else if window_seconds <= 3600 {
+            let lookback_minutes = (window_seconds / 60).min(MINUTES_BUCKETS as i64);
+            let mut sum = 0u32;
+            for i in 0..lookback_minutes as usize {
+                let idx = ((now / 60 - i as i64) % MINUTES_BUCKETS as i64) as usize;
+                sum += Self::get_bucket(&self.minutes, idx);
             }
-        }
 
-        if let Some(oldest) = oldest_with_requests {
-            // Calculate when this bucket will fall out of the window
-            let bucket_expiry = (oldest + buckets_in_window) * self.bucket_size;
-            let wait_seconds = bucket_expiry - now;
-            if wait_seconds > 0 {
-                wait_seconds as u32
-            } else {
-                0
+            let partial_minute_seconds = now % 60;
+            for i in 0..partial_minute_seconds as usize {
+                let idx = ((now - i as i64) % SECONDS_BUCKETS as i64) as usize;
+                sum += Self::get_bucket(&self.seconds, idx);
             }
+            sum
         } else {
-            0
-        }
+            let lookback_hours = (window_seconds / 3600).min(HOURS_BUCKETS as i64);
+            let mut sum = 0u32;
+            for i in 0..lookback_hours as usize {
+                let idx = ((now / 3600 - i as i64) % HOURS_BUCKETS as i64) as usize;
+                sum += Self::get_bucket(&self.hours, idx);
+            }
+
+            let partial_hour_minutes = (now % 3600) / 60;
+            for i in 0..partial_hour_minutes as usize {
+                let idx = ((now / 60 - i as i64) % MINUTES_BUCKETS as i64) as usize;
+                sum += Self::get_bucket(&self.minutes, idx);
+            }
+
+            let partial_minute_seconds = now % 60;
+            for i in 0..partial_minute_seconds as usize {
+                let idx = ((now - i as i64) % SECONDS_BUCKETS as i64) as usize;
+                sum += Self::get_bucket(&self.seconds, idx);
+            }
+            sum
+        };
+
+        let allowed = total < limit;
+        let remaining = if total < limit { limit - total } else { 0 };
+        let retry_after = if !allowed { window_seconds as u32 } else { 0 };
+
+        (allowed, remaining, retry_after)
     }
 }
-
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct DeltaMessage {
     key: String,
-    bucket_id: i64,
-    increment: u32,
+    timestamp: i64,
     node_id: String,
 }
-
-
 
 struct NatsKvStorage {
     bucket: kv::Store,
@@ -174,16 +226,6 @@ impl NatsKvStorage {
         })
     }
 
-    async fn save(
-        &self,
-        key: &str,
-        window: &BucketedWindow,
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        let json = serde_json::to_vec(window)?;
-        let revision = self.bucket.put(key, json.into()).await?;
-        Ok(revision)
-    }
-
     async fn update_cas(
         &self,
         key: &str,
@@ -193,16 +235,6 @@ impl NatsKvStorage {
         let json = serde_json::to_vec(window)?;
         let new_revision = self.bucket.update(key, json.into(), revision).await?;
         Ok(new_revision)
-    }
-
-    async fn create(
-        &self,
-        key: &str,
-        window: &BucketedWindow,
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        let json = serde_json::to_vec(window)?;
-        let revision = self.bucket.create(key, json.into()).await?;
-        Ok(revision)
     }
 
     async fn get_with_revision(
@@ -219,7 +251,10 @@ impl NatsKvStorage {
         }
     }
 
-    async fn load(&self, key: &str) -> Result<Option<BucketedWindow>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn load(
+        &self,
+        key: &str,
+    ) -> Result<Option<BucketedWindow>, Box<dyn std::error::Error + Send + Sync>> {
         match self.bucket.get(key).await {
             Ok(Some(entry)) => {
                 let window: BucketedWindow = serde_json::from_slice(&entry)?;
@@ -241,7 +276,7 @@ struct RateLimiter {
 impl RateLimiter {
     async fn new(nats_url: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let storage = Arc::new(NatsKvStorage::new(nats_url).await?);
-        
+
         // Cache with 1 hour TTL for active entries
         let cache = Cache::builder()
             .time_to_idle(Duration::from_secs(3600)) // 1 hour
@@ -275,12 +310,11 @@ impl RateLimiter {
             let mut sub = delta_sub;
             while let Some(msg) = sub.next().await {
                 if let Ok(delta) = serde_json::from_slice::<DeltaMessage>(&msg.payload) {
-                    // Ignore our own messages
                     if delta.node_id != node_id_for_delta {
-                        // Update the specific bucket in our cache
                         if let Some(window_lock) = cache.get(&delta.key).await {
                             let mut window = window_lock.write().await;
-                            *window.buckets.entry(delta.bucket_id).or_insert(0) += delta.increment;
+                            let second_idx = (delta.timestamp % SECONDS_BUCKETS as i64) as usize;
+                            BucketedWindow::increment_bucket(&mut window.seconds, second_idx);
                         }
                     }
                 }
@@ -290,12 +324,11 @@ impl RateLimiter {
         Ok(())
     }
 
-    async fn publish_delta(&self, key: &str, bucket_id: i64, increment: u32) {
+    async fn publish_delta(&self, key: &str, timestamp: i64) {
         if let Some(client) = self.delta_publisher.read().await.as_ref() {
             let delta = DeltaMessage {
                 key: key.to_string(),
-                bucket_id,
-                increment,
+                timestamp,
                 node_id: self.storage.node_id.clone(),
             };
 
@@ -307,106 +340,55 @@ impl RateLimiter {
     }
 
     async fn check_rate_limit(&self, key: String, limit: u32, window: i64) -> (bool, u32, u32) {
-        // Try to get from cache first
         let window_lock = if let Some(cached_lock) = self.cache.get(&key).await {
             cached_lock
         } else {
-            // Cache miss - try NATS KV
             let loaded_window = match self.storage.load(&key).await {
                 Ok(Some(stored)) => stored,
                 _ => BucketedWindow::new(limit, window),
             };
-            
+
             let lock = Arc::new(RwLock::new(loaded_window));
             self.cache.insert(key.clone(), lock.clone()).await;
             lock
         };
 
-        // Calculate current bucket
         let now = Utc::now().timestamp();
-        // We need bucket size. Read lock first? Or just assume standard sizes?
-        // Better to get it from window.
-        
-        let (allowed, remaining, retry_after, current_bucket) = {
-            // Acquire write lock for atomic update
+
+        let (allowed, remaining, retry_after) = {
             let mut bucketed_window = window_lock.write().await;
 
-            // Check configuration changes
             if bucketed_window.max_requests != limit {
                 bucketed_window.max_requests = limit;
             }
-            if bucketed_window.window_seconds != window {
-                *bucketed_window = BucketedWindow::new(limit, window);
-            }
 
-            let current_bucket = now / bucketed_window.bucket_size;
-            let (allowed, remaining) = bucketed_window.try_add_request();
-            let retry_after = bucketed_window.seconds_until_next_available();
-            
-            (allowed, remaining, retry_after, current_bucket)
-        }; // Lock is dropped here
+            bucketed_window.try_add_request();
 
-        // If request was allowed, publish the delta and persist
+            bucketed_window.check_window(window, limit)
+        };
+
         if allowed {
-            self.publish_delta(&key, current_bucket, 1).await;
-            
-            // Async persist with CAS
+            self.publish_delta(&key, now).await;
+
             let storage = self.storage.clone();
             let key_clone = key.clone();
             tokio::spawn(async move {
-                Self::persist_async(storage, key_clone, 1).await;
+                Self::persist_async(storage, key_clone).await;
             });
         }
 
         (allowed, remaining, retry_after)
     }
 
-    async fn persist_async(storage: Arc<NatsKvStorage>, key: String, delta: u32) {
-        // Retry loop for CAS
+    async fn persist_async(storage: Arc<NatsKvStorage>, key: String) {
         for _ in 0..5 {
             match storage.get_with_revision(&key).await {
-                Ok(Some((mut window, revision))) => {
-                    // Apply delta to the window from KV
-                    // Note: This is a simplified merge. Ideally we'd merge buckets.
-                    // But since we are just counting, we can just add to the current bucket?
-                    // Wait, the window in KV might be old.
-                    // Actually, we should just load, add request, and save?
-                    // No, that's what we did before.
-                    // We need to: Load -> Add -> CAS.
-                    
-                    let now = Utc::now().timestamp();
-                    let current_bucket = now / window.bucket_size;
-                    *window.buckets.entry(current_bucket).or_insert(0) += delta;
-                    
+                Ok(Some((window, revision))) => {
                     if storage.update_cas(&key, &window, revision).await.is_ok() {
                         return;
                     }
                 }
-                Ok(None) => {
-                    // Create new
-                    let mut window = BucketedWindow::new(1000, 3600); // Default, but we don't know limits here easily
-                    // This is tricky. We need the limits to create a new window correctly.
-                    // But usually if it's None, it means it was evicted or never existed.
-                    // If we are persisting a delta, we assume it exists or we should create it.
-                    // For simplicity in this async task, if it doesn't exist, we might skip or try to create with defaults?
-                    // Let's assume it exists if we are persisting a delta, or we create a basic one.
-                    // Actually, the caller knows the limits. But passing them is annoying.
-                    // Let's just try to create with the delta.
-                    
-                    // Ideally we pass limits to persist_async.
-                    // For now, let's skip creation if missing to avoid wrong config, 
-                    // or better: The main thread created it in cache, so it should be in KV eventually?
-                    // No, main thread only put in cache.
-                    
-                    // Let's just return if not found for now to be safe, 
-                    // or rely on the fact that we loaded it from KV or created new in check_rate_limit.
-                    // If we created new in check_rate_limit, we should have saved it?
-                    // We didn't save it synchronously.
-                    
-                    // Let's change check_rate_limit to save synchronously if it was a new creation?
-                    // Or just let this async task handle creation.
-                    return; 
-                }
+                Ok(None) => return,
                 Err(_) => return,
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -486,7 +468,11 @@ async fn check_limit(
     for rate_limit in &key_data.rate_limits {
         let window_seconds = rate_limit.window_seconds();
         let rate_limit_mode = rate_limit.effective_mode();
-        limits.push((rate_limit.max_requests as u32, window_seconds, rate_limit_mode));
+        limits.push((
+            rate_limit.max_requests as u32,
+            window_seconds,
+            rate_limit_mode,
+        ));
     }
 
     // If no limits configured, use a default
@@ -508,78 +494,35 @@ async fn check_limit(
                 )
             }
             RateLimitMode::PerKeyAndIp => {
-                // Check both key and IP limits - use the more restrictive one
-                let key_limit = format!("key:{}:{}:{}", key_data.key_id, identifier, window);
-                let ip_limit = format!(
-                    "ip:{}:{}:{}:{}",
+                format!(
+                    "key_ip:{}:{}:{}:{}",
                     key_data.key_id, client_ip, identifier, window
-                );
-
-                // Check key limit
-                let (key_allowed, key_remaining, key_retry) =
-                    limiter.check_rate_limit(key_limit, *limit, *window).await;
-
-                // Check IP limit
-                let (ip_allowed, ip_remaining, ip_retry) =
-                    limiter.check_rate_limit(ip_limit, *limit, *window).await;
-
-                // Use the more restrictive result
-                let allowed = key_allowed && ip_allowed;
-                let remaining = key_remaining.min(ip_remaining);
-                let retry_after = if !allowed { key_retry.max(ip_retry) } else { 0 };
-
-                // Add headers for this limit
-                let limit_header = format!("X-RateLimit-{}s-Limit", window);
-                let remaining_header = format!("X-RateLimit-{}s-Remaining", window);
-                response_headers.insert(
-                    axum::http::HeaderName::from_bytes(limit_header.as_bytes()).unwrap(),
-                    HeaderValue::from_str(&limit.to_string()).unwrap(),
-                );
-                response_headers.insert(
-                    axum::http::HeaderName::from_bytes(remaining_header.as_bytes()).unwrap(),
-                    HeaderValue::from_str(&remaining.to_string()).unwrap(),
-                );
-
-                if !allowed {
-                    all_allowed = false;
-                    min_retry_after = min_retry_after.min(retry_after);
-                    let reset_header = format!("X-RateLimit-{}s-Reset", window);
-                    response_headers.insert(
-                        axum::http::HeaderName::from_bytes(reset_header.as_bytes()).unwrap(),
-                        HeaderValue::from_str(&retry_after.to_string()).unwrap(),
-                    );
-                }
-
-                continue; // Skip the normal flow for this iteration
+                )
             }
         };
 
-        // For PerKey and PerIp modes (not PerKeyAndIp)
-        if !matches!(rate_limit_mode, RateLimitMode::PerKeyAndIp) {
-            let (allowed, remaining, retry_after) =
-                limiter.check_rate_limit(key, *limit, *window).await;
+        let (allowed, remaining, retry_after) =
+            limiter.check_rate_limit(key, *limit, *window).await;
 
-            // Add headers for each limit
-            let limit_header = format!("X-RateLimit-{}s-Limit", window);
-            let remaining_header = format!("X-RateLimit-{}s-Remaining", window);
-            response_headers.insert(
-                axum::http::HeaderName::from_bytes(limit_header.as_bytes()).unwrap(),
-                HeaderValue::from_str(&limit.to_string()).unwrap(),
-            );
-            response_headers.insert(
-                axum::http::HeaderName::from_bytes(remaining_header.as_bytes()).unwrap(),
-                HeaderValue::from_str(&remaining.to_string()).unwrap(),
-            );
+        let limit_header = format!("X-RateLimit-{}s-Limit", window);
+        let remaining_header = format!("X-RateLimit-{}s-Remaining", window);
+        response_headers.insert(
+            axum::http::HeaderName::from_bytes(limit_header.as_bytes()).unwrap(),
+            HeaderValue::from_str(&limit.to_string()).unwrap(),
+        );
+        response_headers.insert(
+            axum::http::HeaderName::from_bytes(remaining_header.as_bytes()).unwrap(),
+            HeaderValue::from_str(&remaining.to_string()).unwrap(),
+        );
 
-            if !allowed {
-                all_allowed = false;
-                min_retry_after = min_retry_after.min(retry_after);
-                let reset_header = format!("X-RateLimit-{}s-Reset", window);
-                response_headers.insert(
-                    axum::http::HeaderName::from_bytes(reset_header.as_bytes()).unwrap(),
-                    HeaderValue::from_str(&retry_after.to_string()).unwrap(),
-                );
-            }
+        if !allowed {
+            all_allowed = false;
+            min_retry_after = min_retry_after.min(retry_after);
+            let reset_header = format!("X-RateLimit-{}s-Reset", window);
+            response_headers.insert(
+                axum::http::HeaderName::from_bytes(reset_header.as_bytes()).unwrap(),
+                HeaderValue::from_str(&retry_after.to_string()).unwrap(),
+            );
         }
     }
 
