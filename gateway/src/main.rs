@@ -402,7 +402,9 @@ impl RateLimiter {
                         data: fresh_data,
                         cached_at: Utc::now(),
                     });
-                    api_key_cache_clone.insert(key_hash_clone, cached_data).await;
+                    api_key_cache_clone
+                        .insert(key_hash_clone, cached_data)
+                        .await;
                 }
             });
 
@@ -568,9 +570,9 @@ fn is_valid_api_key_format(key: &str) -> bool {
             return false;
         }
 
-        secret_part.chars().all(|c| {
-            c.is_ascii_alphanumeric() || c == '-' || c == '_'
-        })
+        secret_part
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     } else {
         false
     }
@@ -749,7 +751,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rate_limiter = RateLimiter::new(&nats_url).await?;
 
     let app = Router::new()
-        .route("/check/:identifier", get(check_limit))
+        .route("/check/{identifier}", get(check_limit))
         .route("/health", get(health))
         .with_state((rate_limiter, app_state));
 
