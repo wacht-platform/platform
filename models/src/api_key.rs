@@ -130,15 +130,21 @@ impl RateLimit {
             return Err("Max requests must be positive".to_string());
         }
 
+        let window_seconds = self.window_seconds();
+
+        if window_seconds > 86400 {
+            return Err("Rate limit window cannot exceed 24 hours (86400 seconds)".to_string());
+        }
+
         match self.unit {
             RateLimitUnit::Second => {
-                if self.duration > 60 {
-                    return Err("Second-based limits cannot exceed 60 seconds".to_string());
+                if self.duration > 1800 {
+                    return Err("Second-based limits cannot exceed 1800 seconds (30 minutes)".to_string());
                 }
             }
             RateLimitUnit::Minute => {
-                if self.duration > 60 {
-                    return Err("Minute-based limits cannot exceed 60 minutes".to_string());
+                if self.duration > 1440 {
+                    return Err("Minute-based limits cannot exceed 1440 minutes (24 hours)".to_string());
                 }
             }
             RateLimitUnit::Hour => {
