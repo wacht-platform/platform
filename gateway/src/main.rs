@@ -621,10 +621,42 @@ async fn check_limit(
         .unwrap_or_else(|| addr.ip().to_string());
 
     let mut response_headers = HeaderMap::new();
+
+    // API Key identity headers
     response_headers.insert(
-        "X-Deployment-ID",
+        "X-Wacht-Key-ID",
+        HeaderValue::from_str(&key_data.key_id.to_string()).unwrap(),
+    );
+    response_headers.insert(
+        "X-Wacht-Deployment-ID",
         HeaderValue::from_str(&key_data.deployment_id.to_string()).unwrap(),
     );
+    response_headers.insert(
+        "X-Wacht-App-ID",
+        HeaderValue::from_str(&key_data.app_id.to_string()).unwrap(),
+    );
+    response_headers.insert(
+        "X-Wacht-App-Name",
+        HeaderValue::from_str(&key_data.app_name).unwrap(),
+    );
+    response_headers.insert(
+        "X-Wacht-Key-Name",
+        HeaderValue::from_str(&key_data.key_name).unwrap(),
+    );
+
+    // Permissions as JSON array
+    if let Ok(permissions_json) = serde_json::to_string(&key_data.permissions) {
+        if let Ok(header_value) = HeaderValue::from_str(&permissions_json) {
+            response_headers.insert("X-Wacht-Permissions", header_value);
+        }
+    }
+
+    // Metadata as JSON
+    if let Ok(metadata_json) = serde_json::to_string(&key_data.metadata) {
+        if let Ok(header_value) = HeaderValue::from_str(&metadata_json) {
+            response_headers.insert("X-Wacht-Metadata", header_value);
+        }
+    }
 
     let mut all_allowed = true;
     let mut min_retry_after = u32::MAX;

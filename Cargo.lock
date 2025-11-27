@@ -2858,7 +2858,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -5964,9 +5964,9 @@ checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 
 [[package]]
 name = "wacht"
-version = "0.0.1-alpha.7"
+version = "0.0.1-alpha.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "949c49d0ce18d49228ee83a2b5af91eea36f47fca3f530d67fa7899c2e411b61"
+checksum = "ae4558186b85e067a68b94b09a19c2707651495f341f32475339a547dfc25141"
 dependencies = [
  "axum",
  "chrono",

@@ -14,6 +14,7 @@ pub struct ApiKeyGatewayData {
     pub is_active: bool,
     pub expires_at: Option<DateTime<Utc>>,
     pub permissions: Vec<String>,
+    pub metadata: serde_json::Value,
     pub app_name: String,
     pub rate_limits: Vec<RateLimit>,
 }
@@ -42,6 +43,7 @@ impl Query for GetApiKeyGatewayDataQuery {
                 k.is_active,
                 k.expires_at,
                 k.permissions as "permissions: serde_json::Value",
+                k.metadata as "metadata: serde_json::Value",
                 a.name as app_name,
                 a.rate_limits as "rate_limits: serde_json::Value"
             FROM api_keys k
@@ -65,6 +67,7 @@ impl Query for GetApiKeyGatewayDataQuery {
             expires_at: r.expires_at,
             permissions: serde_json::from_value(r.permissions.unwrap_or(serde_json::json!([])))
                 .unwrap_or_default(),
+            metadata: r.metadata.unwrap_or(serde_json::json!({})),
             app_name: r.app_name,
             rate_limits: serde_json::from_value(r.rate_limits.unwrap_or(serde_json::json!([])))
                 .unwrap_or_else(|_| vec![]),
