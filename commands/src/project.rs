@@ -3,20 +3,283 @@ use common::state::AppState;
 use common::{utils::name::generate_random_name, validators::ProjectValidator};
 use models::{
     AuthFactorsEnabled, CustomSmtpConfig, DarkModeSettings, Deployment, DeploymentAuthSettings,
-    DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate,
-    DeploymentKeyPair, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
-    DeploymentSmsTemplate, DeploymentUISettings, DeploymentWorkspaceRole, EmailProvider,
-    EmailSettings, EmailVerificationRecords, FirstFactor, IndividualAuthSettings,
-    LightModeSettings, OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments,
-    SecondFactorPolicy, SocialConnectionProvider, UsernameSettings, VerificationPolicy,
-    VerificationStatus,
+    DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate, DeploymentMode,
+    DeploymentOrganizationRole, DeploymentRestrictions, DeploymentSmsTemplate,
+    DeploymentUISettings, DeploymentWorkspaceRole, EmailProvider, EmailSettings,
+    EmailVerificationRecords, FirstFactor, IndividualAuthSettings, LightModeSettings,
+    OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments, SecondFactorPolicy,
+    SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus,
+    api_key::{RateLimit, RateLimitMode, RateLimitUnit},
+    webhook::WebhookEventDefinition,
 };
 
-use base64::{Engine, prelude::BASE64_STANDARD};
+use base64::{Engine, engine::general_purpose::STANDARD, prelude::BASE64_STANDARD};
 use redis::AsyncCommands;
+use std::env;
 use std::str::FromStr;
 
 use super::{Command, UploadToCdnCommand};
+
+fn generate_signing_secret() -> String {
+    use rand::Rng;
+    let mut rng = rand::rng();
+    let bytes: Vec<u8> = (0..32).map(|_| rng.random::<u8>()).collect();
+    format!("whsec_{}", STANDARD.encode(bytes))
+}
+
+fn get_default_rate_limits() -> Vec<RateLimit> {
+    vec![RateLimit {
+        unit: RateLimitUnit::Minute,
+        duration: 1,
+        max_requests: 100,
+        mode: Some(RateLimitMode::PerKey),
+    }]
+}
+
+fn get_default_webhook_events() -> Vec<WebhookEventDefinition> {
+    vec![
+        WebhookEventDefinition {
+            name: "user.created".to_string(),
+            description: "New user signed up".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.updated".to_string(),
+            description: "User profile updated".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.deleted".to_string(),
+            description: "User account deleted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.email.verified".to_string(),
+            description: "User email address verified".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.password.updated".to_string(),
+            description: "User password changed".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.mfa.enabled".to_string(),
+            description: "User enabled two-factor authentication".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.mfa.disabled".to_string(),
+            description: "User disabled two-factor authentication".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "session.created".to_string(),
+            description: "User signed in".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "session.deleted".to_string(),
+            description: "User signed out".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "session.expired".to_string(),
+            description: "User session expired".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.created".to_string(),
+            description: "New organization created".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.updated".to_string(),
+            description: "Organization settings updated".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.deleted".to_string(),
+            description: "Organization deleted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.member.added".to_string(),
+            description: "Member added to organization".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.member.removed".to_string(),
+            description: "Member removed from organization".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.member.role.updated".to_string(),
+            description: "Organization member role changed".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.created".to_string(),
+            description: "New workspace created".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.updated".to_string(),
+            description: "Workspace settings updated".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.deleted".to_string(),
+            description: "Workspace deleted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.member.added".to_string(),
+            description: "Member added to workspace".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.member.removed".to_string(),
+            description: "Member removed from workspace".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.member.role.updated".to_string(),
+            description: "Workspace member role changed".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.invitation.created".to_string(),
+            description: "Organization invitation sent".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.invitation.accepted".to_string(),
+            description: "Organization invitation accepted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "organization.invitation.revoked".to_string(),
+            description: "Organization invitation revoked".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.invitation.created".to_string(),
+            description: "Workspace invitation sent".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.invitation.accepted".to_string(),
+            description: "Workspace invitation accepted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "workspace.invitation.revoked".to_string(),
+            description: "Workspace invitation revoked".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.phone.added".to_string(),
+            description: "Phone number added to user account".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.phone.verified".to_string(),
+            description: "User phone number verified".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.phone.removed".to_string(),
+            description: "Phone number removed from user account".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.email.added".to_string(),
+            description: "Email address added to user account".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "user.email.removed".to_string(),
+            description: "Email address removed from user account".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "api_key.created".to_string(),
+            description: "API key created".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "api_key.deleted".to_string(),
+            description: "API key deleted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "api_key.rotated".to_string(),
+            description: "API key rotated".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.created".to_string(),
+            description: "AI agent created".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.updated".to_string(),
+            description: "AI agent configuration updated".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.deleted".to_string(),
+            description: "AI agent deleted".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.execution.started".to_string(),
+            description: "AI agent execution started".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.execution.completed".to_string(),
+            description: "AI agent execution completed successfully".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "agent.execution.failed".to_string(),
+            description: "AI agent execution failed".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "waitlist.entry.created".to_string(),
+            description: "New waitlist entry added".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "waitlist.entry.approved".to_string(),
+            description: "Waitlist entry approved".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "execution_context.message".to_string(),
+            description: "Message sent in execution context".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "execution_context.platform_event".to_string(),
+            description: "Platform event occurred in execution context".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "execution_context.platform_function".to_string(),
+            description: "Platform function called in execution context".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
+            name: "execution_context.user_input_request".to_string(),
+            description: "User input requested in execution context".to_string(),
+            schema: None,
+        },
+    ]
+}
 
 pub struct CreateProjectWithStagingDeploymentCommand {
     name: String,
@@ -54,19 +317,6 @@ impl CreateProjectWithStagingDeploymentCommand {
             default_org_creator_role: DeploymentOrganizationRole::admin(),
             default_org_member_role: DeploymentOrganizationRole::member(),
         }
-    }
-
-    fn create_key_pair(&self, deployment_id: i64) -> Result<DeploymentKeyPair, AppError> {
-        let pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-
-        Ok(DeploymentKeyPair {
-            id: 0,
-            deployment_id,
-            public_key: pair.public_key_pem(),
-            private_key: pair.serialize_pem(),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        })
     }
 
     fn create_auth_settings(&self, deployment_id: i64) -> DeploymentAuthSettings {
@@ -212,20 +462,53 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         let validator = ProjectValidator::new();
         validator.validate_project_name(&self.name)?;
         validator.validate_auth_methods(&self.auth_methods)?;
-        let mut tx = app_state.db_pool.begin().await?;
-        let project_id = app_state.sf.next_id()? as i64;
-        let image_url: String;
 
-        if self.has_logo {
-            image_url = UploadToCdnCommand::new(
-                format!("projects/{}/logo.png", project_id),
-                self.logo.clone(),
-            )
-            .execute(app_state)
-            .await?;
-        } else {
-            image_url = "".to_string();
-        }
+        let project_id = app_state.sf.next_id()? as i64;
+
+        let logo_task = {
+            let logo = self.logo.clone();
+            let has_logo = self.has_logo;
+            let project_id = project_id;
+            let app_state = app_state.clone();
+            async move {
+                if has_logo {
+                    UploadToCdnCommand::new(format!("projects/{}/logo.png", project_id), logo)
+                        .execute(&app_state)
+                        .await
+                } else {
+                    Ok("".to_string())
+                }
+            }
+        };
+
+        let key_pair_task = tokio::task::spawn_blocking(|| {
+            let pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+            Ok::<_, AppError>((pair.public_key_pem(), pair.serialize_pem()))
+        });
+
+        let random_name_task = {
+            let app_state = app_state.clone();
+            async move {
+                let random_name = generate_random_name();
+                let count: i64 = app_state
+                    .redis_client
+                    .get_multiplexed_tokio_connection()
+                    .await?
+                    .incr(format!("project_count:{}", random_name), 1)
+                    .await?;
+                Ok::<_, AppError>((random_name, count))
+            }
+        };
+
+        let (image_url_res, key_pair_res, random_name_res) =
+            tokio::join!(logo_task, key_pair_task, random_name_task);
+
+        let image_url = image_url_res?;
+        let (public_key, private_key) =
+            key_pair_res.map_err(|e| AppError::Internal(e.to_string()))??;
+        let (random_name, count) = random_name_res?;
+
+        let mut tx = app_state.db_pool.begin().await?;
 
         let billing_account_id: i64 = if let Some(ref owner_id) = self.owner_id {
             sqlx::query_scalar!(
@@ -262,14 +545,6 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         )
         .fetch_one(&mut *tx)
         .await?;
-
-        let random_name = generate_random_name();
-        let count: i64 = app_state
-            .redis_client
-            .get_multiplexed_tokio_connection()
-            .await?
-            .incr(format!("project_count:{}", random_name), 1)
-            .await?;
 
         let hostname = format!("{}-{}", random_name, count);
 
@@ -552,8 +827,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
-        let key_pair = self.create_key_pair(deployment_row.id)?;
-
+        // Use pre-generated key pair
         sqlx::query!(
             r#"
             INSERT INTO deployment_key_pairs (
@@ -568,8 +842,8 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             "#,
             app_state.sf.next_id()? as i64,
             deployment_row.id,
-            key_pair.public_key,
-            key_pair.private_key,
+            public_key,
+            private_key,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
@@ -816,6 +1090,82 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             }
         }
 
+        let app_name = deployment_row.id.to_string();
+        let rate_limits = get_default_rate_limits();
+        let rate_limits_json = serde_json::to_value(&rate_limits)
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+
+        let console_id = env::var("CONSOLE_DEPLOYMENT_ID")
+            .unwrap()
+            .parse::<i64>()
+            .unwrap();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO api_key_apps (id, deployment_id, name, description, is_active, rate_limits, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, true, $5, $6, $7)
+            "#,
+            app_state.sf.next_id()? as i64,
+            console_id,
+            app_name,
+            format!("API keys for deployment {}", deployment_row.id),
+            rate_limits_json,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let signing_secret = generate_signing_secret();
+        sqlx::query!(
+            r#"
+            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, true, $5, $6)
+            "#,
+            console_id,
+            app_name,
+            format!("Webhooks for deployment {}", deployment_row.id),
+            signing_secret,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let webhook_events = get_default_webhook_events();
+        let events_len = webhook_events.len();
+        let mut event_deployment_ids = Vec::with_capacity(events_len);
+        let mut event_app_names = Vec::with_capacity(events_len);
+        let mut event_names = Vec::with_capacity(events_len);
+        let mut event_descriptions = Vec::with_capacity(events_len);
+        let mut event_schemas = Vec::with_capacity(events_len);
+        let mut event_created_ats = Vec::with_capacity(events_len);
+
+        let now = chrono::Utc::now();
+        for event in webhook_events {
+            event_deployment_ids.push(console_id);
+            event_app_names.push(app_name.clone());
+            event_names.push(event.name);
+            event_descriptions.push(event.description);
+            event_schemas.push(event.schema);
+            event_created_ats.push(now);
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO webhook_app_events (deployment_id, app_name, event_name, description, schema, created_at)
+            SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[], $4::text[], $5::jsonb[], $6::timestamptz[])
+            "#
+        )
+        .bind(&event_deployment_ids)
+        .bind(&event_app_names)
+        .bind(&event_names)
+        .bind(&event_descriptions)
+        .bind(&event_schemas as &[Option<serde_json::Value>])
+        .bind(&event_created_ats)
+        .execute(&mut *tx)
+        .await?;
+
         tx.commit().await?;
 
         let deployment = Deployment {
@@ -947,19 +1297,6 @@ impl CreateStagingDeploymentCommand {
         }
     }
 
-    fn create_key_pair(&self, deployment_id: i64) -> Result<DeploymentKeyPair, AppError> {
-        let pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-
-        Ok(DeploymentKeyPair {
-            id: 0,
-            deployment_id,
-            public_key: pair.public_key_pem(),
-            private_key: pair.serialize_pem(),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        })
-    }
-
     fn create_ui_settings(&self, deployment_id: i64, app_name: String) -> DeploymentUISettings {
         DeploymentUISettings {
             deployment_id,
@@ -1039,19 +1376,6 @@ impl CreateProductionDeploymentCommand {
             default_org_creator_role: DeploymentOrganizationRole::admin(),
             default_org_member_role: DeploymentOrganizationRole::member(),
         }
-    }
-
-    fn create_key_pair(&self, deployment_id: i64) -> Result<DeploymentKeyPair, AppError> {
-        let pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-
-        Ok(DeploymentKeyPair {
-            id: 0,
-            deployment_id,
-            public_key: pair.public_key_pem(),
-            private_key: pair.serialize_pem(),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        })
     }
 
     fn create_auth_settings(&self, deployment_id: i64) -> DeploymentAuthSettings {
@@ -1251,6 +1575,15 @@ impl Command for CreateStagingDeploymentCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let validator = ProjectValidator::new();
         validator.validate_auth_methods(&self.auth_methods)?;
+
+        let key_pair_task = tokio::task::spawn_blocking(|| {
+            let pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+            Ok::<_, AppError>((pair.public_key_pem(), pair.serialize_pem()))
+        });
+
+        let (public_key, private_key) = key_pair_task
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))??;
 
         let mut tx = app_state.db_pool.begin().await?;
 
@@ -1561,8 +1894,7 @@ impl Command for CreateStagingDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
-        let key_pair = self.create_key_pair(deployment_row.id)?;
-
+        // Use pre-generated key pair
         sqlx::query!(
             r#"
             INSERT INTO deployment_key_pairs (
@@ -1577,8 +1909,8 @@ impl Command for CreateStagingDeploymentCommand {
             "#,
             app_state.sf.next_id()? as i64,
             deployment_row.id,
-            key_pair.public_key,
-            key_pair.private_key,
+            public_key,
+            private_key,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
@@ -1693,6 +2025,82 @@ impl Command for CreateStagingDeploymentCommand {
             }
         }
 
+        let app_name = deployment_row.id.to_string();
+        let rate_limits = get_default_rate_limits();
+        let rate_limits_json = serde_json::to_value(&rate_limits)
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+
+        let console_id = env::var("CONSOLE_DEPLOYMENT_ID")
+            .unwrap()
+            .parse::<i64>()
+            .unwrap();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO api_key_apps (id, deployment_id, name, description, is_active, rate_limits, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, true, $5, $6, $7)
+            "#,
+            app_state.sf.next_id()? as i64,
+            console_id,
+            app_name,
+            format!("API keys for deployment {}", deployment_row.id),
+            rate_limits_json,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let signing_secret = generate_signing_secret();
+        sqlx::query!(
+            r#"
+            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, true, $5, $6)
+            "#,
+            console_id,
+            app_name,
+            format!("Webhooks for deployment {}", deployment_row.id),
+            signing_secret,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let webhook_events = get_default_webhook_events();
+        let events_len = webhook_events.len();
+        let mut event_deployment_ids = Vec::with_capacity(events_len);
+        let mut event_app_names = Vec::with_capacity(events_len);
+        let mut event_names = Vec::with_capacity(events_len);
+        let mut event_descriptions = Vec::with_capacity(events_len);
+        let mut event_schemas = Vec::with_capacity(events_len);
+        let mut event_created_ats = Vec::with_capacity(events_len);
+
+        let now = chrono::Utc::now();
+        for event in webhook_events {
+            event_deployment_ids.push(console_id);
+            event_app_names.push(app_name.clone());
+            event_names.push(event.name);
+            event_descriptions.push(event.description);
+            event_schemas.push(event.schema);
+            event_created_ats.push(now);
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO webhook_app_events (deployment_id, app_name, event_name, description, schema, created_at)
+            SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[], $4::text[], $5::jsonb[], $6::timestamptz[])
+            "#
+        )
+        .bind(&event_deployment_ids)
+        .bind(&event_app_names)
+        .bind(&event_names)
+        .bind(&event_descriptions)
+        .bind(&event_schemas as &[Option<serde_json::Value>])
+        .bind(&event_created_ats)
+        .execute(&mut *tx)
+        .await?;
+
         tx.commit().await?;
 
         Ok(Deployment {
@@ -1721,6 +2129,15 @@ impl Command for CreateProductionDeploymentCommand {
         let validator = ProjectValidator::new();
         validator.validate_domain_format(&self.custom_domain)?;
         validator.validate_auth_methods(&self.auth_methods)?;
+
+        let key_pair_task = tokio::task::spawn_blocking(|| {
+            let pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+            Ok::<_, AppError>((pair.public_key_pem(), pair.serialize_pem()))
+        });
+
+        let (public_key, private_key) = key_pair_task
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))??;
 
         let mut tx = app_state.db_pool.begin().await?;
 
@@ -1818,7 +2235,7 @@ impl Command for CreateProductionDeploymentCommand {
         .fetch_one(&mut *tx)
         .await?;
 
-        let auth_settings = self.create_auth_settings(deployment_row.id);
+        let _auth_settings = self.create_auth_settings(deployment_row.id);
         let ui_settings = self.create_ui_settings(
             deployment_row.id,
             frontend_host.clone(),
@@ -1828,65 +2245,23 @@ impl Command for CreateProductionDeploymentCommand {
         let restrictions = self.create_restrictions(deployment_row.id);
         let email_templates = self.create_email_templates(deployment_row.id);
         let sms_templates = self.create_sms_templates(deployment_row.id);
-        let key_pair = self.create_key_pair(deployment_row.id)?;
-
+        // Use pre-generated key pair
         sqlx::query!(
             r#"
-            INSERT INTO deployment_auth_settings (
+            INSERT INTO deployment_key_pairs (
                 id,
                 deployment_id,
-                email_address,
-                phone_number,
-                username,
-                first_factor,
-                first_name,
-                last_name,
-                password,
-                auth_factors_enabled,
-                verification_policy,
-                second_factor_policy,
-                passkey,
-                magic_link,
-                multi_session_support,
-                session_token_lifetime,
-                session_validity_period,
-                session_inactive_timeout,
+                public_key,
+                private_key,
                 created_at,
                 updated_at
             )
-            VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
-            )
+            VALUES ($1, $2, $3, $4, $5, $6)
             "#,
             app_state.sf.next_id()? as i64,
             deployment_row.id,
-            serde_json::to_value(&auth_settings.email_address)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            serde_json::to_value(&auth_settings.phone_number)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            serde_json::to_value(&auth_settings.username)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            auth_settings.first_factor.to_string(),
-            serde_json::to_value(&auth_settings.first_name)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            serde_json::to_value(&auth_settings.last_name)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            serde_json::to_value(&auth_settings.password)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            serde_json::to_value(&auth_settings.auth_factors_enabled)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            serde_json::to_value(&auth_settings.verification_policy)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            auth_settings.second_factor_policy.to_string(),
-            serde_json::to_value(&auth_settings.passkey)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            serde_json::to_value(&auth_settings.magic_link)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            serde_json::to_value(&auth_settings.multi_session_support)
-                .map_err(|e| AppError::Serialization(e.to_string()))?,
-            auth_settings.session_token_lifetime,
-            auth_settings.session_validity_period,
-            auth_settings.session_inactive_timeout,
+            public_key,
+            private_key,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
@@ -2220,6 +2595,7 @@ impl Command for CreateProductionDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
+        // Use pre-generated key pair
         sqlx::query!(
             r#"
             INSERT INTO deployment_key_pairs (
@@ -2234,8 +2610,8 @@ impl Command for CreateProductionDeploymentCommand {
             "#,
             app_state.sf.next_id()? as i64,
             deployment_row.id,
-            key_pair.public_key,
-            key_pair.private_key,
+            public_key,
+            private_key,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
@@ -2395,6 +2771,82 @@ impl Command for CreateProductionDeploymentCommand {
             chrono::Utc::now(),
             deployment_row.id
         )
+        .execute(&mut *tx)
+        .await?;
+
+        let app_name = deployment_row.id.to_string();
+        let rate_limits = get_default_rate_limits();
+        let rate_limits_json = serde_json::to_value(&rate_limits)
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+
+        let console_id = env::var("CONSOLE_DEPLOYMENT_ID")
+            .unwrap()
+            .parse::<i64>()
+            .unwrap();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO api_key_apps (id, deployment_id, name, description, is_active, rate_limits, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, true, $5, $6, $7)
+            "#,
+            app_state.sf.next_id()? as i64,
+            console_id,
+            app_name,
+            format!("API keys for deployment {}", deployment_row.id),
+            rate_limits_json,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let signing_secret = generate_signing_secret();
+        sqlx::query!(
+            r#"
+            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, true, $5, $6)
+            "#,
+            console_id,
+            app_name,
+            format!("Webhooks for deployment {}", deployment_row.id),
+            signing_secret,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let webhook_events = get_default_webhook_events();
+        let events_len = webhook_events.len();
+        let mut event_deployment_ids = Vec::with_capacity(events_len);
+        let mut event_app_names = Vec::with_capacity(events_len);
+        let mut event_names = Vec::with_capacity(events_len);
+        let mut event_descriptions = Vec::with_capacity(events_len);
+        let mut event_schemas = Vec::with_capacity(events_len);
+        let mut event_created_ats = Vec::with_capacity(events_len);
+
+        let now = chrono::Utc::now();
+        for event in webhook_events {
+            event_deployment_ids.push(console_id);
+            event_app_names.push(app_name.clone());
+            event_names.push(event.name);
+            event_descriptions.push(event.description);
+            event_schemas.push(event.schema);
+            event_created_ats.push(now);
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO webhook_app_events (deployment_id, app_name, event_name, description, schema, created_at)
+            SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[], $4::text[], $5::jsonb[], $6::timestamptz[])
+            "#
+        )
+        .bind(&event_deployment_ids)
+        .bind(&event_app_names)
+        .bind(&event_names)
+        .bind(&event_descriptions)
+        .bind(&event_schemas as &[Option<serde_json::Value>])
+        .bind(&event_created_ats)
         .execute(&mut *tx)
         .await?;
 
@@ -2706,211 +3158,3 @@ impl Command for DeleteProjectCommand {
     }
 }
 
-pub struct DeleteDeploymentCommand {
-    deployment_id: i64,
-    project_id: i64,
-}
-
-impl DeleteDeploymentCommand {
-    pub fn new(deployment_id: i64, project_id: i64) -> Self {
-        Self {
-            deployment_id,
-            project_id,
-        }
-    }
-
-    async fn cleanup_external_resources(
-        &self,
-        app_state: &AppState,
-        deployment: &Deployment,
-    ) -> Result<(), AppError> {
-        tracing::info!(
-            "Cleaning up external resources for deployment {}",
-            self.deployment_id
-        );
-
-        // Only cleanup external resources for production deployments
-        if deployment.mode == DeploymentMode::Production {
-            if let Some(domain_records) = &deployment.domain_verification_records {
-                if let Some(frontend_hostname_id) = &domain_records.frontend_hostname_id {
-                    if let Err(e) = app_state
-                        .cloudflare_service
-                        .delete_custom_hostname(frontend_hostname_id)
-                        .await
-                    {
-                        tracing::warn!(
-                            "Failed to cleanup frontend hostname {}: {}",
-                            frontend_hostname_id,
-                            e
-                        );
-                    } else {
-                        tracing::info!(
-                            "Successfully cleaned up frontend hostname: {}",
-                            frontend_hostname_id
-                        );
-                    }
-                }
-
-                if let Some(backend_hostname_id) = &domain_records.backend_hostname_id {
-                    if let Err(e) = app_state
-                        .cloudflare_service
-                        .delete_custom_hostname(backend_hostname_id)
-                        .await
-                    {
-                        tracing::warn!(
-                            "Failed to cleanup backend hostname {}: {}",
-                            backend_hostname_id,
-                            e
-                        );
-                    } else {
-                        tracing::info!(
-                            "Successfully cleaned up backend hostname: {}",
-                            backend_hostname_id
-                        );
-                    }
-                }
-            }
-
-            if let Some(email_records) = &deployment.email_verification_records {
-                if let Some(postmark_domain_id) = email_records.postmark_domain_id {
-                    if let Err(e) = app_state
-                        .postmark_service
-                        .delete_domain(postmark_domain_id)
-                        .await
-                    {
-                        tracing::warn!(
-                            "Failed to cleanup Postmark domain {}: {}",
-                            postmark_domain_id,
-                            e
-                        );
-                    } else {
-                        tracing::info!(
-                            "Successfully cleaned up Postmark domain: {}",
-                            postmark_domain_id
-                        );
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn cleanup_database_records(&self, app_state: &AppState) -> Result<(), AppError> {
-        tracing::info!(
-            "Soft deleting database records for deployment {}",
-            self.deployment_id
-        );
-        let mut tx = app_state.db_pool.begin().await?;
-
-        let now = chrono::Utc::now();
-        tracing::info!(
-            "Skipping soft delete of deployment settings tables - only marking deployment as deleted"
-        );
-        sqlx::query!(
-            "UPDATE deployments SET deleted_at = $1, updated_at = $1 WHERE id = $2",
-            now,
-            self.deployment_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        tx.commit().await?;
-
-        tracing::info!(
-            "Successfully cleaned up all database records for deployment {}",
-            self.deployment_id
-        );
-        Ok(())
-    }
-}
-
-impl Command for DeleteDeploymentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        tracing::info!("Starting deletion of deployment {}", self.deployment_id);
-
-        // First, verify the deployment exists and belongs to the project
-        let deployment = sqlx::query!(
-            r#"
-            SELECT id, created_at, updated_at, maintenance_mode, backend_host, frontend_host,
-                   publishable_key, project_id, mode, mail_from_host,
-                   domain_verification_records::jsonb as domain_verification_records,
-                   email_verification_records::jsonb as email_verification_records,
-                   email_provider, custom_smtp_config::jsonb as custom_smtp_config
-            FROM deployments
-            WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
-            "#,
-            self.deployment_id,
-            self.project_id
-        )
-        .fetch_optional(&app_state.db_pool)
-        .await?;
-
-        let deployment_row = deployment.ok_or_else(|| {
-            AppError::NotFound(format!(
-                "Deployment {} not found or doesn't belong to project {}",
-                self.deployment_id, self.project_id
-            ))
-        })?;
-
-        // Check if this is the last deployment in the project
-        let deployment_count = sqlx::query!(
-            "SELECT COUNT(*) as count FROM deployments WHERE project_id = $1 AND deleted_at IS NULL",
-            self.project_id
-        )
-        .fetch_one(&app_state.db_pool)
-        .await?;
-
-        if deployment_count.count.unwrap_or(0) <= 1 {
-            return Err(AppError::BadRequest(
-                "Cannot delete the last deployment in a project. Delete the project instead."
-                    .to_string(),
-            ));
-        }
-
-        // Convert to Deployment model for external cleanup
-        let deployment_model = Deployment {
-            id: deployment_row.id,
-            created_at: deployment_row.created_at,
-            updated_at: deployment_row.updated_at,
-            maintenance_mode: deployment_row.maintenance_mode,
-            backend_host: deployment_row.backend_host,
-            frontend_host: deployment_row.frontend_host,
-            publishable_key: deployment_row.publishable_key,
-            project_id: deployment_row.project_id,
-            mode: DeploymentMode::from(deployment_row.mode),
-            mail_from_host: deployment_row.mail_from_host,
-            domain_verification_records: deployment_row
-                .domain_verification_records
-                .and_then(|data| serde_json::from_value(data).ok()),
-            email_verification_records: deployment_row
-                .email_verification_records
-                .and_then(|data| serde_json::from_value(data).ok()),
-            email_provider: EmailProvider::from(deployment_row.email_provider),
-            custom_smtp_config: deployment_row
-                .custom_smtp_config
-                .and_then(|v| serde_json::from_value(v).ok())
-                .map(|mut c: CustomSmtpConfig| {
-                    c.password = String::new();
-                    c
-                }),
-        };
-
-        if let Err(e) = self
-            .cleanup_external_resources(app_state, &deployment_model)
-            .await
-        {
-            tracing::warn!("Failed to cleanup external resources: {}", e);
-        }
-
-        self.cleanup_database_records(app_state).await?;
-
-        tracing::info!(
-            "Successfully soft deleted deployment {}",
-            self.deployment_id
-        );
-        Ok(())
-    }
-}

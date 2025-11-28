@@ -22,7 +22,7 @@ commands = { path = "../commands" }
 queries = { path = "../queries" }
 common = { path = "../common" }
 agent-engine = { path = "../agent-engine" }
-wacht = { version = "0.0.1-alpha.8", features = ["axum"] }
+wacht = { version = "0.0.1-alpha.9", features = ["axum"] }
 axum = { version = "0.8", features = ["macros", "multipart"] }
 tokio = { version = "1.35", features = ["full"] }
 tower = "0.5"

@@ -43,44 +43,6 @@ pub async fn get_api_key_status(
     .into())
 }
 
-// Activate API keys for a deployment
-pub async fn activate_api_keys(
-    RequireDeployment(deployment_id): RequireDeployment,
-) -> ApiResult<ApiKeyApp> {
-    let app_name = deployment_id.to_string();
-
-    // Check if already exists using SDK
-    let existing = api_keys::get_api_key_app(&app_name).await.is_ok();
-
-    if existing {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "API keys already activated for this deployment",
-        )
-            .into());
-    }
-
-    // Create API key app using SDK with default rate limits
-    let request = api_keys::CreateApiKeyAppRequest {
-        name: app_name,
-        description: Some(format!("API keys for deployment {}", deployment_id)),
-        rate_limits: Some(vec![
-            api_keys::RateLimit {
-                unit: api_keys::RateLimitUnit::Minute,
-                duration: 1,
-                max_requests: 100,
-                mode: Some(api_keys::RateLimitMode::PerKey),
-            }
-        ]),
-    };
-
-    let sdk_app = api_keys::create_api_key_app(request)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    Ok(ApiKeyApp::from(sdk_app).into())
-}
-
 // Deactivate API keys for a deployment
 pub async fn deactivate_api_keys(
     RequireDeployment(deployment_id): RequireDeployment,

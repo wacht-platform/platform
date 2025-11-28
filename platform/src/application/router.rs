@@ -306,10 +306,6 @@ fn console_specific_routes() -> Router<AppState> {
             get(api::webhook_console::get_webhook_status),
         )
         .route(
-            "/webhooks/activate",
-            post(api::webhook_console::activate_webhooks),
-        )
-        .route(
             "/webhooks/rotate-secret",
             post(api::webhook_console::rotate_webhook_secret),
         )
@@ -364,10 +360,6 @@ fn console_specific_routes() -> Router<AppState> {
         .route(
             "/api-keys/status",
             get(api::api_key_console::get_api_key_status),
-        )
-        .route(
-            "/api-keys/activate",
-            post(api::api_key_console::activate_api_keys),
         )
         .route(
             "/api-keys/deactivate",

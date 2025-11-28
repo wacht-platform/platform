@@ -9,7 +9,7 @@ use common::state::AppState;
 
 use commands::{
     Command, CreateProductionDeploymentCommand, CreateProjectWithStagingDeploymentCommand,
-    CreateStagingDeploymentCommand, DeleteDeploymentCommand, DeleteProjectCommand,
+    CreateStagingDeploymentCommand, DeleteProjectCommand,
     VerifyDeploymentDnsRecordsCommand,
 };
 use dto::json::project::{CreateProductionDeploymentRequest, CreateStagingDeploymentRequest};
@@ -149,11 +149,12 @@ pub async fn delete_project(
 }
 
 pub async fn delete_deployment(
-    State(app_state): State<AppState>,
-    Path((project_id, deployment_id)): Path<(i64, i64)>,
+    State(_app_state): State<AppState>,
+    Path((_project_id, _deployment_id)): Path<(i64, i64)>,
 ) -> ApiResult<()> {
-    let command = DeleteDeploymentCommand::new(deployment_id, project_id);
-    command.execute(&app_state).await?;
-
-    Ok(().into())
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        "Deployment deletion is currently disabled",
+    )
+        .into())
 }
