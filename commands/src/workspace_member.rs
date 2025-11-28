@@ -137,11 +137,13 @@ impl Command for AddWorkspaceMemberCommand {
         for role_id in &self.role_ids {
             sqlx::query!(
                 r#"
-                INSERT INTO workspace_membership_roles (workspace_membership_id, workspace_role_id)
-                VALUES ($1, $2)
+                INSERT INTO workspace_membership_roles (workspace_membership_id, workspace_role_id, workspace_id, organization_id)
+                VALUES ($1, $2, $3, $4)
                 "#,
                 membership_id,
-                *role_id
+                *role_id,
+                self.workspace_id,
+                workspace.organization_id
             )
             .execute(&mut *tx)
             .await?;
@@ -266,7 +268,7 @@ impl Command for UpdateWorkspaceMemberCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let membership = sqlx::query!(
             r#"
-            SELECT wm.id
+            SELECT wm.id, wm.organization_id
             FROM workspace_memberships wm
             JOIN workspaces w ON wm.workspace_id = w.id
             WHERE wm.id = $1 AND wm.workspace_id = $2 AND w.deployment_id = $3
@@ -278,11 +280,9 @@ impl Command for UpdateWorkspaceMemberCommand {
         .fetch_optional(&app_state.db_pool)
         .await?;
 
-        if membership.is_none() {
-            return Err(AppError::NotFound(
-                "Workspace membership not found".to_string(),
-            ));
-        }
+        let membership = membership.ok_or(AppError::NotFound(
+            "Workspace membership not found".to_string(),
+        ))?;
 
         if let Some(role_ids) = self.role_ids {
             sqlx::query!(
@@ -295,11 +295,13 @@ impl Command for UpdateWorkspaceMemberCommand {
             for role_id in role_ids {
                 sqlx::query!(
                     r#"
-                INSERT INTO workspace_membership_roles (workspace_membership_id, workspace_role_id)
-                VALUES ($1, $2)
+                INSERT INTO workspace_membership_roles (workspace_membership_id, workspace_role_id, workspace_id, organization_id)
+                VALUES ($1, $2, $3, $4)
                 "#,
                     self.membership_id,
-                    role_id
+                    role_id,
+                    self.workspace_id,
+                    membership.organization_id
                 )
                 .execute(&app_state.db_pool)
                 .await?;

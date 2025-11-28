@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT wm.id, wm.organization_id\n            FROM workspace_memberships wm\n            JOIN workspaces w ON wm.workspace_id = w.id\n            WHERE wm.id = $1 AND wm.workspace_id = $2 AND w.deployment_id = $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "organization_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ca2bb57e57dbbafa631b3b2d756a8c4b28b94a5ac6621e0df7cd51ad454b29b8"
+}
