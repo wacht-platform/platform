@@ -159,7 +159,7 @@ fn base_deployment_routes() -> Router<AppState> {
         )
         .route(
             "/organizations/{organization_id}/members/{membership_id}",
-            delete(api::b2b::remove_organization_member),
+            delete(api::b2b::remove_organization_member).patch(api::b2b::update_organization_member),
         )
         .route(
             "/organizations/{organization_id}/roles",
@@ -405,10 +405,6 @@ fn console_specific_routes() -> Router<AppState> {
 
 fn backend_specific_routes() -> Router<AppState> {
     Router::new()
-        .route(
-            "/organizations/{organization_id}/members/{membership_id}",
-            patch(api::b2b::update_organization_member),
-        )
         .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
         .route("/webhooks/apps", post(api::webhook::create_webhook_app))
         .route(
