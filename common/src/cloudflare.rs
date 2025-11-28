@@ -69,10 +69,13 @@ impl CloudflareService {
             .await
             .map_err(|e| AppError::External(format!("Cloudflare API request failed: {}", e)))?;
 
-        let cloudflare_response: CloudflareResponse<CustomHostname> =
-            response.json().await.map_err(|e| {
-                AppError::External(format!("Failed to parse Cloudflare response: {}", e))
-            })?;
+        let data = response.text().await.unwrap();
+        print!("{:?}", data);
+
+        let cloudflare_response: CloudflareResponse<CustomHostname> = serde_json::from_str(&data)
+            .map_err(|e| {
+            AppError::External(format!("Failed to parse Cloudflare response: {}", e))
+        })?;
 
         if !cloudflare_response.success {
             let error_messages: Vec<String> = cloudflare_response
