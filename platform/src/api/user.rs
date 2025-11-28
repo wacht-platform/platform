@@ -248,7 +248,12 @@ pub async fn get_active_user_list(
         users
     };
 
-    Ok(PaginatedResponse::from(users).into())
+    Ok(PaginatedResponse {
+        data: users,
+        has_more,
+        limit: Some(limit),
+        offset: Some(params.offset.unwrap_or(0) as i32),
+    }.into())
 }
 
 pub async fn get_invited_user_list(
@@ -274,7 +279,12 @@ pub async fn get_invited_user_list(
         invitations
     };
 
-    Ok(PaginatedResponse::from(invitations).into())
+    Ok(PaginatedResponse {
+        data: invitations,
+        has_more,
+        limit: Some(limit),
+        offset: Some(params.offset.unwrap_or(0) as i32),
+    }.into())
 }
 
 pub async fn get_user_waitlist(
@@ -300,7 +310,12 @@ pub async fn get_user_waitlist(
         waitlist
     };
 
-    Ok(PaginatedResponse::from(waitlist).into())
+    Ok(PaginatedResponse {
+        data: waitlist,
+        has_more,
+        limit: Some(limit),
+        offset: Some(params.offset.unwrap_or(0) as i32),
+    }.into())
 }
 
 pub async fn get_user_details(

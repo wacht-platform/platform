@@ -151,7 +151,12 @@ pub async fn get_organization_list(
         organizations
     };
 
-    Ok(PaginatedResponse::from(organizations).into())
+    Ok(PaginatedResponse {
+        data: organizations,
+        has_more,
+        limit: Some(limit),
+        offset: Some(query_params.offset.unwrap_or(0) as i32),
+    }.into())
 }
 
 pub async fn get_workspace_list(
@@ -176,7 +181,12 @@ pub async fn get_workspace_list(
         workspaces
     };
 
-    Ok(PaginatedResponse::from(workspaces).into())
+    Ok(PaginatedResponse {
+        data: workspaces,
+        has_more,
+        limit: Some(limit),
+        offset: Some(query_params.offset.unwrap_or(0) as i32),
+    }.into())
 }
 
 pub async fn get_organization_details(
