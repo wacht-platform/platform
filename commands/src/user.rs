@@ -43,6 +43,7 @@ impl Command for CreateUserCommand {
             &self.request.phone_number,
             &self.request.username,
             &self.request.password,
+            self.request.skip_password_check,
             &auth_settings,
         )
         .map_err(|errors| {
@@ -497,14 +498,21 @@ pub struct UpdateUserPasswordCommand {
     pub deployment_id: i64,
     pub user_id: i64,
     pub new_password: String,
+    pub skip_password_check: bool,
 }
 
 impl UpdateUserPasswordCommand {
-    pub fn new(deployment_id: i64, user_id: i64, new_password: String) -> Self {
+    pub fn new(
+        deployment_id: i64,
+        user_id: i64,
+        new_password: String,
+        skip_password_check: bool,
+    ) -> Self {
         Self {
             deployment_id,
             user_id,
             new_password,
+            skip_password_check,
         }
     }
 }
@@ -513,6 +521,24 @@ impl Command for UpdateUserPasswordCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        if !self.skip_password_check {
+            let auth_settings = GetDeploymentAuthSettingsQuery::new(self.deployment_id)
+                .execute(app_state)
+                .await?;
+
+            UserValidator::validate_password(
+                &Some(self.new_password.clone()),
+                &auth_settings.password,
+            )
+            .map_err(|errors| {
+                let error_messages: Vec<String> = errors
+                    .into_iter()
+                    .map(|e| format!("{}: {}", e.field, e.message))
+                    .collect();
+                AppError::BadRequest(format!("Validation failed: {}", error_messages.join(", ")))
+            })?;
+        }
+
         // Hash the new password
         let hashed_password = PasswordHasher::hash_password(&self.new_password)?;
 

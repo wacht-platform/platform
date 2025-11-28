@@ -29,6 +29,7 @@ impl UserValidator {
         phone: &Option<String>,
         username: &Option<String>,
         password: &Option<String>,
+        skip_password_check: bool,
         auth_settings: &DeploymentAuthSettings,
     ) -> Result<(), Vec<ValidationError>> {
         let mut errors = Vec::new();
@@ -59,8 +60,10 @@ impl UserValidator {
         }
 
         // Validate password
-        if let Err(password_errors) = Self::validate_password(password, &auth_settings.password) {
-            errors.extend(password_errors);
+        if !skip_password_check {
+            if let Err(password_errors) = Self::validate_password(password, &auth_settings.password) {
+                errors.extend(password_errors);
+            }
         }
 
         if errors.is_empty() {
@@ -228,7 +231,7 @@ impl UserValidator {
         }
     }
 
-    fn validate_password(
+    pub fn validate_password(
         password: &Option<String>,
         settings: &PasswordSettings,
     ) -> Result<(), Vec<ValidationError>> {

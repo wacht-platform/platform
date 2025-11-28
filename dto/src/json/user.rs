@@ -9,6 +9,8 @@ pub struct CreateUserRequest {
     pub phone_number: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
+    #[serde(default)]
+    pub skip_password_check: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -57,4 +59,11 @@ pub struct UpdatePhoneRequest {
     pub phone_number: Option<String>,
     pub verified: Option<bool>,
     pub is_primary: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct UpdatePasswordRequest {
+    pub new_password: String,
+    #[serde(default)]
+    pub skip_password_check: bool,
 }

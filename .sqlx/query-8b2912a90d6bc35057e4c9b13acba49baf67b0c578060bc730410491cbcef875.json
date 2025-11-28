@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT dbs.default_org_member_role_id\n                FROM deployment_b2b_settings dbs\n                WHERE dbs.deployment_id = $1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "default_org_member_role_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8b2912a90d6bc35057e4c9b13acba49baf67b0c578060bc730410491cbcef875"
+}

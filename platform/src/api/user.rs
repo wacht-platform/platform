@@ -14,7 +14,7 @@ use commands::{
 use dto::{
     json::{
         AddEmailRequest, AddPhoneRequest, CreateUserRequest, InviteUserRequest, UpdateEmailRequest,
-        UpdatePhoneRequest, UpdateUserRequest,
+        UpdatePhoneRequest, UpdateUserRequest, UpdatePasswordRequest,
     },
     query::{ActiveUserListQueryParams, InvitationsWaitlistQueryParams},
 };
@@ -133,7 +133,7 @@ async fn validate_create_user_request(
         return Err((StatusCode::BAD_REQUEST, "Username is required".to_string()));
     }
 
-    if auth_settings.password.enabled {
+    if auth_settings.password.enabled && !request.skip_password_check {
         if let Some(password) = &request.password {
             if let Some(min_length) = auth_settings.password.min_length {
                 if password.len() < min_length as usize {
@@ -342,6 +342,7 @@ pub async fn create_user(
         phone_number: None,
         username: None,
         password: None,
+        skip_password_check: false,
     };
 
     let mut profile_image_data: Option<(Vec<u8>, String)> = None;
@@ -401,6 +402,13 @@ pub async fn create_user(
                 if !password.trim().is_empty() {
                     request.password = Some(password.trim().to_string());
                 }
+            }
+            "skip_password_check" => {
+                let value = field
+                    .text()
+                    .await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                request.skip_password_check = value == "true";
             }
             "profile_image" => {
                 let content_type = field.content_type().unwrap_or_default().to_string();
@@ -740,9 +748,14 @@ pub async fn update_user_password(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<UserParams>,
-    Json(new_password): Json<String>,
+    Json(request): Json<UpdatePasswordRequest>,
 ) -> ApiResult<()> {
-    UpdateUserPasswordCommand::new(deployment_id, params.user_id, new_password)
+    UpdateUserPasswordCommand::new(
+        deployment_id,
+        params.user_id,
+        request.new_password,
+        request.skip_password_check,
+    )
         .execute(&app_state)
         .await
         .map(Into::into)
