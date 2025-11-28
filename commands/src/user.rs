@@ -1,5 +1,6 @@
 use chrono::{Duration, Utc};
 use serde_json::json;
+use sqlx::Execute;
 
 use crate::{Command, SendEmailCommand};
 use common::error::AppError;
@@ -414,6 +415,8 @@ impl Command for UpdateUserCommand {
     type Output = UserDetails;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let mut tx = app_state.db_pool.begin().await?;
+
         // Build a single dynamic UPDATE query
         let mut query_builder = sqlx::QueryBuilder::new("UPDATE users SET updated_at = NOW()");
 
@@ -442,13 +445,37 @@ impl Command for UpdateUserCommand {
             query_builder.push_bind(private_metadata);
         }
 
+        if let Some(disabled) = self.request.disabled {
+            query_builder.push(", disabled = ");
+            query_builder.push_bind(disabled);
+        }
+
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
         query_builder.push(" AND id = ");
         query_builder.push_bind(self.user_id);
+        query_builder.push(" RETURNING id");
 
-        // Execute the single query
-        query_builder.build().execute(&app_state.db_pool).await?;
+        let mut query = query_builder.build();
+        
+        let arguments = query.take_arguments().unwrap();
+        let sql = query.sql();
+        
+        if let Some(args) = arguments {
+            let (_user_id,): (i64,) = sqlx::query_as_with(sql, args)
+                .fetch_one(&mut *tx)
+                .await?;
+        } else {
+            return Err(AppError::Internal("Failed to construct query arguments".to_string()));
+        }
+
+        if let Some(true) = self.request.disabled {
+            sqlx::query!("DELETE FROM signins WHERE user_id = $1", self.user_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
 
         use queries::{GetUserDetailsQuery, Query};
         let user_details = GetUserDetailsQuery::new(self.deployment_id, self.user_id)

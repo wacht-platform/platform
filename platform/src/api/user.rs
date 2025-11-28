@@ -492,6 +492,7 @@ pub async fn update_user(
         username: None,
         public_metadata: None,
         private_metadata: None,
+        disabled: None,
     };
 
     let mut profile_image_data: Option<(Vec<u8>, String)> = None;
@@ -552,6 +553,15 @@ pub async fn update_user(
                     if let Ok(metadata) = serde_json::from_str(&metadata_str) {
                         request.private_metadata = Some(metadata);
                     }
+                }
+            }
+            "disabled" => {
+                let disabled_str = field
+                    .text()
+                    .await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                if let Ok(disabled) = disabled_str.parse::<bool>() {
+                    request.disabled = Some(disabled);
                 }
             }
             "profile_image" => {

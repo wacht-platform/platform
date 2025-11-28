@@ -28,6 +28,7 @@ pub struct UpdateUserRequest {
     pub username: Option<String>,
     pub public_metadata: Option<Value>,
     pub private_metadata: Option<Value>,
+    pub disabled: Option<bool>,
 }
 
 // Email management requests
