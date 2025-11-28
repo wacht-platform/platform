@@ -61,9 +61,7 @@ impl CloudflareService {
             .json(&json!({
                 "hostname": hostname,
                 "custom_origin_server": origin_server,
-                "ssl": json!({
-                    "method": "http"
-                })
+                "ssl": json!({})
             }))
             .send()
             .await
