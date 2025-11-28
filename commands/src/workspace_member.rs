@@ -16,7 +16,7 @@ impl Command for AddWorkspaceMemberCommand {
     type Output = WorkspaceMemberDetails;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        log::info!(
+        println!(
             "AddWorkspaceMemberCommand: Starting execution for workspace_id={}, user_id={}, role_ids={:?}",
             self.workspace_id, self.user_id, self.role_ids
         );
@@ -32,11 +32,11 @@ impl Command for AddWorkspaceMemberCommand {
         .await?;
 
         let workspace = workspace.ok_or_else(|| {
-            log::error!("Workspace not found: workspace_id={}, deployment_id={}", self.workspace_id, self.deployment_id);
+            println!("ERROR: Workspace not found: workspace_id={}, deployment_id={}", self.workspace_id, self.deployment_id);
             AppError::NotFound("Workspace not found".to_string())
         })?;
 
-        log::info!("Found workspace: id={}, organization_id={}", workspace.id, workspace.organization_id);
+        println!("Found workspace: id={}, organization_id={}", workspace.id, workspace.organization_id);
 
         // Check if user has an organization membership
         let org_membership = sqlx::query!(
@@ -48,10 +48,10 @@ impl Command for AddWorkspaceMemberCommand {
         .await?;
 
         let org_membership_id = if let Some(membership) = org_membership {
-            log::info!("User already has organization membership: membership_id={}", membership.id);
+            println!("User already has organization membership: membership_id={}", membership.id);
             membership.id
         } else {
-            log::info!("User does not have organization membership, creating implicit membership");
+            println!("User does not have organization membership, creating implicit membership");
             // User is not a member of the organization, create implicit membership
             // Get the deployment's default organization member role
             let default_org_role = sqlx::query!(
@@ -66,21 +66,21 @@ impl Command for AddWorkspaceMemberCommand {
             .await?;
 
             let default_org_role_id = default_org_role
-                .and_then(|r| r.default_org_member_role_id)
+                .and_then(|r| Some(r.default_org_member_role_id))
                 .ok_or_else(|| {
-                    log::error!("No default organization member role configured for deployment_id={}", self.deployment_id);
+                    println!("ERROR: No default organization member role configured for deployment_id={}", self.deployment_id);
                     AppError::BadRequest(
                         "No default organization member role configured for this deployment".to_string(),
                     )
                 })?;
 
-            log::info!("Found default org role: role_id={}", default_org_role_id);
+            println!("Found default org role: role_id={}", default_org_role_id);
 
             // Create organization membership
             let new_membership_id = app_state.sf.next_id()? as i64;
             let now = chrono::Utc::now();
 
-            log::info!("Creating organization membership: membership_id={}, user_id={}, org_id={}",
+            println!("Creating organization membership: membership_id={}, user_id={}, org_id={}",
                 new_membership_id, self.user_id, workspace.organization_id);
 
             sqlx::query!(
@@ -99,11 +99,11 @@ impl Command for AddWorkspaceMemberCommand {
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                log::error!("Failed to create organization membership: {:?}", e);
+                println!("ERROR: Failed to create organization membership: {:?}", e);
                 e
             })?;
 
-            log::info!("Created organization membership, now adding role");
+            println!("Created organization membership, now adding role");
 
             // Add the default role to the organization membership
             sqlx::query!(
@@ -118,11 +118,11 @@ impl Command for AddWorkspaceMemberCommand {
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                log::error!("Failed to add role to organization membership: {:?}", e);
+                println!("ERROR: Failed to add role to organization membership: {:?}", e);
                 e
             })?;
 
-            log::info!("Successfully created implicit organization membership");
+            println!("Successfully created implicit organization membership");
             new_membership_id
         };
 
@@ -136,7 +136,7 @@ impl Command for AddWorkspaceMemberCommand {
         .await?;
 
         if existing.is_some() {
-            log::warn!("User is already a member of workspace: workspace_id={}, user_id={}",
+            println!("WARN: User is already a member of workspace: workspace_id={}, user_id={}",
                 self.workspace_id, self.user_id);
             return Err(AppError::BadRequest(
                 "User is already a member of this workspace".to_string(),
@@ -147,7 +147,7 @@ impl Command for AddWorkspaceMemberCommand {
         let membership_id = app_state.sf.next_id()? as i64;
         let now = chrono::Utc::now();
 
-        log::info!("Creating workspace membership: membership_id={}, workspace_id={}, user_id={}, org_membership_id={}",
+        println!("Creating workspace membership: membership_id={}, workspace_id={}, user_id={}, org_membership_id={}",
             membership_id, self.workspace_id, self.user_id, org_membership_id);
 
         sqlx::query!(
@@ -169,15 +169,15 @@ impl Command for AddWorkspaceMemberCommand {
         .execute(&mut *tx)
         .await
         .map_err(|e| {
-            log::error!("Failed to create workspace membership: {:?}", e);
+            println!("ERROR: Failed to create workspace membership: {:?}", e);
             e
         })?;
 
-        log::info!("Created workspace membership, now adding {} roles", self.role_ids.len());
+        println!("Created workspace membership, now adding {} roles", self.role_ids.len());
 
         // Add roles
         for (idx, role_id) in self.role_ids.iter().enumerate() {
-            log::info!("Adding role {}/{}: role_id={}", idx + 1, self.role_ids.len(), role_id);
+            println!("Adding role {}/{}: role_id={}", idx + 1, self.role_ids.len(), role_id);
             sqlx::query!(
                 r#"
                 INSERT INTO workspace_membership_roles (workspace_membership_id, workspace_role_id, workspace_id, organization_id)
@@ -191,22 +191,22 @@ impl Command for AddWorkspaceMemberCommand {
             .execute(&mut *tx)
             .await
             .map_err(|e| {
-                log::error!("Failed to add role {} to workspace membership: {:?}", role_id, e);
+                println!("ERROR: Failed to add role {} to workspace membership: {:?}", role_id, e);
                 e
             })?;
         }
 
-        log::info!("Successfully added all roles to workspace membership");
+        println!("Successfully added all roles to workspace membership");
 
-        log::info!("Committing transaction");
+        println!("Committing transaction");
 
         // Commit the transaction
         tx.commit().await.map_err(|e| {
-            log::error!("Failed to commit transaction: {:?}", e);
+            println!("ERROR: Failed to commit transaction: {:?}", e);
             e
         })?;
 
-        log::info!("Transaction committed, fetching member details");
+        println!("Transaction committed, fetching member details");
 
         // Fetch the created member details (outside transaction)
         let member = sqlx::query!(
