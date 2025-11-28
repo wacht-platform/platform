@@ -1036,6 +1036,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
+        // Create social connections for OAuth providers
         let social_providers = [
             "google",
             "apple",
@@ -1051,43 +1052,56 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         let empty_credentials = serde_json::to_value(OauthCredentials::default())
             .map_err(|e| AppError::Serialization(e.to_string()))?;
 
+        let mut ids = Vec::new();
+        let mut deployment_ids = Vec::new();
+        let mut providers = Vec::new();
+        let mut enableds = Vec::new();
+        let mut credentials_list = Vec::new();
+        let mut created_ats = Vec::new();
+        let mut updated_ats = Vec::new();
+
+        let now = chrono::Utc::now();
+
         for provider in social_providers.iter() {
             let provider_with_oauth = format!("{}_oauth", provider);
             if (self.auth_methods.contains(&provider.to_string())
                 || self.auth_methods.contains(&provider_with_oauth))
-                && SocialConnectionProvider::from_str(*provider).is_ok()
+                && SocialConnectionProvider::from_str(&provider_with_oauth).is_ok()
             {
-                sqlx::query!(
-                    r#"
-                    INSERT INTO deployment_social_connections (
-                        id,
-                        deployment_id,
-                        provider,
-                        enabled,
-                        credentials,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (
-                        $1,
-                        $2,
-                        $3,
-                        true,
-                        $4,
-                        $5,
-                        $6
-                    )
-                    "#,
-                    app_state.sf.next_id()? as i64,
-                    deployment_row.id,
-                    provider,
-                    empty_credentials,
-                    chrono::Utc::now(),
-                    chrono::Utc::now(),
-                )
-                .execute(&mut *tx)
-                .await?;
+                ids.push(app_state.sf.next_id()? as i64);
+                deployment_ids.push(deployment_row.id);
+                providers.push(provider_with_oauth);
+                enableds.push(true);
+                credentials_list.push(empty_credentials.clone());
+                created_ats.push(now);
+                updated_ats.push(now);
             }
+        }
+
+        if !ids.is_empty() {
+            sqlx::query!(
+                r#"
+                INSERT INTO deployment_social_connections (
+                    id,
+                    deployment_id,
+                    provider,
+                    enabled,
+                    credentials,
+                    created_at,
+                    updated_at
+                )
+                SELECT * FROM UNNEST($1::bigint[], $2::bigint[], $3::text[], $4::bool[], $5::jsonb[], $6::timestamptz[], $7::timestamptz[])
+                "#,
+                &ids,
+                &deployment_ids,
+                &providers,
+                &enableds,
+                &credentials_list,
+                &created_ats,
+                &updated_ats
+            )
+            .execute(&mut *tx)
+            .await?;
         }
 
         let app_name = deployment_row.id.to_string();
@@ -1986,43 +2000,56 @@ impl Command for CreateStagingDeploymentCommand {
         let empty_credentials = serde_json::to_value(OauthCredentials::default())
             .map_err(|e| AppError::Serialization(e.to_string()))?;
 
+        let mut ids = Vec::new();
+        let mut deployment_ids = Vec::new();
+        let mut providers = Vec::new();
+        let mut enableds = Vec::new();
+        let mut credentials_list = Vec::new();
+        let mut created_ats = Vec::new();
+        let mut updated_ats = Vec::new();
+
+        let now = chrono::Utc::now();
+
         for provider in social_providers.iter() {
             let provider_with_oauth = format!("{}_oauth", provider);
             if (self.auth_methods.contains(&provider.to_string())
                 || self.auth_methods.contains(&provider_with_oauth))
-                && SocialConnectionProvider::from_str(*provider).is_ok()
+                && SocialConnectionProvider::from_str(&provider_with_oauth).is_ok()
             {
-                sqlx::query!(
-                    r#"
-                    INSERT INTO deployment_social_connections (
-                        id,
-                        deployment_id,
-                        provider,
-                        enabled,
-                        credentials,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (
-                        $1,
-                        $2,
-                        $3,
-                        true,
-                        $4,
-                        $5,
-                        $6
-                    )
-                    "#,
-                    app_state.sf.next_id()? as i64,
-                    deployment_row.id,
-                    provider,
-                    empty_credentials,
-                    chrono::Utc::now(),
-                    chrono::Utc::now(),
-                )
-                .execute(&mut *tx)
-                .await?;
+                ids.push(app_state.sf.next_id()? as i64);
+                deployment_ids.push(deployment_row.id);
+                providers.push(provider_with_oauth);
+                enableds.push(true);
+                credentials_list.push(empty_credentials.clone());
+                created_ats.push(now);
+                updated_ats.push(now);
             }
+        }
+
+        if !ids.is_empty() {
+            sqlx::query!(
+                r#"
+                INSERT INTO deployment_social_connections (
+                    id,
+                    deployment_id,
+                    provider,
+                    enabled,
+                    credentials,
+                    created_at,
+                    updated_at
+                )
+                SELECT * FROM UNNEST($1::bigint[], $2::bigint[], $3::text[], $4::bool[], $5::jsonb[], $6::timestamptz[], $7::timestamptz[])
+                "#,
+                &ids,
+                &deployment_ids,
+                &providers,
+                &enableds,
+                &credentials_list,
+                &created_ats,
+                &updated_ats
+            )
+            .execute(&mut *tx)
+            .await?;
         }
 
         let app_name = deployment_row.id.to_string();
@@ -2637,7 +2664,7 @@ impl Command for CreateProductionDeploymentCommand {
             let provider_with_oauth = format!("{}_oauth", provider);
             if (self.auth_methods.contains(&provider.to_string())
                 || self.auth_methods.contains(&provider_with_oauth))
-                && SocialConnectionProvider::from_str(*provider).is_ok()
+                && SocialConnectionProvider::from_str(&provider_with_oauth).is_ok()
             {
                 sqlx::query!(
                     r#"
@@ -2662,7 +2689,7 @@ impl Command for CreateProductionDeploymentCommand {
                     "#,
                     app_state.sf.next_id()? as i64,
                     deployment_row.id,
-                    provider,
+                    provider_with_oauth,
                     empty_credentials,
                     chrono::Utc::now(),
                     chrono::Utc::now(),

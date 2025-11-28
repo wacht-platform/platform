@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO deployment_social_connections (\n                    id,\n                    deployment_id,\n                    provider,\n                    enabled,\n                    credentials,\n                    created_at,\n                    updated_at\n                )\n                SELECT * FROM UNNEST($1::bigint[], $2::bigint[], $3::text[], $4::bool[], $5::jsonb[], $6::timestamptz[], $7::timestamptz[])\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array",
+        "TextArray",
+        "BoolArray",
+        "JsonbArray",
+        "TimestamptzArray",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "879a4014dfc6564af7fe1e3c1f202b9fa926acde96b2bc2a7d01093e67bbd87d"
+}
