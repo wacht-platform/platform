@@ -88,8 +88,10 @@ fn base_deployment_routes() -> Router<AppState> {
             "/users/{user_id}/social-connections/{connection_id}",
             delete(api::user::delete_user_social_connection),
         )
-        .route("/invited-users", get(api::user::get_invited_user_list))
-        .route("/invited-users", post(api::user::invite_user))
+        .route(
+            "/invited-users",
+            get(api::user::get_invited_user_list).post(api::user::invite_user),
+        )
         .route(
             "/invited-users/{invitation_id}",
             delete(api::user::delete_invitation),
