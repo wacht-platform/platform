@@ -90,6 +90,10 @@ fn base_deployment_routes() -> Router<AppState> {
         )
         .route("/invited-users", get(api::user::get_invited_user_list))
         .route("/invited-users", post(api::user::invite_user))
+        .route(
+            "/invited-users/{invitation_id}",
+            delete(api::user::delete_invitation),
+        )
         .route("/user-waitlist", get(api::user::get_user_waitlist))
         .route(
             "/user-waitlist/{waitlist_user_id}/approve",

@@ -798,3 +798,40 @@ impl Command for GenerateImpersonationTokenCommand {
         })
     }
 }
+
+pub struct DeleteInvitationCommand {
+    deployment_id: i64,
+    invitation_id: i64,
+}
+
+impl DeleteInvitationCommand {
+    pub fn new(deployment_id: i64, invitation_id: i64) -> Self {
+        Self {
+            deployment_id,
+            invitation_id,
+        }
+    }
+}
+
+impl Command for DeleteInvitationCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let result = sqlx::query!(
+            r#"
+            DELETE FROM deployment_invitations
+            WHERE id = $1 AND deployment_id = $2
+            "#,
+            self.invitation_id,
+            self.deployment_id
+        )
+        .execute(&app_state.db_pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound("Invitation not found".to_string()));
+        }
+
+        Ok(())
+    }
+}

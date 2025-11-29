@@ -6,10 +6,10 @@ use common::state::AppState;
 
 use commands::{
     AddUserEmailCommand, AddUserPhoneCommand, ApproveWaitlistUserCommand, Command,
-    CreateUserCommand, DeleteUserCommand, DeleteUserEmailCommand, DeleteUserPhoneCommand,
-    DeleteUserSocialConnectionCommand, GenerateImpersonationTokenCommand, InviteUserCommand,
-    UpdateUserCommand, UpdateUserEmailCommand, UpdateUserPasswordCommand, UpdateUserPhoneCommand,
-    UpdateUserProfileImageCommand, UploadToCdnCommand,
+    CreateUserCommand, DeleteInvitationCommand, DeleteUserCommand, DeleteUserEmailCommand,
+    DeleteUserPhoneCommand, DeleteUserSocialConnectionCommand, GenerateImpersonationTokenCommand,
+    InviteUserCommand, UpdateUserCommand, UpdateUserEmailCommand, UpdateUserPasswordCommand,
+    UpdateUserPhoneCommand, UpdateUserProfileImageCommand, UploadToCdnCommand,
 };
 use dto::{
     json::{
@@ -72,6 +72,13 @@ pub struct WaitlistUserParams {
     #[serde(flatten)]
     pub rest: HashMap<String, String>,
     pub waitlist_user_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct InvitationParams {
+    #[serde(flatten)]
+    pub rest: HashMap<String, String>,
+    pub invitation_id: i64,
 }
 
 async fn validate_create_user_request(
@@ -647,6 +654,18 @@ pub async fn invite_user(
     Json(request): Json<InviteUserRequest>,
 ) -> ApiResult<DeploymentInvitation> {
     InviteUserCommand::new(deployment_id, request)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+pub async fn delete_invitation(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<InvitationParams>,
+) -> ApiResult<()> {
+    DeleteInvitationCommand::new(deployment_id, params.invitation_id)
         .execute(&app_state)
         .await
         .map(Into::into)

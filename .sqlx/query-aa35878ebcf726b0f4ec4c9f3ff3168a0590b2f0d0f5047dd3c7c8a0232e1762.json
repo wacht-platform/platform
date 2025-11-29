@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM deployment_invitations\n            WHERE id = $1 AND deployment_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aa35878ebcf726b0f4ec4c9f3ff3168a0590b2f0d0f5047dd3c7c8a0232e1762"
+}
