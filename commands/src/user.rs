@@ -251,7 +251,7 @@ impl Command for InviteUserCommand {
 
         SendEmailCommand::new(
             self.deployment_id,
-            "workspace_invite_template".to_string(),
+            "waitlist_invite_template".to_string(),
             self.request.email_address.clone(),
             variables,
         )
