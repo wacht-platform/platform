@@ -424,11 +424,7 @@ pub async fn send_organization_membership_invite_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_name = deployment_settings
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(&deployment_settings);
     let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
 
     let first_name = inviter_name
@@ -643,11 +639,7 @@ fn create_verification_variables(
     user_agent: &str,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(deployment);
 
     let device_info = if !user_agent.is_empty() {
         format!("{} (IP: {})", user_agent, ip_address)
@@ -680,11 +672,7 @@ fn create_password_reset_variables(
     user_agent: &str,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(deployment);
 
     let device_info = if !user_agent.is_empty() {
         format!("{} (IP: {})", user_agent, ip_address)
@@ -730,11 +718,7 @@ fn create_signin_notification_variables(
     signin: Option<&SignIn>,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(deployment);
 
     let mut json_value = serde_json::json!({
         "app": {
@@ -811,11 +795,7 @@ fn create_email_change_variables(
     new_email: &str,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(deployment);
 
     serde_json::json!({
         "app": {
@@ -847,11 +827,7 @@ fn create_password_change_variables(
     deployment: &DeploymentWithSettings,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(deployment);
 
     serde_json::json!({
         "app": {
@@ -882,11 +858,7 @@ fn create_password_remove_variables(
     deployment: &DeploymentWithSettings,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(deployment);
 
     serde_json::json!({
         "app": {
@@ -912,16 +884,20 @@ fn create_password_remove_variables(
     })
 }
 
+fn get_app_name_with_fallback(deployment: &DeploymentWithSettings) -> String {
+    deployment
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.app_name.clone())
+        .unwrap_or_else(|| "".to_string())
+}
+
 fn create_waitlist_signup_variables(
     user: &UserDetails,
     deployment: &DeploymentWithSettings,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(deployment);
 
     serde_json::json!({
         "app": {
@@ -952,11 +928,7 @@ fn create_waitlist_invite_variables(
     invitation: Option<&DeploymentInvitation>,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(deployment);
 
     let (expires_in_days, expiry_date) = if let Some(invitation) = invitation {
         let days_until_expiry = (invitation.expiry - chrono::Utc::now()).num_days();
@@ -1002,11 +974,7 @@ fn create_workspace_invite_variables(
     invitation: Option<&DeploymentInvitation>,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(deployment);
 
     let (expires_in_days, expiry_date) = if let Some(invitation) = invitation {
         let days_until_expiry = (invitation.expiry - chrono::Utc::now()).num_days();
@@ -1053,11 +1021,7 @@ fn create_magic_link_variables(
     magic_link: &str,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
-    let app_name = deployment
-        .ui_settings
-        .as_ref()
-        .map(|ui| ui.app_name.clone())
-        .unwrap_or_else(|| "Your App".to_string());
+    let app_name = get_app_name_with_fallback(deployment);
 
     serde_json::json!({
         "app": {

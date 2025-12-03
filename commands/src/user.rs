@@ -346,10 +346,29 @@ impl Command for ApproveWaitlistUserCommand {
         .execute(&mut *tx)
         .await?;
 
+        let deployment_settings =
+            queries::deployment::GetDeploymentWithSettingsQuery::new(self.deployment_id)
+                .execute(app_state)
+                .await
+                .map_err(|e| {
+                    AppError::Internal(format!("Failed to fetch deployment settings: {}", e))
+                })?;
+
+        let app_name = deployment_settings
+            .ui_settings
+            .as_ref()
+            .map(|ui| ui.app_name.clone())
+            .unwrap_or_else(|| "".to_string());
+
+        let app_logo_url = deployment_settings
+            .ui_settings
+            .as_ref()
+            .map(|ui| ui.logo_image_url.clone());
+
         let variables = serde_json::json!({
             "app": {
-                "name": "Your App",
-                "logo": "https://via.placeholder.com/150"
+                "name": app_name,
+                "logo": app_logo_url
             },
             "user": {
                 "first_name": first_name.clone(),
@@ -457,16 +476,16 @@ impl Command for UpdateUserCommand {
         query_builder.push(" RETURNING id");
 
         let mut query = query_builder.build();
-        
+
         let arguments = query.take_arguments().unwrap();
         let sql = query.sql();
-        
+
         if let Some(args) = arguments {
-            let (_user_id,): (i64,) = sqlx::query_as_with(sql, args)
-                .fetch_one(&mut *tx)
-                .await?;
+            let (_user_id,): (i64,) = sqlx::query_as_with(sql, args).fetch_one(&mut *tx).await?;
         } else {
-            return Err(AppError::Internal("Failed to construct query arguments".to_string()));
+            return Err(AppError::Internal(
+                "Failed to construct query arguments".to_string(),
+            ));
         }
 
         if let Some(true) = self.request.disabled {
@@ -753,7 +772,7 @@ impl Command for GenerateImpersonationTokenCommand {
         // Create JWT payload
         let mut payload = JwtPayload::new();
         payload.set_subject(&self.user_id.to_string());
-        
+
         payload.set_issuer(&format!("https://{}", keypair.frontend_host));
 
         let now = std::time::SystemTime::now();
@@ -766,7 +785,10 @@ impl Command for GenerateImpersonationTokenCommand {
             .set_claim("user_id", Some(serde_json::json!(self.user_id.to_string())))
             .map_err(|e| AppError::Internal(format!("Failed to set user_id claim: {}", e)))?;
         payload
-            .set_claim("deployment_id", Some(serde_json::json!(self.deployment_id.to_string())))
+            .set_claim(
+                "deployment_id",
+                Some(serde_json::json!(self.deployment_id.to_string())),
+            )
             .map_err(|e| AppError::Internal(format!("Failed to set deployment_id claim: {}", e)))?;
         payload
             .set_claim("type", Some(serde_json::json!("impersonation")))
