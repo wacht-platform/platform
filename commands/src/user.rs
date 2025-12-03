@@ -234,19 +234,38 @@ impl Command for InviteUserCommand {
         .execute(&app_state.db_pool)
         .await?;
 
+        let deployment_settings =
+            queries::deployment::GetDeploymentWithSettingsQuery::new(self.deployment_id)
+                .execute(app_state)
+                .await
+                .map_err(|e| {
+                    AppError::Internal(format!("Failed to fetch deployment settings: {}", e))
+                })?;
+
+        let app_name = deployment_settings
+            .ui_settings
+            .as_ref()
+            .map(|ui| ui.app_name.clone())
+            .unwrap_or_else(|| "".to_string());
+
+        let app_logo_url = deployment_settings
+            .ui_settings
+            .as_ref()
+            .map(|ui| ui.logo_image_url.clone());
+
         let variables = serde_json::json!({
             "app": {
-                "name": "Your App",
-                "logo": "https://via.placeholder.com/150"
+                "name": app_name,
+                "logo": app_logo_url
             },
             "user": {
                 "first_name": self.request.first_name.clone(),
                 "last_name": self.request.last_name.clone()
             },
             "invitation": {
-                "expires_in_days": expiry_days.to_string(),
-                "token": token.clone()
-            }
+                "expires_in_days": expiry_days.to_string()
+            },
+            "action_url": format!("https://{}/sign-up?invite_token={}", deployment_settings.frontend_host, token)
         });
 
         SendEmailCommand::new(
