@@ -389,13 +389,6 @@ impl Command for ApproveWaitlistUserCommand {
                 "name": app_name,
                 "logo": app_logo_url
             },
-            "user": {
-                "first_name": first_name.clone(),
-                "last_name": last_name.clone()
-            },
-            "invitation": {
-                "expires_in_days": "7"
-            },
             "action_url": format!("https://{}/sign-up?invite_token={}", deployment_settings.frontend_host, token)
         });
 

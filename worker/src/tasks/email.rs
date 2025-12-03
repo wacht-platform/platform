@@ -3,7 +3,7 @@ use chrono::{self, Datelike, Utc};
 use commands::{Command, email::SendEmailCommand};
 use common::state::AppState;
 use models::{
-    DeploymentInvitation, DeploymentWithSettings, SchemaVersion, SecondFactorPolicy, SignIn,
+    DeploymentInvitation, DeploymentWithSettings, SignIn,
     UserDetails,
 };
 use queries::{
@@ -75,7 +75,8 @@ pub struct PasswordRemoveNotificationTask {
 pub struct WaitlistSignupTask {
     pub deployment_id: u64,
     pub recipient: String,
-    pub user_id: u64,
+    pub first_name: String,
+    pub last_name: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -377,21 +378,24 @@ pub async fn send_password_remove_notification_impl(
 pub async fn send_waitlist_signup_email_impl(
     deployment_id: u64,
     recipient: &str,
-    user_id: u64,
+    _first_name: &str,
+    _last_name: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-    let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch user details: {}", e))?;
-
     let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
         .execute(&app_state)
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
+    let app_name = get_app_name_with_fallback(&deployment_settings);
     let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
-    let variables = create_waitlist_signup_variables(&user_details, &deployment_settings, app_logo_url);
+
+    let variables = serde_json::json!({
+        "app": {
+            "name": app_name,
+            "logo": app_logo_url
+        }
+    });
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -548,38 +552,9 @@ pub async fn send_waitlist_approval_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let user_details = UserDetails {
-        id: 0,
-        created_at: invitation.created_at,
-        updated_at: invitation.updated_at,
-        first_name: invitation.first_name.clone(),
-        last_name: invitation.last_name.clone(),
-        username: None,
-        profile_picture_url: String::new(),
-        schema_version: SchemaVersion::V1,
-        disabled: false,
-        second_factor_policy: SecondFactorPolicy::Optional,
-        active_organization_membership_id: None,
-        active_workspace_membership_id: None,
-        deployment_id: deployment_id as i64,
-        public_metadata: serde_json::Value::Null,
-        private_metadata: serde_json::Value::Null,
-        primary_email_address: Some(invitation.email_address.clone()),
-        primary_email_address_id: None,
-        primary_phone_number_id: None,
-        primary_phone_number: None,
-        email_addresses: vec![],
-        phone_numbers: vec![],
-        social_connections: vec![],
-        has_password: false,
-        has_backup_codes: false,
-        availability: "available".to_string(),
-        last_password_reset_at: None,
-    };
-
     let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
     let mut variables =
-        create_waitlist_invite_variables(&user_details, &deployment_settings, Some(&invitation), app_logo_url);
+        create_waitlist_invite_variables(&deployment_settings, Some(&invitation), app_logo_url);
 
     let frontend_host = deployment_settings.frontend_host.clone();
     let action_url = format!(
@@ -892,65 +867,25 @@ fn get_app_name_with_fallback(deployment: &DeploymentWithSettings) -> String {
         .unwrap_or_else(|| "".to_string())
 }
 
-fn create_waitlist_signup_variables(
-    user: &UserDetails,
-    deployment: &DeploymentWithSettings,
-    app_logo_url: Option<String>,
-) -> serde_json::Value {
-    let app_name = get_app_name_with_fallback(deployment);
 
-    serde_json::json!({
-        "app": {
-            "name": app_name,
-            "logo": app_logo_url
-        },
-        "user": {
-            "id": user.id.to_string(),
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "full_name": format!("{} {}", user.first_name, user.last_name),
-            "username": user.username,
-            "email": user.primary_email_address,
-            "phone": user.primary_phone_number,
-            "profile_picture_url": user.profile_picture_url,
-            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
-            "disabled": user.disabled,
-            "has_password": user.has_password,
-            "public_metadata": user.public_metadata,
-            "private_metadata": user.private_metadata
-        }
-    })
-}
 
 fn create_waitlist_invite_variables(
-    user: &UserDetails,
     deployment: &DeploymentWithSettings,
     invitation: Option<&DeploymentInvitation>,
     app_logo_url: Option<String>,
 ) -> serde_json::Value {
     let app_name = get_app_name_with_fallback(deployment);
 
-    let (action_url, expires_in_days) = if let Some(invitation) = invitation {
-        let days_until_expiry = (invitation.expiry - chrono::Utc::now()).num_days();
-        (
-            format!("https://{}/sign-up?invite_token={}", deployment.frontend_host, invitation.token),
-            days_until_expiry.max(0).to_string(),
-        )
+    let action_url = if let Some(invitation) = invitation {
+        format!("https://{}/sign-up?invite_token={}", deployment.frontend_host, invitation.token)
     } else {
-        ("".to_string(), "7".to_string())
+        "".to_string()
     };
 
     serde_json::json!({
         "app": {
             "name": app_name,
             "logo": app_logo_url
-        },
-        "user": {
-            "first_name": user.first_name,
-            "last_name": user.last_name
-        },
-        "invitation": {
-            "expires_in_days": expires_in_days
         },
         "action_url": action_url
     })

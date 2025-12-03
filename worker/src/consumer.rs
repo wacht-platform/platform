@@ -205,7 +205,8 @@ impl NatsConsumer {
                     email::send_waitlist_signup_email_impl(
                         task.deployment_id,
                         &task.recipient,
-                        task.user_id,
+                        &task.first_name,
+                        &task.last_name,
                         &app_state,
                     )
                     .await
