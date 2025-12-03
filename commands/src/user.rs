@@ -375,9 +375,9 @@ impl Command for ApproveWaitlistUserCommand {
                 "last_name": last_name.clone()
             },
             "invitation": {
-                "expires_in_days": "7",
-                "token": token.clone()
-            }
+                "expires_in_days": "7"
+            },
+            "action_url": format!("https://{}/sign-up?invite_token={}", deployment_settings.frontend_host, token)
         });
 
         SendEmailCommand::new(

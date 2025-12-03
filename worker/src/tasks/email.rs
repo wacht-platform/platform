@@ -930,14 +930,14 @@ fn create_waitlist_invite_variables(
 ) -> serde_json::Value {
     let app_name = get_app_name_with_fallback(deployment);
 
-    let (expires_in_days, expiry_date) = if let Some(invitation) = invitation {
+    let (action_url, expires_in_days) = if let Some(invitation) = invitation {
         let days_until_expiry = (invitation.expiry - chrono::Utc::now()).num_days();
         (
+            format!("https://{}/sign-up?invite_token={}", deployment.frontend_host, invitation.token),
             days_until_expiry.max(0).to_string(),
-            invitation.expiry.format("%Y-%m-%d").to_string(),
         )
     } else {
-        ("7".to_string(), "".to_string())
+        ("".to_string(), "7".to_string())
     };
 
     serde_json::json!({
@@ -946,24 +946,13 @@ fn create_waitlist_invite_variables(
             "logo": app_logo_url
         },
         "user": {
-            "id": user.id.to_string(),
             "first_name": user.first_name,
-            "last_name": user.last_name,
-            "full_name": format!("{} {}", user.first_name, user.last_name),
-            "username": user.username,
-            "email": user.primary_email_address,
-            "phone": user.primary_phone_number,
-            "profile_picture_url": user.profile_picture_url,
-            "created_at": user.created_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
-            "disabled": user.disabled,
-            "has_password": user.has_password,
-            "public_metadata": user.public_metadata,
-            "private_metadata": user.private_metadata
+            "last_name": user.last_name
         },
         "invitation": {
-            "expires_in_days": expires_in_days,
-            "expiry": expiry_date
-        }
+            "expires_in_days": expires_in_days
+        },
+        "action_url": action_url
     })
 }
 
