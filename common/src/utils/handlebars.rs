@@ -17,7 +17,7 @@ impl handlebars::HelperDef for ImageHelper {
         match url {
             Some(src) if !src.is_empty() => {
                 out.write(&format!(
-                    "<img src=\"{}\" alt=\"{} Logo\" style=\"max-width:84px; width:84px; object-fit: contain;\" />",
+                    "<img src=\"{}\" alt=\"{} Logo\" style=\"max-height:60px; width:auto; object-fit: contain;\" />",
                     src, alt_name
                 ))?;
             }
@@ -51,7 +51,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             result,
-            "<img src=\"https://example.com/logo.png\" alt=\"MyApp Logo\" style=\"max-width:84px; width:84px; object-fit: contain;\" />"
+            "<img src=\"https://example.com/logo.png\" alt=\"MyApp Logo\" style=\"max-height:60px; width:auto; object-fit: contain;\" />"
         );
     }
 
