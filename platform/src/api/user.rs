@@ -14,7 +14,7 @@ use commands::{
 use dto::{
     json::{
         AddEmailRequest, AddPhoneRequest, CreateUserRequest, InviteUserRequest, UpdateEmailRequest,
-        UpdatePhoneRequest, UpdateUserRequest, UpdatePasswordRequest,
+        UpdatePasswordRequest, UpdatePhoneRequest, UpdateUserRequest,
     },
     query::{ActiveUserListQueryParams, InvitationsWaitlistQueryParams},
 };
@@ -260,7 +260,8 @@ pub async fn get_active_user_list(
         has_more,
         limit: Some(limit),
         offset: Some(params.offset.unwrap_or(0) as i32),
-    }.into())
+    }
+    .into())
 }
 
 pub async fn get_invited_user_list(
@@ -292,7 +293,8 @@ pub async fn get_invited_user_list(
         has_more,
         limit: Some(limit),
         offset: Some(params.offset.unwrap_or(0) as i32),
-    }.into())
+    }
+    .into())
 }
 
 pub async fn get_user_waitlist(
@@ -324,7 +326,8 @@ pub async fn get_user_waitlist(
         has_more,
         limit: Some(limit),
         offset: Some(params.offset.unwrap_or(0) as i32),
-    }.into())
+    }
+    .into())
 }
 
 pub async fn get_user_details(
@@ -787,10 +790,10 @@ pub async fn update_user_password(
         request.new_password,
         request.skip_password_check,
     )
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    .execute(&app_state)
+    .await
+    .map(Into::into)
+    .map_err(Into::into)
 }
 
 pub async fn delete_user(
@@ -801,8 +804,9 @@ pub async fn delete_user(
     DeleteUserCommand::new(deployment_id, params.user_id)
         .execute(&app_state)
         .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .unwrap();
+
+    Ok(().into())
 }
 
 pub async fn impersonate_user(
