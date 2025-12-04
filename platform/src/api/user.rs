@@ -275,6 +275,7 @@ pub async fn get_invited_user_list(
         .offset(params.offset.unwrap_or(0))
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
+        .search(params.search.clone())
         .execute(&app_state)
         .await
         .unwrap();
@@ -306,6 +307,7 @@ pub async fn get_user_waitlist(
         .offset(params.offset.unwrap_or(0))
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
+        .search(params.search.clone())
         .execute(&app_state)
         .await
         .unwrap();

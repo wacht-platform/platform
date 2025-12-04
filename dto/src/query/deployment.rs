@@ -122,6 +122,7 @@ pub struct InvitationsWaitlistQueryParams {
     )]
     pub sort_order: Option<SortOrder>,
     pub limit: Option<usize>,
+    pub search: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -130,6 +131,7 @@ pub struct OrganizationListQueryParams {
     pub sort_key: Option<String>,
     pub sort_order: Option<String>,
     pub limit: Option<i32>,
+    pub search: Option<String>,
 }
 
 impl Default for OrganizationListQueryParams {
@@ -139,6 +141,7 @@ impl Default for OrganizationListQueryParams {
             sort_key: Some("created_at".to_string()),
             sort_order: Some("desc".to_string()),
             limit: Some(10),
+            search: None,
         }
     }
 }

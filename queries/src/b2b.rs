@@ -1,4 +1,4 @@
-use sqlx::{Row, query, query_as};
+use sqlx::{Postgres, QueryBuilder, Row, query_as};
 
 use crate::prelude::*;
 use models::{
@@ -66,6 +66,7 @@ pub struct DeploymentOrganizationListQuery {
     sort_order: Option<String>,
     limit: i32,
     deployment_id: i64,
+    search: Option<String>,
 }
 
 impl DeploymentOrganizationListQuery {
@@ -76,47 +77,33 @@ impl DeploymentOrganizationListQuery {
             sort_order: None,
             limit: 10,
             deployment_id: id,
+            search: None,
         }
     }
 
-    pub fn offset(&self, offset: i64) -> Self {
-        Self {
-            offset,
-            sort_key: self.sort_key.clone(),
-            sort_order: self.sort_order.clone(),
-            limit: self.limit,
-            deployment_id: self.deployment_id,
-        }
+    pub fn offset(mut self, offset: i64) -> Self {
+        self.offset = offset;
+        self
     }
 
-    pub fn limit(&self, limit: i32) -> Self {
-        Self {
-            offset: self.offset,
-            sort_key: self.sort_key.clone(),
-            sort_order: self.sort_order.clone(),
-            limit,
-            deployment_id: self.deployment_id,
-        }
+    pub fn limit(mut self, limit: i32) -> Self {
+        self.limit = limit;
+        self
     }
 
-    pub fn sort_key(&self, sort_key: Option<String>) -> Self {
-        Self {
-            offset: self.offset,
-            sort_key,
-            sort_order: self.sort_order.clone(),
-            limit: self.limit,
-            deployment_id: self.deployment_id,
-        }
+    pub fn sort_key(mut self, sort_key: Option<String>) -> Self {
+        self.sort_key = sort_key;
+        self
     }
 
-    pub fn sort_order(&self, sort_order: Option<String>) -> Self {
-        Self {
-            offset: self.offset,
-            sort_key: self.sort_key.clone(),
-            sort_order,
-            limit: self.limit,
-            deployment_id: self.deployment_id,
-        }
+    pub fn sort_order(mut self, sort_order: Option<String>) -> Self {
+        self.sort_order = sort_order;
+        self
+    }
+
+    pub fn search(mut self, search: Option<String>) -> Self {
+        self.search = search;
+        self
     }
 }
 
@@ -124,29 +111,51 @@ impl Query for DeploymentOrganizationListQuery {
     type Output = Vec<Organization>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut query_str = String::from(
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
                 o.id, o.created_at, o.updated_at,
                 o.name, o.image_url, o.description, o.member_count,
                 o.public_metadata, o.private_metadata
             FROM organizations o
-            WHERE o.deployment_id = $1
+            WHERE o.deployment_id =
             "#,
         );
+        qb.push_bind(self.deployment_id);
+
+        if let Some(search) = &self.search {
+            if !search.trim().is_empty() {
+                let pattern = format!("%{}%", search.trim());
+                qb.push(" AND o.name ILIKE ");
+                qb.push_bind(pattern);
+            }
+        }
 
         let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
         let sort_order = self.sort_order.as_deref().unwrap_or("desc");
-        query_str.push_str(&format!(" ORDER BY o.{} {}", sort_key, sort_order));
 
-        query_str.push_str(" OFFSET $2 LIMIT $3");
+        // Sanitize sort key to prevent SQL injection (though unlikely with current usage)
+        let valid_sort_keys = ["created_at", "name", "member_count", "updated_at"];
+        let safe_sort_key = if valid_sort_keys.contains(&sort_key) {
+            sort_key
+        } else {
+            "created_at"
+        };
 
-        let rows = query(&query_str)
-            .bind(self.deployment_id)
-            .bind(self.offset)
-            .bind(self.limit)
-            .fetch_all(&app_state.db_pool)
-            .await?;
+        let safe_sort_order = if sort_order.to_lowercase() == "asc" {
+            "ASC"
+        } else {
+            "DESC"
+        };
+
+        qb.push(format!(" ORDER BY o.{} {}", safe_sort_key, safe_sort_order));
+
+        qb.push(" OFFSET ");
+        qb.push_bind(self.offset);
+        qb.push(" LIMIT ");
+        qb.push_bind(self.limit);
+
+        let rows = qb.build().fetch_all(&app_state.db_pool).await?;
 
         Ok(rows
             .into_iter()
@@ -171,6 +180,7 @@ pub struct DeploymentWorkspaceListQuery {
     sort_order: Option<String>,
     limit: i32,
     deployment_id: i64,
+    search: Option<String>,
 }
 
 impl DeploymentWorkspaceListQuery {
@@ -181,47 +191,33 @@ impl DeploymentWorkspaceListQuery {
             sort_order: None,
             limit: 10,
             deployment_id: id,
+            search: None,
         }
     }
 
-    pub fn offset(&self, offset: i64) -> Self {
-        Self {
-            offset,
-            sort_key: self.sort_key.clone(),
-            sort_order: self.sort_order.clone(),
-            limit: self.limit,
-            deployment_id: self.deployment_id,
-        }
+    pub fn offset(mut self, offset: i64) -> Self {
+        self.offset = offset;
+        self
     }
 
-    pub fn limit(&self, limit: i32) -> Self {
-        Self {
-            offset: self.offset,
-            sort_key: self.sort_key.clone(),
-            sort_order: self.sort_order.clone(),
-            limit,
-            deployment_id: self.deployment_id,
-        }
+    pub fn limit(mut self, limit: i32) -> Self {
+        self.limit = limit;
+        self
     }
 
-    pub fn sort_key(&self, sort_key: Option<String>) -> Self {
-        Self {
-            offset: self.offset,
-            sort_key,
-            sort_order: self.sort_order.clone(),
-            limit: self.limit,
-            deployment_id: self.deployment_id,
-        }
+    pub fn sort_key(mut self, sort_key: Option<String>) -> Self {
+        self.sort_key = sort_key;
+        self
     }
 
-    pub fn sort_order(&self, sort_order: Option<String>) -> Self {
-        Self {
-            offset: self.offset,
-            sort_key: self.sort_key.clone(),
-            sort_order,
-            limit: self.limit,
-            deployment_id: self.deployment_id,
-        }
+    pub fn sort_order(mut self, sort_order: Option<String>) -> Self {
+        self.sort_order = sort_order;
+        self
+    }
+
+    pub fn search(mut self, search: Option<String>) -> Self {
+        self.search = search;
+        self
     }
 }
 
@@ -229,7 +225,7 @@ impl Query for DeploymentWorkspaceListQuery {
     type Output = Vec<WorkspaceWithOrganizationName>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut query_str = String::from(
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
                 w.id, w.created_at, w.updated_at, w.deleted_at,
@@ -238,22 +234,58 @@ impl Query for DeploymentWorkspaceListQuery {
                 o.name AS organization_name
             FROM workspaces w
             LEFT JOIN organizations o ON w.organization_id = o.id
-            WHERE w.deployment_id = $1
+            WHERE w.deployment_id =
             "#,
         );
+        qb.push_bind(self.deployment_id);
+
+        if let Some(search) = &self.search {
+            if !search.trim().is_empty() {
+                let pattern = format!("%{}%", search.trim());
+                qb.push(" AND (w.name ILIKE ");
+                qb.push_bind(pattern.clone());
+                qb.push(" OR o.name ILIKE ");
+                qb.push_bind(pattern);
+                qb.push(")");
+            }
+        }
 
         let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
         let sort_order = self.sort_order.as_deref().unwrap_or("desc");
-        query_str.push_str(&format!(" ORDER BY o.{} {}", sort_key, sort_order));
 
-        query_str.push_str(" OFFSET $2 LIMIT $3");
+        // Sanitize sort key
+        let valid_sort_keys = [
+            "created_at",
+            "name",
+            "member_count",
+            "updated_at",
+            "organization_name",
+        ];
+        let safe_sort_key = if valid_sort_keys.contains(&sort_key) {
+            sort_key
+        } else {
+            "created_at"
+        };
 
-        let rows = query(&query_str)
-            .bind(self.deployment_id)
-            .bind(self.offset)
-            .bind(self.limit)
-            .fetch_all(&app_state.db_pool)
-            .await?;
+        let safe_sort_order = if sort_order.to_lowercase() == "asc" {
+            "ASC"
+        } else {
+            "DESC"
+        };
+
+        // Handle sorting by organization name which is on joined table 'o'
+        if safe_sort_key == "organization_name" {
+            qb.push(format!(" ORDER BY o.name {}", safe_sort_order));
+        } else {
+            qb.push(format!(" ORDER BY w.{} {}", safe_sort_key, safe_sort_order));
+        }
+
+        qb.push(" OFFSET ");
+        qb.push_bind(self.offset);
+        qb.push(" LIMIT ");
+        qb.push_bind(self.limit);
+
+        let rows = qb.build().fetch_all(&app_state.db_pool).await?;
 
         Ok(rows
             .into_iter()
@@ -305,7 +337,6 @@ impl Query for GetOrganizationDetailsQuery {
         .fetch_one(&app_state.db_pool)
         .await?;
 
-
         // Get organization roles with permissions (both deployment-level and organization-specific)
         let role_rows = sqlx::query!(
             r#"
@@ -331,7 +362,6 @@ impl Query for GetOrganizationDetailsQuery {
                 is_deployment_level: row.organization_id.is_none(),
             })
             .collect();
-
 
         // Get organization workspaces
         let workspace_rows = sqlx::query!(
@@ -416,7 +446,6 @@ impl Query for GetWorkspaceDetailsQuery {
         .fetch_one(&app_state.db_pool)
         .await?;
 
-
         // Get workspace roles with permissions (both deployment-level and workspace-specific)
         let role_rows = sqlx::query!(
             r#"
@@ -443,7 +472,6 @@ impl Query for GetWorkspaceDetailsQuery {
             })
             .collect();
 
-
         Ok(WorkspaceDetails {
             id: workspace_row.id,
             created_at: workspace_row.created_at,
@@ -465,6 +493,9 @@ pub struct GetOrganizationMembersQuery {
     organization_id: i64,
     offset: i64,
     limit: i32,
+    search: Option<String>,
+    sort_key: Option<String>,
+    sort_order: Option<String>,
 }
 
 impl GetOrganizationMembersQuery {
@@ -473,6 +504,9 @@ impl GetOrganizationMembersQuery {
             organization_id,
             offset: 0,
             limit: 20,
+            search: None,
+            sort_key: None,
+            sort_order: None,
         }
     }
 
@@ -485,14 +519,28 @@ impl GetOrganizationMembersQuery {
         self.limit = limit;
         self
     }
+
+    pub fn search(mut self, search: Option<String>) -> Self {
+        self.search = search;
+        self
+    }
+
+    pub fn sort_key(mut self, sort_key: Option<String>) -> Self {
+        self.sort_key = sort_key;
+        self
+    }
+
+    pub fn sort_order(mut self, sort_order: Option<String>) -> Self {
+        self.sort_order = sort_order;
+        self
+    }
 }
 
 impl Query for GetOrganizationMembersQuery {
     type Output = (Vec<OrganizationMemberDetails>, bool);
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Get organization members with user details and their roles
-        let member_rows = sqlx::query!(
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
                 om.id, om.created_at, om.updated_at,
@@ -500,10 +548,10 @@ impl Query for GetOrganizationMembersQuery {
                 om.public_metadata,
                 u.first_name, u.last_name, u.username,
                 u.created_at as user_created_at,
-                e.email_address as "primary_email_address?",
-                p.phone_number as "primary_phone_number?",
+                e.email_address as "primary_email_address",
+                p.phone_number as "primary_phone_number",
                 COALESCE(
-                    ARRAY_AGG(
+                    jsonb_agg(
                         DISTINCT jsonb_build_object(
                             'id', orole.id::text,
                             'created_at', orole.created_at,
@@ -513,34 +561,69 @@ impl Query for GetOrganizationMembersQuery {
                             'is_deployment_level', CASE WHEN orole.organization_id IS NULL THEN true ELSE false END
                         )
                     ) FILTER (WHERE orole.id IS NOT NULL),
-                    ARRAY[]::jsonb[]
-                ) as "roles!"
+                    '[]'::jsonb
+                ) as "roles"
             FROM organization_memberships om
             JOIN users u ON om.user_id = u.id AND u.deleted_at IS NULL
             LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id
             LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id
             LEFT JOIN organization_membership_roles omr ON omr.organization_membership_id = om.id
             LEFT JOIN organization_roles orole ON omr.organization_role_id = orole.id
-            WHERE om.organization_id = $1 AND om.deleted_at IS NULL
-            GROUP BY om.id, om.created_at, om.updated_at, om.organization_id, om.user_id,
-                     om.public_metadata, u.first_name, u.last_name, u.username, u.created_at,
-                     e.email_address, p.phone_number
-            ORDER BY om.created_at DESC
-            LIMIT $2 OFFSET $3
+            WHERE om.deleted_at IS NULL AND om.organization_id =
             "#,
-            self.organization_id,
-            (self.limit + 1) as i64,
-            self.offset
-        )
-        .fetch_all(&app_state.db_pool)
-        .await?;
+        );
+
+        qb.push_bind(self.organization_id);
+
+        if let Some(search) = &self.search {
+            if !search.trim().is_empty() {
+                let pattern = format!("%{}%", search.trim());
+                qb.push(" AND (u.first_name ILIKE ");
+                qb.push_bind(pattern.clone());
+                qb.push(" OR u.last_name ILIKE ");
+                qb.push_bind(pattern.clone());
+                qb.push(" OR u.username ILIKE ");
+                qb.push_bind(pattern.clone());
+                qb.push(" OR e.email_address ILIKE ");
+                qb.push_bind(pattern);
+                qb.push(")");
+            }
+        }
+
+        qb.push(" GROUP BY om.id, om.created_at, om.updated_at, om.organization_id, om.user_id, om.public_metadata, u.first_name, u.last_name, u.username, u.created_at, e.email_address, p.phone_number");
+
+        let sort_column = match self.sort_key.as_deref() {
+            Some("first_name") => "u.first_name",
+            Some("last_name") => "u.last_name",
+            Some("email") => "e.email_address",
+            Some("username") => "u.username",
+            Some("created_at") => "om.created_at",
+            _ => "om.created_at",
+        };
+
+        let sort_direction = match self.sort_order.as_deref() {
+            Some("asc") => "ASC",
+            _ => "DESC",
+        };
+
+        qb.push(format!(" ORDER BY {} {}", sort_column, sort_direction));
+
+        qb.push(" LIMIT ");
+        qb.push_bind((self.limit + 1) as i64);
+        qb.push(" OFFSET ");
+        qb.push_bind(self.offset);
+
+        let member_rows = qb.build().fetch_all(&app_state.db_pool).await?;
 
         let has_more = member_rows.len() > self.limit as usize;
         let members: Vec<OrganizationMemberDetails> = member_rows
             .into_iter()
             .take(self.limit as usize)
             .map(|row| {
-                let roles: Vec<OrganizationRole> = row.roles
+                let roles_json: serde_json::Value = row.get("roles");
+                let roles_array = roles_json.as_array().unwrap();
+
+                let roles: Vec<OrganizationRole> = roles_array
                     .iter()
                     .filter_map(|role_json| {
                         serde_json::from_value::<OrganizationRole>(role_json.clone()).ok()
@@ -548,23 +631,19 @@ impl Query for GetOrganizationMembersQuery {
                     .collect();
 
                 OrganizationMemberDetails {
-                    id: row.id,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                    organization_id: row.organization_id,
-                    user_id: row.user_id,
+                    id: row.get("id"),
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                    organization_id: row.get("organization_id"),
+                    user_id: row.get("user_id"),
                     roles,
-                    public_metadata: row.public_metadata.clone(),
-                    first_name: row.first_name,
-                    last_name: row.last_name,
-                    username: if row.username.is_empty() {
-                        None
-                    } else {
-                        Some(row.username)
-                    },
-                    primary_email_address: row.primary_email_address,
-                    primary_phone_number: row.primary_phone_number,
-                    user_created_at: row.user_created_at,
+                    public_metadata: row.get("public_metadata"),
+                    first_name: row.get("first_name"),
+                    last_name: row.get("last_name"),
+                    username: row.get("username"),
+                    primary_email_address: row.get("primary_email_address"),
+                    primary_phone_number: row.get("primary_phone_number"),
+                    user_created_at: row.get("user_created_at"),
                 }
             })
             .collect();
@@ -577,6 +656,9 @@ pub struct GetWorkspaceMembersQuery {
     workspace_id: i64,
     offset: i64,
     limit: i32,
+    search: Option<String>,
+    sort_key: Option<String>,
+    sort_order: Option<String>,
 }
 
 impl GetWorkspaceMembersQuery {
@@ -585,6 +667,9 @@ impl GetWorkspaceMembersQuery {
             workspace_id,
             offset: 0,
             limit: 20,
+            search: None,
+            sort_key: None,
+            sort_order: None,
         }
     }
 
@@ -597,14 +682,28 @@ impl GetWorkspaceMembersQuery {
         self.limit = limit;
         self
     }
+
+    pub fn search(mut self, search: Option<String>) -> Self {
+        self.search = search;
+        self
+    }
+
+    pub fn sort_key(mut self, sort_key: Option<String>) -> Self {
+        self.sort_key = sort_key;
+        self
+    }
+
+    pub fn sort_order(mut self, sort_order: Option<String>) -> Self {
+        self.sort_order = sort_order;
+        self
+    }
 }
 
 impl Query for GetWorkspaceMembersQuery {
     type Output = (Vec<WorkspaceMemberDetails>, bool);
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Get workspace members with user details and their roles
-        let member_rows = sqlx::query!(
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
                 wm.id, wm.created_at, wm.updated_at,
@@ -612,10 +711,10 @@ impl Query for GetWorkspaceMembersQuery {
                 wm.public_metadata,
                 u.first_name, u.last_name, u.username,
                 u.created_at as user_created_at,
-                e.email_address as "primary_email_address?",
-                p.phone_number as "primary_phone_number?",
+                e.email_address as "primary_email_address",
+                p.phone_number as "primary_phone_number",
                 COALESCE(
-                    ARRAY_AGG(
+                    jsonb_agg(
                         DISTINCT jsonb_build_object(
                             'id', wrole.id::text,
                             'created_at', wrole.created_at,
@@ -625,34 +724,70 @@ impl Query for GetWorkspaceMembersQuery {
                             'is_deployment_level', CASE WHEN wrole.workspace_id IS NULL THEN true ELSE false END
                         )
                     ) FILTER (WHERE wrole.id IS NOT NULL),
-                    ARRAY[]::jsonb[]
-                ) as "roles!"
+                    '[]'::jsonb
+                ) as "roles"
             FROM workspace_memberships wm
             JOIN users u ON wm.user_id = u.id AND u.deleted_at IS NULL
             LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id
             LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id
             LEFT JOIN workspace_membership_roles wmr ON wmr.workspace_membership_id = wm.id
             LEFT JOIN workspace_roles wrole ON wmr.workspace_role_id = wrole.id
-            WHERE wm.workspace_id = $1 AND wm.deleted_at IS NULL
-            GROUP BY wm.id, wm.created_at, wm.updated_at, wm.workspace_id, wm.user_id,
-                     wm.public_metadata, u.first_name, u.last_name, u.username, u.created_at,
-                     e.email_address, p.phone_number
-            ORDER BY wm.created_at DESC
-            LIMIT $2 OFFSET $3
+            WHERE wm.deleted_at IS NULL AND wm.workspace_id =
             "#,
-            self.workspace_id,
-            (self.limit + 1) as i64,
-            self.offset
-        )
-        .fetch_all(&app_state.db_pool)
-        .await?;
+        );
+
+        qb.push_bind(self.workspace_id);
+
+        if let Some(search) = &self.search {
+            if !search.trim().is_empty() {
+                let pattern = format!("%{}%", search.trim());
+                qb.push(" AND (u.first_name ILIKE ");
+                qb.push_bind(pattern.clone());
+                qb.push(" OR u.last_name ILIKE ");
+                qb.push_bind(pattern.clone());
+                qb.push(" OR u.username ILIKE ");
+                qb.push_bind(pattern.clone());
+                qb.push(" OR e.email_address ILIKE ");
+                qb.push_bind(pattern);
+                qb.push(")");
+            }
+        }
+
+        qb.push(" GROUP BY wm.id, wm.created_at, wm.updated_at, wm.workspace_id, wm.user_id, wm.public_metadata, u.first_name, u.last_name, u.username, u.created_at, e.email_address, p.phone_number");
+
+        // Sorting
+        let sort_column = match self.sort_key.as_deref() {
+            Some("first_name") => "u.first_name",
+            Some("last_name") => "u.last_name",
+            Some("email") => "e.email_address",
+            Some("username") => "u.username",
+            Some("created_at") => "wm.created_at",
+            _ => "wm.created_at",
+        };
+
+        let sort_direction = match self.sort_order.as_deref() {
+            Some("asc") => "ASC",
+            _ => "DESC",
+        };
+
+        qb.push(format!(" ORDER BY {} {}", sort_column, sort_direction));
+
+        qb.push(" LIMIT ");
+        qb.push_bind((self.limit + 1) as i64);
+        qb.push(" OFFSET ");
+        qb.push_bind(self.offset);
+
+        let member_rows = qb.build().fetch_all(&app_state.db_pool).await?;
 
         let has_more = member_rows.len() > self.limit as usize;
         let members: Vec<WorkspaceMemberDetails> = member_rows
             .into_iter()
             .take(self.limit as usize)
             .map(|row| {
-                let roles: Vec<WorkspaceRole> = row.roles
+                let roles_json: serde_json::Value = row.get("roles");
+                let roles_array = roles_json.as_array().unwrap();
+
+                let roles: Vec<WorkspaceRole> = roles_array
                     .iter()
                     .filter_map(|role_json| {
                         serde_json::from_value::<WorkspaceRole>(role_json.clone()).ok()
@@ -660,23 +795,19 @@ impl Query for GetWorkspaceMembersQuery {
                     .collect();
 
                 WorkspaceMemberDetails {
-                    id: row.id,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                    workspace_id: row.workspace_id,
-                    user_id: row.user_id,
+                    id: row.get("id"),
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                    workspace_id: row.get("workspace_id"),
+                    user_id: row.get("user_id"),
                     roles,
-                    public_metadata: row.public_metadata.clone(),
-                    first_name: row.first_name,
-                    last_name: row.last_name,
-                    username: if row.username.is_empty() {
-                        None
-                    } else {
-                        Some(row.username)
-                    },
-                    primary_email_address: row.primary_email_address,
-                    primary_phone_number: row.primary_phone_number,
-                    user_created_at: row.user_created_at,
+                    public_metadata: row.get("public_metadata"),
+                    first_name: row.get("first_name"),
+                    last_name: row.get("last_name"),
+                    username: row.get("username"),
+                    primary_email_address: row.get("primary_email_address"),
+                    primary_phone_number: row.get("primary_phone_number"),
+                    user_created_at: row.get("user_created_at"),
                 }
             })
             .collect();

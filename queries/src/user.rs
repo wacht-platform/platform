@@ -56,6 +56,7 @@ pub struct DeploymentInvitationQuery {
     sort_key: Option<String>,
     sort_order: Option<String>,
     limit: i32,
+    search: Option<String>,
 }
 
 impl DeploymentInvitationQuery {
@@ -66,6 +67,7 @@ impl DeploymentInvitationQuery {
             sort_order: None,
             limit: 10,
             deployment_id: id,
+            search: None,
         }
     }
 
@@ -84,6 +86,10 @@ impl DeploymentInvitationQuery {
     pub fn sort_order(self, sort_order: Option<String>) -> Self {
         Self { sort_order, ..self }
     }
+
+    pub fn search(self, search: Option<String>) -> Self {
+        Self { search, ..self }
+    }
 }
 
 pub struct DeploymentWaitlistQuery {
@@ -92,6 +98,7 @@ pub struct DeploymentWaitlistQuery {
     sort_key: Option<String>,
     sort_order: Option<String>,
     limit: i32,
+    search: Option<String>,
 }
 
 impl DeploymentWaitlistQuery {
@@ -102,6 +109,7 @@ impl DeploymentWaitlistQuery {
             sort_order: None,
             limit: 10,
             deployment_id: id,
+            search: None,
         }
     }
 
@@ -119,6 +127,10 @@ impl DeploymentWaitlistQuery {
 
     pub fn sort_order(self, sort_order: Option<String>) -> Self {
         Self { sort_order, ..self }
+    }
+
+    pub fn search(self, search: Option<String>) -> Self {
+        Self { search, ..self }
     }
 }
 
@@ -229,6 +241,21 @@ impl Query for DeploymentInvitationQuery {
         );
 
         query_builder.push_bind(self.deployment_id);
+
+        if let Some(search_term) = &self.search {
+            let trimmed_search = search_term.trim();
+            if !trimmed_search.is_empty() {
+                let search_pattern = format!("%{}%", trimmed_search);
+                query_builder.push(" AND (");
+                query_builder.push("i.first_name ILIKE ");
+                query_builder.push_bind(search_pattern.clone());
+                query_builder.push(" OR i.last_name ILIKE ");
+                query_builder.push_bind(search_pattern.clone());
+                query_builder.push(" OR i.email_address ILIKE ");
+                query_builder.push_bind(search_pattern);
+                query_builder.push(")");
+            }
+        }
 
         query_builder.push(" ORDER BY ");
 
@@ -461,6 +488,21 @@ impl Query for DeploymentWaitlistQuery {
         );
 
         query_builder.push_bind(self.deployment_id);
+
+        if let Some(search_term) = &self.search {
+            let trimmed_search = search_term.trim();
+            if !trimmed_search.is_empty() {
+                let search_pattern = format!("%{}%", trimmed_search);
+                query_builder.push(" AND (");
+                query_builder.push("u.first_name ILIKE ");
+                query_builder.push_bind(search_pattern.clone());
+                query_builder.push(" OR u.last_name ILIKE ");
+                query_builder.push_bind(search_pattern.clone());
+                query_builder.push(" OR u.email_address ILIKE ");
+                query_builder.push_bind(search_pattern);
+                query_builder.push(")");
+            }
+        }
 
         query_builder.push(" ORDER BY ");
 

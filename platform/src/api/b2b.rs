@@ -52,6 +52,15 @@ pub struct PaginationParams {
 }
 
 #[derive(Deserialize)]
+pub struct OrganizationMemberQueryParams {
+    pub offset: Option<i64>,
+    pub limit: Option<i32>,
+    pub search: Option<String>,
+    pub sort_key: Option<String>,
+    pub sort_order: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct WorkspaceRoleParams {
     #[serde(flatten)]
     pub rest: HashMap<String, String>,
@@ -141,6 +150,7 @@ pub async fn get_organization_list(
         .offset(query_params.offset.unwrap_or(0))
         .sort_key(query_params.sort_key)
         .sort_order(query_params.sort_order)
+        .search(query_params.search)
         .execute(&app_state)
         .await?;
 
@@ -171,6 +181,7 @@ pub async fn get_workspace_list(
         .offset(query_params.offset.unwrap_or(0))
         .sort_key(query_params.sort_key)
         .sort_order(query_params.sort_order)
+        .search(query_params.search)
         .execute(&app_state)
         .await?;
 
@@ -217,14 +228,17 @@ pub async fn get_organization_members(
     State(app_state): State<AppState>,
     RequireDeployment(_): RequireDeployment,
     Path(params): Path<OrganizationParams>,
-    QueryParams(pagination): QueryParams<PaginationParams>,
+    QueryParams(query_params): QueryParams<OrganizationMemberQueryParams>,
 ) -> ApiResult<PaginatedResponse<OrganizationMemberDetails>> {
-    let limit = pagination.limit.unwrap_or(20);
-    let offset = pagination.offset.unwrap_or(0);
+    let limit = query_params.limit.unwrap_or(20);
+    let offset = query_params.offset.unwrap_or(0);
 
     let (members, has_more) = GetOrganizationMembersQuery::new(params.organization_id)
         .offset(offset)
         .limit(limit)
+        .search(query_params.search)
+        .sort_key(query_params.sort_key)
+        .sort_order(query_params.sort_order)
         .execute(&app_state)
         .await?;
 
@@ -237,18 +251,30 @@ pub async fn get_organization_members(
     .into())
 }
 
+#[derive(Deserialize)]
+pub struct WorkspaceMemberQueryParams {
+    pub offset: Option<i64>,
+    pub limit: Option<i32>,
+    pub search: Option<String>,
+    pub sort_key: Option<String>,
+    pub sort_order: Option<String>,
+}
+
 pub async fn get_workspace_members(
     State(app_state): State<AppState>,
     RequireDeployment(_): RequireDeployment,
     Path(params): Path<WorkspaceParams>,
-    QueryParams(pagination): QueryParams<PaginationParams>,
+    QueryParams(query_params): QueryParams<WorkspaceMemberQueryParams>,
 ) -> ApiResult<PaginatedResponse<WorkspaceMemberDetails>> {
-    let limit = pagination.limit.unwrap_or(20);
-    let offset = pagination.offset.unwrap_or(0);
+    let limit = query_params.limit.unwrap_or(20);
+    let offset = query_params.offset.unwrap_or(0);
 
     let (members, has_more) = GetWorkspaceMembersQuery::new(params.workspace_id)
         .offset(offset)
         .limit(limit)
+        .search(query_params.search)
+        .sort_key(query_params.sort_key)
+        .sort_order(query_params.sort_order)
         .execute(&app_state)
         .await?;
 
