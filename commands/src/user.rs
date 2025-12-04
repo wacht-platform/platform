@@ -696,6 +696,17 @@ impl Command for DeleteUserCommand {
         .await?;
 
         sqlx::query!(
+            "UPDATE sessions SET active_signin_id = NULL where active_signin_id IN (SELECT id FROM signins WHERE user_id = $1)",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query!("DELETE FROM signins WHERE user_id = $1", self.user_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query!(
             "DELETE FROM users WHERE id = $1 AND deployment_id = $2",
             self.user_id,
             self.deployment_id
