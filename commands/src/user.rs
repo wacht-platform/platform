@@ -668,20 +668,6 @@ impl Command for DeleteUserCommand {
         .await?;
 
         sqlx::query!(
-            "DELETE FROM organization_membership_roles WHERE organization_membership_id IN (SELECT id FROM organization_memberships WHERE user_id = $1)",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM organization_memberships WHERE user_id = $1",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
             "DELETE FROM workspace_membership_roles WHERE workspace_membership_id IN (SELECT id FROM workspace_memberships WHERE user_id = $1)",
             self.user_id
         )
@@ -690,6 +676,20 @@ impl Command for DeleteUserCommand {
 
         sqlx::query!(
             "DELETE FROM workspace_memberships WHERE user_id = $1",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query!(
+            "DELETE FROM organization_membership_roles WHERE organization_membership_id IN (SELECT id FROM organization_memberships WHERE user_id = $1)",
+            self.user_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query!(
+            "DELETE FROM organization_memberships WHERE user_id = $1",
             self.user_id
         )
         .execute(&mut *tx)
