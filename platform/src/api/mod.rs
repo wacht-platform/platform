@@ -14,6 +14,7 @@ pub mod connection;
 pub mod health;
 pub mod notifications;
 pub mod project;
+pub mod segments;
 pub mod settings;
 pub mod token;
 pub mod upload;

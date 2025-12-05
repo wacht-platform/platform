@@ -394,6 +394,19 @@ impl Query for GetOrganizationDetailsQuery {
             })
             .collect();
 
+        let segments = sqlx::query_as!(
+            models::Segment,
+            r#"
+            SELECT s.*
+            FROM segments s
+            JOIN organization_segments os ON s.id = os.segment_id
+            WHERE os.organization_id = $1
+            "#,
+            self.organization_id
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
         Ok(OrganizationDetails {
             id: org_row.id,
             created_at: org_row.created_at,
@@ -406,6 +419,7 @@ impl Query for GetOrganizationDetailsQuery {
             private_metadata: org_row.private_metadata,
             roles,
             workspaces,
+            segments,
         })
     }
 }
@@ -472,6 +486,19 @@ impl Query for GetWorkspaceDetailsQuery {
             })
             .collect();
 
+        let segments = sqlx::query_as!(
+            models::Segment,
+            r#"
+            SELECT s.*
+            FROM segments s
+            JOIN workspace_segments ws ON s.id = ws.segment_id
+            WHERE ws.workspace_id = $1
+            "#,
+            self.workspace_id
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
         Ok(WorkspaceDetails {
             id: workspace_row.id,
             created_at: workspace_row.created_at,
@@ -485,6 +512,7 @@ impl Query for GetWorkspaceDetailsQuery {
             organization_id: workspace_row.organization_id,
             organization_name: workspace_row.organization_name.unwrap_or_default(),
             roles,
+            segments,
         })
     }
 }

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::WorkspaceRole;
+use super::{Segment, WorkspaceRole};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct WorkspaceDetails {
@@ -20,6 +20,7 @@ pub struct WorkspaceDetails {
     pub organization_id: i64,
     pub organization_name: String,
     pub roles: Vec<WorkspaceRole>,
+    pub segments: Vec<Segment>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

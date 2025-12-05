@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{
-    SchemaVersion, SecondFactorPolicy, SocialConnection, UserEmailAddress, UserPhoneNumber,
+    SchemaVersion, SecondFactorPolicy, Segment, SocialConnection, UserEmailAddress, UserPhoneNumber,
 };
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -33,6 +33,7 @@ pub struct UserDetails {
     pub email_addresses: Vec<UserEmailAddress>,
     pub phone_numbers: Vec<UserPhoneNumber>,
     pub social_connections: Vec<SocialConnection>,
+    pub segments: Vec<Segment>,
     pub has_password: bool,
     pub has_backup_codes: bool,
 }

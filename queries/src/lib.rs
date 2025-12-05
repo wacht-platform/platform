@@ -22,6 +22,7 @@ pub mod deployment;
 pub mod invitation;
 pub mod organization;
 pub mod project;
+pub mod segments;
 pub mod signin;
 pub mod user;
 pub mod workspace;

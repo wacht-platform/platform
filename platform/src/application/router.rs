@@ -180,6 +180,26 @@ fn base_deployment_routes() -> Router<AppState> {
             get(api::b2b::get_deployment_org_roles),
         )
         .route(
+            "/segments",
+            get(api::segments::list_segments).post(api::segments::create_segment),
+        )
+        .route(
+            "/segments/data",
+            post(api::segments::get_segment_data),
+        )
+        .route(
+            "/segments/{id}",
+            patch(api::segments::update_segment).delete(api::segments::delete_segment),
+        )
+        .route(
+            "/segments/{id}/assign",
+            post(api::segments::assign_segment),
+        )
+        .route(
+            "/segments/{id}/remove",
+            post(api::segments::remove_segment),
+        )
+        .route(
             "/settings/auth-settings",
             patch(api::settings::update_deployment_auth_settings),
         )

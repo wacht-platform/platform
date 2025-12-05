@@ -427,6 +427,19 @@ impl Query for GetUserDetailsQuery {
             })
             .collect();
 
+        let segments = sqlx::query_as!(
+            models::Segment,
+            r#"
+            SELECT s.*
+            FROM segments s
+            JOIN user_segments us ON s.id = us.segment_id
+            WHERE us.user_id = $1
+            "#,
+            self.user_id
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
         let user_details = UserDetails {
             id: user_row.id,
             created_at: user_row.created_at,
@@ -460,6 +473,7 @@ impl Query for GetUserDetailsQuery {
             email_addresses,
             phone_numbers,
             social_connections,
+            segments,
             has_password: user_row.password.is_some()
                 && !user_row.password.unwrap_or_default().is_empty(),
             has_backup_codes: user_row.backup_codes.is_some()

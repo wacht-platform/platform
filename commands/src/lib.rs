@@ -36,6 +36,7 @@ pub mod process_document;
 pub mod process_document_embedding;
 pub mod project;
 pub mod s3;
+pub mod segments;
 pub mod smtp;
 mod update_organization;
 mod update_workspace;

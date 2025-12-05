@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{OrganizationRole, Workspace};
+use super::{OrganizationRole, Segment, Workspace};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct OrganizationDetails {
@@ -18,6 +18,7 @@ pub struct OrganizationDetails {
     pub private_metadata: Value,
     pub roles: Vec<OrganizationRole>,
     pub workspaces: Vec<Workspace>,
+    pub segments: Vec<Segment>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
