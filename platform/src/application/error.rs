@@ -12,6 +12,7 @@ impl From<AppError> for ApiErrorResponse {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized").into(),
             AppError::BadRequest(message) => (StatusCode::BAD_REQUEST, message).into(),
             AppError::Internal(message) => (StatusCode::INTERNAL_SERVER_ERROR, message).into(),
+            AppError::Conflict(message) => (StatusCode::CONFLICT, message).into(),
             AppError::Validation(message) => (StatusCode::BAD_REQUEST, message).into(),
             AppError::Serialization(message) => (StatusCode::INTERNAL_SERVER_ERROR, message).into(),
             AppError::S3(message) => (StatusCode::INTERNAL_SERVER_ERROR, message).into(),

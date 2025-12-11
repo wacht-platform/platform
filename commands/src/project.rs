@@ -482,8 +482,18 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         };
 
         let key_pair_task = tokio::task::spawn_blocking(|| {
-            let pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-            Ok::<_, AppError>((pair.public_key_pem(), pair.serialize_pem()))
+            // Generate ECDSA keypair for JWT signing (ES256)
+            let ecdsa_pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+            
+            // Generate RSA keypair for SAML (most IdPs only support RSA for XML signatures)
+            let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).map_err(|e| AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e)))?;
+            
+            Ok::<_, AppError>((
+                ecdsa_pair.public_key_pem(),
+                ecdsa_pair.serialize_pem(),
+                saml_pair.public_key_pem(),
+                saml_pair.serialize_pem(),
+            ))
         });
 
         let random_name_task = {
@@ -504,7 +514,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             tokio::join!(logo_task, key_pair_task, random_name_task);
 
         let image_url = image_url_res?;
-        let (public_key, private_key) =
+        let (public_key, private_key, saml_public_key, saml_private_key) =
             key_pair_res.map_err(|e| AppError::Internal(e.to_string()))??;
         let (random_name, count) = random_name_res?;
 
@@ -835,15 +845,19 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
                 deployment_id,
                 public_key,
                 private_key,
+                saml_public_key,
+                saml_private_key,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
             app_state.sf.next_id()? as i64,
             deployment_row.id,
             public_key,
             private_key,
+            saml_public_key,
+            saml_private_key,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
@@ -1591,11 +1605,21 @@ impl Command for CreateStagingDeploymentCommand {
         validator.validate_auth_methods(&self.auth_methods)?;
 
         let key_pair_task = tokio::task::spawn_blocking(|| {
-            let pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-            Ok::<_, AppError>((pair.public_key_pem(), pair.serialize_pem()))
+            // Generate ECDSA keypair for JWT signing (ES256)
+            let ecdsa_pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+            
+            // Generate RSA keypair for SAML (most IdPs only support RSA for XML signatures)
+            let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).map_err(|e| AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e)))?;
+            
+            Ok::<_, AppError>((
+                ecdsa_pair.public_key_pem(),
+                ecdsa_pair.serialize_pem(),
+                saml_pair.public_key_pem(),
+                saml_pair.serialize_pem(),
+            ))
         });
 
-        let (public_key, private_key) = key_pair_task
+        let (public_key, private_key, saml_public_key, saml_private_key) = key_pair_task
             .await
             .map_err(|e| AppError::Internal(e.to_string()))??;
 
@@ -1916,15 +1940,19 @@ impl Command for CreateStagingDeploymentCommand {
                 deployment_id,
                 public_key,
                 private_key,
+                saml_public_key,
+                saml_private_key,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
             app_state.sf.next_id()? as i64,
             deployment_row.id,
             public_key,
             private_key,
+            saml_public_key,
+            saml_private_key,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
@@ -2158,11 +2186,21 @@ impl Command for CreateProductionDeploymentCommand {
         validator.validate_auth_methods(&self.auth_methods)?;
 
         let key_pair_task = tokio::task::spawn_blocking(|| {
-            let pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-            Ok::<_, AppError>((pair.public_key_pem(), pair.serialize_pem()))
+            // Generate ECDSA keypair for JWT signing (ES256)
+            let ecdsa_pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+            
+            // Generate RSA keypair for SAML (most IdPs only support RSA for XML signatures)
+            let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).map_err(|e| AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e)))?;
+            
+            Ok::<_, AppError>((
+                ecdsa_pair.public_key_pem(),
+                ecdsa_pair.serialize_pem(),
+                saml_pair.public_key_pem(),
+                saml_pair.serialize_pem(),
+            ))
         });
 
-        let (public_key, private_key) = key_pair_task
+        let (public_key, private_key, saml_public_key, saml_private_key) = key_pair_task
             .await
             .map_err(|e| AppError::Internal(e.to_string()))??;
 
@@ -2280,15 +2318,19 @@ impl Command for CreateProductionDeploymentCommand {
                 deployment_id,
                 public_key,
                 private_key,
+                saml_public_key,
+                saml_private_key,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
             app_state.sf.next_id()? as i64,
             deployment_row.id,
             public_key,
             private_key,
+            saml_public_key,
+            saml_private_key,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
@@ -2630,15 +2672,19 @@ impl Command for CreateProductionDeploymentCommand {
                 deployment_id,
                 public_key,
                 private_key,
+                saml_public_key,
+                saml_private_key,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
             app_state.sf.next_id()? as i64,
             deployment_row.id,
             public_key,
             private_key,
+            saml_public_key,
+            saml_private_key,
             chrono::Utc::now(),
             chrono::Utc::now(),
         )

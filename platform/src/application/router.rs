@@ -410,14 +410,35 @@ fn console_specific_routes() -> Router<AppState> {
             post(api::token::generate_user_agent_context_token),
         )
         .route(
-            "/settings/email-provider/smtp",
-            get(api::settings::get_smtp_config)
-                .post(api::settings::update_smtp_config)
-                .delete(api::settings::remove_smtp_config),
-        )
-        .route(
             "/settings/email-provider/smtp/verify",
             post(api::settings::verify_smtp_connection),
+        )
+        // Enterprise SSO routes
+        .route(
+            "/organizations/{org_id}/domains",
+            post(api::enterprise_sso::create_domain_handler).get(api::enterprise_sso::list_domains_handler),
+        )
+        .route(
+            "/organizations/{org_id}/domains/{domain_id}",
+            delete(api::enterprise_sso::delete_domain_handler),
+        )
+        .route(
+            "/organizations/{org_id}/domains/{domain_id}/verify",
+            post(api::enterprise_sso::verify_domain_handler),
+        )
+        .route(
+            "/organizations/{org_id}/connections",
+            post(api::enterprise_sso::create_connection_handler).get(api::enterprise_sso::list_connections_handler),
+        )
+        .route(
+            "/organizations/{org_id}/connections/{connection_id}",
+            post(api::enterprise_sso::update_connection_handler).delete(api::enterprise_sso::delete_connection_handler),
+        )
+        .route(
+            "/organizations/{org_id}/connections/{connection_id}/scim-token",
+            get(api::enterprise_sso::get_scim_token_handler)
+                .post(api::enterprise_sso::generate_scim_token_handler)
+                .delete(api::enterprise_sso::revoke_scim_token_handler),
         )
 }
 

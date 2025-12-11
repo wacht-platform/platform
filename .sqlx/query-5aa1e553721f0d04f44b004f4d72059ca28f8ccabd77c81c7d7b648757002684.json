@@ -1,0 +1,87 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO organization_domains (\n                id,\n                organization_id,\n                deployment_id,\n                fqdn,\n                verified,\n                verification_dns_record_type,\n                verification_dns_record_name,\n                verification_dns_record_data,\n                verification_attempts,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, $4, false, 'TXT', '_wacht-verification', $5, 0, $6, $6)\n            RETURNING *\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "fqdn",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "verification_dns_record_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "verification_dns_record_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "verification_dns_record_data",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "verification_attempts",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "5aa1e553721f0d04f44b004f4d72059ca28f8ccabd77c81c7d7b648757002684"
+}

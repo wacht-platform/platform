@@ -14,6 +14,8 @@ pub enum AppError {
     BadRequest(String),
     #[error("Internal error: {0}")]
     Internal(String),
+    #[error("Conflict: {0}")]
+    Conflict(String),
     #[error("Validation error: {0}")]
     Validation(String),
     #[error("Serialization error: {0}")]

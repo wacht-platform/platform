@@ -19,6 +19,7 @@ pub trait Query {
 
 pub mod b2b;
 pub mod deployment;
+pub mod enterprise_sso;
 pub mod invitation;
 pub mod organization;
 pub mod project;
@@ -41,6 +42,7 @@ pub use ai_knowledge_base::*;
 pub use b2b::*;
 pub use billing::*;
 pub use deployment::*;
+pub use enterprise_sso::*;
 pub use invitation::*;
 pub use organization::*;
 pub use project::*;

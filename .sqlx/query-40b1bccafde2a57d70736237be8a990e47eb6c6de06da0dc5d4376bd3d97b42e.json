@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM scim_tokens\n            WHERE enterprise_connection_id = $1 \n              AND organization_id = $2 \n              AND deployment_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "40b1bccafde2a57d70736237be8a990e47eb6c6de06da0dc5d4376bd3d97b42e"
+}

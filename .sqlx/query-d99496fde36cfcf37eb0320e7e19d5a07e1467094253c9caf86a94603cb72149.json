@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT * FROM organization_domains\n            WHERE id = $1 AND organization_id = $2 AND deployment_id = $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "fqdn",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "verification_dns_record_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "verification_dns_record_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "verification_dns_record_data",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "verification_attempts",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "d99496fde36cfcf37eb0320e7e19d5a07e1467094253c9caf86a94603cb72149"
+}

@@ -32,7 +32,10 @@ mod workspace;
 mod workspace_details;
 mod workspace_membership;
 mod workspace_permission;
-mod workspace_role;
+pub mod enterprise_connection;
+pub mod organization_domain;
+pub mod scim_token;
+pub mod workspace_role;
 
 // AI-related models
 pub mod agent_execution_context;

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE organization_domains\n            SET verification_attempts = verification_attempts + 1\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cb42823c8dcfbd3290b3ffb6dda84e73e2474bb7abcf05052b6423729ec830d8"
+}

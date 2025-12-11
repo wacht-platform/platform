@@ -38,3 +38,5 @@ rcgen = "0.13"
 rust_decimal = "1.36"
 josekit = "0.8"
 urlencoding = "2.1"
+hickory-resolver = "0.24"
+validator = { version = "0.19", features = ["derive"] }

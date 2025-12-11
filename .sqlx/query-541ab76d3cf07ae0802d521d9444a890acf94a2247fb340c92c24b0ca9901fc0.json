@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM enterprise_connections\n            WHERE id = $1 AND organization_id = $2 AND deployment_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "541ab76d3cf07ae0802d521d9444a890acf94a2247fb340c92c24b0ca9901fc0"
+}
