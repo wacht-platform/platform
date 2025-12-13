@@ -740,6 +740,11 @@ impl Command for UpdateDeploymentB2bSettingsCommand {
             query_builder.push_bind(enforce_mfa_per_workspace_enabled);
         }
 
+        if let Some(enterprise_sso_enabled) = self.settings.enterprise_sso_enabled {
+            query_builder.push(", enterprise_sso_enabled = ");
+            query_builder.push_bind(enterprise_sso_enabled);
+        }
+
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 

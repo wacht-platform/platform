@@ -219,6 +219,7 @@ pub struct DeploymentB2bSettingsUpdates {
     pub ip_allowlist_per_workspace_enabled: Option<bool>,
     pub enforce_mfa_per_org_enabled: Option<bool>,
     pub enforce_mfa_per_workspace_enabled: Option<bool>,
+    pub enterprise_sso_enabled: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
