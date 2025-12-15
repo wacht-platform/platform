@@ -67,8 +67,8 @@ impl Command for SendEmailCommand {
             .unwrap_or_else(|_| body_html.clone());
 
         let from_email = format!(
-            "{} <{}@{}>",
-            display_settings.app_name, template.template_from, deployment.mail_from_host
+            "{} <notification@{}>",
+            display_settings.app_name, deployment.mail_from_host
         );
 
         let email_provider = EmailProvider::from(deployment.email_provider);
