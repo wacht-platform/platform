@@ -186,6 +186,7 @@ impl Query for GetDeploymentWithSettingsQuery {
                 deployment_b2b_settings.ip_allowlist_per_workspace_enabled as "b2b_settings_ip_allowlist_per_workspace_enabled?",
                 deployment_b2b_settings.enforce_mfa_per_org_enabled as "b2b_settings_enforce_mfa_per_org_enabled?",
                 deployment_b2b_settings.enforce_mfa_per_workspace_enabled as "b2b_settings_enforce_mfa_per_workspace_enabled?",
+                deployment_b2b_settings.enterprise_sso_enabled as "b2b_settings_enterprise_sso_enabled?",
 
                 deployment_default_workspace_creator_role.created_at as "default_workspace_creator_role_created_at?",
                 deployment_default_workspace_creator_role.updated_at as "default_workspace_creator_role_updated_at?",
@@ -415,6 +416,7 @@ impl Query for GetDeploymentWithSettingsQuery {
                     enforce_mfa_per_workspace_enabled: row
                         .b2b_settings_enforce_mfa_per_workspace_enabled
                         .unwrap(),
+                    enterprise_sso_enabled: row.b2b_settings_enterprise_sso_enabled.unwrap_or(false),
                 };
                 Some(DeploymentB2bSettingsWithRoles {
                     settings: b2b_settings,
