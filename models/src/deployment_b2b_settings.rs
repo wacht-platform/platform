@@ -34,6 +34,7 @@ pub struct DeploymentB2bSettings {
     pub ip_allowlist_per_workspace_enabled: bool,
     pub enforce_mfa_per_org_enabled: bool,
     pub enforce_mfa_per_workspace_enabled: bool,
+    pub enterprise_sso_enabled: bool,
 }
 
 impl Default for DeploymentB2bSettings {
@@ -67,6 +68,7 @@ impl Default for DeploymentB2bSettings {
             ip_allowlist_per_workspace_enabled: false,
             enforce_mfa_per_org_enabled: false,
             enforce_mfa_per_workspace_enabled: false,
+            enterprise_sso_enabled: false,
         }
     }
 }
