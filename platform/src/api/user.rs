@@ -508,6 +508,7 @@ pub async fn update_user(
     };
 
     let mut profile_image_data: Option<(Vec<u8>, String)> = None;
+    let mut remove_profile_image = false;
 
     // Parse multipart form data
     while let Some(field) = multipart
@@ -576,6 +577,13 @@ pub async fn update_user(
                     request.disabled = Some(disabled);
                 }
             }
+            "remove_profile_image" => {
+                let value = field
+                    .text()
+                    .await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                remove_profile_image = value == "true";
+            }
             "profile_image" => {
                 let content_type = field.content_type().unwrap_or_default().to_string();
 
@@ -625,6 +633,20 @@ pub async fn update_user(
     let user_details = UpdateUserCommand::new(deployment_id, params.user_id, request)
         .execute(&app_state)
         .await?;
+
+    // Handle profile image removal
+    if remove_profile_image {
+        UpdateUserProfileImageCommand::new(deployment_id, params.user_id, String::new())
+            .execute(&app_state)
+            .await?;
+
+        // Fetch updated user details to return
+        let updated_user_details = GetUserDetailsQuery::new(deployment_id, params.user_id)
+            .execute(&app_state)
+            .await?;
+
+        return Ok(updated_user_details.into());
+    }
 
     // If there's a profile image, upload it and update the user
     if let Some((image_buffer, file_extension)) = profile_image_data {

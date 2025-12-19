@@ -586,6 +586,7 @@ pub async fn update_workspace(
     let mut image_url: Option<String> = None;
     let mut public_metadata: Option<serde_json::Value> = None;
     let mut private_metadata: Option<serde_json::Value> = None;
+    let mut remove_image = false;
 
     // Parse multipart form data
     while let Some(field) = multipart
@@ -641,6 +642,13 @@ pub async fn update_workspace(
                         )
                     })?);
                 }
+            }
+            "remove_image" => {
+                let value = field
+                    .text()
+                    .await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                remove_image = value == "true";
             }
             "workspace_image" => {
                 let content_type = field.content_type().unwrap_or_default().to_string();
@@ -702,7 +710,10 @@ pub async fn update_workspace(
     if let Some(description) = description {
         command = command.with_description(Some(description));
     }
-    if let Some(image_url) = image_url {
+    // Handle image removal - set to empty string
+    if remove_image {
+        command = command.with_image_url(Some(String::new()));
+    } else if let Some(image_url) = image_url {
         command = command.with_image_url(Some(image_url));
     }
     if let Some(public_metadata) = public_metadata {
@@ -730,6 +741,7 @@ pub async fn update_organization(
     let mut image_url: Option<String> = None;
     let mut public_metadata: Option<serde_json::Value> = None;
     let mut private_metadata: Option<serde_json::Value> = None;
+    let mut remove_image = false;
 
     while let Some(field) = multipart
         .next_field()
@@ -785,6 +797,13 @@ pub async fn update_organization(
                     })?);
                 }
             }
+            "remove_image" => {
+                let value = field
+                    .text()
+                    .await
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                remove_image = value == "true";
+            }
             "organization_image" => {
                 let content_type = field.content_type().unwrap_or_default().to_string();
 
@@ -837,12 +856,19 @@ pub async fn update_organization(
         }
     }
 
+    // Handle image removal - set to empty string
+    let final_image_url = if remove_image {
+        Some(String::new())
+    } else {
+        image_url
+    };
+
     UpdateOrganizationCommand::new(
         deployment_id,
         params.organization_id,
         name,
         description,
-        image_url,
+        final_image_url,
         public_metadata,
         private_metadata,
     )
