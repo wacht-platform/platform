@@ -80,6 +80,7 @@ pub struct WorkspaceFilter {
 pub struct GetSegmentDataQuery {
     pub deployment_id: i64,
     pub target_type: String,
+    pub segment_id: Option<i64>,
     pub user_filter: Option<UserFilter>,
     pub organization_filter: Option<OrganizationFilter>,
     pub workspace_filter: Option<WorkspaceFilter>,
@@ -108,6 +109,21 @@ impl Query for GetSegmentDataQuery {
         let mut query_builder =
             QueryBuilder::new(format!("SELECT {} FROM {} t ", select_clause, table));
 
+        if self.segment_id.is_some() {
+            match self.target_type.as_str() {
+                "organization" => {
+                    query_builder.push(" INNER JOIN organization_segments os ON t.id = os.organization_id ");
+                }
+                "workspace" => {
+                    query_builder.push(" INNER JOIN workspace_segments ws ON t.id = ws.workspace_id ");
+                }
+                "user" => {
+                    query_builder.push(" INNER JOIN user_segments us ON t.id = us.user_id ");
+                }
+                _ => {}
+            }
+        }
+
         if self.target_type == "user" {
             if let Some(user_filters) = &self.user_filter {
                 if user_filters.email.is_some() {
@@ -123,6 +139,22 @@ impl Query for GetSegmentDataQuery {
         query_builder.push(" WHERE t.deployment_id = ");
         query_builder.push_bind(self.deployment_id);
         query_builder.push(" AND t.deleted_at IS NULL ");
+
+        if let Some(segment_id) = self.segment_id {
+            match self.target_type.as_str() {
+                "organization" => {
+                    query_builder.push(" AND os.segment_id = ");
+                }
+                "workspace" => {
+                    query_builder.push(" AND ws.segment_id = ");
+                }
+                "user" => {
+                    query_builder.push(" AND us.segment_id = ");
+                }
+                _ => {}
+            }
+            query_builder.push_bind(segment_id);
+        }
 
         match self.target_type.as_str() {
             "organization" => {

@@ -83,6 +83,9 @@ pub struct SegmentDataFilters {
     pub user: Option<UserFilter>,
     pub organization: Option<OrganizationFilter>,
     pub workspace: Option<WorkspaceFilter>,
+    #[serde(default)]
+    #[serde(with = "common::utils::serde::i64_as_string_option")]
+    pub segment_id: Option<i64>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -99,6 +102,7 @@ pub async fn get_segment_data(
     let query = GetSegmentDataQuery {
         deployment_id,
         target_type: payload.target_type,
+        segment_id: payload.filters.as_ref().and_then(|f| f.segment_id),
         user_filter: payload.filters.as_ref().and_then(|f| f.user.as_ref().map(|u| queries::segments::UserFilter {
             name: u.name.clone(),
             email: u.email.clone(),
