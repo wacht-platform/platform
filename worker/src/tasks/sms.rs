@@ -100,8 +100,7 @@ pub async fn send_otp_sms(
             ));
         }
 
-        // Store verification ID in cache for later verification
-        let cache_key = format!("sms_verification:{}:{}", deployment_id, phone_number);
+        let cache_key = format!("sms_verification:{}:{}:{}", deployment_id, country_code, phone_number);
         
         let mut conn = app_state.redis_client.get_connection()
             .map_err(|e| anyhow!("Failed to get Redis connection: {}", e))?;
@@ -115,10 +114,6 @@ pub async fn send_otp_sms(
 
         track_sms_billing(deployment_id, &country_code, &phone_number, &app_state).await;
 
-        info!(
-            "SMS OTP sent successfully. Verification ID: {}",
-            data.verification_id
-        );
         Ok(format!("SMS sent with verification ID: {}", data.verification_id))
     } else {
         Err(anyhow!("No data in MessageCentral response"))
