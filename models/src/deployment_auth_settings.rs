@@ -292,6 +292,7 @@ impl Default for EmailLinkSettings {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PasskeySettings {
     pub enabled: bool,
+    pub prompt_registration_on_auth: bool,
     pub allow_autofill: bool,
 }
 
@@ -299,6 +300,7 @@ impl Default for PasskeySettings {
     fn default() -> Self {
         Self {
             enabled: false,
+            prompt_registration_on_auth: false,
             allow_autofill: false,
         }
     }

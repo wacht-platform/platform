@@ -72,7 +72,7 @@ impl ProjectValidator {
             "apple_oauth",
             "facebook_oauth",
             "github_oauth",
-            "microsoft_oauth",
+            // "microsoft_oauth", // Microsoft OAuth temporarily disabled - unverified credentials
             "discord_oauth",
             "linkedin_oauth",
             "gitlab_oauth",

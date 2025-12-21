@@ -60,6 +60,7 @@ pub struct PartialEmailLinkSettings {
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct PartialPasskeySettings {
     pub enabled: Option<bool>,
+    pub prompt_registration_on_auth: Option<bool>,
     pub allow_autofill: Option<bool>,
 }
 
