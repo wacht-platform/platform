@@ -292,6 +292,7 @@ impl Default for EmailLinkSettings {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PasskeySettings {
     pub enabled: bool,
+    #[serde(default)]
     pub prompt_registration_on_auth: bool,
     pub allow_autofill: bool,
 }
