@@ -49,7 +49,7 @@ START → Direct command ("run X", "do Y")?
           NO → 5+ iterations since last update?
             YES → acknowledge progress
             NO → Objective achieved?
-              YES → deliverresponse
+              YES → complete (with completion_message)
               NO → Continue investigation
 ```
 
@@ -201,13 +201,29 @@ Single action at a time. Always verify preconditions.
 - User sees incremental progress
 - Can pivot strategy instantly
 
-### 5. deliverresponse - Final Synthesis
-**Only when ALL true**:
+### 5. complete - Task Completion & Final Response
+**CRITICAL**: You MUST provide a `completion_message` to communicate results to the user.
+
+**Structure**:
+```json
+{
+  "next_step": "complete",
+  "completion_message": "Summary of what was accomplished for the user"
+}
+```
+
+**Rules**:
+- ALWAYS include `completion_message` with a user-friendly summary
+- Message should summarize: what was done, what succeeded, key findings
+- For complex tasks: provide comprehensive synthesis with recommendations
+- For simple tasks: brief confirmation of completion
+- Keep it concise but informative
+
+**When to use**:
 - Objective fully achieved
-- Comprehensive understanding gained
-- Root causes identified (not just symptoms)
-- Can provide specific recommendations
-- Further investigation would be redundant
+- User says stop
+- Unrecoverable error (explain what happened)
+- Simple acknowledgments with no further action
 
 ### 6. Other Actions
 
@@ -216,8 +232,6 @@ Single action at a time. Always verify preconditions.
 **validateprogress**: After executions, every 10-15 iterations, when uncertain if on track
 
 **requestuserinput**: Critical ambiguity, missing essential info, high-risk decisions need confirmation
-
-**complete**: User says stop, unrecoverable error, natural end with no response needed
 
 ## Execution Patterns
 

@@ -1,178 +1,188 @@
 {
-  "system_instruction": {
-      "parts": [
-        {
-          "text": "{{system_prompt}}"
-        }
-      ]
-   },
-  "contents": [
-    {{#each conversation_history}}
-    {
-      "role": "{{this.role}}",
-      {{#if this.parts}}
-      "parts": {{json this.parts}}
-      {{else}}
-      "parts": [
-        {
-          "text": "[{{relative_time this.timestamp}}] {{this.content}}"
-        }
-      ]
-      {{/if}}
-    }{{#unless @last}},{{/unless}}
-    {{/each}}
-  ],
-  "generationConfig": {
-    "responseMimeType": "application/json",
-    "responseSchema": {
-      "type": "OBJECT",
-      "properties": {
-        "next_step": {
-          "type": "STRING",
-          "enum": ["acknowledge", "gathercontext", "executeaction", "deliverresponse", "validateprogress", "requestuserinput", "examinetool", "examineworkflow", "complete"],
-          "description": "The next step to execute in the flow"
-        },
-        "reasoning": {
-          "type": "STRING",
-          "description": "Clear explanation of why this step is the most appropriate next action based on current state and conversation history"
-        },
-        "confidence": {
-          "type": "NUMBER",
-          "description": "Confidence level in this decision (0.0 to 1.0)"
-        },
-        "acknowledgment": {
-          "type": "OBJECT",
-          "description": "Acknowledgment details (required when next_step is acknowledge)",
-          "properties": {
-            "message": {
-              "type": "STRING",
-              "description": "The acknowledgment message to send to the user"
-            },
-            "further_action_required": {
-              "type": "BOOLEAN",
-              "description": "Whether the request requires further processing beyond acknowledgment. MUST be false for greetings, presence checks, or if your message ends with a question. Only true for explicit action requests."
-            },
-            "objective": {
-              "type": "OBJECT",
-              "description": "The understood objective from the user's request",
-              "properties": {
-                "primary_goal": {
-                  "type": "STRING",
-                  "description": "The main goal to accomplish"
-                },
-                "success_criteria": {
-                  "type": "ARRAY",
-                  "items": {
-                    "type": "STRING"
-                  },
-                  "description": "Measurable criteria for successful completion"
-                },
-                "constraints": {
-                  "type": "ARRAY",
-                  "items": {
-                    "type": "STRING"
-                  },
-                  "description": "Limitations or requirements to respect"
-                },
-                "context_from_history": {
-                  "type": "STRING",
-                  "description": "Relevant context from conversation history that informs this objective"
-                },
-                "inferred_intent": {
-                  "type": "STRING",
-                  "description": "The inferred intent behind the user's request"
-                }
-              },
-              "required": ["primary_goal", "success_criteria", "constraints", "context_from_history", "inferred_intent"]
-            }
-          },
-          "required": ["message", "further_action_required", "objective"]
-        },
-        "execute_action": {
-          "type": "OBJECT",
-          "description": "Execute a single tool or workflow action (required when next_step is execute_action)",
-          "properties": {
-            "type": {
-              "type": "STRING",
-              "enum": ["tool_call", "workflow_call"],
-              "description": "The type of action to execute"
-            },
-            "details": {
-              "type": "OBJECT",
-              "description": "Action details containing tool/workflow information",
-              "properties": {
-                "tool_name": {
-                  "type": "STRING",
-                  "description": "The name of the tool to execute (required for tool_call)"
-                },
-                "workflow_name": {
-                  "type": "STRING",
-                  "description": "The name of the workflow to execute (required for workflow_call)"
-                }
-              }
-            },
-            "purpose": {
-              "type": "STRING",
-              "description": "The purpose of this action execution"
-            }
-          },
-          "required": ["type", "details", "purpose"]
-        },
-        "examine_tool": {
-          "type": "OBJECT",
-          "description": "Tool examination details (required when next_step is examine_tool)",
-          "properties": {
-            "tool_name": {
-              "type": "STRING",
-              "description": "The name of the tool to examine"
-            }
-          },
-          "required": ["tool_name"]
-        },
-        "examine_workflow": {
-          "type": "OBJECT",
-          "description": "Workflow examination details (required when next_step is examine_workflow)",
-          "properties": {
-            "workflow_name": {
-              "type": "STRING",
-              "description": "The name of the workflow to examine"
-            }
-          },
-          "required": ["workflow_name"]
-        },
-        "context_gathering_directive": {
-          "type": "OBJECT",
-          "description": "MANDATORY when next_step is gathercontext. Structured directive for intelligent context gathering.",
-          "properties": {
-            "pattern": {
-              "type": "STRING",
-              "enum": ["troubleshooting", "implementation", "analysis", "historical", "exploration", "verification"],
-              "description": "The search pattern based on user's request type"
-            },
-            "objective": {
-              "type": "STRING",
-              "description": "Specific goal for this context gathering (e.g., 'Find authentication errors in logs', 'Gather user management documentation')"
-            },
-            "focus_areas": {
-              "type": "ARRAY",
-              "items": {"type": "STRING"},
-              "description": "Key areas to prioritize (e.g., ['error logs', 'recent changes', 'configuration'])",
-              "nullable": true
-            },
-            "expected_depth": {
-              "type": "STRING",
-              "enum": ["shallow", "moderate", "deep"],
-              "description": "How thorough the search should be based on request complexity",
-              "nullable": true
-            }
-          },
-          "required": ["pattern", "objective"]
-        }
-      },
-      "required": ["next_step", "reasoning", "confidence"]
-    },
-    "thinkingConfig": {
-      "thinkingBudget": 300
-    },
-  }
+"system_instruction": {
+"parts": [
+{
+"text": "{{system_prompt}}"
+}
+]
+},
+"contents": [
+{{#each conversation_history}}
+{
+"role": "{{this.role}}",
+{{#if this.parts}}
+"parts": {{json this.parts}}
+{{else}}
+"parts": [
+{
+"text": "[{{relative_time this.timestamp}}] {{this.content}}"
+}
+]
+{{/if}}
+}{{#unless @last}},{{/unless}}
+{{/each}}
+],
+"generationConfig": {
+"responseMimeType": "application/json",
+"responseSchema": {
+"type": "OBJECT",
+"properties": {
+"next_step": {
+"type": "STRING",
+"enum": ["acknowledge", "gathercontext", "executeaction", "validateprogress", "requestuserinput", "examinetool",
+"examineworkflow", "complete"],
+"description": "The next step to execute in the flow"
+},
+"reasoning": {
+"type": "STRING",
+"description": "Clear explanation of why this step is the most appropriate next action based on current state and
+conversation history"
+},
+"confidence": {
+"type": "NUMBER",
+"description": "Confidence level in this decision (0.0 to 1.0)"
+},
+"acknowledgment": {
+"type": "OBJECT",
+"description": "Acknowledgment details (required when next_step is acknowledge)",
+"properties": {
+"message": {
+"type": "STRING",
+"description": "The acknowledgment message to send to the user"
+},
+"further_action_required": {
+"type": "BOOLEAN",
+"description": "Whether the request requires further processing beyond acknowledgment. MUST be false for greetings,
+presence checks, or if your message ends with a question. Only true for explicit action requests."
+},
+"objective": {
+"type": "OBJECT",
+"description": "The understood objective from the user's request",
+"properties": {
+"primary_goal": {
+"type": "STRING",
+"description": "The main goal to accomplish"
+},
+"success_criteria": {
+"type": "ARRAY",
+"items": {
+"type": "STRING"
+},
+"description": "Measurable criteria for successful completion"
+},
+"constraints": {
+"type": "ARRAY",
+"items": {
+"type": "STRING"
+},
+"description": "Limitations or requirements to respect"
+},
+"context_from_history": {
+"type": "STRING",
+"description": "Relevant context from conversation history that informs this objective"
+},
+"inferred_intent": {
+"type": "STRING",
+"description": "The inferred intent behind the user's request"
+}
+},
+"required": ["primary_goal", "success_criteria", "constraints", "context_from_history", "inferred_intent"]
+}
+},
+"required": ["message", "further_action_required", "objective"]
+},
+"execute_action": {
+"type": "OBJECT",
+"description": "Execute a single tool or workflow action (required when next_step is execute_action)",
+"properties": {
+"type": {
+"type": "STRING",
+"enum": ["tool_call", "workflow_call"],
+"description": "The type of action to execute"
+},
+"details": {
+"type": "OBJECT",
+"description": "Action details containing tool/workflow information",
+"properties": {
+"tool_name": {
+"type": "STRING",
+"description": "The name of the tool to execute (required for tool_call)"
+},
+"workflow_name": {
+"type": "STRING",
+"description": "The name of the workflow to execute (required for workflow_call)"
+}
+}
+},
+"purpose": {
+"type": "STRING",
+"description": "The purpose of this action execution"
+}
+},
+"required": ["type", "details", "purpose"]
+},
+"examine_tool": {
+"type": "OBJECT",
+"description": "Tool examination details (required when next_step is examine_tool)",
+"properties": {
+"tool_name": {
+"type": "STRING",
+"description": "The name of the tool to examine"
+}
+},
+"required": ["tool_name"]
+},
+"examine_workflow": {
+"type": "OBJECT",
+"description": "Workflow examination details (required when next_step is examine_workflow)",
+"properties": {
+"workflow_name": {
+"type": "STRING",
+"description": "The name of the workflow to examine"
+}
+},
+"required": ["workflow_name"]
+},
+"context_gathering_directive": {
+"type": "OBJECT",
+"description": "MANDATORY when next_step is gathercontext. Structured directive for intelligent context gathering.",
+"properties": {
+"pattern": {
+"type": "STRING",
+"enum": ["troubleshooting", "implementation", "analysis", "historical", "exploration", "verification"],
+"description": "The search pattern based on user's request type"
+},
+"objective": {
+"type": "STRING",
+"description": "Specific goal for this context gathering (e.g., 'Find authentication errors in logs', 'Gather user
+management documentation')"
+},
+"focus_areas": {
+"type": "ARRAY",
+"items": {"type": "STRING"},
+"description": "Key areas to prioritize (e.g., ['error logs', 'recent changes', 'configuration'])",
+"nullable": true
+},
+"expected_depth": {
+"type": "STRING",
+"enum": ["shallow", "moderate", "deep"],
+"description": "How thorough the search should be based on request complexity",
+"nullable": true
+}
+},
+"required": ["pattern", "objective"]
+},
+"completion_message": {
+"type": "STRING",
+"description": "REQUIRED when next_step is 'complete'. A user-facing summary of what was accomplished, findings, or
+final response.",
+"nullable": true
+}
+},
+"required": ["next_step", "reasoning", "confidence"]
+},
+"thinkingConfig": {
+"thinkingBudget": 300
+},
+}
 }

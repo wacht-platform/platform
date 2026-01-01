@@ -16,6 +16,7 @@ pub struct StepDecision {
     pub examine_workflow: Option<ExamineWorkflowData>,
     pub context_gathering_directive: Option<ContextGatheringDirective>,
     pub memory_loading_directive: Option<MemoryLoadingDirective>,
+    pub completion_message: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -92,8 +93,6 @@ pub enum NextStep {
     ExecuteAction,
     #[serde(rename = "validateprogress")]
     ValidateProgress,
-    #[serde(rename = "deliverresponse")]
-    DeliverResponse,
     #[serde(rename = "requestuserinput")]
     RequestUserInput,
     #[serde(rename = "complete")]
