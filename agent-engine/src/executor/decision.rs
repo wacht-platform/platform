@@ -179,7 +179,11 @@ impl AgentExecutor {
                 return Ok(());
             }
 
+            println!("Iteration: {}", iteration);
+
             let decision = self.decide_next_step().await?;
+
+            println!("Decision: {:#?}", decision);
 
             match self.process_decision(decision).await {
                 Ok(should_continue) => {
@@ -345,8 +349,6 @@ impl AgentExecutor {
                 let validation_result = self.validate_execution().await?;
                 match validation_result.next_action {
                     NextAction::Complete => {
-                        // Validation says complete - but no message needed here
-                        // The LLM should choose Complete with completion_message instead
                         Ok(false)
                     }
                     NextAction::Continue => Ok(true),
@@ -357,7 +359,6 @@ impl AgentExecutor {
                 if let Some(directive) = decision.deep_reasoning_directive {
                     let (reasoning_result, signature) = self.execute_deep_reasoning(&directive).await?;
                     
-                    // Store the reasoning result as a system decision
                     self.store_conversation(
                         ConversationContent::SystemDecision {
                             step: "deep_reasoning".to_string(),
@@ -369,7 +370,7 @@ impl AgentExecutor {
                     )
                     .await?;
 
-                    Ok(true) // Continue processing after reasoning
+                    Ok(true)
                 } else {
                     Err(AppError::BadRequest(
                         "LongThinkAndReason requires deep_reasoning_directive".to_string(),

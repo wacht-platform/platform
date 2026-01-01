@@ -182,8 +182,6 @@ impl AgentExecutor {
             }
         }
 
-        println!("{:?}", history);
-
         history
     }
 
