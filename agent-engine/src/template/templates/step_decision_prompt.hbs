@@ -91,9 +91,11 @@ presence checks, or if your message ends with a question. Only true for explicit
 },
 "required": ["message", "further_action_required", "objective"]
 },
-"execute_action": {
+"actions": {
+"type": "ARRAY",
+"description": "List of actions to execute in parallel (max 10). Required when next_step is executeaction.",
+"items": {
 "type": "OBJECT",
-"description": "Execute a single tool or workflow action (required when next_step is execute_action)",
 "properties": {
 "type": {
 "type": "STRING",
@@ -111,20 +113,21 @@ presence checks, or if your message ends with a question. Only true for explicit
 "workflow_name": {
 "type": "STRING",
 "description": "The name of the workflow to execute (required for workflow_call)"
-},
-"parameters": {
-"type": "OBJECT",
-"description": "Input parameters for the tool or workflow (optional, if context allows precise generation)",
-"nullable": true
 }
 }
 },
 "purpose": {
 "type": "STRING",
-"description": "The purpose of this action execution"
+"description": "Clear purpose of this action - this becomes the primary context for parameter generation"
+},
+"context_messages": {
+"type": "INTEGER",
+"description": "Number of recent conversation messages to include for parameter generation (default: 1). Use purpose
+field as primary context."
 }
 },
 "required": ["type", "details", "purpose"]
+}
 },
 "memory_loading_directive": {
 "type": "OBJECT",

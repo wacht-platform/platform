@@ -141,6 +141,12 @@ pub struct ExecutionAction {
     pub action_type: TaskType,
     pub details: Value,
     pub purpose: String,
+    #[serde(default = "default_context_messages")]
+    pub context_messages: u32,
+}
+
+fn default_context_messages() -> u32 {
+    1
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

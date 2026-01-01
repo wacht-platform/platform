@@ -174,32 +174,33 @@ Access deeper memories beyond MRU. Use for patterns, past solutions, similar sce
 **Focus**: Text for semantic search, empty "" for high-value memories
 **When**: After context, before major actions, for patterns, complex problems
 
-### 4. executeaction - Precision Execution
-Single action at a time. Always verify preconditions.
+### 4. executeaction - Parallel Execution
+Execute 1-10 actions in parallel. Use `context_messages` to optimize token usage.
 
 **Structure**:
 ```json
 {
-  "type": "tool_call|workflow_call",
-  "tool_name": "exact_name_from_available_tools",
-  "workflow_name": "exact_name_from_available_workflows",
-  "purpose": "Specific goal (20-30 words max for system)"
+  "actions": [
+    {
+      "type": "tool_call|workflow_call",
+      "details": {"tool_name": "ToolName"},
+      "purpose": "Clear goal - this becomes primary context for parameter generation",
+      "context_messages": 1
+    }
+  ]
 }
 ```
 
-**Mandatory Pre-checks**:
-```
-1. Scan history: Has this been executed? → validateprogress instead
-2. Check failures: Did this fail before? → different approach
-3. Verify params: Have everything needed? → gathercontext if not
-4. Count attempts: Is this 3rd try? → STOP and acknowledge
-```
+**Key Fields**:
+- `purpose`: Primary context for parameter generation - summarize what the tool needs to know
+- `context_messages`: How many recent messages to include (default: 1). Lower = faster + cheaper
 
-**Why Single Actions**:
-- Immediate feedback enables adaptation
-- Failures don't cascade
-- User sees incremental progress
-- Can pivot strategy instantly
+**When to batch**:
+- Independent API calls (e.g., checking multiple companies)
+- Parallel data gathering
+- Non-dependent tool chains
+
+**Limits**: Max 10 parallel actions. Errors don't stop other actions.
 
 ### 5. complete - Task Completion & Final Response
 **CRITICAL**: You MUST provide a `completion_message` to communicate results to the user.

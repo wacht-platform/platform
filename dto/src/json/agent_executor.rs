@@ -10,10 +10,8 @@ pub struct StepDecision {
     pub next_step: NextStep,
     pub reasoning: String,
     pub confidence: f64,
-    pub execute_action: Option<ExecutionAction>,
+    pub actions: Option<Vec<ExecutionAction>>,
     pub acknowledgment: Option<AcknowledgmentData>,
-    pub examine_tool: Option<ExamineToolData>,
-    pub examine_workflow: Option<ExamineWorkflowData>,
     pub context_gathering_directive: Option<ContextGatheringDirective>,
     pub memory_loading_directive: Option<MemoryLoadingDirective>,
     pub deep_reasoning_directive: Option<DeepReasoningDirective>,
@@ -82,16 +80,6 @@ pub enum MemoryScope {
     CurrentSession, // Only this conversation's memories
     CrossSession,   // Agent's learned patterns across all conversations
     Universal,      // Both current + cross-session memories
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ExamineToolData {
-    pub tool_name: String,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ExamineWorkflowData {
-    pub workflow_name: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

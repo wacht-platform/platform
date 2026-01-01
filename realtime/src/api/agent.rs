@@ -246,6 +246,11 @@ async fn handle_client(
                                 let _ = message.ack().await;
                             }
                             Some(Err(e)) => {
+                                let error_str = e.to_string();
+                                if error_str.contains("heartbeat") || error_str.contains("responders") {
+                                    warn!("NATS stream connection lost ({}), cleaning up consumer task", error_str);
+                                    break;
+                                }
                                 error!("Error receiving message: {}", e);
                             }
                             None => {
