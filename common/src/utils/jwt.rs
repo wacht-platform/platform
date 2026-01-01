@@ -86,6 +86,7 @@ pub fn verify_token<T: for<'de> Deserialize<'de>>(
 
     let mut validation = Validation::new(algorithm);
     validation.validate_exp = true;
+    validation.validate_aud = false; 
 
     decode::<T>(token, &decoding_key, &validation)
         .map_err(|e| AppError::BadRequest(format!("Invalid token: {}", e)))
