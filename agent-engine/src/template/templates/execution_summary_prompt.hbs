@@ -1,74 +1,78 @@
 {
-  "system_instruction": {
-      "parts": [
-        {
-          "text": "{{system_prompt}}"
-        }
-      ]
-   },
-  "contents": [
-    {{#each execution_messages}}
-    {
-      "role": "{{this.role}}",
-      "parts": [
-        {
-          "text": "{{json_string this.content}}"
-        }
-      ]
-    }{{#unless @last}},{{/unless}}
-    {{/each}},
-    {
-      "role": "user",
-      "parts": [
-        {
-          "text": "Analyze this execution and extract:\n1. Execution Summary: What the assistant accomplished (be extremely concise)\n2. Memories: Categorized insights with importance scores\n3. Focus on patterns, successful approaches, and learnings that will help in future similar situations"
-        }
-      ]
-    }
-  ],
-  "generationConfig": {
-    "responseMimeType": "application/json",
-    "responseSchema": {
-      "type": "OBJECT",
-      "properties": {
-        "agent_execution": {
-          "type": "STRING",
-          "description": "A concise summary of ONLY what the assistant did or said. Never include user messages. Use single words for simple responses like 'Greeted.' or 'Acknowledged.'"
-        },
-        "memories": {
-          "type": "ARRAY",
-          "items": {
-            "type": "OBJECT",
-            "properties": {
-              "content": {
-                "type": "STRING",
-                "description": "The memory content - a pattern, insight, fact, or learning"
-              },
-              "category": {
-                "type": "STRING",
-                "enum": ["procedural", "semantic", "episodic", "working"],
-                "description": "Memory category: procedural (how-to), semantic (facts), episodic (events), working (active context)"
-              },
-              "importance": {
-                "type": "NUMBER",
-                "description": "Importance score from 0.0 to 1.0"
-              },
-              "tags": {
-                "type": "ARRAY",
-                "items": {
-                  "type": "STRING"
-                },
-                "description": "Tags like 'search_pattern', 'tool_usage', 'error_recovery', 'user_preference'"
-              }
-            },
-            "required": ["content", "category", "importance"]
-          },
-          "description": "Categorized memories with importance scores extracted from the execution"
-        }
-      },
-      "required": ["agent_execution", "memories"]
-    },
-    "temperature": 0.2,
-    "maxOutputTokens": 1000
-  }
+"system_instruction": {
+"parts": [
+{
+"text": "{{system_prompt}}"
+}
+]
+},
+"contents": [
+{{#each execution_messages}}
+{
+"role": "{{this.role}}",
+"parts": [
+{
+"text": "{{json_string this.content}}"
+}
+]
+}{{#unless @last}},{{/unless}}
+{{/each}},
+{
+"role": "user",
+"parts": [
+{
+"text": "Analyze this execution and extract:\n1. Execution Summary: What the assistant accomplished (be extremely
+concise)\n2. Memories: Categorized insights with importance scores\n3. Focus on patterns, successful approaches, and
+learnings that will help in future similar situations"
+}
+]
+}
+],
+"generationConfig": {
+"responseMimeType": "application/json",
+"responseSchema": {
+"type": "OBJECT",
+"properties": {
+"agent_execution": {
+"type": "STRING",
+"description": "A concise summary of ONLY what the assistant did or said. Only include user messages where the user
+mentioned something important. Use single words
+for simple responses like 'Greeted.' or 'Acknowledged.'"
+},
+"memories": {
+"type": "ARRAY",
+"items": {
+"type": "OBJECT",
+"properties": {
+"content": {
+"type": "STRING",
+"description": "The memory content - a pattern, insight, fact, or learning"
+},
+"category": {
+"type": "STRING",
+"enum": ["procedural", "semantic", "episodic", "working"],
+"description": "Memory category: procedural (how-to), semantic (facts), episodic (events), working (active context)"
+},
+"importance": {
+"type": "NUMBER",
+"description": "Importance score from 0.0 to 1.0"
+},
+"tags": {
+"type": "ARRAY",
+"items": {
+"type": "STRING"
+},
+"description": "Tags like 'search_pattern', 'tool_usage', 'error_recovery', 'user_preference'"
+}
+},
+"required": ["content", "category", "importance"]
+},
+"description": "Categorized memories with importance scores extracted from the execution"
+}
+},
+"required": ["agent_execution", "memories"]
+},
+"temperature": 0.2,
+"maxOutputTokens": 8192
+}
 }
