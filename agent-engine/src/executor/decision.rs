@@ -8,10 +8,10 @@ use dto::json::agent_executor::{
     ContextGatheringDirective, ConverseRequest, DeepReasoningDirective, NextStep, ObjectiveDefinition, StepDecision,
 };
 use dto::json::agent_responses::{
-    ActionsList, NextAction, TaskExecution, TaskType, ValidationResponse,
+    ActionsList, TaskExecution, TaskType,
 };
 use dto::json::{
-    StepDecisionContext, StreamEvent, UserInputOutputState, ValidationContext,
+    StepDecisionContext, StreamEvent, UserInputOutputState,
     WorkflowExecutionResult, WorkflowTaskExecution,
 };
 use models::{
@@ -347,16 +347,6 @@ impl AgentExecutor {
                 Ok(true)
             }
 
-            NextStep::ValidateProgress => {
-                let validation_result = self.validate_execution().await?;
-                match validation_result.next_action {
-                    NextAction::Complete => {
-                        Ok(false)
-                    }
-                    NextAction::Continue => Ok(true),
-                }
-            }
-
             NextStep::LongThinkAndReason => {
                 if let Some(directive) = decision.deep_reasoning_directive {
                     let (reasoning_result, signature) = self.execute_deep_reasoning(&directive).await?;
@@ -383,72 +373,6 @@ impl AgentExecutor {
             NextStep::RequestUserInput => {
                 self.request_user_input().await?;
                 Ok(false)
-            }
-
-            NextStep::ExamineTool => {
-                if let Some(examine_data) = decision.examine_tool {
-                    let tool = self
-                        .agent
-                        .tools
-                        .iter()
-                        .find(|t| t.name == examine_data.tool_name)
-                        .ok_or_else(|| {
-                            AppError::Internal(format!(
-                                "Tool '{}' not found",
-                                examine_data.tool_name
-                            ))
-                        })?;
-
-                    self.store_conversation(
-                        ConversationContent::ContextResults {
-                            query: format!("examine_tool: {}", examine_data.tool_name),
-                            results: serde_json::to_value(tool)?,
-                            result_count: 1,
-                            timestamp: chrono::Utc::now(),
-                        },
-                        ConversationMessageType::ContextResults,
-                    )
-                    .await?;
-
-                    Ok(true)
-                } else {
-                    Err(AppError::Internal(
-                        "Examine tool data missing for examine_tool step".to_string(),
-                    ))
-                }
-            }
-
-            NextStep::ExamineWorkflow => {
-                if let Some(examine_data) = decision.examine_workflow {
-                    let workflow = self
-                        .agent
-                        .workflows
-                        .iter()
-                        .find(|w| w.name == examine_data.workflow_name)
-                        .ok_or_else(|| {
-                            AppError::Internal(format!(
-                                "Workflow '{}' not found",
-                                examine_data.workflow_name
-                            ))
-                        })?;
-
-                    self.store_conversation(
-                        ConversationContent::ContextResults {
-                            query: format!("examine_workflow: {}", examine_data.workflow_name),
-                            results: serde_json::to_value(workflow)?,
-                            result_count: 1,
-                            timestamp: chrono::Utc::now(),
-                        },
-                        ConversationMessageType::ContextResults,
-                    )
-                    .await?;
-
-                    Ok(true)
-                } else {
-                    Err(AppError::Internal(
-                        "Examine workflow data missing for examine_workflow step".to_string(),
-                    ))
-                }
             }
 
             NextStep::Complete => {
@@ -558,67 +482,6 @@ impl AgentExecutor {
         }
 
         Ok(decision)
-    }
-
-    async fn validate_execution(&mut self) -> Result<ValidationResponse, AppError> {
-        let context = ValidationContext {
-            conversation_history: self.get_conversation_history_for_llm().await,
-            user_request: self.user_request.clone(),
-            current_objective: self
-                .current_objective
-                .as_ref()
-                .map(|o| serde_json::to_value(o).unwrap()),
-            task_results: self
-                .task_results
-                .iter()
-                .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
-                .collect(),
-            available_tools: self
-                .agent
-                .tools
-                .iter()
-                .map(|t| serde_json::to_value(t).unwrap())
-                .collect(),
-            available_workflows: self
-                .agent
-                .workflows
-                .iter()
-                .map(|w| serde_json::to_value(w).unwrap())
-                .collect(),
-            available_knowledge_bases: self
-                .agent
-                .knowledge_bases
-                .iter()
-                .map(|kb| serde_json::to_value(kb).unwrap())
-                .collect(),
-        };
-
-        let request_body = render_template_with_prompt(
-            AgentTemplates::VALIDATION,
-            serde_json::to_value(&context)?,
-        )
-        .map_err(|e| AppError::Internal(format!("Failed to render validation template: {e}")))?;
-
-        let (validation, _) = self
-            .create_weak_llm()?
-            .generate_structured_content::<ValidationResponse>(request_body)
-            .await?;
-
-        self.store_conversation(
-            ConversationContent::AssistantValidation {
-                validation_result: serde_json::to_value(&validation.validation_result)?,
-                loop_decision: match validation.next_action {
-                    NextAction::Continue => "continue".to_string(),
-                    NextAction::Complete => "complete".to_string(),
-                },
-                decision_reasoning: validation.reasoning.clone(),
-                next_iteration_focus: validation.next_focus.clone(),
-            },
-            ConversationMessageType::AssistantValidation,
-        )
-        .await?;
-
-        Ok(validation)
     }
 
     async fn generate_and_send_summary(&mut self) -> Result<(), AppError> {

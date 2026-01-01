@@ -29,8 +29,8 @@
 "properties": {
 "next_step": {
 "type": "STRING",
-"enum": ["acknowledge", "gathercontext", "executeaction", "validateprogress", "requestuserinput", "longthinkandreason",
-"examinetool", "examineworkflow", "complete"],
+"enum": ["acknowledge", "gathercontext", "loadmemory", "executeaction", "requestuserinput", "longthinkandreason",
+"complete"],
 "description": "The next step to execute in the flow"
 },
 "reasoning": {
@@ -111,6 +111,11 @@ presence checks, or if your message ends with a question. Only true for explicit
 "workflow_name": {
 "type": "STRING",
 "description": "The name of the workflow to execute (required for workflow_call)"
+},
+"parameters": {
+"type": "OBJECT",
+"description": "Input parameters for the tool or workflow (optional, if context allows precise generation)",
+"nullable": true
 }
 }
 },
@@ -121,27 +126,31 @@ presence checks, or if your message ends with a question. Only true for explicit
 },
 "required": ["type", "details", "purpose"]
 },
-"examine_tool": {
+"memory_loading_directive": {
 "type": "OBJECT",
-"description": "Tool examination details (required when next_step is examine_tool)",
+"description": "MANDATORY when next_step is loadmemory. Directive for loading deeper memories.",
 "properties": {
-"tool_name": {
+"scope": {
 "type": "STRING",
-"description": "The name of the tool to examine"
+"enum": ["current_session", "cross_session", "universal"],
+"description": "Memory scope: current_session (this chat), cross_session (agent patterns), universal (both)"
+},
+"focus": {
+"type": "STRING",
+"description": "Semantic search query for finding relevant memories, or empty for high-value memories"
+},
+"categories": {
+"type": "ARRAY",
+"items": {"type": "STRING"},
+"description": "Memory categories to search: procedural (how-to), semantic (facts), episodic (events), working (state)"
+},
+"depth": {
+"type": "STRING",
+"enum": ["shallow", "moderate", "deep"],
+"description": "How deep to search for memories"
 }
 },
-"required": ["tool_name"]
-},
-"examine_workflow": {
-"type": "OBJECT",
-"description": "Workflow examination details (required when next_step is examine_workflow)",
-"properties": {
-"workflow_name": {
-"type": "STRING",
-"description": "The name of the workflow to examine"
-}
-},
-"required": ["workflow_name"]
+"required": ["scope", "focus"]
 },
 "context_gathering_directive": {
 "type": "OBJECT",

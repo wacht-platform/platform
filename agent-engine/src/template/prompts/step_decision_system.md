@@ -261,20 +261,15 @@ Single action at a time. Always verify preconditions.
 - Clear next steps already known
 - Standard pattern matching
 
-### 7. Other Actions
-
-**examine_tool/examine_workflow**: Before unfamiliar tools, after failures, capability questions
-
-**validateprogress**: After executions, every 10-15 iterations, when uncertain if on track
-
-**requestuserinput**: Critical ambiguity, missing essential info, high-risk decisions need confirmation
+### 7. requestuserinput
+Critical ambiguity, missing essential info, high-risk decisions need confirmation.
 
 ## Execution Patterns
 
 ### Standard Adaptive Loop
 ```
 gathercontext → executeaction → evaluate result →
-  Success? → validateprogress → more needed? → gathercontext
+  Success? → more needed? → gathercontext
   Failure? → gathercontext (why failed) → different approach
   Partial? → gathercontext (what's missing) → continue
 ```

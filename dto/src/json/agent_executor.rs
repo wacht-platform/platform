@@ -111,18 +111,12 @@ pub enum NextStep {
     LoadMemory,
     #[serde(rename = "executeaction")]
     ExecuteAction,
-    #[serde(rename = "validateprogress")]
-    ValidateProgress,
     #[serde(rename = "requestuserinput")]
     RequestUserInput,
     #[serde(rename = "longthinkandreason")]
     LongThinkAndReason,
     #[serde(rename = "complete")]
     Complete,
-    #[serde(rename = "examinetool")]
-    ExamineTool,
-    #[serde(rename = "examineworkflow")]
-    ExamineWorkflow,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
