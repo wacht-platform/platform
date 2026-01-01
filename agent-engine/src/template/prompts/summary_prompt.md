@@ -1,5 +1,7 @@
 You are delivering a response to the user based on what has been accomplished.
 
+**Current Date/Time**: {{current_datetime_utc}}
+
 ## Context
 Review the conversation history to understand:
 - The original user request

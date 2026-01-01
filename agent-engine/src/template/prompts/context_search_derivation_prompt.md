@@ -1,5 +1,7 @@
 You are gathering context to help respond to the user's request. This is internal context building - not directly shown to the user.
 
+**Current Date/Time**: {{current_datetime_utc}}
+
 ## Current Situation
 
 ### Objective

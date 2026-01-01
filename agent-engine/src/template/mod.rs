@@ -1,3 +1,4 @@
+use chrono::Utc;
 use handlebars::Handlebars;
 use serde_json::Value;
 use std::sync::LazyLock;
@@ -39,6 +40,15 @@ pub fn render_template_with_prompt(
     template_name: &str,
     mut context: Value,
 ) -> Result<String, handlebars::RenderError> {
+    // Inject current UTC datetime into all templates
+    if let Some(obj) = context.as_object_mut() {
+        let now = Utc::now();
+        obj.insert(
+            "current_datetime_utc".to_string(),
+            Value::String(now.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+        );
+    }
+
     let system_prompt = match template_name {
         AgentTemplates::STEP_DECISION => prompt_loader::get_prompt("step_decision_system"),
         AgentTemplates::DEEP_REASONING => prompt_loader::get_prompt("deep_reasoning_system"),

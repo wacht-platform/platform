@@ -16,7 +16,7 @@ impl AgentExecutor {
         let start = Instant::now();
         let result = match &action.action_type {
             TaskType::ToolCall => {
-                let tool_call = self.parse_tool_call(&action.details).await?;
+                let tool_call = self.parse_tool_call(&action.details, &action.purpose).await?;
                 let tool = self
                     .agent
                     .tools
@@ -137,13 +137,13 @@ impl AgentExecutor {
         Ok(json!(result))
     }
 
-    async fn parse_tool_call(&self, details: &Value) -> Result<ToolCall, AppError> {
+    async fn parse_tool_call(&self, details: &Value, action_purpose: &str) -> Result<ToolCall, AppError> {
         let tool_name = details["tool_name"]
             .as_str()
             .ok_or_else(|| AppError::BadRequest("Tool name not specified".to_string()))?;
 
         let tool = self.find_tool(tool_name)?;
-        let params = self.get_tool_parameters(tool, details).await?;
+        let params = self.get_tool_parameters(tool, details, action_purpose).await?;
 
         Ok(ToolCall {
             tool_name: tool_name.to_string(),
@@ -159,9 +159,9 @@ impl AgentExecutor {
             .ok_or_else(|| AppError::BadRequest(format!("Tool '{tool_name}' not found")))
     }
 
-    async fn get_tool_parameters(&self, tool: &AiTool, details: &Value) -> Result<Value, AppError> {
+    async fn get_tool_parameters(&self, tool: &AiTool, details: &Value, action_purpose: &str) -> Result<Value, AppError> {
         if self.tool_needs_llm_params(tool) {
-            let generated_params = self.generate_tool_parameters(tool).await?;
+            let generated_params = self.generate_tool_parameters(tool, action_purpose).await?;
             return match &tool.configuration {
                 AiToolConfiguration::Api(api_config) => {
                     self.organize_api_parameters(generated_params, api_config)
@@ -201,7 +201,7 @@ impl AgentExecutor {
         }
     }
 
-    async fn generate_tool_parameters(&self, tool: &AiTool) -> Result<Value, AppError> {
+    async fn generate_tool_parameters(&self, tool: &AiTool, action_purpose: &str) -> Result<Value, AppError> {
         let parameter_schema = self.build_parameter_schema(tool)?;
 
         if parameter_schema == json!({}) {
@@ -209,7 +209,7 @@ impl AgentExecutor {
         }
 
         let response = self
-            .request_parameter_generation(tool, &parameter_schema)
+            .request_parameter_generation(tool, &parameter_schema, action_purpose)
             .await?;
 
         if !response.parameter_generation.can_generate {
@@ -292,6 +292,7 @@ impl AgentExecutor {
         &self,
         tool: &AiTool,
         parameter_schema: &Value,
+        action_purpose: &str,
     ) -> Result<ParameterGenerationResponse, AppError> {
         let mut context_json = json!({
             "conversation_history": self.get_conversation_history_for_llm().await,
@@ -301,6 +302,7 @@ impl AgentExecutor {
             "user_request": self.user_request,
             "current_objective": self.current_objective,
             "conversation_insights": self.conversation_insights,
+            "action_purpose": action_purpose,
         });
 
         if let Some(ref sys_instructions) = self.system_instructions {

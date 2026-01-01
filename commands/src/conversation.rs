@@ -39,9 +39,6 @@ impl CreateConversationCommand {
             } => {
                 format!("{} {}", acknowledgment_message, reasoning)
             }
-            ConversationContent::AssistantIdeation {
-                reasoning_summary, ..
-            } => reasoning_summary.clone(),
             ConversationContent::ExecutionSummary { token_count, .. } => {
                 // For execution summaries, use the pre-calculated token count
                 return Ok(*token_count as i32);
@@ -87,10 +84,7 @@ impl Command for CreateConversationCommand {
             ConversationMessageType::UserMessage => "user_message",
             ConversationMessageType::AgentResponse => "agent_response",
             ConversationMessageType::AssistantAcknowledgment => "assistant_acknowledgment",
-            ConversationMessageType::AssistantIdeation => "assistant_ideation",
-            ConversationMessageType::AssistantActionPlanning => "assistant_action_planning",
             ConversationMessageType::ActionExecutionResult => "action_execution_result",
-            ConversationMessageType::AssistantValidation => "assistant_validation",
             ConversationMessageType::SystemDecision => "system_decision",
             ConversationMessageType::ContextResults => "context_results",
             ConversationMessageType::UserInputRequest => "user_input_request",

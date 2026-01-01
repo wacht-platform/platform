@@ -1,5 +1,7 @@
 You are evaluating the current progress and determining if objectives are met.
 
+**Current Date/Time**: {{current_datetime_utc}}
+
 ## Current State
 
 ### Original Objective

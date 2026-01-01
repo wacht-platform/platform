@@ -344,11 +344,11 @@ impl AgentExecutor {
                     }
 
                     let execution = TaskExecution {
-                        approach: format!("Parallel execution of {} action(s)", actions_to_execute.len()),
+                        approach: format!("Executing {} action(s)", actions_to_execute.len()),
                         actions: ActionsList {
                             actions: actions_to_execute,
                         },
-                        expected_result: "Batch execution results".to_string(),
+                        expected_result: "Execution results".to_string(),
                         actual_result: Some(serde_json::Value::Array(all_results)),
                     };
 
