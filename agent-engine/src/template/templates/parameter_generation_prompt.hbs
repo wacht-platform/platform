@@ -1,61 +1,59 @@
 {
-  "system_instruction": {
-      "parts": [
-        {
-          "text": "{{system_prompt}}"
-        }
-      ]
-   },
-  "contents": [
-    {{#each conversation_history}}
-    {
-      "role": "{{this.role}}",
-      {{#if this.parts}}
-      "parts": {{json this.parts}}
-      {{else}}
-      "parts": [
-        {
-          "text": "{{this.content}}"
-        }
-      ]
-      {{/if}}
-    }{{#unless @last}},{{/unless}}
-    {{/each}}
-  ],
-  "generationConfig": {
-    "thinkingConfig": {
-      "thinkingBudget": 32
-    },
-    "responseMimeType": "application/json",
-    "responseSchema": {
-      "type": "OBJECT",
-      "properties": {
-        "parameter_generation": {
-          "type": "OBJECT",
-          "properties": {
-            "can_generate": {
-              "type": "BOOLEAN",
-              "description": "Whether all required parameters can be generated"
-            },
-            "missing_information": {
-              "type": "ARRAY",
-              "items": {
-                "type": "STRING"
-              },
-              "description": "List of missing information preventing parameter generation"
-            },
-            "parameters": {{json parameter_schema}}
-          },
-          "required": ["can_generate", "missing_information", "parameters"]
-        },
-        "execution_notes": {
-          "type": "STRING",
-          "description": "Any notes about the parameter generation"
-        }
-      },
-      "required": ["parameter_generation", "execution_notes"]
-    },
-    "temperature": 0.3,
-    "maxOutputTokens": 8192
-  }
+"system_instruction": {
+"parts": [
+{
+"text": "{{system_prompt}}"
+}
+]
+},
+"contents": [
+{{#each conversation_history}}
+{
+"role": "{{this.role}}",
+{{#if this.parts}}
+"parts": {{json this.parts}}
+{{else}}
+"parts": [
+{
+"text": "{{this.content}}"
+}
+]
+{{/if}}
+}{{#unless @last}},{{/unless}}
+{{/each}}
+],
+"generationConfig": {
+
+"responseMimeType": "application/json",
+"responseSchema": {
+"type": "OBJECT",
+"properties": {
+"parameter_generation": {
+"type": "OBJECT",
+"properties": {
+"can_generate": {
+"type": "BOOLEAN",
+"description": "Whether all required parameters can be generated"
+},
+"missing_information": {
+"type": "ARRAY",
+"items": {
+"type": "STRING"
+},
+"description": "List of missing information preventing parameter generation"
+},
+"parameters": {{json parameter_schema}}
+},
+"required": ["can_generate", "missing_information", "parameters"]
+},
+"execution_notes": {
+"type": "STRING",
+"description": "Any notes about the parameter generation"
+}
+},
+"required": ["parameter_generation", "execution_notes"]
+},
+"temperature": 0.3,
+"maxOutputTokens": 8192
+}
 }

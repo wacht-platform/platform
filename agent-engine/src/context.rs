@@ -649,7 +649,7 @@ impl ContextOrchestrator {
             render_template_with_prompt(AgentTemplates::CONTEXT_SEARCH_DERIVATION, template_data)
                 .map_err(|e| AppError::Internal(format!("Failed to render template: {e}")))?;
 
-        let derivation = self
+        let (derivation, _) = self
             .create_gemini_client()?
             .generate_structured_content::<ContextSearchDerivation>(request_body)
             .await?;

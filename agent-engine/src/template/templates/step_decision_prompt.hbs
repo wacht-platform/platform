@@ -29,8 +29,8 @@
 "properties": {
 "next_step": {
 "type": "STRING",
-"enum": ["acknowledge", "gathercontext", "executeaction", "validateprogress", "requestuserinput", "examinetool",
-"examineworkflow", "complete"],
+"enum": ["acknowledge", "gathercontext", "executeaction", "validateprogress", "requestuserinput", "longthinkandreason",
+"examinetool", "examineworkflow", "complete"],
 "description": "The next step to execute in the flow"
 },
 "reasoning": {
@@ -177,12 +177,33 @@ management documentation')"
 "description": "REQUIRED when next_step is 'complete'. A user-facing summary of what was accomplished, findings, or
 final response.",
 "nullable": true
+},
+"deep_reasoning_directive": {
+"type": "OBJECT",
+"description": "REQUIRED when next_step is 'longthinkandreason'. Provides context for deep reasoning.",
+"properties": {
+"problem_statement": {
+"type": "STRING",
+"description": "Clear statement of the complex problem to reason about"
+},
+"context_summary": {
+"type": "STRING",
+"description": "Summary of all relevant context gathered so far"
+},
+"expected_output_type": {
+"type": "STRING",
+"enum": ["analysis", "decision", "plan", "synthesis", "debugging"],
+"description": "Type of reasoning output expected"
+}
+},
+"required": ["problem_statement", "context_summary", "expected_output_type"],
+"nullable": true
 }
 },
 "required": ["next_step", "reasoning", "confidence"]
 },
 "thinkingConfig": {
-"thinkingBudget": 30
+"thinkingLevel": "low"
 },
 }
 }

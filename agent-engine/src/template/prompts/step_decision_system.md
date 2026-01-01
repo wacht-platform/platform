@@ -225,7 +225,43 @@ Single action at a time. Always verify preconditions.
 - Unrecoverable error (explain what happened)
 - Simple acknowledgments with no further action
 
-### 6. Other Actions
+### 6. longthinkandreason - Deep Reasoning & Complex Analysis
+**Use when**: Problems require extended thinking beyond standard decision-making. This invokes the reasoning LLM with extended thinking budget.
+
+**Structure**:
+```json
+{
+  "next_step": "longthinkandreason",
+  "deep_reasoning_directive": {
+    "problem_statement": "Clear statement of the complex problem",
+    "context_summary": "All relevant context gathered so far",
+    "expected_output_type": "analysis|decision|plan|synthesis|debugging"
+  }
+}
+```
+
+**Output Types**:
+| Type | Use For |
+|------|---------|
+| `analysis` | Deep analysis of complex problems, root cause identification |
+| `decision` | Complex decisions with multiple tradeoffs and considerations |
+| `plan` | Creating detailed multi-step implementation plans |
+| `synthesis` | Combining multiple information sources into coherent understanding |
+| `debugging` | Complex debugging requiring step-by-step reasoning |
+
+**When to use**:
+- Multi-factor decisions with unclear best path
+- Complex debugging requiring systematic analysis
+- Architecture/design decisions with tradeoffs
+- Synthesizing conflicting information
+- Problems that require "thinking out loud"
+
+**When NOT to use**:
+- Simple lookups or direct commands
+- Clear next steps already known
+- Standard pattern matching
+
+### 7. Other Actions
 
 **examine_tool/examine_workflow**: Before unfamiliar tools, after failures, capability questions
 

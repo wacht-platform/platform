@@ -5,7 +5,7 @@ use crate::template::{render_template_with_prompt, AgentTemplates};
 use commands::{Command, UpdateExecutionContextQuery};
 use common::error::AppError;
 use dto::json::agent_executor::{
-    ContextGatheringDirective, ConverseRequest, NextStep, ObjectiveDefinition, StepDecision,
+    ContextGatheringDirective, ConverseRequest, DeepReasoningDirective, NextStep, ObjectiveDefinition, StepDecision,
 };
 use dto::json::agent_responses::{
     ActionsList, NextAction, TaskExecution, TaskType, ValidationResponse,
@@ -193,6 +193,7 @@ impl AgentExecutor {
                             step: "error_encountered".to_string(),
                             reasoning: format!("Encountered unexpected error: {}. Continuing with available information.", e),
                             confidence: 0.5,
+                            thought_signature: None,
                         },
                         ConversationMessageType::SystemDecision,
                     ).await?;
@@ -210,6 +211,7 @@ impl AgentExecutor {
                             acknowledgment_message: ack_data.message,
                             further_action_required: ack_data.further_action_required,
                             reasoning: decision.reasoning.clone(),
+                            thought_signature: decision.thought_signature.clone(),
                         },
                         ConversationMessageType::AssistantAcknowledgment,
                     )
@@ -351,6 +353,30 @@ impl AgentExecutor {
                 }
             }
 
+            NextStep::LongThinkAndReason => {
+                if let Some(directive) = decision.deep_reasoning_directive {
+                    let (reasoning_result, signature) = self.execute_deep_reasoning(&directive).await?;
+                    
+                    // Store the reasoning result as a system decision
+                    self.store_conversation(
+                        ConversationContent::SystemDecision {
+                            step: "deep_reasoning".to_string(),
+                            reasoning: reasoning_result.analysis.clone(),
+                            confidence: reasoning_result.confidence as f32,
+                            thought_signature: signature,
+                        },
+                        ConversationMessageType::SystemDecision,
+                    )
+                    .await?;
+
+                    Ok(true) // Continue processing after reasoning
+                } else {
+                    Err(AppError::BadRequest(
+                        "LongThinkAndReason requires deep_reasoning_directive".to_string(),
+                    ))
+                }
+            }
+
             NextStep::RequestUserInput => {
                 self.request_user_input().await?;
                 Ok(false)
@@ -430,6 +456,7 @@ impl AgentExecutor {
                         ConversationContent::AgentResponse {
                             response: message.clone(),
                             context_used: Default::default(),
+                            thought_signature: decision.thought_signature.clone(),
                         },
                         ConversationMessageType::AgentResponse,
                     )
@@ -503,10 +530,12 @@ impl AgentExecutor {
                 AppError::Internal(format!("Failed to render step decision template: {e}"))
             })?;
 
-        let decision = self
+        let (mut decision, signature) = self
             .create_strong_llm()?
             .generate_structured_content::<StepDecision>(request_body)
             .await?;
+
+        decision.thought_signature = signature.clone();
 
         if decision.acknowledgment.is_none() {
             self.store_conversation(
@@ -514,6 +543,7 @@ impl AgentExecutor {
                     step: format!("{:?}", decision.next_step).to_lowercase(),
                     reasoning: decision.reasoning.clone(),
                     confidence: decision.confidence as f32,
+                    thought_signature: signature,
                 },
                 ConversationMessageType::SystemDecision,
             )
@@ -562,7 +592,7 @@ impl AgentExecutor {
         )
         .map_err(|e| AppError::Internal(format!("Failed to render validation template: {e}")))?;
 
-        let validation = self
+        let (validation, _) = self
             .create_weak_llm()?
             .generate_structured_content::<ValidationResponse>(request_body)
             .await?;
@@ -598,7 +628,7 @@ impl AgentExecutor {
         )
         .map_err(|e| AppError::Internal(format!("Failed to render summary template: {e}")))?;
 
-        let summary = self
+        let (summary, _) = self
             .create_weak_llm()?
             .generate_structured_content::<Value>(request_body)
             .await?;
@@ -607,6 +637,7 @@ impl AgentExecutor {
             ConversationContent::AgentResponse {
                 response: summary.get("response").unwrap().as_str().unwrap().into(),
                 context_used: Default::default(),
+                thought_signature: None,
             },
             ConversationMessageType::AgentResponse,
         )
@@ -703,9 +734,10 @@ impl AgentExecutor {
             AppError::Internal(format!("Failed to render user input request template: {e}"))
         })?;
 
-        self.create_weak_llm()?
+        let (response, _) = self.create_weak_llm()?
             .generate_structured_content::<serde_json::Value>(request_body)
-            .await
+            .await?;
+        Ok(response)
     }
 
     fn parse_user_input_request(
@@ -774,8 +806,7 @@ impl AgentExecutor {
         ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
     }
 
-    /// Reasoning LLM - Used for complex reasoning tasks (future use)
-    #[allow(dead_code)]
+    /// Reasoning LLM - Used for complex reasoning tasks with extended thinking
     pub(super) fn create_reasoning_llm(&self) -> Result<GeminiClient, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
         Ok(GeminiClient::new(
@@ -783,4 +814,40 @@ impl AgentExecutor {
             Some("gemini-3-pro-preview".to_string()),
         ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
     }
+
+    /// Execute deep reasoning using the reasoning LLM with extended thinking budget
+    async fn execute_deep_reasoning(
+        &self,
+        directive: &DeepReasoningDirective,
+    ) -> Result<(DeepReasoningResult, Option<String>), AppError> {
+        let context = serde_json::json!({
+            "agent_name": self.agent.name,
+            "agent_description": self.agent.description,
+            "problem_statement": directive.problem_statement,
+            "context_summary": directive.context_summary,
+            "expected_output_type": format!("{:?}", directive.expected_output_type).to_lowercase(),
+            "conversation_history": self.get_conversation_history_for_llm().await,
+        });
+
+        let request_body = render_template_with_prompt(AgentTemplates::DEEP_REASONING, context)
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to render deep reasoning template: {e}"))
+            })?;
+
+        self.create_reasoning_llm()?
+            .generate_structured_content::<DeepReasoningResult>(request_body)
+            .await
+    }
 }
+
+/// Result from deep reasoning analysis
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct DeepReasoningResult {
+    pub analysis: String,
+    pub conclusion: String,
+    pub next_actions: Vec<String>,
+    pub confidence: f64,
+    #[serde(default)]
+    pub caveats: Vec<String>,
+}
+

@@ -16,7 +16,17 @@ pub struct StepDecision {
     pub examine_workflow: Option<ExamineWorkflowData>,
     pub context_gathering_directive: Option<ContextGatheringDirective>,
     pub memory_loading_directive: Option<MemoryLoadingDirective>,
+    pub deep_reasoning_directive: Option<DeepReasoningDirective>,
     pub completion_message: Option<String>,
+    #[serde(skip_deserializing, default)]
+    pub thought_signature: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct DeepReasoningDirective {
+    pub problem_statement: String,
+    pub context_summary: String,
+    pub expected_output_type: ReasoningOutputType,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -46,6 +56,16 @@ pub enum SearchDepth {
     Shallow,
     Moderate,
     Deep,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningOutputType {
+    Analysis,       // Deep analysis of a problem
+    Decision,       // Make a complex decision with tradeoffs
+    Plan,           // Create a detailed plan
+    Synthesis,      // Synthesize multiple sources of information
+    Debugging,      // Debug complex issues
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -95,6 +115,8 @@ pub enum NextStep {
     ValidateProgress,
     #[serde(rename = "requestuserinput")]
     RequestUserInput,
+    #[serde(rename = "longthinkandreason")]
+    LongThinkAndReason,
     #[serde(rename = "complete")]
     Complete,
     #[serde(rename = "examinetool")]

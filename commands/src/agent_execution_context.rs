@@ -193,6 +193,7 @@ impl super::Command for UpdateExecutionContextQuery {
                         reasoning: "User requested cancellation of the current execution"
                             .to_string(),
                         confidence: 1.0,
+                        thought_signature: None,
                     },
                     ConversationMessageType::SystemDecision,
                 );

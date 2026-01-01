@@ -318,9 +318,10 @@ impl AgentExecutor {
                     ))
                 })?;
 
-        self.create_weak_llm()?
+        let (response, _) = self.create_weak_llm()?
             .generate_structured_content::<ParameterGenerationResponse>(request_body)
-            .await
+            .await?;
+        Ok(response)
     }
 
     pub(super) fn parse_workflow_call(&self, details: &Value) -> Result<WorkflowCall, AppError> {

@@ -144,7 +144,7 @@ impl AgentExecutor {
         )
         .map_err(|e| AppError::Internal(format!("Failed to render execution summary template: {e}")))?;
 
-        let summary_response = self
+        let (summary_response, _) = self
             .create_weak_llm()?
             .generate_structured_content::<serde_json::Value>(request_body)
             .await

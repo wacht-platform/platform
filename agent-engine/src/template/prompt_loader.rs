@@ -5,55 +5,47 @@ use std::sync::LazyLock;
 static PROMPTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     let mut m = HashMap::new();
 
-    // System prompts
-    m.insert(
-        "acknowledgment_system",
-        include_str!("prompts/acknowledgment_system.md"),
-    );
-    m.insert(
-        "context_gathering_system",
-        include_str!("prompts/context_gathering_system.md"),
-    );
-    m.insert(
-        "context_search_derivation_system",
-        include_str!("prompts/context_search_derivation_prompt.md"),
-    );
-    m.insert(
-        "ideation_system",
-        include_str!("prompts/ideation_prompt.md"),
-    );
-    m.insert(
-        "parameter_generation_system",
-        include_str!("prompts/parameter_generation_prompt.md"),
-    );
+    // Core decision prompts
     m.insert(
         "step_decision_system",
         include_str!("prompts/step_decision_system.md"),
     );
-    m.insert("summary_system", include_str!("prompts/summary_prompt.md"));
     m.insert(
-        "task_breakdown_system",
-        include_str!("prompts/task_breakdown_system.md"),
-    );
-    m.insert(
-        "task_execution_system",
-        include_str!("prompts/task_execution_prompt.md"),
+        "deep_reasoning_system",
+        include_str!("prompts/deep_reasoning_system.md"),
     );
     m.insert(
         "validation_system",
         include_str!("prompts/validation_prompt.md"),
     );
+    m.insert("summary_system", include_str!("prompts/summary_prompt.md"));
     m.insert(
-        "workflow_validation_system",
-        include_str!("prompts/workflow_validation_prompt.md"),
+        "user_input_request_system",
+        include_str!("prompts/user_input_request_system.md"),
     );
     m.insert(
-        "knowledge_base_search_system",
-        include_str!("prompts/knowledge_base_search_system.md"),
+        "execution_summary_system",
+        include_str!("prompts/execution_summary_system.md"),
+    );
+
+    // Tool & context prompts
+    m.insert(
+        "parameter_generation_system",
+        include_str!("prompts/parameter_generation_prompt.md"),
     );
     m.insert(
-        "memory_evaluation_system",
-        include_str!("prompts/memory_evaluation_system.md"),
+        "context_search_derivation_system",
+        include_str!("prompts/context_search_derivation_prompt.md"),
+    );
+
+    // Workflow node prompts
+    m.insert(
+        "switch_case_evaluation_system",
+        include_str!("prompts/switch_case_evaluation_system.md"),
+    );
+    m.insert(
+        "trigger_evaluation_system",
+        include_str!("prompts/trigger_evaluation_system.md"),
     );
 
     m

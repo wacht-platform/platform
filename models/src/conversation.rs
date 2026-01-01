@@ -38,11 +38,15 @@ pub enum ConversationContent {
     AgentResponse {
         response: String,
         context_used: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thought_signature: Option<String>,
     },
     AssistantAcknowledgment {
         acknowledgment_message: String,
         further_action_required: bool,
         reasoning: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thought_signature: Option<String>,
     },
     AssistantIdeation {
         reasoning_summary: String,
@@ -67,6 +71,8 @@ pub enum ConversationContent {
         step: String,
         reasoning: String,
         confidence: f32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thought_signature: Option<String>,
     },
     ContextResults {
         query: String,

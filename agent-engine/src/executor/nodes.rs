@@ -93,7 +93,7 @@ impl AgentExecutor {
             AppError::Internal(format!("Failed to render trigger evaluation template: {e}"))
         })?;
 
-        let evaluation = self
+        let (evaluation, _) = self
             .create_weak_llm()?
             .generate_structured_content::<dto::json::agent_responses::TriggerEvaluation>(request_body)
             .await?;
@@ -220,7 +220,7 @@ impl AgentExecutor {
 
         let request_body = serde_json::to_string(&generation_config)?;
         let llm = self.create_weak_llm()?;
-        let response: Value = llm
+        let (response, _): (Value, _) = llm
             .generate_structured_content(request_body)
             .await
             .map_err(|e| AppError::Internal(format!("LLM call failed: {e}")))?;
@@ -290,7 +290,7 @@ impl AgentExecutor {
         )
         .map_err(|e| AppError::Internal(format!("Failed to render switch case template: {e}")))?;
 
-        let evaluation = self
+        let (evaluation, _) = self
             .create_weak_llm()?
             .generate_structured_content::<SwitchCaseEvaluation>(request_body)
             .await?;

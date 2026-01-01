@@ -39,6 +39,8 @@ pub struct CandidateContent {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CandidatePart {
     pub text: String,
+    #[serde(rename = "thoughtSignature")]
+    pub thought_signature: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,7 +72,7 @@ impl GeminiClient {
         self
     }
 
-    pub async fn generate_structured_content<T>(&self, request_body: String) -> Result<T, AppError>
+    pub async fn generate_structured_content<T>(&self, request_body: String) -> Result<(T, Option<String>), AppError>
     where
         T: for<'de> Deserialize<'de> + Serialize,
     {
@@ -98,8 +100,13 @@ impl GeminiClient {
                         Ok(bytes) => match serde_json::from_slice::<GeminiResponse>(&bytes) {
                             Ok(gemini_response) => {
                                 let mut accumulated_text = String::new();
+                                let mut thought_signature = None;
+                                
                                 for part in &gemini_response.candidates[0].content.parts {
                                     accumulated_text.push_str(&part.text);
+                                    if let Some(sig) = &part.thought_signature {
+                                        thought_signature = Some(sig.clone());
+                                    }
                                 }
 
                                 if accumulated_text.is_empty() {
@@ -113,7 +120,7 @@ impl GeminiClient {
                                         if let Some(usage) = &gemini_response.usage_metadata {
                                             self.track_token_usage(usage).await;
                                         }
-                                        return Ok(parsed_response);
+                                        return Ok((parsed_response, thought_signature));
                                     }
                                     Err(e) => {
                                         last_error = Some(format!("Failed to parse response: {e}"));
