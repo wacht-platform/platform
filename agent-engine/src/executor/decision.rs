@@ -504,7 +504,7 @@ impl AgentExecutor {
             })?;
 
         let decision = self
-            .create_weak_llm()?
+            .create_strong_llm()?
             .generate_structured_content::<StepDecision>(request_body)
             .await?;
 
@@ -756,11 +756,31 @@ impl AgentExecutor {
         })
     }
 
+    /// Strong LLM - Used for step decisions (requires good reasoning)
+    pub(super) fn create_strong_llm(&self) -> Result<GeminiClient, AppError> {
+        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
+        Ok(GeminiClient::new(
+            api_key,
+            Some("gemini-3-flash-preview".to_string()),
+        ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
+    }
+
+    /// Weak LLM - Used for simple tasks (parameter generation, summaries, etc.)
     pub(super) fn create_weak_llm(&self) -> Result<GeminiClient, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
         Ok(GeminiClient::new(
             api_key,
-            Some("gemini-2.5-flash-preview-09-2025".to_string()),
+            Some("gemini-2.5-flash-lite".to_string()),
+        ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
+    }
+
+    /// Reasoning LLM - Used for complex reasoning tasks (future use)
+    #[allow(dead_code)]
+    pub(super) fn create_reasoning_llm(&self) -> Result<GeminiClient, AppError> {
+        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
+        Ok(GeminiClient::new(
+            api_key,
+            Some("gemini-3-pro-preview".to_string()),
         ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
     }
 }
