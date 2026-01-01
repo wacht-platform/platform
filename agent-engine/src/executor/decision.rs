@@ -770,7 +770,7 @@ impl AgentExecutor {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
         Ok(GeminiClient::new(
             api_key,
-            Some("gemini-2.5-flash-lite".to_string()),
+            Some("gemini-2.5-flash".to_string()),
         ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
     }
 
