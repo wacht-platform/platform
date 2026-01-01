@@ -13,6 +13,7 @@ use models::{
 };
 use serde_json::Value;
 use std::collections::HashMap;
+use std::time::Instant;
 
 pub struct ToolExecutor {
     app_state: AppState,
@@ -137,7 +138,10 @@ impl ToolExecutor {
             _ => {}
         }
 
+        let start = Instant::now();
+        println!("LATENCY: Sending API request to {}", url);
         let response = request_builder.send().await;
+        println!("LATENCY: API request to {} took {:?}", url, start.elapsed());
 
         match response {
             Ok(res) => {
@@ -264,8 +268,10 @@ impl ToolExecutor {
             })?;
 
         // First generate embeddings for the query
+        let embed_start = Instant::now();
         let embeddings_command = GenerateEmbeddingsCommand::new(vec![query.to_string()]);
         let embeddings = embeddings_command.execute(&self.app_state).await?;
+        println!("LATENCY: Knowledge Base embedding generation took {:?}", embed_start.elapsed());
         let query_embedding = embeddings
             .into_iter()
             .next()
@@ -279,7 +285,9 @@ impl ToolExecutor {
             limit,
         );
 
+        let search_start = Instant::now();
         let search_results = search_command.execute(&self.app_state).await?;
+        println!("LATENCY: Knowledge Base vector search took {:?}", search_start.elapsed());
 
         // Filter by similarity threshold and convert to structs
         let threshold = config.search_settings.similarity_threshold.unwrap_or(0.7);
