@@ -18,6 +18,7 @@ use models::{
     AgentExecutionState, ConversationContent, ConversationMessageType, ExecutionContextStatus,
 };
 use serde_json::{json, Value};
+use std::time::Instant;
 
 const MAX_LOOP_ITERATIONS: usize = 50;
 
@@ -207,7 +208,8 @@ impl AgentExecutor {
     }
 
     async fn process_decision(&mut self, decision: StepDecision) -> Result<bool, AppError> {
-        match decision.next_step {
+        let start = Instant::now();
+        let result = match decision.next_step {
             NextStep::Acknowledge => {
                 if let Some(ack_data) = decision.acknowledgment {
                     self.store_conversation(
@@ -470,7 +472,9 @@ impl AgentExecutor {
                     .await?;
                 Ok(false)
             }
-        }
+        };
+        println!("LATENCY: process_decision took {:?}", start.elapsed());
+        result
     }
 
     async fn decide_next_step(&mut self) -> Result<StepDecision, AppError> {
@@ -531,10 +535,12 @@ impl AgentExecutor {
                 AppError::Internal(format!("Failed to render step decision template: {e}"))
             })?;
 
+        let start = Instant::now();
         let (mut decision, signature) = self
             .create_strong_llm()?
             .generate_structured_content::<StepDecision>(request_body)
             .await?;
+        println!("LATENCY: decide_next_step LLM took {:?}", start.elapsed());
 
         decision.thought_signature = signature.clone();
 

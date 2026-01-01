@@ -13,6 +13,8 @@ pub struct GeminiClient {
     redis_client: Option<redis::Client>,
 }
 
+use std::time::Instant;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GeminiResponse {
     pub candidates: Vec<Candidate>,
@@ -84,6 +86,9 @@ impl GeminiClient {
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
             }
 
+            let start = Instant::now();
+            println!("LLM: Sending request to {} at {:?}", self.model, Utc::now());
+
             let response = self
                 .client
                 .post(&url)
@@ -92,6 +97,8 @@ impl GeminiClient {
                 .body(request_body.clone())
                 .send()
                 .await;
+            
+            println!("LLM: Response received from {} after {:?}", self.model, start.elapsed());
 
             match response {
                 Ok(resp) => {

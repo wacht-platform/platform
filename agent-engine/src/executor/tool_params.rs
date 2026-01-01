@@ -9,10 +9,12 @@ use models::{
     SchemaField,
 };
 use serde_json::{json, Value};
+use std::time::Instant;
 
 impl AgentExecutor {
     pub(super) async fn execute_action(&self, action: &ExecutionAction) -> Result<Value, AppError> {
-        match &action.action_type {
+        let start = Instant::now();
+        let result = match &action.action_type {
             TaskType::ToolCall => {
                 let tool_call = self.parse_tool_call(&action.details).await?;
                 let tool = self
@@ -69,7 +71,9 @@ impl AgentExecutor {
                 )
                 .await
             }
-        }
+        };
+        println!("LATENCY: execute_action type={:?} took {:?}", action.action_type, start.elapsed());
+        result
     }
 
     fn schema_fields_to_properties(fields: &[SchemaField]) -> (Value, Vec<String>) {
@@ -318,9 +322,11 @@ impl AgentExecutor {
                     ))
                 })?;
 
+        let llm_start = Instant::now();
         let (response, _) = self.create_weak_llm()?
             .generate_structured_content::<ParameterGenerationResponse>(request_body)
             .await?;
+        println!("LATENCY: request_parameter_generation LLM took {:?}", llm_start.elapsed());
         Ok(response)
     }
 
