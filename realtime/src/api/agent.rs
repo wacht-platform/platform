@@ -326,7 +326,7 @@ async fn handle_execution_message(
     };
 
     if let WebsocketMessageType::SessionConnect(context_id, agent_name) = message.message_type {
-        let message = match GetExecutionContextQuery::new(
+        match GetExecutionContextQuery::new(
             context_id.parse().unwrap(),
             deployment_id,
         )
@@ -363,6 +363,7 @@ async fn handle_execution_message(
                         return;
                     }
                 }
+
                 let execution_status = match context.status {
                     ExecutionContextStatus::Idle => "Idle",
                     ExecutionContextStatus::Running => "Running",
@@ -372,51 +373,56 @@ async fn handle_execution_message(
                     ExecutionContextStatus::Failed => "Failed",
                 };
 
-                let session_data = SessionConnectedMessage {
-                    context: serde_json::to_value(&context).unwrap(),
-                    execution_status: execution_status.to_string(),
+                match GetAiAgentByNameWithFeatures::new(deployment_id, agent_name)
+                    .execute(&app_state)
+                    .await
+                {
+                    Ok(agent) => {
+                        let quick_questions: Option<Vec<String>> = agent
+                            .configuration
+                            .get("quick_questions")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok());
+
+                        let session_data = SessionConnectedMessage {
+                            context: serde_json::to_value(&context).unwrap(),
+                            execution_status: execution_status.to_string(),
+                            quick_questions,
+                        };
+                        let msg = WebsocketMessage {
+                            message_id: message.message_id,
+                            message_type: WebsocketMessageType::SessionConnected,
+                            data: serde_json::to_value(&session_data).unwrap(),
+                        };
+
+                        {
+                            let mut session = session_state.lock().await;
+                            session.agent = Some(agent.clone());
+                            session.context_id = Some(context_id.parse().unwrap());
+                            session.ready.notify_waiters();
+                        }
+
+                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+                        let _ = sender.send(msg);
+                    }
+                    Err(e) => {
+                        let message = WebsocketMessage {
+                            message_id: message.message_id,
+                            message_type: WebsocketMessageType::CloseConnection,
+                            data: json!({
+                                "error": format!("Failed to retrieve agent: {}", e)
+                            }),
+                        };
+                        let _ = sender.send(message);
+                    }
                 };
-                WebsocketMessage {
-                    message_id: message.message_id,
-                    message_type: WebsocketMessageType::SessionConnected,
-                    data: serde_json::to_value(&session_data).unwrap(),
-                }
-            }
-            Err(e) => WebsocketMessage {
-                message_id: message.message_id,
-                message_type: WebsocketMessageType::CloseConnection,
-                data: json!({
-                    "error": format!("Failed to retrieve execution contexts: {}", e)
-                }),
-            },
-        };
-
-        if message.message_type == WebsocketMessageType::CloseConnection {
-            let _ = sender.send(message);
-            return;
-        }
-
-        match GetAiAgentByNameWithFeatures::new(deployment_id, agent_name)
-            .execute(&app_state)
-            .await
-        {
-            Ok(agent) => {
-                let mut session = session_state.lock().await;
-                session.agent = Some(agent.clone());
-                session.context_id = Some(context_id.parse().unwrap());
-
-                session.ready.notify_waiters();
-
-                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-                let _ = sender.send(message);
             }
             Err(e) => {
                 let message = WebsocketMessage {
                     message_id: message.message_id,
                     message_type: WebsocketMessageType::CloseConnection,
                     data: json!({
-                        "error": format!("Failed to retrieve agent: {}", e)
+                        "error": format!("Failed to retrieve execution contexts: {}", e)
                     }),
                 };
                 let _ = sender.send(message);

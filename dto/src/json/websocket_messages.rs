@@ -12,6 +12,8 @@ pub struct WebSocketError {
 pub struct SessionConnectedMessage {
     pub context: Value,
     pub execution_status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quick_questions: Option<Vec<String>>,
 }
 
 // Execution Status Messages
