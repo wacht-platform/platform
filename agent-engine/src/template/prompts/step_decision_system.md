@@ -187,19 +187,29 @@ Execute 1-10 actions in parallel. Use `context_messages` to optimize token usage
     {
       "type": "tool_call|workflow_call",
       "details": {"tool_name": "ToolName"},
-      "purpose": "Clear goal - this becomes primary context for parameter generation",
-      "context_messages": 1
+      "purpose": "What to accomplish with specific values (e.g., IDs, names, dates)",
+      "context_messages": 3
     }
   ]
 }
 ```
 
 **Key Fields**:
-- `purpose`: Primary context for parameter generation - summarize what the tool needs to know
-- `context_messages`: How many recent messages to include (default: 1). Lower = faster + cheaper
+- `details`: Contains only `tool_name` (the tool/workflow to execute)
+- `purpose`: **CRITICAL** - Include specific parameter values (IDs, names, dates) when known. Be explicit, not vague.
+- `context_messages`: Recent messages to include for parameter generation.
+
+**Smart Context Usage**:
+- If required data is in the previous message, set `context_messages: 1` and let parameter generation extract it
+- If data was discovered several messages ago, increase `context_messages` accordingly
+- If you have exact values, include them in `purpose` - no need for extra context
+
+**Parameter Rule**: Ensure parameter generation has what it needs:
+1. Include specific values in `purpose` when you know them, OR
+2. Set `context_messages` high enough to include messages with the required data
 
 **When to batch**:
-- Independent API calls (e.g., checking multiple companies)
+- Independent API calls (e.g., checking multiple items)
 - Parallel data gathering
 - Non-dependent tool chains
 

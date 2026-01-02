@@ -108,8 +108,15 @@ Instead, describe actions in natural, user-friendly language. For example:
 6. **Objective Alignment**: Ensure parameters align with the current objective and success criteria
 7. **User Preferences**: Consider user preferences and conversation insights when generating parameters
 
-## Important:
-- Generate ready-to-use parameters, not templates
-- If a required parameter cannot be determined, explain why
-- Consider the tool's specific requirements and constraints
+## Context Sufficiency Check:
+**Before generating parameters, verify you have all required information:**
+- If the action_purpose contains specific values (IDs, names, dates), use them directly
+- If specific values are in the conversation context, extract and use them
+- If a required parameter cannot be found in EITHER the action_purpose OR conversation context, set `can_generate: false`
+
+## Output Rules:
+- Generate ready-to-use parameters, not templates or placeholders
+- Set `can_generate: true` ONLY if ALL required parameters can be determined
+- Set `can_generate: false` if ANY required parameter is missing - list what's missing in `missing_information`
+- If required data is ambiguous or unclear, set `can_generate: false` and explain the ambiguity
 - Format according to the tool type (API, Knowledge Base, Platform Function, etc.)
