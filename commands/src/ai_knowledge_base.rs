@@ -1,4 +1,4 @@
-use crate::{Command, DispatchDocumentProcessingTaskCommand, UploadToKnowledgeBaseBucketCommand};
+use crate::{Command, DispatchDocumentProcessingTaskCommand, WriteToAgentStorageCommand};
 use common::error::AppError;
 use common::state::AppState;
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument};
@@ -245,6 +245,16 @@ impl Command for DeleteAiKnowledgeBaseCommand {
             )));
         }
 
+        // Delete storage files first (before DB)
+        let storage_prefix = format!("{}/knowledge-bases/{}/", self.deployment_id, self.knowledge_base_id);
+        if let Err(e) = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix)
+            .execute(app_state)
+            .await
+        {
+            tracing::warn!("Failed to clean storage for KB {}: {}", self.knowledge_base_id, e);
+            // Continue with DB delete anyway - storage can be cleaned up later
+        }
+
         let mut tx = app_state
             .db_pool
             .begin()
@@ -311,10 +321,20 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
         let now = Utc::now();
         let file_size = self.file_content.len() as i64;
 
-        // Upload file to knowledge base bucket with path structure
-        let file_path = format!("{}/{}", self.knowledge_base_id, self.file_name);
+        // Get deployment_id for path structure
+        let kb_query = sqlx::query!(
+            "SELECT deployment_id FROM ai_knowledge_bases WHERE id = $1",
+            self.knowledge_base_id
+        )
+        .fetch_one(&app_state.db_pool)
+        .await?;
+        let deployment_id = kb_query.deployment_id;
+
+        // Upload file to agent storage with path: {deployment}/knowledge-bases/{kb_id}/{filename}
+        let file_path = format!("{}/knowledge-bases/{}/{}", deployment_id, self.knowledge_base_id, self.file_name);
         let file_content_clone = self.file_content.clone();
-        let file_url = UploadToKnowledgeBaseBucketCommand::new(file_path, file_content_clone)
+        let file_url = WriteToAgentStorageCommand::new(file_path, file_content_clone)
+            .with_content_type(self.file_type.clone())
             .execute(app_state)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -342,14 +362,7 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        // Get deployment_id for this knowledge base
-        let kb_query = sqlx::query!(
-            "SELECT deployment_id FROM ai_knowledge_bases WHERE id = $1",
-            self.knowledge_base_id
-        )
-        .fetch_one(&app_state.db_pool)
-        .await?;
-        let deployment_id = kb_query.deployment_id;
+
 
         // Dispatch document processing to NATS worker
         let dispatch_processing_task = DispatchDocumentProcessingTaskCommand::new(
@@ -420,8 +433,30 @@ impl Command for DeleteKnowledgeBaseDocumentCommand {
             .await
             .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
 
-        // Delete the document
-        let result = sqlx::query!(
+        // Get document info for storage cleanup
+        let doc = sqlx::query!(
+            "SELECT file_name FROM ai_knowledge_base_documents WHERE id = $1 AND knowledge_base_id = $2",
+            self.document_id,
+            self.knowledge_base_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        let doc = doc.ok_or(AppError::NotFound("Document not found".to_string()))?;
+
+        // Delete storage file first (before DB)
+        let storage_key = format!("{}/knowledge-bases/{}/{}", self.deployment_id, self.knowledge_base_id, doc.file_name);
+        if let Err(e) = crate::DeleteFromAgentStorageCommand::new(storage_key)
+            .execute(app_state)
+            .await
+        {
+            tracing::warn!("Failed to delete file from storage: {}", e);
+            // Continue with DB delete anyway
+        }
+
+        // Delete the document from DB
+        sqlx::query!(
             "DELETE FROM ai_knowledge_base_documents WHERE id = $1 AND knowledge_base_id = $2",
             self.document_id,
             self.knowledge_base_id
@@ -429,10 +464,6 @@ impl Command for DeleteKnowledgeBaseDocumentCommand {
         .execute(&app_state.db_pool)
         .await
         .map_err(|e| AppError::Database(e))?;
-
-        if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("Document not found".to_string()));
-        }
 
         Ok(())
     }

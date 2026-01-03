@@ -6,13 +6,14 @@ use dto::json::{
     PlatformFunctionResult, StreamEvent, ToolKnowledgeBaseSearchResult,
 };
 use models::HttpMethod;
-use models::{AiTool, AiToolConfiguration};
+use models::{AiTool, AiToolConfiguration, InternalToolType};
 use models::{
     ApiToolConfiguration, KnowledgeBaseToolConfiguration, PlatformEventToolConfiguration,
-    PlatformFunctionToolConfiguration,
+    PlatformFunctionToolConfiguration, InternalToolConfiguration,
 };
 use serde_json::Value;
 use std::collections::HashMap;
+use crate::filesystem::{AgentFilesystem, shell::ShellExecutor};
 
 
 pub struct ToolExecutor {
@@ -37,6 +38,8 @@ impl ToolExecutor {
         &self,
         tool: &AiTool,
         execution_params: Value,
+        filesystem: Option<&AgentFilesystem>,
+        shell: Option<&ShellExecutor>,
     ) -> Result<Value, AppError> {
         match &tool.configuration {
             AiToolConfiguration::Api(config) => {
@@ -63,8 +66,99 @@ impl ToolExecutor {
                     .await?;
                 Ok(serde_json::to_value(result)?)
             }
+            AiToolConfiguration::Internal(config) => {
+                self.execute_internal_tool(tool, config, &execution_params, filesystem, shell).await
+            }
         }
     }
+
+    async fn execute_internal_tool(
+        &self,
+        tool: &AiTool,
+        config: &InternalToolConfiguration,
+        execution_params: &Value,
+        filesystem: Option<&AgentFilesystem>,
+        shell: Option<&ShellExecutor>,
+    ) -> Result<Value, AppError> {
+        match config.tool_type {
+            InternalToolType::ReadFile => {
+                let fs = filesystem.ok_or(AppError::Internal("Filesystem not available".to_string()))?;
+                let path = execution_params.get("path").and_then(|v| v.as_str())
+                    .ok_or(AppError::BadRequest("Path is required".to_string()))?;
+                let start_line = execution_params.get("start_line").and_then(|v| v.as_u64()).map(|v| v as usize);
+                let end_line = execution_params.get("end_line").and_then(|v| v.as_u64()).map(|v| v as usize);
+                
+                let result = fs.read_file(path, start_line, end_line).await?;
+                Ok(serde_json::json!({
+                    "success": true,
+                    "tool": tool.name,
+                    "path": path,
+                    "content": result.content,
+                    "total_lines": result.total_lines,
+                    "start_line": result.start_line,
+                    "end_line": result.end_line
+                }))
+            }
+            InternalToolType::WriteFile => {
+                let fs = filesystem.ok_or(AppError::Internal("Filesystem not available".to_string()))?;
+                let path = execution_params.get("path").and_then(|v| v.as_str())
+                    .ok_or(AppError::BadRequest("Path is required".to_string()))?;
+                let content = execution_params.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                let start_line = execution_params.get("start_line").and_then(|v| v.as_u64()).map(|v| v as usize);
+                let end_line = execution_params.get("end_line").and_then(|v| v.as_u64()).map(|v| v as usize);
+                
+                let result = fs.write_file(path, content, start_line, end_line).await?;
+                Ok(serde_json::json!({
+                    "success": true,
+                    "tool": tool.name,
+                    "path": path,
+                    "lines_written": result.lines_written,
+                    "total_lines": result.total_lines,
+                    "partial": result.partial
+                }))
+            }
+            InternalToolType::ListDirectory => {
+                let fs = filesystem.ok_or(AppError::Internal("Filesystem not available".to_string()))?;
+                let path = execution_params.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+                let files = fs.list_dir(path).await?;
+                Ok(serde_json::json!({
+                    "success": true,
+                    "tool": tool.name,
+                    "path": path,
+                    "files": files
+                }))
+            }
+            InternalToolType::SearchFiles => {
+                let fs = filesystem.ok_or(AppError::Internal("Filesystem not available".to_string()))?;
+                let query = execution_params.get("query").and_then(|v| v.as_str())
+                    .ok_or(AppError::BadRequest("Query is required".to_string()))?;
+                let path = execution_params.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+                let result = fs.search(query, path).await?;
+                Ok(serde_json::json!({
+                    "success": true,
+                    "tool": tool.name,
+                    "path": path,
+                    "query": query,
+                    "matches": result
+                }))
+            }
+            InternalToolType::ExecuteCommand => {
+                let sh = shell.ok_or(AppError::Internal("Shell not available".to_string()))?;
+                let command = execution_params.get("command").and_then(|v| v.as_str())
+                    .ok_or(AppError::BadRequest("Command is required".to_string()))?;
+                let output = sh.execute(command).await?;
+                Ok(serde_json::json!({
+                    "success": output.exit_code == 0,
+                    "tool": tool.name,
+                    "command": command,
+                    "stdout": output.stdout,
+                    "stderr": output.stderr,
+                    "exit_code": output.exit_code
+                }))
+            }
+        }
+    }
+
 
     async fn execute_api_tool(
         &self,
@@ -178,18 +272,15 @@ impl ToolExecutor {
         config: &PlatformEventToolConfiguration,
         execution_params: &Value,
     ) -> Result<PlatformEventResult, AppError> {
-        // Get event data from execution params or use config default
         let event_data = execution_params
             .get("event_data")
             .cloned()
             .or_else(|| config.event_data.clone())
             .unwrap_or(serde_json::json!({}));
 
-        // Emit the event via WebSocket if channel is available
         if let Some(channel) = &self.channel {
             let event = StreamEvent::PlatformEvent(config.event_label.clone(), event_data.clone());
 
-            // Try to send, but don't fail if channel is closed
             let _ = channel.send(event).await;
         }
 
@@ -218,10 +309,8 @@ impl ToolExecutor {
             }
         }
 
-        // Generate a unique execution ID for this function call
         let execution_id = self.app_state.sf.next_id()? as u64;
 
-        // Prepare function data - send execution_id as string to avoid JS number precision issues
         let function_data = PlatformFunctionData {
             execution_id: execution_id.to_string(),
             function_name: config.function_name.clone(),
@@ -229,18 +318,15 @@ impl ToolExecutor {
             is_overridable: config.is_overridable,
         };
 
-        // Emit the platform function event via WebSocket if channel is available
         if let Some(channel) = &self.channel {
             let event = StreamEvent::PlatformFunction(
                 config.function_name.clone(),
                 serde_json::to_value(&function_data)?,
             );
 
-            // Send the event
             let _ = channel.send(event).await;
         }
 
-        // Return immediately with pending status
         Ok(PlatformFunctionResult {
             success: true,
             tool: tool.name.clone(),
@@ -256,7 +342,6 @@ impl ToolExecutor {
         config: &KnowledgeBaseToolConfiguration,
         execution_params: &Value,
     ) -> Result<KnowledgeBaseToolResult, AppError> {
-        // Get the query from execution parameters
         let query = execution_params
             .get("query")
             .and_then(|v| v.as_str())
@@ -266,7 +351,6 @@ impl ToolExecutor {
                 )
             })?;
 
-        // First generate embeddings for the query
         let embeddings_command = GenerateEmbeddingsCommand::new(vec![query.to_string()]);
         let embeddings = embeddings_command.execute(&self.app_state).await?;
         let query_embedding = embeddings
@@ -274,7 +358,6 @@ impl ToolExecutor {
             .next()
             .ok_or_else(|| AppError::Internal("Failed to generate query embedding".to_string()))?;
 
-        // Search across all configured knowledge bases using semantic search
         let limit = config.search_settings.max_results.unwrap_or(10) as u64;
         let search_command = SearchKnowledgeBaseEmbeddingsCommand::new(
             config.knowledge_base_ids.clone(),
@@ -284,7 +367,6 @@ impl ToolExecutor {
 
         let search_results = search_command.execute(&self.app_state).await?;
 
-        // Filter by similarity threshold and convert to structs
         let threshold = config.search_settings.similarity_threshold.unwrap_or(0.7);
         let mut all_results: Vec<ToolKnowledgeBaseSearchResult> = search_results
             .into_iter()
@@ -300,7 +382,6 @@ impl ToolExecutor {
             })
             .collect();
 
-        // Sort all results by relevance if requested
         if config.search_settings.sort_by_relevance {
             all_results.sort_by(|a, b| {
                 b.similarity_score
@@ -309,7 +390,6 @@ impl ToolExecutor {
             });
         }
 
-        // Limit total results
         let max_results = config.search_settings.max_results.unwrap_or(10) as usize;
         all_results.truncate(max_results);
 

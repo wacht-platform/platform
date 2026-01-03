@@ -20,6 +20,7 @@ use crate::{
 pub struct AppState {
     pub db_pool: PgPool,
     pub s3_client: S3Client,
+    pub agent_storage_client: Option<S3Client>,
     pub sf: sonyflake::Sonyflake,
     pub redis_client: RedisClient,
     pub handlebars: handlebars::Handlebars<'static>,
@@ -89,9 +90,29 @@ impl AppState {
 
         let encryption_service = EncryptionService::new(&env("SMTP_ENCRYPTION_KEY")?)?;
 
+        let agent_storage_client = if let Ok(gateway_url) = env("AGENT_STORAGE_GATEWAY_URL") {
+            Some(S3Client::new(
+                &aws_config::defaults(BehaviorVersion::latest())
+                    .endpoint_url(gateway_url)
+                    .credentials_provider(aws_sdk_s3::config::Credentials::new(
+                        env("AGENT_STORAGE_ACCESS_KEY").unwrap_or_default(),
+                        env("AGENT_STORAGE_SECRET_KEY").unwrap_or_default(),
+                        None,
+                        None,
+                        "AgentStorage",
+                    ))
+                    .region(Region::new("us-east-1"))
+                    .load()
+                    .await,
+            ))
+        } else {
+            None
+        };
+
         Ok(Self {
             db_pool: pool,
             s3_client,
+            agent_storage_client,
             sf,
             redis_client,
             handlebars,

@@ -38,6 +38,7 @@ pub enum AiToolType {
     KnowledgeBase,
     PlatformEvent,
     PlatformFunction,
+    Internal,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -47,6 +48,7 @@ pub enum AiToolConfiguration {
     KnowledgeBase(KnowledgeBaseToolConfiguration),
     PlatformEvent(PlatformEventToolConfiguration),
     PlatformFunction(PlatformFunctionToolConfiguration),
+    Internal(InternalToolConfiguration),
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -97,6 +99,22 @@ pub struct SchemaField {
     pub description: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum InternalToolType {
+    ReadFile,
+    WriteFile,
+    ListDirectory,
+    SearchFiles,
+    ExecuteCommand,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct InternalToolConfiguration {
+    pub tool_type: InternalToolType,
+    pub input_schema: Option<Vec<SchemaField>>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AuthorizationConfiguration {
     pub authorize_as_user: bool,
@@ -120,6 +138,7 @@ impl From<String> for AiToolType {
             "knowledge_base" => AiToolType::KnowledgeBase,
             "platform_event" => AiToolType::PlatformEvent,
             "platform_function" => AiToolType::PlatformFunction,
+            "internal" => AiToolType::Internal,
             _ => AiToolType::Api,
         }
     }
@@ -132,6 +151,7 @@ impl From<AiToolType> for String {
             AiToolType::KnowledgeBase => "knowledge_base".to_string(),
             AiToolType::PlatformEvent => "platform_event".to_string(),
             AiToolType::PlatformFunction => "platform_function".to_string(),
+            AiToolType::Internal => "internal".to_string(),
         }
     }
 }

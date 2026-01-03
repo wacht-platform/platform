@@ -57,18 +57,16 @@ impl AgentExecutor {
 
                 let file_extension = img.mime_type.split('/').last().unwrap_or("png");
                 let filename = format!(
-                    "agent-images/{}/{}.{}",
-                    self.context_id,
+                    "{}.{}",
                     self.app_state.sf.next_id()?,
                     file_extension
                 );
 
-                let upload_command = commands::UploadToCdnCommand::new(filename.clone(), bytes);
-                let cdn_url = upload_command.execute(&self.app_state).await?;
+                let relative_path = self.filesystem.save_upload(&filename, &bytes).await?;
 
                 uploaded_images.push(models::ImageData {
                     mime_type: img.mime_type,
-                    url: cdn_url,
+                    url: relative_path,
                     size_bytes: Some(img.data.len() as u64),
                 });
             }
@@ -136,20 +134,17 @@ impl AgentExecutor {
                         })];
 
                         if let Some(imgs) = images {
-                            let client = reqwest::Client::new();
                             for img in imgs {
-                                if let Ok(response) = client.get(&img.url).send().await {
-                                    if let Ok(bytes) = response.bytes().await {
-                                        use base64::{engine::general_purpose::STANDARD, Engine};
-                                        let base64_data = STANDARD.encode(&bytes);
-
-                                        parts.push(json!({
-                                            "inline_data": {
-                                                "mime_type": img.mime_type,
-                                                "data": base64_data
-                                            }
-                                        }));
-                                    }
+                                use base64::{engine::general_purpose::STANDARD, Engine};
+                                
+                                if let Ok(bytes) = self.filesystem.read_file_bytes(&img.url).await {
+                                    let base64_data = STANDARD.encode(&bytes);
+                                    parts.push(json!({
+                                        "inline_data": {
+                                            "mime_type": img.mime_type,
+                                            "data": base64_data
+                                        }
+                                    }));
                                 }
                             }
                         }

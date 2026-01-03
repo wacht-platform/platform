@@ -1,5 +1,6 @@
 pub mod context;
 pub mod executor;
+pub mod filesystem;
 pub mod gemini;
 pub mod handler;
 pub mod template;

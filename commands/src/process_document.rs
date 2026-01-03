@@ -25,7 +25,6 @@ impl Command for ProcessDocumentCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let now = Utc::now();
 
-        // Get document data including file content from URL
         let document = sqlx::query!(
             r#"
             SELECT id, file_url, file_type, title
@@ -39,28 +38,19 @@ impl Command for ProcessDocumentCommand {
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        // Extract file key from URL (format: kb_id/filename)
-        let url_parts: Vec<&str> = document.file_url.split('/').collect();
+        let file_key = document.file_url.clone();
 
-        if url_parts.len() < 2 {
-            return Err(AppError::Internal("Invalid file URL format".to_string()));
-        }
+        let storage_client = app_state.agent_storage_client.as_ref().ok_or_else(|| {
+            AppError::Internal("Agent storage client not configured".to_string())
+        })?;
 
-        let file_key = format!(
-            "{}/{}",
-            url_parts[url_parts.len() - 2], // kb_id
-            url_parts[url_parts.len() - 1]  // filename
-        );
-
-        // Download file content from S3/R2
-        let response = app_state
-            .s3_client
+        let response = storage_client
             .get_object()
-            .bucket("wacht-knowledge-base")
-            .key(file_key)
+            .bucket("wacht-agents")
+            .key(&file_key)
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to download file from S3: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("Failed to download file from storage: {}", e)))?;
 
         let file_content = response
             .body
@@ -70,7 +60,6 @@ impl Command for ProcessDocumentCommand {
             .into_bytes()
             .to_vec();
 
-        // Extract text and create chunks
         let text = app_state
             .text_processing_service
             .extract_text_from_file(&file_content, &document.file_type)?;
@@ -80,7 +69,6 @@ impl Command for ProcessDocumentCommand {
             .text_processing_service
             .chunk_text(&cleaned_text, 2000, 200)?;
 
-        // Store chunks in database (without embeddings) using batch insert
         if chunks.is_empty() {
             let _ = sqlx::query!(
                 r#"
@@ -106,7 +94,6 @@ impl Command for ProcessDocumentCommand {
             return Ok("No chunks created from document".to_string());
         }
 
-        // Batch insert chunks
         let mut tx = app_state
             .db_pool
             .begin()
@@ -135,7 +122,6 @@ impl Command for ProcessDocumentCommand {
 
         tx.commit().await.map_err(|e| AppError::Database(e))?;
 
-        // Update document status to chunks_ready
         let _ = sqlx::query!(
             r#"
             UPDATE ai_knowledge_base_documents 
@@ -158,13 +144,11 @@ impl Command for ProcessDocumentCommand {
         .execute(&app_state.db_pool)
         .await;
 
-        // Dispatch embedding task
         let dispatch_task =
             DispatchDocumentBatchTaskCommand::new(self.deployment_id, self.knowledge_base_id, 100);
 
         if let Err(e) = dispatch_task.execute(app_state).await {
             tracing::error!("Failed to dispatch embedding processing task: {}", e);
-            // Update document status to failed
             let _ = sqlx::query!(
                 r#"
                 UPDATE ai_knowledge_base_documents 

@@ -1,5 +1,6 @@
 use crate::context::ContextOrchestrator;
 use crate::tools::ToolExecutor;
+use crate::filesystem::{AgentFilesystem, shell::ShellExecutor};
 
 use common::error::AppError;
 use common::state::AppState;
@@ -10,6 +11,7 @@ use dto::json::StreamEvent;
 use models::{
     AgentExecutionState, AiAgentWithFeatures, ConversationRecord, ExecutionContextStatus, MemoryRecord, WorkflowExecutionState,
 };
+use models::{AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration, InternalToolType, SchemaField};
 use queries::{GetExecutionContextQuery, Query};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -39,6 +41,8 @@ pub struct AgentExecutor {
     pub(super) current_workflow_node_id: Option<String>,
     pub(super) current_workflow_execution_path: Vec<String>,
     pub(super) system_instructions: Option<String>,
+    pub(super) filesystem: AgentFilesystem,
+    pub(super) shell: ShellExecutor,
 }
 
 pub struct AgentExecutorBuilder {
@@ -69,8 +73,157 @@ impl AgentExecutorBuilder {
         let context_orchestrator =
             ContextOrchestrator::new(self.app_state.clone(), self.agent.clone(), self.context_id);
 
+        let execution_id = self.app_state.sf.next_id()?.to_string();
+        
+        let filesystem = AgentFilesystem::new(
+            &self.agent.deployment_id.to_string(),
+            &self.agent.id.to_string(),
+            &self.context_id.to_string(),
+            &execution_id,
+        );
+        
+        if let Err(e) = filesystem.initialize().await {
+            tracing::warn!("Failed to initialize agent filesystem: {}", e);
+        }
+
+        let shell = ShellExecutor::new(filesystem.execution_root());
+        
+        for kb in &self.agent.knowledge_bases {
+            if let Err(e) = filesystem.link_knowledge_base(&kb.id.to_string(), &kb.title).await {
+                tracing::warn!("Failed to link knowledge base {} ({}): {}", kb.title, kb.id, e);
+            }
+        }
+        
+        let internal_tools = vec![
+            (
+                "read_file",
+                "Read file content. Supports line ranges. Returns total_lines for navigation.",
+                InternalToolType::ReadFile,
+                vec![
+                    SchemaField {
+                        name: "path".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Path to the file".to_string()),
+                        required: true,
+                    },
+                    SchemaField {
+                        name: "start_line".to_string(),
+                        field_type: "INTEGER".to_string(),
+                        description: Some("Start line (1-indexed, optional)".to_string()),
+                        required: false,
+                    },
+                    SchemaField {
+                        name: "end_line".to_string(),
+                        field_type: "INTEGER".to_string(),
+                        description: Some("End line (inclusive, optional)".to_string()),
+                        required: false,
+                    }
+                ]
+            ),
+            (
+                "write_file",
+                "Write to file. For partial writes (with start_line/end_line), must read_file first.",
+                InternalToolType::WriteFile,
+                vec![
+                    SchemaField {
+                        name: "path".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Path to write (memory/, workspace/, scratch/ only)".to_string()),
+                        required: true,
+                    },
+                    SchemaField {
+                        name: "content".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Content to write".to_string()),
+                        required: true,
+                    },
+                    SchemaField {
+                        name: "start_line".to_string(),
+                        field_type: "INTEGER".to_string(),
+                        description: Some("Replace from this line (1-indexed). Requires prior read_file.".to_string()),
+                        required: false,
+                    },
+                    SchemaField {
+                        name: "end_line".to_string(),
+                        field_type: "INTEGER".to_string(),
+                        description: Some("Replace up to this line (inclusive). Requires prior read_file.".to_string()),
+                        required: false,
+                    }
+                ]
+            ),
+            (
+                "list_directory",
+                "List files and directories at a path.",
+                InternalToolType::ListDirectory,
+                vec![
+                    SchemaField {
+                        name: "path".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Directory path (default: '/')".to_string()),
+                        required: false,
+                    }
+                ]
+            ),
+            (
+                "search_files",
+                "Search for text patterns in files.",
+                InternalToolType::SearchFiles,
+                vec![
+                    SchemaField {
+                        name: "query".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Text or regex to search for".to_string()),
+                        required: true,
+                    },
+                    SchemaField {
+                        name: "path".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Directory to search (default: '/')".to_string()),
+                        required: false,
+                    }
+                ]
+            ),
+            (
+                "execute_command",
+                "Execute a shell command. Allowed: cat, ls, grep, find, etc.",
+                InternalToolType::ExecuteCommand,
+                vec![
+                    SchemaField {
+                        name: "command".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Shell command to run".to_string()),
+                        required: true,
+                    }
+                ]
+            ),
+        ];
+
+        let mut current_tools = self.agent.tools.clone();
+        for (name, desc, tool_type, schema) in internal_tools {
+            if !current_tools.iter().any(|t| t.name == name) {
+                current_tools.push(AiTool {
+                    id: -1,
+                    name: name.to_string(),
+                    description: Some(desc.to_string()),
+                    tool_type: AiToolType::Internal,
+                    deployment_id: self.agent.deployment_id,
+                    configuration: AiToolConfiguration::Internal(
+                        InternalToolConfiguration {
+                            tool_type,
+                            input_schema: Some(schema),
+                        }
+                    ),
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                });
+            }
+        }
+        
+        let mut agent_with_tools = self.agent.clone();
+        agent_with_tools.tools = current_tools;
+
         let mut executor = AgentExecutor {
-            agent: self.agent.clone(),
+            agent: agent_with_tools.clone(),
             app_state: self.app_state.clone(),
             context_id: self.context_id,
             context_orchestrator,
@@ -88,6 +241,8 @@ impl AgentExecutorBuilder {
             current_workflow_node_id: None,
             current_workflow_execution_path: Vec::new(),
             system_instructions: None,
+            filesystem,
+            shell,
         };
 
         let context = GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)

@@ -340,7 +340,7 @@ impl AgentExecutor {
 
         let result = self
             .tool_executor
-            .execute_tool_immediately(&tool, json!(parameters))
+            .execute_tool_immediately(&tool, json!(parameters), Some(&self.filesystem), Some(&self.shell))
             .await?;
 
         Ok(result)

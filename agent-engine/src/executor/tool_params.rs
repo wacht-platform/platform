@@ -26,7 +26,7 @@ impl AgentExecutor {
                         AppError::BadRequest(format!("Tool '{}' not found", tool_call.tool_name))
                     })?;
                 self.tool_executor
-                    .execute_tool_immediately(tool, tool_call.parameters)
+                    .execute_tool_immediately(tool, tool_call.parameters, Some(&self.filesystem), Some(&self.shell))
                     .await
             }
             TaskType::WorkflowCall => {
