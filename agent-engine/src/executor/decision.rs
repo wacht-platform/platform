@@ -716,15 +716,6 @@ impl AgentExecutor {
         ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
     }
 
-    /// Lite LLM - Used for very simple verification tasks (deduplication checks, yes/no)
-    pub(super) fn create_lite_llm(&self) -> Result<GeminiClient, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
-        Ok(GeminiClient::new(
-            api_key,
-            Some("gemini-2.5-flash-lite-preview-06-17".to_string()),
-        ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
-    }
-
     /// Reasoning LLM - Used for complex reasoning tasks with extended thinking
     pub(super) fn create_reasoning_llm(&self) -> Result<GeminiClient, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());

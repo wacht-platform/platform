@@ -30,6 +30,13 @@ pub struct MemoryConsolidationSuggestion {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryConsolidationResponse {
+    pub decision: String,
+    pub consolidated_content: Option<String>,
+    pub reasoning: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextRetrievalStrategy {
     pub memory_categories: Vec<MemoryCategory>,
     pub relevance_threshold: f64,

@@ -1,7 +1,6 @@
 use handlebars::Handlebars;
 
 pub fn register_all_templates(hb: &mut Handlebars) {
-    // Core decision templates
     hb.register_template_string(
         "step_decision_prompt",
         include_str!("templates/step_decision_prompt.hbs"),
@@ -50,7 +49,6 @@ pub fn register_all_templates(hb: &mut Handlebars) {
     )
     .expect("Failed to register context_search_derivation_prompt template");
 
-    // Workflow node templates
     hb.register_template_string(
         "switch_case_evaluation_prompt",
         include_str!("templates/switch_case_evaluation_prompt.hbs"),
