@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use chrono::{Datelike, Utc};
 use reqwest;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::error;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SMSTask {

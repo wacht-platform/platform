@@ -10,6 +10,7 @@ impl From<AppError> for ApiErrorResponse {
             }
             AppError::NotFound(message) => (StatusCode::NOT_FOUND, message).into(),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized").into(),
+            AppError::Forbidden(message) => (StatusCode::FORBIDDEN, message).into(),
             AppError::BadRequest(message) => (StatusCode::BAD_REQUEST, message).into(),
             AppError::Internal(message) => (StatusCode::INTERNAL_SERVER_ERROR, message).into(),
             AppError::Conflict(message) => (StatusCode::CONFLICT, message).into(),
@@ -17,6 +18,7 @@ impl From<AppError> for ApiErrorResponse {
             AppError::Serialization(message) => (StatusCode::INTERNAL_SERVER_ERROR, message).into(),
             AppError::S3(message) => (StatusCode::INTERNAL_SERVER_ERROR, message).into(),
             AppError::External(message) => (StatusCode::BAD_GATEWAY, message).into(),
+            AppError::Timeout => (StatusCode::GATEWAY_TIMEOUT, "Operation timed out").into(),
         }
     }
 }

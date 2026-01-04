@@ -10,6 +10,8 @@ pub enum AppError {
     NotFound(String),
     #[error("Unauthorized access")]
     Unauthorized,
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
     #[error("Bad request: {0}")]
     BadRequest(String),
     #[error("Internal error: {0}")]
@@ -24,6 +26,8 @@ pub enum AppError {
     S3(String),
     #[error("External service error: {0}")]
     External(String),
+    #[error("Operation timed out")]
+    Timeout,
 }
 
 impl From<serde_json::Error> for AppError {

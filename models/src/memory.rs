@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use pgvector::HalfVector;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sqlx::FromRow;
 
 /// Memory record with enhanced importance scoring
@@ -23,7 +22,6 @@ pub struct MemoryRecord {
     pub uniqueness_score: f64,
     pub compression_level: i32,
     pub compressed_content: Option<String>,
-    pub context_decay_profile: Value, // JSONB
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -60,12 +58,5 @@ impl MemoryRecord {
             0 => &self.content,
             _ => self.compressed_content.as_deref().unwrap_or(&self.content),
         }
-    }
-
-    pub fn get_context_decay_modifier(&self, context_id: i64) -> f64 {
-        self.context_decay_profile
-            .get(&context_id.to_string())
-            .and_then(|v| v.as_f64())
-            .unwrap_or(1.0)
     }
 }

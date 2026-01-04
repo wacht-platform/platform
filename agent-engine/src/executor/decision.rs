@@ -96,7 +96,13 @@ impl AgentExecutor {
             .execute(&app_state)
             .await?;
 
-        self.repl().await
+        let result = self.repl().await;
+
+        if let Err(e) = self.filesystem.cleanup().await {
+            tracing::error!("Failed to cleanup filesystem: {}", e);
+        }
+
+        result
     }
 
     pub async fn execute_with_streaming(
@@ -118,7 +124,13 @@ impl AgentExecutor {
         self.conversations = context.conversations;
         self.memories = context.memories;
 
-        self.repl().await?;
+        let result = self.repl().await;
+
+        if let Err(e) = self.filesystem.cleanup().await {
+            tracing::error!("Failed to cleanup filesystem: {}", e);
+        }
+
+        result?;
 
         Ok(())
     }
@@ -564,9 +576,9 @@ impl AgentExecutor {
 
         let query_description = format!("[{:?}] {}", directive.pattern, directive.objective);
 
-        let context_results = match self
+        let hints = match self
             .context_orchestrator
-            .gather_context(
+            .gather_context_hints(
                 &self.conversations,
                 &self.memories,
                 &context_objective,
@@ -575,21 +587,27 @@ impl AgentExecutor {
             )
             .await
         {
-            Ok(results) => results,
+            Ok(h) => h,
             Err(e) => {
                 tracing::warn!(
-                    "Context gathering encountered an issue: {}. Continuing with partial results.",
+                    "Context gathering encountered an issue: {}. Continuing with empty hints.",
                     e
                 );
-                vec![]
+                dto::json::agent_executor::ContextHints {
+                    recommended_files: vec![],
+                    search_summary: format!("Search failed: {}", e),
+                    search_conclusion: dto::json::agent_executor::SearchConclusion::NothingFound,
+                    search_terms_used: vec![],
+                    knowledge_bases_searched: vec![],
+                }
             }
         };
 
         self.store_conversation(
             ConversationContent::ContextResults {
                 query: query_description,
-                results: serde_json::to_value(&context_results)?,
-                result_count: context_results.len(),
+                results: serde_json::to_value(&hints)?,
+                result_count: hints.recommended_files.len(),
                 timestamp: chrono::Utc::now(),
             },
             ConversationMessageType::ContextResults,

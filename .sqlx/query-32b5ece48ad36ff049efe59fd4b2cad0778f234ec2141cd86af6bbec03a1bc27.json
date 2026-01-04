@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, content, embedding as \"embedding: HalfVector\", memory_category,\n                base_temporal_score, access_count,\n                first_accessed_at, last_accessed_at,\n                creation_context_id, agent_id, last_reinforced_at,\n                semantic_centrality, uniqueness_score,\n                compression_level, compressed_content,\n                context_decay_profile,\n                created_at, updated_at,\n                1 - (embedding <=> $1) as similarity_score\n            FROM memories\n            WHERE base_temporal_score > 0.1\n                AND (\n                    ($3::bigint IS NULL AND $4::bigint IS NULL) OR\n                    ($3::bigint IS NOT NULL AND creation_context_id = $3) OR\n                    ($4::bigint IS NOT NULL AND agent_id = $4)\n                )\n                AND ($5::text[] IS NULL OR memory_category = ANY($5))\n            ORDER BY (1 - (embedding <=> $1)) * base_temporal_score DESC\n            LIMIT $2\n            ",
+  "query": "\n            SELECT\n                id, content, embedding as \"embedding: HalfVector\", memory_category,\n                base_temporal_score, access_count,\n                first_accessed_at, last_accessed_at,\n                creation_context_id, agent_id, last_reinforced_at,\n                semantic_centrality, uniqueness_score,\n                compression_level, compressed_content,\n                created_at, updated_at,\n                1 - (embedding <=> $1) as similarity_score\n            FROM memories\n            WHERE base_temporal_score > 0.1\n                AND (\n                    ($3::bigint IS NULL AND $4::bigint IS NULL) OR\n                    ($3::bigint IS NOT NULL AND creation_context_id = $3) OR\n                    ($4::bigint IS NOT NULL AND agent_id = $4)\n                )\n                AND ($5::text[] IS NULL OR memory_category = ANY($5))\n            ORDER BY (1 - (embedding <=> $1)) * base_temporal_score * (1 + LN(1 + access_count)) DESC\n            LIMIT $2\n            ",
   "describe": {
     "columns": [
       {
@@ -85,21 +85,16 @@
       },
       {
         "ordinal": 15,
-        "name": "context_decay_profile",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 16,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 17,
+        "ordinal": 16,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 18,
+        "ordinal": 17,
         "name": "similarity_score",
         "type_info": "Float8"
       }
@@ -136,9 +131,8 @@
       true,
       true,
       true,
-      true,
       null
     ]
   },
-  "hash": "0ea24b53b6a95fc0525812731762ce1cc3564a5455f1f230f6078d6c9067089c"
+  "hash": "32b5ece48ad36ff049efe59fd4b2cad0778f234ec2141cd86af6bbec03a1bc27"
 }

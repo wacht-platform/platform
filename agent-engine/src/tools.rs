@@ -1,5 +1,8 @@
 use commands::{Command, GenerateEmbeddingsCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use common::error::AppError;
+use chrono;
+use rand;
+use base64::Engine;
 use common::state::AppState;
 use dto::json::{
     ApiToolResult, KnowledgeBaseToolResult, PlatformEventResult, PlatformFunctionData,
@@ -38,38 +41,102 @@ impl ToolExecutor {
         &self,
         tool: &AiTool,
         execution_params: Value,
-        filesystem: Option<&AgentFilesystem>,
-        shell: Option<&ShellExecutor>,
+        filesystem: &AgentFilesystem,
+        shell: &ShellExecutor,
     ) -> Result<Value, AppError> {
-        match &tool.configuration {
+        let pipeline: Vec<String> = execution_params
+            .get("pipeline")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+
+        let result = match &tool.configuration {
             AiToolConfiguration::Api(config) => {
                 let result = self
                     .execute_api_tool(tool, config, &execution_params)
                     .await?;
-                Ok(serde_json::to_value(result)?)
+                serde_json::to_value(result)?
             }
             AiToolConfiguration::KnowledgeBase(config) => {
                 let result = self
                     .execute_knowledge_base_tool(tool, config, &execution_params)
                     .await?;
-                Ok(serde_json::to_value(result)?)
+                serde_json::to_value(result)?
             }
             AiToolConfiguration::PlatformEvent(config) => {
                 let result = self
                     .execute_platform_event_tool(tool, config, &execution_params)
                     .await?;
-                Ok(serde_json::to_value(result)?)
+                serde_json::to_value(result)?
             }
             AiToolConfiguration::PlatformFunction(config) => {
                 let result = self
                     .execute_platform_function_tool(tool, config, &execution_params)
                     .await?;
-                Ok(serde_json::to_value(result)?)
+                serde_json::to_value(result)?
             }
             AiToolConfiguration::Internal(config) => {
-                self.execute_internal_tool(tool, config, &execution_params, filesystem, shell).await
+                self.execute_internal_tool(tool, config, &execution_params, filesystem, shell).await?
             }
+        };
+
+        let final_result = if !pipeline.is_empty() {
+            let result_str = serde_json::to_string_pretty(&result)?;
+            let transformed = shell.apply_pipeline(&result_str, &pipeline).await?;
+            serde_json::json!({
+                "result": transformed,
+                "pipeline_applied": pipeline
+            })
+        } else {
+            result
+        };
+
+        let should_truncate = tool.name != "read_file" && tool.name != "read_knowledge_base_documents";
+
+        let result_str = serde_json::to_string_pretty(&final_result)?;
+        let char_count = result_str.chars().count();
+        let threshold = 2000;
+
+        if should_truncate && char_count > threshold {
+            let timestamp = chrono::Utc::now().timestamp_millis();
+            let random_suffix: String = (0..4).map(|_| {
+                use rand::Rng;
+                let idx = rand::thread_rng().gen_range(0..36);
+                let chars: Vec<char> = "0123456789abcdefghijklmnopqrstuvwxyz".chars().collect();
+                chars[idx]
+            }).collect();
+            
+            let scratch_filename = format!("tool_output_{}_{}.txt", timestamp, random_suffix);
+            let scratch_path = format!("/scratch/{}", scratch_filename);
+            let relative_path = format!("scratch/{}", scratch_filename);
+            
+            let _ = filesystem.write_file(&relative_path, &result_str, None, None).await;
+
+            let lines = result_str.lines().count();
+            let size_bytes = result_str.len();
+
+            let hint = if lines <= 1 && size_bytes > 1000 {
+                format!("Output is a large single-line text ({} bytes). Use 'cat {} | jq ...' or 'fold -w 80' to inspect", size_bytes, scratch_path)
+            } else {
+                format!("Output truncated. Full content in '{}'. Use 'cat', 'grep', or 'read_file' on this path.", scratch_path)
+            };
+
+            let preview: String = result_str.chars().take(threshold).collect();
+
+            return Ok(serde_json::json!({
+                "preview": preview,
+                "truncated": true,
+                "original_stats": {
+                    "size_bytes": size_bytes,
+                    "lines": lines,
+                    "char_count": char_count,
+                    "saved_to_path": scratch_path
+                },
+                "hint": hint,
+            }));
         }
+
+        Ok(final_result)
     }
 
     async fn execute_internal_tool(
@@ -77,30 +144,116 @@ impl ToolExecutor {
         tool: &AiTool,
         config: &InternalToolConfiguration,
         execution_params: &Value,
-        filesystem: Option<&AgentFilesystem>,
-        shell: Option<&ShellExecutor>,
+        filesystem: &AgentFilesystem,
+        shell: &ShellExecutor,
     ) -> Result<Value, AppError> {
         match config.tool_type {
             InternalToolType::ReadFile => {
-                let fs = filesystem.ok_or(AppError::Internal("Filesystem not available".to_string()))?;
                 let path = execution_params.get("path").and_then(|v| v.as_str())
                     .ok_or(AppError::BadRequest("Path is required".to_string()))?;
                 let start_line = execution_params.get("start_line").and_then(|v| v.as_u64()).map(|v| v as usize);
                 let end_line = execution_params.get("end_line").and_then(|v| v.as_u64()).map(|v| v as usize);
                 
-                let result = fs.read_file(path, start_line, end_line).await?;
-                Ok(serde_json::json!({
-                    "success": true,
-                    "tool": tool.name,
-                    "path": path,
-                    "content": result.content,
-                    "total_lines": result.total_lines,
-                    "start_line": result.start_line,
-                    "end_line": result.end_line
-                }))
+                let extension = path.split('.').last().unwrap_or("").to_lowercase();
+                
+                match extension.as_str() {
+                    "txt" | "md" | "json" | "yaml" | "yml" | "csv" | "xml" | "html" | "htm" |
+                    "js" | "ts" | "jsx" | "tsx" | "py" | "rs" | "go" | "java" | "c" | "cpp" |
+                    "h" | "hpp" | "css" | "scss" | "toml" | "ini" | "cfg" | "conf" | "sh" |
+                    "bash" | "zsh" | "sql" | "graphql" | "proto" | "env" | "gitignore" | 
+                    "dockerfile" | "makefile" | "log" | "" => {
+                        let result = filesystem.read_file(path, start_line, end_line).await?;
+                        Ok(serde_json::json!({
+                            "success": true,
+                            "tool": tool.name,
+                            "path": path,
+                            "file_type": "text",
+                            "content": result.content,
+                            "total_lines": result.total_lines,
+                            "start_line": result.start_line,
+                            "end_line": result.end_line
+                        }))
+                    }
+                    
+                    "pdf" => {
+                        let full_path = filesystem.resolve_path_public(path)?;
+                        let cmd = format!("pdftotext \"{}\" -", full_path.display());
+                        let output = shell.execute(&cmd).await?;
+                        
+                        if output.exit_code != 0 {
+                            return Ok(serde_json::json!({
+                                "success": false,
+                                "tool": tool.name,
+                                "path": path,
+                                "file_type": "pdf",
+                                "error": format!("Failed to extract PDF text: {}", output.stderr),
+                                "hint": "Ensure pdftotext (poppler-utils) is installed"
+                            }));
+                        }
+                        
+                        let content = output.stdout;
+                        let lines: Vec<&str> = content.lines().collect();
+                        let total_lines = lines.len();
+                        
+                        let start = start_line.unwrap_or(1).saturating_sub(1);
+                        let end = end_line.unwrap_or(total_lines).min(total_lines);
+                        let selected: Vec<&str> = lines.iter().skip(start).take(end.saturating_sub(start)).cloned().collect();
+                        
+                        Ok(serde_json::json!({
+                            "success": true,
+                            "tool": tool.name,
+                            "path": path,
+                            "file_type": "pdf",
+                            "content": selected.join("\n"),
+                            "total_lines": total_lines,
+                            "start_line": start + 1,
+                            "end_line": end,
+                            "note": "Text extracted from PDF via pdftotext"
+                        }))
+                    }
+                    
+                    "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg" => {
+                        let bytes = filesystem.read_file_bytes(path).await?;
+                        let base64_data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                        
+                        let mime_type = match extension.as_str() {
+                            "jpg" | "jpeg" => "image/jpeg",
+                            "png" => "image/png",
+                            "webp" => "image/webp",
+                            "gif" => "image/gif",
+                            "bmp" => "image/bmp",
+                            "svg" => "image/svg+xml",
+                            _ => "application/octet-stream"
+                        };
+                        
+                        Ok(serde_json::json!({
+                            "success": true,
+                            "tool": tool.name,
+                            "path": path,
+                            "file_type": "image",
+                            "mime_type": mime_type,
+                            "size_bytes": bytes.len(),
+                            "base64_data": base64_data,
+                            "note": "Image encoded as base64. Can be passed to vision-capable LLM for analysis."
+                        }))
+                    }
+                    
+                    _ => {
+                        let bytes = filesystem.read_file_bytes(path).await?;
+                        Ok(serde_json::json!({
+                            "success": true,
+                            "tool": tool.name,
+                            "path": path,
+                            "file_type": "binary",
+                            "size_bytes": bytes.len(),
+                            "extension": extension,
+                            "hint": "Binary file. Cannot display content directly. Consider using a specific tool for this file type."
+                        }))
+                    }
+                }
             }
             InternalToolType::WriteFile => {
-                let fs = filesystem.ok_or(AppError::Internal("Filesystem not available".to_string()))?;
+                let fs = filesystem;
                 let path = execution_params.get("path").and_then(|v| v.as_str())
                     .ok_or(AppError::BadRequest("Path is required".to_string()))?;
                 let content = execution_params.get("content").and_then(|v| v.as_str()).unwrap_or("");
@@ -118,7 +271,7 @@ impl ToolExecutor {
                 }))
             }
             InternalToolType::ListDirectory => {
-                let fs = filesystem.ok_or(AppError::Internal("Filesystem not available".to_string()))?;
+                let fs = filesystem;
                 let path = execution_params.get("path").and_then(|v| v.as_str()).unwrap_or("/");
                 let files = fs.list_dir(path).await?;
                 Ok(serde_json::json!({
@@ -129,7 +282,7 @@ impl ToolExecutor {
                 }))
             }
             InternalToolType::SearchFiles => {
-                let fs = filesystem.ok_or(AppError::Internal("Filesystem not available".to_string()))?;
+                let fs = filesystem;
                 let query = execution_params.get("query").and_then(|v| v.as_str())
                     .ok_or(AppError::BadRequest("Query is required".to_string()))?;
                 let path = execution_params.get("path").and_then(|v| v.as_str()).unwrap_or("/");
@@ -143,7 +296,7 @@ impl ToolExecutor {
                 }))
             }
             InternalToolType::ExecuteCommand => {
-                let sh = shell.ok_or(AppError::Internal("Shell not available".to_string()))?;
+                let sh = shell;
                 let command = execution_params.get("command").and_then(|v| v.as_str())
                     .ok_or(AppError::BadRequest("Command is required".to_string()))?;
                 let output = sh.execute(command).await?;
@@ -198,7 +351,11 @@ impl ToolExecutor {
             }
         }
 
-        let client = reqwest::Client::new();
+        let timeout_secs = config.timeout_seconds.unwrap_or(30);
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout_secs as u64))
+            .build()
+            .map_err(|e| AppError::Internal(format!("Failed to build HTTP client: {}", e)))?;
 
         let mut request_builder = match config.method {
             HttpMethod::GET => client.get(&url),
@@ -231,8 +388,6 @@ impl ToolExecutor {
             }
             _ => {}
         }
-
-
 
         let response = request_builder.send().await;
 

@@ -83,6 +83,9 @@ impl CreateAiToolCommand {
                     ));
                 }
             }
+            AiToolConfiguration::Internal(_) => {
+                // Internal tools don't need validation - they're system-defined
+            }
         }
 
         Ok(())
@@ -235,6 +238,9 @@ impl UpdateAiToolCommand {
                             "Function name is required".to_string(),
                         ));
                     }
+                }
+                AiToolConfiguration::Internal(_) => {
+                    // Internal tools don't need validation - they're system-defined
                 }
             }
         }

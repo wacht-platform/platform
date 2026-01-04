@@ -182,3 +182,31 @@ pub struct WorkflowValidationResult {
     pub missing_requirements: Vec<String>,
     pub validation_message: String,
 }
+
+// Context Hints - returned by gather_context for main agent to explore
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContextHints {
+    pub recommended_files: Vec<RecommendedFile>,
+    pub search_summary: String,
+    pub search_conclusion: SearchConclusion,
+    pub search_terms_used: Vec<String>,
+    pub knowledge_bases_searched: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RecommendedFile {
+    pub path: String,
+    pub document_title: String,
+    pub relevance_score: f32,
+    pub reason: String,
+    pub sample_text: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchConclusion {
+    FoundRelevant,
+    PartialMatch,
+    NothingFound,
+    NeedsMoreContext,
+}

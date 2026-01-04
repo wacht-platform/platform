@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT file_name FROM ai_knowledge_base_documents WHERE id = $1 AND knowledge_base_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5b57ee502e3da8fcb1c2fc6ac85311b3c8aa0ff9b9a55da27d6b52033162be9b"
+}

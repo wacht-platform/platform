@@ -36,7 +36,6 @@ impl Command for CreateMemoryCommand {
                 creation_context_id, agent_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
-                context_decay_profile,
                 created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4,
@@ -44,10 +43,14 @@ impl Command for CreateMemoryCommand {
                 $7, $8, $6,
                 0.0, 0.0,
                 0, NULL,
-                '{}',
                 $6, $6
             )
-            RETURNING *
+            RETURNING id, content, embedding, memory_category,
+                base_temporal_score, access_count, first_accessed_at, last_accessed_at,
+                creation_context_id, agent_id, last_reinforced_at,
+                semantic_centrality, uniqueness_score,
+                compression_level, compressed_content,
+                created_at, updated_at
             "#,
         )
         .bind(self.id)

@@ -4,7 +4,7 @@ use chrono::{Duration, Utc};
 use commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use common::error::AppError;
 use common::state::AppState;
-use dto::json::agent_executor::ObjectiveDefinition;
+use dto::json::agent_executor::{ObjectiveDefinition, ContextHints, RecommendedFile, SearchConclusion};
 use dto::json::context_orchestrator::{
     ContextSearchDerivation, LLMFilters, LLMSearchMode, SearchScope,
 };
@@ -544,6 +544,106 @@ impl ContextOrchestrator {
         }
 
         Ok(deduped_results)
+    }
+
+    pub async fn gather_context_hints(
+        &self,
+        conversations: &[ConversationRecord],
+        memories: &[models::MemoryRecord],
+        current_objective: &Option<ObjectiveDefinition>,
+        search_pattern: dto::json::agent_executor::SearchPattern,
+        expected_depth: Option<dto::json::agent_executor::SearchDepth>,
+    ) -> Result<ContextHints, AppError> {
+        let results = self.gather_context(
+            conversations,
+            memories,
+            current_objective,
+            search_pattern,
+            expected_depth,
+        ).await?;
+
+        let mut recommended_files: Vec<RecommendedFile> = Vec::new();
+        let mut seen_documents: HashSet<String> = HashSet::new();
+        let mut search_terms: Vec<String> = Vec::new();
+        let mut kb_names: HashSet<String> = HashSet::new();
+
+        for result in &results {
+            if let Some(query) = result.metadata.get("query").and_then(|v| v.as_str()) {
+                if !search_terms.contains(&query.to_string()) {
+                    search_terms.push(query.to_string());
+                }
+            }
+
+            if let ContextSource::KnowledgeBase { kb_id, document_id } = &result.source {
+                let doc_key = format!("{}_{}", kb_id, document_id);
+                if seen_documents.contains(&doc_key) {
+                    continue;
+                }
+                seen_documents.insert(doc_key);
+
+                let kb_name = self.agent.knowledge_bases
+                    .iter()
+                    .find(|kb| kb.id == *kb_id)
+                    .map(|kb| kb.name.clone())
+                    .unwrap_or_else(|| format!("kb_{}", kb_id));
+                
+                kb_names.insert(kb_name.clone());
+
+                let doc_title = result.metadata.get("document_title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("document")
+                    .to_string();
+
+                let path = format!("/knowledge/{}/{}", kb_name, doc_title);
+
+                let sample = if result.content.len() > 200 {
+                    Some(format!("{}...", &result.content[..200]))
+                } else if !result.content.is_empty() {
+                    Some(result.content.clone())
+                } else {
+                    None
+                };
+
+                recommended_files.push(RecommendedFile {
+                    path,
+                    document_title: doc_title,
+                    relevance_score: result.relevance_score as f32,
+                    reason: format!("Matched search query with score {:.2}", result.relevance_score),
+                    sample_text: sample,
+                });
+            }
+        }
+
+        // Sort by relevance and limit to top 10
+        recommended_files.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap_or(std::cmp::Ordering::Equal));
+        recommended_files.truncate(10);
+
+        // Determine search conclusion
+        let conclusion = if recommended_files.is_empty() {
+            SearchConclusion::NothingFound
+        } else if recommended_files.len() >= 5 && recommended_files[0].relevance_score > 0.7 {
+            SearchConclusion::FoundRelevant
+        } else if recommended_files.len() >= 2 {
+            SearchConclusion::PartialMatch
+        } else {
+            SearchConclusion::NeedsMoreContext
+        };
+
+        // Create search summary
+        let summary = format!(
+            "Searched {} knowledge bases using terms: [{}]. Found {} relevant documents.",
+            kb_names.len(),
+            search_terms.join(", "),
+            recommended_files.len()
+        );
+
+        Ok(ContextHints {
+            recommended_files,
+            search_summary: summary,
+            search_conclusion: conclusion,
+            search_terms_used: search_terms,
+            knowledge_bases_searched: kb_names.into_iter().collect(),
+        })
     }
 
     fn create_progress_summary(&self, metrics: &SearchMetrics, searches: &[Value]) -> Value {

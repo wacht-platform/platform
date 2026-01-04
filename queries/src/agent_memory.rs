@@ -27,7 +27,6 @@ impl Query for GetMRUMemoriesQuery {
                 creation_context_id, agent_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
-                context_decay_profile,
                 created_at, updated_at
             FROM memories
             WHERE creation_context_id = $1
@@ -195,7 +194,6 @@ impl Query for SearchMemoriesWithDecayQuery {
                 creation_context_id, agent_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
-                context_decay_profile,
                 created_at, updated_at,
                 1 - (embedding <=> $1) as similarity_score
             FROM memories
@@ -206,7 +204,7 @@ impl Query for SearchMemoriesWithDecayQuery {
                     ($4::bigint IS NOT NULL AND agent_id = $4)
                 )
                 AND ($5::text[] IS NULL OR memory_category = ANY($5))
-            ORDER BY (1 - (embedding <=> $1)) * base_temporal_score DESC
+            ORDER BY (1 - (embedding <=> $1)) * base_temporal_score * (1 + LN(1 + access_count)) DESC
             LIMIT $2
             "#,
             &embedding as &HalfVector,
@@ -237,7 +235,6 @@ impl Query for SearchMemoriesWithDecayQuery {
                 uniqueness_score: row.uniqueness_score.unwrap_or(0.0),
                 compression_level: row.compression_level.unwrap_or(0),
                 compressed_content: row.compressed_content,
-                context_decay_profile: row.context_decay_profile.unwrap_or(serde_json::json!({})),
                 created_at: row.created_at.unwrap_or_else(|| Utc::now()),
                 updated_at: row.updated_at.unwrap_or_else(|| Utc::now()),
             };
@@ -358,12 +355,11 @@ impl Query for GetSessionMemoriesQuery {
                 creation_context_id, agent_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
-                context_decay_profile,
                 created_at, updated_at
             FROM memories
             WHERE creation_context_id = $1
                 AND ($2::text[] IS NULL OR memory_category = ANY($2))
-            ORDER BY base_temporal_score * (1.0 / (1.0 + EXTRACT(EPOCH FROM (NOW() - last_accessed_at)) / 86400)) DESC
+            ORDER BY base_temporal_score * (1.0 / (1.0 + EXTRACT(EPOCH FROM (NOW() - last_accessed_at)) / 86400)) * (1 + LN(1 + access_count)) DESC
             LIMIT $3
             "#,
         )
@@ -402,13 +398,12 @@ impl Query for GetAgentMemoriesQuery {
                 creation_context_id, agent_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
-                context_decay_profile,
                 created_at, updated_at
             FROM memories
             WHERE agent_id = $1
                 AND creation_context_id IS NULL
                 AND ($2::text[] IS NULL OR memory_category = ANY($2))
-            ORDER BY base_temporal_score * semantic_centrality DESC
+            ORDER BY base_temporal_score * semantic_centrality * (1 + LN(1 + access_count)) DESC
             LIMIT $3
             "#,
         )
@@ -448,13 +443,12 @@ impl Query for GetAgentImportantMemoriesQuery {
                 creation_context_id, agent_id, last_reinforced_at,
                 semantic_centrality, uniqueness_score,
                 compression_level, compressed_content,
-                context_decay_profile,
                 created_at, updated_at
             FROM memories
             WHERE agent_id = $1
                 AND base_temporal_score >= $2
                 AND ($3::text[] IS NULL OR memory_category = ANY($3))
-            ORDER BY base_temporal_score * uniqueness_score DESC
+            ORDER BY base_temporal_score * uniqueness_score * (1 + LN(1 + access_count)) DESC
             LIMIT $4
             "#,
         )

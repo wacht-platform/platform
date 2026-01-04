@@ -135,10 +135,10 @@ impl AgentFilesystem {
     }
 
     pub async fn cleanup(&self) -> Result<(), AppError> {
-        let scratch = self.execution_root().join("scratch");
-        if scratch.exists() {
-            fs::remove_dir_all(&scratch).await.map_err(|e| {
-                AppError::Internal(format!("Failed to cleanup scratch: {}", e))
+        let root = self.execution_root();
+        if root.exists() {
+            fs::remove_dir_all(&root).await.map_err(|e| {
+                AppError::Internal(format!("Failed to cleanup execution root: {}", e))
             })?;
         }
         Ok(())
@@ -230,7 +230,7 @@ impl AgentFilesystem {
             }
 
             let existing = fs::read_to_string(&full_path).await.unwrap_or_default();
-            let mut lines: Vec<String> = existing.lines().map(|s| s.to_string()).collect();
+            let lines: Vec<String> = existing.lines().map(|s| s.to_string()).collect();
             
             let start = start_line.unwrap_or(1).saturating_sub(1);
             let end = end_line.unwrap_or(lines.len()).min(lines.len());
@@ -329,6 +329,10 @@ impl AgentFilesystem {
 
         let clean = path.trim_start_matches('/');
         Ok(self.execution_root().join(clean))
+    }
+
+    pub fn resolve_path_public(&self, path: &str) -> Result<PathBuf, AppError> {
+        self.resolve_path(path)
     }
 }
 

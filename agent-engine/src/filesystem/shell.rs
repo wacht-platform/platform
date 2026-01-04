@@ -28,7 +28,7 @@ impl ShellExecutor {
                 "cat", "head", "tail", "grep", "rg", "find", "ls", "tree", "wc", "du", "df",
                 "touch", "mkdir", "echo", "cp", "mv", "rm", "chmod",
                 "sed", "awk", "sort", "uniq", "jq", "cut", "tr", "diff",
-                "date", "whoami", "pwd", "printf"
+                "date", "whoami", "pwd", "printf", "pdftotext", "file"
             ].iter().map(|s| s.to_string()).collect(),
         }
     }
@@ -63,4 +63,61 @@ impl ShellExecutor {
             Err(e) => Err(AppError::Internal(format!("Failed to execute process: {}", e))),
         }
     }
+
+    pub async fn apply_pipeline(&self, input: &str, pipeline: &[String]) -> Result<String, AppError> {
+        if pipeline.is_empty() {
+            return Ok(input.to_string());
+        }
+
+        // Read-only commands allowed in pipeline (no rm, mv, cp, etc.)
+        let pipeline_allowed: Vec<&str> = vec![
+            "cat", "head", "tail", "grep", "rg", "wc", "sort", "uniq", 
+            "jq", "cut", "tr", "awk", "sed", "diff", "tee"
+        ];
+
+        // Validate each pipeline command
+        for cmd in pipeline {
+            let cmd_name = cmd.split_whitespace().next().unwrap_or("");
+            if !pipeline_allowed.contains(&cmd_name) {
+                return Err(AppError::Forbidden(format!(
+                    "Command '{}' is not allowed in pipeline. Allowed: {:?}", 
+                    cmd_name, pipeline_allowed
+                )));
+            }
+            if cmd.contains("..") {
+                return Err(AppError::Forbidden("Path traversal (..) is not allowed in pipeline".to_string()));
+            }
+        }
+
+        // Build full pipeline command: echo "input" | cmd1 | cmd2 | cmd3
+        let pipeline_str = pipeline.join(" | ");
+        let full_command = format!("echo {} | {}", shell_escape(input), pipeline_str);
+
+        let result = timeout(
+            Duration::from_secs(10), // Shorter timeout for pipelines
+            Command::new("bash")
+                .arg("-c")
+                .arg(&full_command)
+                .current_dir(&self.working_dir)
+                .output()
+        ).await.map_err(|_| AppError::Timeout)?;
+
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    Err(AppError::Internal(format!("Pipeline failed: {}", stderr)))
+                }
+            }
+            Err(e) => Err(AppError::Internal(format!("Failed to execute pipeline: {}", e))),
+        }
+    }
 }
+
+fn shell_escape(s: &str) -> String {
+    // Use $'...' syntax for proper escaping
+    format!("$'{}'", s.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n"))
+}
+

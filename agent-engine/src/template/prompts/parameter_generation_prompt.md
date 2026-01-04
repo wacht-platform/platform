@@ -107,6 +107,13 @@ Instead, describe actions in natural, user-friendly language. For example:
 5. **Context Awareness**: Use information from conversation history and previous results
 6. **Objective Alignment**: Ensure parameters align with the current objective and success criteria
 7. **User Preferences**: Consider user preferences and conversation insights when generating parameters
+8. **Pipeline Usage**: You support a `pipeline` parameter for ALL tools. Use it to:
+   - Filter large outputs (e.g., `grep ERROR`, `head -50`)
+   - Extract specific JSON fields (e.g., `jq '.data.items[] | .id'`)
+   - Count results (e.g., `wc -l`)
+   - Transform data formats (e.g., `sort | uniq`)
+   - **Allowed Commands**: `cat`, `head`, `tail`, `grep`, `rg`, `wc`, `sort`, `uniq`, `jq`, `cut`, `tr`, `awk`, `sed`, `diff`, `tee`
+   - **Example**: `["grep ERROR", "tail -20"]` for log files.
 
 ## Context Sufficiency Check:
 **Before generating parameters, verify you have all required information:**

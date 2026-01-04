@@ -89,8 +89,8 @@ impl AgentExecutorBuilder {
         let shell = ShellExecutor::new(filesystem.execution_root());
         
         for kb in &self.agent.knowledge_bases {
-            if let Err(e) = filesystem.link_knowledge_base(&kb.id.to_string(), &kb.title).await {
-                tracing::warn!("Failed to link knowledge base {} ({}): {}", kb.title, kb.id, e);
+            if let Err(e) = filesystem.link_knowledge_base(&kb.id.to_string(), &kb.name).await {
+                tracing::warn!("Failed to link knowledge base {} ({}): {}", kb.name, kb.id, e);
             }
         }
         
@@ -185,7 +185,7 @@ impl AgentExecutorBuilder {
             ),
             (
                 "execute_command",
-                "Execute a shell command. Allowed: cat, ls, grep, find, etc.",
+                "Execute a shell command. Allowed commands: cat, head, tail, grep, rg, find, ls, tree, wc, du, df, touch, mkdir, echo, cp, mv, rm, chmod, sed, awk, sort, uniq, jq, cut, tr, diff, date, whoami, pwd, printf.",
                 InternalToolType::ExecuteCommand,
                 vec![
                     SchemaField {
