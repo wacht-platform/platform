@@ -62,6 +62,15 @@ impl AgentFilesystem {
             .join(kb_id)
     }
 
+    pub fn persistent_scratch_path(&self) -> PathBuf {
+        self.base_path
+            .join(&self.deployment_id)
+            .join("persistent")
+            .join(&self.agent_id)
+            .join(&self.context_id)
+            .join("scratch")
+    }
+
     pub async fn initialize(&self) -> Result<(), AppError> {
         let root = self.execution_root();
         
@@ -73,9 +82,17 @@ impl AgentFilesystem {
             AppError::Internal(format!("Failed to create workspace: {}", e))
         })?;
 
-        fs::create_dir_all(root.join("scratch")).await.map_err(|e| {
-            AppError::Internal(format!("Failed to create scratch: {}", e))
+        let persistent_scratch = self.persistent_scratch_path();
+        fs::create_dir_all(&persistent_scratch).await.map_err(|e| {
+            AppError::Internal(format!("Failed to create persistent scratch: {}", e))
         })?;
+
+        let scratch_link = root.join("scratch");
+        if !scratch_link.exists() {
+            fs::symlink(&persistent_scratch, &scratch_link).await.map_err(|e| {
+                AppError::Internal(format!("Failed to symlink scratch: {}", e))
+            })?;
+        }
 
         fs::create_dir_all(root.join("knowledge")).await.map_err(|e| {
             AppError::Internal(format!("Failed to create knowledge dir: {}", e))
