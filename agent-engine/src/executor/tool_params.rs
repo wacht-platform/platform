@@ -9,22 +9,35 @@ use models::{
     SchemaField,
 };
 use serde_json::{json, Value};
+use tracing::{info, warn};
 
 
 impl AgentExecutor {
     pub(super) async fn execute_action(&self, action: &ExecutionAction) -> Result<Value, AppError> {
+        info!(
+            action_type = ?action.action_type,
+            purpose = %action.purpose,
+            "Executing action"
+        );
 
         let result = match &action.action_type {
             TaskType::ToolCall => {
                 let tool_call = self.parse_tool_call(&action.details, &action.purpose).await?;
+                info!(
+                    tool_name = %tool_call.tool_name,
+                    parameters = %tool_call.parameters,
+                    "Parsed tool call"
+                );
                 let tool = self
                     .agent
                     .tools
                     .iter()
                     .find(|t| t.name == tool_call.tool_name)
                     .ok_or_else(|| {
+                        warn!(tool_name = %tool_call.tool_name, "Tool not found");
                         AppError::BadRequest(format!("Tool '{}' not found", tool_call.tool_name))
                     })?;
+
                 self.tool_executor
                     .execute_tool_immediately(tool, tool_call.parameters, &self.filesystem, &self.shell)
                     .await

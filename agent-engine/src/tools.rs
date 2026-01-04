@@ -121,10 +121,9 @@ impl ToolExecutor {
             }).collect();
             
             let scratch_filename = format!("tool_output_{}_{}.txt", timestamp, random_suffix);
-            let scratch_path = format!("/scratch/{}", scratch_filename);
-            let relative_path = format!("scratch/{}", scratch_filename);
+            let scratch_path = format!("scratch/{}", scratch_filename);
             
-            let _ = filesystem.write_file(&relative_path, &result_str, None, None).await;
+            let _ = filesystem.write_file(&scratch_path, &result_str, None, None).await;
 
             let lines = result_str.lines().count();
             let size_bytes = result_str.len();
@@ -161,10 +160,20 @@ impl ToolExecutor {
         filesystem: &AgentFilesystem,
         shell: &ShellExecutor,
     ) -> Result<Value, AppError> {
+        tracing::info!(
+            tool_name = %tool.name,
+            params = %execution_params,
+            "Executing internal tool"
+        );
+        
         match config.tool_type {
             InternalToolType::ReadFile => {
-                let path = execution_params.get("path").and_then(|v| v.as_str())
-                    .ok_or(AppError::BadRequest("Path is required".to_string()))?;
+                let path = execution_params.get("path").and_then(|v| v.as_str());
+                tracing::debug!(path = ?path, "ReadFile path extraction");
+                let path = path.ok_or_else(|| {
+                    tracing::warn!(params = %execution_params, "Path is required but missing");
+                    AppError::BadRequest("Path is required".to_string())
+                })?;
                 let start_line = execution_params.get("start_line").and_then(|v| v.as_u64()).map(|v| v as usize);
                 let end_line = execution_params.get("end_line").and_then(|v| v.as_u64()).map(|v| v as usize);
                 
