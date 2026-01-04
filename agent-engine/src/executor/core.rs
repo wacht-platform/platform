@@ -69,7 +69,7 @@ impl AgentExecutorBuilder {
 
     pub async fn build(self) -> Result<AgentExecutor, AppError> {
         let tool_executor =
-            ToolExecutor::new(self.app_state.clone()).with_channel(self.channel.clone());
+            ToolExecutor::new(self.app_state.clone(), self.agent.clone(), self.context_id).with_channel(self.channel.clone());
         let context_orchestrator =
             ContextOrchestrator::new(self.app_state.clone(), self.agent.clone(), self.context_id);
 
@@ -193,6 +193,31 @@ impl AgentExecutorBuilder {
                         field_type: "STRING".to_string(),
                         description: Some("Shell command to run".to_string()),
                         required: true,
+                    }
+                ]
+            ),
+            (
+                "save_memory",
+                "Save important information to long-term memory. Use for facts, preferences, procedures that should be remembered across sessions.",
+                InternalToolType::SaveMemory,
+                vec![
+                    SchemaField {
+                        name: "content".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("The information to remember".to_string()),
+                        required: true,
+                    },
+                    SchemaField {
+                        name: "category".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Category: procedural (how-to), semantic (facts), episodic (events), working (temp)".to_string()),
+                        required: true,
+                    },
+                    SchemaField {
+                        name: "importance".to_string(),
+                        field_type: "NUMBER".to_string(),
+                        description: Some("Importance 0.0-1.0 (default: 0.5)".to_string()),
+                        required: false,
                     }
                 ]
             ),

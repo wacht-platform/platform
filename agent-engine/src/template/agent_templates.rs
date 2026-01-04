@@ -38,7 +38,6 @@ pub fn register_all_templates(hb: &mut Handlebars) {
     )
     .expect("Failed to register execution_summary_prompt template");
 
-    // Tool & context templates
     hb.register_template_string(
         "parameter_generation_prompt",
         include_str!("templates/parameter_generation_prompt.hbs"),
@@ -63,4 +62,10 @@ pub fn register_all_templates(hb: &mut Handlebars) {
         include_str!("templates/trigger_evaluation_prompt.hbs"),
     )
     .expect("Failed to register trigger_evaluation_prompt template");
+
+    hb.register_template_string(
+        "memory_consolidation_prompt",
+        include_str!("templates/memory_consolidation_prompt.hbs"),
+    )
+    .expect("Failed to register memory_consolidation_prompt template");
 }

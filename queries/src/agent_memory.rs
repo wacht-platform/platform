@@ -253,6 +253,85 @@ impl Query for SearchMemoriesWithDecayQuery {
     }
 }
 
+/// Find memories similar to given embedding for deduplication
+#[derive(Debug)]
+pub struct FindSimilarMemoriesQuery {
+    pub agent_id: i64,
+    pub embedding: Vec<f32>,
+    pub threshold: f64,
+    pub limit: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimilarMemory {
+    pub id: i64,
+    pub content: String,
+    pub similarity: f64,
+}
+
+impl Query for FindSimilarMemoriesQuery {
+    type Output = Vec<SimilarMemory>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let embedding = HalfVector::from_f32_slice(&self.embedding);
+        
+        let results = sqlx::query!(
+            r#"
+            SELECT id, content, 1 - (embedding <=> $1) as similarity
+            FROM memories
+            WHERE agent_id = $2
+              AND 1 - (embedding <=> $1) > $3
+            ORDER BY similarity DESC
+            LIMIT $4
+            "#,
+            &embedding as &HalfVector,
+            self.agent_id,
+            self.threshold,
+            self.limit
+        )
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(AppError::from)?;
+
+        Ok(results.into_iter().map(|r| SimilarMemory {
+            id: r.id,
+            content: r.content,
+            similarity: r.similarity.unwrap_or(0.0),
+        }).collect())
+    }
+}
+
+/// Get a single memory by ID
+#[derive(Debug)]
+pub struct GetMemoryByIdQuery {
+    pub memory_id: i64,
+}
+
+impl Query for GetMemoryByIdQuery {
+    type Output = MemoryRecord;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query_as::<_, MemoryRecord>(
+            r#"
+            SELECT
+                id, content, embedding, memory_category,
+                base_temporal_score, access_count,
+                first_accessed_at, last_accessed_at,
+                creation_context_id, agent_id, last_reinforced_at,
+                semantic_centrality, uniqueness_score,
+                compression_level, compressed_content,
+                created_at, updated_at
+            FROM memories
+            WHERE id = $1
+            "#,
+        )
+        .bind(self.memory_id)
+        .fetch_one(&app_state.db_pool)
+        .await
+        .map_err(AppError::from)
+    }
+}
+
 #[derive(Debug)]
 pub struct SearchConversationsQuery {
     pub context_id: i64,

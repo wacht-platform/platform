@@ -1,0 +1,42 @@
+{
+"system_instruction": {
+"parts": [
+{
+"text": "{{system_prompt}}"
+}
+]
+},
+"contents": [
+{
+"role": "user",
+"parts": [
+{
+"text": "NEW FACT: {{new_fact}}\n\nSIMILAR EXISTING FACTS:\n{{#each existing_facts}}\n- {{this}}\n{{/each}}"
+}
+]
+}
+],
+"generationConfig": {
+"responseMimeType": "application/json",
+"responseSchema": {
+"type": "OBJECT",
+"properties": {
+"decision": {
+"type": "STRING",
+"enum": ["duplicate", "consolidate"],
+"description": "Whether this is a duplicate or should be consolidated"
+},
+"consolidated_content": {
+"type": "STRING",
+"nullable": true,
+"description": "The merged statement if decision is consolidate"
+},
+"reasoning": {
+"type": "STRING",
+"description": "Brief explanation of the decision"
+}
+},
+"required": ["decision", "reasoning"]
+}
+}
+}

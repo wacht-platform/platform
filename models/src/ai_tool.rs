@@ -107,6 +107,7 @@ pub enum InternalToolType {
     ListDirectory,
     SearchFiles,
     ExecuteCommand,
+    SaveMemory,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

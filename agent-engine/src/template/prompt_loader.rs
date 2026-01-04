@@ -48,6 +48,12 @@ static PROMPTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         include_str!("prompts/trigger_evaluation_system.md"),
     );
 
+    // Memory prompts
+    m.insert(
+        "memory_consolidation_system",
+        include_str!("prompts/memory_consolidation_prompt.md"),
+    );
+
     m
 });
 

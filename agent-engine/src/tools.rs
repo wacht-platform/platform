@@ -1,4 +1,5 @@
-use commands::{Command, GenerateEmbeddingsCommand, SearchKnowledgeBaseEmbeddingsCommand};
+use commands::{Command, GenerateEmbeddingsCommand, SearchKnowledgeBaseEmbeddingsCommand, CreateMemoryCommand};
+use queries::Query;
 use common::error::AppError;
 use chrono;
 use rand;
@@ -17,17 +18,22 @@ use models::{
 use serde_json::Value;
 use std::collections::HashMap;
 use crate::filesystem::{AgentFilesystem, shell::ShellExecutor};
+use models::AiAgentWithTools;
 
 
 pub struct ToolExecutor {
     app_state: AppState,
+    agent: AiAgentWithTools,
+    context_id: i64,
     channel: Option<tokio::sync::mpsc::Sender<StreamEvent>>,
 }
 
 impl ToolExecutor {
-    pub fn new(app_state: AppState) -> Self {
+    pub fn new(app_state: AppState, agent: AiAgentWithTools, context_id: i64) -> Self {
         Self {
             app_state,
+            agent,
+            context_id,
             channel: None,
         }
     }
@@ -35,6 +41,15 @@ impl ToolExecutor {
     pub fn with_channel(mut self, channel: tokio::sync::mpsc::Sender<StreamEvent>) -> Self {
         self.channel = Some(channel);
         self
+    }
+
+    /// Lite LLM - Used for simple verification tasks (deduplication checks)
+    fn create_lite_llm(&self) -> crate::llm::GeminiClient {
+        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_default();
+        crate::llm::GeminiClient::new(
+            api_key,
+            Some("gemini-2.5-flash-lite-preview-06-17".to_string()),
+        ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone())
     }
 
     pub async fn execute_tool_immediately(
@@ -307,6 +322,154 @@ impl ToolExecutor {
                     "stdout": output.stdout,
                     "stderr": output.stderr,
                     "exit_code": output.exit_code
+                }))
+            }
+            InternalToolType::SaveMemory => {
+                let content = execution_params.get("content").and_then(|v| v.as_str())
+                    .ok_or(AppError::BadRequest("Content is required".to_string()))?;
+                let category_str = execution_params.get("category").and_then(|v| v.as_str())
+                    .unwrap_or("working");
+                let importance = execution_params.get("importance").and_then(|v| v.as_f64())
+                    .unwrap_or(0.5);
+                
+                let category = dto::json::agent_memory::MemoryCategory::from_str(category_str)
+                    .unwrap_or(dto::json::agent_memory::MemoryCategory::Working);
+                
+                // Generate embedding for the content
+                let embeddings = commands::GenerateEmbeddingsCommand::new(vec![content.to_string()])
+                    .with_task_type("RETRIEVAL_DOCUMENT".to_string())
+                    .execute(&self.app_state)
+                    .await?;
+                
+                if embeddings.is_empty() {
+                    return Err(AppError::Internal("Failed to generate embedding".to_string()));
+                }
+                
+                let embedding = &embeddings[0];
+                
+                // Find similar memories for consolidation (0.70+)
+                let similar = queries::FindSimilarMemoriesQuery {
+                    agent_id: self.agent.id,
+                    embedding: embedding.clone(),
+                    threshold: 0.70,
+                    limit: 5,
+                }.execute(&self.app_state).await?;
+                
+                // Check for near-exact duplicates (0.95+)
+                let exact_dupe = similar.iter().find(|m| m.similarity > 0.95);
+                if let Some(dupe) = exact_dupe {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "tool": tool.name,
+                        "message": "This information already exists",
+                        "existing_content": dupe.content
+                    }));
+                }
+                
+                // For similar memories (0.70-0.95), ask LLM if we should consolidate
+                let consolidation_candidates: Vec<_> = similar.iter()
+                    .filter(|m| m.similarity >= 0.70 && m.similarity < 0.95)
+                    .collect();
+                
+                let final_content: String;
+                let mut consolidated_ids: Vec<i64> = Vec::new();
+                let mut total_access_count: i32 = 0;
+                
+                if !consolidation_candidates.is_empty() {
+                    // Build context for template
+                    let existing_facts: Vec<String> = consolidation_candidates.iter()
+                        .map(|m| m.content.clone())
+                        .collect();
+                    
+                    let context = serde_json::json!({
+                        "new_fact": content,
+                        "existing_facts": existing_facts
+                    });
+                    
+                    // Render the consolidation prompt using template
+                    let prompt = crate::template::render_template_with_prompt(
+                        crate::template::AgentTemplates::MEMORY_CONSOLIDATION,
+                        context
+                    ).map_err(|e| AppError::Internal(format!("Template error: {}", e)))?;
+                    
+                    // Use lite LLM for this simple task
+                    let llm = self.create_lite_llm();
+                    
+                    let response = llm.generate_text(&prompt, None, None).await
+                        .map_err(|e| AppError::External(format!("LLM consolidation failed: {}", e)))?;
+                    
+                    let consolidated = response.trim();
+                    
+                    if consolidated.to_uppercase() == "DUPLICATE" {
+                        return Ok(serde_json::json!({
+                            "success": false,
+                            "tool": tool.name,
+                            "message": "This information is redundant with existing memories"
+                        }));
+                    }
+                    
+                    // Use consolidated content
+                    final_content = consolidated.to_string();
+                    
+                    // Mark old memories for deletion
+                    for candidate in &consolidation_candidates {
+                        consolidated_ids.push(candidate.id);
+                    }
+                    
+                    // Sum up access counts from old memories
+                    for id in &consolidated_ids {
+                        if let Ok(mem) = queries::GetMemoryByIdQuery { memory_id: *id }
+                            .execute(&self.app_state).await {
+                            total_access_count += mem.access_count;
+                        }
+                    }
+                } else {
+                    final_content = content.to_string();
+                }
+                
+                // Generate new embedding for consolidated content if needed
+                let final_embedding = if final_content != content {
+                    let new_embeddings = commands::GenerateEmbeddingsCommand::new(vec![final_content.clone()])
+                        .with_task_type("RETRIEVAL_DOCUMENT".to_string())
+                        .execute(&self.app_state)
+                        .await?;
+                    new_embeddings.get(0).cloned().unwrap_or(embedding.clone())
+                } else {
+                    embedding.clone()
+                };
+                
+                // Create the memory
+                let memory_id = self.app_state.sf.next_id()? as i64;
+                let create_cmd = commands::CreateMemoryCommand {
+                    id: memory_id,
+                    content: final_content.clone(),
+                    embedding: final_embedding,
+                    memory_category: category.clone(),
+                    creation_context_id: Some(self.context_id),
+                    agent_id: Some(self.agent.id),
+                    initial_importance: importance,
+                };
+                let memory = create_cmd.execute(&self.app_state).await?;
+                
+                // Delete old consolidated memories
+                if !consolidated_ids.is_empty() {
+                    commands::DeleteMemoriesCommand {
+                        memory_ids: consolidated_ids.clone(),
+                    }.execute(&self.app_state).await.ok();
+                }
+                
+                let consolidated_count = consolidated_ids.len();
+                Ok(serde_json::json!({
+                    "success": true,
+                    "tool": tool.name,
+                    "message": if consolidated_count > 0 {
+                        format!("Memory saved (consolidated {} related memories)", consolidated_count)
+                    } else {
+                        "Memory saved successfully".to_string()
+                    },
+                    "memory_id": memory.id.to_string(),
+                    "category": category_str,
+                    "consolidated_count": consolidated_count
                 }))
             }
         }

@@ -222,6 +222,56 @@ Access deeper memories beyond MRU. Use for patterns, past solutions, similar sce
 **Focus**: Text for semantic search, empty "" for high-value memories
 **When**: After context, before major actions, for patterns, complex problems
 
+### Memory Management Guide
+
+**Use `save_memory` tool** to store important information for future reference:
+
+```json
+{
+  "tool_name": "save_memory",
+  "parameters": {
+    "content": "User prefers TypeScript for all new projects",
+    "category": "semantic",
+    "importance": 0.8
+  }
+}
+```
+
+**When to Save Memory**:
+| Scenario | Category | Importance |
+|----------|----------|------------|
+| User states a preference | `semantic` | 0.7-0.9 |
+| Learned how to do something | `procedural` | 0.6-0.8 |
+| Important event/outcome | `episodic` | 0.5-0.7 |
+| Temporary working data | `working` | 0.3-0.5 |
+
+**Memory Categories**:
+- `procedural`: How-to knowledge, steps, processes ("To deploy, run X then Y")
+- `semantic`: Facts, preferences, definitions ("User's timezone is UTC")
+- `episodic`: Events, outcomes, what happened ("API call to X failed with 404")
+- `working`: Temporary state, current task data (auto-cleared)
+
+**Automatic Consolidation** (happens when you save):
+The system automatically:
+1. **Detects duplicates** (>95% similar) → Returns "already exists"
+2. **Consolidates related memories** (70-95% similar) → Merges into one
+3. **Saves new unique info** → Creates new memory
+
+**Possible save_memory responses**:
+| Response | Meaning |
+|----------|---------|
+| `"Memory saved successfully"` | New memory created |
+| `"Memory saved (consolidated 2 related memories)"` | Merged with existing |
+| `"This information already exists"` | Duplicate detected |
+| `"This information is redundant"` | LLM determined it adds nothing new |
+
+**Important Rules**:
+1. **DON'T worry about duplicates** - system handles automatically
+2. **DO save frequently** - better to try than miss important info
+3. **DO save user preferences** - they matter across sessions
+4. **DO save learned solutions** - helps with similar future problems
+5. **DON'T save transient data** - use `/scratch/` for temporary files
+
 ### 4. executeaction - Parallel Execution
 Execute 1-10 actions in parallel. Use `context_messages` to optimize token usage.
 

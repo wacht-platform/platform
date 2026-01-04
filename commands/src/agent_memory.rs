@@ -93,3 +93,27 @@ impl Command for UpdateMemoryAccessCommand {
         Ok(())
     }
 }
+
+/// Delete multiple memories (used for consolidation)
+pub struct DeleteMemoriesCommand {
+    pub memory_ids: Vec<i64>,
+}
+
+impl Command for DeleteMemoriesCommand {
+    type Output = u64;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        if self.memory_ids.is_empty() {
+            return Ok(0);
+        }
+        
+        let result = sqlx::query(
+            r#"DELETE FROM memories WHERE id = ANY($1)"#,
+        )
+        .bind(&self.memory_ids)
+        .execute(&app_state.db_pool)
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+}
