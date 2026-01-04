@@ -229,8 +229,11 @@ impl AgentExecutor {
             AiToolConfiguration::PlatformFunction(func_config) => {
                 self.build_platform_function_schema(func_config)
             }
+            AiToolConfiguration::Internal(internal_config) => {
+                self.build_internal_schema(internal_config)
+            }
             _ => Err(AppError::Internal(
-                "Parameter generation called for non-API/PlatformFunction tool".to_string(),
+                "Parameter generation not supported for this tool type".to_string(),
             )),
         }
     }
@@ -274,6 +277,28 @@ impl AgentExecutor {
             .input_schema
             .as_ref()
             .ok_or_else(|| AppError::Internal("No input schema".to_string()))?;
+
+        let (properties, required) = Self::schema_fields_to_properties(schema);
+
+        if properties.as_object().is_none_or(|p| p.is_empty()) {
+            return Ok(json!({}));
+        }
+
+        Ok(json!({
+            "type": "OBJECT",
+            "properties": properties,
+            "required": required
+        }))
+    }
+
+    fn build_internal_schema(
+        &self,
+        internal_config: &models::InternalToolConfiguration,
+    ) -> Result<Value, AppError> {
+        let schema = match &internal_config.input_schema {
+            Some(s) if !s.is_empty() => s,
+            _ => return Ok(json!({})),
+        };
 
         let (properties, required) = Self::schema_fields_to_properties(schema);
 
