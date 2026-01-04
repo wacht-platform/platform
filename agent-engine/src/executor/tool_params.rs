@@ -181,6 +181,9 @@ impl AgentExecutor {
             AiToolConfiguration::PlatformFunction(func_config) => {
                 func_config.input_schema.is_some()
             }
+            AiToolConfiguration::Internal(internal_config) => {
+                internal_config.input_schema.as_ref().is_some_and(|s| !s.is_empty())
+            }
             _ => false,
         }
     }
