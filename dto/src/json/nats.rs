@@ -77,7 +77,10 @@ pub enum AgentExecutionType {
 pub struct AgentExecutionRequest {
     pub deployment_id: i64,
     pub context_id: i64,
-    pub agent_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<i64>,
     #[serde(flatten)]
     pub execution_type: AgentExecutionType,
 }

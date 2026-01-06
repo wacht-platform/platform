@@ -1,28 +1,38 @@
 use commands::{Command, TriggerWebhookEventCommand};
 use common::state::AppState;
 
-/// Process an agent execution request
-/// Handles NewMessage, PlatformFunctionResult, and UserInputResponse
 pub async fn process_agent_execution(
     app_state: &AppState,
     request: dto::json::AgentExecutionRequest,
 ) -> Result<String, anyhow::Error> {
     use agent_engine::{AgentHandler, ExecutionRequest};
     use dto::json::AgentExecutionType;
-    use queries::{GetAiAgentByNameWithFeatures, Query};
+    use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures, Query};
+
+    let agent_identifier = request.agent_id.map(|id| id.to_string())
+        .or(request.agent_name.clone())
+        .unwrap_or_else(|| "unknown".to_string());
 
     tracing::info!(
         "Processing agent '{}' execution for context {} (type: {:?})",
-        request.agent_name,
+        agent_identifier,
         request.context_id,
         request.execution_type
     );
 
-    // Fetch the agent by name
-    let agent = GetAiAgentByNameWithFeatures::new(request.deployment_id, request.agent_name.clone())
-        .execute(app_state)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to get agent '{}': {}", request.agent_name, e))?;
+    let agent = if let Some(agent_id) = request.agent_id {
+        GetAiAgentByIdWithFeatures::new(agent_id)
+            .execute(app_state)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get agent by ID {}: {}", agent_id, e))?
+    } else if let Some(ref agent_name) = request.agent_name {
+        GetAiAgentByNameWithFeatures::new(request.deployment_id, agent_name.clone())
+            .execute(app_state)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get agent '{}': {}", agent_name, e))?
+    } else {
+        return Err(anyhow::anyhow!("Either agent_id or agent_name must be provided"));
+    };
 
     // Build ExecutionRequest based on execution type
     let execution_request = match request.execution_type {

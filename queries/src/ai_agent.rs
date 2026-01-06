@@ -286,8 +286,7 @@ impl Query for GetAiAgentByNameWithFeatures {
                         'name', i.name,
                         'deployment_id', i.deployment_id::text,
                         'integration_type', i.integration_type,
-                        'config', i.config,
-                        'enabled', i.enabled
+                        'config', i.config
                     )
                 ), '[]'::jsonb) as list
                 FROM agent_integrations i
@@ -301,6 +300,139 @@ impl Query for GetAiAgentByNameWithFeatures {
         )
         .bind(&self.agent_name)
         .bind(self.deployment_id)
+        .fetch_one(&app_state.db_pool)
+        .await
+        .map_err(|e| AppError::Database(e))?;
+
+        let tools = serde_json::from_value(row.get("tools"))
+            .map_err(|e| AppError::Internal(format!("Failed to deserialize tools: {}", e)))?;
+        let workflows = serde_json::from_value(row.get("workflows"))
+            .map_err(|e| AppError::Internal(format!("Failed to deserialize workflows: {}", e)))?;
+        let knowledge_bases = serde_json::from_value(row.get("knowledge_bases")).map_err(|e| {
+            AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
+        })?;
+        let integrations = serde_json::from_value(row.get("integrations")).map_err(|e| {
+            AppError::Internal(format!("Failed to deserialize integrations: {}", e))
+        })?;
+
+        Ok(AiAgentWithFeatures {
+            id: row.get("id"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+            description: row.get("description"),
+            name: row.get("name"),
+            deployment_id: row.get("deployment_id"),
+            configuration: row.get("configuration"),
+            tools,
+            workflows,
+            knowledge_bases,
+            integrations,
+        })
+    }
+}
+
+pub struct GetAiAgentByIdWithFeatures {
+    pub agent_id: i64,
+}
+
+impl GetAiAgentByIdWithFeatures {
+    pub fn new(agent_id: i64) -> Self {
+        Self { agent_id }
+    }
+}
+
+impl Query for GetAiAgentByIdWithFeatures {
+    type Output = AiAgentWithFeatures;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                a.id,
+                a.created_at,
+                a.updated_at,
+                a.description,
+                a.name,
+                a.deployment_id,
+                a.configuration,
+                tools.list as tools,
+                workflows.list as workflows,
+                knowledge_bases.list as knowledge_bases,
+                integrations.list as integrations
+            FROM ai_agents a
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(jsonb_agg(
+                    jsonb_build_object(
+                        'id', t.id::text,
+                        'created_at', t.created_at,
+                        'updated_at', t.updated_at,
+                        'name', t.name,
+                        'description', t.description,
+                        'tool_type', t.tool_type,
+                        'deployment_id', t.deployment_id::text,
+                        'configuration', t.configuration
+                    )
+                ), '[]'::jsonb) as list
+                FROM ai_tools t
+                WHERE t.deployment_id = a.deployment_id
+                    AND jsonb_typeof(a.configuration->'tool_ids') = 'array'
+                    AND t.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'tool_ids'))
+            ) tools ON true
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(jsonb_agg(
+                    jsonb_build_object(
+                        'id', w.id::text,
+                        'created_at', w.created_at,
+                        'updated_at', w.updated_at,
+                        'name', w.name,
+                        'description', w.description,
+                        'deployment_id', w.deployment_id::text,
+                        'configuration', w.configuration,
+                        'workflow_definition', w.workflow_definition
+                    )
+                ), '[]'::jsonb) as list
+                FROM ai_workflows w
+                WHERE w.deployment_id = a.deployment_id
+                    AND jsonb_typeof(a.configuration->'workflow_ids') = 'array'
+                    AND w.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'workflow_ids'))
+            ) workflows ON true
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(jsonb_agg(
+                    jsonb_build_object(
+                        'id', kb.id::text,
+                        'created_at', kb.created_at,
+                        'updated_at', kb.updated_at,
+                        'name', kb.name,
+                        'description', kb.description,
+                        'deployment_id', kb.deployment_id::text
+                    )
+                ), '[]'::jsonb) as list
+                FROM ai_knowledge_bases kb
+                WHERE kb.deployment_id = a.deployment_id
+                    AND jsonb_typeof(a.configuration->'knowledge_base_ids') = 'array'
+                    AND kb.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'knowledge_base_ids'))
+            ) knowledge_bases ON true
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(jsonb_agg(
+                    jsonb_build_object(
+                        'id', i.id::text,
+                        'created_at', i.created_at,
+                        'updated_at', i.updated_at,
+                        'name', i.name,
+                        'deployment_id', i.deployment_id::text,
+                        'integration_type', i.integration_type,
+                        'config', i.config
+                    )
+                ), '[]'::jsonb) as list
+                FROM agent_integrations i
+                WHERE i.deployment_id = a.deployment_id
+                    AND jsonb_typeof(a.configuration->'integration_ids') = 'array'
+                    AND i.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'integration_ids'))
+            ) integrations ON true
+            WHERE a.id = $1
+            "#,
+        )
+        .bind(self.agent_id)
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(|e| AppError::Database(e))?;
