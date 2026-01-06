@@ -1,8 +1,5 @@
 use commands::{Command, TriggerWebhookEventCommand};
 use common::state::AppState;
-use serde::{Deserialize, Serialize};
-
-
 
 /// Process an agent execution request
 /// Handles NewMessage, PlatformFunctionResult, and UserInputResponse
@@ -47,7 +44,7 @@ pub async fn process_agent_execution(
 
                 let trigger_command = TriggerWebhookEventCommand::new(
                     console_id,
-                    request.deployment_id.clone(),
+                    request.deployment_id.to_string(),
                     "execution_context.message".to_string(),
                     webhook_payload,
                 );
@@ -82,7 +79,7 @@ pub async fn process_agent_execution(
 
                 let trigger_command = TriggerWebhookEventCommand::new(
                     console_id,
-                    request.deployment_id.clone(),
+                    request.deployment_id.to_string(),
                     "execution_context.message".to_string(),
                     webhook_payload,
                 );
@@ -117,7 +114,7 @@ pub async fn process_agent_execution(
 
             let trigger_command = TriggerWebhookEventCommand::new(
                 console_id,
-                request.deployment_id.clone(),
+                request.deployment_id.to_string(),
                 "execution_context.platform_function_result".to_string(),
                 webhook_payload,
             );
