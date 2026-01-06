@@ -20,7 +20,9 @@ pub async fn process_agent_execution(
         request.execution_type
     );
 
-    let agent = if let Some(agent_id) = request.agent_id {
+    let agent = if let Some(ref agent_id_str) = request.agent_id {
+        let agent_id: i64 = agent_id_str.parse()
+            .map_err(|e| anyhow::anyhow!("Invalid agent_id '{}': {}", agent_id_str, e))?;
         GetAiAgentByIdWithFeatures::new(agent_id)
             .execute(app_state)
             .await
