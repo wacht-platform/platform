@@ -83,6 +83,40 @@ impl Query for GetRecentConversationsQuery {
 }
 
 #[derive(Debug)]
+pub struct GetConversationByIdQuery {
+    pub conversation_id: i64,
+}
+
+impl GetConversationByIdQuery {
+    pub fn new(conversation_id: i64) -> Self {
+        Self { conversation_id }
+    }
+}
+
+impl Query for GetConversationByIdQuery {
+    type Output = ConversationRecord;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let record = sqlx::query_as::<_, ConversationRecord>(
+            r#"
+            SELECT
+                id, context_id, timestamp, content, message_type,
+                created_at, updated_at
+            FROM conversations
+            WHERE id = $1
+            "#,
+        )
+        .bind(self.conversation_id)
+        .fetch_optional(&app_state.db_pool)
+        .await
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::NotFound(format!("Conversation {} not found", self.conversation_id)))?;
+
+        Ok(record)
+    }
+}
+
+#[derive(Debug)]
 pub struct GetLLMConversationHistoryQuery {
     pub context_id: i64,
 }

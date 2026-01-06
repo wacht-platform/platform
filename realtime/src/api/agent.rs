@@ -1,7 +1,7 @@
 use super::models::{WebsocketMessage, WebsocketMessageType};
 use super::session::SessionState;
 use crate::middleware::host_extractor::ExtractedHost;
-use agent_engine::{AgentHandler, ExecutionRequest};
+use commands::agent_execution::{UploadImagesToS3Command, PublishAgentExecutionCommand};
 use async_nats::jetstream;
 use async_nats::jetstream::stream;
 use axum::Extension;
@@ -485,44 +485,74 @@ async fn handle_execution_message(
             };
             let _ = sender.send(status_message);
 
-            let execution_request = ExecutionRequest {
-                agent,
-                user_message: Some(user_message),
-                user_images,
-                context_id,
-                platform_function_result: None,
-            };
+            // 1. Upload images to S3 via agent storage command
+            use commands::{Command, CreateConversationCommand};
+            use models::{ConversationContent, ConversationMessageType};
 
-            // Execute agent and update status based on result
-            match AgentHandler::new(app_state)
-                .execute_agent_streaming(execution_request)
+            let model_images = match UploadImagesToS3Command::new(deployment_id, context_id, user_images)
+                .execute(&app_state)
                 .await
             {
-                Ok(_) => {
-                    // Send idle status on completion
-                    let status_update = ExecutionStatusUpdate {
-                        status: "Idle".to_string(),
-                    };
-                    let status_message = WebsocketMessage {
-                        message_id: None,
-                        message_type: WebsocketMessageType::ExecutionStatusUpdate,
-                        data: serde_json::to_value(&status_update).unwrap(),
-                    };
-                    let _ = sender.send(status_message);
+                Ok(images) => images,
+                Err(e) => {
+                    tracing::error!("Failed to upload images: {}", e);
+                    None
                 }
-                Err(_) => {
-                    // Send failed status on error
-                    let status_update = ExecutionStatusUpdate {
-                        status: "Failed".to_string(),
-                    };
-                    let status_message = WebsocketMessage {
-                        message_id: None,
-                        message_type: WebsocketMessageType::ExecutionStatusUpdate,
-                        data: serde_json::to_value(&status_update).unwrap(),
-                    };
-                    let _ = sender.send(status_message);
-                }
+            };
+
+            // 2. Persist conversation to DB
+            let conversation_id = app_state.sf.next_id().unwrap_or(0) as i64;
+            let create_result = CreateConversationCommand::new(
+                conversation_id,
+                context_id,
+                ConversationContent::UserMessage {
+                    message: user_message,
+                    images: model_images,
+                },
+                ConversationMessageType::UserMessage,
+            )
+            .execute(&app_state)
+            .await;
+
+            if let Err(e) = create_result {
+                tracing::error!("Failed to create conversation: {}", e);
+                let status_update = ExecutionStatusUpdate {
+                    status: "Failed".to_string(),
+                };
+                let status_message = WebsocketMessage {
+                    message_id: None,
+                    message_type: WebsocketMessageType::ExecutionStatusUpdate,
+                    data: serde_json::to_value(&status_update).unwrap(),
+                };
+                let _ = sender.send(status_message);
+                return;
             }
+
+            // 3. Publish execution request to NATS (worker will execute agent)
+            if let Err(e) = PublishAgentExecutionCommand::new_message(
+                deployment_id,
+                context_id,
+                agent.name.clone(),
+                conversation_id,
+            )
+            .execute(&app_state)
+            .await
+            {
+                tracing::error!("Failed to publish execution request: {}", e);
+                let status_update = ExecutionStatusUpdate {
+                    status: "Failed".to_string(),
+                };
+                let status_message = WebsocketMessage {
+                    message_id: None,
+                    message_type: WebsocketMessageType::ExecutionStatusUpdate,
+                    data: serde_json::to_value(&status_update).unwrap(),
+                };
+                let _ = sender.send(status_message);
+                return;
+            }
+
+            // Status updates will come via NATS subscription (already set up in handle_client)
+            tracing::info!("Published agent execution request for context {}", context_id);
         }
         WebsocketMessageType::PlatformFunctionResult(execution_id, result) => {
             tracing::info!(
@@ -549,35 +579,27 @@ async fn handle_execution_message(
                     context.execution_state.is_some()
                 );
 
-                // If the context was in WaitingForInput state, resume execution
+                // If the context was in WaitingForInput state, publish resume request to NATS
                 if matches!(context.status, ExecutionContextStatus::WaitingForInput) {
                     if context.execution_state.is_some() {
-                        tracing::info!("Context was waiting for input, resuming agent execution");
+                        tracing::info!("Context was waiting for input, publishing resume request to NATS");
 
-                        // Get the agent from session state
-                        let session = session_state.lock().await;
-                        if let Some(agent) = session.agent.clone() {
-                            drop(session); // Release the lock before calling execute_agent_streaming
-
-                            // Create resume request with platform function result
-                            let resume_request = ExecutionRequest {
-                                agent,
-                                user_message: None,
-                                user_images: None,
-                                context_id,
-                                platform_function_result: Some((
-                                    execution_id.clone(),
-                                    result.clone(),
-                                )),
-                            };
-
-                            // Execute agent directly (we're already in a spawned task)
-                            let result = AgentHandler::new(app_state.clone())
-                                .execute_agent_streaming(resume_request)
-                                .await;
-                            tracing::info!("Agent resume completed: {:?}", result.is_ok());
+                        // Publish platform function result to NATS (worker will handle resume)
+                        use commands::Command;
+                        
+                        if let Err(e) = PublishAgentExecutionCommand::platform_function_result(
+                            deployment_id,
+                            context_id,
+                            agent.name.clone(),
+                            execution_id.clone(),
+                            result.clone(),
+                        )
+                        .execute(&app_state)
+                        .await
+                        {
+                            tracing::error!("Failed to publish platform function result: {}", e);
                         } else {
-                            tracing::error!("No agent found in session state");
+                            tracing::info!("Published platform function result for execution_id: {}", execution_id);
                         }
                     } else {
                         tracing::warn!("No execution state found in context");
@@ -594,34 +616,59 @@ async fn handle_execution_message(
         WebsocketMessageType::UserInputResponse(input) => {
             tracing::info!("Received user input response: {}", input);
 
-            // Resume execution with user input
-            let execution_request = ExecutionRequest {
-                agent,
-                user_message: Some(input),
-                user_images: None,
-                context_id,
-                platform_function_result: None,
-            };
+            // Persist user input as conversation first
+            use commands::{Command, CreateConversationCommand};
+            use models::{ConversationContent, ConversationMessageType};
 
-            match AgentHandler::new(app_state)
-                .execute_agent_streaming(execution_request)
-                .await
+            let conversation_id = app_state.sf.next_id().unwrap_or(0) as i64;
+            let create_result = CreateConversationCommand::new(
+                conversation_id,
+                context_id,
+                ConversationContent::UserMessage {
+                    message: input,
+                    images: None,
+                },
+                ConversationMessageType::UserMessage,
+            )
+            .execute(&app_state)
+            .await;
+
+            if let Err(e) = create_result {
+                tracing::error!("Failed to create user input conversation: {}", e);
+                let status_update = ExecutionStatusUpdate {
+                    status: "Failed".to_string(),
+                };
+                let status_message = WebsocketMessage {
+                    message_id: None,
+                    message_type: WebsocketMessageType::ExecutionStatusUpdate,
+                    data: serde_json::to_value(&status_update).unwrap(),
+                };
+                let _ = sender.send(status_message);
+                return;
+            }
+
+            // Publish user input response to NATS (worker will handle resume)
+            if let Err(e) = PublishAgentExecutionCommand::user_input_response(
+                deployment_id,
+                context_id,
+                agent.name.clone(),
+                conversation_id,
+            )
+            .execute(&app_state)
+            .await
             {
-                Ok(_) => {
-                    tracing::info!("Successfully resumed execution with user input");
-                }
-                Err(e) => {
-                    tracing::error!("Failed to resume with user input: {}", e);
-                    let status_update = ExecutionStatusUpdate {
-                        status: "Failed".to_string(),
-                    };
-                    let status_message = WebsocketMessage {
-                        message_id: None,
-                        message_type: WebsocketMessageType::ExecutionStatusUpdate,
-                        data: serde_json::to_value(&status_update).unwrap(),
-                    };
-                    let _ = sender.send(status_message);
-                }
+                tracing::error!("Failed to publish user input response: {}", e);
+                let status_update = ExecutionStatusUpdate {
+                    status: "Failed".to_string(),
+                };
+                let status_message = WebsocketMessage {
+                    message_id: None,
+                    message_type: WebsocketMessageType::ExecutionStatusUpdate,
+                    data: serde_json::to_value(&status_update).unwrap(),
+                };
+                let _ = sender.send(status_message);
+            } else {
+                tracing::info!("Published user input response for context {}", context_id);
             }
         }
         WebsocketMessageType::CancelExecution => {

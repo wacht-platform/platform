@@ -3,7 +3,7 @@ use common::error::AppError;
 use common::state::AppState;
 use dto::json::StreamEvent;
 use futures::StreamExt;
-use models::{AiAgentWithFeatures, ExecutionContextStatus};
+use models::AiAgentWithFeatures;
 use queries::{GetExecutionContextQuery, Query};
 use tracing::{error, warn};
 
@@ -14,8 +14,7 @@ pub struct AgentHandler {
 #[derive(Clone)]
 pub struct ExecutionRequest {
     pub agent: AiAgentWithFeatures,
-    pub user_message: Option<String>,
-    pub user_images: Option<Vec<dto::json::agent_executor::ImageData>>,
+    pub conversation_id: Option<i64>,
     pub context_id: i64,
     pub platform_function_result: Option<(String, serde_json::Value)>,
 }
@@ -48,12 +47,11 @@ impl AgentHandler {
             .await?;
 
         let execution_result = match (
-            request.user_message,
-            request.user_images,
+            request.conversation_id,
             request.platform_function_result,
             context.status,
         ) {
-            (_, _, Some((exec_id, result)), _) => {
+            (_, Some((exec_id, result)), _) => {
                 self.resume_agent_execution(
                     &kv,
                     &context_key,
@@ -64,30 +62,18 @@ impl AgentHandler {
                 )
                 .await
             }
-            (Some(input), _, None, ExecutionContextStatus::WaitingForInput) => {
-                self.resume_agent_execution(
-                    &kv,
-                    &context_key,
-                    execution_id,
-                    &mut executor,
-                    watch,
-                    ResumeContext::UserInput(input),
-                )
-                .await
-            }
-            (Some(message), images, None, _) => {
+            (Some(conv_id), None, _) => {
                 self.run_agent_execution(
                     &kv,
                     &context_key,
                     execution_id,
                     &mut executor,
-                    &message,
-                    images,
+                    conv_id,
                     watch,
                 )
                 .await
             }
-            _ => Err(AppError::Internal("Invalid execution request".to_string())),
+            _ => Err(AppError::Internal("Invalid execution request: conversation_id required".to_string())),
         };
 
         executor.post_execution_processing();
@@ -123,11 +109,11 @@ impl AgentHandler {
         context_key: String,
         deployment_id: i64,
     ) {
-        let jetstream = self.app_state.nats_jetstream.clone();
+        let app_state = self.app_state.clone();
         tokio::spawn(async move {
             while let Some(message) = receiver.recv().await {
                 let _ =
-                    publish_stream_event(&jetstream, &context_key, deployment_id, message).await;
+                    publish_stream_event(&app_state, &context_key, deployment_id, message).await;
             }
         });
     }
@@ -138,8 +124,7 @@ impl AgentHandler {
         context_key: &str,
         execution_id: i64,
         agent_executor: &mut AgentExecutor,
-        user_message: &str,
-        user_images: Option<Vec<dto::json::agent_executor::ImageData>>,
+        conversation_id: i64,
         mut watch: async_nats::jetstream::kv::Watch,
     ) -> Result<(), AppError> {
         kv.put(context_key, execution_id.to_string().into())
@@ -147,7 +132,7 @@ impl AgentHandler {
             .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {e}")))?;
 
         tokio::select! {
-            result = agent_executor.execute_with_streaming(user_message.to_string(), user_images) => {
+            result = agent_executor.execute_with_conversation_id(conversation_id) => {
                 result
             }
             _ = watch_for_cancellation(&mut watch, execution_id) => {
@@ -183,14 +168,15 @@ impl AgentHandler {
 }
 
 async fn publish_stream_event(
-    jetstream: &async_nats::jetstream::Context,
+    app_state: &AppState,
     context_key: &str,
     deployment_id: i64,
     event: StreamEvent,
 ) -> Result<(), AppError> {
+    let jetstream = &app_state.nats_jetstream;
     let subject = format!("agent_execution_stream.context:{context_key}");
 
-    let (message_type, payload) = match event {
+    let (message_type, payload) = match &event {
         StreamEvent::ConversationMessage(conversation_content) => {
             let payload = serde_json::to_vec(&conversation_content)
                 .map_err(|e| AppError::Internal(format!("Failed to serialize message: {e}")))?;
@@ -198,8 +184,8 @@ async fn publish_stream_event(
         }
         StreamEvent::PlatformEvent(event_label, event_data) => {
             let event_payload = dto::json::PlatformEventPayload {
-                event_label,
-                event_data,
+                event_label: event_label.clone(),
+                event_data: event_data.clone(),
             };
             let payload = serde_json::to_vec(&event_payload).map_err(|e| {
                 AppError::Internal(format!("Failed to serialize platform event: {e}"))
@@ -208,8 +194,8 @@ async fn publish_stream_event(
         }
         StreamEvent::PlatformFunction(function_name, function_data) => {
             let function_payload = dto::json::PlatformFunctionPayload {
-                function_name,
-                function_data,
+                function_name: function_name.clone(),
+                function_data: function_data.clone(),
             };
             let payload = serde_json::to_vec(&function_payload).map_err(|e| {
                 AppError::Internal(format!("Failed to serialize platform function: {e}"))
@@ -229,33 +215,51 @@ async fn publish_stream_event(
     headers.insert("context_id", context_key);
     headers.insert("deployment_id", deployment_id.to_string().as_str());
 
+    // 1. Publish to Realtime Stream
     jetstream
         .publish_with_headers(subject, headers, payload.clone().into())
         .await
         .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {e}")))?;
 
-    let worker_task = dto::json::NatsTaskMessage {
-        task_id: format!(
-            "agent_stream_{}_{}",
-            context_key,
-            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
-        ),
-        task_type: "agent.stream_log".to_string(),
-        payload: serde_json::json!({
-            "context_id": context_key,
-            "deployment_id": deployment_id.to_string(),
-            "message_type": message_type,
-            "payload": serde_json::from_slice::<serde_json::Value>(&payload).unwrap_or(serde_json::Value::Null),
-        }),
+    // 2. Trigger Webhook Directly (Streamlined)
+    use commands::{Command, TriggerWebhookEventCommand};
+
+    let webhook_event = match message_type {
+        "conversation_message" => "execution_context.message",
+        "platform_event" => "execution_context.platform_event",
+        "platform_function" => "execution_context.platform_function",
+        "user_input_request" => "execution_context.user_input_request",
+        _ => "execution_context.message",
     };
 
-    let worker_payload = serde_json::to_vec(&worker_task)
-        .map_err(|e| AppError::Internal(format!("Failed to serialize worker task: {e}")))?;
+    let webhook_payload = serde_json::json!({
+        "context_id": context_key,
+        "message_type": message_type,
+        "data": serde_json::from_slice::<serde_json::Value>(&payload).unwrap_or(serde_json::Value::Null),
+        "timestamp": chrono::Utc::now(),
+    });
 
-    jetstream
-        .publish("worker.tasks.agent.stream_log", worker_payload.into())
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to publish worker task: {e}")))?;
+    let console_id = std::env::var("CONSOLE_DEPLOYMENT_ID")
+        .unwrap_or_else(|_| "0".to_string())
+        .parse()
+        .unwrap_or(0);
+
+    let trigger_command = TriggerWebhookEventCommand::new(
+        console_id,
+        deployment_id.to_string(),
+        webhook_event.to_string(),
+        webhook_payload,
+    );
+
+    // Run webhook trigger in background or await? 
+    // Since publish_stream_event is spawned in a loop, awaiting is fine/good.
+    // However, if webhook is slow, it might block stream?
+    // publish_stream_event is inside a tokio::spawn loop in spawn_message_publisher
+    // Yes, awaiting is correct.
+    
+    if let Err(e) = trigger_command.execute(app_state).await {
+         error!("Failed to trigger webhook for agent stream event: {}", e);
+    }
 
     Ok(())
 }

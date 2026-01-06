@@ -138,10 +138,9 @@ pub struct ImageData {
     pub data: String,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ConverseRequest {
-    pub message: String,
-    pub images: Option<Vec<ImageData>>,
+    pub conversation_id: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

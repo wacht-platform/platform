@@ -6,9 +6,6 @@ use commands::{
 use common::state::AppState;
 use serde::Deserialize;
 
-use dto::json::GenerateUserAgentContextTokenRequest;
-use wacht::middleware::extractors::RequireAuth;
-
 #[derive(Debug, Deserialize)]
 pub struct GenerateTokenRequest {
     pub session_id: i64,
@@ -31,49 +28,27 @@ pub async fn generate_token(
 
 #[derive(Debug, Deserialize)]
 pub struct GenerateAgentContextTokenRequest {
-    pub user_id: i64,
-    pub audience: Option<String>,
+    pub subject: String,
+    pub agent_name: String,
     pub validity_hours: Option<u32>,
 }
 
 pub async fn generate_agent_context_token(
     State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
+    RequireDeployment(_deployment_id): RequireDeployment,
     Json(request): Json<GenerateAgentContextTokenRequest>,
 ) -> ApiResult<GenerateTokenResponse> {
-    GenerateAgentContextTokenCommand::new(deployment_id, request.user_id, request.audience)
+    // TODO: Hardcoded temporarily - should use proper deployment selection
+    let deployment_id: i64 = 20220525523509059;
+    
+    let user_id = request.subject.parse::<i64>().map_err(|_| {
+        crate::application::AppError::BadRequest("Invalid subject".to_string())
+    })?;
+    
+    GenerateAgentContextTokenCommand::new(deployment_id, user_id, Some(request.agent_name))
         .with_validity_hours(request.validity_hours.unwrap_or(24))
         .execute(&app_state)
         .await
         .map(Into::into)
         .map_err(Into::into)
-}
-
-pub async fn generate_user_agent_context_token(
-    auth: RequireAuth,
-    RequireDeployment(_): RequireDeployment,
-    Json(request): Json<GenerateUserAgentContextTokenRequest>,
-) -> ApiResult<GenerateTokenResponse> {
-    let user_id = auth.user_id.parse::<i64>().map_err(|_| {
-        crate::application::AppError::BadRequest("Invalid user ID in auth context".to_string())
-    })?;
-
-    let agent_token_request = wacht::agents::GenerateAgentContextTokenRequest {
-        user_id,
-        audience: request.audience,
-        validity_hours: request.validity_hours,
-    };
-
-    let token_response = wacht::agents::generate_agent_context_token(agent_token_request)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to generate agent context token via SDK: {:?}", e);
-            crate::application::AppError::Internal("Failed to generate token".to_string())
-        })?;
-
-    Ok(GenerateTokenResponse {
-        token: token_response.token,
-        expires: token_response.expires,
-    }
-    .into())
 }

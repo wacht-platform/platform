@@ -80,6 +80,69 @@ pub async fn get_ai_agent_by_id(
         .map_err(Into::into)
 }
 
+/// Get full agent details including integrations, tools, workflows, knowledge bases
+pub async fn get_ai_agent_details(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentParams>,
+) -> ApiResult<AgentDetailsResponse> {
+    use queries::GetIntegrationsByAgentIdQuery;
+    
+    // Fetch agent
+    let agent = GetAiAgentByIdQuery::new(deployment_id, params.agent_id)
+        .execute(&app_state)
+        .await?;
+    
+    // Fetch integrations
+    let integrations = GetIntegrationsByAgentIdQuery::new(deployment_id, params.agent_id)
+        .execute(&app_state)
+        .await
+        .unwrap_or_default();
+    
+    // Generate webhook URLs
+    let base_url = std::env::var("INTEGRATIONS_BASE_URL")
+        .unwrap_or_else(|_| "https://integrations.wacht.services".to_string());
+    
+    let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
+        .into_iter()
+        .map(|integration| {
+            let webhook_url = format!(
+                "{}/service/{}/{}/message",
+                base_url,
+                integration.integration_type.to_string().to_lowercase(),
+                params.agent_id
+            );
+            IntegrationWithUrl {
+                id: integration.id,
+                created_at: integration.created_at,
+                updated_at: integration.updated_at,
+                deployment_id: integration.deployment_id,
+                integration_type: integration.integration_type,
+                name: integration.name,
+                config: integration.config,
+                webhook_url,
+            }
+        })
+        .collect();
+    
+    Ok(AgentDetailsResponse {
+        id: agent.id,
+        created_at: agent.created_at,
+        updated_at: agent.updated_at,
+        deployment_id: agent.deployment_id,
+        name: agent.name,
+        description: agent.description,
+        configuration: agent.configuration,
+        tools_count: agent.tools_count,
+        workflows_count: agent.workflows_count,
+        knowledge_bases_count: agent.knowledge_bases_count,
+        integrations: integrations_with_urls,
+        tools: vec![], // TODO: fetch tools if needed
+        workflows: vec![], // TODO: fetch workflows if needed
+        knowledge_bases: vec![], // TODO: fetch knowledge bases if needed
+    }.into())
+}
+
 pub async fn update_ai_agent(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -115,4 +178,80 @@ pub async fn delete_ai_agent(
         .await
         .map(Into::into)
         .map_err(Into::into)
+}
+
+/// Get integrations attached to an agent via integration_ids in configuration
+pub async fn get_agent_integrations(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentParams>,
+) -> ApiResult<IntegrationsResponse> {
+    use queries::GetIntegrationsByAgentIdQuery;
+    
+    let integrations = GetIntegrationsByAgentIdQuery::new(deployment_id, params.agent_id)
+        .execute(&app_state)
+        .await?;
+    
+    // Generate webhook URLs for each integration
+    let base_url = std::env::var("INTEGRATIONS_BASE_URL")
+        .unwrap_or_else(|_| "https://integrations.wacht.services".to_string());
+    
+    let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
+        .into_iter()
+        .map(|integration| {
+            let webhook_url = format!(
+                "{}/service/{}/{}/message",
+                base_url,
+                integration.integration_type.to_string().to_lowercase(),
+                params.agent_id
+            );
+            IntegrationWithUrl {
+                id: integration.id,
+                created_at: integration.created_at,
+                updated_at: integration.updated_at,
+                deployment_id: integration.deployment_id,
+                integration_type: integration.integration_type,
+                name: integration.name,
+                config: integration.config,
+                webhook_url,
+            }
+        })
+        .collect();
+    
+    Ok(IntegrationsResponse { integrations: integrations_with_urls }.into())
+}
+
+#[derive(serde::Serialize)]
+pub struct IntegrationWithUrl {
+    pub id: i64,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub deployment_id: i64,
+    pub integration_type: models::IntegrationType,
+    pub name: String,
+    pub config: serde_json::Value,
+    pub webhook_url: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct IntegrationsResponse {
+    pub integrations: Vec<IntegrationWithUrl>,
+}
+
+#[derive(serde::Serialize)]
+pub struct AgentDetailsResponse {
+    pub id: i64,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub deployment_id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub configuration: serde_json::Value,
+    pub tools_count: i64,
+    pub workflows_count: i64,
+    pub knowledge_bases_count: i64,
+    pub integrations: Vec<IntegrationWithUrl>,
+    pub tools: Vec<serde_json::Value>,
+    pub workflows: Vec<serde_json::Value>,
+    pub knowledge_bases: Vec<serde_json::Value>,
 }

@@ -29,6 +29,7 @@ pub mod user;
 pub mod workspace;
 
 pub mod agent_execution_context;
+pub mod agent_integration;
 pub mod ai_agent;
 pub mod ai_knowledge_base;
 pub mod ai_tool;
@@ -37,6 +38,7 @@ pub mod billing;
 pub mod hybrid_search;
 pub mod plan_access;
 pub use agent_execution_context::*;
+pub use agent_integration::*;
 pub use ai_agent::*;
 pub use ai_knowledge_base::*;
 pub use b2b::*;

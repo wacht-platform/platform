@@ -54,3 +54,31 @@ impl TaskResult {
         }
     }
 }
+
+/// Type of agent execution request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum AgentExecutionType {
+    /// New message from user - conversation already persisted
+    #[serde(rename = "new_message")]
+    NewMessage { conversation_id: i64 },
+    
+    /// Platform function result - worker will persist this
+    #[serde(rename = "platform_function_result")]
+    PlatformFunctionResult { execution_id: String, result: serde_json::Value },
+    
+    /// User input response - conversation already persisted
+    #[serde(rename = "user_input_response")]
+    UserInputResponse { conversation_id: i64 },
+}
+
+/// Request to execute an agent via NATS
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentExecutionRequest {
+    pub deployment_id: i64,
+    pub context_id: i64,
+    pub agent_name: String,
+    #[serde(flatten)]
+    pub execution_type: AgentExecutionType,
+}
+

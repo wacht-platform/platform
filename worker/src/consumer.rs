@@ -422,18 +422,20 @@ impl NatsConsumer {
             }),
         );
 
+
+
         task_handlers.insert(
-            "agent.stream_log".to_string(),
+            "agent.execution_request".to_string(),
             Box::new(|payload, app_state| {
                 Box::pin(async move {
-                    let task: agent::AgentStreamLogTask =
+                    let request: dto::json::AgentExecutionRequest =
                         serde_json::from_value(payload).map_err(|e| {
                             TaskError::Permanent(format!(
-                                "Failed to deserialize agent stream log task: {}",
+                                "Failed to deserialize agent execution request: {}",
                                 e
                             ))
                         })?;
-                    agent::log_agent_stream_message(&app_state, task)
+                    agent::process_agent_execution(&app_state, request)
                         .await
                         .map_err(|e| TaskError::Permanent(e.to_string()))
                 })

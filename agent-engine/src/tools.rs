@@ -466,6 +466,46 @@ impl ToolExecutor {
                     "consolidated_count": consolidated_count
                 }))
             }
+
+            InternalToolType::GenerateIntegrationLink => {
+                let integration_type = execution_params
+                    .get("integration_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("teams")
+                    .to_string();
+
+                // 1. Get the context to find the context_group
+                let context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                    .execute(&self.app_state)
+                    .await?;
+
+                // 2. Get context_group (subject/audience identifier)
+                let context_group = context.context_group
+                    .ok_or_else(|| AppError::BadRequest("No context group found (user not identified)".to_string()))?;
+
+                // 3. Generate the code
+                let cmd = commands::CreateIntegrationLinkCodeCommand::new(
+                    self.agent.deployment_id,
+                    context_group,
+                    self.agent.id,
+                    integration_type.clone(),
+                );
+                
+                let result = cmd.execute(&self.app_state).await?;
+                
+                // 4. Return the code
+                Ok(serde_json::json!({
+                    "success": true,
+                    "tool": tool.name,
+                    "code": result.code,
+                    "expires_at": result.expires_at,
+                    "integration_type": integration_type,
+                    "message": format!(
+                        "Generated linking code: {}. It expires at {}. Please send this code to the {} bot to link your account.",
+                        result.code, result.expires_at, integration_type
+                    )
+                }))
+            }
         }
     }
 

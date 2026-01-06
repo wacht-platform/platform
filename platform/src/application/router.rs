@@ -243,6 +243,14 @@ fn base_deployment_routes() -> Router<AppState> {
                 .delete(api::ai_agents::delete_ai_agent),
         )
         .route(
+            "/ai-agents/{agent_id}/integrations",
+            get(api::ai_agents::get_agent_integrations),
+        )
+        .route(
+            "/ai-agents/{agent_id}/details",
+            get(api::ai_agents::get_ai_agent_details),
+        )
+        .route(
             "/ai-workflows",
             get(api::ai_workflows::get_ai_workflows).post(api::ai_workflows::create_ai_workflow),
         )
@@ -290,6 +298,17 @@ fn base_deployment_routes() -> Router<AppState> {
         .route(
             "/ai-knowledge-bases/{kb_id}/search",
             get(api::ai_knowledge_base_search::search_specific_knowledge_base),
+        )
+        .route(
+            "/agent-integrations",
+            get(api::agent_integrations::get_agent_integrations)
+                .post(api::agent_integrations::create_agent_integration),
+        )
+        .route(
+            "/agent-integrations/{integration_id}",
+            get(api::agent_integrations::get_agent_integration_by_id)
+                .patch(api::agent_integrations::update_agent_integration)
+                .delete(api::agent_integrations::delete_agent_integration),
         )
         .route("/analytics/stats", get(api::analytics::get_analytics_stats))
         .route(
@@ -406,8 +425,8 @@ fn console_specific_routes() -> Router<AppState> {
             post(api::api_key_console::rotate_api_key),
         )
         .route(
-            "/token/user-agent-context",
-            post(api::token::generate_user_agent_context_token),
+            "/token/agent",
+            post(api::token::generate_agent_context_token),
         )
         .route(
             "/settings/email-provider/smtp/verify",

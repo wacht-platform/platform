@@ -108,6 +108,7 @@ pub enum InternalToolType {
     SearchFiles,
     ExecuteCommand,
     SaveMemory,
+    GenerateIntegrationLink,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

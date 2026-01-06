@@ -2,8 +2,8 @@ use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use axum::extract::{Json, Path, Query, State};
 
-use agent_engine::{AgentHandler, ExecutionRequest};
-use commands::{Command, CreateExecutionContextCommand, UpdateExecutionContextCommand};
+use commands::{Command, CreateExecutionContextCommand, UpdateExecutionContextCommand, CreateConversationCommand};
+use commands::agent_execution::{UploadImagesToS3Command, PublishAgentExecutionCommand};
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::UpdateExecutionContextRequest;
@@ -12,7 +12,7 @@ use dto::json::deployment::{
 };
 use models::{AgentExecutionContext, ExecutionContextStatus};
 use queries::{
-    GetAiAgentByNameWithFeatures, GetExecutionContextQuery, ListExecutionContextsQuery,
+    GetExecutionContextQuery, ListExecutionContextsQuery,
     Query as QueryTrait,
 };
 use serde::Deserialize;
@@ -201,57 +201,127 @@ pub async fn execute_agent_async(
     Path(params): Path<ExecuteParams>,
     Json(request): Json<ExecuteAgentRequest>,
 ) -> ApiResult<ExecuteAgentResponse> {
+    use dto::json::deployment::ExecuteAgentRequestType;
+    use models::{ConversationContent, ConversationMessageType};
+    
     let context_id = params.context_id;
+    
     GetExecutionContextQuery::new(context_id, deployment_id)
         .execute(&app_state)
         .await?;
 
-    let agent = GetAiAgentByNameWithFeatures::new(deployment_id, request.agent_name.clone())
-        .execute(&app_state)
-        .await?;
+    match request.execution_type {
+        ExecuteAgentRequestType::NewMessage { message, images } => {
+            let model_images = match UploadImagesToS3Command::new(deployment_id, context_id, images)
+                .execute(&app_state)
+                .await
+            {
+                Ok(imgs) => imgs,
+                Err(e) => {
+                    error!("Failed to upload images: {}", e);
+                    None
+                }
+            };
 
-    let execution_id = app_state
-        .sf
-        .next_id()
-        .map_err(|e| AppError::Internal(format!("Failed to generate execution ID: {}", e)))?
-        as i64;
+            let conversation_id = app_state
+                .sf
+                .next_id()
+                .map_err(|e| AppError::Internal(format!("Failed to generate conversation ID: {}", e)))?
+                as i64;
 
-    let execution_request = ExecutionRequest {
-        agent,
-        user_message: Some(request.message),
-        user_images: request.images,
-        context_id,
-        platform_function_result: request.platform_function_result,
-    };
+            CreateConversationCommand::new(
+                conversation_id,
+                context_id,
+                ConversationContent::UserMessage {
+                    message,
+                    images: model_images,
+                },
+                ConversationMessageType::UserMessage,
+            )
+            .execute(&app_state)
+            .await?;
 
-    tokio::spawn(async move {
-        info!(
-            "Starting background execution {} for context {} in deployment {}",
-            execution_id, context_id, deployment_id
-        );
+            PublishAgentExecutionCommand::new_message(
+                deployment_id,
+                context_id,
+                request.agent_name.clone(),
+                conversation_id,
+            )
+            .execute(&app_state)
+            .await?;
 
-        let handler = AgentHandler::new(app_state);
-        match handler.execute_agent_streaming(execution_request).await {
-            Ok(_) => {
-                info!(
-                    "Successfully completed execution {} for context {}",
-                    execution_id, context_id
-                );
+            info!(
+                "Published new_message execution for context {} (conversation_id: {})",
+                context_id, conversation_id
+            );
+
+            Ok(ExecuteAgentResponse {
+                execution_id: conversation_id,
+                status: "queued".to_string(),
             }
-            Err(e) => {
-                error!("Failed to execute agent for context {}: {}", context_id, e);
-            }
+            .into())
         }
-    });
+        
+        ExecuteAgentRequestType::UserInputResponse { message } => {
+            let conversation_id = app_state
+                .sf
+                .next_id()
+                .map_err(|e| AppError::Internal(format!("Failed to generate conversation ID: {}", e)))?
+                as i64;
 
-    info!(
-        "Started async agent execution {} for context {} in deployment {}",
-        execution_id, context_id, deployment_id
-    );
+            CreateConversationCommand::new(
+                conversation_id,
+                context_id,
+                ConversationContent::UserMessage {
+                    message,
+                    images: None,
+                },
+                ConversationMessageType::UserMessage,
+            )
+            .execute(&app_state)
+            .await?;
 
-    Ok(ExecuteAgentResponse {
-        execution_id,
-        status: "running".to_string(),
+            PublishAgentExecutionCommand::user_input_response(
+                deployment_id,
+                context_id,
+                request.agent_name.clone(),
+                conversation_id,
+            )
+            .execute(&app_state)
+            .await?;
+
+            info!(
+                "Published user_input_response execution for context {} (conversation_id: {})",
+                context_id, conversation_id
+            );
+
+            Ok(ExecuteAgentResponse {
+                execution_id: conversation_id,
+                status: "queued".to_string(),
+            }
+            .into())
+        }
+        
+        ExecuteAgentRequestType::PlatformFunctionResult { execution_id, result } => {
+            PublishAgentExecutionCommand::platform_function_result(
+                deployment_id,
+                context_id,
+                request.agent_name.clone(),
+                execution_id.clone(),
+                result,
+            )
+            .execute(&app_state)
+            .await?;
+
+            info!(
+                "Published platform_function_result execution for context {} (execution_id: {})",
+                context_id, execution_id
+            );
+
+            Ok(ExecuteAgentResponse {
+                status: "queued".to_string(),
+            }
+            .into())
+        }
     }
-    .into())
 }

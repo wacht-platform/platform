@@ -220,7 +220,8 @@ impl Query for GetAiAgentByNameWithFeatures {
                 a.configuration,
                 tools.list as tools,
                 workflows.list as workflows,
-                knowledge_bases.list as knowledge_bases
+                knowledge_bases.list as knowledge_bases,
+                integrations.list as integrations
             FROM
                 ai_agents a
             LEFT JOIN LATERAL (
@@ -276,6 +277,24 @@ impl Query for GetAiAgentByNameWithFeatures {
                     AND jsonb_typeof(a.configuration->'knowledge_base_ids') = 'array'
                     AND k.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'knowledge_base_ids'))
             ) knowledge_bases ON true
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(jsonb_agg(
+                    jsonb_build_object(
+                        'id', i.id::text,
+                        'created_at', i.created_at,
+                        'updated_at', i.updated_at,
+                        'name', i.name,
+                        'deployment_id', i.deployment_id::text,
+                        'integration_type', i.integration_type,
+                        'config', i.config,
+                        'enabled', i.enabled
+                    )
+                ), '[]'::jsonb) as list
+                FROM agent_integrations i
+                WHERE i.deployment_id = a.deployment_id
+                    AND jsonb_typeof(a.configuration->'integration_ids') = 'array'
+                    AND i.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'integration_ids'))
+            ) integrations ON true
             WHERE
                 a.name = $1 AND a.deployment_id = $2
             "#,
@@ -293,6 +312,9 @@ impl Query for GetAiAgentByNameWithFeatures {
         let knowledge_bases = serde_json::from_value(row.get("knowledge_bases")).map_err(|e| {
             AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
         })?;
+        let integrations = serde_json::from_value(row.get("integrations")).map_err(|e| {
+            AppError::Internal(format!("Failed to deserialize integrations: {}", e))
+        })?;
 
         Ok(AiAgentWithFeatures {
             id: row.get("id"),
@@ -305,6 +327,7 @@ impl Query for GetAiAgentByNameWithFeatures {
             tools,
             workflows,
             knowledge_bases,
+            integrations,
         })
     }
 }

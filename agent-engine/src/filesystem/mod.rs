@@ -11,20 +11,18 @@ pub mod shell;
 pub struct AgentFilesystem {
     base_path: PathBuf,
     deployment_id: String,
-    agent_id: String,
     context_id: String,
     execution_id: String,
     read_files: Arc<RwLock<HashSet<String>>>,
 }
 
 impl AgentFilesystem {
-    pub fn new(deployment_id: &str, agent_id: &str, context_id: &str, execution_id: &str) -> Self {
+    pub fn new(deployment_id: &str, context_id: &str, execution_id: &str) -> Self {
         let base = "/mnt/wacht-agents".to_string();
         
         Self {
             base_path: PathBuf::from(base),
             deployment_id: deployment_id.to_string(),
-            agent_id: agent_id.to_string(),
             context_id: context_id.to_string(),
             execution_id: execution_id.to_string(),
             read_files: Arc::new(RwLock::new(HashSet::new())),

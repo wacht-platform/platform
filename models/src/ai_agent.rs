@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{AiKnowledgeBase, AiTool, AiWorkflow};
+use crate::{AgentIntegration, AiKnowledgeBase, AiTool, AiWorkflow};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AiAgent {
@@ -46,4 +46,5 @@ pub struct AiAgentWithFeatures {
     pub tools: Vec<AiTool>,
     pub workflows: Vec<AiWorkflow>,
     pub knowledge_bases: Vec<AiKnowledgeBase>,
+    pub integrations: Vec<AgentIntegration>,
 }

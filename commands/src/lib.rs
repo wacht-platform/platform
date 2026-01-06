@@ -11,6 +11,9 @@ pub trait Command {
 }
 
 pub mod agent_execution_context;
+pub mod agent_execution;
+pub mod agent_integration;
+pub mod integration_linking;
 pub mod agent_memory;
 pub mod agent_storage;
 pub mod ai_agents;
@@ -75,6 +78,8 @@ pub use workspace_role::*;
 pub use scim_token::*;
 
 pub use agent_memory::*;
+pub use agent_integration::*;
+pub use integration_linking::*;
 pub use agent_storage::*;
 pub use ai_agents::*;
 pub use ai_knowledge_base::*;

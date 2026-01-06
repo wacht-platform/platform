@@ -3,6 +3,7 @@ use crate::gemini::GeminiClient;
 use crate::template::{render_template_with_prompt, AgentTemplates};
 
 use commands::{Command, UpdateExecutionContextQuery};
+use queries::Query;
 use common::error::AppError;
 use dto::json::agent_executor::{
     ContextGatheringDirective, ConverseRequest, DeepReasoningDirective, NextStep, ObjectiveDefinition, StepDecision,
@@ -105,20 +106,37 @@ impl AgentExecutor {
         result
     }
 
-    pub async fn execute_with_streaming(
+    /// Execute with a pre-persisted conversation ID
+    /// The conversation must already exist in the database
+    pub async fn execute_with_conversation_id(
         &mut self,
-        message: String,
-        images: Option<Vec<dto::json::agent_executor::ImageData>>,
+        conversation_id: i64,
     ) -> Result<(), AppError> {
-        let request = ConverseRequest { message, images };
+        let request = ConverseRequest { conversation_id };
         self.run(request).await
     }
 
     pub async fn run(&mut self, request: ConverseRequest) -> Result<(), AppError> {
-        self.user_request = request.message.clone();
-
-        self.store_user_message(request.message, request.images)
+        // Fetch the conversation from DB - it must already be persisted
+        let conversation = queries::GetConversationByIdQuery::new(request.conversation_id)
+            .execute(&self.app_state)
             .await?;
+
+        // Extract user message from conversation content
+        let user_message = match &conversation.content {
+            models::ConversationContent::UserMessage { message, .. } => message.clone(),
+            _ => return Err(AppError::BadRequest("Conversation must be a user message".to_string())),
+        };
+
+        self.user_request = user_message;
+
+        // Stream the conversation to subscribers (for realtime clients)
+        let _ = self
+            .channel
+            .send(StreamEvent::ConversationMessage(conversation))
+            .await;
+
+        // get_immediate_context() fetches all conversations from DB including the one we just fetched
         let context = self.get_immediate_context().await?;
 
         self.conversations = context.conversations;

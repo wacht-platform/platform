@@ -3,7 +3,6 @@ use std::collections::HashMap;
 
 use models::{AiToolConfiguration, WorkflowConfiguration, WorkflowDefinition};
 
-// AI Agent models
 #[derive(Deserialize)]
 pub struct CreateAgentRequest {
     pub name: String,
@@ -19,7 +18,6 @@ pub struct UpdateAgentRequest {
     pub configuration: Option<serde_json::Value>,
 }
 
-// AI Tool models
 #[derive(Deserialize)]
 pub struct CreateToolRequest {
     pub name: String,
@@ -36,7 +34,6 @@ pub struct UpdateToolRequest {
     pub configuration: Option<AiToolConfiguration>,
 }
 
-// AI Workflow models
 #[derive(Deserialize)]
 pub struct CreateWorkflowRequest {
     pub name: String,
@@ -76,11 +73,31 @@ pub struct UpdateExecutionContextRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(tag = "type")]
+pub enum ExecuteAgentRequestType {
+    #[serde(rename = "new_message")]
+    NewMessage {
+        message: String,
+        images: Option<Vec<crate::json::agent_executor::ImageData>>,
+    },
+    
+    #[serde(rename = "user_input_response")]
+    UserInputResponse {
+        message: String,
+    },
+    
+    #[serde(rename = "platform_function_result")]
+    PlatformFunctionResult {
+        execution_id: String,
+        result: serde_json::Value,
+    },
+}
+
+#[derive(Deserialize)]
 pub struct ExecuteAgentRequest {
     pub agent_name: String,
-    pub message: String,
-    pub images: Option<Vec<crate::json::agent_executor::ImageData>>,
-    pub platform_function_result: Option<(String, serde_json::Value)>,
+    #[serde(flatten)]
+    pub execution_type: ExecuteAgentRequestType,
 }
 
 #[derive(Serialize)]

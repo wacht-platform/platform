@@ -2,44 +2,71 @@ use commands::{Command, TriggerWebhookEventCommand};
 use common::state::AppState;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AgentStreamLogTask {
-    pub context_id: String,
-    pub deployment_id: String,
-    pub message_type: String,
-    pub payload: serde_json::Value,
-}
 
-pub async fn log_agent_stream_message(
+
+/// Process an agent execution request
+/// Handles NewMessage, PlatformFunctionResult, and UserInputResponse
+pub async fn process_agent_execution(
     app_state: &AppState,
-    task: AgentStreamLogTask,
+    request: dto::json::AgentExecutionRequest,
 ) -> Result<String, anyhow::Error> {
-    let webhook_event = match task.message_type.as_str() {
-        "conversation_message" => "execution_context.message",
-        "platform_event" => "execution_context.platform_event",
-        "platform_function" => "execution_context.platform_function",
-        "user_input_request" => "execution_context.user_input_request",
-        _ => "execution_context.message",
-    };
+    use agent_engine::{AgentHandler, ExecutionRequest};
+    use dto::json::AgentExecutionType;
+    use queries::{GetAiAgentByNameWithFeatures, Query};
 
-    let webhook_payload = serde_json::json!({
-        "context_id": task.context_id,
-        "message_type": task.message_type,
-        "data": task.payload,
-        "timestamp": chrono::Utc::now(),
-    });
-
-    let trigger_command = TriggerWebhookEventCommand::new(
-        std::env::var("CONSOLE_DEPLOYMENT_ID")?.parse()?,
-        task.deployment_id.to_string(),
-        webhook_event.to_string(),
-        webhook_payload,
+    tracing::info!(
+        "Processing agent '{}' execution for context {} (type: {:?})",
+        request.agent_name,
+        request.context_id,
+        request.execution_type
     );
 
-    trigger_command.execute(app_state).await?;
+    // Fetch the agent by name
+    let agent = GetAiAgentByNameWithFeatures::new(request.deployment_id, request.agent_name.clone())
+        .execute(app_state)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to get agent '{}': {}", request.agent_name, e))?;
+
+    // Build ExecutionRequest based on execution type
+    let execution_request = match request.execution_type {
+        AgentExecutionType::NewMessage { conversation_id } => {
+            tracing::info!("New message execution with conversation_id: {}", conversation_id);
+            ExecutionRequest {
+                agent,
+                conversation_id: Some(conversation_id),
+                context_id: request.context_id,
+                platform_function_result: None,
+            }
+        }
+        AgentExecutionType::UserInputResponse { conversation_id } => {
+            tracing::info!("User input response with conversation_id: {}", conversation_id);
+            ExecutionRequest {
+                agent,
+                conversation_id: Some(conversation_id),
+                context_id: request.context_id,
+                platform_function_result: None,
+            }
+        }
+        AgentExecutionType::PlatformFunctionResult { execution_id, result } => {
+            tracing::info!("Platform function result for execution_id: {}", execution_id);
+            ExecutionRequest {
+                agent,
+                conversation_id: None,
+                context_id: request.context_id,
+                platform_function_result: Some((execution_id, result)),
+            }
+        }
+    };
+
+    // Execute the agent
+    AgentHandler::new(app_state.clone())
+        .execute_agent_streaming(execution_request)
+        .await
+        .map_err(|e| anyhow::anyhow!("Agent execution failed: {}", e))?;
 
     Ok(format!(
-        "Processed {} message for context {}",
-        task.message_type, task.context_id
+        "Agent '{}' execution completed for context {}",
+        request.agent_name, request.context_id
     ))
 }
+

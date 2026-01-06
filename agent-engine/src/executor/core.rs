@@ -77,7 +77,6 @@ impl AgentExecutorBuilder {
         
         let filesystem = AgentFilesystem::new(
             &self.agent.deployment_id.to_string(),
-            &self.agent.id.to_string(),
             &self.context_id.to_string(),
             &execution_id,
         );
