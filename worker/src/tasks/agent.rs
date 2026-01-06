@@ -9,7 +9,7 @@ pub async fn process_agent_execution(
     use dto::json::AgentExecutionType;
     use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures, Query};
 
-    let agent_identifier = request.agent_id.map(|id| id.to_string())
+    let agent_identifier = request.agent_id.as_ref().map(|id| id.to_string())
         .or(request.agent_name.clone())
         .unwrap_or_else(|| "unknown".to_string());
 
