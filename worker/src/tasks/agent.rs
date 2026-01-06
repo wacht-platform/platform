@@ -150,7 +150,7 @@ pub async fn process_agent_execution(
 
     Ok(format!(
         "Agent '{}' execution completed for context {}",
-        request.agent_name, request.context_id
+        agent_identifier, request.context_id
     ))
 }
 
