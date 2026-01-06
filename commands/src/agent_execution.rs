@@ -87,7 +87,6 @@ impl PublishAgentExecutionCommand {
         Self { request }
     }
 
-    /// Create a command for a new user message
     pub fn new_message(
         deployment_id: i64,
         context_id: i64,
@@ -96,16 +95,15 @@ impl PublishAgentExecutionCommand {
     ) -> Self {
         Self {
             request: AgentExecutionRequest {
-                deployment_id,
-                context_id,
+                deployment_id: deployment_id.to_string(),
+                context_id: context_id.to_string(),
                 agent_name: Some(agent_name),
                 agent_id: None,
-                execution_type: AgentExecutionType::NewMessage { conversation_id },
+                execution_type: AgentExecutionType::NewMessage { conversation_id: conversation_id.to_string() },
             },
         }
     }
 
-    /// Create a command for a user input response
     pub fn user_input_response(
         deployment_id: i64,
         context_id: i64,
@@ -114,16 +112,15 @@ impl PublishAgentExecutionCommand {
     ) -> Self {
         Self {
             request: AgentExecutionRequest {
-                deployment_id,
-                context_id,
+                deployment_id: deployment_id.to_string(),
+                context_id: context_id.to_string(),
                 agent_name: Some(agent_name),
                 agent_id: None,
-                execution_type: AgentExecutionType::UserInputResponse { conversation_id },
+                execution_type: AgentExecutionType::UserInputResponse { conversation_id: conversation_id.to_string() },
             },
         }
     }
 
-    /// Create a command for a platform function result
     pub fn platform_function_result(
         deployment_id: i64,
         context_id: i64,
@@ -133,8 +130,8 @@ impl PublishAgentExecutionCommand {
     ) -> Self {
         Self {
             request: AgentExecutionRequest {
-                deployment_id,
-                context_id,
+                deployment_id: deployment_id.to_string(),
+                context_id: context_id.to_string(),
                 agent_name: Some(agent_name),
                 agent_id: None,
                 execution_type: AgentExecutionType::PlatformFunctionResult { execution_id, result },

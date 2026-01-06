@@ -13,10 +13,16 @@ pub async fn process_agent_execution(
         .or(request.agent_name.clone())
         .unwrap_or_else(|| "unknown".to_string());
 
+    // Parse string IDs to i64
+    let deployment_id: i64 = request.deployment_id.parse()
+        .map_err(|e| anyhow::anyhow!("Invalid deployment_id '{}': {}", request.deployment_id, e))?;
+    let context_id: i64 = request.context_id.parse()
+        .map_err(|e| anyhow::anyhow!("Invalid context_id '{}': {}", request.context_id, e))?;
+
     tracing::info!(
         "Processing agent '{}' execution for context {} (type: {:?})",
         agent_identifier,
-        request.context_id,
+        context_id,
         request.execution_type
     );
 
@@ -28,7 +34,7 @@ pub async fn process_agent_execution(
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get agent by ID {}: {}", agent_id, e))?
     } else if let Some(ref agent_name) = request.agent_name {
-        GetAiAgentByNameWithFeatures::new(request.deployment_id, agent_name.clone())
+        GetAiAgentByNameWithFeatures::new(deployment_id, agent_name.clone())
             .execute(app_state)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get agent '{}': {}", agent_name, e))?
@@ -36,14 +42,15 @@ pub async fn process_agent_execution(
         return Err(anyhow::anyhow!("Either agent_id or agent_name must be provided"));
     };
 
-    // Build ExecutionRequest based on execution type
     let execution_request = match request.execution_type {
-        AgentExecutionType::NewMessage { conversation_id } => {
-            tracing::info!("New message execution with conversation_id: {}", conversation_id);
+        AgentExecutionType::NewMessage { ref conversation_id } => {
+            let conv_id: i64 = conversation_id.parse()
+                .map_err(|e| anyhow::anyhow!("Invalid conversation_id '{}': {}", conversation_id, e))?;
+            tracing::info!("New message execution with conversation_id: {}", conv_id);
             
-            if let Ok(conversation) = queries::GetConversationByIdQuery::new(conversation_id).execute(app_state).await {
+            if let Ok(conversation) = queries::GetConversationByIdQuery::new(conv_id).execute(app_state).await {
                 let webhook_payload = serde_json::json!({
-                    "context_id": request.context_id,
+                    "context_id": context_id,
                     "message_type": "conversation_message",
                     "data": conversation.content,
                     "timestamp": conversation.timestamp,
@@ -56,7 +63,7 @@ pub async fn process_agent_execution(
 
                 let trigger_command = TriggerWebhookEventCommand::new(
                     console_id,
-                    request.deployment_id.to_string(),
+                    deployment_id.to_string(),
                     "execution_context.message".to_string(),
                     webhook_payload,
                 );
@@ -68,17 +75,19 @@ pub async fn process_agent_execution(
 
             ExecutionRequest {
                 agent,
-                conversation_id: Some(conversation_id),
-                context_id: request.context_id,
+                conversation_id: Some(conv_id),
+                context_id,
                 platform_function_result: None,
             }
         }
-        AgentExecutionType::UserInputResponse { conversation_id } => {
-            tracing::info!("User input response with conversation_id: {}", conversation_id);
+        AgentExecutionType::UserInputResponse { ref conversation_id } => {
+            let conv_id: i64 = conversation_id.parse()
+                .map_err(|e| anyhow::anyhow!("Invalid conversation_id '{}': {}", conversation_id, e))?;
+            tracing::info!("User input response with conversation_id: {}", conv_id);
 
-            if let Ok(conversation) = queries::GetConversationByIdQuery::new(conversation_id).execute(app_state).await {
+            if let Ok(conversation) = queries::GetConversationByIdQuery::new(conv_id).execute(app_state).await {
                 let webhook_payload = serde_json::json!({
-                    "context_id": request.context_id,
+                    "context_id": context_id,
                     "message_type": "user_input_response",
                     "data": conversation.content,
                     "timestamp": conversation.timestamp,
@@ -91,7 +100,7 @@ pub async fn process_agent_execution(
 
                 let trigger_command = TriggerWebhookEventCommand::new(
                     console_id,
-                    request.deployment_id.to_string(),
+                    deployment_id.to_string(),
                     "execution_context.message".to_string(),
                     webhook_payload,
                 );
@@ -103,8 +112,8 @@ pub async fn process_agent_execution(
 
             ExecutionRequest {
                 agent,
-                conversation_id: Some(conversation_id),
-                context_id: request.context_id,
+                conversation_id: Some(conv_id),
+                context_id,
                 platform_function_result: None,
             }
         }
@@ -112,7 +121,7 @@ pub async fn process_agent_execution(
             tracing::info!("Platform function result for execution_id: {}", execution_id);
             
             let webhook_payload = serde_json::json!({
-                "context_id": request.context_id,
+                "context_id": context_id,
                 "message_type": "platform_function_result",
                 "execution_id": execution_id,
                 "data": result,
@@ -126,7 +135,7 @@ pub async fn process_agent_execution(
 
             let trigger_command = TriggerWebhookEventCommand::new(
                 console_id,
-                request.deployment_id.to_string(),
+                deployment_id.to_string(),
                 "execution_context.platform_function_result".to_string(),
                 webhook_payload,
             );
@@ -138,13 +147,12 @@ pub async fn process_agent_execution(
             ExecutionRequest {
                 agent,
                 conversation_id: None,
-                context_id: request.context_id,
+                context_id,
                 platform_function_result: Some((execution_id, result)),
             }
         }
     };
 
-    // Execute the agent
     AgentHandler::new(app_state.clone())
         .execute_agent_streaming(execution_request)
         .await
@@ -152,7 +160,6 @@ pub async fn process_agent_execution(
 
     Ok(format!(
         "Agent '{}' execution completed for context {}",
-        agent_identifier, request.context_id
+        agent_identifier, context_id
     ))
 }
-
