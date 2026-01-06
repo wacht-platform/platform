@@ -102,7 +102,6 @@ pub struct ExecuteAgentRequest {
 
 #[derive(Serialize)]
 pub struct ExecuteAgentResponse {
-    pub execution_id: i64,
     pub status: String,
 }
 

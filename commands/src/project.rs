@@ -278,6 +278,11 @@ fn get_default_webhook_events() -> Vec<WebhookEventDefinition> {
             description: "User input requested in execution context".to_string(),
             schema: None,
         },
+        WebhookEventDefinition {
+            name: "execution_context.platform_function_result".to_string(),
+            description: "Platform function result received in execution context".to_string(),
+            schema: None,
+        },
     ]
 }
 

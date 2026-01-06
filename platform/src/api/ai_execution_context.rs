@@ -256,7 +256,6 @@ pub async fn execute_agent_async(
             );
 
             Ok(ExecuteAgentResponse {
-                execution_id: conversation_id,
                 status: "queued".to_string(),
             }
             .into())
@@ -296,7 +295,6 @@ pub async fn execute_agent_async(
             );
 
             Ok(ExecuteAgentResponse {
-                execution_id: conversation_id,
                 status: "queued".to_string(),
             }
             .into())
