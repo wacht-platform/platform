@@ -98,7 +98,8 @@ impl PublishAgentExecutionCommand {
             request: AgentExecutionRequest {
                 deployment_id,
                 context_id,
-                agent_name,
+                agent_name: Some(agent_name),
+                agent_id: None,
                 execution_type: AgentExecutionType::NewMessage { conversation_id },
             },
         }
@@ -115,7 +116,8 @@ impl PublishAgentExecutionCommand {
             request: AgentExecutionRequest {
                 deployment_id,
                 context_id,
-                agent_name,
+                agent_name: Some(agent_name),
+                agent_id: None,
                 execution_type: AgentExecutionType::UserInputResponse { conversation_id },
             },
         }
@@ -133,7 +135,8 @@ impl PublishAgentExecutionCommand {
             request: AgentExecutionRequest {
                 deployment_id,
                 context_id,
-                agent_name,
+                agent_name: Some(agent_name),
+                agent_id: None,
                 execution_type: AgentExecutionType::PlatformFunctionResult { execution_id, result },
             },
         }
@@ -162,10 +165,14 @@ impl Command for PublishAgentExecutionCommand {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;
 
+        let agent_identifier = self.request.agent_id.map(|id| id.to_string())
+            .or(self.request.agent_name.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+
         tracing::info!(
             "Published agent execution request for context {} (agent: {})",
             self.request.context_id,
-            self.request.agent_name
+            agent_identifier
         );
 
         Ok(())
