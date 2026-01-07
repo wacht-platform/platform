@@ -90,6 +90,7 @@ pub struct UpdateExecutionContextQuery {
     pub completed_at: Option<Option<DateTime<Utc>>>,
     pub execution_state: Option<AgentExecutionState>,
     pub status: Option<ExecutionContextStatus>,
+    pub external_resource_metadata: Option<serde_json::Value>,
 }
 
 impl UpdateExecutionContextQuery {
@@ -101,6 +102,7 @@ impl UpdateExecutionContextQuery {
             completed_at: None,
             execution_state: None,
             status: None,
+            external_resource_metadata: None,
         }
     }
 
@@ -121,6 +123,11 @@ impl UpdateExecutionContextQuery {
 
     pub fn with_status(mut self, status: ExecutionContextStatus) -> Self {
         self.status = Some(status);
+        self
+    }
+
+    pub fn with_external_resource_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.external_resource_metadata = Some(metadata);
         self
     }
 }
@@ -216,6 +223,19 @@ impl super::Command for UpdateExecutionContextQuery {
                     }
                 }
             }
+        }
+
+        if let Some(ref metadata) = self.external_resource_metadata {
+            sqlx::query!(
+                "UPDATE agent_execution_contexts SET updated_at = $1, last_activity_at = $1, external_resource_metadata = $2 WHERE id = $3 AND deployment_id = $4",
+                now,
+                metadata,
+                self.context_id,
+                self.deployment_id
+            )
+            .execute(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
         }
 
         Ok(())
