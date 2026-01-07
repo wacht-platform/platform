@@ -482,6 +482,18 @@ impl AgentExecutor {
     }
 
     async fn decide_next_step(&mut self) -> Result<StepDecision, AppError> {
+        // Fetch the execution context to get title and actionables from metadata
+        let exec_context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+            .execute(&self.app_state)
+            .await?;
+        
+        // Parse actionables from external_resource_metadata if present
+        let actionables: Vec<dto::json::Actionable> = exec_context.external_resource_metadata
+            .as_ref()
+            .and_then(|m| m.get("actionables"))
+            .and_then(|a| serde_json::from_value(a.clone()).ok())
+            .unwrap_or_default();
+
         let context = StepDecisionContext {
             conversation_history: self.get_conversation_history_for_llm().await,
             user_request: self.user_request.clone(),
@@ -521,6 +533,9 @@ impl AgentExecutor {
                 max_iterations: MAX_LOOP_ITERATIONS,
             },
             teams_enabled: self.teams_enabled,
+            context_id: self.context_id,
+            context_title: exec_context.title,
+            actionables,
         };
 
         let mut context_json = serde_json::to_value(&context)?;

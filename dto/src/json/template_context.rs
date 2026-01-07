@@ -18,6 +18,20 @@ pub struct StepDecisionContext {
     pub iteration_info: IterationInfo,
     #[serde(default)]
     pub teams_enabled: bool,
+    // Cross-context awareness
+    pub context_id: i64,
+    pub context_title: String,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub actionables: Vec<Actionable>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Actionable {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub actionable_type: String,
+    pub description: String,
+    pub target_context_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

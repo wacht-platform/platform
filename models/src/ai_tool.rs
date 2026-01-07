@@ -124,6 +124,7 @@ pub enum UseExternalServiceToolType {
     TeamsListUsers,
     TeamsSearchUsers,
     TeamsSendDm,
+    TriggerContext,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

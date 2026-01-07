@@ -303,7 +303,7 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_send_dm",
-                    "Send a direct message to a user in Microsoft Teams. REQUIRES both user_id and message.",
+                    "Send a direct message to a user in Microsoft Teams. REQUIRES both user_id and message. Use notify_on_reply to get notified when user responds.",
                     UseExternalServiceToolType::TeamsSendDm,
                     vec![
                         SchemaField {
@@ -317,7 +317,19 @@ impl AgentExecutorBuilder {
                             field_type: "STRING".to_string(),
                             description: Some("The message content to send to the user.".to_string()),
                             required: true,
-                        }
+                        },
+                        SchemaField {
+                            name: "notify_on_reply".to_string(),
+                            field_type: "BOOLEAN".to_string(),
+                            description: Some("If true, you will be notified in your current context when the user replies. Default: false.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "description".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Context for why you're sending this DM - helps when processing the reply. Required if notify_on_reply is true.".to_string()),
+                            required: false,
+                        },
                     ]
                 ),
             ];
@@ -341,6 +353,50 @@ impl AgentExecutorBuilder {
                     });
                 }
             }
+        }
+        
+        // Add trigger_context tool (always available for cross-context messaging)
+        if !current_tools.iter().any(|t| t.name == "trigger_context") {
+            current_tools.push(AiTool {
+                id: -1,
+                name: "trigger_context".to_string(),
+                description: Some("Trigger execution in another context with a message. Use this to relay information or notify another conversation.".to_string()),
+                tool_type: AiToolType::UseExternalService,
+                deployment_id: self.agent.deployment_id,
+                configuration: AiToolConfiguration::UseExternalService(
+                    UseExternalServiceToolConfiguration {
+                        service_type: UseExternalServiceToolType::TriggerContext,
+                        input_schema: Some(vec![
+                            SchemaField {
+                                name: "target_context_id".to_string(),
+                                field_type: "INTEGER".to_string(),
+                                description: Some("The context ID to send the message to.".to_string()),
+                                required: true,
+                            },
+                            SchemaField {
+                                name: "message".to_string(),
+                                field_type: "STRING".to_string(),
+                                description: Some("The message to inject into the target context.".to_string()),
+                                required: true,
+                            },
+                            SchemaField {
+                                name: "actionable_id".to_string(),
+                                field_type: "STRING".to_string(),
+                                description: Some("Optional: ID of the actionable being fulfilled.".to_string()),
+                                required: false,
+                            },
+                            SchemaField {
+                                name: "execute".to_string(),
+                                field_type: "BOOLEAN".to_string(),
+                                description: Some("Whether to trigger agent execution in target context. Default: true. Set to false to just add message without execution.".to_string()),
+                                required: false,
+                            },
+                        ]),
+                    }
+                ),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            });
         }
         
         let mut agent_with_tools = self.agent.clone();

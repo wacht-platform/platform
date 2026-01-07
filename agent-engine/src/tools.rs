@@ -489,6 +489,9 @@ impl ToolExecutor {
             UseExternalServiceToolType::TeamsSendDm => {
                 self.execute_teams_command(tool, "send_dm", execution_params).await
             },
+            UseExternalServiceToolType::TriggerContext => {
+                self.execute_trigger_context(tool, execution_params).await
+            },
         }
     }
 
@@ -574,6 +577,88 @@ impl ToolExecutor {
             "success": true,
             "tool": tool.name,
             "result": response_data
+        }))
+    }
+
+    async fn execute_trigger_context(
+        &self,
+        tool: &AiTool,
+        execution_params: &Value,
+    ) -> Result<Value, AppError> {
+        let target_context_id = execution_params.get("target_context_id")
+            .and_then(|v| v.as_i64())
+            .ok_or_else(|| AppError::BadRequest("target_context_id is required".to_string()))?;
+        
+        let message = execution_params.get("message")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::BadRequest("message is required".to_string()))?;
+        
+        let actionable_id = execution_params.get("actionable_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        
+        // Whether to trigger immediate execution in target context (default: true for cross-context triggers)
+        let trigger_execution = execution_params.get("execute")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        // Verify target context exists and belongs to same deployment
+        let target_context = queries::GetExecutionContextQuery::new(target_context_id, self.agent.deployment_id)
+            .execute(&self.app_state)
+            .await
+            .map_err(|_| AppError::BadRequest(format!("Target context {} not found or not accessible", target_context_id)))?;
+
+        // Add a conversation record to the target context with the relayed message
+        let conversation_id = self.app_state.sf.next_id().map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))? as i64;
+        let relayed_message = format!(
+            "[Cross-context message from context #{}] {}{}",
+            self.context_id,
+            message,
+            actionable_id.as_ref().map(|id| format!(" (actionable: {})", id)).unwrap_or_default()
+        );
+        
+        let content = models::ConversationContent::UserMessage {
+            message: relayed_message.clone(),
+            sender_name: Some(format!("Cross-context relay from #{}", self.context_id)),
+            images: None,
+        };
+        
+        let conversation_cmd = commands::CreateConversationCommand::new(
+            conversation_id,
+            target_context_id,
+            content,
+            models::ConversationMessageType::UserMessage,
+        );
+        conversation_cmd.execute(&self.app_state).await?;
+
+        // Optionally trigger agent execution in the target context
+        if trigger_execution {
+            let trigger_payload = serde_json::json!({
+                "execution_context_id": target_context_id,
+                "message_type": "cross_context_trigger",
+                "content": message,
+                "metadata": {
+                    "source_context_id": self.context_id,
+                    "actionable_id": actionable_id
+                }
+            });
+
+            let subject = format!("agents.execute.{}", self.agent.deployment_id);
+            let _ = self.app_state.nats_client
+                .publish(subject, serde_json::to_vec(&trigger_payload)?.into())
+                .await;
+        }
+
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": tool.name,
+            "result": {
+                "message": if trigger_execution { "Message relayed and execution triggered" } else { "Message relayed to target context" },
+                "target_context_id": target_context_id,
+                "target_context_title": target_context.title,
+                "relayed_message": message,
+                "execution_triggered": trigger_execution
+            }
         }))
     }
 
