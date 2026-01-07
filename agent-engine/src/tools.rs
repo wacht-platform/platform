@@ -637,20 +637,25 @@ impl ToolExecutor {
         conversation_cmd.execute(&self.app_state).await?;
 
         if trigger_execution {
-            let trigger_payload = serde_json::json!({
-                "execution_context_id": target_context_id,
-                "message_type": "cross_context_trigger",
-                "content": message,
-                "metadata": {
-                    "source_context_id": self.context_id,
-                    "actionable_id": actionable_id
-                }
-            });
-
-            let subject = format!("agents.execute.{}", self.agent.deployment_id);
-            let _ = self.app_state.nats_client
-                .publish(subject, serde_json::to_vec(&trigger_payload)?.into())
-                .await;
+            let exec_cmd = commands::PublishAgentExecutionCommand::new_message(
+                self.agent.deployment_id,
+                target_context_id,
+                self.agent.name.clone(),
+                conversation_id,
+            );
+            
+            if let Err(e) = exec_cmd.execute(&self.app_state).await {
+                tracing::error!(
+                    target_context_id = target_context_id,
+                    error = %e,
+                    "Failed to trigger cross-context execution"
+                );
+            } else {
+                tracing::info!(
+                    target_context_id = target_context_id,
+                    "Cross-context execution triggered successfully"
+                );
+            }
         }
 
         // Clear the fulfilled actionable from the current context
