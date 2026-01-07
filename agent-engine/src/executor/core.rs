@@ -369,8 +369,8 @@ impl AgentExecutorBuilder {
                         input_schema: Some(vec![
                             SchemaField {
                                 name: "target_context_id".to_string(),
-                                field_type: "INTEGER".to_string(),
-                                description: Some("The context ID to send the message to.".to_string()),
+                                field_type: "STRING".to_string(),
+                                description: Some("The context ID to send the message to (as string to preserve precision).".to_string()),
                                 required: true,
                             },
                             SchemaField {

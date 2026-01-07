@@ -592,7 +592,9 @@ impl ToolExecutor {
         execution_params: &Value,
     ) -> Result<Value, AppError> {
         let target_context_id = execution_params.get("target_context_id")
-            .and_then(|v| v.as_i64())
+            .and_then(|v| {
+                v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+            })
             .ok_or_else(|| AppError::BadRequest("target_context_id is required".to_string()))?;
         
         let message = execution_params.get("message")

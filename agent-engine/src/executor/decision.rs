@@ -269,6 +269,27 @@ impl AgentExecutor {
 
         let result = match decision.next_step {
             NextStep::Acknowledge => {
+                let last_was_ack = self.conversations.last().map_or(false, |conv| {
+                    matches!(conv.message_type, ConversationMessageType::AssistantAcknowledgment)
+                });
+                
+                if last_was_ack {
+                    tracing::warn!(
+                        context_id = self.context_id,
+                        "Detected consecutive acknowledgment attempt - potential loop. Skipping duplicate acknowledgment and forcing action."
+                    );
+                    self.store_conversation(
+                        ConversationContent::SystemDecision {
+                            step: "loop_detection".to_string(),
+                            reasoning: "Consecutive acknowledgment detected. Previous message was already an acknowledgment. Proceeding to gather context or execute action instead.".to_string(),
+                            confidence: 1.0,
+                            thought_signature: None,
+                        },
+                        ConversationMessageType::SystemDecision,
+                    ).await?;
+                    return Ok(true);
+                }
+
                 if let Some(ack_data) = decision.acknowledgment {
                     self.store_conversation(
                         ConversationContent::AssistantAcknowledgment {
