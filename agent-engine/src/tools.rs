@@ -509,13 +509,19 @@ impl ToolExecutor {
         let context_group = context.context_group
             .ok_or_else(|| AppError::BadRequest("No context group found for Teams command".to_string()))?;
 
-        // Publish NATS Request - use strings for large IDs to avoid JS precision loss
+        let mut params = execution_params.clone();
+        if action == "send_dm" {
+            if let Some(obj) = params.as_object_mut() {
+                obj.insert("source_context_id".to_string(), serde_json::json!(self.context_id.to_string()));
+            }
+        }
+
         let payload = serde_json::json!({
             "deployment_id": self.agent.deployment_id.to_string(),
             "context_group": context_group,
             "agent_id": self.agent.id.to_string(),
             "action": action,
-            "params": execution_params
+            "params": params
         });
 
         let subject = "integrations.teams.command";
