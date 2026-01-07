@@ -340,7 +340,7 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_get_current_channel_messages",
-                    "Get recent messages from the current Teams channel you are in. Only works in channel contexts. Useful for finding meeting notifications, previous discussions, or context.",
+                    "Get recent messages from your current Teams conversation. Works for Team channels, group DMs, and 1:1 chats. Useful for finding meeting notifications, previous discussions, or context.",
                     UseExternalServiceToolType::TeamsGetChannelMessages,
                     vec![
                         SchemaField {
