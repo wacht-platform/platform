@@ -492,8 +492,8 @@ impl ToolExecutor {
             UseExternalServiceToolType::TeamsGetChannelMessages => {
                 self.execute_teams_command(tool, "get_current_channel_messages", execution_params).await
             },
-            UseExternalServiceToolType::TeamsListChannels => {
-                self.execute_teams_command(tool, "list_channels", execution_params).await
+            UseExternalServiceToolType::TeamsListMyConversations => {
+                self.execute_teams_command(tool, "list_my_conversations", execution_params).await
             },
             UseExternalServiceToolType::TeamsGetMeetingRecording => {
                 self.execute_teams_command(tool, "get_meeting_recording", execution_params).await

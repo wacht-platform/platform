@@ -358,17 +358,10 @@ impl AgentExecutorBuilder {
                     ]
                 ),
                 (
-                    "teams_list_channels",
-                    "List all channels in a specific Team. Use this to discover available channels.",
-                    UseExternalServiceToolType::TeamsListChannels,
-                    vec![
-                        SchemaField {
-                            name: "team_id".to_string(),
-                            field_type: "STRING".to_string(),
-                            description: Some("The Team ID to list channels from. Get this from context metadata or ask the user.".to_string()),
-                            required: true,
-                        },
-                    ]
+                    "teams_list_my_conversations",
+                    "Discover all chats and teams the bot has access to. Returns: chats (DMs, group chats with members) and teams (with IDs for listing channels). Use this to understand your conversation landscape.",
+                    UseExternalServiceToolType::TeamsListMyConversations,
+                    vec![] 
                 ),
                 (
                     "teams_get_meeting_recording",
