@@ -170,3 +170,57 @@ impl Query for GetIntegrationsByAgentIdQuery {
             .collect())
     }
 }
+
+pub struct GetActiveIntegrationsForContextQuery {
+    deployment_id: i64,
+    agent_id: i64,
+    context_group: String,
+}
+
+impl GetActiveIntegrationsForContextQuery {
+    pub fn new(deployment_id: i64, agent_id: i64, context_group: String) -> Self {
+        Self {
+            deployment_id,
+            agent_id,
+            context_group,
+        }
+    }
+}
+
+impl Query for GetActiveIntegrationsForContextQuery {
+    type Output = Vec<AgentIntegration>;
+
+    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT i.id, i.created_at, i.updated_at, i.deployment_id, i.integration_type, i.name, i.config
+            FROM active_agent_integrations aai
+            JOIN agent_integrations i ON i.id = aai.integration_id
+            JOIN ai_agents a ON a.id = $3
+            WHERE aai.context_group = $1
+              AND aai.deployment_id = $2
+              AND jsonb_typeof(a.configuration->'integration_ids') = 'array'
+              AND i.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'integration_ids'))
+            "#,
+            self.context_group,
+            self.deployment_id,
+            self.agent_id,
+        )
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| AgentIntegration {
+                id: r.id,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+                deployment_id: r.deployment_id,
+                integration_type: parse_integration_type(&r.integration_type),
+                name: r.name,
+                config: r.config,
+            })
+            .collect())
+    }
+}

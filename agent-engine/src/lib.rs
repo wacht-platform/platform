@@ -5,6 +5,7 @@ pub mod gemini;
 pub mod handler;
 pub mod template;
 pub mod tools;
+pub mod teams_logger;
 
 pub use context::ContextOrchestrator;
 pub use executor::{AgentExecutor, ResumeContext};

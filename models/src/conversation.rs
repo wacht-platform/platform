@@ -30,6 +30,8 @@ pub enum ConversationContent {
     UserMessage {
         message: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        sender_name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         images: Option<Vec<ImageData>>,
     },
     AgentResponse {

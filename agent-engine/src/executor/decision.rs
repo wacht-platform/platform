@@ -123,10 +123,38 @@ impl AgentExecutor {
             .await?;
 
         // Extract user message from conversation content
-        let user_message = match &conversation.content {
-            models::ConversationContent::UserMessage { message, .. } => message.clone(),
+        let (user_message, sender_name) = match &conversation.content {
+            models::ConversationContent::UserMessage { message, sender_name, .. } => (message.clone(), sender_name.clone()),
             _ => return Err(AppError::BadRequest("Conversation must be a user message".to_string())),
         };
+
+        // Log incoming message if from Teams integration
+        if let Some(user) = &sender_name {
+            // Fetch context to check source and get metadata
+            if let Ok(ctx) = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                .execute(&self.app_state)
+                .await 
+            {
+                if ctx.source.as_deref() == Some("teams") {
+                    if let Some(group) = &ctx.context_group {
+                        if !group.is_empty() {
+                            let mut location = String::new();
+                            if let Some(meta) = &ctx.external_resource_metadata {
+                                if let Some(channel_name) = meta.get("channelName").and_then(|v| v.as_str()) {
+                                    location = format!(" [Channel: {}]", channel_name);
+                                }
+                            }
+                            
+                            let logger = crate::teams_logger::TeamsActivityLogger::new(
+                                &self.agent.deployment_id.to_string(), 
+                                group
+                            );
+                            let _ = logger.append_entry("INCOMING", &format!("From {}{}: {}", user, location, user_message)).await;
+                        }
+                    }
+                }
+            }
+        }
 
         self.user_request = user_message;
 
@@ -492,6 +520,7 @@ impl AgentExecutor {
                 current_iteration: 1,
                 max_iterations: MAX_LOOP_ITERATIONS,
             },
+            teams_enabled: self.teams_enabled,
         };
 
         let mut context_json = serde_json::to_value(&context)?;

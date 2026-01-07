@@ -234,6 +234,7 @@ pub async fn execute_agent_async(
                 context_id,
                 ConversationContent::UserMessage {
                     message,
+                    sender_name: None,
                     images: model_images,
                 },
                 ConversationMessageType::UserMessage,
@@ -273,6 +274,7 @@ pub async fn execute_agent_async(
                 context_id,
                 ConversationContent::UserMessage {
                     message,
+                    sender_name: None,
                     images: None,
                 },
                 ConversationMessageType::UserMessage,

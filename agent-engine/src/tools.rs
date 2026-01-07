@@ -10,14 +10,15 @@ use dto::json::{
     PlatformFunctionResult, StreamEvent, ToolKnowledgeBaseSearchResult,
 };
 use models::HttpMethod;
-use models::{AiTool, AiToolConfiguration, InternalToolType};
+use models::{AiTool, AiToolConfiguration, InternalToolType, UseExternalServiceToolType};
 use models::{
     ApiToolConfiguration, KnowledgeBaseToolConfiguration, PlatformEventToolConfiguration,
-    PlatformFunctionToolConfiguration, InternalToolConfiguration,
+    PlatformFunctionToolConfiguration, InternalToolConfiguration, UseExternalServiceToolConfiguration,
 };
 use serde_json::Value;
 use std::collections::HashMap;
 use crate::filesystem::{AgentFilesystem, shell::ShellExecutor};
+use crate::teams_logger::TeamsActivityLogger;
 use models::AiAgentWithFeatures;
 
 
@@ -91,6 +92,9 @@ impl ToolExecutor {
             }
             AiToolConfiguration::Internal(config) => {
                 self.execute_internal_tool(tool, config, &execution_params, filesystem, shell).await?
+            }
+            AiToolConfiguration::UseExternalService(config) => {
+                self.execute_external_service_tool(tool, config, &execution_params).await?
             }
         };
 
@@ -466,49 +470,112 @@ impl ToolExecutor {
                     "consolidated_count": consolidated_count
                 }))
             }
-
-            InternalToolType::GenerateIntegrationLink => {
-                let integration_type = execution_params
-                    .get("integration_type")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("teams")
-                    .to_string();
-
-                // 1. Get the context to find the context_group
-                let context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                    .execute(&self.app_state)
-                    .await?;
-
-                // 2. Get context_group (subject/audience identifier)
-                let context_group = context.context_group
-                    .ok_or_else(|| AppError::BadRequest("No context group found (user not identified)".to_string()))?;
-
-                // 3. Generate the code
-                let cmd = commands::CreateIntegrationLinkCodeCommand::new(
-                    self.agent.deployment_id,
-                    context_group,
-                    self.agent.id,
-                    integration_type.clone(),
-                );
-                
-                let result = cmd.execute(&self.app_state).await?;
-                
-                // 4. Return the code
-                Ok(serde_json::json!({
-                    "success": true,
-                    "tool": tool.name,
-                    "code": result.code,
-                    "expires_at": result.expires_at,
-                    "integration_type": integration_type,
-                    "message": format!(
-                        "Generated linking code: {}. It expires at {}. Please send this code to the {} bot to link your account.",
-                        result.code, result.expires_at, integration_type
-                    )
-                }))
-            }
         }
     }
 
+    async fn execute_external_service_tool(
+        &self,
+        tool: &AiTool,
+        config: &UseExternalServiceToolConfiguration,
+        execution_params: &Value,
+    ) -> Result<Value, AppError> {
+        match config.service_type {
+            UseExternalServiceToolType::TeamsListUsers => {
+                self.execute_teams_command(tool, "list_users", execution_params).await
+            },
+            UseExternalServiceToolType::TeamsSearchUsers => {
+                self.execute_teams_command(tool, "search_users", execution_params).await
+            },
+            UseExternalServiceToolType::TeamsSendDm => {
+                self.execute_teams_command(tool, "send_dm", execution_params).await
+            },
+        }
+    }
+
+    async fn execute_teams_command(
+        &self,
+        tool: &AiTool,
+        action: &str,
+        execution_params: &Value,
+    ) -> Result<Value, AppError> {
+        // Get the context to find the context_group
+        let context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+            .execute(&self.app_state)
+            .await?;
+
+        let context_group = context.context_group
+            .ok_or_else(|| AppError::BadRequest("No context group found for Teams command".to_string()))?;
+
+        // Publish NATS Request - use strings for large IDs to avoid JS precision loss
+        let payload = serde_json::json!({
+            "deployment_id": self.agent.deployment_id.to_string(),
+            "context_group": context_group,
+            "agent_id": self.agent.id.to_string(),
+            "action": action,
+            "params": execution_params
+        });
+
+        let subject = "integrations.teams.command";
+        let response = self.app_state.nats_client
+            .request(subject.to_string(), serde_json::to_vec(&payload)?.into())
+            .await
+            .map_err(|e| AppError::External(format!("Teams integration request failed: {}", e)))?;
+
+        let response_data: Value = serde_json::from_slice(&response.payload)?;
+        
+        // Check if the response indicates an error from the integration service
+        if response_data.get("success") == Some(&serde_json::json!(false)) {
+            let error_msg = response_data.get("error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("Unknown error from Teams integration");
+            return Ok(serde_json::json!({
+                "success": false,
+                "tool": tool.name,
+                "error": error_msg
+            }));
+        }
+        
+        // Log success
+        let logger = TeamsActivityLogger::new(&self.agent.deployment_id.to_string(), &context_group);
+        let _ = logger.ensure_directory().await;
+
+        match action {
+            "send_dm" => {
+                let user_id = execution_params.get("user_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let message = execution_params.get("message").and_then(|v| v.as_str()).unwrap_or("");
+                let message_preview = if message.len() > 50 {
+                   format!("{}...", &message[..50])
+                } else {
+                   message.to_string()
+                };
+                let _ = logger.append_entry("DM_SENT", &format!("to user {} -> Message: '{}'", user_id, message_preview)).await;
+            },
+            "search_users" => {
+                let query = execution_params.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                // Determine results count for simple logging
+                let count = response_data.get("users")
+                    .and_then(|u| u.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                
+                let _ = logger.append_entry("SEARCH", &format!("query='{}' -> Found {} users", query, count)).await;
+            },
+            "list_users" => {
+                let count = response_data.get("users")
+                    .and_then(|u| u.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                let _ = logger.append_entry("LIST_USERS", &format!("Listed {} users", count)).await;
+            },
+            _ => {}
+        }
+        
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": tool.name,
+            "result": response_data
+        }))
+    }
 
     async fn execute_api_tool(
         &self,

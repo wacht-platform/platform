@@ -39,6 +39,7 @@ pub enum AiToolType {
     PlatformEvent,
     PlatformFunction,
     Internal,
+    UseExternalService,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -49,6 +50,7 @@ pub enum AiToolConfiguration {
     PlatformEvent(PlatformEventToolConfiguration),
     PlatformFunction(PlatformFunctionToolConfiguration),
     Internal(InternalToolConfiguration),
+    UseExternalService(UseExternalServiceToolConfiguration),
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -108,12 +110,25 @@ pub enum InternalToolType {
     SearchFiles,
     ExecuteCommand,
     SaveMemory,
-    GenerateIntegrationLink,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct InternalToolConfiguration {
     pub tool_type: InternalToolType,
+    pub input_schema: Option<Vec<SchemaField>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum UseExternalServiceToolType {
+    TeamsListUsers,
+    TeamsSearchUsers,
+    TeamsSendDm,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct UseExternalServiceToolConfiguration {
+    pub service_type: UseExternalServiceToolType,
     pub input_schema: Option<Vec<SchemaField>>,
 }
 
@@ -141,6 +156,7 @@ impl From<String> for AiToolType {
             "platform_event" => AiToolType::PlatformEvent,
             "platform_function" => AiToolType::PlatformFunction,
             "internal" => AiToolType::Internal,
+            "use_external_service" => AiToolType::UseExternalService,
             _ => AiToolType::Api,
         }
     }
@@ -154,6 +170,7 @@ impl From<AiToolType> for String {
             AiToolType::PlatformEvent => "platform_event".to_string(),
             AiToolType::PlatformFunction => "platform_function".to_string(),
             AiToolType::Internal => "internal".to_string(),
+            AiToolType::UseExternalService => "use_external_service".to_string(),
         }
     }
 }

@@ -18,6 +18,9 @@ pub struct AgentExecutionContext {
     pub completed_at: Option<DateTime<Utc>>,
     pub execution_state: Option<AgentExecutionState>,
     pub status: ExecutionContextStatus,
+    pub source: Option<String>,
+    pub external_context_id: Option<String>,
+    pub external_resource_metadata: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]

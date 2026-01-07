@@ -86,8 +86,6 @@ impl GeminiClient {
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
             }
 
-
-
             let response = self
                 .client
                 .post(&url)
@@ -96,14 +94,16 @@ impl GeminiClient {
                 .body(request_body.clone())
                 .send()
                 .await;
-            
-
 
             match response {
                 Ok(resp) => {
                     let body = resp.bytes().await;
                     match body {
-                        Ok(bytes) => match serde_json::from_slice::<GeminiResponse>(&bytes) {
+                        Ok(bytes) => {
+                            // Log raw response for debugging parse failures
+                            let raw_response = String::from_utf8_lossy(&bytes);
+                            
+                            match serde_json::from_slice::<GeminiResponse>(&bytes) {
                             Ok(gemini_response) => {
                                 let mut accumulated_text = String::new();
                                 let mut thought_signature = None;
@@ -134,9 +134,15 @@ impl GeminiClient {
                                 }
                             }
                             Err(e) => {
+                                tracing::error!(
+                                    "Gemini API parse error: {}. Raw response (first 500 chars): {}",
+                                    e,
+                                    &raw_response.chars().take(500).collect::<String>()
+                                );
                                 last_error = Some(format!("Invalid API response format: {e}"));
                             }
-                        },
+                        }
+                    },
                         Err(e) => {
                             last_error = Some(format!("Failed to read response body: {e}"));
                         }

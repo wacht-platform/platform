@@ -53,6 +53,13 @@ impl AgentFilesystem {
             .join(kb_id)
     }
 
+    pub fn teams_activity_path(&self, context_group: &str) -> PathBuf {
+        self.base_path
+            .join(&self.deployment_id)
+            .join("teams-activity")
+            .join(context_group)
+    }
+
     pub async fn initialize(&self) -> Result<(), AppError> {
         let root = self.execution_root();
         
@@ -109,6 +116,34 @@ impl AgentFilesystem {
 
         fs::symlink(&source, &target).await.map_err(|e| {
             AppError::Internal(format!("Failed to link KB: {}", e))
+        })?;
+
+        Ok(())
+    }
+
+    pub async fn link_teams_activity(&self, context_group: &str) -> Result<(), AppError> {
+        let source = self.teams_activity_path(context_group);
+        let target = self.execution_root().join("teams-activity");
+
+        // Ensure source directory exists
+        if !source.exists() {
+            fs::create_dir_all(&source).await.map_err(|e| {
+                AppError::Internal(format!("Failed to create teams-activity directory: {}", e))
+            })?;
+        }
+
+        // Remove existing symlink if present
+        if target.exists() {
+            let metadata = fs::symlink_metadata(&target).await.ok();
+            if let Some(m) = metadata {
+                if m.is_symlink() {
+                    fs::remove_file(&target).await.ok();
+                }
+            }
+        }
+
+        fs::symlink(&source, &target).await.map_err(|e| {
+            AppError::Internal(format!("Failed to link teams-activity: {}", e))
         })?;
 
         Ok(())

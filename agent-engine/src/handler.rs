@@ -1,4 +1,4 @@
-use crate::{AgentExecutor, ResumeContext};
+use crate::{AgentExecutor, ResumeContext, teams_logger::TeamsActivityLogger};
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::StreamEvent;
@@ -178,6 +178,32 @@ async fn publish_stream_event(
 
     let (message_type, payload) = match &event {
         StreamEvent::ConversationMessage(conversation_content) => {
+            // Log outgoing agent response if from Teams context
+            if let models::ConversationContent::AgentResponse { response, .. } = &conversation_content.content {
+                if let Ok(ctx_id) = context_key.parse::<i64>() {
+                    if let Ok(ctx) = GetExecutionContextQuery::new(ctx_id, deployment_id)
+                        .execute(app_state)
+                        .await 
+                    {
+                        if ctx.source.as_deref() == Some("teams") {
+                            if let Some(group) = &ctx.context_group {
+                                if !group.is_empty() {
+                                    let mut location = String::new();
+                                    if let Some(meta) = &ctx.external_resource_metadata {
+                                        if let Some(channel_name) = meta.get("channelName").and_then(|v| v.as_str()) {
+                                            location = format!(" [Channel: {}]", channel_name);
+                                        }
+                                    }
+                                    
+                                    let logger = TeamsActivityLogger::new(&deployment_id.to_string(), group);
+                                    let _ = logger.append_entry("RESPONSE", &format!("To User{}: {}", location, response)).await;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             let payload = serde_json::to_vec(&conversation_content)
                 .map_err(|e| AppError::Internal(format!("Failed to serialize message: {e}")))?;
             ("conversation_message", payload)
@@ -258,7 +284,13 @@ async fn publish_stream_event(
     // Yes, awaiting is correct.
     
     if let Err(e) = trigger_command.execute(app_state).await {
-         error!("Failed to trigger webhook for agent stream event: {}", e);
+         tracing::warn!(
+            deployment_id = deployment_id,
+            webhook_event = %webhook_event,
+            context_key = %context_key,
+            "Failed to trigger webhook for agent stream event: {}. This is expected if no webhook is configured.", 
+            e
+        );
     }
 
     Ok(())

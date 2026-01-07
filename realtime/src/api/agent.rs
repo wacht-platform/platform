@@ -507,6 +507,7 @@ async fn handle_execution_message(
                 context_id,
                 ConversationContent::UserMessage {
                     message: user_message,
+                    sender_name: None,
                     images: model_images,
                 },
                 ConversationMessageType::UserMessage,
@@ -626,6 +627,7 @@ async fn handle_execution_message(
                 context_id,
                 ConversationContent::UserMessage {
                     message: input,
+                    sender_name: None,
                     images: None,
                 },
                 ConversationMessageType::UserMessage,

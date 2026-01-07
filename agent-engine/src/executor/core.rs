@@ -11,7 +11,7 @@ use dto::json::StreamEvent;
 use models::{
     AgentExecutionState, AiAgentWithFeatures, ConversationRecord, ExecutionContextStatus, MemoryRecord, WorkflowExecutionState,
 };
-use models::{AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration, InternalToolType, SchemaField};
+use models::{AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration, InternalToolType, SchemaField, UseExternalServiceToolConfiguration, UseExternalServiceToolType};
 use queries::{GetExecutionContextQuery, Query};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -43,6 +43,7 @@ pub struct AgentExecutor {
     pub(super) system_instructions: Option<String>,
     pub(super) filesystem: AgentFilesystem,
     pub(super) shell: ShellExecutor,
+    pub(super) teams_enabled: bool,
 }
 
 pub struct AgentExecutorBuilder {
@@ -222,6 +223,34 @@ impl AgentExecutorBuilder {
             ),
         ];
 
+        // Check for active Teams integrations to enable proactive messaging tools
+        // 1. Get the context to find the context_group (moved up from below)
+        let context = GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+            .execute(&self.app_state)
+            .await?;
+
+        let mut teams_enabled = false;
+
+        if let Some(context_group) = &context.context_group {
+            let active_integrations = queries::GetActiveIntegrationsForContextQuery::new(
+                self.agent.deployment_id,
+                self.agent.id,
+                context_group.clone()
+            ).execute(&self.app_state).await?;
+
+            let has_teams = active_integrations.iter().any(|i| matches!(i.integration_type, models::IntegrationType::Teams));
+
+            if has_teams {
+                teams_enabled = true;
+                tracing::info!("Context group {} has active Teams integration. Injecting Teams tools.", context_group);
+                
+                // Symlink teams-activity to agent's virtual filesystem
+                if let Err(e) = filesystem.link_teams_activity(context_group).await {
+                    tracing::warn!("Failed to link teams-activity directory: {}", e);
+                }
+            }
+        }
+
         let mut current_tools = self.agent.tools.clone();
         for (name, desc, tool_type, schema) in internal_tools {
             if !current_tools.iter().any(|t| t.name == name) {
@@ -240,6 +269,77 @@ impl AgentExecutorBuilder {
                     created_at: chrono::Utc::now(),
                     updated_at: chrono::Utc::now(),
                 });
+            }
+        }
+        
+        // Add Teams external service tools if enabled
+        if teams_enabled {
+            let teams_tools: Vec<(&str, &str, UseExternalServiceToolType, Vec<SchemaField>)> = vec![
+                (
+                    "teams_list_users",
+                    "List users in the Microsoft Teams tenant. Returns up to 25 users by default.",
+                    UseExternalServiceToolType::TeamsListUsers,
+                    vec![
+                        SchemaField {
+                            name: "limit".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Max number of users to return (default: 25).".to_string()),
+                            required: false,
+                        }
+                    ]
+                ),
+                (
+                    "teams_search_users",
+                    "Search for users in the Microsoft Teams tenant by name or email.",
+                    UseExternalServiceToolType::TeamsSearchUsers,
+                    vec![
+                        SchemaField {
+                            name: "query".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Search query (name or email).".to_string()),
+                            required: true,
+                        }
+                    ]
+                ),
+                (
+                    "teams_send_dm",
+                    "Send a direct message to a user in Microsoft Teams. REQUIRES both user_id and message.",
+                    UseExternalServiceToolType::TeamsSendDm,
+                    vec![
+                        SchemaField {
+                            name: "user_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The user's ID (aadObjectId) to send the message to. Get this from teams_list_users or teams_search_users.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "message".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The message content to send to the user.".to_string()),
+                            required: true,
+                        }
+                    ]
+                ),
+            ];
+            
+            for (name, desc, service_type, schema) in teams_tools {
+                if !current_tools.iter().any(|t| t.name == name) {
+                    current_tools.push(AiTool {
+                        id: -1,
+                        name: name.to_string(),
+                        description: Some(desc.to_string()),
+                        tool_type: AiToolType::UseExternalService,
+                        deployment_id: self.agent.deployment_id,
+                        configuration: AiToolConfiguration::UseExternalService(
+                            UseExternalServiceToolConfiguration {
+                                service_type,
+                                input_schema: Some(schema),
+                            }
+                        ),
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                    });
+                }
             }
         }
         
@@ -267,13 +367,16 @@ impl AgentExecutorBuilder {
             system_instructions: None,
             filesystem,
             shell,
+            teams_enabled,
         };
 
-        let context = GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-            .execute(&self.app_state)
-            .await?;
+        executor.system_instructions = context.system_instructions.clone();
 
-        executor.system_instructions = context.system_instructions;
+        if teams_enabled {
+            // Teams instructions should be configured in the agent's system instructions template
+            // using variables like {{deployment_id}}, {{context_group}}, etc.
+            tracing::debug!("Teams integration enabled for context {}", self.context_id);
+        }
 
         if context.status == ExecutionContextStatus::WaitingForInput {
             if let Some(state) = context.execution_state {

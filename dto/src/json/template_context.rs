@@ -16,6 +16,8 @@ pub struct StepDecisionContext {
     pub available_workflows: Vec<Value>,
     pub available_knowledge_bases: Vec<Value>,
     pub iteration_info: IterationInfo,
+    #[serde(default)]
+    pub teams_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

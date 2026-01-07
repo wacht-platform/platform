@@ -76,6 +76,9 @@ impl Command for CreateExecutionContextCommand {
             completed_at: None,
             execution_state: None,
             status: ExecutionContextStatus::Idle,
+            source: None,
+            external_context_id: None,
+            external_resource_metadata: None,
         })
     }
 }

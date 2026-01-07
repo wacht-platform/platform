@@ -22,7 +22,7 @@ impl AgentExecutor {
 
         let result = match &action.action_type {
             TaskType::ToolCall => {
-                let tool_call = self.parse_tool_call(&action.details, &action.purpose).await?;
+                let tool_call = self.parse_tool_call(&action.details, &action.purpose, action.context_messages).await?;
                 info!(
                     tool_name = %tool_call.tool_name,
                     parameters = %tool_call.parameters,
@@ -150,13 +150,13 @@ impl AgentExecutor {
         Ok(json!(result))
     }
 
-    async fn parse_tool_call(&self, details: &Value, action_purpose: &str) -> Result<ToolCall, AppError> {
+    async fn parse_tool_call(&self, details: &Value, action_purpose: &str, context_messages: u32) -> Result<ToolCall, AppError> {
         let tool_name = details["tool_name"]
             .as_str()
             .ok_or_else(|| AppError::BadRequest("Tool name not specified".to_string()))?;
 
         let tool = self.find_tool(tool_name)?;
-        let params = self.get_tool_parameters(tool, details, action_purpose).await?;
+        let params = self.get_tool_parameters(tool, details, action_purpose, context_messages).await?;
 
         Ok(ToolCall {
             tool_name: tool_name.to_string(),
@@ -172,9 +172,9 @@ impl AgentExecutor {
             .ok_or_else(|| AppError::BadRequest(format!("Tool '{tool_name}' not found")))
     }
 
-    async fn get_tool_parameters(&self, tool: &AiTool, details: &Value, action_purpose: &str) -> Result<Value, AppError> {
+    async fn get_tool_parameters(&self, tool: &AiTool, details: &Value, action_purpose: &str, context_messages: u32) -> Result<Value, AppError> {
         if self.tool_needs_llm_params(tool) {
-            let generated_params = self.generate_tool_parameters(tool, action_purpose).await?;
+            let generated_params = self.generate_tool_parameters(tool, action_purpose, context_messages).await?;
             return match &tool.configuration {
                 AiToolConfiguration::Api(api_config) => {
                     self.organize_api_parameters(generated_params, api_config)
@@ -197,6 +197,9 @@ impl AgentExecutor {
             AiToolConfiguration::Internal(internal_config) => {
                 internal_config.input_schema.as_ref().is_some_and(|s| !s.is_empty())
             }
+            AiToolConfiguration::UseExternalService(external_config) => {
+                external_config.input_schema.as_ref().is_some_and(|s| !s.is_empty())
+            }
             _ => false,
         }
     }
@@ -217,7 +220,7 @@ impl AgentExecutor {
         }
     }
 
-    async fn generate_tool_parameters(&self, tool: &AiTool, action_purpose: &str) -> Result<Value, AppError> {
+    async fn generate_tool_parameters(&self, tool: &AiTool, action_purpose: &str, context_messages: u32) -> Result<Value, AppError> {
         let parameter_schema = self.build_parameter_schema(tool)?;
 
         if parameter_schema == json!({}) {
@@ -225,7 +228,7 @@ impl AgentExecutor {
         }
 
         let response = self
-            .request_parameter_generation(tool, &parameter_schema, action_purpose)
+            .request_parameter_generation(tool, &parameter_schema, action_purpose, context_messages)
             .await?;
 
         if !response.parameter_generation.can_generate {
@@ -247,6 +250,9 @@ impl AgentExecutor {
             }
             AiToolConfiguration::Internal(internal_config) => {
                 self.build_internal_schema(internal_config)
+            }
+            AiToolConfiguration::UseExternalService(external_config) => {
+                self.build_external_service_schema(external_config)
             }
             _ => Err(AppError::Internal(
                 "Parameter generation not supported for this tool type".to_string(),
@@ -329,14 +335,45 @@ impl AgentExecutor {
         }))
     }
 
+    fn build_external_service_schema(
+        &self,
+        external_config: &models::UseExternalServiceToolConfiguration,
+    ) -> Result<Value, AppError> {
+        let schema = match &external_config.input_schema {
+            Some(s) if !s.is_empty() => s,
+            _ => return Ok(json!({})),
+        };
+
+        let (properties, required) = Self::schema_fields_to_properties(schema);
+
+        if properties.as_object().is_none_or(|p| p.is_empty()) {
+            return Ok(json!({}));
+        }
+
+        Ok(json!({
+            "type": "OBJECT",
+            "properties": properties,
+            "required": required
+        }))
+    }
+
     async fn request_parameter_generation(
         &self,
         tool: &AiTool,
         parameter_schema: &Value,
         action_purpose: &str,
+        context_messages: u32,
     ) -> Result<ParameterGenerationResponse, AppError> {
+        // Get FILTERED conversation history based on context_messages
+        let full_history = self.get_conversation_history_for_llm().await;
+        let limited_history: Vec<Value> = if context_messages > 0 && (context_messages as usize) < full_history.len() {
+            full_history.into_iter().rev().take(context_messages as usize).rev().collect()
+        } else {
+            full_history
+        };
+        
         let mut context_json = json!({
-            "conversation_history": self.get_conversation_history_for_llm().await,
+            "conversation_history": limited_history,
             "tool_name": tool.name,
             "tool_description": tool.description.as_ref().unwrap_or(&"".to_string()),
             "parameter_schema": parameter_schema,

@@ -25,7 +25,7 @@ impl super::Query for GetExecutionContextQuery {
             r#"
             SELECT id, created_at, updated_at, deployment_id,
             title, context_group, system_instructions, last_activity_at, completed_at,
-            execution_state, status
+            execution_state, status, source, external_context_id, external_resource_metadata
             FROM agent_execution_contexts
             WHERE id = $1 AND deployment_id = $2
             "#,
@@ -55,6 +55,9 @@ impl super::Query for GetExecutionContextQuery {
             completed_at: context.completed_at,
             execution_state,
             status,
+            source: context.source,
+            external_context_id: context.external_context_id,
+            external_resource_metadata: context.external_resource_metadata,
         })
     }
 }
@@ -117,7 +120,7 @@ impl super::Query for ListExecutionContextsQuery {
         let mut query = sqlx::QueryBuilder::new(
             "SELECT id, created_at, updated_at, deployment_id, 
              title, context_group, system_instructions, last_activity_at, completed_at,
-             execution_state, status 
+             execution_state, status, source, external_context_id, external_resource_metadata 
              FROM agent_execution_contexts 
              WHERE deployment_id = "
         );
@@ -174,6 +177,9 @@ impl super::Query for ListExecutionContextsQuery {
                 completed_at: row.get("completed_at"),
                 execution_state,
                 status,
+                source: row.get("source"),
+                external_context_id: row.get("external_context_id"),
+                external_resource_metadata: row.get("external_resource_metadata"),
             });
         }
 

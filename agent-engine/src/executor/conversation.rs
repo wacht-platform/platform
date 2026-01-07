@@ -81,6 +81,7 @@ impl AgentExecutor {
             self.context_id,
             ConversationContent::UserMessage {
                 message,
+                sender_name: None,
                 images: model_images,
             },
             ConversationMessageType::UserMessage,
@@ -128,7 +129,7 @@ impl AgentExecutor {
                     }
                 }
                 ConversationMessageType::UserMessage => {
-                    if let ConversationContent::UserMessage { message, images } = &conv.content {
+                    if let ConversationContent::UserMessage { message, images, .. } = &conv.content {
                         let mut parts = vec![json!({
                             "text": message
                         })];
@@ -177,6 +178,21 @@ impl AgentExecutor {
             }
         }
 
+
+
+        // DEBUG: Print formatted history
+        println!("\n=== LLM CONVERSATION HISTORY ===");
+        for item in &history {
+            let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let content = if let Some(parts) = item.get("parts") {
+                format!("{:?}", parts)
+            } else {
+                item.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string()
+            };
+            println!("[{}] {}", role.to_uppercase(), content);
+        }
+        println!("================================\n");
+
         history
     }
 
@@ -210,7 +226,19 @@ impl AgentExecutor {
     }
 
     pub(super) fn extract_conversation_content(&self, content: &ConversationContent) -> String {
-        serde_json::to_string(content).unwrap()
+        match content {
+            ConversationContent::UserMessage { message, .. } => message.clone(),
+            ConversationContent::AssistantAcknowledgment {
+                acknowledgment_message,
+                ..
+            } => acknowledgment_message.clone(),
+            ConversationContent::AgentResponse { response, .. } => response.clone(),
+            ConversationContent::UserInputRequest { question, .. } => question.clone(),
+            ConversationContent::SystemDecision { step, reasoning, .. } => {
+                format!("System Decision (Step: {}): {}", step, reasoning)
+            },
+            _ => serde_json::to_string(content).unwrap_or_default(),
+        }
     }
 
     pub fn post_execution_processing(mut self) {
