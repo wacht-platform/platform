@@ -489,6 +489,12 @@ impl ToolExecutor {
             UseExternalServiceToolType::TeamsSendDm => {
                 self.execute_teams_command(tool, "send_dm", execution_params).await
             },
+            UseExternalServiceToolType::TeamsGetChannelMessages => {
+                self.execute_teams_command(tool, "get_channel_messages", execution_params).await
+            },
+            UseExternalServiceToolType::TeamsGetMeetingRecording => {
+                self.execute_teams_command(tool, "get_meeting_recording", execution_params).await
+            },
             UseExternalServiceToolType::TriggerContext => {
                 self.execute_trigger_context(tool, execution_params).await
             },

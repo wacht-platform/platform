@@ -338,6 +338,62 @@ impl AgentExecutorBuilder {
                         },
                     ]
                 ),
+                (
+                    "teams_get_channel_messages",
+                    "Get recent messages from a Teams channel. Useful for finding meeting notifications, context, or previous discussions.",
+                    UseExternalServiceToolType::TeamsGetChannelMessages,
+                    vec![
+                        SchemaField {
+                            name: "team_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The Team ID. Get this from the channel context or ask the user.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "channel_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The Channel ID.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "count".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Number of messages to fetch (default: 20, max: 50).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "before_timestamp".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("ISO timestamp for pagination - fetch messages before this time.".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
+                (
+                    "teams_get_meeting_recording",
+                    "Get the recording of a Teams meeting. Returns download URL for the video file. Requires meeting organizer ID and meeting ID or join URL.",
+                    UseExternalServiceToolType::TeamsGetMeetingRecording,
+                    vec![
+                        SchemaField {
+                            name: "organizer_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The AAD Object ID of the meeting organizer. Found in meetingInfo from channel messages.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "meeting_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The meeting ID. Either meeting_id or join_url is required.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "join_url".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The meeting join URL. Either meeting_id or join_url is required.".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
             ];
             
             for (name, desc, service_type, schema) in teams_tools {
