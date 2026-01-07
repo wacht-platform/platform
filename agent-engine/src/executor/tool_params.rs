@@ -1,6 +1,7 @@
 use super::core::AgentExecutor;
 use crate::template::{render_template_with_prompt, AgentTemplates};
 
+use commands::Command;
 use common::error::AppError;
 use dto::json::agent_responses::{ExecutionAction, ParameterGenerationResponse, TaskType};
 use dto::json::{ToolCall, WorkflowCall};
@@ -8,9 +9,9 @@ use models::{
     AiTool, AiToolConfiguration, ApiToolConfiguration, PlatformFunctionToolConfiguration,
     SchemaField,
 };
+use queries::Query;
 use serde_json::{json, Value};
 use tracing::{info, warn};
-
 
 impl AgentExecutor {
     pub(super) async fn execute_action(&self, action: &ExecutionAction) -> Result<Value, AppError> {
