@@ -820,6 +820,16 @@ impl AgentExecutor {
         &self,
         directive: &DeepReasoningDirective,
     ) -> Result<(DeepReasoningResult, Option<String>), AppError> {
+        let exec_context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+            .execute(&self.app_state)
+            .await?;
+        
+        let actionables: Vec<dto::json::Actionable> = exec_context.external_resource_metadata
+            .as_ref()
+            .and_then(|m| m.get("actionables"))
+            .and_then(|a| serde_json::from_value(a.clone()).ok())
+            .unwrap_or_default();
+
         let context = serde_json::json!({
             "agent_name": self.agent.name,
             "agent_description": self.agent.description,
@@ -827,6 +837,21 @@ impl AgentExecutor {
             "context_summary": directive.context_summary,
             "expected_output_type": format!("{:?}", directive.expected_output_type).to_lowercase(),
             "conversation_history": self.get_conversation_history_for_llm().await,
+            "user_request": self.user_request,
+            "current_objective": self.current_objective,
+            "conversation_insights": self.conversation_insights,
+            "task_results": self.task_results,
+            "available_tools": self.agent.tools,
+            "available_workflows": self.agent.workflows,
+            "available_knowledge_bases": self.agent.knowledge_bases,
+            "iteration_info": dto::json::IterationInfo {
+                current_iteration: 1,
+                max_iterations: MAX_LOOP_ITERATIONS,
+            },
+            "teams_enabled": self.teams_enabled,
+            "context_id": self.context_id,
+            "context_title": exec_context.title,
+            "actionables": actionables,
         });
 
         let request_body = render_template_with_prompt(AgentTemplates::DEEP_REASONING, context)

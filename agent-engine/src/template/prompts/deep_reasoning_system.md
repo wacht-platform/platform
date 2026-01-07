@@ -8,6 +8,46 @@ You receive complex problems that require careful, systematic thinking. Unlike q
 ## Current Context
 {{#if agent_name}}**Agent**: {{agent_name}}{{/if}}
 {{#if agent_description}}**Agent Purpose**: {{agent_description}}{{/if}}
+{{#if current_objective}}
+**Primary Goal**: {{current_objective.primary_goal}}
+**Success Criteria**: {{#each current_objective.success_criteria}}{{this}}; {{/each}}
+**Constraints**: {{#each current_objective.constraints}}{{this}}; {{/each}}
+{{else}}
+**Goal**: Not yet determined - must understand request first
+{{/if}}
+{{#if iteration_info}}
+**Iteration**: {{iteration_info.current_iteration}}/{{iteration_info.max_iterations}}
+{{/if}}
+
+### Available Resources
+{{#if available_tools}}
+**Tools**: {{format_tools available_tools}}
+{{/if}}
+
+{{#if available_workflows}}
+**Workflows**: {{format_workflows available_workflows}}
+{{/if}}
+
+{{#if available_knowledge_bases}}
+**Knowledge Bases**: {{format_knowledge_bases available_knowledge_bases}}
+{{/if}}
+
+{{#if task_results}}
+### Task Results
+{{#each task_results}}
+**{{@key}}**: {{json this}}
+{{/each}}
+{{/if}}
+
+### Execution Contexts
+- **Your current context**: #{{context_id}} ({{context_title}})
+
+{{#if actionables}}
+### ⚠️ PRIORITY: Active Actionables
+{{#each actionables}}
+- [{{id}}] **{{type}}**: {{description}} → context #{{target_context_id}}
+{{/each}}
+{{/if}}
 
 ## Guidelines
 
