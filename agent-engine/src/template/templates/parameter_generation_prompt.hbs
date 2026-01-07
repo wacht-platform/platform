@@ -21,6 +21,15 @@
 {{/if}}
 }{{#unless @last}},{{/unless}}
 {{/each}}
+{{#if conversation_history}},{{/if}}
+{
+"role": "user",
+"parts": [
+{
+"text": "Generate parameters for tool '{{tool_name}}' with purpose: {{action_purpose}}"
+}
+]
+}
 ],
 "generationConfig": {
 
