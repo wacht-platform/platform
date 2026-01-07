@@ -358,32 +358,38 @@ impl AgentExecutorBuilder {
                     ]
                 ),
                 (
-                    "teams_list_my_conversations",
-                    "Discover all chats and teams the bot has access to. Returns: chats (DMs, group chats with members) and teams (with IDs for listing channels). Use this to understand your conversation landscape.",
-                    UseExternalServiceToolType::TeamsListMyConversations,
-                    vec![] 
-                ),
-                (
                     "teams_get_meeting_recording",
-                    "Get the recording of a Teams meeting. Returns download URL for the video file. Requires meeting organizer ID and meeting ID or join URL.",
+                    "Get meeting recordings from a user's OneDrive. Can work two ways: 1) With meeting_id or join_url to find a specific recording, 2) With just organizer_id and search_recent=true to list recent recordings. Use search_recent when you can't find a meeting ID.",
                     UseExternalServiceToolType::TeamsGetMeetingRecording,
                     vec![
                         SchemaField {
                             name: "organizer_id".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("The AAD Object ID of the meeting organizer. Found in meetingInfo from channel messages.".to_string()),
+                            description: Some("The AAD Object ID of the meeting organizer. Found in meetingInfo from channel messages or from callEnded events.".to_string()),
                             required: true,
                         },
                         SchemaField {
                             name: "meeting_id".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("The meeting ID. Either meeting_id or join_url is required.".to_string()),
+                            description: Some("The meeting ID. Optional if using search_recent.".to_string()),
                             required: false,
                         },
                         SchemaField {
                             name: "join_url".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("The meeting join URL. Either meeting_id or join_url is required.".to_string()),
+                            description: Some("The meeting join URL. Optional if using search_recent.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "search_recent".to_string(),
+                            field_type: "BOOLEAN".to_string(),
+                            description: Some("Set to true to search for recent recordings in OneDrive without needing meeting ID. Useful for ad-hoc calls.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "max_results".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Maximum number of recordings to return when using search_recent. Default 5.".to_string()),
                             required: false,
                         },
                     ]
