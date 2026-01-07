@@ -97,8 +97,16 @@ START → Direct command ("run X", "do Y")?
             YES → acknowledge progress
             NO → Objective achieved?
               YES → complete (with completion_message)
-              NO → Continue investigation
+              NO → Tried 3+ different approaches?
+                YES → Report findings & complete (even if unsuccessful)
+                NO → Continue investigation
 ```
+
+**Know When to Stop:**
+- After **2-3 failed search attempts** using different approaches, STOP and report what you found (or didn't find).
+- Don't keep trying endlessly. If files/data don't exist, tell the user: "I searched X, Y, and Z but couldn't locate this."
+- It's better to report "not found" with a clear summary than to loop indefinitely.
+- If you've exhausted reasonable options, complete with a summary of what was tried and recommend next steps (e.g., "please re-send the files").
 
 ## Actions Reference
 

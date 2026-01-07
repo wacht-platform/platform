@@ -44,6 +44,21 @@ impl ShellExecutor {
         if command_line.contains("..") {
              return Err(AppError::Forbidden("Path traversal (..) is not allowed in commands".to_string()));
         }
+
+        // Block absolute paths outside the working directory
+        // Extract all potential paths from the command (words starting with /)
+        let working_dir_str = self.working_dir.to_string_lossy().to_string();
+        for part in command_line.split_whitespace() {
+            if part.starts_with('/') {
+                // This is an absolute path - verify it's under working directory
+                if !part.starts_with(&working_dir_str) {
+                    return Err(AppError::Forbidden(format!(
+                        "Absolute path '{}' is outside the working directory. Only paths under '{}' are allowed.",
+                        part, working_dir_str
+                    )));
+                }
+            }
+        }
         
         let result = timeout(
             Duration::from_secs(self.timeout_secs),
@@ -76,6 +91,7 @@ impl ShellExecutor {
         ];
 
         // Validate each pipeline command
+        let working_dir_str = self.working_dir.to_string_lossy().to_string();
         for cmd in pipeline {
             let cmd_name = cmd.split_whitespace().next().unwrap_or("");
             if !pipeline_allowed.contains(&cmd_name) {
@@ -86,6 +102,15 @@ impl ShellExecutor {
             }
             if cmd.contains("..") {
                 return Err(AppError::Forbidden("Path traversal (..) is not allowed in pipeline".to_string()));
+            }
+            // Block absolute paths outside working directory in pipeline
+            for part in cmd.split_whitespace() {
+                if part.starts_with('/') && !part.starts_with(&working_dir_str) {
+                    return Err(AppError::Forbidden(format!(
+                        "Absolute path '{}' is outside the working directory in pipeline.",
+                        part
+                    )));
+                }
             }
         }
 
