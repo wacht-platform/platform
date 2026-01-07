@@ -119,6 +119,58 @@ impl handlebars::HelperDef for FormatToolsHelper {
                             param_info.push_str(" [Knowledge Base Search]");
                             param_info.push_str(" | Requires: query (predefined search)");
                         }
+                        "UseExternalService" => {
+                            param_info.push_str(" [External Service]");
+                            if let Some(schema) =
+                                config.get("input_schema").and_then(|s| s.as_array())
+                            {
+                                if !schema.is_empty() {
+                                    let params: Vec<String> = schema
+                                        .iter()
+                                        .filter_map(|field| {
+                                            let name = field.get("name")?.as_str()?;
+                                            let required = field
+                                                .get("required")
+                                                .and_then(|r| r.as_bool())
+                                                .unwrap_or(false);
+                                            Some(if required {
+                                                format!("{name} (required)")
+                                            } else {
+                                                name.to_string()
+                                            })
+                                        })
+                                        .collect();
+                                    param_info
+                                        .push_str(&format!(" | Inputs: {}", params.join(", ")));
+                                }
+                            }
+                        }
+                        "Internal" => {
+                            param_info.push_str(" [Internal Tool]");
+                            if let Some(schema) =
+                                config.get("input_schema").and_then(|s| s.as_array())
+                            {
+                                if !schema.is_empty() {
+                                    let params: Vec<String> = schema
+                                        .iter()
+                                        .filter_map(|field| {
+                                            let name = field.get("name")?.as_str()?;
+                                            let required = field
+                                                .get("required")
+                                                .and_then(|r| r.as_bool())
+                                                .unwrap_or(false);
+                                            Some(if required {
+                                                format!("{name} (required)")
+                                            } else {
+                                                name.to_string()
+                                            })
+                                        })
+                                        .collect();
+                                    param_info
+                                        .push_str(&format!(" | Inputs: {}", params.join(", ")));
+                                }
+                            }
+                        }
                         _ => {
                             param_info.push_str(&format!(" [{tool_type}]"));
                         }

@@ -230,8 +230,20 @@ impl AgentExecutor {
             ConversationContent::UserMessage { message, .. } => message.clone(),
             ConversationContent::AssistantAcknowledgment {
                 acknowledgment_message,
+                further_action_required,
+                reasoning,
                 ..
-            } => acknowledgment_message.clone(),
+            } => {
+                let val = json!({
+                    "next_step": "acknowledge",
+                    "reasoning": reasoning,
+                    "acknowledgment": {
+                        "message": acknowledgment_message,
+                        "further_action_required": further_action_required
+                    }
+                });
+                val.to_string()
+            },
             ConversationContent::AgentResponse { response, .. } => response.clone(),
             ConversationContent::UserInputRequest { question, .. } => question.clone(),
             ConversationContent::SystemDecision { step, reasoning, .. } => {
