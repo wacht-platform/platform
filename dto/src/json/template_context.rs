@@ -31,7 +31,8 @@ pub struct Actionable {
     #[serde(rename = "type")]
     pub actionable_type: String,
     pub description: String,
-    pub target_context_id: i64,
+    /// Stored as string to preserve precision for large IDs
+    pub target_context_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
