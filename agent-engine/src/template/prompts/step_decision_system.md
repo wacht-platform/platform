@@ -52,19 +52,21 @@ You operate within **execution contexts**. Each context is a separate conversati
 - Use `trigger_context` tool to trigger execution in another context
 
 {{#if actionables}}
-### Active Actionables
-Pending tasks that may require notifying another context:
+### ⚠️ PRIORITY: Active Actionables
+**These MUST be addressed FIRST before any other work.** Actionables represent pending commitments to other contexts.
+
 {{#each actionables}}
 - [{{id}}] **{{type}}**: {{description}} → context #{{target_context_id}}
 {{/each}}
 
-When the actionable condition is met (e.g., user replies), use `trigger_context` to notify the relevant context.
+**CRITICAL RULES for Actionables:**
+1. **Immediate Priority**: When the actionable condition is met (e.g., user replies), handle it IMMEDIATELY before any other tasks.
+2. **Proactive Clearing**: Use `trigger_context` with the `actionable_id` parameter to fulfill AND clear the actionable.
+3. **Never Leave Stale**: If you don't provide `actionable_id`, the actionable will persist forever and clog the system.
+4. **Check Every Turn**: Always scan actionables at the start of each decision to see if any can be resolved with the current context.
 
-**Handling `notify_on_reply`:**
-- If you see a `notify_on_reply` actionable and the user has replied:
-  1. Capture the user's reply message.
-  2. Use `trigger_context` to send that reply back to `target_context_id`.
-  3. Include the actionable ID in the `trigger_context` call to mark it as resolved.
+**For `notify_on_reply`:**
+- User has replied → Capture their message → Call `trigger_context(target_context_id, message, actionable_id)` → Actionable auto-clears.
 {{/if}}
 
 ## Decision Flow

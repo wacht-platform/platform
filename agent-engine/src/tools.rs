@@ -605,18 +605,15 @@ impl ToolExecutor {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         
-        // Whether to trigger immediate execution in target context (default: true for cross-context triggers)
         let trigger_execution = execution_params.get("execute")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
-        // Verify target context exists and belongs to same deployment
         let target_context = queries::GetExecutionContextQuery::new(target_context_id, self.agent.deployment_id)
             .execute(&self.app_state)
             .await
             .map_err(|_| AppError::BadRequest(format!("Target context {} not found or not accessible", target_context_id)))?;
 
-        // Add a conversation record to the target context with the relayed message
         let conversation_id = self.app_state.sf.next_id().map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))? as i64;
         let relayed_message = format!(
             "[Cross-context message from context #{}] {}{}",
@@ -639,7 +636,6 @@ impl ToolExecutor {
         );
         conversation_cmd.execute(&self.app_state).await?;
 
-        // Optionally trigger agent execution in the target context
         if trigger_execution {
             let trigger_payload = serde_json::json!({
                 "execution_context_id": target_context_id,
@@ -655,6 +651,33 @@ impl ToolExecutor {
             let _ = self.app_state.nats_client
                 .publish(subject, serde_json::to_vec(&trigger_payload)?.into())
                 .await;
+        }
+
+        // Clear the fulfilled actionable from the current context
+        if let Some(ref fulfilled_id) = actionable_id {
+            let current_context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                .execute(&self.app_state)
+                .await?;
+            
+            if let Some(mut metadata) = current_context.external_resource_metadata {
+                if let Some(actionables) = metadata.get_mut("actionables") {
+                    if let Some(arr) = actionables.as_array_mut() {
+                        arr.retain(|a| a.get("id").and_then(|id| id.as_str()) != Some(fulfilled_id.as_str()));
+                        
+                        // Update the context with cleaned actionables
+                        commands::UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                            .with_external_resource_metadata(metadata)
+                            .execute(&self.app_state)
+                            .await?;
+                        
+                        tracing::info!(
+                            context_id = self.context_id,
+                            actionable_id = %fulfilled_id,
+                            "Cleared fulfilled actionable from context"
+                        );
+                    }
+                }
+            }
         }
 
         Ok(serde_json::json!({
