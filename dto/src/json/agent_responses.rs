@@ -143,6 +143,9 @@ pub struct ExecutionAction {
     pub purpose: String,
     #[serde(default = "default_context_messages")]
     pub context_messages: u32,
+    /// Optional: Actionable ID to clear after this tool executes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clear_actionable_id: Option<String>,
 }
 
 fn default_context_messages() -> u32 {

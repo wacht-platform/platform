@@ -86,6 +86,35 @@ impl AgentExecutor {
             }
         };
 
+        if let Some(ref actionable_id) = action.clear_actionable_id {
+            if let Ok(current_context) = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                .execute(&self.app_state)
+                .await
+            {
+                if let Some(mut metadata) = current_context.external_resource_metadata {
+                    if let Some(actionables) = metadata.get_mut("actionables") {
+                        if let Some(arr) = actionables.as_array_mut() {
+                            let original_len = arr.len();
+                            arr.retain(|a| a.get("id").and_then(|id| id.as_str()) != Some(actionable_id.as_str()));
+                            
+                            if arr.len() < original_len {
+                                let _ = commands::UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                                    .with_external_resource_metadata(metadata)
+                                    .execute(&self.app_state)
+                                    .await;
+                                
+                                tracing::info!(
+                                    context_id = self.context_id,
+                                    actionable_id = %actionable_id,
+                                    "Cleared actionable from context after tool execution"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         result
     }
 

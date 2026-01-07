@@ -388,7 +388,7 @@ impl AgentExecutorBuilder {
                             SchemaField {
                                 name: "actionable_id".to_string(),
                                 field_type: "STRING".to_string(),
-                                description: Some("Optional: ID of the actionable being fulfilled.".to_string()),
+                                description: Some("CRITICAL: When fulfilling an actionable, you MUST provide its ID here. This removes it from your pending list. Without this, the actionable will persist forever. Get the ID from the actionables shown in system context (e.g., 'notify_1736...').".to_string()),
                                 required: false,
                             },
                             SchemaField {

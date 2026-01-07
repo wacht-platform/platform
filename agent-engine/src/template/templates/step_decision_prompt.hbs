@@ -125,6 +125,11 @@ account for all important configuration parameters of the selected tool here to 
 "type": "INTEGER",
 "description": "Number of recent conversation messages to include for parameter generation (default: 1). Use purpose
 field as primary context."
+},
+"clear_actionable_id": {
+"type": "STRING",
+"description": "If this tool call fulfills a pending actionable, provide the actionable ID here. It will be
+automatically cleared after the tool executes. Get the ID from the actionables list (e.g., 'notify_1736...')."
 }
 },
 "required": ["type", "details", "purpose"]
