@@ -339,22 +339,10 @@ impl AgentExecutorBuilder {
                     ]
                 ),
                 (
-                    "teams_get_channel_messages",
-                    "Get recent messages from a Teams channel. Useful for finding meeting notifications, context, or previous discussions.",
+                    "teams_get_current_channel_messages",
+                    "Get recent messages from the current Teams channel you are in. Only works in channel contexts. Useful for finding meeting notifications, previous discussions, or context.",
                     UseExternalServiceToolType::TeamsGetChannelMessages,
                     vec![
-                        SchemaField {
-                            name: "team_id".to_string(),
-                            field_type: "STRING".to_string(),
-                            description: Some("The Team ID. Get this from the channel context or ask the user.".to_string()),
-                            required: true,
-                        },
-                        SchemaField {
-                            name: "channel_id".to_string(),
-                            field_type: "STRING".to_string(),
-                            description: Some("The Channel ID.".to_string()),
-                            required: true,
-                        },
                         SchemaField {
                             name: "count".to_string(),
                             field_type: "INTEGER".to_string(),
@@ -366,6 +354,19 @@ impl AgentExecutorBuilder {
                             field_type: "STRING".to_string(),
                             description: Some("ISO timestamp for pagination - fetch messages before this time.".to_string()),
                             required: false,
+                        },
+                    ]
+                ),
+                (
+                    "teams_list_channels",
+                    "List all channels in a specific Team. Use this to discover available channels.",
+                    UseExternalServiceToolType::TeamsListChannels,
+                    vec![
+                        SchemaField {
+                            name: "team_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The Team ID to list channels from. Get this from context metadata or ask the user.".to_string()),
+                            required: true,
                         },
                     ]
                 ),

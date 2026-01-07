@@ -490,7 +490,10 @@ impl ToolExecutor {
                 self.execute_teams_command(tool, "send_dm", execution_params).await
             },
             UseExternalServiceToolType::TeamsGetChannelMessages => {
-                self.execute_teams_command(tool, "get_channel_messages", execution_params).await
+                self.execute_teams_command(tool, "get_current_channel_messages", execution_params).await
+            },
+            UseExternalServiceToolType::TeamsListChannels => {
+                self.execute_teams_command(tool, "list_channels", execution_params).await
             },
             UseExternalServiceToolType::TeamsGetMeetingRecording => {
                 self.execute_teams_command(tool, "get_meeting_recording", execution_params).await
@@ -524,6 +527,7 @@ impl ToolExecutor {
 
         let payload = serde_json::json!({
             "deployment_id": self.agent.deployment_id.to_string(),
+            "context_id": self.context_id.to_string(),
             "context_group": context_group,
             "agent_id": self.agent.id.to_string(),
             "action": action,
