@@ -330,6 +330,12 @@ impl AgentExecutorBuilder {
                             description: Some("Context for why you're sending this DM - helps when processing the reply. Required if notify_on_reply is true.".to_string()),
                             required: false,
                         },
+                        SchemaField {
+                            name: "context_notes".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Transient memory passed to the DM context. Include: WHO is asking (name), WHAT they need, and any context. The agent handling this DM sees these notes and can act accordingly. Example: 'John Smith asked for the project deadline - let him know when you get a response'.".to_string()),
+                            required: false,
+                        },
                     ]
                 ),
             ];

@@ -95,6 +95,8 @@ pub struct ConversationRecord {
     pub token_count: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Value>,
 }
 
 impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
@@ -136,6 +138,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for ConversationRecord {
             token_count: row.try_get("token_count").unwrap_or(0),
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
+            metadata: row.try_get("metadata").ok(),
         })
     }
 }

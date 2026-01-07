@@ -129,7 +129,7 @@ impl AgentExecutor {
                     }
                 }
                 ConversationMessageType::UserMessage => {
-                    if let ConversationContent::UserMessage { message, images, .. } = &conv.content {
+                    if let ConversationContent::UserMessage { message, images, sender_name } = &conv.content {
                         let mut parts = vec![json!({
                             "text": message
                         })];
@@ -150,29 +150,45 @@ impl AgentExecutor {
                             }
                         }
 
-                        history.push(json!({
+                        let mut entry = json!({
                             "role": "user",
                             "parts": parts,
                             "timestamp": conv.created_at,
                             "type": conv.message_type,
-                        }));
+                        });
+                        // Include sender name if available (for Teams DMs, etc.)
+                        if let Some(ref name) = sender_name {
+                            entry["sender"] = json!(name);
+                        }
+                        if let Some(ref meta) = conv.metadata {
+                            entry["metadata"] = meta.clone();
+                        }
+                        history.push(entry);
                     } else {
-                        history.push(json!({
+                        let mut entry = json!({
                             "role": "user",
                             "content": self.extract_conversation_content(&conv.content),
                             "timestamp": conv.created_at,
                             "type": conv.message_type,
-                        }));
+                        });
+                        if let Some(ref meta) = conv.metadata {
+                            entry["metadata"] = meta.clone();
+                        }
+                        history.push(entry);
                     }
                     i += 1;
                 }
                 _ => {
-                    history.push(json!({
+                    let mut entry = json!({
                         "role": self.map_conversation_type_to_role(&conv.message_type),
                         "content": self.extract_conversation_content(&conv.content),
                         "timestamp": conv.created_at,
                         "type": conv.message_type,
-                    }));
+                    });
+                    if let Some(ref meta) = conv.metadata {
+                        entry["metadata"] = meta.clone();
+                    }
+                    history.push(entry);
                     i += 1;
                 }
             }

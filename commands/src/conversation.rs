@@ -11,6 +11,7 @@ pub struct CreateConversationCommand {
     pub context_id: i64,
     pub content: ConversationContent,
     pub message_type: ConversationMessageType,
+    pub metadata: Option<serde_json::Value>,
 }
 
 impl CreateConversationCommand {
@@ -25,7 +26,13 @@ impl CreateConversationCommand {
             context_id,
             content,
             message_type,
+            metadata: None,
         }
+    }
+
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
     }
 
     fn calculate_token_count(&self) -> Result<i32, AppError> {
@@ -96,9 +103,9 @@ impl Command for CreateConversationCommand {
             r#"
             INSERT INTO conversations (
                 id, context_id, timestamp, content, message_type,
-                token_count, created_at, updated_at
+                token_count, created_at, updated_at, metadata
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $7
+                $1, $2, $3, $4, $5, $6, $7, $7, $8
             )
             RETURNING *
             "#,
@@ -110,6 +117,7 @@ impl Command for CreateConversationCommand {
         .bind(message_type_str)
         .bind(token_count)
         .bind(now)
+        .bind(&self.metadata)
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(AppError::from)?;
