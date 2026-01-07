@@ -514,6 +514,13 @@ impl AgentExecutor {
             .and_then(|m| m.get("actionables"))
             .and_then(|a| serde_json::from_value(a.clone()).ok())
             .unwrap_or_default();
+        
+        tracing::info!(
+            context_id = self.context_id,
+            actionable_count = actionables.len(),
+            actionables = ?actionables,
+            "Loaded actionables for decision"
+        );
 
         let context = StepDecisionContext {
             conversation_history: self.get_conversation_history_for_llm().await,
