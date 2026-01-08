@@ -536,16 +536,10 @@ impl ToolExecutor {
 
         let subject = "integrations.teams.command";
         
-        // Use a longer timeout for operations that may take time (e.g., video transcription)
-        // We wrap both the NATS request and any built-in timeout in our own tokio timeout
-        let timeout_duration = std::time::Duration::from_secs(300); // 5 minutes
-        
-        let nats_future = self.app_state.nats_client
-            .request(subject.to_string(), serde_json::to_vec(&payload)?.into());
-        
-        let response = tokio::time::timeout(timeout_duration, nats_future)
+        // NATS client has 5-minute request_timeout configured globally in common/state.rs
+        let response = self.app_state.nats_client
+            .request(subject.to_string(), serde_json::to_vec(&payload)?.into())
             .await
-            .map_err(|_| AppError::External("Teams integration request timed out after 5 minutes".to_string()))?
             .map_err(|e| AppError::External(format!("Teams integration request failed: {}", e)))?;
 
         let response_data: Value = serde_json::from_slice(&response.payload)?;
