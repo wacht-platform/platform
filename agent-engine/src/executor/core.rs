@@ -425,6 +425,51 @@ impl AgentExecutorBuilder {
                         },
                     ]
                 ),
+                (
+                    "teams_save_attachment",
+                    "Save an image attachment from a Teams message to your uploads folder for later use. Use this when you need to keep an image for reference or processing.",
+                    UseExternalServiceToolType::TeamsSaveAttachment,
+                    vec![
+                        SchemaField {
+                            name: "attachment_url".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The URL of the attachment from the message metadata.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "filename".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Name to save the file as (e.g. 'screenshot.png').".to_string()),
+                            required: true,
+                        },
+                    ]
+                ),
+                (
+                    "teams_describe_image",
+                    "Describe an image attachment from a Teams message. Use this when you need to understand what's in an image the user sent.",
+                    UseExternalServiceToolType::TeamsDescribeImage,
+                    vec![
+                        SchemaField {
+                            name: "attachment_url".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The URL of the image attachment from the message metadata.".to_string()),
+                            required: true,
+                        },
+                    ]
+                ),
+                (
+                    "teams_transcribe_audio",
+                    "Transcribe a voice note or audio attachment from a Teams message. Use this when you need to understand what was said in an audio message.",
+                    UseExternalServiceToolType::TeamsTranscribeAudio,
+                    vec![
+                        SchemaField {
+                            name: "attachment_url".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The URL of the audio attachment from the message metadata.".to_string()),
+                            required: true,
+                        },
+                    ]
+                ),
             ];
             
             for (name, desc, service_type, schema) in teams_tools {

@@ -498,6 +498,15 @@ impl ToolExecutor {
             UseExternalServiceToolType::TeamsTranscribeMeeting => {
                 self.execute_teams_command(tool, "analyze_meeting", execution_params).await
             },
+            UseExternalServiceToolType::TeamsSaveAttachment => {
+                self.execute_teams_save_attachment(tool, execution_params).await
+            },
+            UseExternalServiceToolType::TeamsDescribeImage => {
+                self.execute_teams_command(tool, "describe_image", execution_params).await
+            },
+            UseExternalServiceToolType::TeamsTranscribeAudio => {
+                self.execute_teams_command(tool, "transcribe_audio", execution_params).await
+            },
             UseExternalServiceToolType::TriggerContext => {
                 self.execute_trigger_context(tool, execution_params).await
             },
@@ -595,6 +604,89 @@ impl ToolExecutor {
             "success": true,
             "tool": tool.name,
             "result": response_data
+        }))
+    }
+
+    async fn execute_teams_save_attachment(
+        &self,
+        tool: &AiTool,
+        execution_params: &Value,
+    ) -> Result<Value, AppError> {
+        let attachment_url = execution_params.get("attachment_url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::BadRequest("attachment_url is required".to_string()))?;
+        
+        let filename = execution_params.get("filename")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::BadRequest("filename is required".to_string()))?;
+
+        // Get context group for NATS routing
+        let context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+            .execute(&self.app_state)
+            .await?;
+        
+        let context_group = context.context_group
+            .ok_or_else(|| AppError::BadRequest("No context group found".to_string()))?;
+
+        // Request worker to download the image and return base64 data
+        let payload = serde_json::json!({
+            "deployment_id": self.agent.deployment_id.to_string(),
+            "context_id": self.context_id.to_string(),
+            "context_group": context_group,
+            "agent_id": self.agent.id.to_string(),
+            "action": "download_attachment",
+            "params": { "attachment_url": attachment_url }
+        });
+
+        let response = self.app_state.nats_client
+            .request("integrations.teams.command".to_string(), serde_json::to_vec(&payload)?.into())
+            .await
+            .map_err(|e| AppError::External(format!("Failed to download attachment: {}", e)))?;
+
+        let response_data: Value = serde_json::from_slice(&response.payload)?;
+        
+        if response_data.get("success") != Some(&serde_json::json!(true)) {
+            let error_msg = response_data.get("error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("Failed to download attachment");
+            return Ok(serde_json::json!({
+                "success": false,
+                "tool": tool.name,
+                "error": error_msg
+            }));
+        }
+
+        // Get base64 data from response
+        let base64_data = response_data.get("data")
+            .and_then(|d| d.as_str())
+            .ok_or_else(|| AppError::Internal("No data in download response".to_string()))?;
+
+        // Decode base64 data
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let bytes = STANDARD.decode(base64_data)
+            .map_err(|e| AppError::Internal(format!("Invalid base64 data: {}", e)))?;
+
+        // Create filesystem instance for saving
+        let execution_id = self.app_state.sf.next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
+            .to_string();
+        
+        let filesystem = AgentFilesystem::new(
+            &self.agent.deployment_id.to_string(),
+            &self.context_id.to_string(),
+            &execution_id,
+        );
+        
+        let saved_path = filesystem.save_upload(filename, &bytes).await?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": tool.name,
+            "result": {
+                "saved": true,
+                "path": saved_path,
+                "description": response_data.get("description")
+            }
         }))
     }
 

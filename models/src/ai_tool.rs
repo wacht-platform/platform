@@ -127,6 +127,9 @@ pub enum UseExternalServiceToolType {
     TeamsGetChannelMessages,
     TeamsGetMeetingRecording,
     TeamsTranscribeMeeting,
+    TeamsSaveAttachment,
+    TeamsDescribeImage,
+    TeamsTranscribeAudio,
     TriggerContext,
 }
 
