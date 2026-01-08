@@ -496,7 +496,7 @@ impl ToolExecutor {
                 self.execute_teams_command(tool, "get_meeting_recording", execution_params).await
             },
             UseExternalServiceToolType::TeamsTranscribeMeeting => {
-                self.execute_teams_command(tool, "transcribe_meeting", execution_params).await
+                self.execute_teams_command(tool, "analyze_meeting", execution_params).await
             },
             UseExternalServiceToolType::TriggerContext => {
                 self.execute_trigger_context(tool, execution_params).await

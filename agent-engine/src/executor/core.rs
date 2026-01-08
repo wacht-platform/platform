@@ -401,14 +401,14 @@ impl AgentExecutorBuilder {
                     ]
                 ),
                 (
-                    "teams_transcribe_meeting",
-                    "Transcribe a meeting recording. Downloads the video, uploads to Gemini, and returns a text transcript of all spoken content with speaker labels and timestamps.",
+                    "teams_analyze_meeting",
+                    "Analyze a meeting recording. Downloads video and extracts: 1) Audio transcription with speaker labels, 2) Visual content (screen shares, presentations). Returns summary, transcript, and visual notes.",
                     UseExternalServiceToolType::TeamsTranscribeMeeting,
                     vec![
                         SchemaField {
-                            name: "download_url".to_string(),
+                            name: "recording_id".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("The download URL of the recording. Get this from teams_get_meeting_recording results (the downloadUrl field).".to_string()),
+                            description: Some("The recording ID from teams_get_meeting_recording results (the 'id' field).".to_string()),
                             required: true,
                         },
                         SchemaField {
