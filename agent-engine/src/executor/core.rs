@@ -402,7 +402,7 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_analyze_meeting",
-                    "Analyze a meeting recording. Downloads video and extracts: 1) Audio transcription with speaker labels, 2) Visual content (screen shares, presentations). Returns summary, transcript, and visual notes.",
+                    "Analyze a meeting recording. Downloads video and extracts: 1) Audio transcription with speaker labels, 2) Visual content. For DM recordings, pass organizer_id from teams_get_meeting_recording results.",
                     UseExternalServiceToolType::TeamsTranscribeMeeting,
                     vec![
                         SchemaField {
@@ -410,6 +410,12 @@ impl AgentExecutorBuilder {
                             field_type: "STRING".to_string(),
                             description: Some("The recording ID from teams_get_meeting_recording results (the 'id' field).".to_string()),
                             required: true,
+                        },
+                        SchemaField {
+                            name: "organizer_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("For DM/group recordings ONLY: the 'organizer_id' from teams_get_meeting_recording results. Not needed for channel meetings.".to_string()),
+                            required: false,
                         },
                         SchemaField {
                             name: "recording_name".to_string(),
