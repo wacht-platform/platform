@@ -446,7 +446,7 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_describe_image",
-                    "Describe an image attachment from a Teams message. Use this when you need to understand what's in an image the user sent.",
+                    "Describe an image attachment from a Teams message. Use this when you need to understand what's in an image the user sent. You can optionally specify what to focus on.",
                     UseExternalServiceToolType::TeamsDescribeImage,
                     vec![
                         SchemaField {
@@ -454,6 +454,12 @@ impl AgentExecutorBuilder {
                             field_type: "STRING".to_string(),
                             description: Some("The URL of the image attachment from the message metadata.".to_string()),
                             required: true,
+                        },
+                        SchemaField {
+                            name: "prompt".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Optional: What to look for or ask about the image (e.g. 'What text is visible?', 'Is there a chart?', 'What colors are used?').".to_string()),
+                            required: false,
                         },
                     ]
                 ),
