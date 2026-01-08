@@ -21,8 +21,26 @@ pub struct StepDecisionContext {
     // Cross-context awareness
     pub context_id: i64,
     pub context_title: String,
+    /// Source of this context (e.g., "teams", "slack", "web")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_source: Option<String>,
+    /// Teams-specific context info (conversation type, channel name, team ID)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub teams_context: Option<TeamsContextInfo>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub actionables: Vec<Actionable>,
+}
+
+/// Teams-specific context information for agent awareness
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamsContextInfo {
+    /// Type of conversation: "channel", "groupChat", or "personal"
+    pub conversation_type: String,
+    /// Name of the team/channel or "Personal"
+    pub channel_name: String,
+    /// Team ID (for channel meetings)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

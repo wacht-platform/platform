@@ -563,6 +563,26 @@ impl AgentExecutor {
             teams_enabled: self.teams_enabled,
             context_id: self.context_id,
             context_title: exec_context.title,
+            context_source: exec_context.source.clone(),
+            teams_context: if exec_context.source.as_deref() == Some("teams") {
+                exec_context.external_resource_metadata.as_ref().map(|meta| {
+                    dto::json::TeamsContextInfo {
+                        conversation_type: meta.get("conversationType")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown")
+                            .to_string(),
+                        channel_name: meta.get("channelName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown")
+                            .to_string(),
+                        team_id: meta.get("teamId")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                    }
+                })
+            } else {
+                None
+            },
             actionables,
         };
 

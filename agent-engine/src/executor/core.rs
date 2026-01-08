@@ -303,7 +303,7 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_send_dm",
-                    "Send a direct message to a user in Microsoft Teams. REQUIRES both user_id and message. Use notify_on_reply to get notified when user responds.",
+                    "Send a direct message to a user in Microsoft Teams. ALWAYS include sender_info to explain who is asking and from where. Use notify_on_reply to get notified when user responds.",
                     UseExternalServiceToolType::TeamsSendDm,
                     vec![
                         SchemaField {
@@ -315,7 +315,13 @@ impl AgentExecutorBuilder {
                         SchemaField {
                             name: "message".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("The message content to send to the user.".to_string()),
+                            description: Some("The message content to send. MUST include context about who is asking if relaying on behalf of someone.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "sender_info".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("REQUIRED: Who is sending this and from where. Example: 'Saurav Singh from #General channel' or 'John Smith from group DM'. This is prepended to your message for clarity.".to_string()),
                             required: true,
                         },
                         SchemaField {
@@ -359,14 +365,14 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_get_meeting_recording",
-                    "Get meeting recordings from a user's OneDrive. Can work two ways: 1) With meeting_id or join_url to find a specific recording, 2) With just organizer_id and search_recent=true to list recent recordings. Use search_recent when you can't find a meeting ID.",
+                    "Get meeting recordings. For DM/group chats: uses organizer_id to search their OneDrive. For channel meetings: automatically detects Team context and searches SharePoint. Set search_recent=true when you don't have a meeting ID.",
                     UseExternalServiceToolType::TeamsGetMeetingRecording,
                     vec![
                         SchemaField {
                             name: "organizer_id".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("The AAD Object ID of the meeting organizer. Found in meetingInfo from channel messages or from callEnded events.".to_string()),
-                            required: true,
+                            description: Some("For DM/group chat recordings. The AAD Object ID of the meeting organizer from callEnded events. Not needed for channel meetings (auto-detected).".to_string()),
+                            required: false,
                         },
                         SchemaField {
                             name: "meeting_id".to_string(),
@@ -383,13 +389,32 @@ impl AgentExecutorBuilder {
                         SchemaField {
                             name: "search_recent".to_string(),
                             field_type: "BOOLEAN".to_string(),
-                            description: Some("Set to true to search for recent recordings in OneDrive without needing meeting ID. Useful for ad-hoc calls.".to_string()),
+                            description: Some("Set to true to search for recent recordings without needing meeting ID. Useful for ad-hoc calls.".to_string()),
                             required: false,
                         },
                         SchemaField {
                             name: "max_results".to_string(),
                             field_type: "INTEGER".to_string(),
-                            description: Some("Maximum number of recordings to return when using search_recent. Default 5.".to_string()),
+                            description: Some("Maximum number of recordings to return. Default 5.".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
+                (
+                    "teams_transcribe_meeting",
+                    "Transcribe a meeting recording. Downloads the video, uploads to Gemini, and returns a text transcript of all spoken content with speaker labels and timestamps.",
+                    UseExternalServiceToolType::TeamsTranscribeMeeting,
+                    vec![
+                        SchemaField {
+                            name: "download_url".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The download URL of the recording. Get this from teams_get_meeting_recording results (the downloadUrl field).".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "recording_name".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Optional name of the recording for reference.".to_string()),
                             required: false,
                         },
                     ]
