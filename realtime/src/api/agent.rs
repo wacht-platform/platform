@@ -533,7 +533,8 @@ async fn handle_execution_message(
             if let Err(e) = PublishAgentExecutionCommand::new_message(
                 deployment_id,
                 context_id,
-                agent.name.clone(),
+                Some(agent.id),
+                None,
                 conversation_id,
             )
             .execute(&app_state)
@@ -591,7 +592,8 @@ async fn handle_execution_message(
                         if let Err(e) = PublishAgentExecutionCommand::platform_function_result(
                             deployment_id,
                             context_id,
-                            agent.name.clone(),
+                            Some(agent.id),
+                            None,
                             execution_id.clone(),
                             result.clone(),
                         )
@@ -653,7 +655,8 @@ async fn handle_execution_message(
             if let Err(e) = PublishAgentExecutionCommand::user_input_response(
                 deployment_id,
                 context_id,
-                agent.name.clone(),
+                Some(agent.id),
+                None,
                 conversation_id,
             )
             .execute(&app_state)

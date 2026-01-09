@@ -86,7 +86,7 @@ pub async fn get_ai_agent_details(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<AgentDetailsResponse> {
-    use queries::GetIntegrationsByAgentIdQuery;
+    use queries::GetAgentIntegrationsQuery;
     
     // Fetch agent
     let agent = GetAiAgentByIdQuery::new(deployment_id, params.agent_id)
@@ -94,7 +94,7 @@ pub async fn get_ai_agent_details(
         .await?;
     
     // Fetch integrations
-    let integrations = GetIntegrationsByAgentIdQuery::new(deployment_id, params.agent_id)
+    let integrations = GetAgentIntegrationsQuery::new(deployment_id, params.agent_id)
         .execute(&app_state)
         .await
         .unwrap_or_default();
@@ -117,6 +117,7 @@ pub async fn get_ai_agent_details(
                 created_at: integration.created_at,
                 updated_at: integration.updated_at,
                 deployment_id: integration.deployment_id,
+                agent_id: integration.agent_id,
                 integration_type: integration.integration_type,
                 name: integration.name,
                 config: integration.config,
@@ -180,15 +181,15 @@ pub async fn delete_ai_agent(
         .map_err(Into::into)
 }
 
-/// Get integrations attached to an agent via integration_ids in configuration
+/// Get integrations attached to an agent
 pub async fn get_agent_integrations(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<IntegrationsResponse> {
-    use queries::GetIntegrationsByAgentIdQuery;
+    use queries::GetAgentIntegrationsQuery;
     
-    let integrations = GetIntegrationsByAgentIdQuery::new(deployment_id, params.agent_id)
+    let integrations = GetAgentIntegrationsQuery::new(deployment_id, params.agent_id)
         .execute(&app_state)
         .await?;
     
@@ -210,6 +211,7 @@ pub async fn get_agent_integrations(
                 created_at: integration.created_at,
                 updated_at: integration.updated_at,
                 deployment_id: integration.deployment_id,
+                agent_id: integration.agent_id,
                 integration_type: integration.integration_type,
                 name: integration.name,
                 config: integration.config,
@@ -227,6 +229,7 @@ pub struct IntegrationWithUrl {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub deployment_id: i64,
+    pub agent_id: i64,
     pub integration_type: models::IntegrationType,
     pub name: String,
     pub config: serde_json::Value,

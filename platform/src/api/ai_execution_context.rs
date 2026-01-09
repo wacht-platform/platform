@@ -210,6 +210,9 @@ pub async fn execute_agent_async(
         .execute(&app_state)
         .await?;
 
+    // Note: We pass agent_name here, the worker will lookup the agent
+    let agent_name = request.agent_name.clone();
+
     match request.execution_type {
         ExecuteAgentRequestType::NewMessage { message, images } => {
             let model_images = match UploadImagesToS3Command::new(deployment_id, context_id, images)
@@ -245,7 +248,8 @@ pub async fn execute_agent_async(
             PublishAgentExecutionCommand::new_message(
                 deployment_id,
                 context_id,
-                request.agent_name.clone(),
+                None,
+                Some(agent_name.clone()),
                 conversation_id,
             )
             .execute(&app_state)
@@ -285,7 +289,8 @@ pub async fn execute_agent_async(
             PublishAgentExecutionCommand::user_input_response(
                 deployment_id,
                 context_id,
-                request.agent_name.clone(),
+                None,
+                Some(agent_name.clone()),
                 conversation_id,
             )
             .execute(&app_state)
@@ -306,7 +311,8 @@ pub async fn execute_agent_async(
             PublishAgentExecutionCommand::platform_function_result(
                 deployment_id,
                 context_id,
-                request.agent_name.clone(),
+                None,
+                Some(agent_name.clone()),
                 execution_id.clone(),
                 result,
             )

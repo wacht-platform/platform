@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, created_at, updated_at, deployment_id, integration_type, name, config\n            FROM agent_integrations\n            WHERE id = $1 AND deployment_id = $2\n            ",
+  "query": "\n            INSERT INTO agent_integrations (id, created_at, updated_at, deployment_id, agent_id, integration_type, name, config)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            RETURNING id, created_at, updated_at, deployment_id, agent_id, integration_type, name, config\n            ",
   "describe": {
     "columns": [
       {
@@ -25,16 +25,21 @@
       },
       {
         "ordinal": 4,
+        "name": "agent_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
         "name": "integration_type",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "name",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "config",
         "type_info": "Jsonb"
       }
@@ -42,7 +47,13 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8"
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Jsonb"
       ]
     },
     "nullable": [
@@ -52,8 +63,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "1e1c83202d56b715e0ab275a9c4d63ae839ab8e0668b94950464a65b15e5e770"
+  "hash": "bd0cc8048bd5f65c709c0b49e199668367c2802e9d35cbc834cf41d7059c7cf2"
 }

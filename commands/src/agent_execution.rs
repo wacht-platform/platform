@@ -90,15 +90,16 @@ impl PublishAgentExecutionCommand {
     pub fn new_message(
         deployment_id: i64,
         context_id: i64,
-        agent_name: String,
+        agent_id: Option<i64>,
+        agent_name: Option<String>,
         conversation_id: i64,
     ) -> Self {
         Self {
             request: AgentExecutionRequest {
                 deployment_id: deployment_id.to_string(),
                 context_id: context_id.to_string(),
-                agent_name: Some(agent_name),
-                agent_id: None,
+                agent_name,
+                agent_id: agent_id.map(|id| id.to_string()),
                 execution_type: AgentExecutionType::NewMessage { conversation_id: conversation_id.to_string() },
             },
         }
@@ -107,15 +108,16 @@ impl PublishAgentExecutionCommand {
     pub fn user_input_response(
         deployment_id: i64,
         context_id: i64,
-        agent_name: String,
+        agent_id: Option<i64>,
+        agent_name: Option<String>,
         conversation_id: i64,
     ) -> Self {
         Self {
             request: AgentExecutionRequest {
                 deployment_id: deployment_id.to_string(),
                 context_id: context_id.to_string(),
-                agent_name: Some(agent_name),
-                agent_id: None,
+                agent_name,
+                agent_id: agent_id.map(|id| id.to_string()),
                 execution_type: AgentExecutionType::UserInputResponse { conversation_id: conversation_id.to_string() },
             },
         }
@@ -124,7 +126,8 @@ impl PublishAgentExecutionCommand {
     pub fn platform_function_result(
         deployment_id: i64,
         context_id: i64,
-        agent_name: String,
+        agent_id: Option<i64>,
+        agent_name: Option<String>,
         execution_id: String,
         result: serde_json::Value,
     ) -> Self {
@@ -132,8 +135,8 @@ impl PublishAgentExecutionCommand {
             request: AgentExecutionRequest {
                 deployment_id: deployment_id.to_string(),
                 context_id: context_id.to_string(),
-                agent_name: Some(agent_name),
-                agent_id: None,
+                agent_name,
+                agent_id: agent_id.map(|id| id.to_string()),
                 execution_type: AgentExecutionType::PlatformFunctionResult { execution_id, result },
             },
         }

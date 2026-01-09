@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, created_at, updated_at, deployment_id, integration_type, name, config\n            FROM agent_integrations\n            WHERE deployment_id = $1\n            ORDER BY created_at DESC\n            LIMIT $2 OFFSET $3\n            ",
+  "query": "\n            SELECT i.id, i.created_at, i.updated_at, i.deployment_id, i.agent_id, i.integration_type, i.name, i.config\n            FROM active_agent_integrations aai\n            JOIN agent_integrations i ON i.id = aai.integration_id\n            WHERE aai.context_group = $1\n              AND aai.deployment_id = $2\n              AND aai.agent_id = $3\n            ",
   "describe": {
     "columns": [
       {
@@ -25,23 +25,28 @@
       },
       {
         "ordinal": 4,
+        "name": "agent_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
         "name": "integration_type",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "name",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "config",
         "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
+        "Text",
         "Int8",
         "Int8"
       ]
@@ -53,8 +58,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "fb68862bade1cba36199157518974dbda81b67dd81e99878b2744713e970c631"
+  "hash": "ae7695473b87b69663854069b7d4cb3eb6f85f071fe94ad46b4e62ef619a9b40"
 }

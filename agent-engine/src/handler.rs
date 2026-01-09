@@ -29,6 +29,7 @@ impl AgentHandler {
         let execution_id = self.app_state.sf.next_id()? as i64;
         let context_key = request.context_id.to_string();
         let deployment_id = request.agent.deployment_id;
+        let agent_id = request.agent.id;
 
         let mut executor = AgentExecutor::new(
             request.agent,
@@ -40,7 +41,7 @@ impl AgentHandler {
 
         let kv = self.get_key_value_store().await?;
         let watch = self.create_watcher(&kv, &context_key).await?;
-        self.spawn_message_publisher(receiver, context_key.clone(), deployment_id);
+        self.spawn_message_publisher(receiver, context_key.clone(), deployment_id, agent_id);
 
         let context = GetExecutionContextQuery::new(request.context_id, deployment_id)
             .execute(&self.app_state)
@@ -108,12 +109,13 @@ impl AgentHandler {
         mut receiver: tokio::sync::mpsc::Receiver<StreamEvent>,
         context_key: String,
         deployment_id: i64,
+        agent_id: i64,
     ) {
         let app_state = self.app_state.clone();
         tokio::spawn(async move {
             while let Some(message) = receiver.recv().await {
                 let _ =
-                    publish_stream_event(&app_state, &context_key, deployment_id, message).await;
+                    publish_stream_event(&app_state, &context_key, deployment_id, agent_id, message).await;
             }
         });
     }
@@ -171,6 +173,7 @@ async fn publish_stream_event(
     app_state: &AppState,
     context_key: &str,
     deployment_id: i64,
+    agent_id: i64,
     event: StreamEvent,
 ) -> Result<(), AppError> {
     let jetstream = &app_state.nats_jetstream;
@@ -195,7 +198,7 @@ async fn publish_stream_event(
                                         }
                                     }
                                     
-                                    let logger = TeamsActivityLogger::new(&deployment_id.to_string(), group);
+                                    let logger = TeamsActivityLogger::new(&deployment_id.to_string(), &agent_id.to_string(), group);
                                     let _ = logger.append_entry("RESPONSE", &format!("To User{}: {}", location, response)).await;
                                 }
                             }

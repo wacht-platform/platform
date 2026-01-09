@@ -566,7 +566,7 @@ impl ToolExecutor {
         }
         
         // Log success
-        let logger = TeamsActivityLogger::new(&self.agent.deployment_id.to_string(), &context_group);
+        let logger = TeamsActivityLogger::new(&self.agent.deployment_id.to_string(), &self.agent.id.to_string(), &context_group);
         let _ = logger.ensure_directory().await;
 
         match action {
@@ -744,7 +744,8 @@ impl ToolExecutor {
             let exec_cmd = commands::PublishAgentExecutionCommand::new_message(
                 self.agent.deployment_id,
                 target_context_id,
-                self.agent.name.clone(),
+                Some(self.agent.id),
+                None,
                 conversation_id,
             );
             

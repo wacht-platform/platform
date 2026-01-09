@@ -13,15 +13,20 @@ use models::{AgentIntegration, IntegrationType};
 use queries::{GetAgentIntegrationByIdQuery, GetAgentIntegrationsQuery, Query as QueryTrait};
 
 #[derive(Deserialize)]
-pub struct IntegrationParams {
+pub struct AgentIntegrationParams {
+    pub agent_id: i64,
     pub integration_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct AgentParams {
+    pub agent_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct GetIntegrationsQuery {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
-    pub integration_type: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -47,14 +52,16 @@ fn parse_integration_type(s: &str) -> Result<IntegrationType, String> {
     }
 }
 
+/// GET /agents/:agent_id/integrations
 pub async fn get_agent_integrations(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentParams>,
     Query(query): Query<GetIntegrationsQuery>,
 ) -> ApiResult<PaginatedResponse<AgentIntegration>> {
     let limit = query.limit.unwrap_or(50) as u32;
 
-    let integrations = GetAgentIntegrationsQuery::new(deployment_id)
+    let integrations = GetAgentIntegrationsQuery::new(deployment_id, params.agent_id)
         .with_limit(Some(limit + 1))
         .with_offset(query.offset.map(|o| o as u32))
         .execute(&app_state)
@@ -76,37 +83,47 @@ pub async fn get_agent_integrations(
     .into())
 }
 
+/// POST /agents/:agent_id/integrations
 pub async fn create_agent_integration(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentParams>,
     Json(request): Json<CreateIntegrationRequest>,
 ) -> ApiResult<AgentIntegration> {
     let integration_type = parse_integration_type(&request.integration_type)
         .map_err(|e| common::error::AppError::BadRequest(e))?;
 
-    CreateAgentIntegrationCommand::new(deployment_id, integration_type, request.name, request.config)
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    CreateAgentIntegrationCommand::new(
+        deployment_id,
+        params.agent_id,
+        integration_type,
+        request.name,
+        request.config,
+    )
+    .execute(&app_state)
+    .await
+    .map(Into::into)
+    .map_err(Into::into)
 }
 
+/// GET /agents/:agent_id/integrations/:integration_id
 pub async fn get_agent_integration_by_id(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<IntegrationParams>,
+    Path(params): Path<AgentIntegrationParams>,
 ) -> ApiResult<AgentIntegration> {
-    GetAgentIntegrationByIdQuery::new(deployment_id, params.integration_id)
+    GetAgentIntegrationByIdQuery::new(deployment_id, params.agent_id, params.integration_id)
         .execute(&app_state)
         .await
         .map(Into::into)
         .map_err(Into::into)
 }
 
+/// PATCH /agents/:agent_id/integrations/:integration_id
 pub async fn update_agent_integration(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<IntegrationParams>,
+    Path(params): Path<AgentIntegrationParams>,
     Json(request): Json<UpdateIntegrationRequest>,
 ) -> ApiResult<AgentIntegration> {
     let mut command = UpdateAgentIntegrationCommand::new(deployment_id, params.integration_id);
@@ -125,10 +142,11 @@ pub async fn update_agent_integration(
         .map_err(Into::into)
 }
 
+/// DELETE /agents/:agent_id/integrations/:integration_id
 pub async fn delete_agent_integration(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<IntegrationParams>,
+    Path(params): Path<AgentIntegrationParams>,
 ) -> ApiResult<()> {
     DeleteAgentIntegrationCommand::new(deployment_id, params.integration_id)
         .execute(&app_state)
@@ -136,3 +154,4 @@ pub async fn delete_agent_integration(
         .map(Into::into)
         .map_err(Into::into)
 }
+

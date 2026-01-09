@@ -32,6 +32,8 @@ pub struct AgentIntegration {
     pub updated_at: DateTime<Utc>,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub agent_id: i64,
     pub integration_type: IntegrationType,
     pub name: String,
     pub config: serde_json::Value,

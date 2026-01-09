@@ -300,12 +300,12 @@ fn base_deployment_routes() -> Router<AppState> {
             get(api::ai_knowledge_base_search::search_specific_knowledge_base),
         )
         .route(
-            "/agent-integrations",
+            "/agents/{agent_id}/integrations",
             get(api::agent_integrations::get_agent_integrations)
                 .post(api::agent_integrations::create_agent_integration),
         )
         .route(
-            "/agent-integrations/{integration_id}",
+            "/agents/{agent_id}/integrations/{integration_id}",
             get(api::agent_integrations::get_agent_integration_by_id)
                 .patch(api::agent_integrations::update_agent_integration)
                 .delete(api::agent_integrations::delete_agent_integration),

@@ -9,20 +9,23 @@ const RETENTION_DAYS: i64 = 15;
 #[allow(dead_code)]
 pub struct TeamsActivityLogger {
     deployment_id: String,
+    agent_id: String,
     context_group: String,
     base_path: PathBuf,
 }
 
 impl TeamsActivityLogger {
-    pub fn new(deployment_id: &str, context_group: &str) -> Self {
-        // Use /mnt/wacht-agents/{deployment_id}/teams-activity/{context_group}
+    pub fn new(deployment_id: &str, agent_id: &str, context_group: &str) -> Self {
+        // Use /mnt/wacht-agents/{deployment_id}/{agent_id}/teams-activity/{context_group}
         let base_path = PathBuf::from("/mnt/wacht-agents")
             .join(deployment_id)
+            .join(agent_id)
             .join("teams-activity")
             .join(context_group);
 
         Self {
             deployment_id: deployment_id.to_string(),
+            agent_id: agent_id.to_string(),
             context_group: context_group.to_string(),
             base_path,
         }

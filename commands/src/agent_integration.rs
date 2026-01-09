@@ -7,6 +7,7 @@ use sqlx::Row;
 
 pub struct CreateAgentIntegrationCommand {
     pub deployment_id: i64,
+    pub agent_id: i64,
     pub integration_type: IntegrationType,
     pub name: String,
     pub config: serde_json::Value,
@@ -15,12 +16,14 @@ pub struct CreateAgentIntegrationCommand {
 impl CreateAgentIntegrationCommand {
     pub fn new(
         deployment_id: i64,
+        agent_id: i64,
         integration_type: IntegrationType,
         name: String,
         config: serde_json::Value,
     ) -> Self {
         Self {
             deployment_id,
+            agent_id,
             integration_type,
             name,
             config,
@@ -37,14 +40,15 @@ impl Command for CreateAgentIntegrationCommand {
 
         let integration = sqlx::query!(
             r#"
-            INSERT INTO agent_integrations (id, created_at, updated_at, deployment_id, integration_type, name, config)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, created_at, updated_at, deployment_id, integration_type, name, config
+            INSERT INTO agent_integrations (id, created_at, updated_at, deployment_id, agent_id, integration_type, name, config)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, created_at, updated_at, deployment_id, agent_id, integration_type, name, config
             "#,
             id,
             now,
             now,
             self.deployment_id,
+            self.agent_id,
             self.integration_type.to_string(),
             self.name,
             self.config,
@@ -58,6 +62,7 @@ impl Command for CreateAgentIntegrationCommand {
             created_at: integration.created_at,
             updated_at: integration.updated_at,
             deployment_id: integration.deployment_id,
+            agent_id: integration.agent_id,
             integration_type: self.integration_type,
             name: integration.name,
             config: integration.config,
@@ -116,7 +121,7 @@ impl Command for UpdateAgentIntegrationCommand {
             UPDATE agent_integrations
             SET {}
             WHERE id = ${} AND deployment_id = ${}
-            RETURNING id, created_at, updated_at, deployment_id, integration_type, name, config
+            RETURNING id, created_at, updated_at, deployment_id, agent_id, integration_type, name, config
             "#,
             query_parts.join(", "),
             param_count,
@@ -154,6 +159,7 @@ impl Command for UpdateAgentIntegrationCommand {
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
             deployment_id: row.get("deployment_id"),
+            agent_id: row.get("agent_id"),
             integration_type,
             name: row.get("name"),
             config: row.get("config"),

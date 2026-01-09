@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT i.id, i.created_at, i.updated_at, i.deployment_id, i.integration_type, i.name, i.config\n            FROM agent_integrations i\n            INNER JOIN ai_agents a ON a.deployment_id = i.deployment_id\n            WHERE a.id = $1 \n                AND a.deployment_id = $2\n                AND jsonb_typeof(a.configuration->'integration_ids') = 'array'\n                AND i.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'integration_ids'))\n            ",
+  "query": "\n            SELECT id, created_at, updated_at, deployment_id, agent_id, integration_type, name, config\n            FROM agent_integrations\n            WHERE deployment_id = $1 AND agent_id = $2\n            ORDER BY created_at DESC\n            LIMIT $3 OFFSET $4\n            ",
   "describe": {
     "columns": [
       {
@@ -25,22 +25,29 @@
       },
       {
         "ordinal": 4,
+        "name": "agent_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
         "name": "integration_type",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "name",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "config",
         "type_info": "Jsonb"
       }
     ],
     "parameters": {
       "Left": [
+        "Int8",
+        "Int8",
         "Int8",
         "Int8"
       ]
@@ -52,8 +59,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "4a14bc3758557a882c838656dce0412eef2e6f53156501d78e99e47dd1ec41f2"
+  "hash": "a1b166ddf938097430a35a42f8ef115d4420e27375c4d4f8e000b72a045f3beb"
 }
