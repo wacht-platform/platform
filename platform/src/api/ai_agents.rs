@@ -101,7 +101,7 @@ pub async fn get_ai_agent_details(
     
     // Generate webhook URLs
     let base_url = std::env::var("INTEGRATIONS_BASE_URL")
-        .unwrap_or_else(|_| "https://integrations.wacht.services".to_string());
+        .unwrap_or_else(|_| "https://agentlink.wacht.services".to_string());
     
     let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
         .into_iter()
@@ -195,7 +195,7 @@ pub async fn get_agent_integrations(
     
     // Generate webhook URLs for each integration
     let base_url = std::env::var("INTEGRATIONS_BASE_URL")
-        .unwrap_or_else(|_| "https://integrations.wacht.services".to_string());
+        .unwrap_or_else(|_| "https://agentlink.wacht.services".to_string());
     
     let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
         .into_iter()
