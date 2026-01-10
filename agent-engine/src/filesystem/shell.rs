@@ -82,28 +82,30 @@ impl ShellExecutor {
         let working_dir_str = self.working_dir.to_string_lossy().to_string();
         let base = working_dir_str.trim_end_matches('/');
         
-        let mut result = command_line.to_string();
-        
-        let aliases: Vec<(&str, String)> = vec![
-            ("/teams-activity/", format!("{}/teams-activity/", base)),
-            ("/teams-activity", format!("{}/teams-activity", base)),
-            ("/knowledge/", format!("{}/knowledge/", base)),
-            ("/knowledge", format!("{}/knowledge", base)),
-            ("/uploads/", format!("{}/uploads/", base)),
-            ("/uploads", format!("{}/uploads", base)),
-            ("/scratch/", format!("{}/scratch/", base)),
-            ("/scratch", format!("{}/scratch", base)),
-            ("/workspace/", format!("{}/workspace/", base)),
-            ("/workspace", format!("{}/workspace", base)),
-        ];
-        
-        for (alias, replacement) in aliases {
-            if result.contains(alias) {
-                result = result.replace(alias, &replacement);
+        let words: Vec<&str> = command_line.split_whitespace().collect();
+        let processed_words: Vec<String> = words.iter().map(|word| {
+            let aliases: Vec<(&str, String)> = vec![
+                ("/teams-activity/", format!("{}/teams-activity/", base)),
+                ("/teams-activity", format!("{}/teams-activity", base)),
+                ("/knowledge/", format!("{}/knowledge/", base)),
+                ("/knowledge", format!("{}/knowledge", base)),
+                ("/uploads/", format!("{}/uploads/", base)),
+                ("/uploads", format!("{}/uploads", base)),
+                ("/scratch/", format!("{}/scratch/", base)),
+                ("/scratch", format!("{}/scratch", base)),
+                ("/workspace/", format!("{}/workspace/", base)),
+                ("/workspace", format!("{}/workspace", base)),
+            ];
+            
+            for (alias, replacement) in aliases {
+                if word.starts_with(alias) {
+                    return format!("{}{}", replacement, &word[alias.len()..]);
+                }
             }
-        }
+            word.to_string()
+        }).collect();
         
-        result
+        processed_words.join(" ")
     }
 
     pub async fn apply_pipeline(&self, input: &str, pipeline: &[String]) -> Result<String, AppError> {

@@ -492,8 +492,8 @@ impl ToolExecutor {
             UseExternalServiceToolType::TeamsSendContextMessage => {
                 self.execute_teams_command(tool, "send_context_message", execution_params).await
             },
-            UseExternalServiceToolType::TeamsGetChannelMessages => {
-                self.execute_teams_command(tool, "get_current_channel_messages", execution_params).await
+            UseExternalServiceToolType::TeamsListMessages => {
+                self.execute_teams_command(tool, "list_messages", execution_params).await
             },
             UseExternalServiceToolType::TeamsGetMeetingRecording => {
                 self.execute_teams_command(tool, "get_meeting_recording", execution_params).await
@@ -512,6 +512,9 @@ impl ToolExecutor {
             },
             UseExternalServiceToolType::TeamsListContexts => {
                 self.execute_teams_list_contexts(execution_params).await
+            },
+            UseExternalServiceToolType::TeamsSearchMessages => {
+                self.execute_teams_command(tool, "search_teams_messages", execution_params).await
             },
             UseExternalServiceToolType::TriggerContext => {
                 self.execute_trigger_context(tool, execution_params).await

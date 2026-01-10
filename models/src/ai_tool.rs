@@ -125,13 +125,14 @@ pub enum UseExternalServiceToolType {
     TeamsSearchUsers,
     TeamsSendDm,
     TeamsSendContextMessage,
-    TeamsGetChannelMessages,
+    TeamsListMessages,
     TeamsGetMeetingRecording,
     TeamsTranscribeMeeting,
     TeamsSaveAttachment,
     TeamsDescribeImage,
     TeamsTranscribeAudio,
     TeamsListContexts,
+    TeamsSearchMessages,
     TriggerContext,
 }
 
