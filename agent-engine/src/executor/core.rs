@@ -389,7 +389,7 @@ impl AgentExecutorBuilder {
                         SchemaField {
                             name: "count".to_string(),
                             field_type: "INTEGER".to_string(),
-                            description: Some("Number of messages to fetch (default: 20, max: 50).".to_string()),
+                            description: Some("Batch size for fetching. If `from_date` is used, this acts as page size (system auto-paginates up to 500 messages). If no date, this is the limit (max 50).".to_string()),
                             required: false,
                         },
                         SchemaField {

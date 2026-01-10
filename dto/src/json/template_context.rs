@@ -21,10 +21,8 @@ pub struct StepDecisionContext {
     // Cross-context awareness
     pub context_id: i64,
     pub context_title: String,
-    /// Source of this context (e.g., "teams", "slack", "web")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_source: Option<String>,
-    /// Teams-specific context info (conversation type, channel name, team ID)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub teams_context: Option<TeamsContextInfo>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]

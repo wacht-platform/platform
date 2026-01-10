@@ -34,6 +34,8 @@ impl ShellExecutor {
     }
     
     pub async fn execute(&self, command_line: &str) -> Result<ShellOutput, AppError> {
+        let command_line = self.normalize_path_aliases(command_line);
+        
         let cmd_parts: Vec<&str> = command_line.split_whitespace().collect();
         let cmd_name = cmd_parts.first().ok_or(AppError::BadRequest("Empty command".to_string()))?;
         
@@ -45,16 +47,13 @@ impl ShellExecutor {
              return Err(AppError::Forbidden("Path traversal (..) is not allowed in commands".to_string()));
         }
 
-        // Block absolute paths outside the working directory
-        // Extract all potential paths from the command (words starting with /)
         let working_dir_str = self.working_dir.to_string_lossy().to_string();
         for part in command_line.split_whitespace() {
             if part.starts_with('/') {
-                // This is an absolute path - verify it's under working directory
                 if !part.starts_with(&working_dir_str) {
                     return Err(AppError::Forbidden(format!(
-                        "Absolute path '{}' is outside the working directory. Only paths under '{}' are allowed.",
-                        part, working_dir_str
+                        "Absolute path '{}' is outside allowed directories. Use /teams-activity/, /knowledge/, /uploads/, /scratch/, or /workspace/",
+                        part
                     )));
                 }
             }
@@ -64,7 +63,7 @@ impl ShellExecutor {
             Duration::from_secs(self.timeout_secs),
             Command::new("bash")
                 .arg("-c")
-                .arg(command_line)
+                .arg(&command_line)
                 .current_dir(&self.working_dir)
                 .output()
         ).await.map_err(|_| AppError::Timeout)?;
@@ -79,10 +78,42 @@ impl ShellExecutor {
         }
     }
 
+    fn normalize_path_aliases(&self, command_line: &str) -> String {
+        let working_dir_str = self.working_dir.to_string_lossy().to_string();
+        let base = working_dir_str.trim_end_matches('/');
+        
+        let mut result = command_line.to_string();
+        
+        let aliases: Vec<(&str, String)> = vec![
+            ("/teams-activity/", format!("{}/teams-activity/", base)),
+            ("/teams-activity", format!("{}/teams-activity", base)),
+            ("/knowledge/", format!("{}/knowledge/", base)),
+            ("/knowledge", format!("{}/knowledge", base)),
+            ("/uploads/", format!("{}/uploads/", base)),
+            ("/uploads", format!("{}/uploads", base)),
+            ("/scratch/", format!("{}/scratch/", base)),
+            ("/scratch", format!("{}/scratch", base)),
+            ("/workspace/", format!("{}/workspace/", base)),
+            ("/workspace", format!("{}/workspace", base)),
+        ];
+        
+        for (alias, replacement) in aliases {
+            if result.contains(alias) {
+                result = result.replace(alias, &replacement);
+            }
+        }
+        
+        result
+    }
+
     pub async fn apply_pipeline(&self, input: &str, pipeline: &[String]) -> Result<String, AppError> {
         if pipeline.is_empty() {
             return Ok(input.to_string());
         }
+
+        let pipeline: Vec<String> = pipeline.iter()
+            .map(|cmd| self.normalize_path_aliases(cmd))
+            .collect();
 
         // Read-only commands allowed in pipeline (no rm, mv, cp, etc.)
         let pipeline_allowed: Vec<&str> = vec![
@@ -92,7 +123,7 @@ impl ShellExecutor {
 
         // Validate each pipeline command
         let working_dir_str = self.working_dir.to_string_lossy().to_string();
-        for cmd in pipeline {
+        for cmd in &pipeline {
             let cmd_name = cmd.split_whitespace().next().unwrap_or("");
             if !pipeline_allowed.contains(&cmd_name) {
                 return Err(AppError::Forbidden(format!(
@@ -107,7 +138,7 @@ impl ShellExecutor {
             for part in cmd.split_whitespace() {
                 if part.starts_with('/') && !part.starts_with(&working_dir_str) {
                     return Err(AppError::Forbidden(format!(
-                        "Absolute path '{}' is outside the working directory in pipeline.",
+                        "Absolute path '{}' is outside allowed directories in pipeline. Use /teams-activity/, /knowledge/, /uploads/, /scratch/, or /workspace/",
                         part
                     )));
                 }

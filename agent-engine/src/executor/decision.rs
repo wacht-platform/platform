@@ -588,6 +588,15 @@ impl AgentExecutor {
         };
 
         let mut context_json = serde_json::to_value(&context)?;
+        
+        // Inject agent identity into context
+        if let Some(obj) = context_json.as_object_mut() {
+            obj.insert("agent_name".to_string(), json!(self.agent.name));
+            if let Some(desc) = &self.agent.description {
+                obj.insert("agent_description".to_string(), json!(desc));
+            }
+        }
+        
         if let Some(ref sys_instructions) = self.system_instructions {
             if let Some(obj) = context_json.as_object_mut() {
                 let custom_instructions =
