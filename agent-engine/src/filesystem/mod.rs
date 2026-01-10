@@ -56,12 +56,12 @@ impl AgentFilesystem {
     }
 
     pub fn teams_activity_path(&self, context_group: &str) -> PathBuf {
-        // Path: /mnt/wacht-agents/{deployment_id}/{agent_id}/teams-activity/{context_group}/
+        // Path: /mnt/wacht-agents/{deployment_id}/teams-activity/{context_group}/{agent_id}/
         self.base_path
             .join(&self.deployment_id)
-            .join(&self.agent_id)
             .join("teams-activity")
             .join(context_group)
+            .join(&self.agent_id)
     }
 
     pub async fn initialize(&self) -> Result<(), AppError> {

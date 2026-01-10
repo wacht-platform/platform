@@ -28,6 +28,19 @@ impl AgentExecutor {
         &mut self,
         resume_context: ResumeContext,
     ) -> Result<(), AppError> {
+        let result = self.resume_execution_inner(resume_context).await;
+
+        if let Err(e) = self.filesystem.cleanup().await {
+            tracing::error!("Failed to cleanup filesystem: {}", e);
+        }
+
+        result
+    }
+
+    async fn resume_execution_inner(
+        &mut self,
+        resume_context: ResumeContext,
+    ) -> Result<(), AppError> {
         let context_id = self.context_id;
         let deployment_id = self.agent.deployment_id;
         let app_state = self.app_state.clone();
@@ -97,13 +110,7 @@ impl AgentExecutor {
             .execute(&app_state)
             .await?;
 
-        let result = self.repl().await;
-
-        if let Err(e) = self.filesystem.cleanup().await {
-            tracing::error!("Failed to cleanup filesystem: {}", e);
-        }
-
-        result
+        self.repl().await
     }
 
     /// Execute with a pre-persisted conversation ID
@@ -117,6 +124,16 @@ impl AgentExecutor {
     }
 
     pub async fn run(&mut self, request: ConverseRequest) -> Result<(), AppError> {
+        let result = self.run_inner(request).await;
+
+        if let Err(e) = self.filesystem.cleanup().await {
+            tracing::error!("Failed to cleanup filesystem: {}", e);
+        }
+
+        result
+    }
+
+    async fn run_inner(&mut self, request: ConverseRequest) -> Result<(), AppError> {
         // Fetch the conversation from DB - it must already be persisted
         let conversation = queries::GetConversationByIdQuery::new(request.conversation_id)
             .execute(&self.app_state)
@@ -172,10 +189,6 @@ impl AgentExecutor {
         self.memories = context.memories;
 
         let result = self.repl().await;
-
-        if let Err(e) = self.filesystem.cleanup().await {
-            tracing::error!("Failed to cleanup filesystem: {}", e);
-        }
 
         result?;
 

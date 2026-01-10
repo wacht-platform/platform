@@ -451,9 +451,10 @@ This is especially important when users say things like:
 - "Follow up on this" (on what?)
 
 **Output Truncation**:
-Teams tools may return large responses (user lists, message histories). When output exceeds 2000 characters:
+Tools (Teams, Shell, Web Reader, etc.) may return large responses. When output exceeds 2000 characters:
 - You receive a **preview** (first 2000 chars) + a **hint** with the full file path
-- Full output is saved to `/scratch/tool_output_*.txt`
+- Full output is saved TEMPORARILY to `/scratch/tool_output_*.txt`
+- **WARNING**: This directory is ephemeral. Read or process these files IMMEDIATELY. Do not expect them to persist.
 
 *To filter large outputs, use `read_file` with shell commands:*
 ```bash
