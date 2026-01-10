@@ -361,6 +361,7 @@ Need to interact with OTHER channels/chats?
   → spawn_context_execution(target_context_id, message) → spawns a separate agent instance there
 
 Uncertain about past interactions or history?
+  → FIRST: ls /workspace/ - check if you already saved relevant summaries
   → grep -i 'search term' /teams-activity/*.log | head -20
   → tail -50 /teams-activity/YYYY-MM-DD.log for recent entries
   → This is your MEMORY of all Teams interactions - CHECK IT before saying you don't know!
