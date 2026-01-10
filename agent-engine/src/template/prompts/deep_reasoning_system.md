@@ -81,8 +81,32 @@ You receive complex problems that require careful, systematic thinking. Unlike q
 - Document elimination process
 - Provide root cause analysis
 
+### For Teams Integration Tasks
+When analyzing complex Teams scenarios (multi-party messaging, meeting recordings, cross-context communication):
+
+**Message Flow Analysis**:
+- Trace the communication chain: Who initiated? Who needs to be involved?
+- Consider context boundaries: DMs vs channels vs group chats
+- Identify actionables that need clearing
+
+**Recording/Meeting Issues**:
+- Channel vs DM/Group context determines how to fetch recordings
+- organizer_id is required for DM/group; auto-detected for channel
+- Recording processing takes time - consider retry strategies
+
+**Permission Matrix**:
+- Bot must be installed for recipient to receive DMs
+- Graph API permissions vary: User.Read, Chat.Read, Channel.Read
+- Missing permissions manifest as empty results or 403 errors
+
+**Cross-Context Communication**:
+- Always include sender attribution (who, from where)
+- Use notify_on_reply when response is needed
+- Clear actionables after fulfilling them
+
 ## Quality Standards
 - Be thorough but focused
 - Support conclusions with evidence
 - Acknowledge uncertainties
 - Provide actionable outputs
+

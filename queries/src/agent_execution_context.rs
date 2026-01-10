@@ -68,6 +68,7 @@ pub struct ListExecutionContextsQuery {
     pub offset: Option<u32>,
     pub status_filter: Option<String>,
     pub context_group_filter: Option<String>,
+    pub source_filter: Option<String>,
     pub title_search: Option<String>,
 }
 
@@ -79,6 +80,7 @@ impl ListExecutionContextsQuery {
             offset: None,
             status_filter: None,
             context_group_filter: None,
+            source_filter: None,
             title_search: None,
         }
     }
@@ -100,6 +102,11 @@ impl ListExecutionContextsQuery {
 
     pub fn with_context_group_filter(mut self, context_group: String) -> Self {
         self.context_group_filter = Some(context_group);
+        self
+    }
+
+    pub fn with_source_filter(mut self, source: String) -> Self {
+        self.source_filter = Some(source);
         self
     }
 
@@ -141,6 +148,11 @@ impl super::Query for ListExecutionContextsQuery {
         if let Some(ref context_group_filter) = self.context_group_filter {
             query.push(" AND context_group = ");
             query.push_bind(context_group_filter);
+        }
+        
+        if let Some(ref source_filter) = self.source_filter {
+            query.push(" AND source = ");
+            query.push_bind(source_filter);
         }
         
         query.push(" ORDER BY last_activity_at DESC LIMIT ");

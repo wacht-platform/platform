@@ -489,6 +489,9 @@ impl ToolExecutor {
             UseExternalServiceToolType::TeamsSendDm => {
                 self.execute_teams_command(tool, "send_dm", execution_params).await
             },
+            UseExternalServiceToolType::TeamsSendContextMessage => {
+                self.execute_teams_command(tool, "send_context_message", execution_params).await
+            },
             UseExternalServiceToolType::TeamsGetChannelMessages => {
                 self.execute_teams_command(tool, "get_current_channel_messages", execution_params).await
             },
@@ -507,6 +510,9 @@ impl ToolExecutor {
             UseExternalServiceToolType::TeamsTranscribeAudio => {
                 self.execute_teams_command(tool, "transcribe_audio", execution_params).await
             },
+            UseExternalServiceToolType::TeamsListContexts => {
+                self.execute_teams_list_contexts(execution_params).await
+            },
             UseExternalServiceToolType::TriggerContext => {
                 self.execute_trigger_context(tool, execution_params).await
             },
@@ -519,10 +525,29 @@ impl ToolExecutor {
         action: &str,
         execution_params: &Value,
     ) -> Result<Value, AppError> {
-        // Get the context to find the context_group
-        let context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+        // Check if a target_context_id is provided for cross-context operations
+        let target_context_id = execution_params.get("context_id")
+            .and_then(|v| {
+                v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+            });
+
+        // Get the context to find the context_group (use target if provided, else current)
+        let effective_context_id = target_context_id.unwrap_or(self.context_id);
+        let context = queries::GetExecutionContextQuery::new(effective_context_id, self.agent.deployment_id)
             .execute(&self.app_state)
-            .await?;
+            .await
+            .map_err(|_| AppError::BadRequest(format!(
+                "Context {} not found or not accessible", effective_context_id
+            )))?;
+
+        // Validate that target context is a Teams context if cross-context
+        if target_context_id.is_some() {
+            if context.source.as_deref() != Some("teams") {
+                return Err(AppError::BadRequest(
+                    "Target context is not a Teams context".to_string()
+                ));
+            }
+        }
 
         let context_group = context.context_group
             .ok_or_else(|| AppError::BadRequest("No context group found for Teams command".to_string()))?;
@@ -536,7 +561,7 @@ impl ToolExecutor {
 
         let payload = serde_json::json!({
             "deployment_id": self.agent.deployment_id.to_string(),
-            "context_id": self.context_id.to_string(),
+            "context_id": effective_context_id.to_string(),
             "context_group": context_group,
             "agent_id": self.agent.id.to_string(),
             "action": action,
@@ -687,6 +712,54 @@ impl ToolExecutor {
                 "path": saved_path,
                 "description": response_data.get("description")
             }
+        }))
+    }
+
+    async fn execute_teams_list_contexts(
+        &self,
+        execution_params: &Value,
+    ) -> Result<Value, AppError> {
+        let limit = execution_params.get("limit")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(25) as u32;
+        
+        let offset = execution_params.get("offset")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as u32;
+
+        // Get current context to find the context_group
+        let current_context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+            .execute(&self.app_state)
+            .await?;
+
+        let context_group = current_context.context_group
+            .ok_or_else(|| AppError::BadRequest("No context group found - this tool requires a Teams context".to_string()))?;
+
+        // Query all Teams contexts in the same context_group
+        let contexts = queries::ListExecutionContextsQuery::new(self.agent.deployment_id)
+            .with_source_filter("teams".to_string())
+            .with_context_group_filter(context_group.clone())
+            .with_limit(limit)
+            .with_offset(offset)
+            .execute(&self.app_state)
+            .await?;
+
+        let result: Vec<serde_json::Value> = contexts.iter().map(|ctx| {
+            serde_json::json!({
+                "context_id": ctx.id.to_string(),
+                "title": ctx.title,
+                "status": format!("{:?}", ctx.status),
+                "last_activity": ctx.last_activity_at.to_rfc3339(),
+                "is_current": ctx.id == self.context_id
+            })
+        }).collect();
+
+        Ok(serde_json::json!({
+            "contexts": result,
+            "total": result.len(),
+            "offset": offset,
+            "context_group": context_group,
+            "hint": "Use trigger_context with a context_id to send a message to another channel/chat"
         }))
     }
 

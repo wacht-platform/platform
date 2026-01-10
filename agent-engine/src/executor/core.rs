@@ -345,10 +345,47 @@ impl AgentExecutorBuilder {
                     ]
                 ),
                 (
+                    "teams_send_context_message",
+                    "Send a message to any Teams channel or chat by context ID. Use teams_list_contexts() to discover available contexts. The message will be visible to everyone in that conversation. Use notify_on_reply if you want to be notified when someone responds.",
+                    UseExternalServiceToolType::TeamsSendContextMessage,
+                    vec![
+                        SchemaField {
+                            name: "context_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The target context ID. Use teams_list_contexts() to get available context IDs.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "message".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The message to send to the channel/chat.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "sender_info".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Context about who/where this message is coming from. Example: 'From John in #Support channel'.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "notify_on_reply".to_string(),
+                            field_type: "BOOLEAN".to_string(),
+                            description: Some("If true, you will be notified in your current context when someone replies in that channel. Default: false.".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
+                (
                     "teams_get_current_channel_messages",
-                    "Get recent messages from your current Teams conversation. Works for Team channels, group DMs, and 1:1 chats. Useful for finding meeting notifications, previous discussions, or context.",
+                    "Get recent messages from a Teams conversation. Works for Team channels, group DMs, and 1:1 chats. Useful for finding meeting notifications, previous discussions, or context. Use context_id to read from another channel/chat.",
                     UseExternalServiceToolType::TeamsGetChannelMessages,
                     vec![
+                        SchemaField {
+                            name: "context_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Optional: Target context ID to read messages from. Use teams_list_contexts() to discover available contexts. Defaults to current context.".to_string()),
+                            required: false,
+                        },
                         SchemaField {
                             name: "count".to_string(),
                             field_type: "INTEGER".to_string(),
@@ -365,9 +402,15 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_get_meeting_recording",
-                    "Get meeting recordings. For DM/group chats: uses organizer_id to search their OneDrive. For channel meetings: automatically detects Team context and searches SharePoint. Set search_recent=true when you don't have a meeting ID.",
+                    "Get meeting recordings. For DM/group chats: uses organizer_id to search their OneDrive. For channel meetings: automatically detects Team context and searches SharePoint. Use context_id to search recordings from another channel/chat.",
                     UseExternalServiceToolType::TeamsGetMeetingRecording,
                     vec![
+                        SchemaField {
+                            name: "context_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Optional: Target context ID. Use teams_list_contexts() to discover available contexts. Defaults to current context.".to_string()),
+                            required: false,
+                        },
                         SchemaField {
                             name: "organizer_id".to_string(),
                             field_type: "STRING".to_string(),
@@ -476,6 +519,25 @@ impl AgentExecutorBuilder {
                         },
                     ]
                 ),
+                (
+                    "teams_list_contexts",
+                    "List all Teams channels, group chats, and DMs that you have access to. Returns context IDs and titles so you can interact with other conversations using trigger_context or understand your available scope.",
+                    UseExternalServiceToolType::TeamsListContexts,
+                    vec![
+                        SchemaField {
+                            name: "limit".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Maximum number of contexts to return (default: 25).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "offset".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Offset for pagination (default: 0).".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
             ];
             
             for (name, desc, service_type, schema) in teams_tools {
@@ -499,12 +561,14 @@ impl AgentExecutorBuilder {
             }
         }
         
-        // Add trigger_context tool (always available for cross-context messaging)
-        if !current_tools.iter().any(|t| t.name == "trigger_context") {
+        // Add spawn_context_execution tool (always available for cross-context messaging)
+        if !current_tools.iter().any(|t| t.name == "spawn_context_execution") {
             current_tools.push(AiTool {
                 id: -1,
-                name: "trigger_context".to_string(),
-                description: Some("Trigger execution in another context with a message. Use this to relay information or notify another conversation.".to_string()),
+                name: "spawn_context_execution".to_string(),
+                description: Some(
+                    "Spawn a new agent execution in another context. Just like you are currently running in your context with your own conversation history, tools, and workflows - this will start a separate, self-contained agent instance in the target context. The spawned instance will receive your message as input and operate independently with its own context, history, and available tools. Use this to delegate tasks, notify other channels, or hand off work.".to_string()
+                ),
                 tool_type: AiToolType::UseExternalService,
                 deployment_id: self.agent.deployment_id,
                 configuration: AiToolConfiguration::UseExternalService(
@@ -514,25 +578,25 @@ impl AgentExecutorBuilder {
                             SchemaField {
                                 name: "target_context_id".to_string(),
                                 field_type: "STRING".to_string(),
-                                description: Some("The context ID to send the message to (as string to preserve precision).".to_string()),
+                                description: Some("The context ID where the new agent instance will be spawned.".to_string()),
                                 required: true,
                             },
                             SchemaField {
                                 name: "message".to_string(),
                                 field_type: "STRING".to_string(),
-                                description: Some("The message to inject into the target context.".to_string()),
+                                description: Some("The message/task to send to the spawned instance. This becomes the input that the new instance will process.".to_string()),
                                 required: true,
                             },
                             SchemaField {
                                 name: "actionable_id".to_string(),
                                 field_type: "STRING".to_string(),
-                                description: Some("CRITICAL: When fulfilling an actionable, you MUST provide its ID here. This removes it from your pending list. Without this, the actionable will persist forever. Get the ID from the actionables shown in system context (e.g., 'notify_1736...').".to_string()),
+                                description: Some("If you are fulfilling an actionable from your pending list, provide its ID here to mark it complete.".to_string()),
                                 required: false,
                             },
                             SchemaField {
                                 name: "execute".to_string(),
                                 field_type: "BOOLEAN".to_string(),
-                                description: Some("Whether to trigger agent execution in target context. Default: true. Set to false to just add message without execution.".to_string()),
+                                description: Some("Whether to actually spawn the agent instance. Default: true. Set to false to just add the message to the target context's history without triggering execution.".to_string()),
                                 required: false,
                             },
                         ]),

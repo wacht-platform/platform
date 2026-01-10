@@ -5,6 +5,7 @@ pub mod document;
 pub mod email;
 pub mod embedding;
 pub mod sms;
+pub mod teams_activity;
 pub mod token;
 pub mod webhook;
 pub mod webhook_event;
