@@ -452,6 +452,12 @@ jq '.messages[] | select(.from.displayName == "John")' /scratch/tool_output_123.
 3. **Use notify_on_reply wisely** - only when you genuinely need their response
 4. **Handle truncated output** - use grep/jq to filter large results
 5. **Respect rate limits** - don't spam multiple DMs in sequence
+6. **Save important findings** - After fetching large message histories, transform and save to `/workspace/`:
+   ```bash
+   # Save truncated output path after teams_get_current_channel_messages
+   jq '.messages[] | "\(.createdDateTime) - \(.from.displayName): \(.body.content)"' /scratch/tool_output_123.txt > /workspace/general_chat_jan10.txt
+   ```
+   Next time you need this info, just `read_file("/workspace/general_chat_jan10.txt")` - saves tokens!
 
 **Teams Activity Logs**:
 Your Teams interactions are automatically logged to persistent storage:
