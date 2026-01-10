@@ -201,9 +201,10 @@ impl AgentFilesystem {
 
         let selected_lines: Vec<String> = lines
             .iter()
+            .enumerate()
             .skip(start)
             .take(end.saturating_sub(start))
-            .map(|s| s.to_string())
+            .map(|(i, s)| format!("{}: {}", i + 1, s))
             .collect();
 
         if let Ok(mut read_files) = self.read_files.write() {
