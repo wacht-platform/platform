@@ -4,7 +4,7 @@ use tokio::io::AsyncWriteExt;
 use std::path::PathBuf;
 use tracing::warn;
 
-use crate::TaskError;
+use crate::consumer::TaskError;
 
 #[derive(Debug, Deserialize)]
 pub struct TeamsActivityLogTask {
@@ -13,8 +13,10 @@ pub struct TeamsActivityLogTask {
     pub timestamp: String,
     pub direction: String,
     pub user_name: String,
+    #[allow(dead_code)]
     pub user_id: Option<String>,
     pub message: String,
+    #[allow(dead_code)]
     pub conversation_type: String,
     pub context_title: Option<String>,
     pub attachments: Option<Vec<AttachmentMetadata>>,
