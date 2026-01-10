@@ -115,7 +115,7 @@ impl ToolExecutor {
         let mut final_result = final_result;
         if tool.name == "read_file" {
              if let Some(content) = final_result.get("content").and_then(|c| c.as_str()) {
-                 if content.len() > 2000 {
+                 if content.len() > 32000 {
                       let truncated = format!("{}... \n[TRUNCATED: Content too long. Use start_line/end_line to read more]", &content[..2000]);
                       if let Some(obj) = final_result.as_object_mut() {
                           obj.insert("content".to_string(), serde_json::Value::String(truncated));
@@ -129,7 +129,7 @@ impl ToolExecutor {
 
         let result_str = serde_json::to_string_pretty(&final_result)?;
         let char_count = result_str.chars().count();
-        let threshold = 1000;
+        let threshold = 8000;
 
         if should_truncate && char_count > threshold {
             let timestamp = chrono::Utc::now().timestamp_millis();
