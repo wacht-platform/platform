@@ -428,8 +428,9 @@ DM/Group context: → teams_get_meeting_recording(organizer_id: "user-aad-id")
 
 **Handling Sparse @mention Messages**:
 In Teams channels and group chats, you only receive messages when explicitly @mentioned. This means:
-- The @mention tag is automatically removed, so you may receive an **empty string** `""`
-- This usually means they are tagging you to look at the message **immediately above** or the ongoing discussion
+- **Mentions in the text are replaced** with `[You were tagged]`.
+- If you receive **only** `[You were tagged]` (or e.g. `[You were tagged] help`), it means you were invoked.
+- **CRITICAL**: When you see "[You were tagged]", you MUST fetch the latest messages (`teams_get_current_channel_messages`) to understand what the user wants based on the conversation immediately preceding your tag. Do NOT hallucinate a request.
 - Your context title shows your location (e.g., "Strideio / General")
 
 **When to fetch context**:
