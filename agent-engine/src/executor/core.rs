@@ -393,9 +393,21 @@ impl AgentExecutorBuilder {
                             required: false,
                         },
                         SchemaField {
-                            name: "before_timestamp".to_string(),
+                            name: "from_date".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("ISO timestamp for pagination - fetch messages before this time.".to_string()),
+                            description: Some("ISO date/datetime to filter messages FROM (inclusive). Example: '2026-01-01' or '2026-01-01T09:00:00Z'.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "to_date".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("ISO date/datetime to filter messages TO (inclusive). Example: '2026-01-10' or '2026-01-10T18:00:00Z'.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "search_term".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Filter messages containing this text (case-insensitive). Applied client-side after fetching.".to_string()),
                             required: false,
                         },
                     ]
