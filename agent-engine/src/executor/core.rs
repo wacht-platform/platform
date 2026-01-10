@@ -554,13 +554,13 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_transcribe_audio",
-                    "Transcribe a voice note or audio attachment from a Teams message. Use this when you need to understand what was said in an audio message.",
+                    "Transcribe a voice note or audio attachment from a Teams message. Use this when you need to understand what was said in an audio message. For voice notes (contentType=application/vnd.microsoft.card.audio), the URL is inside the attachment's 'content' field as a JSON string - parse it to extract the 'url' property.",
                     UseExternalServiceToolType::TeamsTranscribeAudio,
                     vec![
                         SchemaField {
                             name: "attachment_url".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("The URL of the audio attachment from the message metadata.".to_string()),
+                            description: Some("The audio URL. For voice notes, parse the attachment's 'content' JSON to get the 'url' field. The 'content' field contains a JSON string like: {\"url\": \"https://graph.microsoft.com/...\"}".to_string()),
                             required: true,
                         },
                     ]
