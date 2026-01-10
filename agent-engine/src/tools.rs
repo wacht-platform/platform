@@ -748,7 +748,7 @@ impl ToolExecutor {
             serde_json::json!({
                 "context_id": ctx.id.to_string(),
                 "title": ctx.title,
-                "status": format!("{:?}", ctx.status),
+                "status": ctx.status.to_string(),
                 "last_activity": ctx.last_activity_at.to_rfc3339(),
                 "is_current": ctx.id == self.context_id
             })
