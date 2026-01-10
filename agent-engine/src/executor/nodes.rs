@@ -338,7 +338,7 @@ impl AgentExecutor {
 
         let parameters = config.input_parameters.clone();
 
-        let title = self.context.title.as_deref().unwrap_or("Context");
+        let title = &self.context_title;
         let result = self
             .tool_executor
             .execute_tool_immediately(&tool, json!(parameters), &self.filesystem, &self.shell, title)

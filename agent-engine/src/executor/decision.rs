@@ -162,7 +162,11 @@ impl AgentExecutor {
                                 }
                             }
                             
-                            let title = self.context.title.clone().unwrap_or_else(|| format!("Context {}", self.context.id));
+                            let title = if ctx.title.is_empty() {
+                                format!("Context {}", ctx.id)
+                            } else {
+                                ctx.title.clone()
+                            };
                             let logger = crate::teams_logger::TeamsActivityLogger::new(
                                 &self.agent.deployment_id.to_string(),
                                 &self.agent.id.to_string(),

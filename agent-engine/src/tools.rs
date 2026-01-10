@@ -498,40 +498,40 @@ impl ToolExecutor {
     ) -> Result<Value, AppError> {
         match config.service_type {
             UseExternalServiceToolType::TeamsListUsers => {
-                self.execute_teams_command(tool, "list_users", execution_params).await
+                self.execute_teams_command(tool, "list_users", execution_params, context_title).await
             },
             UseExternalServiceToolType::TeamsSearchUsers => {
-                self.execute_teams_command(tool, "search_users", execution_params).await
+                self.execute_teams_command(tool, "search_users", execution_params, context_title).await
             },
             UseExternalServiceToolType::TeamsSendDm => {
-                self.execute_teams_command(tool, "send_dm", execution_params).await
+                self.execute_teams_command(tool, "send_dm", execution_params, context_title).await
             },
             UseExternalServiceToolType::TeamsSendContextMessage => {
-                self.execute_teams_command(tool, "send_context_message", execution_params).await
+                self.execute_teams_command(tool, "send_context_message", execution_params, context_title).await
             },
             UseExternalServiceToolType::TeamsListMessages => {
-                self.execute_teams_command(tool, "list_messages", execution_params).await
+                self.execute_teams_command(tool, "list_messages", execution_params, context_title).await
             },
             UseExternalServiceToolType::TeamsGetMeetingRecording => {
-                self.execute_teams_command(tool, "get_meeting_recording", execution_params).await
+                self.execute_teams_command(tool, "get_meeting_recording", execution_params, context_title).await
             },
             UseExternalServiceToolType::TeamsTranscribeMeeting => {
-                self.execute_teams_command(tool, "analyze_meeting", execution_params).await
+                self.execute_teams_command(tool, "analyze_meeting", execution_params, context_title).await
             },
             UseExternalServiceToolType::TeamsSaveAttachment => {
                 self.execute_teams_save_attachment(tool, execution_params).await
             },
             UseExternalServiceToolType::TeamsDescribeImage => {
-                self.execute_teams_command(tool, "describe_image", execution_params).await
+                self.execute_teams_command(tool, "describe_image", execution_params, context_title).await
             },
             UseExternalServiceToolType::TeamsTranscribeAudio => {
-                self.execute_teams_command(tool, "transcribe_audio", execution_params).await
+                self.execute_teams_command(tool, "transcribe_audio", execution_params, context_title).await
             },
             UseExternalServiceToolType::TeamsListContexts => {
                 self.execute_teams_list_contexts(execution_params).await
             },
             UseExternalServiceToolType::TeamsSearchMessages => {
-                self.execute_teams_command(tool, "search_teams_messages", execution_params).await
+                self.execute_teams_command(tool, "search_teams_messages", execution_params, context_title).await
             },
             UseExternalServiceToolType::TriggerContext => {
                 self.execute_trigger_context(tool, execution_params).await
@@ -544,6 +544,7 @@ impl ToolExecutor {
         tool: &AiTool,
         action: &str,
         execution_params: &Value,
+        context_title: &str,
     ) -> Result<Value, AppError> {
         // Check if a target_context_id is provided for cross-context operations
         let target_context_id = execution_params.get("context_id")

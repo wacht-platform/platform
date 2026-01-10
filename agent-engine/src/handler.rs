@@ -31,14 +31,6 @@ impl AgentHandler {
         let deployment_id = request.agent.deployment_id;
         let agent_id = request.agent.id;
 
-        let mut executor = AgentExecutor::new(
-            request.agent,
-            request.context_id,
-            self.app_state.clone(),
-            sender,
-        )
-        .await?;
-
         let kv = self.get_key_value_store().await?;
         let watch = self.create_watcher(&kv, &context_key).await?;
         self.spawn_message_publisher(receiver, context_key.clone(), deployment_id, agent_id);
@@ -46,6 +38,22 @@ impl AgentHandler {
         let context = GetExecutionContextQuery::new(request.context_id, deployment_id)
             .execute(&self.app_state)
             .await?;
+        
+        // Extract title ensuring we have a reasonable default
+        let context_title = if context.title.is_empty() {
+            format!("Context {}", request.context_id)
+        } else {
+            context.title.clone()
+        };
+
+        let mut executor = AgentExecutor::new(
+            request.agent,
+            request.context_id,
+            self.app_state.clone(),
+            sender,
+            context_title,
+        )
+        .await?;
 
         let execution_result = match (
             request.conversation_id,
@@ -198,7 +206,11 @@ async fn publish_stream_event(
                                         }
                                     }
                                     
-                                    let title = ctx.title.clone().unwrap_or_else(|| format!("Context {}", ctx.id));
+                                    let title = if ctx.title.is_empty() {
+                                        format!("Context {}", ctx.id) 
+                                    } else { 
+                                        ctx.title.clone() 
+                                    };
                                     let logger = TeamsActivityLogger::new(&deployment_id.to_string(), &agent_id.to_string(), group, &title);
                                     let _ = logger.append_entry("RESPONSE", &format!("To User{}: {}", location, response)).await;
                                 }

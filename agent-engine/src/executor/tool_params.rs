@@ -39,7 +39,7 @@ impl AgentExecutor {
                         AppError::BadRequest(format!("Tool '{}' not found", tool_call.tool_name))
                     })?;
 
-                let title = self.context.title.as_deref().unwrap_or("Context");
+                let title = &self.context_title;
                 self.tool_executor
                     .execute_tool_immediately(tool, tool_call.parameters, &self.filesystem, &self.shell, title)
                     .await

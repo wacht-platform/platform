@@ -72,6 +72,7 @@ dependencies = [
  "commands",
  "common",
  "dto",
+ "flate2",
  "futures",
  "handlebars",
  "models",

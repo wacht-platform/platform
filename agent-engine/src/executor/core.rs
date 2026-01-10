@@ -44,6 +44,7 @@ pub struct AgentExecutor {
     pub(super) filesystem: AgentFilesystem,
     pub(super) shell: ShellExecutor,
     pub(super) teams_enabled: bool,
+    pub(super) context_title: String,
 }
 
 pub struct AgentExecutorBuilder {
@@ -51,6 +52,7 @@ pub struct AgentExecutorBuilder {
     app_state: AppState,
     context_id: i64,
     channel: tokio::sync::mpsc::Sender<StreamEvent>,
+    context_title: String,
 }
 
 impl AgentExecutorBuilder {
@@ -59,12 +61,14 @@ impl AgentExecutorBuilder {
         context_id: i64,
         app_state: AppState,
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
+        context_title: String,
     ) -> Self {
         Self {
             agent,
             context_id,
             app_state,
             channel,
+            context_title,
         }
     }
 
@@ -677,6 +681,7 @@ impl AgentExecutorBuilder {
             filesystem,
             shell,
             teams_enabled,
+            context_title: self.context_title,
         };
 
         executor.system_instructions = context.system_instructions.clone();
@@ -697,8 +702,9 @@ impl AgentExecutor {
         context_id: i64,
         app_state: AppState,
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
+        context_title: String,
     ) -> Result<Self, AppError> {
-        AgentExecutorBuilder::new(agent, context_id, app_state, channel)
+        AgentExecutorBuilder::new(agent, context_id, app_state, channel, context_title)
             .build()
             .await
     }
