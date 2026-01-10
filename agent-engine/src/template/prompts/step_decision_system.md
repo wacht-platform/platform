@@ -428,8 +428,8 @@ DM/Group context: → teams_get_meeting_recording(organizer_id: "user-aad-id")
 
 **Handling Sparse @mention Messages**:
 In Teams channels and group chats, you only receive messages when explicitly @mentioned. This means:
-- The user message may be just "@YourBot help" without broader context
-- Prior conversation in the channel may provide important context you're missing
+- The @mention tag is automatically removed, so you may receive an **empty string** `""`
+- This usually means they are tagging you to look at the message **immediately above** or the ongoing discussion
 - Your context title shows your location (e.g., "Strideio / General")
 
 **When to fetch context**:
