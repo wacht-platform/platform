@@ -9,6 +9,7 @@ use crate::consumer::TaskError;
 #[derive(Debug, Deserialize)]
 pub struct TeamsActivityLogTask {
     pub deployment_id: String,
+    pub agent_id: String,
     pub context_group: String,
     pub timestamp: String,
     pub direction: String,
@@ -29,9 +30,18 @@ pub struct AttachmentMetadata {
     pub name: String,
 }
 
+fn sanitize_filename(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string()
+}
+
 pub async fn write_teams_activity_log(task: TeamsActivityLogTask) -> Result<String, TaskError> {
     let base_path = PathBuf::from("/mnt/wacht-agents")
         .join(&task.deployment_id)
+        .join(&task.agent_id)
         .join("teams-activity")
         .join(&task.context_group);
 
@@ -41,7 +51,12 @@ pub async fn write_teams_activity_log(task: TeamsActivityLogTask) -> Result<Stri
     }
 
     let date = task.timestamp.split('T').next().unwrap_or("unknown");
-    let filename = format!("{}.log", date);
+    
+    let filename = if let Some(ref title) = task.context_title {
+        format!("{}_{}.log", sanitize_filename(title), date)
+    } else {
+        format!("{}.log", date)
+    };
     let file_path = base_path.join(&filename);
 
     let time = task.timestamp

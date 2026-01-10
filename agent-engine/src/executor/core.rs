@@ -78,6 +78,7 @@ impl AgentExecutorBuilder {
         
         let filesystem = AgentFilesystem::new(
             &self.agent.deployment_id.to_string(),
+            &self.agent.id.to_string(),
             &self.context_id.to_string(),
             &execution_id,
         );
@@ -223,8 +224,6 @@ impl AgentExecutorBuilder {
             ),
         ];
 
-        // Check for active Teams integrations to enable proactive messaging tools
-        // 1. Get the context to find the context_group (moved up from below)
         let context = GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
             .execute(&self.app_state)
             .await?;
@@ -244,7 +243,6 @@ impl AgentExecutorBuilder {
                 teams_enabled = true;
                 tracing::info!("Context group {} has active Teams integration. Injecting Teams tools.", context_group);
                 
-                // Symlink teams-activity to agent's virtual filesystem
                 if let Err(e) = filesystem.link_teams_activity(context_group).await {
                     tracing::warn!("Failed to link teams-activity directory: {}", e);
                 }
@@ -272,7 +270,6 @@ impl AgentExecutorBuilder {
             }
         }
         
-        // Add Teams external service tools if enabled
         if teams_enabled {
             let teams_tools: Vec<(&str, &str, UseExternalServiceToolType, Vec<SchemaField>)> = vec![
                 (
@@ -573,7 +570,6 @@ impl AgentExecutorBuilder {
             }
         }
         
-        // Add spawn_context_execution tool (always available for cross-context messaging)
         if !current_tools.iter().any(|t| t.name == "spawn_context_execution") {
             current_tools.push(AiTool {
                 id: -1,
@@ -647,12 +643,6 @@ impl AgentExecutorBuilder {
         };
 
         executor.system_instructions = context.system_instructions.clone();
-
-        if teams_enabled {
-            // Teams instructions should be configured in the agent's system instructions template
-            // using variables like {{deployment_id}}, {{context_group}}, etc.
-            tracing::debug!("Teams integration enabled for context {}", self.context_id);
-        }
 
         if context.status == ExecutionContextStatus::WaitingForInput {
             if let Some(state) = context.execution_state {
