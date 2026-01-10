@@ -20,6 +20,8 @@ use std::collections::HashMap;
 use crate::filesystem::{AgentFilesystem, shell::ShellExecutor};
 use crate::teams_logger::TeamsActivityLogger;
 use models::AiAgentWithFeatures;
+use std::io::Read;
+use flate2::read::GzDecoder;
 
 
 pub struct ToolExecutor {
@@ -579,7 +581,18 @@ impl ToolExecutor {
             .await
             .map_err(|e| AppError::External(format!("Teams integration request failed: {}", e)))?;
 
-        let response_data: Value = serde_json::from_slice(&response.payload)?;
+        let payload = response.payload.clone();
+        let is_gzipped = payload.len() > 2 && payload[0] == 0x1f && payload[1] == 0x8b;
+
+        let response_data: Value = if is_gzipped {
+            let mut decoder = GzDecoder::new(&payload[..]);
+            let mut decoded_string = String::new();
+            decoder.read_to_string(&mut decoded_string)
+                .map_err(|e| AppError::External(format!("Decompression failed: {}", e)))?;
+            serde_json::from_str(&decoded_string)?
+        } else {
+            serde_json::from_slice(&payload)?
+        };
         
         // Check if the response indicates an error from the integration service
         if response_data.get("success") == Some(&serde_json::json!(false)) {
