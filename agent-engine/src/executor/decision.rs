@@ -162,10 +162,12 @@ impl AgentExecutor {
                                 }
                             }
                             
+                            let title = self.context.title.clone().unwrap_or_else(|| format!("Context {}", self.context.id));
                             let logger = crate::teams_logger::TeamsActivityLogger::new(
                                 &self.agent.deployment_id.to_string(),
                                 &self.agent.id.to_string(),
-                                group
+                                group,
+                                &title
                             );
                             let _ = logger.append_entry("INCOMING", &format!("From {}{}: {}", user, location, user_message)).await;
                         }

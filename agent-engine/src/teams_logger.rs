@@ -11,11 +11,12 @@ pub struct TeamsActivityLogger {
     deployment_id: String,
     agent_id: String,
     context_group: String,
+    context_title: String,
     base_path: PathBuf,
 }
 
 impl TeamsActivityLogger {
-    pub fn new(deployment_id: &str, agent_id: &str, context_group: &str) -> Self {
+    pub fn new(deployment_id: &str, agent_id: &str, context_group: &str, context_title: &str) -> Self {
         // Use /mnt/wacht-agents/{deployment_id}/teams-activity/{context_group}/{agent_id}
         let base_path = PathBuf::from("/mnt/wacht-agents")
             .join(deployment_id)
@@ -27,13 +28,23 @@ impl TeamsActivityLogger {
             deployment_id: deployment_id.to_string(),
             agent_id: agent_id.to_string(),
             context_group: context_group.to_string(),
+            context_title: context_title.to_string(),
             base_path,
         }
     }
 
+    fn sanitize_filename(title: &str) -> String {
+        title.chars()
+            .filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+            .collect()
+    }
+
     fn get_today_filename(&self) -> String {
         let now = Local::now();
-        format!("{}.log", now.format("%Y-%m-%d"))
+        let sanitized_title = Self::sanitize_filename(&self.context_title);
+        // Fallback to "Activity" if title is empty after sanitization
+        let title_part = if sanitized_title.is_empty() { "Activity".to_string() } else { sanitized_title };
+        format!("{}_{}.log", title_part, now.format("%Y-%m-%d"))
     }
 
     fn get_log_file_path(&self, filename: &str) -> PathBuf {

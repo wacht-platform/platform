@@ -60,6 +60,7 @@ impl ToolExecutor {
         execution_params: Value,
         filesystem: &AgentFilesystem,
         shell: &ShellExecutor,
+        context_title: &str,
     ) -> Result<Value, AppError> {
         let pipeline: Vec<String> = execution_params
             .get("pipeline")
@@ -96,7 +97,7 @@ impl ToolExecutor {
                 self.execute_internal_tool(tool, config, &execution_params, filesystem, shell).await?
             }
             AiToolConfiguration::UseExternalService(config) => {
-                self.execute_external_service_tool(tool, config, &execution_params).await?
+                self.execute_external_service_tool(tool, config, &execution_params, context_title).await?
             }
         };
 
@@ -493,6 +494,7 @@ impl ToolExecutor {
         tool: &AiTool,
         config: &UseExternalServiceToolConfiguration,
         execution_params: &Value,
+        context_title: &str,
     ) -> Result<Value, AppError> {
         match config.service_type {
             UseExternalServiceToolType::TeamsListUsers => {
@@ -620,7 +622,7 @@ impl ToolExecutor {
         }
         
         // Log success
-        let logger = TeamsActivityLogger::new(&self.agent.deployment_id.to_string(), &self.agent.id.to_string(), &context_group);
+        let logger = TeamsActivityLogger::new(&self.agent.deployment_id.to_string(), &self.agent.id.to_string(), &context_group, context_title);
         let _ = logger.ensure_directory().await;
 
         match action {

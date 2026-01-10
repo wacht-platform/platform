@@ -198,7 +198,8 @@ async fn publish_stream_event(
                                         }
                                     }
                                     
-                                    let logger = TeamsActivityLogger::new(&deployment_id.to_string(), &agent_id.to_string(), group);
+                                    let title = ctx.title.clone().unwrap_or_else(|| format!("Context {}", ctx.id));
+                                    let logger = TeamsActivityLogger::new(&deployment_id.to_string(), &agent_id.to_string(), group, &title);
                                     let _ = logger.append_entry("RESPONSE", &format!("To User{}: {}", location, response)).await;
                                 }
                             }

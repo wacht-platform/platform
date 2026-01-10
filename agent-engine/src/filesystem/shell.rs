@@ -50,6 +50,11 @@ impl ShellExecutor {
         let working_dir_str = self.working_dir.to_string_lossy().to_string();
         for part in command_line.split_whitespace() {
             if part.starts_with('/') {
+                // Allow "//" which is a common operator in jq (null coalescing) and other tools
+                if part == "//" {
+                    continue;
+                }
+                
                 if !part.starts_with(&working_dir_str) {
                     return Err(AppError::Forbidden(format!(
                         "Absolute path '{}' is outside allowed directories. Use /teams-activity/, /knowledge/, /uploads/, /scratch/, or /workspace/",
@@ -139,6 +144,11 @@ impl ShellExecutor {
             // Block absolute paths outside working directory in pipeline
             for part in cmd.split_whitespace() {
                 if part.starts_with('/') && !part.starts_with(&working_dir_str) {
+                    // Allow "//" which is a common operator in jq (null coalescing)
+                    if part == "//" {
+                        continue;
+                    }
+
                     return Err(AppError::Forbidden(format!(
                         "Absolute path '{}' is outside allowed directories in pipeline. Use /teams-activity/, /knowledge/, /uploads/, /scratch/, or /workspace/",
                         part
