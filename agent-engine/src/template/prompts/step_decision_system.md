@@ -359,7 +359,7 @@ Need to contact someone?
           └─ Want to be notified of reply? Set notify_on_reply: true
 
 Need context from current conversation?
-  → teams_get_current_channel_messages(count: 20)
+  → teams_list_messages(count: 20)
     └─ Looking for something specific? Use before_timestamp for pagination
 
 Need meeting recordings?
@@ -391,7 +391,7 @@ Uncertain about past interactions or history?
 | | `teams_search_users` | Find user by name/email | `query` (required) |
 | **Messaging** | `teams_send_dm` | Send DM to user | `user_id`, `message`, `sender_info` (required) |
 | | `teams_send_context_message` | Send message to any channel/chat | `context_id`, `message`, `notify_on_reply` |
-| **Context** | `teams_get_current_channel_messages` | Get conversation history | `context_id` (optional), `count`, `before_timestamp` |
+| **Context** | `teams_list_messages` | Get conversation history | `context_id` (optional), `count`, `before_timestamp` |
 | **Recordings** | `teams_get_meeting_recording` | Find recordings | `context_id` (optional), `organizer_id` (for DMs), `max_results` |
 | | `teams_analyze_meeting` | Transcribe/analyze video | `recording_id`, `organizer_id` (for DMs) |
 | **Media** | `teams_describe_image` | Describe image content | `attachment_url`, `prompt` (optional) |
@@ -426,21 +426,21 @@ DM/Group context: → teams_get_meeting_recording(organizer_id: "user-aad-id")
 | `teams_search_users` returns empty | User not in directory or name mismatch | Try email, try partial name, ask user for exact name |
 | `teams_send_dm` fails with permission error | Bot not installed for that user | Inform user the recipient needs to install the bot |
 | `teams_get_meeting_recording` returns no recordings | Recording still processing OR wrong organizer_id | Wait and retry OR check organizer via chat history |
-| `teams_get_current_channel_messages` empty | No Graph API permission | Inform user about missing Channel.Read.All permission |
+| `teams_list_messages` empty | No Graph API permission | Inform user about missing Channel.Read.All permission |
 | `teams_analyze_meeting` fails | Recording file moved/deleted OR permission denied | Report to user, suggest checking Teams app directly |
-| User message is empty/sparse (just "@bot" or "help") | Agent only receives @mentions; surrounding context stripped | Use `teams_get_current_channel_messages` to fetch recent messages for context |
+| User message is empty/sparse (just "@bot" or "help") | Agent only receives @mentions; surrounding context stripped | Use `teams_list_messages` to fetch recent messages for context |
 
 **Handling Sparse @mention Messages**:
 In Teams channels and group chats, you only receive messages when explicitly @mentioned. This means:
 - **Mentions in the text are replaced** with `[You were tagged]`.
 - If you receive **only** `[You were tagged]` (or e.g. `[You were tagged] help`), it means you were invoked.
-- **CRITICAL**: When you see "[You were tagged]", you MUST fetch the latest messages (`teams_get_current_channel_messages`) to understand what the user wants based on the conversation immediately preceding your tag. Do NOT hallucinate a request.
+- **CRITICAL**: When you see "[You were tagged]", you MUST fetch the latest messages (`teams_list_messages`) to understand what the user wants based on the conversation immediately preceding your tag. Do NOT hallucinate a request.
 - Your context title shows your location (e.g., "Strideio / General")
 
 **When to fetch context**:
 ```
 Received sparse message (< 20 chars or seems like it needs context)?
-  → teams_get_current_channel_messages(count: 10)
+  → teams_list_messages(count: 10)
   → Scan for: recent questions, ongoing discussions, attachments, meeting links
   → Then respond with full context awareness
 ```
@@ -472,7 +472,7 @@ jq '.messages[] | select(.from.displayName == "John")' /scratch/tool_output_123.
 5. **Respect rate limits** - don't spam multiple DMs in sequence
 6. **Save important findings** - After fetching large message histories, transform and save to `/workspace/`:
    ```bash
-   # Save truncated output path after teams_get_current_channel_messages
+   # Save truncated output path after teams_list_messages
    jq '.messages[] | "\(.createdDateTime) - \(.from.displayName): \(.body.content)"' /scratch/tool_output_123.txt > /workspace/general_chat_jan10.txt
    ```
    Next time you need this info, just `read_file("/workspace/general_chat_jan10.txt")` - saves tokens!

@@ -373,9 +373,9 @@ impl AgentExecutorBuilder {
                     ]
                 ),
                 (
-                    "teams_get_current_channel_messages",
+                    "teams_list_messages",
                     "Get recent messages from a Teams conversation. Works for Team channels, group DMs, and 1:1 chats. Useful for finding meeting notifications, previous discussions, or context. Use context_id to read from another channel/chat.",
-                    UseExternalServiceToolType::TeamsGetChannelMessages,
+                    UseExternalServiceToolType::TeamsListMessages,
                     vec![
                         SchemaField {
                             name: "context_id".to_string(),
@@ -405,6 +405,43 @@ impl AgentExecutorBuilder {
                             name: "search_term".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Filter messages containing this text (case-insensitive). Applied client-side after fetching.".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
+                (
+                    "teams_search_messages",
+                    "Search for messages using specific criteria (keywords, date range, sender). Uses Microsoft Graph Search API for efficient filtering of deep history. Faster than paging through thousands of messages if you know what you're looking for.",
+                    UseExternalServiceToolType::TeamsSearchMessages,
+                    vec![
+                        SchemaField {
+                            name: "query".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Search query (keywords, phrase) to find specific messages.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "context_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Optional: Target context ID to search in. Defaults to current context.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "from_date".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("ISO date to filter FROM (inclusive). E.g. '2025-01-01'. Restrict search to this period.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "to_date".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("ISO date to filter TO (inclusive). E.g. '2025-02-01'.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "from_user".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Display name of the sender to filter by (e.g. 'Jane Doe').".to_string()),
                             required: false,
                         },
                     ]
