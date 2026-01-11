@@ -95,7 +95,9 @@ impl AgentExecutor {
 
         let (evaluation, _) = self
             .create_weak_llm()?
-            .generate_structured_content::<dto::json::agent_responses::TriggerEvaluation>(request_body)
+            .generate_structured_content::<dto::json::agent_responses::TriggerEvaluation>(
+                request_body,
+            )
             .await?;
 
         if evaluation.should_trigger {
@@ -341,7 +343,13 @@ impl AgentExecutor {
         let title = &self.context_title;
         let result = self
             .tool_executor
-            .execute_tool_immediately(&tool, json!(parameters), &self.filesystem, &self.shell, title)
+            .execute_tool_immediately(
+                &tool,
+                json!(parameters),
+                &self.filesystem,
+                &self.shell,
+                title,
+            )
             .await?;
 
         Ok(result)

@@ -426,7 +426,7 @@ impl Command for TestWebhookEndpointCommand {
             &endpoint.signing_secret,
             &webhook_id,
             webhook_timestamp,
-            &self.test_payload
+            &self.test_payload,
         );
 
         query!(

@@ -13,7 +13,6 @@ use dto::json::{
 };
 use models::{DeploymentJwtTemplate, DeploymentSocialConnection, SocialConnectionProvider};
 
-
 use chrono::{Duration, Utc};
 use redis::AsyncCommands;
 use serde::Serialize;
@@ -725,7 +724,9 @@ impl Command for UpdateDeploymentB2bSettingsCommand {
             query_builder.push_bind(organization_permissions);
         }
 
-        if let Some(ip_allowlist_per_workspace_enabled) = self.settings.ip_allowlist_per_workspace_enabled {
+        if let Some(ip_allowlist_per_workspace_enabled) =
+            self.settings.ip_allowlist_per_workspace_enabled
+        {
             query_builder.push(", ip_allowlist_per_workspace_enabled = ");
             query_builder.push_bind(ip_allowlist_per_workspace_enabled);
         }
@@ -735,7 +736,9 @@ impl Command for UpdateDeploymentB2bSettingsCommand {
             query_builder.push_bind(enforce_mfa_per_org_enabled);
         }
 
-        if let Some(enforce_mfa_per_workspace_enabled) = self.settings.enforce_mfa_per_workspace_enabled {
+        if let Some(enforce_mfa_per_workspace_enabled) =
+            self.settings.enforce_mfa_per_workspace_enabled
+        {
             query_builder.push(", enforce_mfa_per_workspace_enabled = ");
             query_builder.push_bind(enforce_mfa_per_workspace_enabled);
         }
@@ -1182,8 +1185,6 @@ impl Command for GenerateTokenCommand {
                 template.token_lifetime as i64 + template.allowed_clock_skew as i64,
             );
 
-
-
         let mut custom_claims = HashMap::new();
 
         if !template.template.is_null() {
@@ -1209,13 +1210,16 @@ impl Command for GenerateTokenCommand {
                             .handlebars
                             .render_template(s, &handlebars_context)
                             .map_err(|e| {
-                                AppError::BadRequest(format!("Failed to render template value for key {}: {}", k, e))
+                                AppError::BadRequest(format!(
+                                    "Failed to render template value for key {}: {}",
+                                    k, e
+                                ))
                             })?;
                         // Try to parse as JSON if it looks like JSON, otherwise keep as string
                         if let Ok(parsed_val) = serde_json::from_str::<Value>(&rendered) {
-                             custom_claims.insert(k.clone(), parsed_val);
+                            custom_claims.insert(k.clone(), parsed_val);
                         } else {
-                             custom_claims.insert(k.clone(), json!(rendered));
+                            custom_claims.insert(k.clone(), json!(rendered));
                         }
                     } else {
                         custom_claims.insert(k.clone(), v.clone());
@@ -1242,7 +1246,7 @@ impl Command for GenerateTokenCommand {
             if let Some(org_id) = org["organization_id"].as_str() {
                 all_claims.insert("organization".to_string(), json!(org_id));
             }
-            
+
             if let Some(roles) = org["roles"].as_array() {
                 let mut perms = Vec::new();
                 for role in roles {

@@ -14,7 +14,10 @@ pub async fn process_billing_event(
     task: BillingEventTask,
     app_state: &AppState,
 ) -> Result<String, anyhow::Error> {
-    let mut conn = app_state.redis_client.get_multiplexed_async_connection().await?;
+    let mut conn = app_state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
 
     let now = Utc::now();
     let period = format!("{}-{:02}", now.year(), now.month());
@@ -50,10 +53,7 @@ pub async fn process_billing_event(
         task.deployment_id,
         1,
     );
-    pipe.expire(
-        &format!("billing:{}:dirty_deployments", period),
-        5184000,
-    );
+    pipe.expire(&format!("billing:{}:dirty_deployments", period), 5184000);
 
     let _: () = pipe.query_async(&mut conn).await?;
 

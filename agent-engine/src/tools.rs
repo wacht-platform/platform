@@ -1,29 +1,29 @@
-use commands::{Command, GenerateEmbeddingsCommand, SearchKnowledgeBaseEmbeddingsCommand};
-use queries::Query;
-use common::error::AppError;
-use chrono;
-use rand;
+use crate::executor::python::PythonExecutor;
+use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
+use crate::teams_logger::TeamsActivityLogger;
 use base64::Engine;
+use chrono;
+use commands::{Command, GenerateEmbeddingsCommand, SearchKnowledgeBaseEmbeddingsCommand};
+use common::error::AppError;
 use common::state::AppState;
 use dto::json::{
     ApiToolResult, KnowledgeBaseToolResult, PlatformEventResult, PlatformFunctionData,
     PlatformFunctionResult, StreamEvent, ToolKnowledgeBaseSearchResult,
 };
+use flate2::read::GzDecoder;
+use models::AiAgentWithFeatures;
 use models::HttpMethod;
 use models::{AiTool, AiToolConfiguration, InternalToolType, UseExternalServiceToolType};
 use models::{
-    ApiToolConfiguration, KnowledgeBaseToolConfiguration, PlatformEventToolConfiguration,
-    PlatformFunctionToolConfiguration, InternalToolConfiguration, UseExternalServiceToolConfiguration,
+    ApiToolConfiguration, InternalToolConfiguration, KnowledgeBaseToolConfiguration,
+    PlatformEventToolConfiguration, PlatformFunctionToolConfiguration,
+    UseExternalServiceToolConfiguration,
 };
+use queries::Query;
+use rand;
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::filesystem::{AgentFilesystem, shell::ShellExecutor};
-use crate::teams_logger::TeamsActivityLogger;
-use models::AiAgentWithFeatures;
 use std::io::Read;
-use flate2::read::GzDecoder;
-use crate::executor::python::PythonExecutor;
-
 
 pub struct ToolExecutor {
     app_state: AppState,
@@ -31,7 +31,6 @@ pub struct ToolExecutor {
     context_id: i64,
     channel: Option<tokio::sync::mpsc::Sender<StreamEvent>>,
 }
-
 
 impl ToolExecutor {
     pub fn new(app_state: AppState, agent: AiAgentWithFeatures, context_id: i64) -> Self {
@@ -53,7 +52,11 @@ impl ToolExecutor {
         crate::GeminiClient::new(
             api_key,
             Some("gemini-2.5-flash-lite-preview-06-17".to_string()),
-        ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone())
+        )
+        .with_billing(
+            self.agent.deployment_id,
+            self.app_state.redis_client.clone(),
+        )
     }
 
     pub async fn execute_tool_immediately(
@@ -67,7 +70,11 @@ impl ToolExecutor {
         let pipeline: Vec<String> = execution_params
             .get("pipeline")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let result = match &tool.configuration {
@@ -96,10 +103,12 @@ impl ToolExecutor {
                 serde_json::to_value(result)?
             }
             AiToolConfiguration::Internal(config) => {
-                self.execute_internal_tool(tool, config, &execution_params, filesystem, shell).await?
+                self.execute_internal_tool(tool, config, &execution_params, filesystem, shell)
+                    .await?
             }
             AiToolConfiguration::UseExternalService(config) => {
-                self.execute_external_service_tool(tool, config, &execution_params, context_title).await?
+                self.execute_external_service_tool(tool, config, &execution_params, context_title)
+                    .await?
             }
         };
 
@@ -116,18 +125,19 @@ impl ToolExecutor {
 
         let mut final_result = final_result;
         if tool.name == "read_file" {
-             if let Some(content) = final_result.get("content").and_then(|c| c.as_str()) {
-                 if content.len() > 32000 {
-                      let truncated = format!("{}... \n[TRUNCATED: Content too long. Use start_line/end_line to read more]", &content[..2000]);
-                      if let Some(obj) = final_result.as_object_mut() {
-                          obj.insert("content".to_string(), serde_json::Value::String(truncated));
-                          obj.insert("truncated".to_string(), serde_json::Value::Bool(true));
-                      }
-                 }
-             }
+            if let Some(content) = final_result.get("content").and_then(|c| c.as_str()) {
+                if content.len() > 32000 {
+                    let truncated = format!("{}... \n[TRUNCATED: Content too long. Use start_line/end_line to read more]", &content[..2000]);
+                    if let Some(obj) = final_result.as_object_mut() {
+                        obj.insert("content".to_string(), serde_json::Value::String(truncated));
+                        obj.insert("truncated".to_string(), serde_json::Value::Bool(true));
+                    }
+                }
+            }
         }
 
-        let should_truncate = tool.name != "read_file" && tool.name != "read_knowledge_base_documents";
+        let should_truncate =
+            tool.name != "read_file" && tool.name != "read_knowledge_base_documents";
 
         let result_str = serde_json::to_string_pretty(&final_result)?;
         let char_count = result_str.chars().count();
@@ -135,17 +145,21 @@ impl ToolExecutor {
 
         if should_truncate && char_count > threshold {
             let timestamp = chrono::Utc::now().timestamp_millis();
-            let random_suffix: String = (0..4).map(|_| {
-                use rand::Rng;
-                let idx = rand::thread_rng().gen_range(0..36);
-                let chars: Vec<char> = "0123456789abcdefghijklmnopqrstuvwxyz".chars().collect();
-                chars[idx]
-            }).collect();
-            
+            let random_suffix: String = (0..4)
+                .map(|_| {
+                    use rand::Rng;
+                    let idx = rand::thread_rng().gen_range(0..36);
+                    let chars: Vec<char> = "0123456789abcdefghijklmnopqrstuvwxyz".chars().collect();
+                    chars[idx]
+                })
+                .collect();
+
             let scratch_filename = format!("tool_output_{}_{}.txt", timestamp, random_suffix);
             let scratch_path = format!("scratch/{}", scratch_filename);
-            
-            let _ = filesystem.write_file(&scratch_path, &result_str, None, None).await;
+
+            let _ = filesystem
+                .write_file(&scratch_path, &result_str, None, None)
+                .await;
 
             let lines = result_str.lines().count();
             let size_bytes = result_str.len();
@@ -187,7 +201,7 @@ impl ToolExecutor {
             params = %execution_params,
             "Executing internal tool"
         );
-        
+
         match config.tool_type {
             InternalToolType::ReadFile => {
                 let path = execution_params.get("path").and_then(|v| v.as_str());
@@ -196,17 +210,23 @@ impl ToolExecutor {
                     tracing::warn!(params = %execution_params, "Path is required but missing");
                     AppError::BadRequest("Path is required".to_string())
                 })?;
-                let start_line = execution_params.get("start_line").and_then(|v| v.as_u64()).map(|v| v as usize);
-                let end_line = execution_params.get("end_line").and_then(|v| v.as_u64()).map(|v| v as usize);
-                
+                let start_line = execution_params
+                    .get("start_line")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+                let end_line = execution_params
+                    .get("end_line")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+
                 let extension = path.split('.').last().unwrap_or("").to_lowercase();
-                
+
                 match extension.as_str() {
-                    "txt" | "md" | "json" | "yaml" | "yml" | "csv" | "xml" | "html" | "htm" |
-                    "js" | "ts" | "jsx" | "tsx" | "py" | "rs" | "go" | "java" | "c" | "cpp" |
-                    "h" | "hpp" | "css" | "scss" | "toml" | "ini" | "cfg" | "conf" | "sh" |
-                    "bash" | "zsh" | "sql" | "graphql" | "proto" | "env" | "gitignore" | 
-                    "dockerfile" | "makefile" | "log" | "" => {
+                    "txt" | "md" | "json" | "yaml" | "yml" | "csv" | "xml" | "html" | "htm"
+                    | "js" | "ts" | "jsx" | "tsx" | "py" | "rs" | "go" | "java" | "c" | "cpp"
+                    | "h" | "hpp" | "css" | "scss" | "toml" | "ini" | "cfg" | "conf" | "sh"
+                    | "bash" | "zsh" | "sql" | "graphql" | "proto" | "env" | "gitignore"
+                    | "dockerfile" | "makefile" | "log" | "" => {
                         let result = filesystem.read_file(path, start_line, end_line).await?;
                         Ok(serde_json::json!({
                             "success": true,
@@ -219,12 +239,12 @@ impl ToolExecutor {
                             "end_line": result.end_line
                         }))
                     }
-                    
+
                     "pdf" => {
                         let full_path = filesystem.resolve_path_public(path)?;
                         let cmd = format!("pdftotext \"{}\" -", full_path.display());
                         let output = shell.execute(&cmd).await?;
-                        
+
                         if output.exit_code != 0 {
                             return Ok(serde_json::json!({
                                 "success": false,
@@ -235,15 +255,20 @@ impl ToolExecutor {
                                 "hint": "Ensure pdftotext (poppler-utils) is installed"
                             }));
                         }
-                        
+
                         let content = output.stdout;
                         let lines: Vec<&str> = content.lines().collect();
                         let total_lines = lines.len();
-                        
+
                         let start = start_line.unwrap_or(1).saturating_sub(1);
                         let end = end_line.unwrap_or(total_lines).min(total_lines);
-                        let selected: Vec<&str> = lines.iter().skip(start).take(end.saturating_sub(start)).cloned().collect();
-                        
+                        let selected: Vec<&str> = lines
+                            .iter()
+                            .skip(start)
+                            .take(end.saturating_sub(start))
+                            .cloned()
+                            .collect();
+
                         Ok(serde_json::json!({
                             "success": true,
                             "tool": tool.name,
@@ -256,11 +281,11 @@ impl ToolExecutor {
                             "note": "Text extracted from PDF via pdftotext"
                         }))
                     }
-                    
+
                     "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg" => {
                         let bytes = filesystem.read_file_bytes(path).await?;
                         let base64_data = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                        
+
                         let mime_type = match extension.as_str() {
                             "jpg" | "jpeg" => "image/jpeg",
                             "png" => "image/png",
@@ -268,9 +293,9 @@ impl ToolExecutor {
                             "gif" => "image/gif",
                             "bmp" => "image/bmp",
                             "svg" => "image/svg+xml",
-                            _ => "application/octet-stream"
+                            _ => "application/octet-stream",
                         };
-                        
+
                         Ok(serde_json::json!({
                             "success": true,
                             "tool": tool.name,
@@ -282,7 +307,7 @@ impl ToolExecutor {
                             "note": "Image encoded as base64. Can be passed to vision-capable LLM for analysis."
                         }))
                     }
-                    
+
                     _ => {
                         let bytes = filesystem.read_file_bytes(path).await?;
                         Ok(serde_json::json!({
@@ -299,12 +324,23 @@ impl ToolExecutor {
             }
             InternalToolType::WriteFile => {
                 let fs = filesystem;
-                let path = execution_params.get("path").and_then(|v| v.as_str())
+                let path = execution_params
+                    .get("path")
+                    .and_then(|v| v.as_str())
                     .ok_or(AppError::BadRequest("Path is required".to_string()))?;
-                let content = execution_params.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                let start_line = execution_params.get("start_line").and_then(|v| v.as_u64()).map(|v| v as usize);
-                let end_line = execution_params.get("end_line").and_then(|v| v.as_u64()).map(|v| v as usize);
-                
+                let content = execution_params
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let start_line = execution_params
+                    .get("start_line")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+                let end_line = execution_params
+                    .get("end_line")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+
                 let result = fs.write_file(path, content, start_line, end_line).await?;
                 Ok(serde_json::json!({
                     "success": true,
@@ -317,7 +353,10 @@ impl ToolExecutor {
             }
             InternalToolType::ListDirectory => {
                 let fs = filesystem;
-                let path = execution_params.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+                let path = execution_params
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("/");
                 let files = fs.list_dir(path).await?;
                 Ok(serde_json::json!({
                     "success": true,
@@ -328,9 +367,14 @@ impl ToolExecutor {
             }
             InternalToolType::SearchFiles => {
                 let fs = filesystem;
-                let query = execution_params.get("query").and_then(|v| v.as_str())
+                let query = execution_params
+                    .get("query")
+                    .and_then(|v| v.as_str())
                     .ok_or(AppError::BadRequest("Query is required".to_string()))?;
-                let path = execution_params.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+                let path = execution_params
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("/");
                 let result = fs.search(query, path).await?;
                 Ok(serde_json::json!({
                     "success": true,
@@ -342,7 +386,9 @@ impl ToolExecutor {
             }
             InternalToolType::ExecuteCommand => {
                 let sh = shell;
-                let command = execution_params.get("command").and_then(|v| v.as_str())
+                let command = execution_params
+                    .get("command")
+                    .and_then(|v| v.as_str())
                     .ok_or(AppError::BadRequest("Command is required".to_string()))?;
                 let output = sh.execute(command).await?;
                 Ok(serde_json::json!({
@@ -359,57 +405,70 @@ impl ToolExecutor {
                     .get("script_path")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::BadRequest("Missing script_path".to_string()))?;
-                
+
                 let args_str = execution_params
                     .get("args")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                
+
                 let args: Vec<String> = args_str.split_whitespace().map(String::from).collect();
-                
+
                 let execution_root = filesystem.execution_root();
                 let script_path = std::path::Path::new(script_path_str);
-                
+
                 let executor = crate::executor::python::NsJailExecutor::new();
 
-                let result = executor.execute_script(
-                    &execution_root,
-                    script_path,
-                    args,
-                    30 // Default timeout 30s
-                ).await?;
-                
+                let result = executor
+                    .execute_script(
+                        &execution_root,
+                        script_path,
+                        args,
+                        30, // Default timeout 30s
+                    )
+                    .await?;
+
                 Ok(serde_json::to_value(result)?)
             }
             InternalToolType::SaveMemory => {
-                let content = execution_params.get("content").and_then(|v| v.as_str())
+                let content = execution_params
+                    .get("content")
+                    .and_then(|v| v.as_str())
                     .ok_or(AppError::BadRequest("Content is required".to_string()))?;
-                let category_str = execution_params.get("category").and_then(|v| v.as_str())
+                let category_str = execution_params
+                    .get("category")
+                    .and_then(|v| v.as_str())
                     .unwrap_or("working");
-                let importance = execution_params.get("importance").and_then(|v| v.as_f64())
+                let importance = execution_params
+                    .get("importance")
+                    .and_then(|v| v.as_f64())
                     .unwrap_or(0.5);
-                
+
                 let category = dto::json::agent_memory::MemoryCategory::from_str(category_str)
                     .unwrap_or(dto::json::agent_memory::MemoryCategory::Working);
-                
-                let embeddings = commands::GenerateEmbeddingsCommand::new(vec![content.to_string()])
-                    .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-                    .execute(&self.app_state)
-                    .await?;
-                
+
+                let embeddings =
+                    commands::GenerateEmbeddingsCommand::new(vec![content.to_string()])
+                        .with_task_type("RETRIEVAL_DOCUMENT".to_string())
+                        .execute(&self.app_state)
+                        .await?;
+
                 if embeddings.is_empty() {
-                    return Err(AppError::Internal("Failed to generate embedding".to_string()));
+                    return Err(AppError::Internal(
+                        "Failed to generate embedding".to_string(),
+                    ));
                 }
-                
+
                 let embedding = &embeddings[0];
-                
+
                 let similar = queries::FindSimilarMemoriesQuery {
                     agent_id: self.agent.id,
                     embedding: embedding.clone(),
                     threshold: 0.70,
                     limit: 5,
-                }.execute(&self.app_state).await?;
-                
+                }
+                .execute(&self.app_state)
+                .await?;
+
                 let exact_dupe = similar.iter().find(|m| m.similarity > 0.95);
                 if let Some(dupe) = exact_dupe {
                     return Ok(serde_json::json!({
@@ -419,35 +478,42 @@ impl ToolExecutor {
                         "existing_content": dupe.content
                     }));
                 }
-                
-                let consolidation_candidates: Vec<_> = similar.iter()
+
+                let consolidation_candidates: Vec<_> = similar
+                    .iter()
                     .filter(|m| m.similarity >= 0.70 && m.similarity < 0.95)
                     .collect();
-                
+
                 let final_content: String;
                 let mut consolidated_ids: Vec<i64> = Vec::new();
                 let mut _total_access_count: i32 = 0;
-                
+
                 if !consolidation_candidates.is_empty() {
-                    let existing_facts: Vec<String> = consolidation_candidates.iter()
+                    let existing_facts: Vec<String> = consolidation_candidates
+                        .iter()
                         .map(|m| m.content.clone())
                         .collect();
-                    
+
                     let context = serde_json::json!({
                         "new_fact": content,
                         "existing_facts": existing_facts
                     });
-                    
+
                     let request_body = crate::template::render_template_with_prompt(
                         crate::template::AgentTemplates::MEMORY_CONSOLIDATION,
-                        context
-                    ).map_err(|e| AppError::Internal(format!("Template error: {}", e)))?;
-                    
+                        context,
+                    )
+                    .map_err(|e| AppError::Internal(format!("Template error: {}", e)))?;
+
                     let llm = self.create_lite_llm();
-                    
-                    let (response, _): (dto::json::agent_memory::MemoryConsolidationResponse, _) = llm.generate_structured_content(request_body).await
-                        .map_err(|e| AppError::External(format!("LLM consolidation failed: {}", e)))?;
-                    
+
+                    let (response, _): (dto::json::agent_memory::MemoryConsolidationResponse, _) =
+                        llm.generate_structured_content(request_body)
+                            .await
+                            .map_err(|e| {
+                                AppError::External(format!("LLM consolidation failed: {}", e))
+                            })?;
+
                     if response.decision == "duplicate" {
                         return Ok(serde_json::json!({
                             "success": false,
@@ -456,33 +522,38 @@ impl ToolExecutor {
                             "reason": response.reasoning
                         }));
                     }
-                    
-                    final_content = response.consolidated_content.unwrap_or_else(|| content.to_string());
-                    
+
+                    final_content = response
+                        .consolidated_content
+                        .unwrap_or_else(|| content.to_string());
+
                     for candidate in &consolidation_candidates {
                         consolidated_ids.push(candidate.id);
                     }
-                    
+
                     for id in &consolidated_ids {
                         if let Ok(mem) = (queries::GetMemoryByIdQuery { memory_id: *id })
-                            .execute(&self.app_state).await {
+                            .execute(&self.app_state)
+                            .await
+                        {
                             _total_access_count += mem.access_count;
                         }
                     }
                 } else {
                     final_content = content.to_string();
                 }
-                
+
                 let final_embedding = if final_content != content {
-                    let new_embeddings = commands::GenerateEmbeddingsCommand::new(vec![final_content.clone()])
-                        .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-                        .execute(&self.app_state)
-                        .await?;
+                    let new_embeddings =
+                        commands::GenerateEmbeddingsCommand::new(vec![final_content.clone()])
+                            .with_task_type("RETRIEVAL_DOCUMENT".to_string())
+                            .execute(&self.app_state)
+                            .await?;
                     new_embeddings.get(0).cloned().unwrap_or(embedding.clone())
                 } else {
                     embedding.clone()
                 };
-                
+
                 let memory_id = self.app_state.sf.next_id()? as i64;
                 let create_cmd = commands::CreateMemoryCommand {
                     id: memory_id,
@@ -494,13 +565,16 @@ impl ToolExecutor {
                     initial_importance: importance,
                 };
                 let memory = create_cmd.execute(&self.app_state).await?;
-                
+
                 if !consolidated_ids.is_empty() {
                     commands::DeleteMemoriesCommand {
                         memory_ids: consolidated_ids.clone(),
-                    }.execute(&self.app_state).await.ok();
+                    }
+                    .execute(&self.app_state)
+                    .await
+                    .ok();
                 }
-                
+
                 let consolidated_count = consolidated_ids.len();
                 Ok(serde_json::json!({
                     "success": true,
@@ -527,83 +601,137 @@ impl ToolExecutor {
     ) -> Result<Value, AppError> {
         match config.service_type {
             UseExternalServiceToolType::TeamsListUsers => {
-                self.execute_teams_command(tool, "list_users", execution_params, context_title).await
-            },
+                self.execute_teams_command(tool, "list_users", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::TeamsSearchUsers => {
-                self.execute_teams_command(tool, "search_users", execution_params, context_title).await
-            },
+                self.execute_teams_command(tool, "search_users", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::TeamsSendDm => {
-                self.execute_teams_command(tool, "send_dm", execution_params, context_title).await
-            },
+                self.execute_teams_command(tool, "send_dm", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::TeamsSendContextMessage => {
-                self.execute_teams_command(tool, "send_context_message", execution_params, context_title).await
-            },
+                self.execute_teams_command(
+                    tool,
+                    "send_context_message",
+                    execution_params,
+                    context_title,
+                )
+                .await
+            }
             UseExternalServiceToolType::TeamsListMessages => {
-                self.execute_teams_command(tool, "list_messages", execution_params, context_title).await
-            },
+                self.execute_teams_command(tool, "list_messages", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::TeamsGetMeetingRecording => {
-                self.execute_teams_command(tool, "get_meeting_recording", execution_params, context_title).await
-            },
+                self.execute_teams_command(
+                    tool,
+                    "get_meeting_recording",
+                    execution_params,
+                    context_title,
+                )
+                .await
+            }
             UseExternalServiceToolType::TeamsTranscribeMeeting => {
-                self.execute_teams_command(tool, "analyze_meeting", execution_params, context_title).await
-            },
+                self.execute_teams_command(tool, "analyze_meeting", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::TeamsSaveAttachment => {
-                self.execute_teams_save_attachment(tool, execution_params).await
-            },
+                self.execute_teams_save_attachment(tool, execution_params)
+                    .await
+            }
             UseExternalServiceToolType::TeamsDescribeImage => {
-                self.execute_teams_command(tool, "describe_image", execution_params, context_title).await
-            },
+                self.execute_teams_command(tool, "describe_image", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::TeamsTranscribeAudio => {
-                self.execute_teams_command(tool, "transcribe_audio", execution_params, context_title).await
-            },
+                self.execute_teams_command(
+                    tool,
+                    "transcribe_audio",
+                    execution_params,
+                    context_title,
+                )
+                .await
+            }
             UseExternalServiceToolType::TeamsListContexts => {
                 self.execute_teams_list_contexts(execution_params).await
-            },
+            }
             UseExternalServiceToolType::TeamsSearchMessages => {
-                self.execute_teams_command(tool, "search_teams_messages", execution_params, context_title).await
-            },
+                self.execute_teams_command(
+                    tool,
+                    "search_teams_messages",
+                    execution_params,
+                    context_title,
+                )
+                .await
+            }
             UseExternalServiceToolType::TriggerContext => {
                 self.execute_trigger_context(tool, execution_params).await
-            },
+            }
             UseExternalServiceToolType::ClickUpCreateTask => {
-                self.execute_clickup_command(tool, "create_task", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "create_task", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::ClickUpCreateList => {
-                self.execute_clickup_command(tool, "create_list", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "create_list", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::ClickUpUpdateTask => {
-                self.execute_clickup_command(tool, "update_task", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "update_task", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::ClickUpAddComment => {
-                self.execute_clickup_command(tool, "add_comment", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "add_comment", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::ClickUpGetTask => {
-                self.execute_clickup_command(tool, "get_task", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "get_task", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::ClickUpGetLists => {
-                self.execute_clickup_command(tool, "get_lists", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "get_lists", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::ClickUpGetSpaceLists => {
-                self.execute_clickup_command(tool, "get_space_lists", execution_params, context_title).await
-            },
+                self.execute_clickup_command(
+                    tool,
+                    "get_space_lists",
+                    execution_params,
+                    context_title,
+                )
+                .await
+            }
             UseExternalServiceToolType::ClickUpGetFolders => {
-                self.execute_clickup_command(tool, "get_folders", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "get_folders", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::ClickUpGetSpaces => {
-                self.execute_clickup_command(tool, "get_spaces", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "get_spaces", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::ClickUpGetTeams => {
-                self.execute_clickup_command(tool, "get_teams", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "get_teams", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::ClickUpGetCurrentUser => {
-                self.execute_clickup_command(tool, "get_current_user", execution_params, context_title).await
-            },
+                self.execute_clickup_command(
+                    tool,
+                    "get_current_user",
+                    execution_params,
+                    context_title,
+                )
+                .await
+            }
             UseExternalServiceToolType::ClickUpGetTasks => {
-                self.execute_clickup_command(tool, "get_tasks", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "get_tasks", execution_params, context_title)
+                    .await
+            }
             UseExternalServiceToolType::ClickUpSearchTasks => {
-                self.execute_clickup_command(tool, "search_tasks", execution_params, context_title).await
-            },
+                self.execute_clickup_command(tool, "search_tasks", execution_params, context_title)
+                    .await
+            }
         }
     }
 
@@ -614,13 +742,15 @@ impl ToolExecutor {
         execution_params: &Value,
         _context_title: &str,
     ) -> Result<Value, AppError> {
-        let context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-            .execute(&self.app_state)
-            .await?;
-        
+        let context =
+            queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                .execute(&self.app_state)
+                .await?;
+
         // Use generic context group, fallback to Teams context group if not present (legacy support) or fail
-        let context_group = context.context_group
-            .ok_or_else(|| AppError::BadRequest("No context group found for ClickUp command".to_string()))?;
+        let context_group = context.context_group.ok_or_else(|| {
+            AppError::BadRequest("No context group found for ClickUp command".to_string())
+        })?;
 
         let payload = serde_json::json!({
             "deployment_id": self.agent.deployment_id.to_string(),
@@ -632,16 +762,21 @@ impl ToolExecutor {
         });
 
         let subject = "integrations.clickup.command";
-        
-        let response = self.app_state.nats_client
+
+        let response = self
+            .app_state
+            .nats_client
             .request(subject.to_string(), serde_json::to_vec(&payload)?.into())
             .await
-            .map_err(|e| AppError::External(format!("ClickUp integration request failed: {}", e)))?;
+            .map_err(|e| {
+                AppError::External(format!("ClickUp integration request failed: {}", e))
+            })?;
 
         let response_data: Value = serde_json::from_slice(&response.payload)?;
-        
+
         if response_data.get("status") == Some(&serde_json::json!("error")) {
-             let error_msg = response_data.get("error")
+            let error_msg = response_data
+                .get("error")
                 .and_then(|e| e.as_str())
                 .unwrap_or("Unknown error from ClickUp integration");
             return Ok(serde_json::json!({
@@ -650,7 +785,7 @@ impl ToolExecutor {
                 "error": error_msg
             }));
         }
-        
+
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
@@ -666,36 +801,44 @@ impl ToolExecutor {
         context_title: &str,
     ) -> Result<Value, AppError> {
         // Check if a target_context_id is provided for cross-context operations
-        let target_context_id = execution_params.get("context_id")
-            .and_then(|v| {
-                v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
-            });
+        let target_context_id = execution_params.get("context_id").and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+        });
 
         // Get the context to find the context_group (use target if provided, else current)
         let effective_context_id = target_context_id.unwrap_or(self.context_id);
-        let context = queries::GetExecutionContextQuery::new(effective_context_id, self.agent.deployment_id)
-            .execute(&self.app_state)
-            .await
-            .map_err(|_| AppError::BadRequest(format!(
-                "Context {} not found or not accessible", effective_context_id
-            )))?;
+        let context =
+            queries::GetExecutionContextQuery::new(effective_context_id, self.agent.deployment_id)
+                .execute(&self.app_state)
+                .await
+                .map_err(|_| {
+                    AppError::BadRequest(format!(
+                        "Context {} not found or not accessible",
+                        effective_context_id
+                    ))
+                })?;
 
         // Validate that target context is a Teams context if cross-context
         if target_context_id.is_some() {
             if context.source.as_deref() != Some("teams") {
                 return Err(AppError::BadRequest(
-                    "Target context is not a Teams context".to_string()
+                    "Target context is not a Teams context".to_string(),
                 ));
             }
         }
 
-        let context_group = context.context_group
-            .ok_or_else(|| AppError::BadRequest("No context group found for Teams command".to_string()))?;
+        let context_group = context.context_group.ok_or_else(|| {
+            AppError::BadRequest("No context group found for Teams command".to_string())
+        })?;
 
         let mut params = execution_params.clone();
         if action == "send_dm" {
             if let Some(obj) = params.as_object_mut() {
-                obj.insert("source_context_id".to_string(), serde_json::json!(self.context_id.to_string()));
+                obj.insert(
+                    "source_context_id".to_string(),
+                    serde_json::json!(self.context_id.to_string()),
+                );
             }
         }
 
@@ -709,9 +852,11 @@ impl ToolExecutor {
         });
 
         let subject = "integrations.teams.command";
-        
+
         // NATS client has 5-minute request_timeout configured globally in common/state.rs
-        let response = self.app_state.nats_client
+        let response = self
+            .app_state
+            .nats_client
             .request(subject.to_string(), serde_json::to_vec(&payload)?.into())
             .await
             .map_err(|e| AppError::External(format!("Teams integration request failed: {}", e)))?;
@@ -722,16 +867,18 @@ impl ToolExecutor {
         let response_data: Value = if is_gzipped {
             let mut decoder = GzDecoder::new(&payload[..]);
             let mut decoded_string = String::new();
-            decoder.read_to_string(&mut decoded_string)
+            decoder
+                .read_to_string(&mut decoded_string)
                 .map_err(|e| AppError::External(format!("Decompression failed: {}", e)))?;
             serde_json::from_str(&decoded_string)?
         } else {
             serde_json::from_slice(&payload)?
         };
-        
+
         // Check if the response indicates an error from the integration service
         if response_data.get("success") == Some(&serde_json::json!(false)) {
-            let error_msg = response_data.get("error")
+            let error_msg = response_data
+                .get("error")
                 .and_then(|e| e.as_str())
                 .unwrap_or("Unknown error from Teams integration");
             return Ok(serde_json::json!({
@@ -740,42 +887,70 @@ impl ToolExecutor {
                 "error": error_msg
             }));
         }
-        
+
         // Log success
-        let logger = TeamsActivityLogger::new(&self.agent.deployment_id.to_string(), &self.agent.id.to_string(), &context_group, context_title);
+        let logger = TeamsActivityLogger::new(
+            &self.agent.deployment_id.to_string(),
+            &self.agent.id.to_string(),
+            &context_group,
+            context_title,
+        );
         let _ = logger.ensure_directory().await;
 
         match action {
             "send_dm" => {
-                let user_id = execution_params.get("user_id").and_then(|v| v.as_str()).unwrap_or("unknown");
-                let message = execution_params.get("message").and_then(|v| v.as_str()).unwrap_or("");
+                let user_id = execution_params
+                    .get("user_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let message = execution_params
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let message_preview = if message.len() > 50 {
-                   format!("{}...", &message[..50])
+                    format!("{}...", &message[..50])
                 } else {
-                   message.to_string()
+                    message.to_string()
                 };
-                let _ = logger.append_entry("DM_SENT", &format!("to user {} -> Message: '{}'", user_id, message_preview)).await;
-            },
+                let _ = logger
+                    .append_entry(
+                        "DM_SENT",
+                        &format!("to user {} -> Message: '{}'", user_id, message_preview),
+                    )
+                    .await;
+            }
             "search_users" => {
-                let query = execution_params.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                let query = execution_params
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 // Determine results count for simple logging
-                let count = response_data.get("users")
+                let count = response_data
+                    .get("users")
                     .and_then(|u| u.as_array())
                     .map(|a| a.len())
                     .unwrap_or(0);
-                
-                let _ = logger.append_entry("SEARCH", &format!("query='{}' -> Found {} users", query, count)).await;
-            },
+
+                let _ = logger
+                    .append_entry(
+                        "SEARCH",
+                        &format!("query='{}' -> Found {} users", query, count),
+                    )
+                    .await;
+            }
             "list_users" => {
-                let count = response_data.get("users")
+                let count = response_data
+                    .get("users")
                     .and_then(|u| u.as_array())
                     .map(|a| a.len())
                     .unwrap_or(0);
-                let _ = logger.append_entry("LIST_USERS", &format!("Listed {} users", count)).await;
-            },
+                let _ = logger
+                    .append_entry("LIST_USERS", &format!("Listed {} users", count))
+                    .await;
+            }
             _ => {}
         }
-        
+
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
@@ -788,20 +963,24 @@ impl ToolExecutor {
         tool: &AiTool,
         execution_params: &Value,
     ) -> Result<Value, AppError> {
-        let attachment_url = execution_params.get("attachment_url")
+        let attachment_url = execution_params
+            .get("attachment_url")
             .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::BadRequest("attachment_url is required".to_string()))?;
-        
-        let filename = execution_params.get("filename")
+
+        let filename = execution_params
+            .get("filename")
             .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::BadRequest("filename is required".to_string()))?;
 
         // Get context group for NATS routing
-        let context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-            .execute(&self.app_state)
-            .await?;
-        
-        let context_group = context.context_group
+        let context =
+            queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                .execute(&self.app_state)
+                .await?;
+
+        let context_group = context
+            .context_group
             .ok_or_else(|| AppError::BadRequest("No context group found".to_string()))?;
 
         // Request worker to download the image and return base64 data
@@ -814,15 +993,21 @@ impl ToolExecutor {
             "params": { "attachment_url": attachment_url }
         });
 
-        let response = self.app_state.nats_client
-            .request("integrations.teams.command".to_string(), serde_json::to_vec(&payload)?.into())
+        let response = self
+            .app_state
+            .nats_client
+            .request(
+                "integrations.teams.command".to_string(),
+                serde_json::to_vec(&payload)?.into(),
+            )
             .await
             .map_err(|e| AppError::External(format!("Failed to download attachment: {}", e)))?;
 
         let response_data: Value = serde_json::from_slice(&response.payload)?;
-        
+
         if response_data.get("success") != Some(&serde_json::json!(true)) {
-            let error_msg = response_data.get("error")
+            let error_msg = response_data
+                .get("error")
                 .and_then(|e| e.as_str())
                 .unwrap_or("Failed to download attachment");
             return Ok(serde_json::json!({
@@ -833,27 +1018,32 @@ impl ToolExecutor {
         }
 
         // Get base64 data from response
-        let base64_data = response_data.get("data")
+        let base64_data = response_data
+            .get("data")
             .and_then(|d| d.as_str())
             .ok_or_else(|| AppError::Internal("No data in download response".to_string()))?;
 
         // Decode base64 data
         use base64::{engine::general_purpose::STANDARD, Engine};
-        let bytes = STANDARD.decode(base64_data)
+        let bytes = STANDARD
+            .decode(base64_data)
             .map_err(|e| AppError::Internal(format!("Invalid base64 data: {}", e)))?;
 
         // Create filesystem instance for saving
-        let execution_id = self.app_state.sf.next_id()
+        let execution_id = self
+            .app_state
+            .sf
+            .next_id()
             .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
             .to_string();
-        
+
         let filesystem = AgentFilesystem::new(
             &self.agent.deployment_id.to_string(),
             &self.agent.id.to_string(),
             &self.context_id.to_string(),
             &execution_id,
         );
-        
+
         let saved_path = filesystem.save_upload(filename, &bytes).await?;
 
         Ok(serde_json::json!({
@@ -871,21 +1061,27 @@ impl ToolExecutor {
         &self,
         execution_params: &Value,
     ) -> Result<Value, AppError> {
-        let limit = execution_params.get("limit")
+        let limit = execution_params
+            .get("limit")
             .and_then(|v| v.as_i64())
             .unwrap_or(25) as u32;
-        
-        let offset = execution_params.get("offset")
+
+        let offset = execution_params
+            .get("offset")
             .and_then(|v| v.as_i64())
             .unwrap_or(0) as u32;
 
         // Get current context to find the context_group
-        let current_context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-            .execute(&self.app_state)
-            .await?;
+        let current_context =
+            queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                .execute(&self.app_state)
+                .await?;
 
-        let context_group = current_context.context_group
-            .ok_or_else(|| AppError::BadRequest("No context group found - this tool requires a Teams context".to_string()))?;
+        let context_group = current_context.context_group.ok_or_else(|| {
+            AppError::BadRequest(
+                "No context group found - this tool requires a Teams context".to_string(),
+            )
+        })?;
 
         // Query all Teams contexts in the same context_group
         let contexts = queries::ListExecutionContextsQuery::new(self.agent.deployment_id)
@@ -896,15 +1092,18 @@ impl ToolExecutor {
             .execute(&self.app_state)
             .await?;
 
-        let result: Vec<serde_json::Value> = contexts.iter().map(|ctx| {
-            serde_json::json!({
-                "context_id": ctx.id.to_string(),
-                "title": ctx.title,
-                "status": ctx.status.to_string(),
-                "last_activity": ctx.last_activity_at.to_rfc3339(),
-                "is_current": ctx.id == self.context_id
+        let result: Vec<serde_json::Value> = contexts
+            .iter()
+            .map(|ctx| {
+                serde_json::json!({
+                    "context_id": ctx.id.to_string(),
+                    "title": ctx.title,
+                    "status": ctx.status.to_string(),
+                    "last_activity": ctx.last_activity_at.to_rfc3339(),
+                    "is_current": ctx.id == self.context_id
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(serde_json::json!({
             "contexts": result,
@@ -920,43 +1119,62 @@ impl ToolExecutor {
         tool: &AiTool,
         execution_params: &Value,
     ) -> Result<Value, AppError> {
-        let target_context_id = execution_params.get("target_context_id")
+        let target_context_id = execution_params
+            .get("target_context_id")
             .and_then(|v| {
-                v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
             })
             .ok_or_else(|| AppError::BadRequest("target_context_id is required".to_string()))?;
-        
-        let message = execution_params.get("message")
+
+        let message = execution_params
+            .get("message")
             .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::BadRequest("message is required".to_string()))?;
-        
-        let actionable_id = execution_params.get("actionable_id")
+
+        let actionable_id = execution_params
+            .get("actionable_id")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        
-        let trigger_execution = execution_params.get("execute")
+
+        let trigger_execution = execution_params
+            .get("execute")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
-        let target_context = queries::GetExecutionContextQuery::new(target_context_id, self.agent.deployment_id)
-            .execute(&self.app_state)
-            .await
-            .map_err(|_| AppError::BadRequest(format!("Target context {} not found or not accessible", target_context_id)))?;
+        let target_context =
+            queries::GetExecutionContextQuery::new(target_context_id, self.agent.deployment_id)
+                .execute(&self.app_state)
+                .await
+                .map_err(|_| {
+                    AppError::BadRequest(format!(
+                        "Target context {} not found or not accessible",
+                        target_context_id
+                    ))
+                })?;
 
-        let conversation_id = self.app_state.sf.next_id().map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))? as i64;
+        let conversation_id = self
+            .app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
+            as i64;
         let relayed_message = format!(
             "[Cross-context message from context #{}] {}{}",
             self.context_id,
             message,
-            actionable_id.as_ref().map(|id| format!(" (actionable: {})", id)).unwrap_or_default()
+            actionable_id
+                .as_ref()
+                .map(|id| format!(" (actionable: {})", id))
+                .unwrap_or_default()
         );
-        
+
         let content = models::ConversationContent::UserMessage {
             message: relayed_message.clone(),
             sender_name: Some(format!("Cross-context relay from #{}", self.context_id)),
             images: None,
         };
-        
+
         let conversation_cmd = commands::CreateConversationCommand::new(
             conversation_id,
             target_context_id,
@@ -973,7 +1191,7 @@ impl ToolExecutor {
                 None,
                 conversation_id,
             );
-            
+
             if let Err(e) = exec_cmd.execute(&self.app_state).await {
                 tracing::error!(
                     target_context_id = target_context_id,
@@ -990,21 +1208,27 @@ impl ToolExecutor {
 
         // Clear the fulfilled actionable from the current context
         if let Some(ref fulfilled_id) = actionable_id {
-            let current_context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                .execute(&self.app_state)
-                .await?;
-            
+            let current_context =
+                queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                    .execute(&self.app_state)
+                    .await?;
+
             if let Some(mut metadata) = current_context.external_resource_metadata {
                 if let Some(actionables) = metadata.get_mut("actionables") {
                     if let Some(arr) = actionables.as_array_mut() {
-                        arr.retain(|a| a.get("id").and_then(|id| id.as_str()) != Some(fulfilled_id.as_str()));
-                        
+                        arr.retain(|a| {
+                            a.get("id").and_then(|id| id.as_str()) != Some(fulfilled_id.as_str())
+                        });
+
                         // Update the context with cleaned actionables
-                        commands::UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                            .with_external_resource_metadata(metadata)
-                            .execute(&self.app_state)
-                            .await?;
-                        
+                        commands::UpdateExecutionContextQuery::new(
+                            self.context_id,
+                            self.agent.deployment_id,
+                        )
+                        .with_external_resource_metadata(metadata)
+                        .execute(&self.app_state)
+                        .await?;
+
                         tracing::info!(
                             context_id = self.context_id,
                             actionable_id = %fulfilled_id,

@@ -63,8 +63,8 @@ impl Command for SendEmailCommand {
             .render_template(&template.template_data, &self.variables)
             .map_err(|e| AppError::BadRequest(format!("Failed to render body: {}", e)))?;
 
-        let body_text = html2text::from_read(body_html.as_bytes(), 80)
-            .unwrap_or_else(|_| body_html.clone());
+        let body_text =
+            html2text::from_read(body_html.as_bytes(), 80).unwrap_or_else(|_| body_html.clone());
 
         let from_email = format!(
             "{} <notification@{}>",
@@ -97,13 +97,17 @@ impl Command for SendEmailCommand {
                         use_tls: config.use_tls,
                     });
 
-                    let smtp_from_email = format!(
-                        "{} <{}>",
-                        display_settings.app_name, config.from_email
-                    );
+                    let smtp_from_email =
+                        format!("{} <{}>", display_settings.app_name, config.from_email);
 
                     match smtp_service
-                        .send_email(&smtp_from_email, &self.to_email, &subject, &body_html, Some(&body_text))
+                        .send_email(
+                            &smtp_from_email,
+                            &self.to_email,
+                            &subject,
+                            &body_html,
+                            Some(&body_text),
+                        )
                         .await
                     {
                         Ok(_) => {

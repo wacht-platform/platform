@@ -40,9 +40,10 @@ impl Command for ProcessDocumentCommand {
 
         let file_key = document.file_url.clone();
 
-        let storage_client = app_state.agent_storage_client.as_ref().ok_or_else(|| {
-            AppError::Internal("Agent storage client not configured".to_string())
-        })?;
+        let storage_client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
 
         let response = storage_client
             .get_object()
@@ -50,7 +51,9 @@ impl Command for ProcessDocumentCommand {
             .key(&file_key)
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to download file from storage: {}", e)))?;
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to download file from storage: {}", e))
+            })?;
 
         let file_content = response
             .body

@@ -5,23 +5,19 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use models::plan_features::PlanFeature;
-use queries::{plan_access::CheckDeploymentFeatureAccessQuery, Query};
+use queries::{Query, plan_access::CheckDeploymentFeatureAccessQuery};
 
 /// Middleware function to check feature access
 /// Use this to protect routes that require specific plan features
 pub async fn require_feature(
     feature: PlanFeature,
 ) -> impl Fn(Request, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
-       + Clone {
++ Clone {
     move |req: Request, next: Next| {
         let feature = feature;
         Box::pin(async move {
             // Extract deployment_id from request extensions
-            let deployment_id = req
-                .extensions()
-                .get::<i64>()
-                .copied()
-                .unwrap_or_default();
+            let deployment_id = req.extensions().get::<i64>().copied().unwrap_or_default();
 
             if deployment_id == 0 {
                 return (
@@ -35,11 +31,8 @@ pub async fn require_feature(
             let state = match req.extensions().get::<common::state::AppState>() {
                 Some(s) => s.clone(),
                 None => {
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "App state not found",
-                    )
-                        .into_response()
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "App state not found")
+                        .into_response();
                 }
             };
 

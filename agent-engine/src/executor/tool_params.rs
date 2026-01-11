@@ -23,7 +23,9 @@ impl AgentExecutor {
 
         let result = match &action.action_type {
             TaskType::ToolCall => {
-                let tool_call = self.parse_tool_call(&action.details, &action.purpose, action.context_messages).await?;
+                let tool_call = self
+                    .parse_tool_call(&action.details, &action.purpose, action.context_messages)
+                    .await?;
                 info!(
                     tool_name = %tool_call.tool_name,
                     parameters = %tool_call.parameters,
@@ -41,7 +43,13 @@ impl AgentExecutor {
 
                 let title = &self.context_title;
                 self.tool_executor
-                    .execute_tool_immediately(tool, tool_call.parameters, &self.filesystem, &self.shell, title)
+                    .execute_tool_immediately(
+                        tool,
+                        tool_call.parameters,
+                        &self.filesystem,
+                        &self.shell,
+                        title,
+                    )
                     .await
             }
             TaskType::WorkflowCall => {
@@ -89,22 +97,29 @@ impl AgentExecutor {
         };
 
         if let Some(ref actionable_id) = action.clear_actionable_id {
-            if let Ok(current_context) = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                .execute(&self.app_state)
-                .await
+            if let Ok(current_context) =
+                queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                    .execute(&self.app_state)
+                    .await
             {
                 if let Some(mut metadata) = current_context.external_resource_metadata {
                     if let Some(actionables) = metadata.get_mut("actionables") {
                         if let Some(arr) = actionables.as_array_mut() {
                             let original_len = arr.len();
-                            arr.retain(|a| a.get("id").and_then(|id| id.as_str()) != Some(actionable_id.as_str()));
-                            
+                            arr.retain(|a| {
+                                a.get("id").and_then(|id| id.as_str())
+                                    != Some(actionable_id.as_str())
+                            });
+
                             if arr.len() < original_len {
-                                let _ = commands::UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                                    .with_external_resource_metadata(metadata)
-                                    .execute(&self.app_state)
-                                    .await;
-                                
+                                let _ = commands::UpdateExecutionContextQuery::new(
+                                    self.context_id,
+                                    self.agent.deployment_id,
+                                )
+                                .with_external_resource_metadata(metadata)
+                                .execute(&self.app_state)
+                                .await;
+
                                 tracing::info!(
                                     context_id = self.context_id,
                                     actionable_id = %actionable_id,
@@ -130,9 +145,12 @@ impl AgentExecutor {
             field_def.insert("type".to_string(), json!(field_type_lower));
 
             if let Some(ref items_type) = field.items_type {
-                field_def.insert("items".to_string(), json!({
-                    "type": items_type.to_lowercase()
-                }));
+                field_def.insert(
+                    "items".to_string(),
+                    json!({
+                        "type": items_type.to_lowercase()
+                    }),
+                );
             }
 
             if let Some(desc) = &field.description {
@@ -188,13 +206,20 @@ impl AgentExecutor {
         Ok(json!(result))
     }
 
-    async fn parse_tool_call(&self, details: &Value, action_purpose: &str, context_messages: u32) -> Result<ToolCall, AppError> {
+    async fn parse_tool_call(
+        &self,
+        details: &Value,
+        action_purpose: &str,
+        context_messages: u32,
+    ) -> Result<ToolCall, AppError> {
         let tool_name = details["tool_name"]
             .as_str()
             .ok_or_else(|| AppError::BadRequest("Tool name not specified".to_string()))?;
 
         let tool = self.find_tool(tool_name)?;
-        let params = self.get_tool_parameters(tool, details, action_purpose, context_messages).await?;
+        let params = self
+            .get_tool_parameters(tool, details, action_purpose, context_messages)
+            .await?;
 
         Ok(ToolCall {
             tool_name: tool_name.to_string(),
@@ -210,9 +235,17 @@ impl AgentExecutor {
             .ok_or_else(|| AppError::BadRequest(format!("Tool '{tool_name}' not found")))
     }
 
-    async fn get_tool_parameters(&self, tool: &AiTool, details: &Value, action_purpose: &str, context_messages: u32) -> Result<Value, AppError> {
+    async fn get_tool_parameters(
+        &self,
+        tool: &AiTool,
+        details: &Value,
+        action_purpose: &str,
+        context_messages: u32,
+    ) -> Result<Value, AppError> {
         if self.tool_needs_llm_params(tool) {
-            let generated_params = self.generate_tool_parameters(tool, action_purpose, context_messages).await?;
+            let generated_params = self
+                .generate_tool_parameters(tool, action_purpose, context_messages)
+                .await?;
             return match &tool.configuration {
                 AiToolConfiguration::Api(api_config) => {
                     self.organize_api_parameters(generated_params, api_config)
@@ -232,12 +265,14 @@ impl AgentExecutor {
             AiToolConfiguration::PlatformFunction(func_config) => {
                 func_config.input_schema.is_some()
             }
-            AiToolConfiguration::Internal(internal_config) => {
-                internal_config.input_schema.as_ref().is_some_and(|s| !s.is_empty())
-            }
-            AiToolConfiguration::UseExternalService(external_config) => {
-                external_config.input_schema.as_ref().is_some_and(|s| !s.is_empty())
-            }
+            AiToolConfiguration::Internal(internal_config) => internal_config
+                .input_schema
+                .as_ref()
+                .is_some_and(|s| !s.is_empty()),
+            AiToolConfiguration::UseExternalService(external_config) => external_config
+                .input_schema
+                .as_ref()
+                .is_some_and(|s| !s.is_empty()),
             _ => false,
         }
     }
@@ -258,7 +293,12 @@ impl AgentExecutor {
         }
     }
 
-    async fn generate_tool_parameters(&self, tool: &AiTool, action_purpose: &str, context_messages: u32) -> Result<Value, AppError> {
+    async fn generate_tool_parameters(
+        &self,
+        tool: &AiTool,
+        action_purpose: &str,
+        context_messages: u32,
+    ) -> Result<Value, AppError> {
         let parameter_schema = self.build_parameter_schema(tool)?;
 
         if parameter_schema == json!({}) {
@@ -404,12 +444,18 @@ impl AgentExecutor {
     ) -> Result<ParameterGenerationResponse, AppError> {
         // Get FILTERED conversation history based on context_messages
         let full_history = self.get_conversation_history_for_llm().await;
-        let limited_history: Vec<Value> = if context_messages > 0 && (context_messages as usize) < full_history.len() {
-            full_history.into_iter().rev().take(context_messages as usize).rev().collect()
-        } else {
-            full_history
-        };
-        
+        let limited_history: Vec<Value> =
+            if context_messages > 0 && (context_messages as usize) < full_history.len() {
+                full_history
+                    .into_iter()
+                    .rev()
+                    .take(context_messages as usize)
+                    .rev()
+                    .collect()
+            } else {
+                full_history
+            };
+
         let mut context_json = json!({
             "conversation_history": limited_history,
             "tool_name": tool.name,
@@ -440,8 +486,8 @@ impl AgentExecutor {
                     ))
                 })?;
 
-
-        let (response, _) = self.create_weak_llm()?
+        let (response, _) = self
+            .create_weak_llm()?
             .generate_structured_content::<ParameterGenerationResponse>(request_body)
             .await?;
 

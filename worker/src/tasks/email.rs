@@ -2,10 +2,7 @@ use anyhow::Result;
 use chrono::{self, Datelike, Utc};
 use commands::{Command, email::SendEmailCommand};
 use common::state::AppState;
-use models::{
-    DeploymentInvitation, DeploymentWithSettings, SignIn,
-    UserDetails,
-};
+use models::{DeploymentInvitation, DeploymentWithSettings, SignIn, UserDetails};
 use queries::{
     Query, deployment::GetDeploymentWithSettingsQuery, invitation::GetDeploymentInvitationQuery,
     signin::GetSignInQuery, user::GetUserDetailsQuery, workspace::GetWorkspaceNameQuery,
@@ -117,8 +114,17 @@ pub async fn send_verification_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
-    let variables = create_verification_variables(&deployment_settings, verification_code, ip_address, user_agent, app_logo_url);
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
+    let variables = create_verification_variables(
+        &deployment_settings,
+        verification_code,
+        ip_address,
+        user_agent,
+        app_logo_url,
+    );
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -156,9 +162,18 @@ pub async fn send_password_reset_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
-    let variables =
-        create_password_reset_variables(&user_details, &deployment_settings, reset_code, ip_address, user_agent, app_logo_url);
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
+    let variables = create_password_reset_variables(
+        &user_details,
+        &deployment_settings,
+        reset_code,
+        ip_address,
+        user_agent,
+        app_logo_url,
+    );
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -194,8 +209,16 @@ pub async fn send_magic_link_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
-    let variables = create_magic_link_variables(&user_details, &deployment_settings, magic_link, app_logo_url);
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
+    let variables = create_magic_link_variables(
+        &user_details,
+        &deployment_settings,
+        magic_link,
+        app_logo_url,
+    );
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -233,7 +256,10 @@ pub async fn send_signin_notification_email_impl(
 
     let signin_details = fetch_signin_details(&app_state, signin_id).await.ok();
 
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
     let variables = create_signin_notification_variables(
         &user_details,
         &deployment_settings,
@@ -276,9 +302,17 @@ pub async fn send_email_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
-    let variables =
-        create_email_change_variables(&user_details, &deployment_settings, old_email, new_email, app_logo_url);
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
+    let variables = create_email_change_variables(
+        &user_details,
+        &deployment_settings,
+        old_email,
+        new_email,
+        app_logo_url,
+    );
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -313,8 +347,12 @@ pub async fn send_password_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
-    let variables = create_password_change_variables(&user_details, &deployment_settings, app_logo_url);
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
+    let variables =
+        create_password_change_variables(&user_details, &deployment_settings, app_logo_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -352,8 +390,12 @@ pub async fn send_password_remove_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
-    let variables = create_password_remove_variables(&user_details, &deployment_settings, app_logo_url);
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
+    let variables =
+        create_password_remove_variables(&user_details, &deployment_settings, app_logo_url);
 
     let command = SendEmailCommand::new(
         deployment_id as i64,
@@ -388,7 +430,10 @@ pub async fn send_waitlist_signup_email_impl(
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
     let app_name = get_app_name_with_fallback(&deployment_settings);
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
 
     let variables = serde_json::json!({
         "app": {
@@ -429,7 +474,10 @@ pub async fn send_organization_membership_invite_impl(
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
     let app_name = get_app_name_with_fallback(&deployment_settings);
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
 
     let first_name = inviter_name
         .split_whitespace()
@@ -501,7 +549,10 @@ pub async fn send_deployment_invite_impl(
         .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
 
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
     let mut variables = create_workspace_invite_variables(
         &inviter_details,
         &deployment_settings,
@@ -515,9 +566,12 @@ pub async fn send_deployment_invite_impl(
         "https://{}/sign-up?invite_token={}",
         frontend_host, invitation.token
     );
-    
+
     if let serde_json::Value::Object(ref mut map) = variables {
-        map.insert("action_url".to_string(), serde_json::Value::String(action_url));
+        map.insert(
+            "action_url".to_string(),
+            serde_json::Value::String(action_url),
+        );
     }
 
     let command = SendEmailCommand::new(
@@ -552,7 +606,10 @@ pub async fn send_waitlist_approval_impl(
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
 
-    let app_logo_url = deployment_settings.ui_settings.as_ref().map(|ui| ui.logo_image_url.clone());
+    let app_logo_url = deployment_settings
+        .ui_settings
+        .as_ref()
+        .map(|ui| ui.logo_image_url.clone());
     let mut variables =
         create_waitlist_invite_variables(&deployment_settings, Some(&invitation), app_logo_url);
 
@@ -561,9 +618,12 @@ pub async fn send_waitlist_approval_impl(
         "https://{}/sign-up?invite_token={}",
         frontend_host, invitation.token
     );
-    
+
     if let serde_json::Value::Object(ref mut map) = variables {
-        map.insert("action_url".to_string(), serde_json::Value::String(action_url));
+        map.insert(
+            "action_url".to_string(),
+            serde_json::Value::String(action_url),
+        );
     }
 
     let command = SendEmailCommand::new(
@@ -867,8 +927,6 @@ fn get_app_name_with_fallback(deployment: &DeploymentWithSettings) -> String {
         .unwrap_or_else(|| "".to_string())
 }
 
-
-
 fn create_waitlist_invite_variables(
     deployment: &DeploymentWithSettings,
     invitation: Option<&DeploymentInvitation>,
@@ -877,7 +935,10 @@ fn create_waitlist_invite_variables(
     let app_name = get_app_name_with_fallback(deployment);
 
     let action_url = if let Some(invitation) = invitation {
-        format!("https://{}/sign-up?invite_token={}", deployment.frontend_host, invitation.token)
+        format!(
+            "https://{}/sign-up?invite_token={}",
+            deployment.frontend_host, invitation.token
+        )
     } else {
         "".to_string()
     };

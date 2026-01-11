@@ -103,17 +103,27 @@ pub async fn get_segment_data(
         deployment_id,
         target_type: payload.target_type,
         segment_id: payload.filters.as_ref().and_then(|f| f.segment_id),
-        user_filter: payload.filters.as_ref().and_then(|f| f.user.as_ref().map(|u| queries::segments::UserFilter {
-            name: u.name.clone(),
-            email: u.email.clone(),
-            phone: u.phone.clone(),
-        })),
-        organization_filter: payload.filters.as_ref().and_then(|f| f.organization.as_ref().map(|o| queries::segments::OrganizationFilter {
-            name: o.name.clone(),
-        })),
-        workspace_filter: payload.filters.as_ref().and_then(|f| f.workspace.as_ref().map(|w| queries::segments::WorkspaceFilter {
-            name: w.name.clone(),
-        })),
+        user_filter: payload.filters.as_ref().and_then(|f| {
+            f.user.as_ref().map(|u| queries::segments::UserFilter {
+                name: u.name.clone(),
+                email: u.email.clone(),
+                phone: u.phone.clone(),
+            })
+        }),
+        organization_filter: payload.filters.as_ref().and_then(|f| {
+            f.organization
+                .as_ref()
+                .map(|o| queries::segments::OrganizationFilter {
+                    name: o.name.clone(),
+                })
+        }),
+        workspace_filter: payload.filters.as_ref().and_then(|f| {
+            f.workspace
+                .as_ref()
+                .map(|w| queries::segments::WorkspaceFilter {
+                    name: w.name.clone(),
+                })
+        }),
     };
 
     let entities = query.execute(&state).await?;
@@ -245,4 +255,3 @@ pub async fn remove_segment(
 
     Ok(result.into())
 }
-

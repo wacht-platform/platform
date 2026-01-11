@@ -61,7 +61,7 @@ impl Command for UpdateSegmentCommand {
         }
 
         let mut query_builder = sqlx::QueryBuilder::new("UPDATE segments SET updated_at = NOW()");
-        
+
         if let Some(name) = self.name {
             query_builder.push(", name = ");
             query_builder.push_bind(name);
@@ -276,14 +276,12 @@ impl Command for RemoveSegmentCommand {
                 .map_err(AppError::Database)?;
             }
             "user" => {
-                sqlx::query(
-                    "DELETE FROM user_segments WHERE user_id = $1 AND segment_id = $2",
-                )
-                .bind(self.entity_id)
-                .bind(self.segment_id)
-                .execute(&app_state.db_pool)
-                .await
-                .map_err(AppError::Database)?;
+                sqlx::query("DELETE FROM user_segments WHERE user_id = $1 AND segment_id = $2")
+                    .bind(self.entity_id)
+                    .bind(self.segment_id)
+                    .execute(&app_state.db_pool)
+                    .await
+                    .map_err(AppError::Database)?;
             }
             _ => return Err(AppError::Internal("Invalid segment type".into())),
         }

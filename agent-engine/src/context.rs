@@ -4,7 +4,9 @@ use chrono::{Duration, Utc};
 use commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use common::error::AppError;
 use common::state::AppState;
-use dto::json::agent_executor::{ObjectiveDefinition, ContextHints, RecommendedFile, SearchConclusion};
+use dto::json::agent_executor::{
+    ContextHints, ObjectiveDefinition, RecommendedFile, SearchConclusion,
+};
 use dto::json::context_orchestrator::{
     ContextSearchDerivation, LLMFilters, LLMSearchMode, SearchScope,
 };
@@ -554,13 +556,15 @@ impl ContextOrchestrator {
         search_pattern: dto::json::agent_executor::SearchPattern,
         expected_depth: Option<dto::json::agent_executor::SearchDepth>,
     ) -> Result<ContextHints, AppError> {
-        let results = self.gather_context(
-            conversations,
-            memories,
-            current_objective,
-            search_pattern,
-            expected_depth,
-        ).await?;
+        let results = self
+            .gather_context(
+                conversations,
+                memories,
+                current_objective,
+                search_pattern,
+                expected_depth,
+            )
+            .await?;
 
         let mut recommended_files: Vec<RecommendedFile> = Vec::new();
         let mut seen_documents: HashSet<String> = HashSet::new();
@@ -581,15 +585,19 @@ impl ContextOrchestrator {
                 }
                 seen_documents.insert(doc_key);
 
-                let kb_name = self.agent.knowledge_bases
+                let kb_name = self
+                    .agent
+                    .knowledge_bases
                     .iter()
                     .find(|kb| kb.id == *kb_id)
                     .map(|kb| kb.name.clone())
                     .unwrap_or_else(|| format!("kb_{}", kb_id));
-                
+
                 kb_names.insert(kb_name.clone());
 
-                let doc_title = result.metadata.get("document_title")
+                let doc_title = result
+                    .metadata
+                    .get("document_title")
                     .and_then(|v| v.as_str())
                     .unwrap_or("document")
                     .to_string();
@@ -608,14 +616,21 @@ impl ContextOrchestrator {
                     path,
                     document_title: doc_title,
                     relevance_score: result.relevance_score as f32,
-                    reason: format!("Matched search query with score {:.2}", result.relevance_score),
+                    reason: format!(
+                        "Matched search query with score {:.2}",
+                        result.relevance_score
+                    ),
                     sample_text: sample,
                 });
             }
         }
 
         // Sort by relevance and limit to top 10
-        recommended_files.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap_or(std::cmp::Ordering::Equal));
+        recommended_files.sort_by(|a, b| {
+            b.relevance_score
+                .partial_cmp(&a.relevance_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         recommended_files.truncate(10);
 
         // Determine search conclusion

@@ -26,15 +26,15 @@ impl AgentTemplates {
     pub const SUMMARY: &'static str = "summary_prompt";
     pub const USER_INPUT_REQUEST: &'static str = "user_input_request_prompt";
     pub const EXECUTION_SUMMARY: &'static str = "execution_summary_prompt";
-    
+
     // Tool & context templates
     pub const PARAMETER_GENERATION: &'static str = "parameter_generation_prompt";
     pub const CONTEXT_SEARCH_DERIVATION: &'static str = "context_search_derivation_prompt";
-    
+
     // Workflow node templates
     pub const SWITCH_CASE_EVALUATION: &'static str = "switch_case_evaluation_prompt";
     pub const TRIGGER_EVALUATION: &'static str = "trigger_evaluation_prompt";
-    
+
     // Memory templates
     pub const MEMORY_CONSOLIDATION: &'static str = "memory_consolidation_prompt";
 }

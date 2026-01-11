@@ -3,7 +3,9 @@
 use super::core::AgentExecutor;
 use crate::template::{render_template_with_prompt, AgentTemplates};
 
-use commands::{Command, CreateConversationCommand, CreateMemoryCommand, GenerateEmbeddingsCommand};
+use commands::{
+    Command, CreateConversationCommand, CreateMemoryCommand, GenerateEmbeddingsCommand,
+};
 use common::error::AppError;
 use dto::json::agent_memory::MemoryCategory;
 use models::{ConversationContent, ConversationMessageType};
@@ -69,7 +71,11 @@ impl AgentExecutor {
         }
 
         if execution_start < current_execution_start && !current_user_request.is_empty() {
-            executions.push((execution_start, current_execution_start, current_user_request));
+            executions.push((
+                execution_start,
+                current_execution_start,
+                current_user_request,
+            ));
         }
 
         let mut compressed_tokens = 0;
@@ -89,7 +95,9 @@ impl AgentExecutor {
 
             let execution_tokens: usize = self.conversations[*start_idx..*end_idx]
                 .iter()
-                .filter(|conv| !matches!(conv.message_type, ConversationMessageType::ExecutionSummary))
+                .filter(|conv| {
+                    !matches!(conv.message_type, ConversationMessageType::ExecutionSummary)
+                })
                 .map(|conv| conv.token_count as usize)
                 .sum();
 
@@ -112,12 +120,19 @@ impl AgentExecutor {
                 continue;
             }
 
-            match self.generate_execution_summary_for_messages(user_request.clone(), execution_messages).await {
+            match self
+                .generate_execution_summary_for_messages(user_request.clone(), execution_messages)
+                .await
+            {
                 Ok(summary_tokens) => {
                     compressed_tokens += execution_tokens.saturating_sub(summary_tokens);
                 }
                 Err(e) => {
-                    tracing::error!("Failed to generate summary for execution {}: {}", exec_idx, e);
+                    tracing::error!(
+                        "Failed to generate summary for execution {}: {}",
+                        exec_idx,
+                        e
+                    );
                 }
             }
         }
@@ -132,7 +147,8 @@ impl AgentExecutor {
     ) -> Result<usize, AppError> {
         use tiktoken_rs::cl100k_base;
 
-        let existing_memories: Vec<String> = self.memories.iter().map(|m| m.content.clone()).collect();
+        let existing_memories: Vec<String> =
+            self.memories.iter().map(|m| m.content.clone()).collect();
 
         let request_body = render_template_with_prompt(
             AgentTemplates::EXECUTION_SUMMARY,
@@ -142,7 +158,9 @@ impl AgentExecutor {
                 "existing_memories": existing_memories,
             }),
         )
-        .map_err(|e| AppError::Internal(format!("Failed to render execution summary template: {e}")))?;
+        .map_err(|e| {
+            AppError::Internal(format!("Failed to render execution summary template: {e}"))
+        })?;
 
         let (summary_response, _) = self
             .create_weak_llm()?
@@ -227,7 +245,10 @@ impl AgentExecutor {
                 .and_then(|c| c.as_str())
                 .and_then(MemoryCategory::from_str)
                 .unwrap_or(MemoryCategory::Working);
-            let importance = memory.get("importance").and_then(|i| i.as_f64()).unwrap_or(0.5);
+            let importance = memory
+                .get("importance")
+                .and_then(|i| i.as_f64())
+                .unwrap_or(0.5);
 
             if let Ok(id) = self.app_state.sf.next_id() {
                 let create_cmd = CreateMemoryCommand {

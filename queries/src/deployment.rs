@@ -412,11 +412,15 @@ impl Query for GetDeploymentWithSettingsQuery {
                     ip_allowlist_per_workspace_enabled: row
                         .b2b_settings_ip_allowlist_per_workspace_enabled
                         .unwrap(),
-                    enforce_mfa_per_org_enabled: row.b2b_settings_enforce_mfa_per_org_enabled.unwrap(),
+                    enforce_mfa_per_org_enabled: row
+                        .b2b_settings_enforce_mfa_per_org_enabled
+                        .unwrap(),
                     enforce_mfa_per_workspace_enabled: row
                         .b2b_settings_enforce_mfa_per_workspace_enabled
                         .unwrap(),
-                    enterprise_sso_enabled: row.b2b_settings_enterprise_sso_enabled.unwrap_or(false),
+                    enterprise_sso_enabled: row
+                        .b2b_settings_enterprise_sso_enabled
+                        .unwrap_or(false),
                 };
                 Some(DeploymentB2bSettingsWithRoles {
                     settings: b2b_settings,

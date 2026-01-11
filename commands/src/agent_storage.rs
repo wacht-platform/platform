@@ -29,9 +29,10 @@ impl Command for WriteToAgentStorageCommand {
     type Output = String;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let client = app_state.agent_storage_client.as_ref().ok_or_else(|| {
-            AppError::Internal("Agent storage client not configured".to_string())
-        })?;
+        let client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
 
         let mut request = client
             .put_object()
@@ -66,9 +67,10 @@ impl Command for DeleteFromAgentStorageCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let client = app_state.agent_storage_client.as_ref().ok_or_else(|| {
-            AppError::Internal("Agent storage client not configured".to_string())
-        })?;
+        let client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
 
         client
             .delete_object()
@@ -96,9 +98,10 @@ impl Command for DeletePrefixFromAgentStorageCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let client = app_state.agent_storage_client.as_ref().ok_or_else(|| {
-            AppError::Internal("Agent storage client not configured".to_string())
-        })?;
+        let client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
 
         let list_result = client
             .list_objects_v2()

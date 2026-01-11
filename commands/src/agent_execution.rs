@@ -31,7 +31,7 @@ impl Command for UploadImagesToS3Command {
     type Output = Option<Vec<ImageData>>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        use base64::{engine::general_purpose::STANDARD, Engine};
+        use base64::{Engine, engine::general_purpose::STANDARD};
 
         let Some(imgs) = self.images else {
             return Ok(None);
@@ -41,9 +41,9 @@ impl Command for UploadImagesToS3Command {
 
         for img in imgs {
             // Decode base64 image data
-            let bytes = STANDARD.decode(&img.data).map_err(|e| {
-                AppError::BadRequest(format!("Invalid base64 image data: {}", e))
-            })?;
+            let bytes = STANDARD
+                .decode(&img.data)
+                .map_err(|e| AppError::BadRequest(format!("Invalid base64 image data: {}", e)))?;
 
             // Get file extension from mime type
             let file_extension = img.mime_type.split('/').next_back().unwrap_or("png");
@@ -100,7 +100,9 @@ impl PublishAgentExecutionCommand {
                 context_id: context_id.to_string(),
                 agent_name,
                 agent_id: agent_id.map(|id| id.to_string()),
-                execution_type: AgentExecutionType::NewMessage { conversation_id: conversation_id.to_string() },
+                execution_type: AgentExecutionType::NewMessage {
+                    conversation_id: conversation_id.to_string(),
+                },
             },
         }
     }
@@ -118,7 +120,9 @@ impl PublishAgentExecutionCommand {
                 context_id: context_id.to_string(),
                 agent_name,
                 agent_id: agent_id.map(|id| id.to_string()),
-                execution_type: AgentExecutionType::UserInputResponse { conversation_id: conversation_id.to_string() },
+                execution_type: AgentExecutionType::UserInputResponse {
+                    conversation_id: conversation_id.to_string(),
+                },
             },
         }
     }
@@ -137,7 +141,10 @@ impl PublishAgentExecutionCommand {
                 context_id: context_id.to_string(),
                 agent_name,
                 agent_id: agent_id.map(|id| id.to_string()),
-                execution_type: AgentExecutionType::PlatformFunctionResult { execution_id, result },
+                execution_type: AgentExecutionType::PlatformFunctionResult {
+                    execution_id,
+                    result,
+                },
             },
         }
     }
@@ -155,9 +162,8 @@ impl Command for PublishAgentExecutionCommand {
             })?,
         };
 
-        let payload = serde_json::to_vec(&task).map_err(|e| {
-            AppError::Internal(format!("Failed to serialize task message: {}", e))
-        })?;
+        let payload = serde_json::to_vec(&task)
+            .map_err(|e| AppError::Internal(format!("Failed to serialize task message: {}", e)))?;
 
         app_state
             .nats_jetstream
@@ -165,7 +171,10 @@ impl Command for PublishAgentExecutionCommand {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;
 
-        let agent_identifier = self.request.agent_id.map(|id| id.to_string())
+        let agent_identifier = self
+            .request
+            .agent_id
+            .map(|id| id.to_string())
             .or(self.request.agent_name.clone())
             .unwrap_or_else(|| "unknown".to_string());
 

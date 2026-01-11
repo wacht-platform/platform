@@ -59,11 +59,11 @@ pub enum SearchDepth {
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningOutputType {
-    Analysis,       // Deep analysis of a problem
-    Decision,       // Make a complex decision with tradeoffs
-    Plan,           // Create a detailed plan
-    Synthesis,      // Synthesize multiple sources of information
-    Debugging,      // Debug complex issues
+    Analysis,  // Deep analysis of a problem
+    Decision,  // Make a complex decision with tradeoffs
+    Plan,      // Create a detailed plan
+    Synthesis, // Synthesize multiple sources of information
+    Debugging, // Debug complex issues
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

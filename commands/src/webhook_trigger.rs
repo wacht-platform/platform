@@ -160,7 +160,7 @@ impl Command for TriggerWebhookEventCommand {
                 &endpoint.signing_secret,
                 &webhook_id,
                 webhook_timestamp,
-                &self.payload
+                &self.payload,
             );
 
             // Queue for delivery
@@ -423,7 +423,7 @@ impl Command for ReplayWebhookDeliveryCommand {
                 &endpoint.signing_secret,
                 &webhook_id,
                 webhook_timestamp,
-                &payload
+                &payload,
             ));
             let payload_size_bytes =
                 serde_json::to_string(&payload).unwrap_or_default().len() as i32;

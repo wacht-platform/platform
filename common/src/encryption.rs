@@ -1,9 +1,9 @@
+use crate::error::AppError;
 use aes_gcm::{
     Aes256Gcm, Key, Nonce,
     aead::{Aead, KeyInit},
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
-use crate::error::AppError;
 
 const NONCE_SIZE: usize = 12;
 

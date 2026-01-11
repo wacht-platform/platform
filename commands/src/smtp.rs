@@ -105,7 +105,10 @@ impl Command for UpdateDeploymentSmtpConfigCommand {
             serde_json::to_value(&config).map_err(|e| AppError::Serialization(e.to_string()))?;
 
         if let Some(obj) = config_json.as_object_mut() {
-            obj.insert("password".to_string(), serde_json::Value::String(encrypted_password.clone()));
+            obj.insert(
+                "password".to_string(),
+                serde_json::Value::String(encrypted_password.clone()),
+            );
         }
 
         sqlx::query!(

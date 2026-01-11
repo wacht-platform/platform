@@ -44,7 +44,8 @@ impl Query for GetApiKeyAppsQuery {
                     name: rec.name,
                     description: rec.description,
                     is_active: rec.is_active.unwrap_or(true),
-                    rate_limits: rec.rate_limits
+                    rate_limits: rec
+                        .rate_limits
                         .and_then(|v| serde_json::from_value(v).ok())
                         .unwrap_or_default(),
                     created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
@@ -70,7 +71,8 @@ impl Query for GetApiKeyAppsQuery {
                     name: rec.name,
                     description: rec.description,
                     is_active: rec.is_active.unwrap_or(true),
-                    rate_limits: rec.rate_limits
+                    rate_limits: rec
+                        .rate_limits
                         .and_then(|v| serde_json::from_value(v).ok())
                         .unwrap_or_default(),
                     created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
@@ -110,7 +112,8 @@ impl Query for GetApiKeyAppByIdQuery {
             name: rec.name,
             description: rec.description,
             is_active: rec.is_active.unwrap_or(true),
-            rate_limits: rec.rate_limits
+            rate_limits: rec
+                .rate_limits
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_default(),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
@@ -155,7 +158,8 @@ impl Query for GetApiKeyAppByNameQuery {
             name: rec.name,
             description: rec.description,
             is_active: rec.is_active.unwrap_or(true),
-            rate_limits: rec.rate_limits
+            rate_limits: rec
+                .rate_limits
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_default(),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),

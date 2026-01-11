@@ -1,12 +1,12 @@
 use super::models::{WebsocketMessage, WebsocketMessageType};
 use super::session::SessionState;
 use crate::middleware::host_extractor::ExtractedHost;
-use commands::agent_execution::{UploadImagesToS3Command, PublishAgentExecutionCommand};
 use async_nats::jetstream;
 use async_nats::jetstream::stream;
 use axum::Extension;
 use axum::extract::{Query as QueryParams, State};
 use axum::response::IntoResponse;
+use commands::agent_execution::{PublishAgentExecutionCommand, UploadImagesToS3Command};
 use common::state::AppState;
 use common::utils::jwt::verify_agent_context_token;
 use dto::json::{ExecutionStatusUpdate, SessionConnectedMessage, WebSocketError};
@@ -326,12 +326,9 @@ async fn handle_execution_message(
     };
 
     if let WebsocketMessageType::SessionConnect(context_id, agent_name) = message.message_type {
-        match GetExecutionContextQuery::new(
-            context_id.parse().unwrap(),
-            deployment_id,
-        )
-        .execute(&app_state)
-        .await
+        match GetExecutionContextQuery::new(context_id.parse().unwrap(), deployment_id)
+            .execute(&app_state)
+            .await
         {
             Ok(context) => {
                 if let Some(token_audience) = &session_state.lock().await.audience {
@@ -489,16 +486,17 @@ async fn handle_execution_message(
             use commands::{Command, CreateConversationCommand};
             use models::{ConversationContent, ConversationMessageType};
 
-            let model_images = match UploadImagesToS3Command::new(deployment_id, context_id, user_images)
-                .execute(&app_state)
-                .await
-            {
-                Ok(images) => images,
-                Err(e) => {
-                    tracing::error!("Failed to upload images: {}", e);
-                    None
-                }
-            };
+            let model_images =
+                match UploadImagesToS3Command::new(deployment_id, context_id, user_images)
+                    .execute(&app_state)
+                    .await
+                {
+                    Ok(images) => images,
+                    Err(e) => {
+                        tracing::error!("Failed to upload images: {}", e);
+                        None
+                    }
+                };
 
             // 2. Persist conversation to DB
             let conversation_id = app_state.sf.next_id().unwrap_or(0) as i64;
@@ -554,7 +552,10 @@ async fn handle_execution_message(
             }
 
             // Status updates will come via NATS subscription (already set up in handle_client)
-            tracing::info!("Published agent execution request for context {}", context_id);
+            tracing::info!(
+                "Published agent execution request for context {}",
+                context_id
+            );
         }
         WebsocketMessageType::PlatformFunctionResult(execution_id, result) => {
             tracing::info!(
@@ -584,11 +585,13 @@ async fn handle_execution_message(
                 // If the context was in WaitingForInput state, publish resume request to NATS
                 if matches!(context.status, ExecutionContextStatus::WaitingForInput) {
                     if context.execution_state.is_some() {
-                        tracing::info!("Context was waiting for input, publishing resume request to NATS");
+                        tracing::info!(
+                            "Context was waiting for input, publishing resume request to NATS"
+                        );
 
                         // Publish platform function result to NATS (worker will handle resume)
                         use commands::Command;
-                        
+
                         if let Err(e) = PublishAgentExecutionCommand::platform_function_result(
                             deployment_id,
                             context_id,
@@ -602,7 +605,10 @@ async fn handle_execution_message(
                         {
                             tracing::error!("Failed to publish platform function result: {}", e);
                         } else {
-                            tracing::info!("Published platform function result for execution_id: {}", execution_id);
+                            tracing::info!(
+                                "Published platform function result for execution_id: {}",
+                                execution_id
+                            );
                         }
                     } else {
                         tracing::warn!("No execution state found in context");

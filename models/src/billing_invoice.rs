@@ -53,7 +53,10 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for InvoiceStatus {
 }
 
 impl<'q> sqlx::Encode<'q, sqlx::Postgres> for InvoiceStatus {
-    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn std::error::Error + Send + Sync>> {
         <String as sqlx::Encode<sqlx::Postgres>>::encode(self.to_string(), buf)
     }
 }

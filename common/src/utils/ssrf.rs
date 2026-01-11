@@ -57,17 +57,20 @@ fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
 /// Validate webhook URL to prevent SSRF attacks
 pub fn validate_webhook_url(url: &str) -> Result<(), String> {
     // Parse URL
-    let parsed_url = Url::parse(url)
-        .map_err(|_| "Invalid URL format".to_string())?;
+    let parsed_url = Url::parse(url).map_err(|_| "Invalid URL format".to_string())?;
 
     // Check scheme (only allow http/https)
     let scheme = parsed_url.scheme();
     if scheme != "http" && scheme != "https" {
-        return Err(format!("Invalid URL scheme: {}. Only http and https are allowed", scheme));
+        return Err(format!(
+            "Invalid URL scheme: {}. Only http and https are allowed",
+            scheme
+        ));
     }
 
     // Get host
-    let host = parsed_url.host_str()
+    let host = parsed_url
+        .host_str()
         .ok_or_else(|| "URL must have a host".to_string())?;
 
     // Don't allow URLs with user info (http://user:pass@host)
@@ -76,11 +79,12 @@ pub fn validate_webhook_url(url: &str) -> Result<(), String> {
     }
 
     // Check for localhost variations
-    if host == "localhost" ||
-       host.ends_with(".localhost") ||
-       host == "0.0.0.0" ||
-       host == "[::]" ||
-       host == "::1" {
+    if host == "localhost"
+        || host.ends_with(".localhost")
+        || host == "0.0.0.0"
+        || host == "[::]"
+        || host == "::1"
+    {
         return Err(format!("Localhost URLs are not allowed: {}", host));
     }
 
@@ -89,7 +93,10 @@ pub fn validate_webhook_url(url: &str) -> Result<(), String> {
     // at request time (not just at endpoint creation) to prevent DNS rebinding attacks
     if let Ok(ip) = host.parse::<IpAddr>() {
         if is_private_or_reserved_ip(ip) {
-            return Err(format!("Private or reserved IP addresses are not allowed: {}", ip));
+            return Err(format!(
+                "Private or reserved IP addresses are not allowed: {}",
+                ip
+            ));
         }
     }
 
@@ -120,7 +127,9 @@ mod tests {
         assert!(is_private_or_reserved_ip("172.16.0.1".parse().unwrap()));
         assert!(is_private_or_reserved_ip("192.168.1.1".parse().unwrap()));
         assert!(is_private_or_reserved_ip("127.0.0.1".parse().unwrap()));
-        assert!(is_private_or_reserved_ip("169.254.169.254".parse().unwrap()));
+        assert!(is_private_or_reserved_ip(
+            "169.254.169.254".parse().unwrap()
+        ));
 
         assert!(!is_private_or_reserved_ip("8.8.8.8".parse().unwrap()));
         assert!(!is_private_or_reserved_ip("1.1.1.1".parse().unwrap()));

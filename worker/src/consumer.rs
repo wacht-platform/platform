@@ -8,8 +8,8 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 
 use crate::tasks::{
-    agent, analytics, billing, document, email, embedding, sms, teams_activity, token, webhook, webhook_event,
-    webhook_replay_batch,
+    agent, analytics, billing, document, email, embedding, sms, teams_activity, token, webhook,
+    webhook_event, webhook_replay_batch,
 };
 use dto::json::NatsTaskMessage;
 
@@ -422,14 +422,12 @@ impl NatsConsumer {
             }),
         );
 
-
-
         task_handlers.insert(
             "agent.execution_request".to_string(),
             Box::new(|payload, app_state| {
                 Box::pin(async move {
-                    let request: dto::json::AgentExecutionRequest =
-                        serde_json::from_value(payload).map_err(|e| {
+                    let request: dto::json::AgentExecutionRequest = serde_json::from_value(payload)
+                        .map_err(|e| {
                             TaskError::Permanent(format!(
                                 "Failed to deserialize agent execution request: {}",
                                 e
@@ -589,7 +587,7 @@ impl NatsConsumer {
         // For long-running tasks like agent execution, ack immediately to prevent redelivery
         // The task itself handles its own error recovery
         let should_ack_early = task_message.task_type == "agent.execution_request";
-        
+
         if should_ack_early {
             if let Err(e) = message.ack().await {
                 error!("Failed to early-ack task {}: {}", task_message.task_id, e);

@@ -1,5 +1,7 @@
 use crate::prelude::*;
-use models::{enterprise_connection::EnterpriseConnection, organization_domain::OrganizationDomain};
+use models::{
+    enterprise_connection::EnterpriseConnection, organization_domain::OrganizationDomain,
+};
 
 pub struct ListOrganizationDomainsQuery {
     deployment_id: i64,

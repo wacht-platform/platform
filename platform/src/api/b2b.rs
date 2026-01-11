@@ -166,7 +166,8 @@ pub async fn get_organization_list(
         has_more,
         limit: Some(limit),
         offset: Some(query_params.offset.unwrap_or(0) as i32),
-    }.into())
+    }
+    .into())
 }
 
 pub async fn get_workspace_list(
@@ -197,7 +198,8 @@ pub async fn get_workspace_list(
         has_more,
         limit: Some(limit),
         offset: Some(query_params.offset.unwrap_or(0) as i32),
-    }.into())
+    }
+    .into())
 }
 
 pub async fn get_organization_details(

@@ -9,14 +9,21 @@ pub async fn process_agent_execution(
     use dto::json::AgentExecutionType;
     use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures, Query};
 
-    let agent_identifier = request.agent_id.as_ref().map(|id| id.to_string())
+    let agent_identifier = request
+        .agent_id
+        .as_ref()
+        .map(|id| id.to_string())
         .or(request.agent_name.clone())
         .unwrap_or_else(|| "unknown".to_string());
 
     // Parse string IDs to i64
-    let deployment_id: i64 = request.deployment_id.parse()
+    let deployment_id: i64 = request
+        .deployment_id
+        .parse()
         .map_err(|e| anyhow::anyhow!("Invalid deployment_id '{}': {}", request.deployment_id, e))?;
-    let context_id: i64 = request.context_id.parse()
+    let context_id: i64 = request
+        .context_id
+        .parse()
         .map_err(|e| anyhow::anyhow!("Invalid context_id '{}': {}", request.context_id, e))?;
 
     tracing::info!(
@@ -27,7 +34,8 @@ pub async fn process_agent_execution(
     );
 
     let agent = if let Some(ref agent_id_str) = request.agent_id {
-        let agent_id: i64 = agent_id_str.parse()
+        let agent_id: i64 = agent_id_str
+            .parse()
             .map_err(|e| anyhow::anyhow!("Invalid agent_id '{}': {}", agent_id_str, e))?;
         GetAiAgentByIdWithFeatures::new(agent_id)
             .execute(app_state)
@@ -39,16 +47,24 @@ pub async fn process_agent_execution(
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get agent '{}': {}", agent_name, e))?
     } else {
-        return Err(anyhow::anyhow!("Either agent_id or agent_name must be provided"));
+        return Err(anyhow::anyhow!(
+            "Either agent_id or agent_name must be provided"
+        ));
     };
 
     let execution_request = match request.execution_type {
-        AgentExecutionType::NewMessage { ref conversation_id } => {
-            let conv_id: i64 = conversation_id.parse()
-                .map_err(|e| anyhow::anyhow!("Invalid conversation_id '{}': {}", conversation_id, e))?;
+        AgentExecutionType::NewMessage {
+            ref conversation_id,
+        } => {
+            let conv_id: i64 = conversation_id.parse().map_err(|e| {
+                anyhow::anyhow!("Invalid conversation_id '{}': {}", conversation_id, e)
+            })?;
             tracing::info!("New message execution with conversation_id: {}", conv_id);
-            
-            if let Ok(conversation) = queries::GetConversationByIdQuery::new(conv_id).execute(app_state).await {
+
+            if let Ok(conversation) = queries::GetConversationByIdQuery::new(conv_id)
+                .execute(app_state)
+                .await
+            {
                 let webhook_payload = serde_json::json!({
                     "context_id": context_id,
                     "message_type": "conversation_message",
@@ -80,12 +96,18 @@ pub async fn process_agent_execution(
                 platform_function_result: None,
             }
         }
-        AgentExecutionType::UserInputResponse { ref conversation_id } => {
-            let conv_id: i64 = conversation_id.parse()
-                .map_err(|e| anyhow::anyhow!("Invalid conversation_id '{}': {}", conversation_id, e))?;
+        AgentExecutionType::UserInputResponse {
+            ref conversation_id,
+        } => {
+            let conv_id: i64 = conversation_id.parse().map_err(|e| {
+                anyhow::anyhow!("Invalid conversation_id '{}': {}", conversation_id, e)
+            })?;
             tracing::info!("User input response with conversation_id: {}", conv_id);
 
-            if let Ok(conversation) = queries::GetConversationByIdQuery::new(conv_id).execute(app_state).await {
+            if let Ok(conversation) = queries::GetConversationByIdQuery::new(conv_id)
+                .execute(app_state)
+                .await
+            {
                 let webhook_payload = serde_json::json!({
                     "context_id": context_id,
                     "message_type": "user_input_response",
@@ -106,7 +128,7 @@ pub async fn process_agent_execution(
                 );
 
                 if let Err(e) = trigger_command.execute(app_state).await {
-                     tracing::error!("Failed to trigger user response webhook: {}", e);
+                    tracing::error!("Failed to trigger user response webhook: {}", e);
                 }
             }
 
@@ -117,9 +139,15 @@ pub async fn process_agent_execution(
                 platform_function_result: None,
             }
         }
-        AgentExecutionType::PlatformFunctionResult { execution_id, result } => {
-            tracing::info!("Platform function result for execution_id: {}", execution_id);
-            
+        AgentExecutionType::PlatformFunctionResult {
+            execution_id,
+            result,
+        } => {
+            tracing::info!(
+                "Platform function result for execution_id: {}",
+                execution_id
+            );
+
             let webhook_payload = serde_json::json!({
                 "context_id": context_id,
                 "message_type": "platform_function_result",
@@ -141,7 +169,7 @@ pub async fn process_agent_execution(
             );
 
             if let Err(e) = trigger_command.execute(app_state).await {
-                    tracing::error!("Failed to trigger platform function result webhook: {}", e);
+                tracing::error!("Failed to trigger platform function result webhook: {}", e);
             }
 
             ExecutionRequest {

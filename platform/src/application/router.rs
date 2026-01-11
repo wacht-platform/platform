@@ -165,7 +165,8 @@ fn base_deployment_routes() -> Router<AppState> {
         )
         .route(
             "/organizations/{organization_id}/members/{membership_id}",
-            delete(api::b2b::remove_organization_member).patch(api::b2b::update_organization_member),
+            delete(api::b2b::remove_organization_member)
+                .patch(api::b2b::update_organization_member),
         )
         .route(
             "/organizations/{organization_id}/roles",
@@ -183,22 +184,13 @@ fn base_deployment_routes() -> Router<AppState> {
             "/segments",
             get(api::segments::list_segments).post(api::segments::create_segment),
         )
-        .route(
-            "/segments/data",
-            post(api::segments::get_segment_data),
-        )
+        .route("/segments/data", post(api::segments::get_segment_data))
         .route(
             "/segments/{id}",
             patch(api::segments::update_segment).delete(api::segments::delete_segment),
         )
-        .route(
-            "/segments/{id}/assign",
-            post(api::segments::assign_segment),
-        )
-        .route(
-            "/segments/{id}/remove",
-            post(api::segments::remove_segment),
-        )
+        .route("/segments/{id}/assign", post(api::segments::assign_segment))
+        .route("/segments/{id}/remove", post(api::segments::remove_segment))
         .route(
             "/settings/auth-settings",
             patch(api::settings::update_deployment_auth_settings),
@@ -435,7 +427,8 @@ fn console_specific_routes() -> Router<AppState> {
         // Enterprise SSO routes
         .route(
             "/organizations/{org_id}/domains",
-            post(api::enterprise_sso::create_domain_handler).get(api::enterprise_sso::list_domains_handler),
+            post(api::enterprise_sso::create_domain_handler)
+                .get(api::enterprise_sso::list_domains_handler),
         )
         .route(
             "/organizations/{org_id}/domains/{domain_id}",
@@ -447,11 +440,13 @@ fn console_specific_routes() -> Router<AppState> {
         )
         .route(
             "/organizations/{org_id}/connections",
-            post(api::enterprise_sso::create_connection_handler).get(api::enterprise_sso::list_connections_handler),
+            post(api::enterprise_sso::create_connection_handler)
+                .get(api::enterprise_sso::list_connections_handler),
         )
         .route(
             "/organizations/{org_id}/connections/{connection_id}",
-            post(api::enterprise_sso::update_connection_handler).delete(api::enterprise_sso::delete_connection_handler),
+            post(api::enterprise_sso::update_connection_handler)
+                .delete(api::enterprise_sso::delete_connection_handler),
         )
         .route(
             "/organizations/{org_id}/connections/{connection_id}/scim-token",

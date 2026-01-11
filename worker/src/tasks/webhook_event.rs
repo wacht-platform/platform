@@ -216,7 +216,11 @@ async fn track_webhook_billing(deployment_id: i64, redis_client: &redis::Client)
             .ignore()
             .expire(&format!("{}:metrics", prefix), 5184000)
             .ignore()
-            .zincr(&format!("billing:{}:dirty_deployments", period), deployment_id, 1)
+            .zincr(
+                &format!("billing:{}:dirty_deployments", period),
+                deployment_id,
+                1,
+            )
             .ignore()
             .expire(&format!("{}:metrics", prefix), 5184000)
             .ignore();

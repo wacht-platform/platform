@@ -61,7 +61,8 @@ impl UserValidator {
 
         // Validate password
         if !skip_password_check {
-            if let Err(password_errors) = Self::validate_password(password, &auth_settings.password) {
+            if let Err(password_errors) = Self::validate_password(password, &auth_settings.password)
+            {
                 errors.extend(password_errors);
             }
         }

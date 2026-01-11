@@ -40,11 +40,12 @@ pub async fn generate_agent_context_token(
 ) -> ApiResult<GenerateTokenResponse> {
     // TODO: Hardcoded temporarily - should use proper deployment selection
     let deployment_id: i64 = 20220525523509059;
-    
-    let user_id = request.subject.parse::<i64>().map_err(|_| {
-        crate::application::AppError::BadRequest("Invalid subject".to_string())
-    })?;
-    
+
+    let user_id = request
+        .subject
+        .parse::<i64>()
+        .map_err(|_| crate::application::AppError::BadRequest("Invalid subject".to_string()))?;
+
     GenerateAgentContextTokenCommand::new(deployment_id, user_id, Some(request.agent_name))
         .with_validity_hours(request.validity_hours.unwrap_or(24))
         .execute(&app_state)

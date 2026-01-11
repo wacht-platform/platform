@@ -3,23 +3,21 @@ use crate::gemini::GeminiClient;
 use crate::template::{render_template_with_prompt, AgentTemplates};
 
 use commands::{Command, UpdateExecutionContextQuery};
-use queries::Query;
 use common::error::AppError;
 use dto::json::agent_executor::{
-    ContextGatheringDirective, ConverseRequest, DeepReasoningDirective, NextStep, ObjectiveDefinition, StepDecision,
+    ContextGatheringDirective, ConverseRequest, DeepReasoningDirective, NextStep,
+    ObjectiveDefinition, StepDecision,
 };
-use dto::json::agent_responses::{
-    ActionsList, TaskExecution, TaskType,
-};
+use dto::json::agent_responses::{ActionsList, TaskExecution, TaskType};
 use dto::json::{
-    StepDecisionContext, StreamEvent, UserInputOutputState,
-    WorkflowExecutionResult, WorkflowTaskExecution,
+    StepDecisionContext, StreamEvent, UserInputOutputState, WorkflowExecutionResult,
+    WorkflowTaskExecution,
 };
 use models::{
     AgentExecutionState, ConversationContent, ConversationMessageType, ExecutionContextStatus,
 };
+use queries::Query;
 use serde_json::{json, Value};
-
 
 const MAX_LOOP_ITERATIONS: usize = 50;
 
@@ -141,27 +139,38 @@ impl AgentExecutor {
 
         // Extract user message from conversation content
         let (user_message, sender_name) = match &conversation.content {
-            models::ConversationContent::UserMessage { message, sender_name, .. } => (message.clone(), sender_name.clone()),
-            _ => return Err(AppError::BadRequest("Conversation must be a user message".to_string())),
+            models::ConversationContent::UserMessage {
+                message,
+                sender_name,
+                ..
+            } => (message.clone(), sender_name.clone()),
+            _ => {
+                return Err(AppError::BadRequest(
+                    "Conversation must be a user message".to_string(),
+                ))
+            }
         };
 
         // Log incoming message if from Teams integration
         if let Some(user) = &sender_name {
             // Fetch context to check source and get metadata
-            if let Ok(ctx) = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                .execute(&self.app_state)
-                .await 
+            if let Ok(ctx) =
+                queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                    .execute(&self.app_state)
+                    .await
             {
                 if ctx.source.as_deref() == Some("teams") {
                     if let Some(group) = &ctx.context_group {
                         if !group.is_empty() {
                             let mut location = String::new();
                             if let Some(meta) = &ctx.external_resource_metadata {
-                                if let Some(channel_name) = meta.get("channelName").and_then(|v| v.as_str()) {
+                                if let Some(channel_name) =
+                                    meta.get("channelName").and_then(|v| v.as_str())
+                                {
                                     location = format!(" [Channel: {}]", channel_name);
                                 }
                             }
-                            
+
                             let title = if ctx.title.is_empty() {
                                 format!("Context {}", ctx.id)
                             } else {
@@ -171,9 +180,14 @@ impl AgentExecutor {
                                 &self.agent.deployment_id.to_string(),
                                 &self.agent.id.to_string(),
                                 group,
-                                &title
+                                &title,
                             );
-                            let _ = logger.append_entry("INCOMING", &format!("From {}{}: {}", user, location, user_message)).await;
+                            let _ = logger
+                                .append_entry(
+                                    "INCOMING",
+                                    &format!("From {}{}: {}", user, location, user_message),
+                                )
+                                .await;
                         }
                     }
                 }
@@ -286,13 +300,15 @@ impl AgentExecutor {
     }
 
     async fn process_decision(&mut self, decision: StepDecision) -> Result<bool, AppError> {
-
         let result = match decision.next_step {
             NextStep::Acknowledge => {
                 let last_was_ack = self.conversations.last().map_or(false, |conv| {
-                    matches!(conv.message_type, ConversationMessageType::AssistantAcknowledgment)
+                    matches!(
+                        conv.message_type,
+                        ConversationMessageType::AssistantAcknowledgment
+                    )
                 });
-                
+
                 if last_was_ack {
                     tracing::warn!(
                         context_id = self.context_id,
@@ -360,21 +376,23 @@ impl AgentExecutor {
             NextStep::ExecuteAction => {
                 if let Some(actions) = decision.actions {
                     let actions_to_execute: Vec<_> = actions.into_iter().take(10).collect();
-                    
+
                     let futures: Vec<_> = actions_to_execute
                         .iter()
                         .map(|action| self.execute_action(action))
                         .collect();
-                    
+
                     let results = futures::future::join_all(futures).await;
-                    
+
                     let mut all_results = Vec::new();
                     let mut any_pending = false;
-                    
+
                     for (action, result) in actions_to_execute.iter().zip(results.into_iter()) {
                         match result {
                             Ok(result_value) => {
-                                if result_value.get("status").and_then(|s| s.as_str()) == Some("pending") {
+                                if result_value.get("status").and_then(|s| s.as_str())
+                                    == Some("pending")
+                                {
                                     any_pending = true;
                                 } else {
                                     let task_type_str = match action.action_type {
@@ -388,12 +406,13 @@ impl AgentExecutor {
                                         all_results.len()
                                     );
 
-                                    let task_result = dto::json::agent_executor::TaskExecutionResult {
-                                        task_id: task_id.clone(),
-                                        status: "completed".to_string(),
-                                        output: Some(result_value.clone()),
-                                        error: None,
-                                    };
+                                    let task_result =
+                                        dto::json::agent_executor::TaskExecutionResult {
+                                            task_id: task_id.clone(),
+                                            status: "completed".to_string(),
+                                            output: Some(result_value.clone()),
+                                            error: None,
+                                        };
 
                                     self.task_results.insert(task_id, task_result);
                                 }
@@ -432,14 +451,11 @@ impl AgentExecutor {
                             pending_input_request: None,
                         };
 
-                        UpdateExecutionContextQuery::new(
-                            self.context_id,
-                            self.agent.deployment_id,
-                        )
-                        .with_execution_state(execution_state)
-                        .with_status(ExecutionContextStatus::WaitingForInput)
-                        .execute(&self.app_state)
-                        .await?;
+                        UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                            .with_execution_state(execution_state)
+                            .with_status(ExecutionContextStatus::WaitingForInput)
+                            .execute(&self.app_state)
+                            .await?;
                     }
 
                     let execution = TaskExecution {
@@ -454,7 +470,8 @@ impl AgentExecutor {
                     self.store_conversation(
                         ConversationContent::ActionExecutionResult {
                             task_execution: serde_json::to_value(&execution)?,
-                            execution_status: if any_pending { "pending" } else { "completed" }.to_string(),
+                            execution_status: if any_pending { "pending" } else { "completed" }
+                                .to_string(),
                             blocking_reason: None,
                         },
                         ConversationMessageType::ActionExecutionResult,
@@ -470,8 +487,9 @@ impl AgentExecutor {
 
             NextStep::LongThinkAndReason => {
                 if let Some(directive) = decision.deep_reasoning_directive {
-                    let (reasoning_result, signature) = self.execute_deep_reasoning(&directive).await?;
-                    
+                    let (reasoning_result, signature) =
+                        self.execute_deep_reasoning(&directive).await?;
+
                     self.store_conversation(
                         ConversationContent::SystemDecision {
                             step: "deep_reasoning".to_string(),
@@ -524,17 +542,19 @@ impl AgentExecutor {
 
     async fn decide_next_step(&mut self) -> Result<StepDecision, AppError> {
         // Fetch the execution context to get title and actionables from metadata
-        let exec_context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-            .execute(&self.app_state)
-            .await?;
-        
+        let exec_context =
+            queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                .execute(&self.app_state)
+                .await?;
+
         // Parse actionables from external_resource_metadata if present
-        let actionables: Vec<dto::json::Actionable> = exec_context.external_resource_metadata
+        let actionables: Vec<dto::json::Actionable> = exec_context
+            .external_resource_metadata
             .as_ref()
             .and_then(|m| m.get("actionables"))
             .and_then(|a| serde_json::from_value(a.clone()).ok())
             .unwrap_or_default();
-        
+
         tracing::info!(
             context_id = self.context_id,
             actionable_count = actionables.len(),
@@ -586,21 +606,25 @@ impl AgentExecutor {
             context_title: exec_context.title,
             context_source: exec_context.source.clone(),
             teams_context: if exec_context.source.as_deref() == Some("teams") {
-                exec_context.external_resource_metadata.as_ref().map(|meta| {
-                    dto::json::TeamsContextInfo {
-                        conversation_type: meta.get("conversationType")
+                exec_context
+                    .external_resource_metadata
+                    .as_ref()
+                    .map(|meta| dto::json::TeamsContextInfo {
+                        conversation_type: meta
+                            .get("conversationType")
                             .and_then(|v| v.as_str())
                             .unwrap_or("unknown")
                             .to_string(),
-                        channel_name: meta.get("channelName")
+                        channel_name: meta
+                            .get("channelName")
                             .and_then(|v| v.as_str())
                             .unwrap_or("Unknown")
                             .to_string(),
-                        team_id: meta.get("teamId")
+                        team_id: meta
+                            .get("teamId")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string()),
-                    }
-                })
+                    })
             } else {
                 None
             },
@@ -608,7 +632,7 @@ impl AgentExecutor {
         };
 
         let mut context_json = serde_json::to_value(&context)?;
-        
+
         // Inject agent identity into context
         if let Some(obj) = context_json.as_object_mut() {
             obj.insert("agent_name".to_string(), json!(self.agent.name));
@@ -616,7 +640,7 @@ impl AgentExecutor {
                 obj.insert("agent_description".to_string(), json!(desc));
             }
         }
-        
+
         if let Some(ref sys_instructions) = self.system_instructions {
             if let Some(obj) = context_json.as_object_mut() {
                 let custom_instructions =
@@ -633,12 +657,10 @@ impl AgentExecutor {
                 AppError::Internal(format!("Failed to render step decision template: {e}"))
             })?;
 
-
         let (mut decision, signature) = self
             .create_strong_llm()?
             .generate_structured_content::<StepDecision>(request_body)
             .await?;
-
 
         decision.thought_signature = signature.clone();
 
@@ -784,7 +806,8 @@ impl AgentExecutor {
             AppError::Internal(format!("Failed to render user input request template: {e}"))
         })?;
 
-        let (response, _) = self.create_weak_llm()?
+        let (response, _) = self
+            .create_weak_llm()?
             .generate_structured_content::<serde_json::Value>(request_body)
             .await?;
         Ok(response)
@@ -841,28 +864,34 @@ impl AgentExecutor {
     /// Strong LLM - Used for step decisions (requires good reasoning)
     pub(super) fn create_strong_llm(&self) -> Result<GeminiClient, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
-        Ok(GeminiClient::new(
-            api_key,
-            Some("gemini-3-flash-preview".to_string()),
-        ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
+        Ok(
+            GeminiClient::new(api_key, Some("gemini-3-flash-preview".to_string())).with_billing(
+                self.agent.deployment_id,
+                self.app_state.redis_client.clone(),
+            ),
+        )
     }
 
     /// Weak LLM - Used for simple tasks (parameter generation, summaries, etc.)
     pub(super) fn create_weak_llm(&self) -> Result<GeminiClient, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
-        Ok(GeminiClient::new(
-            api_key,
-            Some("gemini-2.5-flash".to_string()),
-        ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
+        Ok(
+            GeminiClient::new(api_key, Some("gemini-2.5-flash".to_string())).with_billing(
+                self.agent.deployment_id,
+                self.app_state.redis_client.clone(),
+            ),
+        )
     }
 
     /// Reasoning LLM - Used for complex reasoning tasks with extended thinking
     pub(super) fn create_reasoning_llm(&self) -> Result<GeminiClient, AppError> {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
-        Ok(GeminiClient::new(
-            api_key,
-            Some("gemini-3-pro-preview".to_string()),
-        ).with_billing(self.agent.deployment_id, self.app_state.redis_client.clone()))
+        Ok(
+            GeminiClient::new(api_key, Some("gemini-3-pro-preview".to_string())).with_billing(
+                self.agent.deployment_id,
+                self.app_state.redis_client.clone(),
+            ),
+        )
     }
 
     /// Execute deep reasoning using the reasoning LLM with extended thinking budget
@@ -870,11 +899,13 @@ impl AgentExecutor {
         &self,
         directive: &DeepReasoningDirective,
     ) -> Result<(DeepReasoningResult, Option<String>), AppError> {
-        let exec_context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-            .execute(&self.app_state)
-            .await?;
-        
-        let actionables: Vec<dto::json::Actionable> = exec_context.external_resource_metadata
+        let exec_context =
+            queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                .execute(&self.app_state)
+                .await?;
+
+        let actionables: Vec<dto::json::Actionable> = exec_context
+            .external_resource_metadata
             .as_ref()
             .and_then(|m| m.get("actionables"))
             .and_then(|a| serde_json::from_value(a.clone()).ok())
@@ -925,4 +956,3 @@ pub struct DeepReasoningResult {
     #[serde(default)]
     pub caveats: Vec<String>,
 }
-

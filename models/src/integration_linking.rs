@@ -25,11 +25,11 @@ pub struct ActiveAgentIntegration {
     pub id: i64,
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    pub context_group: String,  // Flexible: could be user_id, org_id, custom group
+    pub context_group: String, // Flexible: could be user_id, org_id, custom group
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub integration_id: i64,
     pub external_id: String,
-    pub connection_metadata: Option<serde_json::Value>,  // tenantId stored here if needed
+    pub connection_metadata: Option<serde_json::Value>, // tenantId stored here if needed
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
 }

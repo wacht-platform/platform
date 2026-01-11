@@ -246,12 +246,19 @@ impl Command for DeleteAiKnowledgeBaseCommand {
         }
 
         // Delete storage files first (before DB)
-        let storage_prefix = format!("{}/knowledge-bases/{}/", self.deployment_id, self.knowledge_base_id);
+        let storage_prefix = format!(
+            "{}/knowledge-bases/{}/",
+            self.deployment_id, self.knowledge_base_id
+        );
         if let Err(e) = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix)
             .execute(app_state)
             .await
         {
-            tracing::warn!("Failed to clean storage for KB {}: {}", self.knowledge_base_id, e);
+            tracing::warn!(
+                "Failed to clean storage for KB {}: {}",
+                self.knowledge_base_id,
+                e
+            );
             // Continue with DB delete anyway - storage can be cleaned up later
         }
 
@@ -331,7 +338,10 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
         let deployment_id = kb_query.deployment_id;
 
         // Upload file to agent storage with path: {deployment}/knowledge-bases/{kb_id}/{filename}
-        let file_path = format!("{}/knowledge-bases/{}/{}", deployment_id, self.knowledge_base_id, self.file_name);
+        let file_path = format!(
+            "{}/knowledge-bases/{}/{}",
+            deployment_id, self.knowledge_base_id, self.file_name
+        );
         let file_content_clone = self.file_content.clone();
         let file_url = WriteToAgentStorageCommand::new(file_path, file_content_clone)
             .with_content_type(self.file_type.clone())
@@ -361,8 +371,6 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(|e| AppError::Database(e))?;
-
-
 
         // Dispatch document processing to NATS worker
         let dispatch_processing_task = DispatchDocumentProcessingTaskCommand::new(
@@ -446,7 +454,10 @@ impl Command for DeleteKnowledgeBaseDocumentCommand {
         let doc = doc.ok_or(AppError::NotFound("Document not found".to_string()))?;
 
         // Delete storage file first (before DB)
-        let storage_key = format!("{}/knowledge-bases/{}/{}", self.deployment_id, self.knowledge_base_id, doc.file_name);
+        let storage_key = format!(
+            "{}/knowledge-bases/{}/{}",
+            self.deployment_id, self.knowledge_base_id, doc.file_name
+        );
         if let Err(e) = crate::DeleteFromAgentStorageCommand::new(storage_key)
             .execute(app_state)
             .await

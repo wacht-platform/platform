@@ -27,7 +27,8 @@ impl CreateApiKeyAppCommand {
 
     pub fn with_rate_limits(self, rate_limits: Vec<RateLimit>) -> Result<Self, AppError> {
         for limit in &rate_limits {
-            limit.validate()
+            limit
+                .validate()
                 .map_err(|e| AppError::BadRequest(format!("Invalid rate limit: {}", e)))?;
         }
 
@@ -70,7 +71,8 @@ impl Command for CreateApiKeyAppCommand {
             name: rec.name,
             description: rec.description,
             is_active: rec.is_active.unwrap_or(true),
-            rate_limits: rec.rate_limits
+            rate_limits: rec
+                .rate_limits
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_default(),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
@@ -95,12 +97,14 @@ impl Command for UpdateApiKeyAppCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         if let Some(ref rate_limits) = self.rate_limits {
             for limit in rate_limits {
-                limit.validate()
+                limit
+                    .validate()
                     .map_err(|e| AppError::BadRequest(format!("Invalid rate limit: {}", e)))?;
             }
         }
 
-        let rate_limits_json = self.rate_limits
+        let rate_limits_json = self
+            .rate_limits
             .as_ref()
             .map(|rl| serde_json::to_value(rl))
             .transpose()
@@ -136,7 +140,8 @@ impl Command for UpdateApiKeyAppCommand {
             name: rec.name,
             description: rec.description,
             is_active: rec.is_active.unwrap_or(true),
-            rate_limits: rec.rate_limits
+            rate_limits: rec
+                .rate_limits
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_default(),
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),

@@ -32,11 +32,17 @@ impl Command for AddWorkspaceMemberCommand {
         .await?;
 
         let workspace = workspace.ok_or_else(|| {
-            println!("ERROR: Workspace not found: workspace_id={}, deployment_id={}", self.workspace_id, self.deployment_id);
+            println!(
+                "ERROR: Workspace not found: workspace_id={}, deployment_id={}",
+                self.workspace_id, self.deployment_id
+            );
             AppError::NotFound("Workspace not found".to_string())
         })?;
 
-        println!("Found workspace: id={}, organization_id={}", workspace.id, workspace.organization_id);
+        println!(
+            "Found workspace: id={}, organization_id={}",
+            workspace.id, workspace.organization_id
+        );
 
         // Check if user has an organization membership
         let org_membership = sqlx::query!(
@@ -48,7 +54,10 @@ impl Command for AddWorkspaceMemberCommand {
         .await?;
 
         let org_membership_id = if let Some(membership) = org_membership {
-            println!("User already has organization membership: membership_id={}", membership.id);
+            println!(
+                "User already has organization membership: membership_id={}",
+                membership.id
+            );
             membership.id
         } else {
             println!("User does not have organization membership, creating implicit membership");
@@ -80,8 +89,10 @@ impl Command for AddWorkspaceMemberCommand {
             let new_membership_id = app_state.sf.next_id()? as i64;
             let now = chrono::Utc::now();
 
-            println!("Creating organization membership: membership_id={}, user_id={}, org_id={}",
-                new_membership_id, self.user_id, workspace.organization_id);
+            println!(
+                "Creating organization membership: membership_id={}, user_id={}, org_id={}",
+                new_membership_id, self.user_id, workspace.organization_id
+            );
 
             sqlx::query!(
                 r#"
@@ -136,8 +147,10 @@ impl Command for AddWorkspaceMemberCommand {
         .await?;
 
         if existing.is_some() {
-            println!("WARN: User is already a member of workspace: workspace_id={}, user_id={}",
-                self.workspace_id, self.user_id);
+            println!(
+                "WARN: User is already a member of workspace: workspace_id={}, user_id={}",
+                self.workspace_id, self.user_id
+            );
             return Err(AppError::BadRequest(
                 "User is already a member of this workspace".to_string(),
             ));
@@ -147,8 +160,10 @@ impl Command for AddWorkspaceMemberCommand {
         let membership_id = app_state.sf.next_id()? as i64;
         let now = chrono::Utc::now();
 
-        println!("Creating workspace membership: membership_id={}, workspace_id={}, user_id={}, org_membership_id={}",
-            membership_id, self.workspace_id, self.user_id, org_membership_id);
+        println!(
+            "Creating workspace membership: membership_id={}, workspace_id={}, user_id={}, org_membership_id={}",
+            membership_id, self.workspace_id, self.user_id, org_membership_id
+        );
 
         sqlx::query!(
             r#"
@@ -173,11 +188,19 @@ impl Command for AddWorkspaceMemberCommand {
             e
         })?;
 
-        println!("Created workspace membership, now adding {} roles", self.role_ids.len());
+        println!(
+            "Created workspace membership, now adding {} roles",
+            self.role_ids.len()
+        );
 
         // Add roles
         for (idx, role_id) in self.role_ids.iter().enumerate() {
-            println!("Adding role {}/{}: role_id={}", idx + 1, self.role_ids.len(), role_id);
+            println!(
+                "Adding role {}/{}: role_id={}",
+                idx + 1,
+                self.role_ids.len(),
+                role_id
+            );
             sqlx::query!(
                 r#"
                 INSERT INTO workspace_membership_roles (workspace_membership_id, workspace_role_id, workspace_id, organization_id)

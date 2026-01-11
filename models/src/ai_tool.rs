@@ -93,11 +93,15 @@ pub struct PlatformFunctionToolConfiguration {
     pub is_overridable: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct SchemaField {
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub field_type: String,
+    #[serde(default)]
     pub required: bool,
+    #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
     pub items_type: Option<String>,

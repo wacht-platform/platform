@@ -1,17 +1,19 @@
 use crate::context::ContextOrchestrator;
+use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
 use crate::tools::ToolExecutor;
-use crate::filesystem::{AgentFilesystem, shell::ShellExecutor};
 
 use common::error::AppError;
 use common::state::AppState;
-use dto::json::agent_executor::{
-    ConversationInsights, ObjectiveDefinition, TaskExecutionResult,
-};
+use dto::json::agent_executor::{ConversationInsights, ObjectiveDefinition, TaskExecutionResult};
 use dto::json::StreamEvent;
 use models::{
-    AgentExecutionState, AiAgentWithFeatures, ConversationRecord, ExecutionContextStatus, MemoryRecord, WorkflowExecutionState,
+    AgentExecutionState, AiAgentWithFeatures, ConversationRecord, ExecutionContextStatus,
+    MemoryRecord, WorkflowExecutionState,
 };
-use models::{AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration, InternalToolType, SchemaField, UseExternalServiceToolConfiguration, UseExternalServiceToolType};
+use models::{
+    AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration, InternalToolType,
+    SchemaField, UseExternalServiceToolConfiguration, UseExternalServiceToolType,
+};
 use queries::{GetExecutionContextQuery, Query};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -75,35 +77,40 @@ impl AgentExecutorBuilder {
 
     pub async fn build(self) -> Result<AgentExecutor, AppError> {
         let tool_executor =
-            ToolExecutor::new(
-                self.app_state.clone(), 
-                self.agent.clone(), 
-                self.context_id
-            ).with_channel(self.channel.clone());
+            ToolExecutor::new(self.app_state.clone(), self.agent.clone(), self.context_id)
+                .with_channel(self.channel.clone());
         let context_orchestrator =
             ContextOrchestrator::new(self.app_state.clone(), self.agent.clone(), self.context_id);
 
         let execution_id = self.app_state.sf.next_id()?.to_string();
-        
+
         let filesystem = AgentFilesystem::new(
             &self.agent.deployment_id.to_string(),
             &self.agent.id.to_string(),
             &self.context_id.to_string(),
             &execution_id,
         );
-        
+
         if let Err(e) = filesystem.initialize().await {
             tracing::warn!("Failed to initialize agent filesystem: {}", e);
         }
 
         let shell = ShellExecutor::new(filesystem.execution_root());
-        
+
         for kb in &self.agent.knowledge_bases {
-            if let Err(e) = filesystem.link_knowledge_base(&kb.id.to_string(), &kb.name).await {
-                tracing::warn!("Failed to link knowledge base {} ({}): {}", kb.name, kb.id, e);
+            if let Err(e) = filesystem
+                .link_knowledge_base(&kb.id.to_string(), &kb.name)
+                .await
+            {
+                tracing::warn!(
+                    "Failed to link knowledge base {} ({}): {}",
+                    kb.name,
+                    kb.id,
+                    e
+                );
             }
         }
-        
+
         let internal_tools = vec![
             (
                 "read_file",
@@ -114,19 +121,19 @@ impl AgentExecutorBuilder {
                         name: "path".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("Path to the file".to_string()),
-                        required: true,
+                        required: true, ..Default::default()
                     },
                     SchemaField {
                         name: "start_line".to_string(),
                         field_type: "INTEGER".to_string(),
                         description: Some("Start line (1-indexed, optional)".to_string()),
-                        required: false,
+                        required: false, ..Default::default()
                     },
                     SchemaField {
                         name: "end_line".to_string(),
                         field_type: "INTEGER".to_string(),
                         description: Some("End line (inclusive, optional)".to_string()),
-                        required: false,
+                        required: false, ..Default::default()
                     }
                 ]
             ),
@@ -139,25 +146,25 @@ impl AgentExecutorBuilder {
                         name: "path".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("Path to write (memory/, workspace/, scratch/ only)".to_string()),
-                        required: true,
+                        required: true, ..Default::default()
                     },
                     SchemaField {
                         name: "content".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("Content to write".to_string()),
-                        required: true,
+                        required: true, ..Default::default()
                     },
                     SchemaField {
                         name: "start_line".to_string(),
                         field_type: "INTEGER".to_string(),
                         description: Some("Replace from this line (1-indexed). Requires prior read_file.".to_string()),
-                        required: false,
+                        required: false, ..Default::default()
                     },
                     SchemaField {
                         name: "end_line".to_string(),
                         field_type: "INTEGER".to_string(),
                         description: Some("Replace up to this line (inclusive). Requires prior read_file.".to_string()),
-                        required: false,
+                        required: false, ..Default::default()
                     }
                 ]
             ),
@@ -170,7 +177,7 @@ impl AgentExecutorBuilder {
                         name: "path".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("Directory path (default: '/')".to_string()),
-                        required: false,
+                        required: false, ..Default::default()
                     }
                 ]
             ),
@@ -183,13 +190,13 @@ impl AgentExecutorBuilder {
                         name: "query".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("Text or regex to search for".to_string()),
-                        required: true,
+                        required: true, ..Default::default()
                     },
                     SchemaField {
                         name: "path".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("Directory to search (default: '/')".to_string()),
-                        required: false,
+                        required: false, ..Default::default()
                     }
                 ]
             ),
@@ -202,7 +209,7 @@ impl AgentExecutorBuilder {
                         name: "command".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("Shell command to run".to_string()),
-                        required: true,
+                        required: true, ..Default::default()
                     }
                 ]
             ),
@@ -215,19 +222,19 @@ impl AgentExecutorBuilder {
                         name: "content".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("The information to remember".to_string()),
-                        required: true,
+                        required: true, ..Default::default()
                     },
                     SchemaField {
                         name: "category".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("Category: procedural (how-to), semantic (facts), episodic (events), working (temp)".to_string()),
-                        required: true,
+                        required: true, ..Default::default()
                     },
                     SchemaField {
                         name: "importance".to_string(),
                         field_type: "NUMBER".to_string(),
                         description: Some("Importance 0.0-1.0 (default: 0.5)".to_string()),
-                        required: false,
+                        required: false, ..Default::default()
                     }
                 ]
             ),
@@ -240,13 +247,13 @@ impl AgentExecutorBuilder {
                         name: "script_path".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("Relative path to script (e.g. workspace/analysis.py)".to_string()),
-                        required: true,
+                        required: true, ..Default::default()
                     },
                     SchemaField {
                         name: "args".to_string(),
                         field_type: "STRING".to_string(),
                         description: Some("Space-separated arguments".to_string()),
-                        required: false,
+                        required: false, ..Default::default()
                     }
                 ]
             ),
@@ -263,25 +270,37 @@ impl AgentExecutorBuilder {
             let active_integrations = queries::GetActiveIntegrationsForContextQuery::new(
                 self.agent.deployment_id,
                 self.agent.id,
-                context_group.clone()
-            ).execute(&self.app_state).await?;
+                context_group.clone(),
+            )
+            .execute(&self.app_state)
+            .await?;
 
-            let has_teams = active_integrations.iter().any(|i| matches!(i.integration_type, models::IntegrationType::Teams));
+            let has_teams = active_integrations
+                .iter()
+                .any(|i| matches!(i.integration_type, models::IntegrationType::Teams));
 
             if has_teams {
                 teams_enabled = true;
-                tracing::info!("Context group {} has active Teams integration. Injecting Teams tools.", context_group);
-                
+                tracing::info!(
+                    "Context group {} has active Teams integration. Injecting Teams tools.",
+                    context_group
+                );
+
                 if let Err(e) = filesystem.link_teams_activity(context_group).await {
                     tracing::warn!("Failed to link teams-activity directory: {}", e);
                 }
             }
 
-            let has_clickup = active_integrations.iter().any(|i| matches!(i.integration_type, models::IntegrationType::ClickUp));
+            let has_clickup = active_integrations
+                .iter()
+                .any(|i| matches!(i.integration_type, models::IntegrationType::ClickUp));
 
             if has_clickup {
                 clickup_enabled = true;
-                tracing::info!("Context group {} has active ClickUp integration. Injecting ClickUp tools.", context_group);
+                tracing::info!(
+                    "Context group {} has active ClickUp integration. Injecting ClickUp tools.",
+                    context_group
+                );
             }
         }
 
@@ -294,18 +313,16 @@ impl AgentExecutorBuilder {
                     description: Some(desc.to_string()),
                     tool_type: AiToolType::Internal,
                     deployment_id: self.agent.deployment_id,
-                    configuration: AiToolConfiguration::Internal(
-                        InternalToolConfiguration {
-                            tool_type,
-                            input_schema: Some(schema),
-                        }
-                    ),
+                    configuration: AiToolConfiguration::Internal(InternalToolConfiguration {
+                        tool_type,
+                        input_schema: Some(schema),
+                    }),
                     created_at: chrono::Utc::now(),
                     updated_at: chrono::Utc::now(),
                 });
             }
         }
-        
+
         if teams_enabled {
             let teams_tools: Vec<(&str, &str, UseExternalServiceToolType, Vec<SchemaField>)> = vec![
                 (
@@ -317,7 +334,7 @@ impl AgentExecutorBuilder {
                             name: "limit".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Max number of users to return (default: 25).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         }
                     ]
                 ),
@@ -330,7 +347,7 @@ impl AgentExecutorBuilder {
                             name: "query".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Search query (name or email).".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         }
                     ]
                 ),
@@ -343,37 +360,37 @@ impl AgentExecutorBuilder {
                             name: "user_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The user's ID (aadObjectId) to send the message to. Get this from teams_list_users or teams_search_users.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "message".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The message content to send. MUST include context about who is asking if relaying on behalf of someone.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "sender_info".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("REQUIRED: Who is sending this and from where. Example: 'Saurav Singh from #General channel' or 'John Smith from group DM'. This is prepended to your message for clarity.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "notify_on_reply".to_string(),
                             field_type: "BOOLEAN".to_string(),
                             description: Some("If true, you will be notified in your current context when the user replies. Default: false.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "description".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Context for why you're sending this DM - helps when processing the reply. Required if notify_on_reply is true.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "context_notes".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Transient memory passed to the DM context. Include: WHO is asking (name), WHAT they need, and any context. The agent handling this DM sees these notes and can act accordingly. Example: 'John Smith asked for the project deadline - let him know when you get a response'.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -386,25 +403,25 @@ impl AgentExecutorBuilder {
                             name: "context_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The target context ID. Use teams_list_contexts() to get available context IDs.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "message".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The message to send to the channel/chat.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "sender_info".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Context about who/where this message is coming from. Example: 'From John in #Support channel'.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "notify_on_reply".to_string(),
                             field_type: "BOOLEAN".to_string(),
                             description: Some("If true, you will be notified in your current context when someone replies in that channel. Default: false.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -417,31 +434,31 @@ impl AgentExecutorBuilder {
                             name: "context_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Optional: Target context ID to read messages from. Use teams_list_contexts() to discover available contexts. Defaults to current context.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "count".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Batch size for fetching. If `from_date` is used, this acts as page size (system auto-paginates up to 500 messages). If no date, this is the limit (max 50).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "from_date".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("ISO date/datetime to filter messages FROM (inclusive). Example: '2026-01-01' or '2026-01-01T09:00:00Z'.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "to_date".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("ISO date/datetime to filter messages TO (inclusive). Example: '2026-01-10' or '2026-01-10T18:00:00Z'.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "search_term".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Filter messages containing this text (case-insensitive). Applied client-side after fetching.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -454,31 +471,31 @@ impl AgentExecutorBuilder {
                             name: "query".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Search query (keywords, phrase) to find specific messages.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "context_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Optional: Target context ID to search in. Defaults to current context.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "from_date".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("ISO date to filter FROM (inclusive). E.g. '2025-01-01'. Restrict search to this period.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "to_date".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("ISO date to filter TO (inclusive). E.g. '2025-02-01'.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "from_user".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Display name of the sender to filter by (e.g. 'Jane Doe').".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -491,37 +508,37 @@ impl AgentExecutorBuilder {
                             name: "context_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Optional: Target context ID. Use teams_list_contexts() to discover available contexts. Defaults to current context.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "organizer_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("For DM/group chat recordings. The AAD Object ID of the meeting organizer from callEnded events. Not needed for channel meetings (auto-detected).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "meeting_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The meeting ID. Optional if using search_recent.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "join_url".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The meeting join URL. Optional if using search_recent.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "search_recent".to_string(),
                             field_type: "BOOLEAN".to_string(),
                             description: Some("Set to true to search for recent recordings without needing meeting ID. Useful for ad-hoc calls.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "max_results".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Maximum number of recordings to return. Default 5.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -534,19 +551,19 @@ impl AgentExecutorBuilder {
                             name: "recording_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The recording ID from teams_get_meeting_recording results (the 'id' field).".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "organizer_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("For DM/group recordings ONLY: the 'organizer_id' from teams_get_meeting_recording results. Not needed for channel meetings.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "recording_name".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Optional name of the recording for reference.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -559,13 +576,13 @@ impl AgentExecutorBuilder {
                             name: "attachment_url".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The URL of the attachment from the message metadata.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "filename".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Name to save the file as (e.g. 'screenshot.png').".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                     ]
                 ),
@@ -578,13 +595,13 @@ impl AgentExecutorBuilder {
                             name: "attachment_url".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The URL of the image attachment from the message metadata.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "prompt".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Optional: What to look for or ask about the image (e.g. 'What text is visible?', 'Is there a chart?', 'What colors are used?').".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -597,7 +614,7 @@ impl AgentExecutorBuilder {
                             name: "attachment_url".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The audio URL. For voice notes, parse the attachment's 'content' JSON to get the 'url' field. The 'content' field contains a JSON string like: {\"url\": \"https://graph.microsoft.com/...\"}".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                     ]
                 ),
@@ -610,18 +627,18 @@ impl AgentExecutorBuilder {
                             name: "limit".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Maximum number of contexts to return (default: 25).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "offset".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Offset for pagination (default: 0).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
             ];
-            
+
             for (name, desc, service_type, schema) in teams_tools {
                 if !current_tools.iter().any(|t| t.name == name) {
                     current_tools.push(AiTool {
@@ -634,7 +651,7 @@ impl AgentExecutorBuilder {
                             UseExternalServiceToolConfiguration {
                                 service_type,
                                 input_schema: Some(schema),
-                            }
+                            },
                         ),
                         created_at: chrono::Utc::now(),
                         updated_at: chrono::Utc::now(),
@@ -642,7 +659,7 @@ impl AgentExecutorBuilder {
                 }
             }
         }
-        
+
         if clickup_enabled {
             let clickup_tools: Vec<(&str, &str, UseExternalServiceToolType, Vec<SchemaField>)> = vec![
                 (
@@ -666,7 +683,7 @@ impl AgentExecutorBuilder {
                             name: "team_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The team/workspace ID. Get this from clickup_get_teams.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         }
                     ]
                 ),
@@ -679,7 +696,7 @@ impl AgentExecutorBuilder {
                             name: "space_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The space ID. Get this from clickup_get_spaces.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         }
                     ]
                 ),
@@ -692,7 +709,7 @@ impl AgentExecutorBuilder {
                             name: "folder_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The folder ID. Get this from clickup_get_folders.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         }
                     ]
                 ),
@@ -705,7 +722,7 @@ impl AgentExecutorBuilder {
                             name: "space_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The space ID. Get this from clickup_get_spaces.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         }
                     ]
                 ),
@@ -718,37 +735,37 @@ impl AgentExecutorBuilder {
                             name: "list_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The list ID to get tasks from.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "archived".to_string(),
                             field_type: "BOOLEAN".to_string(),
                             description: Some("Include archived tasks (default: false).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "page".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Page number (default: 0).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "order_by".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Order by field (created, updated, id, due_date, etc.).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "reverse".to_string(),
                             field_type: "BOOLEAN".to_string(),
                             description: Some("Reverse order (default: false).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "subtasks".to_string(),
                             field_type: "BOOLEAN".to_string(),
                             description: Some("Include subtasks (default: false).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -761,13 +778,13 @@ impl AgentExecutorBuilder {
                             name: "team_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The team/workspace ID to search in. Get this from clickup_get_teams.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "search".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Search keywords to match against task name or description.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "assignees".to_string(),
@@ -787,49 +804,49 @@ impl AgentExecutorBuilder {
                             name: "archived".to_string(),
                             field_type: "BOOLEAN".to_string(),
                             description: Some("Include archived tasks (default: false).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "date_created_gt".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Filter tasks created after this timestamp.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "due_date_gt".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Filter tasks due after this timestamp.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "due_date_lt".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Filter tasks due before this timestamp.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "page".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Page number (default: 0).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "order_by".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Order by field (created, updated, id, due_date, etc.).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "reverse".to_string(),
                             field_type: "BOOLEAN".to_string(),
                             description: Some("Reverse order (default: false).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "subtasks".to_string(),
                             field_type: "BOOLEAN".to_string(),
                             description: Some("Include subtasks (default: false).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -842,7 +859,7 @@ impl AgentExecutorBuilder {
                             name: "task_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The task ID to retrieve.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         }
                     ]
                 ),
@@ -855,19 +872,19 @@ impl AgentExecutorBuilder {
                             name: "list_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The list ID where the task will be created. Get this from clickup_get_lists.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "name".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The task name/title.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "description".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Task description (supports markdown).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "assignees".to_string(),
@@ -880,19 +897,19 @@ impl AgentExecutorBuilder {
                             name: "status".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("Initial status of the task.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "priority".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Task priority (1=urgent, 2=high, 3=normal, 4=low).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "due_date".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Due date as Unix timestamp in milliseconds.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -905,19 +922,19 @@ impl AgentExecutorBuilder {
                             name: "space_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The space ID where the list will be created. Get this from clickup_get_spaces.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "name".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The list name.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "content".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("List description.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
@@ -930,37 +947,37 @@ impl AgentExecutorBuilder {
                             name: "task_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The task ID to update.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "name".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("New task name.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "description".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("New task description (supports markdown).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "status".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("New status (e.g., 'Open', 'in progress', 'complete').".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "priority".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Priority (1=urgent, 2=high, 3=normal, 4=low).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "due_date".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Due date as Unix timestamp in milliseconds.".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "assignees".to_string(),
@@ -980,24 +997,24 @@ impl AgentExecutorBuilder {
                             name: "task_id".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The task ID to add a comment to.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "comment_text".to_string(),
                             field_type: "STRING".to_string(),
                             description: Some("The comment text to add.".to_string()),
-                            required: true,
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "notify_all".to_string(),
                             field_type: "BOOLEAN".to_string(),
                             description: Some("Notify all assignees about the comment (default: false).".to_string()),
-                            required: false,
+                            required: false, ..Default::default()
                         },
                     ]
                 ),
             ];
-            
+
             for (name, desc, service_type, schema) in clickup_tools {
                 if !current_tools.iter().any(|t| t.name == name) {
                     current_tools.push(AiTool {
@@ -1010,7 +1027,7 @@ impl AgentExecutorBuilder {
                             UseExternalServiceToolConfiguration {
                                 service_type,
                                 input_schema: Some(schema),
-                            }
+                            },
                         ),
                         created_at: chrono::Utc::now(),
                         updated_at: chrono::Utc::now(),
@@ -1018,8 +1035,11 @@ impl AgentExecutorBuilder {
                 }
             }
         }
-        
-        if !current_tools.iter().any(|t| t.name == "spawn_context_execution") {
+
+        if !current_tools
+            .iter()
+            .any(|t| t.name == "spawn_context_execution")
+        {
             current_tools.push(AiTool {
                 id: -1,
                 name: "spawn_context_execution".to_string(),
@@ -1036,25 +1056,25 @@ impl AgentExecutorBuilder {
                                 name: "target_context_id".to_string(),
                                 field_type: "STRING".to_string(),
                                 description: Some("The context ID where the new agent instance will be spawned.".to_string()),
-                                required: true,
+                                required: true, ..Default::default()
                             },
                             SchemaField {
                                 name: "message".to_string(),
                                 field_type: "STRING".to_string(),
                                 description: Some("The message/task to send to the spawned instance. This becomes the input that the new instance will process.".to_string()),
-                                required: true,
+                                required: true, ..Default::default()
                             },
                             SchemaField {
                                 name: "actionable_id".to_string(),
                                 field_type: "STRING".to_string(),
                                 description: Some("If you are fulfilling an actionable from your pending list, provide its ID here to mark it complete.".to_string()),
-                                required: false,
+                                required: false, ..Default::default()
                             },
                             SchemaField {
                                 name: "execute".to_string(),
                                 field_type: "BOOLEAN".to_string(),
                                 description: Some("Whether to actually spawn the agent instance. Default: true. Set to false to just add the message to the target context's history without triggering execution.".to_string()),
-                                required: false,
+                                required: false, ..Default::default()
                             },
                         ]),
                     }
@@ -1063,7 +1083,7 @@ impl AgentExecutorBuilder {
                 updated_at: chrono::Utc::now(),
             });
         }
-        
+
         let mut agent_with_tools = self.agent.clone();
         agent_with_tools.tools = current_tools;
 
@@ -1118,7 +1138,10 @@ impl AgentExecutor {
             .await
     }
 
-    pub(super) fn restore_from_state(&mut self, state: AgentExecutionState) -> Result<(), AppError> {
+    pub(super) fn restore_from_state(
+        &mut self,
+        state: AgentExecutionState,
+    ) -> Result<(), AppError> {
         self.task_results = state
             .task_results
             .into_iter()

@@ -1,7 +1,7 @@
 use serde::Deserialize;
+use std::path::PathBuf;
 use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncWriteExt;
-use std::path::PathBuf;
 use tracing::warn;
 
 use crate::consumer::TaskError;
@@ -32,7 +32,13 @@ pub struct AttachmentMetadata {
 
 fn sanitize_filename(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .trim_matches('_')
         .to_string()
@@ -47,11 +53,14 @@ pub async fn write_teams_activity_log(task: TeamsActivityLogTask) -> Result<Stri
 
     if let Err(e) = fs::create_dir_all(&base_path).await {
         warn!("Failed to create teams activity directory: {}", e);
-        return Err(TaskError::Permanent(format!("Failed to create directory: {}", e)));
+        return Err(TaskError::Permanent(format!(
+            "Failed to create directory: {}",
+            e
+        )));
     }
 
     let date = task.timestamp.split('T').next().unwrap_or("unknown");
-    
+
     let filename = if let Some(ref title) = task.context_title {
         format!("{}_{}.log", sanitize_filename(title), date)
     } else {
@@ -59,27 +68,29 @@ pub async fn write_teams_activity_log(task: TeamsActivityLogTask) -> Result<Stri
     };
     let file_path = base_path.join(&filename);
 
-    let time = task.timestamp
+    let time = task
+        .timestamp
         .split('T')
         .nth(1)
         .and_then(|t| t.split('.').next())
         .unwrap_or("00:00:00");
 
-    let direction_symbol = if task.direction == "incoming" { "→" } else { "←" };
-    
+    let direction_symbol = if task.direction == "incoming" {
+        "→"
+    } else {
+        "←"
+    };
+
     // Format: [time] [context] → user: message
-    let context_label = task.context_title
+    let context_label = task
+        .context_title
         .as_ref()
         .map(|t| format!("[{}] ", t))
         .unwrap_or_default();
-    
+
     let mut log_line = format!(
         "[{}] {}{} {}: {}\n",
-        time,
-        context_label,
-        direction_symbol,
-        task.user_name,
-        task.message
+        time, context_label, direction_symbol, task.user_name, task.message
     );
 
     if let Some(attachments) = &task.attachments {

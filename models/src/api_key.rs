@@ -139,12 +139,16 @@ impl RateLimit {
         match self.unit {
             RateLimitUnit::Second => {
                 if self.duration > 1800 {
-                    return Err("Second-based limits cannot exceed 1800 seconds (30 minutes)".to_string());
+                    return Err(
+                        "Second-based limits cannot exceed 1800 seconds (30 minutes)".to_string(),
+                    );
                 }
             }
             RateLimitUnit::Minute => {
                 if self.duration > 1440 {
-                    return Err("Minute-based limits cannot exceed 1440 minutes (24 hours)".to_string());
+                    return Err(
+                        "Minute-based limits cannot exceed 1440 minutes (24 hours)".to_string()
+                    );
                 }
             }
             RateLimitUnit::Hour => {

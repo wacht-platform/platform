@@ -4,7 +4,7 @@ use axum::{
 };
 use commands::{
     Command,
-    billing::{UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand, UpsertInvoiceCommand},
+    billing::{UpdateBillingAccountStatusCommand, UpsertInvoiceCommand, UpsertSubscriptionCommand},
 };
 use common::dodo::DodoClient;
 use common::state::AppState;
@@ -33,15 +33,13 @@ pub async fn handle_dodo_webhook(
 
     let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if !dodo.verify_webhook(
-        webhook_id,
-        webhook_timestamp,
-        &body,
-        webhook_signature,
-    ) {
+    if !dodo.verify_webhook(webhook_id, webhook_timestamp, &body, webhook_signature) {
         warn!(
             "Invalid webhook signature for webhook_id: {}. Timestamp: {}, Signature: {}, Body length: {}",
-            webhook_id, webhook_timestamp, webhook_signature, body.len()
+            webhook_id,
+            webhook_timestamp,
+            webhook_signature,
+            body.len()
         );
         return Err(StatusCode::UNAUTHORIZED);
     }
@@ -111,7 +109,10 @@ async fn handle_subscription_active(
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
     if owner_id.is_empty() {
-        warn!("Could not determine owner_id from customer_id: {}", customer_id);
+        warn!(
+            "Could not determine owner_id from customer_id: {}",
+            customer_id
+        );
         return Ok(());
     }
 
@@ -140,7 +141,10 @@ async fn handle_subscription_active(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    info!("Subscription {} activated for owner {}", subscription_id, owner_id);
+    info!(
+        "Subscription {} activated for owner {}",
+        subscription_id, owner_id
+    );
 
     Ok(())
 }
@@ -170,7 +174,10 @@ async fn handle_subscription_renewed(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        info!("Subscription {} renewed for owner {}", subscription_id, owner_id);
+        info!(
+            "Subscription {} renewed for owner {}",
+            subscription_id, owner_id
+        );
     }
 
     Ok(())
@@ -230,7 +237,10 @@ async fn handle_subscription_cancelled(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        info!("Subscription {} cancelled for owner {}", subscription_id, owner_id);
+        info!(
+            "Subscription {} cancelled for owner {}",
+            subscription_id, owner_id
+        );
     }
 
     Ok(())
@@ -272,7 +282,10 @@ async fn handle_subscription_on_hold(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        info!("Subscription {} on hold for owner {}", subscription_id, owner_id);
+        info!(
+            "Subscription {} on hold for owner {}",
+            subscription_id, owner_id
+        );
     }
 
     Ok(())
@@ -314,7 +327,10 @@ async fn handle_subscription_failed(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        info!("Subscription {} failed for owner {}", subscription_id, owner_id);
+        info!(
+            "Subscription {} failed for owner {}",
+            subscription_id, owner_id
+        );
     }
 
     Ok(())
@@ -356,7 +372,10 @@ async fn handle_subscription_expired(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        info!("Subscription {} expired for owner {}", subscription_id, owner_id);
+        info!(
+            "Subscription {} expired for owner {}",
+            subscription_id, owner_id
+        );
     }
 
     Ok(())
@@ -381,7 +400,10 @@ async fn handle_payment_succeeded(
         .execute(app_state)
         .await
         .map_err(|e| {
-            error!("Failed to update billing account status on payment success: {}", e);
+            error!(
+                "Failed to update billing account status on payment success: {}",
+                e
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
@@ -432,7 +454,10 @@ async fn handle_payment_failed(
         .execute(app_state)
         .await
         .map_err(|e| {
-            error!("Failed to update billing account status on payment failure: {}", e);
+            error!(
+                "Failed to update billing account status on payment failure: {}",
+                e
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
@@ -442,7 +467,11 @@ async fn handle_payment_failed(
     Ok(())
 }
 
-async fn extract_owner_id(app_state: &AppState, customer_id: &str, data: &serde_json::Value) -> String {
+async fn extract_owner_id(
+    app_state: &AppState,
+    customer_id: &str,
+    data: &serde_json::Value,
+) -> String {
     if let Some(metadata) = data["metadata"].as_object() {
         if let Some(owner_id) = metadata.get("owner_id").and_then(|v| v.as_str()) {
             return owner_id.to_string();

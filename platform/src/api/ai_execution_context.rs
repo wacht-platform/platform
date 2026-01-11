@@ -2,8 +2,11 @@ use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use axum::extract::{Json, Path, Query, State};
 
-use commands::{Command, CreateExecutionContextCommand, UpdateExecutionContextCommand, CreateConversationCommand};
-use commands::agent_execution::{UploadImagesToS3Command, PublishAgentExecutionCommand};
+use commands::agent_execution::{PublishAgentExecutionCommand, UploadImagesToS3Command};
+use commands::{
+    Command, CreateConversationCommand, CreateExecutionContextCommand,
+    UpdateExecutionContextCommand,
+};
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::UpdateExecutionContextRequest;
@@ -11,10 +14,7 @@ use dto::json::deployment::{
     CreateExecutionContextRequest, ExecuteAgentRequest, ExecuteAgentResponse,
 };
 use models::{AgentExecutionContext, ExecutionContextStatus};
-use queries::{
-    GetExecutionContextQuery, ListExecutionContextsQuery,
-    Query as QueryTrait,
-};
+use queries::{GetExecutionContextQuery, ListExecutionContextsQuery, Query as QueryTrait};
 use serde::Deserialize;
 use tracing::{error, info};
 
@@ -203,9 +203,9 @@ pub async fn execute_agent_async(
 ) -> ApiResult<ExecuteAgentResponse> {
     use dto::json::deployment::ExecuteAgentRequestType;
     use models::{ConversationContent, ConversationMessageType};
-    
+
     let context_id = params.context_id;
-    
+
     GetExecutionContextQuery::new(context_id, deployment_id)
         .execute(&app_state)
         .await?;
@@ -226,11 +226,9 @@ pub async fn execute_agent_async(
                 }
             };
 
-            let conversation_id = app_state
-                .sf
-                .next_id()
-                .map_err(|e| AppError::Internal(format!("Failed to generate conversation ID: {}", e)))?
-                as i64;
+            let conversation_id = app_state.sf.next_id().map_err(|e| {
+                AppError::Internal(format!("Failed to generate conversation ID: {}", e))
+            })? as i64;
 
             CreateConversationCommand::new(
                 conversation_id,
@@ -265,13 +263,11 @@ pub async fn execute_agent_async(
             }
             .into())
         }
-        
+
         ExecuteAgentRequestType::UserInputResponse { message } => {
-            let conversation_id = app_state
-                .sf
-                .next_id()
-                .map_err(|e| AppError::Internal(format!("Failed to generate conversation ID: {}", e)))?
-                as i64;
+            let conversation_id = app_state.sf.next_id().map_err(|e| {
+                AppError::Internal(format!("Failed to generate conversation ID: {}", e))
+            })? as i64;
 
             CreateConversationCommand::new(
                 conversation_id,
@@ -306,8 +302,11 @@ pub async fn execute_agent_async(
             }
             .into())
         }
-        
-        ExecuteAgentRequestType::PlatformFunctionResult { execution_id, result } => {
+
+        ExecuteAgentRequestType::PlatformFunctionResult {
+            execution_id,
+            result,
+        } => {
             PublishAgentExecutionCommand::platform_function_result(
                 deployment_id,
                 context_id,

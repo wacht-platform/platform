@@ -1,4 +1,4 @@
-use crate::{AgentExecutor, ResumeContext, teams_logger::TeamsActivityLogger};
+use crate::{teams_logger::TeamsActivityLogger, AgentExecutor, ResumeContext};
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::StreamEvent;
@@ -38,7 +38,7 @@ impl AgentHandler {
         let context = GetExecutionContextQuery::new(request.context_id, deployment_id)
             .execute(&self.app_state)
             .await?;
-        
+
         // Extract title ensuring we have a reasonable default
         let context_title = if context.title.is_empty() {
             format!("Context {}", request.context_id)
@@ -82,7 +82,9 @@ impl AgentHandler {
                 )
                 .await
             }
-            _ => Err(AppError::Internal("Invalid execution request: conversation_id required".to_string())),
+            _ => Err(AppError::Internal(
+                "Invalid execution request: conversation_id required".to_string(),
+            )),
         };
 
         executor.post_execution_processing();
@@ -122,8 +124,14 @@ impl AgentHandler {
         let app_state = self.app_state.clone();
         tokio::spawn(async move {
             while let Some(message) = receiver.recv().await {
-                let _ =
-                    publish_stream_event(&app_state, &context_key, deployment_id, agent_id, message).await;
+                let _ = publish_stream_event(
+                    &app_state,
+                    &context_key,
+                    deployment_id,
+                    agent_id,
+                    message,
+                )
+                .await;
             }
         });
     }
@@ -190,29 +198,43 @@ async fn publish_stream_event(
     let (message_type, payload) = match &event {
         StreamEvent::ConversationMessage(conversation_content) => {
             // Log outgoing agent response if from Teams context
-            if let models::ConversationContent::AgentResponse { response, .. } = &conversation_content.content {
+            if let models::ConversationContent::AgentResponse { response, .. } =
+                &conversation_content.content
+            {
                 if let Ok(ctx_id) = context_key.parse::<i64>() {
                     if let Ok(ctx) = GetExecutionContextQuery::new(ctx_id, deployment_id)
                         .execute(app_state)
-                        .await 
+                        .await
                     {
                         if ctx.source.as_deref() == Some("teams") {
                             if let Some(group) = &ctx.context_group {
                                 if !group.is_empty() {
                                     let mut location = String::new();
                                     if let Some(meta) = &ctx.external_resource_metadata {
-                                        if let Some(channel_name) = meta.get("channelName").and_then(|v| v.as_str()) {
+                                        if let Some(channel_name) =
+                                            meta.get("channelName").and_then(|v| v.as_str())
+                                        {
                                             location = format!(" [Channel: {}]", channel_name);
                                         }
                                     }
-                                    
+
                                     let title = if ctx.title.is_empty() {
-                                        format!("Context {}", ctx.id) 
-                                    } else { 
-                                        ctx.title.clone() 
+                                        format!("Context {}", ctx.id)
+                                    } else {
+                                        ctx.title.clone()
                                     };
-                                    let logger = TeamsActivityLogger::new(&deployment_id.to_string(), &agent_id.to_string(), group, &title);
-                                    let _ = logger.append_entry("RESPONSE", &format!("To User{}: {}", location, response)).await;
+                                    let logger = TeamsActivityLogger::new(
+                                        &deployment_id.to_string(),
+                                        &agent_id.to_string(),
+                                        group,
+                                        &title,
+                                    );
+                                    let _ = logger
+                                        .append_entry(
+                                            "RESPONSE",
+                                            &format!("To User{}: {}", location, response),
+                                        )
+                                        .await;
                                 }
                             }
                         }
@@ -293,18 +315,18 @@ async fn publish_stream_event(
         webhook_payload,
     );
 
-    // Run webhook trigger in background or await? 
+    // Run webhook trigger in background or await?
     // Since publish_stream_event is spawned in a loop, awaiting is fine/good.
     // However, if webhook is slow, it might block stream?
     // publish_stream_event is inside a tokio::spawn loop in spawn_message_publisher
     // Yes, awaiting is correct.
-    
+
     if let Err(e) = trigger_command.execute(app_state).await {
-         tracing::warn!(
+        tracing::warn!(
             deployment_id = deployment_id,
             webhook_event = %webhook_event,
             context_key = %context_key,
-            "Failed to trigger webhook for agent stream event: {}. This is expected if no webhook is configured.", 
+            "Failed to trigger webhook for agent stream event: {}. This is expected if no webhook is configured.",
             e
         );
     }

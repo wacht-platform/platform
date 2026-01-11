@@ -38,11 +38,11 @@ impl GenerateScimTokenCommand {
         let token_suffix = hex::encode(random_bytes);
         let plain_token = format!("scm_{}", token_suffix);
         let token_prefix = format!("scm_{}...", &token_suffix[..8]);
-        
+
         let mut hasher = Sha256::new();
         hasher.update(plain_token.as_bytes());
         let token_hash = hex::encode(hasher.finalize());
-        
+
         (plain_token, token_prefix, token_hash)
     }
 }

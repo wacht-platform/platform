@@ -1,9 +1,9 @@
+use common::error::AppError;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tokio::fs;
 use tokio::process::Command;
-use common::error::AppError;
 
 pub mod shell;
 
@@ -20,7 +20,7 @@ pub struct AgentFilesystem {
 impl AgentFilesystem {
     pub fn new(deployment_id: &str, agent_id: &str, context_id: &str, execution_id: &str) -> Self {
         let base = "/mnt/wacht-agents".to_string();
-        
+
         Self {
             base_path: PathBuf::from(base),
             deployment_id: deployment_id.to_string(),
@@ -37,8 +37,6 @@ impl AgentFilesystem {
             .join("executions")
             .join(&self.execution_id)
     }
-
-
 
     pub fn persistent_uploads_path(&self) -> PathBuf {
         self.base_path
@@ -66,23 +64,22 @@ impl AgentFilesystem {
 
     pub async fn initialize(&self) -> Result<(), AppError> {
         let root = self.execution_root();
-        
-        fs::create_dir_all(&root).await.map_err(|e| {
-            AppError::Internal(format!("Failed to create execution root: {}", e))
-        })?;
 
-        fs::create_dir_all(root.join("workspace")).await.map_err(|e| {
-            AppError::Internal(format!("Failed to create workspace: {}", e))
-        })?;
+        fs::create_dir_all(&root)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to create execution root: {}", e)))?;
 
-        fs::create_dir_all(root.join("scratch")).await.map_err(|e| {
-            AppError::Internal(format!("Failed to create scratch: {}", e))
-        })?;
+        fs::create_dir_all(root.join("workspace"))
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to create workspace: {}", e)))?;
 
-        fs::create_dir_all(root.join("knowledge")).await.map_err(|e| {
-            AppError::Internal(format!("Failed to create knowledge dir: {}", e))
-        })?;
+        fs::create_dir_all(root.join("scratch"))
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to create scratch: {}", e)))?;
 
+        fs::create_dir_all(root.join("knowledge"))
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to create knowledge dir: {}", e)))?;
 
         let persistent_uploads = self.persistent_uploads_path();
         fs::create_dir_all(&persistent_uploads).await.map_err(|e| {
@@ -91,9 +88,9 @@ impl AgentFilesystem {
 
         let uploads_link = root.join("uploads");
         if !uploads_link.exists() {
-            fs::symlink(&persistent_uploads, &uploads_link).await.map_err(|e| {
-                AppError::Internal(format!("Failed to symlink uploads: {}", e))
-            })?;
+            fs::symlink(&persistent_uploads, &uploads_link)
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to symlink uploads: {}", e)))?;
         }
 
         Ok(())
@@ -104,9 +101,9 @@ impl AgentFilesystem {
         let target = self.execution_root().join("knowledge").join(kb_name);
 
         if !source.exists() {
-            fs::create_dir_all(&source).await.map_err(|e| {
-                AppError::Internal(format!("Failed to create KB directory: {}", e))
-            })?;
+            fs::create_dir_all(&source)
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to create KB directory: {}", e)))?;
         }
 
         if target.exists() {
@@ -118,9 +115,9 @@ impl AgentFilesystem {
             }
         }
 
-        fs::symlink(&source, &target).await.map_err(|e| {
-            AppError::Internal(format!("Failed to link KB: {}", e))
-        })?;
+        fs::symlink(&source, &target)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to link KB: {}", e)))?;
 
         Ok(())
     }
@@ -146,9 +143,9 @@ impl AgentFilesystem {
             }
         }
 
-        fs::symlink(&source, &target).await.map_err(|e| {
-            AppError::Internal(format!("Failed to link teams-activity: {}", e))
-        })?;
+        fs::symlink(&source, &target)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to link teams-activity: {}", e)))?;
 
         Ok(())
     }
@@ -166,20 +163,20 @@ impl AgentFilesystem {
     pub async fn save_upload(&self, filename: &str, data: &[u8]) -> Result<String, AppError> {
         let uploads_dir = self.persistent_uploads_path();
         fs::create_dir_all(&uploads_dir).await.ok();
-        
+
         let file_path = uploads_dir.join(filename);
-        fs::write(&file_path, data).await.map_err(|e| {
-            AppError::Internal(format!("Failed to save upload: {}", e))
-        })?;
-        
+        fs::write(&file_path, data)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to save upload: {}", e)))?;
+
         Ok(format!("/uploads/{}", filename))
     }
 
     pub async fn read_file_bytes(&self, path: &str) -> Result<Vec<u8>, AppError> {
         let full_path = self.resolve_path(path)?;
-        fs::read(&full_path).await.map_err(|e| {
-            AppError::NotFound(format!("Failed to read {}: {}", path, e))
-        })
+        fs::read(&full_path)
+            .await
+            .map_err(|e| AppError::NotFound(format!("Failed to read {}: {}", path, e)))
     }
 
     pub async fn read_file(
@@ -189,9 +186,9 @@ impl AgentFilesystem {
         end_line: Option<usize>,
     ) -> Result<ReadFileResult, AppError> {
         let full_path = self.resolve_path(path)?;
-        let content = fs::read_to_string(&full_path).await.map_err(|e| {
-            AppError::NotFound(format!("Failed to read {}: {}", path, e))
-        })?;
+        let content = fs::read_to_string(&full_path)
+            .await
+            .map_err(|e| AppError::NotFound(format!("Failed to read {}: {}", path, e)))?;
 
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
@@ -227,11 +224,13 @@ impl AgentFilesystem {
         end_line: Option<usize>,
     ) -> Result<WriteFileResult, AppError> {
         let full_path = self.resolve_path(path)?;
-        
+
         let writable_prefixes = ["memory/", "workspace/", "scratch/"];
         let clean = path.trim_start_matches('/');
         if !writable_prefixes.iter().any(|p| clean.starts_with(p)) {
-            return Err(AppError::Forbidden("Can only write to memory/, workspace/, scratch/".to_string()));
+            return Err(AppError::Forbidden(
+                "Can only write to memory/, workspace/, scratch/".to_string(),
+            ));
         }
 
         if let Some(parent) = full_path.parent() {
@@ -239,35 +238,37 @@ impl AgentFilesystem {
         }
 
         if start_line.is_some() || end_line.is_some() {
-            let was_read = self.read_files.read()
+            let was_read = self
+                .read_files
+                .read()
                 .map(|rf| rf.contains(path))
                 .unwrap_or(false);
-            
+
             if !was_read {
                 return Err(AppError::BadRequest(
-                    "Must read file before partial write. Use read_file first.".to_string()
+                    "Must read file before partial write. Use read_file first.".to_string(),
                 ));
             }
 
             let existing = fs::read_to_string(&full_path).await.unwrap_or_default();
             let lines: Vec<String> = existing.lines().map(|s| s.to_string()).collect();
-            
+
             let start = start_line.unwrap_or(1).saturating_sub(1);
             let end = end_line.unwrap_or(lines.len()).min(lines.len());
 
             let new_lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-            
+
             let before: Vec<String> = lines.iter().take(start).cloned().collect();
             let after: Vec<String> = lines.iter().skip(end).cloned().collect();
-            
+
             let mut result = before;
             result.extend(new_lines);
             result.extend(after);
 
             let final_content = result.join("\n");
-            fs::write(&full_path, &final_content).await.map_err(|e| {
-                AppError::Internal(format!("Failed to write {}: {}", path, e))
-            })?;
+            fs::write(&full_path, &final_content)
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to write {}: {}", path, e)))?;
 
             if let Ok(mut read_files) = self.read_files.write() {
                 read_files.remove(path);
@@ -279,9 +280,9 @@ impl AgentFilesystem {
                 partial: true,
             })
         } else {
-            fs::write(&full_path, content).await.map_err(|e| {
-                AppError::Internal(format!("Failed to write {}: {}", path, e))
-            })?;
+            fs::write(&full_path, content)
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to write {}: {}", path, e)))?;
 
             if let Ok(mut read_files) = self.read_files.write() {
                 read_files.remove(path);
@@ -302,17 +303,23 @@ impl AgentFilesystem {
             return Err(AppError::NotFound(format!("Directory not found: {}", path)));
         }
 
-        let mut entries = fs::read_dir(&full_path).await.map_err(|e| {
-            AppError::Internal(format!("Failed to read directory: {}", e))
-        })?;
+        let mut entries = fs::read_dir(&full_path)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to read directory: {}", e)))?;
 
         let mut files = Vec::new();
-        while let Some(entry) = entries.next_entry().await.map_err(|e| {
-            AppError::Internal(format!("Failed to read entry: {}", e))
-        })? {
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to read entry: {}", e)))?
+        {
             if let Some(name) = entry.file_name().to_str() {
                 let metadata = entry.metadata().await.ok();
-                let suffix = if metadata.map(|m| m.is_dir()).unwrap_or(false) { "/" } else { "" };
+                let suffix = if metadata.map(|m| m.is_dir()).unwrap_or(false) {
+                    "/"
+                } else {
+                    ""
+                };
                 files.push(format!("{}{}", name, suffix));
             }
         }
@@ -344,7 +351,9 @@ impl AgentFilesystem {
 
     fn resolve_path(&self, path: &str) -> Result<PathBuf, AppError> {
         if path.contains("..") {
-            return Err(AppError::BadRequest("Path traversal not allowed".to_string()));
+            return Err(AppError::BadRequest(
+                "Path traversal not allowed".to_string(),
+            ));
         }
 
         let clean = path.trim_start_matches('/');

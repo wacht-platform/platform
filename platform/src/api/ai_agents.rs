@@ -87,32 +87,34 @@ pub async fn get_ai_agent_details(
     Path(params): Path<AgentParams>,
 ) -> ApiResult<AgentDetailsResponse> {
     use queries::GetAgentIntegrationsQuery;
-    
+
     // Fetch agent
     let agent = GetAiAgentByIdQuery::new(deployment_id, params.agent_id)
         .execute(&app_state)
         .await?;
-    
+
     // Fetch integrations
     let integrations = GetAgentIntegrationsQuery::new(deployment_id, params.agent_id)
         .execute(&app_state)
         .await
         .unwrap_or_default();
-    
+
     // Generate webhook URLs
     let base_url = std::env::var("INTEGRATIONS_BASE_URL")
         .unwrap_or_else(|_| "https://agentlink.wacht.services".to_string());
-    
+
     let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
         .into_iter()
         .map(|integration| {
             let webhook_url = match integration.integration_type {
-                models::IntegrationType::Teams | models::IntegrationType::WhatsApp => Some(format!(
-                    "{}/service/{}/{}/message",
-                    base_url,
-                    integration.integration_type.to_string().to_lowercase(),
-                    params.agent_id
-                )),
+                models::IntegrationType::Teams | models::IntegrationType::WhatsApp => {
+                    Some(format!(
+                        "{}/service/{}/{}/message",
+                        base_url,
+                        integration.integration_type.to_string().to_lowercase(),
+                        params.agent_id
+                    ))
+                }
                 _ => None,
             };
             IntegrationWithUrl {
@@ -128,7 +130,7 @@ pub async fn get_ai_agent_details(
             }
         })
         .collect();
-    
+
     Ok(AgentDetailsResponse {
         id: agent.id,
         created_at: agent.created_at,
@@ -141,10 +143,11 @@ pub async fn get_ai_agent_details(
         workflows_count: agent.workflows_count,
         knowledge_bases_count: agent.knowledge_bases_count,
         integrations: integrations_with_urls,
-        tools: vec![], // TODO: fetch tools if needed
-        workflows: vec![], // TODO: fetch workflows if needed
+        tools: vec![],           // TODO: fetch tools if needed
+        workflows: vec![],       // TODO: fetch workflows if needed
         knowledge_bases: vec![], // TODO: fetch knowledge bases if needed
-    }.into())
+    }
+    .into())
 }
 
 pub async fn update_ai_agent(
@@ -191,25 +194,27 @@ pub async fn get_agent_integrations(
     Path(params): Path<AgentParams>,
 ) -> ApiResult<IntegrationsResponse> {
     use queries::GetAgentIntegrationsQuery;
-    
+
     let integrations = GetAgentIntegrationsQuery::new(deployment_id, params.agent_id)
         .execute(&app_state)
         .await?;
-    
+
     // Generate webhook URLs for each integration
     let base_url = std::env::var("INTEGRATIONS_BASE_URL")
         .unwrap_or_else(|_| "https://agentlink.wacht.services".to_string());
-    
+
     let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
         .into_iter()
         .map(|integration| {
             let webhook_url = match integration.integration_type {
-                models::IntegrationType::Teams | models::IntegrationType::WhatsApp => Some(format!(
-                    "{}/service/{}/{}/message",
-                    base_url,
-                    integration.integration_type.to_string().to_lowercase(),
-                    params.agent_id
-                )),
+                models::IntegrationType::Teams | models::IntegrationType::WhatsApp => {
+                    Some(format!(
+                        "{}/service/{}/{}/message",
+                        base_url,
+                        integration.integration_type.to_string().to_lowercase(),
+                        params.agent_id
+                    ))
+                }
                 _ => None,
             };
             IntegrationWithUrl {
@@ -225,8 +230,11 @@ pub async fn get_agent_integrations(
             }
         })
         .collect();
-    
-    Ok(IntegrationsResponse { integrations: integrations_with_urls }.into())
+
+    Ok(IntegrationsResponse {
+        integrations: integrations_with_urls,
+    }
+    .into())
 }
 
 #[derive(serde::Serialize)]

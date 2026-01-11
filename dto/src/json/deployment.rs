@@ -80,12 +80,10 @@ pub enum ExecuteAgentRequestType {
         message: String,
         images: Option<Vec<crate::json::agent_executor::ImageData>>,
     },
-    
+
     #[serde(rename = "user_input_response")]
-    UserInputResponse {
-        message: String,
-    },
-    
+    UserInputResponse { message: String },
+
     #[serde(rename = "platform_function_result")]
     PlatformFunctionResult {
         execution_id: String,

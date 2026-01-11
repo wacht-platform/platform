@@ -18,17 +18,50 @@ struct MetricConfig {
 
 fn get_metric_config(metric: &str) -> MetricConfig {
     match metric {
-        "mau" => MetricConfig { event_name: "users.active", use_last_aggregation: true },
-        "mao" => MetricConfig { event_name: "organizations.active", use_last_aggregation: true },
-        "maw" => MetricConfig { event_name: "workspaces.active", use_last_aggregation: true },
-        "storage" => MetricConfig { event_name: "storage.used", use_last_aggregation: false },
-        "emails" => MetricConfig { event_name: "emails.sent", use_last_aggregation: false },
-        "webhooks" => MetricConfig { event_name: "webhooks.sent", use_last_aggregation: false },
-        "ai_tokens_input" => MetricConfig { event_name: "ai.tokens.input", use_last_aggregation: false },
-        "ai_tokens_output" => MetricConfig { event_name: "ai.tokens.output", use_last_aggregation: false },
-        "sms_cost" => MetricConfig { event_name: "sms.cost", use_last_aggregation: false },
-        "api_checks" => MetricConfig { event_name: "api.checks", use_last_aggregation: false },
-        _ => MetricConfig { event_name: "unknown", use_last_aggregation: false },
+        "mau" => MetricConfig {
+            event_name: "users.active",
+            use_last_aggregation: true,
+        },
+        "mao" => MetricConfig {
+            event_name: "organizations.active",
+            use_last_aggregation: true,
+        },
+        "maw" => MetricConfig {
+            event_name: "workspaces.active",
+            use_last_aggregation: true,
+        },
+        "storage" => MetricConfig {
+            event_name: "storage.used",
+            use_last_aggregation: false,
+        },
+        "emails" => MetricConfig {
+            event_name: "emails.sent",
+            use_last_aggregation: false,
+        },
+        "webhooks" => MetricConfig {
+            event_name: "webhooks.sent",
+            use_last_aggregation: false,
+        },
+        "ai_tokens_input" => MetricConfig {
+            event_name: "ai.tokens.input",
+            use_last_aggregation: false,
+        },
+        "ai_tokens_output" => MetricConfig {
+            event_name: "ai.tokens.output",
+            use_last_aggregation: false,
+        },
+        "sms_cost" => MetricConfig {
+            event_name: "sms.cost",
+            use_last_aggregation: false,
+        },
+        "api_checks" => MetricConfig {
+            event_name: "api.checks",
+            use_last_aggregation: false,
+        },
+        _ => MetricConfig {
+            event_name: "unknown",
+            use_last_aggregation: false,
+        },
     }
 }
 
@@ -216,17 +249,61 @@ async fn sync_deployment(
     let results: Vec<String> = script.arg(&prefix).invoke_async(redis).await?;
 
     let metrics = vec![
-        ("mau", results[0].parse::<i64>().unwrap_or(0), results[1].parse::<i64>().unwrap_or(0)),
-        ("mao", results[2].parse::<i64>().unwrap_or(0), results[3].parse::<i64>().unwrap_or(0)),
-        ("maw", results[4].parse::<i64>().unwrap_or(0), results[5].parse::<i64>().unwrap_or(0)),
-        ("projects", results[6].parse::<i64>().unwrap_or(0), results[7].parse::<i64>().unwrap_or(0)),
-        ("emails", results[8].parse::<i64>().unwrap_or(0), results[9].parse::<i64>().unwrap_or(0)),
-        ("webhooks", results[10].parse::<i64>().unwrap_or(0), results[11].parse::<i64>().unwrap_or(0)),
-        ("ai_tokens_input", results[12].parse::<i64>().unwrap_or(0), results[13].parse::<i64>().unwrap_or(0)),
-        ("ai_tokens_output", results[14].parse::<i64>().unwrap_or(0), results[15].parse::<i64>().unwrap_or(0)),
-        ("sms_cost", results[16].parse::<i64>().unwrap_or(0), results[17].parse::<i64>().unwrap_or(0)),
-        ("storage", results[18].parse::<i64>().unwrap_or(0), results[19].parse::<i64>().unwrap_or(0)),
-        ("api_checks", results[20].parse::<i64>().unwrap_or(0), results[21].parse::<i64>().unwrap_or(0)),
+        (
+            "mau",
+            results[0].parse::<i64>().unwrap_or(0),
+            results[1].parse::<i64>().unwrap_or(0),
+        ),
+        (
+            "mao",
+            results[2].parse::<i64>().unwrap_or(0),
+            results[3].parse::<i64>().unwrap_or(0),
+        ),
+        (
+            "maw",
+            results[4].parse::<i64>().unwrap_or(0),
+            results[5].parse::<i64>().unwrap_or(0),
+        ),
+        (
+            "projects",
+            results[6].parse::<i64>().unwrap_or(0),
+            results[7].parse::<i64>().unwrap_or(0),
+        ),
+        (
+            "emails",
+            results[8].parse::<i64>().unwrap_or(0),
+            results[9].parse::<i64>().unwrap_or(0),
+        ),
+        (
+            "webhooks",
+            results[10].parse::<i64>().unwrap_or(0),
+            results[11].parse::<i64>().unwrap_or(0),
+        ),
+        (
+            "ai_tokens_input",
+            results[12].parse::<i64>().unwrap_or(0),
+            results[13].parse::<i64>().unwrap_or(0),
+        ),
+        (
+            "ai_tokens_output",
+            results[14].parse::<i64>().unwrap_or(0),
+            results[15].parse::<i64>().unwrap_or(0),
+        ),
+        (
+            "sms_cost",
+            results[16].parse::<i64>().unwrap_or(0),
+            results[17].parse::<i64>().unwrap_or(0),
+        ),
+        (
+            "storage",
+            results[18].parse::<i64>().unwrap_or(0),
+            results[19].parse::<i64>().unwrap_or(0),
+        ),
+        (
+            "api_checks",
+            results[20].parse::<i64>().unwrap_or(0),
+            results[21].parse::<i64>().unwrap_or(0),
+        ),
     ];
 
     let mut total_units_synced = 0i64;
@@ -281,10 +358,7 @@ async fn sync_to_dodo(
             return;
         }
         Err(e) => {
-            error!(
-                "[DODO] Failed to fetch deployment {}: {}",
-                deployment_id, e
-            );
+            error!("[DODO] Failed to fetch deployment {}: {}", deployment_id, e);
             return;
         }
     };
@@ -315,7 +389,13 @@ async fn sync_to_dodo(
         );
 
         match dodo_client
-            .ingest_usage_events(&customer_id, config.event_name, value_to_send, &event_id, config.use_last_aggregation)
+            .ingest_usage_events(
+                &customer_id,
+                config.event_name,
+                value_to_send,
+                &event_id,
+                config.use_last_aggregation,
+            )
             .await
         {
             Ok(_) => {

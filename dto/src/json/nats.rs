@@ -61,10 +61,13 @@ impl TaskResult {
 pub enum AgentExecutionType {
     #[serde(rename = "new_message")]
     NewMessage { conversation_id: String },
-    
+
     #[serde(rename = "platform_function_result")]
-    PlatformFunctionResult { execution_id: String, result: serde_json::Value },
-    
+    PlatformFunctionResult {
+        execution_id: String,
+        result: serde_json::Value,
+    },
+
     #[serde(rename = "user_input_response")]
     UserInputResponse { conversation_id: String },
 }
@@ -81,4 +84,3 @@ pub struct AgentExecutionRequest {
     #[serde(flatten)]
     pub execution_type: AgentExecutionType,
 }
-

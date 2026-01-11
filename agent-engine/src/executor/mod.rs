@@ -11,10 +11,9 @@ mod core;
 mod decision;
 mod memory;
 mod nodes;
+pub mod python;
 mod tool_params;
 mod workflow;
-pub mod python;
 
 // Re-export public types
 pub use core::{AgentExecutor, AgentExecutorBuilder, ResumeContext};
-

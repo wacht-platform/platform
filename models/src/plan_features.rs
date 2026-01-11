@@ -41,19 +41,11 @@ impl PlanTier {
             PlanTier::Starter => {
                 // Starter plan: CIAM suite only (limited usage)
                 // No webhooks, no AI agents, no API keys
-                HashSet::from([
-                    Organizations,
-                    Workspaces,
-                ])
+                HashSet::from([Organizations, Workspaces])
             }
             PlanTier::Growth => {
                 // Growth plan: CIAM suite + Webhooks + API Keys
-                HashSet::from([
-                    Webhooks,
-                    ApiKeys,
-                    Organizations,
-                    Workspaces,
-                ])
+                HashSet::from([Webhooks, ApiKeys, Organizations, Workspaces])
             }
             PlanTier::Pro => {
                 // Pro plan: Everything (CIAM suite + AI agents + webhooks + API keys)

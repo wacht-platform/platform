@@ -5,17 +5,22 @@ use tracing::error;
 
 use commands::{
     Command,
-    billing::{CreateBillingAccountCommand, UpdateBillingAccountCommand, SetProviderCustomerIdCommand},
+    billing::{
+        CreateBillingAccountCommand, SetProviderCustomerIdCommand, UpdateBillingAccountCommand,
+    },
 };
 use common::dodo::{
-    DodoClient, CreateCheckoutParams, ProductCartItem, CheckoutCustomer, ChangePlanParams,
-    CreateCustomerParams,
+    ChangePlanParams, CheckoutCustomer, CreateCheckoutParams, CreateCustomerParams, DodoClient,
+    ProductCartItem,
 };
 use common::state::AppState;
 use models::billing::BillingAccountWithSubscription;
 use queries::{
     Query as QueryTrait,
-    billing::{GetBillingAccountQuery, GetDeploymentUsageQuery, GetDodoProductQuery, GetAllDodoProductsQuery, DodoProduct, UsageSnapshot},
+    billing::{
+        DodoProduct, GetAllDodoProductsQuery, GetBillingAccountQuery, GetDeploymentUsageQuery,
+        GetDodoProductQuery, UsageSnapshot,
+    },
 };
 use wacht::middleware::RequireAuth;
 
@@ -220,13 +225,10 @@ pub async fn create_checkout(
         discount_code: None,
     };
 
-    let checkout = dodo
-        .create_checkout_session(params)
-        .await
-        .map_err(|e| {
-            error!("Failed to create checkout session: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let checkout = dodo.create_checkout_session(params).await.map_err(|e| {
+        error!("Failed to create checkout session: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(Json(CheckoutResponse {
         checkout_id: checkout.checkout_id,
@@ -500,13 +502,10 @@ pub async fn change_plan(
 pub async fn get_plans(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<DodoProduct>>, StatusCode> {
-    let products = GetAllDodoProductsQuery
-        .execute(&state)
-        .await
-        .map_err(|e| {
-            error!("Failed to get plans: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let products = GetAllDodoProductsQuery.execute(&state).await.map_err(|e| {
+        error!("Failed to get plans: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(Json(products))
 }

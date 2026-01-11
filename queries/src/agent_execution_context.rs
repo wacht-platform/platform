@@ -129,38 +129,39 @@ impl super::Query for ListExecutionContextsQuery {
              title, context_group, system_instructions, last_activity_at, completed_at,
              execution_state, status, source, external_context_id, external_resource_metadata 
              FROM agent_execution_contexts 
-             WHERE deployment_id = "
+             WHERE deployment_id = ",
         );
-        
+
         query.push_bind(self.deployment_id);
-        
+
         if let Some(ref title_search) = self.title_search {
             query.push(" AND title ILIKE '%' || ");
             query.push_bind(title_search);
             query.push(" || '%'");
         }
-        
+
         if let Some(ref status_filter) = self.status_filter {
             query.push(" AND status = ");
             query.push_bind(status_filter);
         }
-        
+
         if let Some(ref context_group_filter) = self.context_group_filter {
             query.push(" AND context_group = ");
             query.push_bind(context_group_filter);
         }
-        
+
         if let Some(ref source_filter) = self.source_filter {
             query.push(" AND source = ");
             query.push_bind(source_filter);
         }
-        
+
         query.push(" ORDER BY last_activity_at DESC LIMIT ");
         query.push_bind(limit);
         query.push(" OFFSET ");
         query.push_bind(offset);
-        
-        let rows = query.build()
+
+        let rows = query
+            .build()
             .fetch_all(&app_state.db_pool)
             .await
             .map_err(|e| AppError::Database(e))?;
@@ -168,7 +169,7 @@ impl super::Query for ListExecutionContextsQuery {
         let mut result = Vec::new();
         for row in rows {
             use sqlx::Row;
-            
+
             let status_str: String = row.get("status");
             let status = ExecutionContextStatus::from_str(&status_str).unwrap_or_default();
 

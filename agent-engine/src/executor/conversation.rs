@@ -56,11 +56,7 @@ impl AgentExecutor {
                 })?;
 
                 let file_extension = img.mime_type.split('/').last().unwrap_or("png");
-                let filename = format!(
-                    "{}.{}",
-                    self.app_state.sf.next_id()?,
-                    file_extension
-                );
+                let filename = format!("{}.{}", self.app_state.sf.next_id()?, file_extension);
 
                 let relative_path = self.filesystem.save_upload(&filename, &bytes).await?;
 
@@ -129,7 +125,12 @@ impl AgentExecutor {
                     }
                 }
                 ConversationMessageType::UserMessage => {
-                    if let ConversationContent::UserMessage { message, images, sender_name } = &conv.content {
+                    if let ConversationContent::UserMessage {
+                        message,
+                        images,
+                        sender_name,
+                    } = &conv.content
+                    {
                         let mut parts = vec![json!({
                             "text": message
                         })];
@@ -137,7 +138,7 @@ impl AgentExecutor {
                         if let Some(imgs) = images {
                             for img in imgs {
                                 use base64::{engine::general_purpose::STANDARD, Engine};
-                                
+
                                 if let Ok(bytes) = self.filesystem.read_file_bytes(&img.url).await {
                                     let base64_data = STANDARD.encode(&bytes);
                                     parts.push(json!({
@@ -194,16 +195,20 @@ impl AgentExecutor {
             }
         }
 
-
-
         // DEBUG: Print formatted history
         println!("\n=== LLM CONVERSATION HISTORY ===");
         for item in &history {
-            let role = item.get("role").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let role = item
+                .get("role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             let content = if let Some(parts) = item.get("parts") {
                 format!("{:?}", parts)
             } else {
-                item.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string()
+                item.get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string()
             };
             println!("[{}] {}", role.to_uppercase(), content);
         }
@@ -212,7 +217,10 @@ impl AgentExecutor {
         history
     }
 
-    pub(super) fn map_conversation_type_to_role(&self, msg_type: &ConversationMessageType) -> &'static str {
+    pub(super) fn map_conversation_type_to_role(
+        &self,
+        msg_type: &ConversationMessageType,
+    ) -> &'static str {
         match msg_type {
             ConversationMessageType::UserMessage => "user",
             _ => "model",
@@ -259,12 +267,14 @@ impl AgentExecutor {
                     }
                 });
                 val.to_string()
-            },
+            }
             ConversationContent::AgentResponse { response, .. } => response.clone(),
             ConversationContent::UserInputRequest { question, .. } => question.clone(),
-            ConversationContent::SystemDecision { step, reasoning, .. } => {
+            ConversationContent::SystemDecision {
+                step, reasoning, ..
+            } => {
                 format!("System Decision (Step: {}): {}", step, reasoning)
-            },
+            }
             _ => serde_json::to_string(content).unwrap_or_default(),
         }
     }

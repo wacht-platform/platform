@@ -110,7 +110,9 @@ impl Query for GetConversationByIdQuery {
         .fetch_optional(&app_state.db_pool)
         .await
         .map_err(AppError::from)?
-        .ok_or_else(|| AppError::NotFound(format!("Conversation {} not found", self.conversation_id)))?;
+        .ok_or_else(|| {
+            AppError::NotFound(format!("Conversation {} not found", self.conversation_id))
+        })?;
 
         Ok(record)
     }
@@ -308,7 +310,7 @@ impl Query for FindSimilarMemoriesQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let embedding = HalfVector::from_f32_slice(&self.embedding);
-        
+
         let results = sqlx::query!(
             r#"
             SELECT id, content, 1 - (embedding <=> $1) as similarity
@@ -327,11 +329,14 @@ impl Query for FindSimilarMemoriesQuery {
         .await
         .map_err(AppError::from)?;
 
-        Ok(results.into_iter().map(|r| SimilarMemory {
-            id: r.id,
-            content: r.content,
-            similarity: r.similarity.unwrap_or(0.0),
-        }).collect())
+        Ok(results
+            .into_iter()
+            .map(|r| SimilarMemory {
+                id: r.id,
+                content: r.content,
+                similarity: r.similarity.unwrap_or(0.0),
+            })
+            .collect())
     }
 }
 

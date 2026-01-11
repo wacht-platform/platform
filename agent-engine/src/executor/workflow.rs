@@ -1,12 +1,8 @@
 use super::core::AgentExecutor;
 
 use common::error::AppError;
-use dto::json::{
-    StreamEvent, WorkflowCall, WorkflowExecutionResult,
-};
-use models::{
-    AiWorkflow, WorkflowEdge, WorkflowNode, WorkflowNodeType,
-};
+use dto::json::{StreamEvent, WorkflowCall, WorkflowExecutionResult};
+use models::{AiWorkflow, WorkflowEdge, WorkflowNode, WorkflowNodeType};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 

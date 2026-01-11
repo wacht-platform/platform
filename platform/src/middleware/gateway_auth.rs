@@ -27,11 +27,7 @@ pub async fn gateway_auth_middleware(
         }
     };
 
-    let identifier = req
-        .uri()
-        .path()
-        .trim_start_matches('/')
-        .replace('/', ":");
+    let identifier = req.uri().path().trim_start_matches('/').replace('/', ":");
 
     match wacht::gateway::verify_request(api_key, &identifier).await {
         Ok(response) => {

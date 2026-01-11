@@ -291,7 +291,11 @@ pub async fn trigger_webhook_event(
                     .ignore()
                     .expire(&format!("{}:metrics", prefix), 5184000)
                     .ignore()
-                    .zincr(&format!("billing:{}:dirty_deployments", period), deployment_id, 1)
+                    .zincr(
+                        &format!("billing:{}:dirty_deployments", period),
+                        deployment_id,
+                        1,
+                    )
                     .ignore()
                     .expire(&format!("billing:{}:dirty_deployments", period), 5184000)
                     .ignore();

@@ -13,8 +13,6 @@ pub struct GeminiClient {
     redis_client: Option<redis::Client>,
 }
 
-
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GeminiResponse {
     pub candidates: Vec<Candidate>,
@@ -74,7 +72,10 @@ impl GeminiClient {
         self
     }
 
-    pub async fn generate_structured_content<T>(&self, request_body: String) -> Result<(T, Option<String>), AppError>
+    pub async fn generate_structured_content<T>(
+        &self,
+        request_body: String,
+    ) -> Result<(T, Option<String>), AppError>
     where
         T: for<'de> Deserialize<'de> + Serialize,
     {
@@ -102,47 +103,48 @@ impl GeminiClient {
                         Ok(bytes) => {
                             // Log raw response for debugging parse failures
                             let raw_response = String::from_utf8_lossy(&bytes);
-                            
+
                             match serde_json::from_slice::<GeminiResponse>(&bytes) {
-                            Ok(gemini_response) => {
-                                let mut accumulated_text = String::new();
-                                let mut thought_signature = None;
-                                
-                                for part in &gemini_response.candidates[0].content.parts {
-                                    accumulated_text.push_str(&part.text);
-                                    if let Some(sig) = &part.thought_signature {
-                                        thought_signature = Some(sig.clone());
-                                    }
-                                }
+                                Ok(gemini_response) => {
+                                    let mut accumulated_text = String::new();
+                                    let mut thought_signature = None;
 
-                                if accumulated_text.is_empty() {
-                                    last_error =
-                                        Some("No response content from Gemini API".to_string());
-                                    continue;
-                                }
-
-                                match serde_json::from_str::<T>(&accumulated_text) {
-                                    Ok(parsed_response) => {
-                                        if let Some(usage) = &gemini_response.usage_metadata {
-                                            self.track_token_usage(usage).await;
+                                    for part in &gemini_response.candidates[0].content.parts {
+                                        accumulated_text.push_str(&part.text);
+                                        if let Some(sig) = &part.thought_signature {
+                                            thought_signature = Some(sig.clone());
                                         }
-                                        return Ok((parsed_response, thought_signature));
                                     }
-                                    Err(e) => {
-                                        last_error = Some(format!("Failed to parse response: {e}"));
+
+                                    if accumulated_text.is_empty() {
+                                        last_error =
+                                            Some("No response content from Gemini API".to_string());
+                                        continue;
+                                    }
+
+                                    match serde_json::from_str::<T>(&accumulated_text) {
+                                        Ok(parsed_response) => {
+                                            if let Some(usage) = &gemini_response.usage_metadata {
+                                                self.track_token_usage(usage).await;
+                                            }
+                                            return Ok((parsed_response, thought_signature));
+                                        }
+                                        Err(e) => {
+                                            last_error =
+                                                Some(format!("Failed to parse response: {e}"));
+                                        }
                                     }
                                 }
-                            }
-                            Err(e) => {
-                                tracing::error!(
+                                Err(e) => {
+                                    tracing::error!(
                                     "Gemini API parse error: {}. Raw response (first 500 chars): {}",
                                     e,
                                     &raw_response.chars().take(500).collect::<String>()
                                 );
-                                last_error = Some(format!("Invalid API response format: {e}"));
+                                    last_error = Some(format!("Invalid API response format: {e}"));
+                                }
                             }
                         }
-                    },
                         Err(e) => {
                             last_error = Some(format!("Failed to read response body: {e}"));
                         }
@@ -161,8 +163,12 @@ impl GeminiClient {
     }
 
     async fn track_token_usage(&self, usage: &UsageMetadata) {
-        let Some(deployment_id) = self.deployment_id else { return };
-        let Some(redis_client) = &self.redis_client else { return };
+        let Some(deployment_id) = self.deployment_id else {
+            return;
+        };
+        let Some(redis_client) = &self.redis_client else {
+            return;
+        };
 
         if let Ok(mut conn) = redis_client.get_multiplexed_async_connection().await {
             let now = Utc::now();
@@ -175,13 +181,25 @@ impl GeminiClient {
 
             let mut pipe = redis::pipe();
             pipe.atomic()
-                .zincr(&format!("{}:metrics", prefix), "ai_tokens_input", input_tokens)
+                .zincr(
+                    &format!("{}:metrics", prefix),
+                    "ai_tokens_input",
+                    input_tokens,
+                )
                 .ignore()
-                .zincr(&format!("{}:metrics", prefix), "ai_tokens_output", output_tokens)
+                .zincr(
+                    &format!("{}:metrics", prefix),
+                    "ai_tokens_output",
+                    output_tokens,
+                )
                 .ignore()
                 .expire(&format!("{}:metrics", prefix), 5184000)
                 .ignore()
-                .zincr(&format!("billing:{}:dirty_deployments", period), deployment_id, input_tokens + output_tokens)
+                .zincr(
+                    &format!("billing:{}:dirty_deployments", period),
+                    deployment_id,
+                    input_tokens + output_tokens,
+                )
                 .ignore()
                 .expire(&format!("billing:{}:dirty_deployments", period), 5184000)
                 .ignore();
@@ -189,6 +207,4 @@ impl GeminiClient {
             let _: Result<(), redis::RedisError> = pipe.query_async(&mut conn).await;
         }
     }
-
-
 }

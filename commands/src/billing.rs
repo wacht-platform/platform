@@ -463,7 +463,9 @@ impl Command for UpsertInvoiceCommand {
         .fetch_optional(&state.db_pool)
         .await?;
 
-        let status: InvoiceStatus = self.status.parse()
+        let status: InvoiceStatus = self
+            .status
+            .parse()
             .map_err(|e| AppError::Validation(format!("Invalid invoice status: {}", e)))?;
 
         let existing_id: Option<i64> = sqlx::query_scalar!(

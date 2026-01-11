@@ -1,6 +1,6 @@
-use super::{PythonExecutor, ExecutionResult};
-use common::error::AppError;
+use super::{ExecutionResult, PythonExecutor};
 use async_trait::async_trait;
+use common::error::AppError;
 use std::process::Stdio;
 use std::time::Instant;
 
@@ -23,7 +23,8 @@ impl NsJailExecutor {
         // Minimal configuration for running Python
         // We mount /usr, /lib, /lib64, /bin because host python relies on them used shared libs.
         // We strictly bind-mount the execution root.
-        let config = format!(r#"
+        let config = format!(
+            r#"
 name: "agent-python-sandbox"
 mode: ONCE
 hostname: "agent-sandbox"
@@ -127,11 +128,14 @@ mount {{
     is_bind: true
     rw: true
 }}
-"#, execution_root.to_string_lossy());
+"#,
+            execution_root.to_string_lossy()
+        );
 
-        tokio::fs::write(config_path, config).await
+        tokio::fs::write(config_path, config)
+            .await
             .map_err(|e| AppError::Internal(format!("Failed to write nsjail config: {}", e)))?;
-        
+
         Ok(())
     }
 }
@@ -149,31 +153,32 @@ impl PythonExecutor for NsJailExecutor {
 
         let scratch_dir = execution_root.join("scratch");
         if !scratch_dir.exists() {
-             tokio::fs::create_dir_all(&scratch_dir).await
+            tokio::fs::create_dir_all(&scratch_dir)
+                .await
                 .map_err(|e| AppError::Internal(format!("Failed to ensure scratch dir: {}", e)))?;
         }
-        
+
         let config_name = "nsjail.cfg";
         let config_path = scratch_dir.join(config_name);
 
         self.generate_config(&config_path, execution_root).await?;
 
         let mut cmd = tokio::process::Command::new("nsjail");
-        
+
         cmd.arg("--config").arg(&config_path);
-        
+
         cmd.arg("--time_limit").arg(timeout_secs.to_string());
 
         cmd.arg("--");
         cmd.arg(&self.python_path);
-        
+
         let script_relative = script_path.to_string_lossy();
         let script_inside_jail = if script_relative.starts_with("./") {
             format!("/app/{}", &script_relative[2..])
         } else {
             format!("/app/{}", script_relative)
         };
-        
+
         cmd.arg(script_inside_jail);
         cmd.args(&args);
 
@@ -181,7 +186,7 @@ impl PythonExecutor for NsJailExecutor {
         cmd.stderr(Stdio::piped());
 
         let child_res = cmd.spawn();
-        
+
         if let Err(e) = child_res {
             let _ = tokio::fs::remove_file(&config_path).await;
             return Err(AppError::Internal(format!("Failed to spawn nsjail: {}", e)));
@@ -190,16 +195,25 @@ impl PythonExecutor for NsJailExecutor {
 
         let output_res = tokio::time::timeout(
             std::time::Duration::from_secs(timeout_secs),
-            child.wait_with_output()
-        ).await;
+            child.wait_with_output(),
+        )
+        .await;
 
         let _ = tokio::fs::remove_file(&config_path).await;
 
         let output = match output_res {
             Ok(Ok(output)) => output,
-            Ok(Err(e)) => return Err(AppError::Internal(format!("NsJail execution failed: {}", e))),
+            Ok(Err(e)) => {
+                return Err(AppError::Internal(format!(
+                    "NsJail execution failed: {}",
+                    e
+                )))
+            }
             Err(_) => {
-                return Err(AppError::Internal(format!("Python script timed out after {}s", timeout_secs)));
+                return Err(AppError::Internal(format!(
+                    "Python script timed out after {}s",
+                    timeout_secs
+                )));
             }
         };
 

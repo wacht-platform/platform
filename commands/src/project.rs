@@ -488,11 +488,14 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         let key_pair_task = tokio::task::spawn_blocking(|| {
             // Generate ECDSA keypair for JWT signing (ES256)
-            let ecdsa_pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-            
+            let ecdsa_pair =
+                rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+
             // Generate RSA keypair for SAML (most IdPs only support RSA for XML signatures)
-            let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).map_err(|e| AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e)))?;
-            
+            let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).map_err(|e| {
+                AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e))
+            })?;
+
             Ok::<_, AppError>((
                 ecdsa_pair.public_key_pem(),
                 ecdsa_pair.serialize_pem(),
@@ -1611,11 +1614,14 @@ impl Command for CreateStagingDeploymentCommand {
 
         let key_pair_task = tokio::task::spawn_blocking(|| {
             // Generate ECDSA keypair for JWT signing (ES256)
-            let ecdsa_pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-            
+            let ecdsa_pair =
+                rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+
             // Generate RSA keypair for SAML (most IdPs only support RSA for XML signatures)
-            let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).map_err(|e| AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e)))?;
-            
+            let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).map_err(|e| {
+                AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e))
+            })?;
+
             Ok::<_, AppError>((
                 ecdsa_pair.public_key_pem(),
                 ecdsa_pair.serialize_pem(),
@@ -1624,9 +1630,10 @@ impl Command for CreateStagingDeploymentCommand {
             ))
         });
 
-        let (public_key, private_key, saml_public_key, saml_private_key) = key_pair_task
-            .await
-            .map_err(|e| AppError::Internal(e.to_string()))??;
+        let (public_key, private_key, saml_public_key, saml_private_key) =
+            key_pair_task
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))??;
 
         let mut tx = app_state.db_pool.begin().await?;
 
@@ -2192,11 +2199,14 @@ impl Command for CreateProductionDeploymentCommand {
 
         let key_pair_task = tokio::task::spawn_blocking(|| {
             // Generate ECDSA keypair for JWT signing (ES256)
-            let ecdsa_pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
-            
+            let ecdsa_pair =
+                rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+
             // Generate RSA keypair for SAML (most IdPs only support RSA for XML signatures)
-            let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).map_err(|e| AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e)))?;
-            
+            let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).map_err(|e| {
+                AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e))
+            })?;
+
             Ok::<_, AppError>((
                 ecdsa_pair.public_key_pem(),
                 ecdsa_pair.serialize_pem(),
@@ -2205,9 +2215,10 @@ impl Command for CreateProductionDeploymentCommand {
             ))
         });
 
-        let (public_key, private_key, saml_public_key, saml_private_key) = key_pair_task
-            .await
-            .map_err(|e| AppError::Internal(e.to_string()))??;
+        let (public_key, private_key, saml_public_key, saml_private_key) =
+            key_pair_task
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))??;
 
         let mut tx = app_state.db_pool.begin().await?;
 
@@ -3235,4 +3246,3 @@ impl Command for DeleteProjectCommand {
         Ok(())
     }
 }
-

@@ -56,7 +56,11 @@ impl Command for CreateIntegrationLinkCodeCommand {
     type Output = LinkCodeResponse;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let id = app_state.sf.next_id().map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))? as i64;
+        let id = app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
+            as i64;
         // Use Base62-encoded Snowflake ID for guaranteed uniqueness
         let code = base62_encode(id as u64);
         let expires_at = Utc::now() + Duration::minutes(10);
@@ -145,7 +149,11 @@ impl Command for ValidateLinkCodeCommand {
         let context_group = link_code.context_group.clone();
 
         // Create the active integration connection
-        let connection_id = app_state.sf.next_id().map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))? as i64;
+        let connection_id = app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
+            as i64;
         sqlx::query!(
             r#"
             INSERT INTO active_agent_integrations (id, deployment_id, context_group, integration_id, external_id, connection_metadata)

@@ -112,10 +112,12 @@ impl Query for GetSegmentDataQuery {
         if self.segment_id.is_some() {
             match self.target_type.as_str() {
                 "organization" => {
-                    query_builder.push(" INNER JOIN organization_segments os ON t.id = os.organization_id ");
+                    query_builder
+                        .push(" INNER JOIN organization_segments os ON t.id = os.organization_id ");
                 }
                 "workspace" => {
-                    query_builder.push(" INNER JOIN workspace_segments ws ON t.id = ws.workspace_id ");
+                    query_builder
+                        .push(" INNER JOIN workspace_segments ws ON t.id = ws.workspace_id ");
                 }
                 "user" => {
                     query_builder.push(" INNER JOIN user_segments us ON t.id = us.user_id ");

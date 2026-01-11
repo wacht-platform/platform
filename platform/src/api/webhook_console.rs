@@ -94,7 +94,6 @@ pub async fn get_webhook_status(
     .into())
 }
 
-
 pub async fn rotate_webhook_secret(
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<WebhookApp> {

@@ -12,7 +12,10 @@ impl handlebars::HelperDef for ImageHelper {
         out: &mut dyn Output,
     ) -> HelperResult {
         let url = h.param(0).and_then(|v| v.value().as_str());
-        let alt_name = h.param(1).and_then(|v| v.value().as_str()).unwrap_or("Logo");
+        let alt_name = h
+            .param(1)
+            .and_then(|v| v.value().as_str())
+            .unwrap_or("Logo");
 
         match url {
             Some(src) if !src.is_empty() => {

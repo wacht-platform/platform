@@ -9,8 +9,7 @@ use common::state::AppState;
 
 use commands::{
     Command, CreateProductionDeploymentCommand, CreateProjectWithStagingDeploymentCommand,
-    CreateStagingDeploymentCommand, DeleteProjectCommand,
-    VerifyDeploymentDnsRecordsCommand,
+    CreateStagingDeploymentCommand, DeleteProjectCommand, VerifyDeploymentDnsRecordsCommand,
 };
 use dto::json::project::{CreateProductionDeploymentRequest, CreateStagingDeploymentRequest};
 use models::{Deployment, ProjectWithDeployments};

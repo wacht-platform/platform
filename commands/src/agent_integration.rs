@@ -138,7 +138,9 @@ impl Command for UpdateAgentIntegrationCommand {
             query_builder = query_builder.bind(config);
         }
 
-        query_builder = query_builder.bind(self.integration_id).bind(self.deployment_id);
+        query_builder = query_builder
+            .bind(self.integration_id)
+            .bind(self.deployment_id);
 
         let row = query_builder
             .fetch_one(&app_state.db_pool)

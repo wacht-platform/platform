@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::{Datelike, Utc};
 use reqwest;
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ pub struct SMSOTPTask {
 #[derive(Deserialize)]
 struct MessageCentralSendResponse {
     #[serde(rename = "responseCode")]
-    response_code: u32,  // Number at top level
+    response_code: u32, // Number at top level
     message: String,
     data: Option<MessageCentralSendData>,
     #[serde(rename = "errorMessage")]
@@ -35,7 +35,7 @@ struct MessageCentralSendData {
     #[serde(rename = "verificationId")]
     verification_id: String,
     #[serde(rename = "responseCode")]
-    response_code: String,  // String inside data
+    response_code: String, // String inside data
     #[serde(rename = "errorMessage")]
     error_message: Option<String>,
 }
@@ -61,7 +61,6 @@ pub async fn send_otp_sms(
         clean_country_code, customer_id, clean_phone
     );
 
-
     let client = reqwest::Client::new();
     let response = client
         .post(&url)
@@ -78,8 +77,14 @@ pub async fn send_otp_sms(
         return Err(anyhow!("SMS send failed with status {}", status));
     }
 
-    let mc_response: MessageCentralSendResponse = serde_json::from_str(&response_text)
-        .map_err(|e| anyhow!("Failed to parse MessageCentral response: {} - Response: {}", e, response_text))?;
+    let mc_response: MessageCentralSendResponse =
+        serde_json::from_str(&response_text).map_err(|e| {
+            anyhow!(
+                "Failed to parse MessageCentral response: {} - Response: {}",
+                e,
+                response_text
+            )
+        })?;
 
     if mc_response.response_code != 200 {
         error!(
@@ -96,15 +101,21 @@ pub async fn send_otp_sms(
         if data.response_code != "200" {
             return Err(anyhow!(
                 "SMS send failed: {}",
-                data.error_message.unwrap_or_else(|| "Unknown error".to_string())
+                data.error_message
+                    .unwrap_or_else(|| "Unknown error".to_string())
             ));
         }
 
-        let cache_key = format!("sms_verification:{}:{}:{}", deployment_id, country_code, phone_number);
-        
-        let mut conn = app_state.redis_client.get_connection()
+        let cache_key = format!(
+            "sms_verification:{}:{}:{}",
+            deployment_id, country_code, phone_number
+        );
+
+        let mut conn = app_state
+            .redis_client
+            .get_connection()
             .map_err(|e| anyhow!("Failed to get Redis connection: {}", e))?;
-        
+
         redis::cmd("SETEX")
             .arg(&cache_key)
             .arg(600) // 10 minutes expiry
@@ -114,13 +125,21 @@ pub async fn send_otp_sms(
 
         track_sms_billing(deployment_id, &country_code, &phone_number, &app_state).await;
 
-        Ok(format!("SMS sent with verification ID: {}", data.verification_id))
+        Ok(format!(
+            "SMS sent with verification ID: {}",
+            data.verification_id
+        ))
     } else {
         Err(anyhow!("No data in MessageCentral response"))
     }
 }
 
-async fn track_sms_billing(deployment_id: u64, country_code: &str, _phone_number: &str, app_state: &common::state::AppState) {
+async fn track_sms_billing(
+    deployment_id: u64,
+    country_code: &str,
+    _phone_number: &str,
+    app_state: &common::state::AppState,
+) {
     use queries::{GetSmsPricingQuery, Query};
 
     let cost_cents: f64 = GetSmsPricingQuery::new(country_code.to_string())
@@ -131,7 +150,11 @@ async fn track_sms_billing(deployment_id: u64, country_code: &str, _phone_number
         .map(|d| d.to_string().parse::<f64>().unwrap_or(0.495))
         .unwrap_or(0.495);
 
-    if let Ok(mut conn) = app_state.redis_client.get_multiplexed_async_connection().await {
+    if let Ok(mut conn) = app_state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await
+    {
         let now = Utc::now();
         let period = format!("{}-{:02}", now.year(), now.month());
         let prefix = format!("billing:{}:deployment:{}", period, deployment_id);
@@ -140,11 +163,19 @@ async fn track_sms_billing(deployment_id: u64, country_code: &str, _phone_number
         pipe.atomic()
             .zincr(&format!("{}:metrics", prefix), "sms_count", 1)
             .ignore()
-            .zincr(&format!("{}:metrics", prefix), "sms_cost_cents", cost_cents as i64)
+            .zincr(
+                &format!("{}:metrics", prefix),
+                "sms_cost_cents",
+                cost_cents as i64,
+            )
             .ignore()
             .expire(&format!("{}:metrics", prefix), 5184000)
             .ignore()
-            .zincr(&format!("billing:{}:dirty_deployments", period), deployment_id as i64, 1)
+            .zincr(
+                &format!("billing:{}:dirty_deployments", period),
+                deployment_id as i64,
+                1,
+            )
             .ignore()
             .expire(&format!("billing:{}:dirty_deployments", period), 5184000)
             .ignore();
