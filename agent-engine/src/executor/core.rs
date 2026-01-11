@@ -688,32 +688,6 @@ impl AgentExecutorBuilder {
                     ]
                 ),
                 (
-                    "clickup_get_folders",
-                    "Get all folders in a ClickUp space. Folders are optional organizational containers for lists.",
-                    UseExternalServiceToolType::ClickUpGetFolders,
-                    vec![
-                        SchemaField {
-                            name: "space_id".to_string(),
-                            field_type: "STRING".to_string(),
-                            description: Some("The space ID. Get this from clickup_get_spaces.".to_string()),
-                            required: true, ..Default::default()
-                        }
-                    ]
-                ),
-                (
-                    "clickup_get_lists",
-                    "Get all lists in a ClickUp folder. Lists contain tasks.",
-                    UseExternalServiceToolType::ClickUpGetLists,
-                    vec![
-                        SchemaField {
-                            name: "folder_id".to_string(),
-                            field_type: "STRING".to_string(),
-                            description: Some("The folder ID. Get this from clickup_get_folders.".to_string()),
-                            required: true, ..Default::default()
-                        }
-                    ]
-                ),
-                (
                     "clickup_get_space_lists",
                     "Get all folderless lists directly in a ClickUp space. Use this when a space has no folders, or to get lists not inside any folder.",
                     UseExternalServiceToolType::ClickUpGetSpaceLists,
@@ -871,7 +845,7 @@ impl AgentExecutorBuilder {
                         SchemaField {
                             name: "list_id".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("The list ID where the task will be created. Get this from clickup_get_lists.".to_string()),
+                            description: Some("The list ID where the task will be created. Get this from clickup_get_space_lists.".to_string()),
                             required: true, ..Default::default()
                         },
                         SchemaField {
@@ -896,8 +870,8 @@ impl AgentExecutorBuilder {
                         SchemaField {
                             name: "status".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("Initial status of the task.".to_string()),
-                            required: false, ..Default::default()
+                            description: Some("The status name for the task (e.g., 'to do', 'in progress', 'complete'). This is REQUIRED - check the space settings for valid status names.".to_string()),
+                            required: true, ..Default::default()
                         },
                         SchemaField {
                             name: "priority".to_string(),

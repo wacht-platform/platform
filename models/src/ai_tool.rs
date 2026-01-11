@@ -151,12 +151,8 @@ pub enum UseExternalServiceToolType {
     ClickUpAddComment,
     #[serde(rename = "clickup_get_task")]
     ClickUpGetTask,
-    #[serde(rename = "clickup_get_lists")]
-    ClickUpGetLists,
     #[serde(rename = "clickup_get_space_lists")]
     ClickUpGetSpaceLists,
-    #[serde(rename = "clickup_get_folders")]
-    ClickUpGetFolders,
     #[serde(rename = "clickup_get_spaces")]
     ClickUpGetSpaces,
     #[serde(rename = "clickup_get_teams")]

@@ -690,10 +690,6 @@ impl ToolExecutor {
                 self.execute_clickup_command(tool, "get_task", execution_params, context_title)
                     .await
             }
-            UseExternalServiceToolType::ClickUpGetLists => {
-                self.execute_clickup_command(tool, "get_lists", execution_params, context_title)
-                    .await
-            }
             UseExternalServiceToolType::ClickUpGetSpaceLists => {
                 self.execute_clickup_command(
                     tool,
@@ -702,10 +698,6 @@ impl ToolExecutor {
                     context_title,
                 )
                 .await
-            }
-            UseExternalServiceToolType::ClickUpGetFolders => {
-                self.execute_clickup_command(tool, "get_folders", execution_params, context_title)
-                    .await
             }
             UseExternalServiceToolType::ClickUpGetSpaces => {
                 self.execute_clickup_command(tool, "get_spaces", execution_params, context_title)
