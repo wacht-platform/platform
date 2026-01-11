@@ -151,6 +151,7 @@ impl Command for UpdateAgentIntegrationCommand {
             "slack" => IntegrationType::Slack,
             "whatsapp" => IntegrationType::WhatsApp,
             "discord" => IntegrationType::Discord,
+            "clickup" => IntegrationType::ClickUp,
             _ => return Err(AppError::BadRequest("Unknown integration type".to_string())),
         };
 

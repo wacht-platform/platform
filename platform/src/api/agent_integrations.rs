@@ -48,6 +48,7 @@ fn parse_integration_type(s: &str) -> Result<IntegrationType, String> {
         "slack" => Ok(IntegrationType::Slack),
         "whatsapp" => Ok(IntegrationType::WhatsApp),
         "discord" => Ok(IntegrationType::Discord),
+        "clickup" => Ok(IntegrationType::ClickUp),
         _ => Err(format!("Unknown integration type: {}", s)),
     }
 }
