@@ -35,6 +35,7 @@ fn parse_integration_type(s: &str) -> IntegrationType {
         "slack" => IntegrationType::Slack,
         "whatsapp" => IntegrationType::WhatsApp,
         "discord" => IntegrationType::Discord,
+        "clickup" => IntegrationType::ClickUp,
         _ => IntegrationType::Teams,
     }
 }
