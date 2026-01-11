@@ -99,6 +99,8 @@ pub struct SchemaField {
     pub field_type: String,
     pub required: bool,
     pub description: Option<String>,
+    #[serde(default)]
+    pub items_type: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]

@@ -774,12 +774,14 @@ impl AgentExecutorBuilder {
                             field_type: "ARRAY".to_string(),
                             description: Some("Filter tasks assigned to specific user IDs.".to_string()),
                             required: false,
+                            items_type: Some("STRING".to_string()),
                         },
                         SchemaField {
                             name: "statuses".to_string(),
                             field_type: "ARRAY".to_string(),
                             description: Some("Filter by specific status names (e.g., ['Open', 'in progress']).".to_string()),
                             required: false,
+                            items_type: Some("STRING".to_string()),
                         },
                         SchemaField {
                             name: "archived".to_string(),
@@ -872,6 +874,7 @@ impl AgentExecutorBuilder {
                             field_type: "ARRAY".to_string(),
                             description: Some("Array of user IDs to assign the task to.".to_string()),
                             required: false,
+                            items_type: Some("STRING".to_string()),
                         },
                         SchemaField {
                             name: "status".to_string(),
@@ -964,6 +967,7 @@ impl AgentExecutorBuilder {
                             field_type: "ARRAY".to_string(),
                             description: Some("Array of user IDs to assign.".to_string()),
                             required: false,
+                            items_type: Some("STRING".to_string()),
                         },
                     ]
                 ),

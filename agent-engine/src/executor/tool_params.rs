@@ -126,7 +126,14 @@ impl AgentExecutor {
 
         for field in fields {
             let mut field_def = serde_json::Map::new();
-            field_def.insert("type".to_string(), json!(field.field_type.to_lowercase()));
+            let field_type_lower = field.field_type.to_lowercase();
+            field_def.insert("type".to_string(), json!(field_type_lower));
+
+            if let Some(ref items_type) = field.items_type {
+                field_def.insert("items".to_string(), json!({
+                    "type": items_type.to_lowercase()
+                }));
+            }
 
             if let Some(desc) = &field.description {
                 field_def.insert("description".to_string(), json!(desc));
