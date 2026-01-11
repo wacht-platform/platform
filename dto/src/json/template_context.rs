@@ -18,7 +18,8 @@ pub struct StepDecisionContext {
     pub iteration_info: IterationInfo,
     #[serde(default)]
     pub teams_enabled: bool,
-    // Cross-context awareness
+    #[serde(default)]
+    pub clickup_enabled: bool,
     pub context_id: i64,
     pub context_title: String,
     #[serde(skip_serializing_if = "Option::is_none")]

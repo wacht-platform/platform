@@ -15,9 +15,35 @@ impl AgentExecutor {
         let (mru_memories, recent_conversations) =
             tokio::join!(self.get_mru_memories(20), self.get_recent_conversations());
 
+        let mut conversations = recent_conversations?;
+        
+        let mut found_most_recent_execution = false;
+        
+        for conv in conversations.iter_mut().rev() {
+            if let models::ConversationContent::ActionExecutionResult { task_execution, .. } = &mut conv.content {
+                if !found_most_recent_execution {
+                    found_most_recent_execution = true;
+                    continue;
+                }
+                
+                if let Some(result) = task_execution.get_mut("result") {
+                     if let Some(output) = result.get_mut("output") {
+                         let output_str = output.to_string();
+                         if output_str.len() > 500 {
+                             *output = serde_json::json!({
+                                 "truncated": true,
+                                 "preview": output_str.chars().take(500).collect::<String>(),
+                                 "note": "Historical output truncated to save context."
+                             });
+                         }
+                     }
+                }
+            }
+        }
+
         Ok(ImmediateContext {
             memories: mru_memories?,
-            conversations: recent_conversations?,
+            conversations,
         })
     }
 

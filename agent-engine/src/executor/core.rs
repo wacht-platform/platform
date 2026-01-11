@@ -44,6 +44,7 @@ pub struct AgentExecutor {
     pub(super) filesystem: AgentFilesystem,
     pub(super) shell: ShellExecutor,
     pub(super) teams_enabled: bool,
+    pub(super) clickup_enabled: bool,
     pub(super) context_title: String,
 }
 
@@ -74,7 +75,11 @@ impl AgentExecutorBuilder {
 
     pub async fn build(self) -> Result<AgentExecutor, AppError> {
         let tool_executor =
-            ToolExecutor::new(self.app_state.clone(), self.agent.clone(), self.context_id).with_channel(self.channel.clone());
+            ToolExecutor::new(
+                self.app_state.clone(), 
+                self.agent.clone(), 
+                self.context_id
+            ).with_channel(self.channel.clone());
         let context_orchestrator =
             ContextOrchestrator::new(self.app_state.clone(), self.agent.clone(), self.context_id);
 
@@ -226,6 +231,25 @@ impl AgentExecutorBuilder {
                     }
                 ]
             ),
+            (
+                "execute_python",
+                "Execute a Python script from a file securely (sandboxed on Linux). Script must be in workspace.",
+                InternalToolType::ExecutePython,
+                vec![
+                    SchemaField {
+                        name: "script_path".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Relative path to script (e.g. workspace/analysis.py)".to_string()),
+                        required: true,
+                    },
+                    SchemaField {
+                        name: "args".to_string(),
+                        field_type: "STRING".to_string(),
+                        description: Some("Space-separated arguments".to_string()),
+                        required: false,
+                    }
+                ]
+            ),
         ];
 
         let context = GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
@@ -233,6 +257,7 @@ impl AgentExecutorBuilder {
             .await?;
 
         let mut teams_enabled = false;
+        let mut clickup_enabled = false;
 
         if let Some(context_group) = &context.context_group {
             let active_integrations = queries::GetActiveIntegrationsForContextQuery::new(
@@ -250,6 +275,13 @@ impl AgentExecutorBuilder {
                 if let Err(e) = filesystem.link_teams_activity(context_group).await {
                     tracing::warn!("Failed to link teams-activity directory: {}", e);
                 }
+            }
+
+            let has_clickup = active_integrations.iter().any(|i| matches!(i.integration_type, models::IntegrationType::ClickUp));
+
+            if has_clickup {
+                clickup_enabled = true;
+                tracing::info!("Context group {} has active ClickUp integration. Injecting ClickUp tools.", context_group);
             }
         }
 
@@ -611,6 +643,266 @@ impl AgentExecutorBuilder {
             }
         }
         
+        if clickup_enabled {
+            let clickup_tools: Vec<(&str, &str, UseExternalServiceToolType, Vec<SchemaField>)> = vec![
+                (
+                    "clickup_get_current_user",
+                    "Get the currently authenticated ClickUp user. Returns user ID, username, email, and timezone.",
+                    UseExternalServiceToolType::ClickUpGetCurrentUser,
+                    vec![]
+                ),
+                (
+                    "clickup_get_teams",
+                    "Get all ClickUp teams/workspaces the authenticated user has access to.",
+                    UseExternalServiceToolType::ClickUpGetTeams,
+                    vec![]
+                ),
+                (
+                    "clickup_get_spaces",
+                    "Get all spaces in a ClickUp team/workspace.",
+                    UseExternalServiceToolType::ClickUpGetSpaces,
+                    vec![
+                        SchemaField {
+                            name: "team_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The team/workspace ID. Get this from clickup_get_teams.".to_string()),
+                            required: true,
+                        }
+                    ]
+                ),
+                (
+                    "clickup_get_folders",
+                    "Get all folders in a ClickUp space. Folders are optional organizational containers for lists.",
+                    UseExternalServiceToolType::ClickUpGetFolders,
+                    vec![
+                        SchemaField {
+                            name: "space_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The space ID. Get this from clickup_get_spaces.".to_string()),
+                            required: true,
+                        }
+                    ]
+                ),
+                (
+                    "clickup_get_lists",
+                    "Get all lists in a ClickUp folder. Lists contain tasks.",
+                    UseExternalServiceToolType::ClickUpGetLists,
+                    vec![
+                        SchemaField {
+                            name: "folder_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The folder ID. Get this from clickup_get_folders.".to_string()),
+                            required: true,
+                        }
+                    ]
+                ),
+                (
+                    "clickup_get_tasks",
+                    "Get tasks from a list. Returns task details.",
+                    UseExternalServiceToolType::ClickUpGetTasks,
+                    vec![
+                        SchemaField {
+                            name: "list_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The list ID to get tasks from.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "archived".to_string(),
+                            field_type: "BOOLEAN".to_string(),
+                            description: Some("Include archived tasks (default: false).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "page".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Page number (default: 0).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "order_by".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Order by field (created, updated, id, due_date, etc.).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "reverse".to_string(),
+                            field_type: "BOOLEAN".to_string(),
+                            description: Some("Reverse order (default: false).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "subtasks".to_string(),
+                            field_type: "BOOLEAN".to_string(),
+                            description: Some("Include subtasks (default: false).".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
+                (
+                    "clickup_search_tasks",
+                    "Search for tasks across a team/workspace using filters. Combine filters like assignees, status, and keywords to find specific work items.",
+                    UseExternalServiceToolType::ClickUpSearchTasks,
+                    vec![
+                        SchemaField {
+                            name: "team_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The team/workspace ID to search in. Get this from clickup_get_teams.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "search".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Search keywords to match against task name or description.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "assignees".to_string(),
+                            field_type: "ARRAY".to_string(),
+                            description: Some("Filter tasks assigned to specific user IDs.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "statuses".to_string(),
+                            field_type: "ARRAY".to_string(),
+                            description: Some("Filter by specific status names (e.g., ['Open', 'in progress']).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "archived".to_string(),
+                            field_type: "BOOLEAN".to_string(),
+                            description: Some("Include archived tasks (default: false).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "date_created_gt".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Filter tasks created after this timestamp.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "due_date_gt".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Filter tasks due after this timestamp.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "due_date_lt".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Filter tasks due before this timestamp.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "page".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Page number (default: 0).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "order_by".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Order by field (created, updated, id, due_date, etc.).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "reverse".to_string(),
+                            field_type: "BOOLEAN".to_string(),
+                            description: Some("Reverse order (default: false).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "subtasks".to_string(),
+                            field_type: "BOOLEAN".to_string(),
+                            description: Some("Include subtasks (default: false).".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
+                (
+                    "clickup_get_task",
+                    "Get details of a specific ClickUp task by ID.",
+                    UseExternalServiceToolType::ClickUpGetTask,
+                    vec![
+                        SchemaField {
+                            name: "task_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The task ID to retrieve.".to_string()),
+                            required: true,
+                        }
+                    ]
+                ),
+                (
+                    "clickup_create_task",
+                    "Create a new task in a ClickUp list.",
+                    UseExternalServiceToolType::ClickUpCreateTask,
+                    vec![
+                        SchemaField {
+                            name: "list_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The list ID where the task will be created. Get this from clickup_get_lists.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "name".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The task name/title.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "description".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Task description (supports markdown).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "assignees".to_string(),
+                            field_type: "ARRAY".to_string(),
+                            description: Some("Array of user IDs to assign the task to.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "status".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Initial status of the task.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "priority".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Task priority (1=urgent, 2=high, 3=normal, 4=low).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "due_date".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Due date as Unix timestamp in milliseconds.".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
+            ];
+            
+            for (name, desc, service_type, schema) in clickup_tools {
+                if !current_tools.iter().any(|t| t.name == name) {
+                    current_tools.push(AiTool {
+                        id: -1,
+                        name: name.to_string(),
+                        description: Some(desc.to_string()),
+                        tool_type: AiToolType::UseExternalService,
+                        deployment_id: self.agent.deployment_id,
+                        configuration: AiToolConfiguration::UseExternalService(
+                            UseExternalServiceToolConfiguration {
+                                service_type,
+                                input_schema: Some(schema),
+                            }
+                        ),
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                    });
+                }
+            }
+        }
+        
         if !current_tools.iter().any(|t| t.name == "spawn_context_execution") {
             current_tools.push(AiTool {
                 id: -1,
@@ -681,6 +973,7 @@ impl AgentExecutorBuilder {
             filesystem,
             shell,
             teams_enabled,
+            clickup_enabled,
             context_title: self.context_title,
         };
 

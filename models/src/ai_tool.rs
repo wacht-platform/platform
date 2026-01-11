@@ -110,6 +110,7 @@ pub enum InternalToolType {
     SearchFiles,
     ExecuteCommand,
     SaveMemory,
+    ExecutePython,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -134,6 +135,24 @@ pub enum UseExternalServiceToolType {
     TeamsListContexts,
     TeamsSearchMessages,
     TriggerContext,
+    #[serde(rename = "clickup_create_task")]
+    ClickUpCreateTask,
+    #[serde(rename = "clickup_get_task")]
+    ClickUpGetTask,
+    #[serde(rename = "clickup_get_lists")]
+    ClickUpGetLists,
+    #[serde(rename = "clickup_get_folders")]
+    ClickUpGetFolders,
+    #[serde(rename = "clickup_get_spaces")]
+    ClickUpGetSpaces,
+    #[serde(rename = "clickup_get_teams")]
+    ClickUpGetTeams,
+    #[serde(rename = "clickup_get_current_user")]
+    ClickUpGetCurrentUser,
+    #[serde(rename = "clickup_get_tasks")]
+    ClickUpGetTasks,
+    #[serde(rename = "clickup_search_tasks")]
+    ClickUpSearchTasks,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

@@ -22,6 +22,7 @@ use crate::teams_logger::TeamsActivityLogger;
 use models::AiAgentWithFeatures;
 use std::io::Read;
 use flate2::read::GzDecoder;
+use crate::executor::python::PythonExecutor;
 
 
 pub struct ToolExecutor {
@@ -30,6 +31,7 @@ pub struct ToolExecutor {
     context_id: i64,
     channel: Option<tokio::sync::mpsc::Sender<StreamEvent>>,
 }
+
 
 impl ToolExecutor {
     pub fn new(app_state: AppState, agent: AiAgentWithFeatures, context_id: i64) -> Self {
@@ -352,6 +354,33 @@ impl ToolExecutor {
                     "exit_code": output.exit_code
                 }))
             }
+            InternalToolType::ExecutePython => {
+                let script_path_str = execution_params
+                    .get("script_path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("Missing script_path".to_string()))?;
+                
+                let args_str = execution_params
+                    .get("args")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                
+                let args: Vec<String> = args_str.split_whitespace().map(String::from).collect();
+                
+                let execution_root = filesystem.execution_root();
+                let script_path = std::path::Path::new(script_path_str);
+                
+                let executor = crate::executor::python::NsJailExecutor::new();
+
+                let result = executor.execute_script(
+                    &execution_root,
+                    script_path,
+                    args,
+                    30 // Default timeout 30s
+                ).await?;
+                
+                Ok(serde_json::to_value(result)?)
+            }
             InternalToolType::SaveMemory => {
                 let content = execution_params.get("content").and_then(|v| v.as_str())
                     .ok_or(AppError::BadRequest("Content is required".to_string()))?;
@@ -536,7 +565,85 @@ impl ToolExecutor {
             UseExternalServiceToolType::TriggerContext => {
                 self.execute_trigger_context(tool, execution_params).await
             },
+            UseExternalServiceToolType::ClickUpCreateTask => {
+                self.execute_clickup_command(tool, "create_task", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpGetTask => {
+                self.execute_clickup_command(tool, "get_task", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpGetLists => {
+                self.execute_clickup_command(tool, "get_lists", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpGetFolders => {
+                self.execute_clickup_command(tool, "get_folders", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpGetSpaces => {
+                self.execute_clickup_command(tool, "get_spaces", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpGetTeams => {
+                self.execute_clickup_command(tool, "get_teams", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpGetCurrentUser => {
+                self.execute_clickup_command(tool, "get_current_user", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpGetTasks => {
+                self.execute_clickup_command(tool, "get_tasks", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpSearchTasks => {
+                self.execute_clickup_command(tool, "search_tasks", execution_params, context_title).await
+            },
         }
+    }
+
+    async fn execute_clickup_command(
+        &self,
+        tool: &AiTool,
+        action: &str,
+        execution_params: &Value,
+        _context_title: &str,
+    ) -> Result<Value, AppError> {
+        let context = queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+            .execute(&self.app_state)
+            .await?;
+        
+        // Use generic context group, fallback to Teams context group if not present (legacy support) or fail
+        let context_group = context.context_group
+            .ok_or_else(|| AppError::BadRequest("No context group found for ClickUp command".to_string()))?;
+
+        let payload = serde_json::json!({
+            "deployment_id": self.agent.deployment_id.to_string(),
+            "context_id": self.context_id.to_string(),
+            "context_group": context_group,
+            "agent_id": self.agent.id.to_string(),
+            "action": action,
+            "params": execution_params
+        });
+
+        let subject = "integrations.clickup.command";
+        
+        let response = self.app_state.nats_client
+            .request(subject.to_string(), serde_json::to_vec(&payload)?.into())
+            .await
+            .map_err(|e| AppError::External(format!("ClickUp integration request failed: {}", e)))?;
+
+        let response_data: Value = serde_json::from_slice(&response.payload)?;
+        
+        if response_data.get("status") == Some(&serde_json::json!("error")) {
+             let error_msg = response_data.get("error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("Unknown error from ClickUp integration");
+            return Ok(serde_json::json!({
+                "success": false,
+                "tool": tool.name,
+                "error": error_msg
+            }));
+        }
+        
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": tool.name,
+            "result": response_data.get("data").unwrap_or(&serde_json::json!({}))
+        }))
     }
 
     async fn execute_teams_command(

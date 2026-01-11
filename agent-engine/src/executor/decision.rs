@@ -581,6 +581,7 @@ impl AgentExecutor {
                 max_iterations: MAX_LOOP_ITERATIONS,
             },
             teams_enabled: self.teams_enabled,
+            clickup_enabled: self.clickup_enabled,
             context_id: self.context_id,
             context_title: exec_context.title,
             context_source: exec_context.source.clone(),
