@@ -106,12 +106,15 @@ pub async fn get_ai_agent_details(
     let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
         .into_iter()
         .map(|integration| {
-            let webhook_url = format!(
-                "{}/service/{}/{}/message",
-                base_url,
-                integration.integration_type.to_string().to_lowercase(),
-                params.agent_id
-            );
+            let webhook_url = match integration.integration_type {
+                models::IntegrationType::Teams | models::IntegrationType::WhatsApp => Some(format!(
+                    "{}/service/{}/{}/message",
+                    base_url,
+                    integration.integration_type.to_string().to_lowercase(),
+                    params.agent_id
+                )),
+                _ => None,
+            };
             IntegrationWithUrl {
                 id: integration.id,
                 created_at: integration.created_at,
@@ -200,12 +203,15 @@ pub async fn get_agent_integrations(
     let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
         .into_iter()
         .map(|integration| {
-            let webhook_url = format!(
-                "{}/service/{}/{}/message",
-                base_url,
-                integration.integration_type.to_string().to_lowercase(),
-                params.agent_id
-            );
+            let webhook_url = match integration.integration_type {
+                models::IntegrationType::Teams | models::IntegrationType::WhatsApp => Some(format!(
+                    "{}/service/{}/{}/message",
+                    base_url,
+                    integration.integration_type.to_string().to_lowercase(),
+                    params.agent_id
+                )),
+                _ => None,
+            };
             IntegrationWithUrl {
                 id: integration.id,
                 created_at: integration.created_at,
@@ -225,15 +231,19 @@ pub async fn get_agent_integrations(
 
 #[derive(serde::Serialize)]
 pub struct IntegrationWithUrl {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub id: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub deployment_id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub agent_id: i64,
     pub integration_type: models::IntegrationType,
     pub name: String,
     pub config: serde_json::Value,
-    pub webhook_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -243,9 +253,11 @@ pub struct IntegrationsResponse {
 
 #[derive(serde::Serialize)]
 pub struct AgentDetailsResponse {
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub id: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    #[serde(with = "models::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub name: String,
     pub description: Option<String>,
