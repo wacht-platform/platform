@@ -137,10 +137,18 @@ pub enum UseExternalServiceToolType {
     TriggerContext,
     #[serde(rename = "clickup_create_task")]
     ClickUpCreateTask,
+    #[serde(rename = "clickup_create_list")]
+    ClickUpCreateList,
+    #[serde(rename = "clickup_update_task")]
+    ClickUpUpdateTask,
+    #[serde(rename = "clickup_add_comment")]
+    ClickUpAddComment,
     #[serde(rename = "clickup_get_task")]
     ClickUpGetTask,
     #[serde(rename = "clickup_get_lists")]
     ClickUpGetLists,
+    #[serde(rename = "clickup_get_space_lists")]
+    ClickUpGetSpaceLists,
     #[serde(rename = "clickup_get_folders")]
     ClickUpGetFolders,
     #[serde(rename = "clickup_get_spaces")]

@@ -697,6 +697,19 @@ impl AgentExecutorBuilder {
                     ]
                 ),
                 (
+                    "clickup_get_space_lists",
+                    "Get all folderless lists directly in a ClickUp space. Use this when a space has no folders, or to get lists not inside any folder.",
+                    UseExternalServiceToolType::ClickUpGetSpaceLists,
+                    vec![
+                        SchemaField {
+                            name: "space_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The space ID. Get this from clickup_get_spaces.".to_string()),
+                            required: true,
+                        }
+                    ]
+                ),
+                (
                     "clickup_get_tasks",
                     "Get tasks from a list. Returns task details.",
                     UseExternalServiceToolType::ClickUpGetTasks,
@@ -876,6 +889,105 @@ impl AgentExecutorBuilder {
                             name: "due_date".to_string(),
                             field_type: "INTEGER".to_string(),
                             description: Some("Due date as Unix timestamp in milliseconds.".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
+                (
+                    "clickup_create_list",
+                    "Create a new list directly in a ClickUp space (folderless list). Use this when you need to create a list for tasks.",
+                    UseExternalServiceToolType::ClickUpCreateList,
+                    vec![
+                        SchemaField {
+                            name: "space_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The space ID where the list will be created. Get this from clickup_get_spaces.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "name".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The list name.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "content".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("List description.".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
+                (
+                    "clickup_update_task",
+                    "Update an existing task. Change status, assignees, priority, due date, or description.",
+                    UseExternalServiceToolType::ClickUpUpdateTask,
+                    vec![
+                        SchemaField {
+                            name: "task_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The task ID to update.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "name".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("New task name.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "description".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("New task description (supports markdown).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "status".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("New status (e.g., 'Open', 'in progress', 'complete').".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "priority".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Priority (1=urgent, 2=high, 3=normal, 4=low).".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "due_date".to_string(),
+                            field_type: "INTEGER".to_string(),
+                            description: Some("Due date as Unix timestamp in milliseconds.".to_string()),
+                            required: false,
+                        },
+                        SchemaField {
+                            name: "assignees".to_string(),
+                            field_type: "ARRAY".to_string(),
+                            description: Some("Array of user IDs to assign.".to_string()),
+                            required: false,
+                        },
+                    ]
+                ),
+                (
+                    "clickup_add_comment",
+                    "Add a comment to a task. Use for providing updates, notes, or communication on tasks.",
+                    UseExternalServiceToolType::ClickUpAddComment,
+                    vec![
+                        SchemaField {
+                            name: "task_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The task ID to add a comment to.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "comment_text".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The comment text to add.".to_string()),
+                            required: true,
+                        },
+                        SchemaField {
+                            name: "notify_all".to_string(),
+                            field_type: "BOOLEAN".to_string(),
+                            description: Some("Notify all assignees about the comment (default: false).".to_string()),
                             required: false,
                         },
                     ]

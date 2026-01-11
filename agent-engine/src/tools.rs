@@ -568,11 +568,23 @@ impl ToolExecutor {
             UseExternalServiceToolType::ClickUpCreateTask => {
                 self.execute_clickup_command(tool, "create_task", execution_params, context_title).await
             },
+            UseExternalServiceToolType::ClickUpCreateList => {
+                self.execute_clickup_command(tool, "create_list", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpUpdateTask => {
+                self.execute_clickup_command(tool, "update_task", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpAddComment => {
+                self.execute_clickup_command(tool, "add_comment", execution_params, context_title).await
+            },
             UseExternalServiceToolType::ClickUpGetTask => {
                 self.execute_clickup_command(tool, "get_task", execution_params, context_title).await
             },
             UseExternalServiceToolType::ClickUpGetLists => {
                 self.execute_clickup_command(tool, "get_lists", execution_params, context_title).await
+            },
+            UseExternalServiceToolType::ClickUpGetSpaceLists => {
+                self.execute_clickup_command(tool, "get_space_lists", execution_params, context_title).await
             },
             UseExternalServiceToolType::ClickUpGetFolders => {
                 self.execute_clickup_command(tool, "get_folders", execution_params, context_title).await
