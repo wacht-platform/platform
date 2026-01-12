@@ -85,8 +85,9 @@ impl AppState {
         let clickhouse_service =
             ClickHouseService::new(env("CLICKHOUSE_HOST")?, env("CLICKHOUSE_PASSWORD")?)?;
 
+        // 50 minute timeout for long video transcription operations
         let nats_options =
-            async_nats::ConnectOptions::new().request_timeout(Some(Duration::from_secs(300)));
+            async_nats::ConnectOptions::new().request_timeout(Some(Duration::from_secs(3000)));
         let nats_client = async_nats::connect_with_options(env("NATS_URL")?, nats_options).await?;
         let nats_jetstream = jetstream::new(nats_client.clone());
 

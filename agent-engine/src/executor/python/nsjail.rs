@@ -227,8 +227,19 @@ impl PythonExecutor for NsJailExecutor {
         cmd.arg(&self.python_path);
 
         let script_relative = script_path.to_string_lossy();
-        let script_inside_jail = if script_relative.starts_with("./") {
+        
+        let script_inside_jail = if script_relative.starts_with("/workspace/")
+            || script_relative.starts_with("/scratch/")
+            || script_relative.starts_with("/knowledge/")
+            || script_relative.starts_with("/uploads/")
+            || script_relative.starts_with("/teams-activity/")
+            || script_relative.starts_with("/app/")
+        {
+            script_relative.to_string()
+        } else if script_relative.starts_with("./") {
             format!("/app/{}", &script_relative[2..])
+        } else if script_relative.starts_with("/") {
+            script_relative.to_string()
         } else {
             format!("/app/{}", script_relative)
         };
