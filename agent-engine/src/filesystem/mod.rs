@@ -289,6 +289,10 @@ impl AgentFilesystem {
                 .await
                 .map_err(|e| AppError::Internal(format!("Failed to write {}: {}", path, e)))?;
 
+            if let Ok(file) = fs::File::open(&full_path).await {
+                let _ = file.sync_all().await;
+            }
+
             if let Ok(mut read_files) = self.read_files.write() {
                 read_files.remove(path);
             }
@@ -302,6 +306,10 @@ impl AgentFilesystem {
             fs::write(&full_path, content)
                 .await
                 .map_err(|e| AppError::Internal(format!("Failed to write {}: {}", path, e)))?;
+
+            if let Ok(file) = fs::File::open(&full_path).await {
+                let _ = file.sync_all().await;
+            }
 
             if let Ok(mut read_files) = self.read_files.write() {
                 read_files.remove(path);
