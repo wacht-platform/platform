@@ -20,9 +20,12 @@ impl NsJailExecutor {
         config_path: &std::path::Path,
         execution_root: &std::path::Path,
     ) -> Result<(), AppError> {
+        let exec_root_str = execution_root.to_string_lossy();
+        
         // Minimal configuration for running Python
         // We mount /usr, /lib, /lib64, /bin because host python relies on them used shared libs.
         // We strictly bind-mount the execution root.
+        // We also mount alias paths so scripts can use /teams-activity/, /knowledge/, etc.
         let config = format!(
             r#"
 name: "agent-python-sandbox"
@@ -121,15 +124,66 @@ mount {{
     rw: true
 }}
 
-# Execution Root Bind
+# Execution Root Bind - main workspace at /app
 mount {{
-    src: "{}"
+    src: "{0}"
     dst: "/app"
     is_bind: true
     rw: true
 }}
+
+# Alias path mounts - so scripts can use the same paths as the agent
+# These allow Python to use /teams-activity/, /knowledge/, etc. directly
+mount {{
+    src: "{0}/teams-activity"
+    dst: "/teams-activity"
+    is_bind: true
+    rw: true
+    mandatory: false
+}}
+
+mount {{
+    src: "{0}/knowledge"
+    dst: "/knowledge"
+    is_bind: true
+    rw: false
+    mandatory: false
+}}
+
+mount {{
+    src: "{0}/uploads"
+    dst: "/uploads"
+    is_bind: true
+    rw: false
+    mandatory: false
+}}
+
+mount {{
+    src: "{0}/scratch"
+    dst: "/scratch"
+    is_bind: true
+    rw: true
+    mandatory: false
+}}
+
+mount {{
+    src: "{0}/workspace"
+    dst: "/workspace"
+    is_bind: true
+    rw: true
+    mandatory: false
+}}
+
+# Full execution root path mount - fallback if agent uses actual path
+# This allows scripts using /mnt/wacht-agents/... directly to still work
+mount {{
+    src: "{0}"
+    dst: "{0}"
+    is_bind: true
+    rw: true
+}}
 "#,
-            execution_root.to_string_lossy()
+            exec_root_str
         );
 
         tokio::fs::write(config_path, config)
