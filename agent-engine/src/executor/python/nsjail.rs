@@ -22,6 +22,21 @@ impl NsJailExecutor {
     ) -> Result<(), AppError> {
         let exec_root_str = execution_root.to_string_lossy();
         
+        // Resolve symlinks to actual paths - bind mounts don't follow symlinks!
+        // workspace and uploads are symlinks to persistent storage, we need the real paths.
+        let resolve_path = |subdir: &str| -> String {
+            let path = execution_root.join(subdir);
+            std::fs::canonicalize(&path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| path.to_string_lossy().to_string())
+        };
+        
+        let workspace_path = resolve_path("workspace");
+        let uploads_path = resolve_path("uploads");
+        let scratch_path = resolve_path("scratch");
+        let knowledge_path = resolve_path("knowledge");
+        let teams_activity_path = resolve_path("teams-activity");
+        
         // Minimal configuration for running Python
         // We mount /usr, /lib, /lib64, /bin because host python relies on them used shared libs.
         // We strictly bind-mount the execution root.
@@ -126,7 +141,7 @@ mount {{
 
 # Execution Root Bind - main workspace at /app
 mount {{
-    src: "{0}"
+    src: "{exec_root}"
     dst: "/app"
     is_bind: true
     rw: true
@@ -134,8 +149,9 @@ mount {{
 
 # Alias path mounts - so scripts can use the same paths as the agent
 # These allow Python to use /teams-activity/, /knowledge/, etc. directly
+# Using resolved paths (not symlinks) since bind mounts don't follow symlinks
 mount {{
-    src: "{0}/teams-activity"
+    src: "{teams_activity}"
     dst: "/teams-activity"
     is_bind: true
     rw: true
@@ -143,7 +159,7 @@ mount {{
 }}
 
 mount {{
-    src: "{0}/knowledge"
+    src: "{knowledge}"
     dst: "/knowledge"
     is_bind: true
     rw: false
@@ -151,7 +167,7 @@ mount {{
 }}
 
 mount {{
-    src: "{0}/uploads"
+    src: "{uploads}"
     dst: "/uploads"
     is_bind: true
     rw: false
@@ -159,7 +175,7 @@ mount {{
 }}
 
 mount {{
-    src: "{0}/scratch"
+    src: "{scratch}"
     dst: "/scratch"
     is_bind: true
     rw: true
@@ -167,7 +183,7 @@ mount {{
 }}
 
 mount {{
-    src: "{0}/workspace"
+    src: "{workspace}"
     dst: "/workspace"
     is_bind: true
     rw: true
@@ -177,13 +193,18 @@ mount {{
 # Full execution root path mount - fallback if agent uses actual path
 # This allows scripts using /mnt/wacht-agents/... directly to still work
 mount {{
-    src: "{0}"
-    dst: "{0}"
+    src: "{exec_root}"
+    dst: "{exec_root}"
     is_bind: true
     rw: true
 }}
 "#,
-            exec_root_str
+            exec_root = exec_root_str,
+            workspace = workspace_path,
+            uploads = uploads_path,
+            scratch = scratch_path,
+            knowledge = knowledge_path,
+            teams_activity = teams_activity_path
         );
 
         tokio::fs::write(config_path, config)

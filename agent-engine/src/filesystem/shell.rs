@@ -86,10 +86,8 @@ impl ShellExecutor {
         }
 
         // Validate ALL commands in pipes, not just the first one
-        // Split by | and ; to catch all commands in the pipeline
-        let command_segments: Vec<&str> = command_line
-            .split(|c| c == '|' || c == ';' || c == '&')
-            .collect();
+        // Use quote-aware splitting to handle jq expressions like '.foo | .bar'
+        let command_segments = split_command_segments(&command_line);
         
         for segment in &command_segments {
             let trimmed = segment.trim();
@@ -281,4 +279,48 @@ fn shell_escape(s: &str) -> String {
             .replace('\'', "\\'")
             .replace('\n', "\\n")
     )
+}
+
+/// Split command line on |, ;, & but respect quoted strings.
+/// Fixes issues where jq expressions like '.foo | .bar' were incorrectly split.
+fn split_command_segments(cmd: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut chars = cmd.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' if !in_double_quote => {
+                in_single_quote = !in_single_quote;
+                current.push(c);
+            }
+            '"' if !in_single_quote => {
+                in_double_quote = !in_double_quote;
+                current.push(c);
+            }
+            '\\' => {
+                current.push(c);
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                }
+            }
+            '|' | ';' | '&' if !in_single_quote && !in_double_quote => {
+                let trimmed = current.trim().to_string();
+                if !trimmed.is_empty() {
+                    segments.push(trimmed);
+                }
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() {
+        segments.push(trimmed);
+    }
+
+    segments
 }

@@ -112,6 +112,19 @@ impl ToolExecutor {
             }
         };
 
+        // Inject dynamic structure hint into the result
+        let mut result = result;
+        if result.is_object() && result.get("structure_hint").is_none() {
+            // Infer schema from the actual response data (prefer 'data' or 'result' field if exists)
+            let data_to_analyze = result.get("data")
+                .or_else(|| result.get("result"))
+                .unwrap_or(&result);
+            let hint = infer_schema_hint(data_to_analyze);
+            if let Some(obj) = result.as_object_mut() {
+                obj.insert("structure_hint".to_string(), serde_json::json!(hint));
+            }
+        }
+
         let final_result = if !pipeline.is_empty() {
             let result_str = serde_json::to_string_pretty(&result)?;
             let transformed = shell.apply_pipeline(&result_str, &pipeline).await?;
@@ -769,10 +782,16 @@ impl ToolExecutor {
             }));
         }
 
+        // Build response with dynamically inferred structure hint
+        let empty_obj = serde_json::json!({});
+        let result_data = response_data.get("data").unwrap_or(&empty_obj);
+        let structure_hint = infer_schema_hint(result_data);
+        
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
-            "result": response_data.get("data").unwrap_or(&serde_json::json!({}))
+            "result": result_data,
+            "structure_hint": structure_hint
         }))
     }
 
@@ -933,11 +952,14 @@ impl ToolExecutor {
             }
             _ => {}
         }
-
+        // Build response with dynamically inferred structure hint
+        let structure_hint = infer_schema_hint(&response_data);
+        
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
-            "result": response_data
+            "result": response_data,
+            "structure_hint": structure_hint
         }))
     }
 
@@ -1479,5 +1501,60 @@ impl ToolExecutor {
             total_results: all_results.len(),
             search_settings: serde_json::to_value(&config.search_settings)?,
         })
+    }
+}
+
+/// Dynamically analyze JSON value and generate a human-readable structure hint.
+/// Max depth of 3 levels to keep hints concise.
+fn infer_schema_hint(value: &Value) -> String {
+    infer_schema_recursive(value, 0)
+}
+
+fn infer_schema_recursive(value: &Value, depth: usize) -> String {
+    if depth > 5 {
+        return "...".to_string();
+    }
+
+    match value {
+        Value::Object(map) => {
+            if map.is_empty() {
+                return "{}".to_string();
+            }
+            let fields: Vec<String> = map
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, infer_type_hint(v, depth + 1)))
+                .collect();
+            format!("{{{}}}", fields.join(", "))
+        }
+        Value::Array(arr) => {
+            if let Some(first) = arr.first() {
+                format!("{}[]", infer_type_hint(first, depth + 1))
+            } else {
+                "[]".to_string()
+            }
+        }
+        _ => infer_type_hint(value, depth),
+    }
+}
+
+fn infer_type_hint(value: &Value, depth: usize) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(_) => "bool".to_string(),
+        Value::Number(n) => {
+            if n.is_i64() { "int".to_string() }
+            else { "number".to_string() }
+        }
+        Value::String(s) => {
+            // Give better hints for common patterns
+            if s.contains("T") && s.contains(":") && s.len() > 15 {
+                "datetime".to_string()
+            } else if s.starts_with("http") {
+                "url".to_string()
+            } else {
+                "string".to_string()
+            }
+        }
+        Value::Array(_) | Value::Object(_) => infer_schema_recursive(value, depth),
     }
 }
