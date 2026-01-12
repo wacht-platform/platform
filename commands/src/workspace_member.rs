@@ -146,7 +146,7 @@ impl Command for AddWorkspaceMemberCommand {
             e
         })?;
 
-        for (idx, role_id) in self.role_ids.iter().enumerate() {
+        for (_, role_id) in self.role_ids.iter().enumerate() {
             sqlx::query!(
                 r#"
                 INSERT INTO workspace_membership_roles (workspace_membership_id, workspace_role_id, workspace_id, organization_id)

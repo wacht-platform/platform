@@ -464,7 +464,7 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_get_meeting_recording",
-                    "Get meeting recordings. For DM/group chats: uses organizer_id to search their OneDrive. For channel meetings: automatically detects Team context and searches SharePoint. Use context_id to search recordings from another channel/chat.",
+                    "Get meeting recording info. PREFERRED: Pass 'join_url' from a meeting recap link to auto-extract recording. ALTERNATIVE: For channel meetings team_id is auto-detected. For DM/group chats use 'organizer_id' from callEnded events.",
                     UseExternalServiceToolType::TeamsGetMeetingRecording,
                     vec![
                         SchemaField {
@@ -507,25 +507,37 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_analyze_meeting",
-                    "Analyze a meeting recording. Downloads video and extracts: 1) Audio transcription with speaker labels, 2) Visual content. For DM recordings, pass organizer_id from teams_get_meeting_recording results.",
+                    "Analyze a meeting recording. PREFERRED: Pass 'join_url' from a meeting recap link to auto-download and transcribe. ALTERNATIVE: Pass 'recording_id' + 'organizer_id' from teams_get_meeting_recording results. Extracts: 1) Audio transcription with speaker labels, 2) Visual content from screen shares.",
                     UseExternalServiceToolType::TeamsTranscribeMeeting,
                     vec![
                         SchemaField {
+                            name: "join_url".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("PREFERRED: The meeting recap URL from Teams. Will auto-extract and download the recording without needing organizer_id.".to_string()),
+                            required: false, ..Default::default()
+                        },
+                        SchemaField {
+                            name: "download_url".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Direct download URL for the recording. Use if you already have it from teams_get_meeting_recording results.".to_string()),
+                            required: false, ..Default::default()
+                        },
+                        SchemaField {
                             name: "recording_id".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("The recording ID from teams_get_meeting_recording results (the 'id' field).".to_string()),
-                            required: true, ..Default::default()
+                            description: Some("The recording ID from teams_get_meeting_recording results. Requires 'organizer_id' for DM/group recordings.".to_string()),
+                            required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "organizer_id".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("For DM/group recordings ONLY: the 'organizer_id' from teams_get_meeting_recording results. Not needed for channel meetings.".to_string()),
+                            description: Some("For DM/group recordings with recording_id: the 'organizer_id' from teams_get_meeting_recording results.".to_string()),
                             required: false, ..Default::default()
                         },
                         SchemaField {
                             name: "recording_name".to_string(),
                             field_type: "STRING".to_string(),
-                            description: Some("Optional name of the recording for reference.".to_string()),
+                            description: Some("Optional name of the recording for reference in the transcript.".to_string()),
                             required: false, ..Default::default()
                         },
                     ]
