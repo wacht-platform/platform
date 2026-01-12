@@ -465,6 +465,7 @@ impl AgentExecutor {
             "current_objective": self.current_objective,
             "conversation_insights": self.conversation_insights,
             "action_purpose": action_purpose,
+            "available_paths": self.get_available_paths(),
         });
 
         if let Some(ref sys_instructions) = self.system_instructions {
@@ -505,5 +506,38 @@ impl AgentExecutor {
             workflow_name: workflow_name.to_string(),
             inputs,
         })
+    }
+
+    /// Get available filesystem paths for parameter generation context.
+    /// Lists standard paths first, then Teams activity path if Teams integration is enabled.
+    fn get_available_paths(&self) -> Value {
+        let mut paths = vec![
+            json!({
+                "path": "/knowledge/",
+                "description": "Knowledge bases with indexed documents"
+            }),
+            json!({
+                "path": "/uploads/",
+                "description": "User uploaded files"
+            }),
+            json!({
+                "path": "/scratch/",
+                "description": "Temporary working directory"
+            }),
+            json!({
+                "path": "/workspace/",
+                "description": "Persistent workspace files"
+            }),
+        ];
+
+        // Teams activity path - only if Teams integration is enabled
+        if self.teams_enabled {
+            paths.push(json!({
+                "path": "/teams-activity/",
+                "description": "Teams conversation activity logs - contains daily log files named like 'YYYY-MM-DD.log' or 'Teams DM {Name}_YYYY-MM-DD.log'"
+            }));
+        }
+
+        json!(paths)
     }
 }

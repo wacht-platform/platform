@@ -98,6 +98,16 @@ Instead, describe actions in natural, user-friendly language. For example:
 {{/each}}
 {{/if}}
 
+### Available File Paths:
+{{#if available_paths}}
+**The following directories are available for file operations:**
+{{#each available_paths}}
+- **{{this.path}}** - {{this.description}}
+{{/each}}
+
+**IMPORTANT**: Only use paths within these directories. Do NOT use system paths like `/var/log/` or other locations outside these allowed directories.
+{{/if}}
+
 ## Parameter Generation Guidelines:
 
 1. **Extract Real Values**: Use actual data from context, not placeholders
