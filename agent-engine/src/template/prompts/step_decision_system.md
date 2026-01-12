@@ -565,6 +565,82 @@ Execute 1-10 actions in parallel. Use `context_messages` to optimize token usage
 - Use this to reduce token costs and improve processing speed for large datasets.
 - **Safety**: Do not assume fields exist. If structure is unknown, read a sample first (e.g., "Read first 5 lines to check format") before creating a filtering pipeline.
 
+**Shell Commands & Pipes Best Practices**:
+When working with files and data, follow this pattern:
+1. **Understand the data first** - Before filtering, peek at the structure:
+   ```bash
+   # See what you're working with
+   head -10 /workspace/data.json        # First 10 lines
+   file /workspace/data.csv             # File type
+   wc -l /teams-activity/2026-01-12.log # Line count
+   ```
+2. **Then filter intelligently**:
+   ```bash
+   # Chain commands with pipes (left-to-right flow)
+   cat file.log | grep 'ERROR' | head -20           # Find errors, limit output
+   jq '.users[] | .name' data.json                  # Extract specific fields
+   grep -i 'search' *.log | sort | uniq             # Deduplicate results
+   awk -F',' '{print $2}' data.csv | sort | uniq -c # Count unique values
+   ```
+3. **Common patterns**:
+   | Goal | Command |
+   |------|---------|
+   | Find text in files | `grep -i 'term' file.log` |
+   | Filter JSON | `jq '.field' file.json` |
+   | Count matches | `grep -c 'pattern' file.log` |
+   | Sort & dedupe | `sort file.txt \| uniq` |
+   | Last N lines | `tail -50 file.log` |
+   | Extract column | `awk -F',' '{print $2}' data.csv` |
+
+**Python Execution Guidance**:
+Use `execute_python` for complex data processing when shell commands become unwieldy:
+
+**When to use Python**:
+- Multi-step data transformations (parse → transform → aggregate → format)
+- Complex JSON/CSV manipulation requiring logic
+- Calculations, statistics, or aggregations
+- When piping 3+ shell commands becomes confusing
+- Pattern matching with complex regex
+- Building structured output from unstructured data
+
+**When shell is better**:
+- Simple grep/sed operations
+- Quick file inspection (head, tail, cat)
+- Counting, sorting, deduplicating
+- Single-step transformations
+
+**Python workflow**:
+```
+1. write_file("/scratch/analyze.py", code)  # Write the script
+2. execute_python(script_path: "scratch/analyze.py")  # Run it
+```
+
+**Path consistency in Python scripts**:
+```python
+# All these paths work inside Python scripts:
+open("/knowledge/docs/guide.md")         # Knowledge base
+open("/workspace/output.json")           # Persistent workspace
+```
+
+**Example - complex log analysis**:
+```python
+import json
+from collections import Counter
+
+# Read and parse log entries
+errors = Counter()
+with open("/teams-activity/2026-01-12.log") as f:
+    for line in f:
+        if "ERROR" in line:
+            # Extract error type
+            parts = line.split(":")
+            if len(parts) > 2:
+                errors[parts[1].strip()] += 1
+
+# Output summary
+print(json.dumps(dict(errors.most_common(10)), indent=2))
+```
+
 ### 5. complete - Task Completion & Final Response
 **CRITICAL**: You MUST provide a `completion_message` to communicate results to the user.
 

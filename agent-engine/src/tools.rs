@@ -658,15 +658,6 @@ impl ToolExecutor {
             UseExternalServiceToolType::TeamsListContexts => {
                 self.execute_teams_list_contexts(execution_params).await
             }
-            UseExternalServiceToolType::TeamsSearchMessages => {
-                self.execute_teams_command(
-                    tool,
-                    "search_teams_messages",
-                    execution_params,
-                    context_title,
-                )
-                .await
-            }
             UseExternalServiceToolType::TriggerContext => {
                 self.execute_trigger_context(tool, execution_params).await
             }

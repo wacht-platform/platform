@@ -463,43 +463,6 @@ impl AgentExecutorBuilder {
                     ]
                 ),
                 (
-                    "teams_search_messages",
-                    "Search for messages using specific criteria (keywords, date range, sender). Uses Microsoft Graph Search API for efficient filtering of deep history. Faster than paging through thousands of messages if you know what you're looking for.",
-                    UseExternalServiceToolType::TeamsSearchMessages,
-                    vec![
-                        SchemaField {
-                            name: "query".to_string(),
-                            field_type: "STRING".to_string(),
-                            description: Some("Search query (keywords, phrase) to find specific messages.".to_string()),
-                            required: true, ..Default::default()
-                        },
-                        SchemaField {
-                            name: "context_id".to_string(),
-                            field_type: "STRING".to_string(),
-                            description: Some("Optional: Target context ID to search in. Defaults to current context.".to_string()),
-                            required: false, ..Default::default()
-                        },
-                        SchemaField {
-                            name: "from_date".to_string(),
-                            field_type: "STRING".to_string(),
-                            description: Some("ISO date to filter FROM (inclusive). E.g. '2025-01-01'. Restrict search to this period.".to_string()),
-                            required: false, ..Default::default()
-                        },
-                        SchemaField {
-                            name: "to_date".to_string(),
-                            field_type: "STRING".to_string(),
-                            description: Some("ISO date to filter TO (inclusive). E.g. '2025-02-01'.".to_string()),
-                            required: false, ..Default::default()
-                        },
-                        SchemaField {
-                            name: "from_user".to_string(),
-                            field_type: "STRING".to_string(),
-                            description: Some("Display name of the sender to filter by (e.g. 'Jane Doe').".to_string()),
-                            required: false, ..Default::default()
-                        },
-                    ]
-                ),
-                (
                     "teams_get_meeting_recording",
                     "Get meeting recordings. For DM/group chats: uses organizer_id to search their OneDrive. For channel meetings: automatically detects Team context and searches SharePoint. Use context_id to search recordings from another channel/chat.",
                     UseExternalServiceToolType::TeamsGetMeetingRecording,

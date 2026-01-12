@@ -139,7 +139,6 @@ pub enum UseExternalServiceToolType {
     TeamsDescribeImage,
     TeamsTranscribeAudio,
     TeamsListContexts,
-    TeamsSearchMessages,
     TriggerContext,
     #[serde(rename = "clickup_create_task")]
     ClickUpCreateTask,
