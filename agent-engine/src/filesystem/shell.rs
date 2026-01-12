@@ -85,6 +85,37 @@ impl ShellExecutor {
             ));
         }
 
+        // Validate ALL commands in pipes, not just the first one
+        // Split by | and ; to catch all commands in the pipeline
+        let command_segments: Vec<&str> = command_line
+            .split(|c| c == '|' || c == ';' || c == '&')
+            .collect();
+        
+        for segment in &command_segments {
+            let trimmed = segment.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            
+            // Get the first word of each segment (the command name)
+            let cmd_name = trimmed.split_whitespace().next();
+            
+            if let Some(cmd) = cmd_name {
+                // Skip if it's a subcommand indicator like "then", "else", "do", etc.
+                let shell_keywords = ["then", "else", "fi", "do", "done", "esac", "in"];
+                if shell_keywords.contains(&cmd) {
+                    continue;
+                }
+                
+                if !self.allowed_commands.contains(&cmd.to_string()) {
+                    return Err(AppError::Forbidden(format!(
+                        "Command '{}' is not allowed. Allowed commands: cat, grep, jq, head, tail, etc. For Python, use the execute_python tool instead.",
+                        cmd
+                    )));
+                }
+            }
+        }
+
         let working_dir_str = self.working_dir.to_string_lossy().to_string();
         for part in command_line.split_whitespace() {
             if part.starts_with('/') {
