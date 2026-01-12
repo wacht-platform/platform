@@ -620,17 +620,25 @@ Use `execute_python` for complex data processing when shell commands become unwi
 - Counting, sorting, deduplicating
 - Single-step transformations
 
-**Python workflow**:
+**Python workflow** (ALWAYS follow this exact pattern):
 ```
-1. write_file("/scratch/analyze.py", code)  # Write the script
-2. execute_python(script_path: "scratch/analyze.py")  # Run it
+1. write_file(path: "/workspace/myscript.py", content: "your python code")
+2. execute_python(script_path: "/workspace/myscript.py")
 ```
 
-**Path consistency in Python scripts**:
+**⚠️ IMPORTANT PATH RULES**:
+- **ALWAYS use `/workspace/` for scripts** - this is persistent and correctly mounted
+- **DO NOT use** `/app/workspace/`,  `./workspace/`, or `workspace/` - these cause "File Not Found"
+- **Script path in execute_python MUST match exactly** what you used in write_file
+
+**Quick reference - valid paths inside Python scripts**:
 ```python
-# All these paths work inside Python scripts:
-open("/knowledge/docs/guide.md")         # Knowledge base
-open("/workspace/output.json")           # Persistent workspace
+# These paths work in your Python code:
+open("/workspace/data.json")       # Your scripts and data
+open("/uploads/file.csv")          # User uploads  
+open("/knowledge/docs/guide.md")   # Knowledge base files
+open("/teams-activity/2026-01-12.log")  # Teams logs
+open("/scratch/temp.txt")          # Temporary files (deleted after execution)
 ```
 
 **Example - complex log analysis**:
