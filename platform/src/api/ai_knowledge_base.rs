@@ -156,7 +156,6 @@ pub async fn upload_knowledge_base_document(
     let mut file_type: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await.map_err(|e| {
-        println!("Failed to read multipart field: {}", e);
         (
             StatusCode::BAD_REQUEST,
             format!("Failed to read multipart field: {}", e),

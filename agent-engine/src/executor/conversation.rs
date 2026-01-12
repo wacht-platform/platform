@@ -195,25 +195,6 @@ impl AgentExecutor {
             }
         }
 
-        // DEBUG: Print formatted history
-        println!("\n=== LLM CONVERSATION HISTORY ===");
-        for item in &history {
-            let role = item
-                .get("role")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            let content = if let Some(parts) = item.get("parts") {
-                format!("{:?}", parts)
-            } else {
-                item.get("content")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string()
-            };
-            println!("[{}] {}", role.to_uppercase(), content);
-        }
-        println!("================================\n");
-
         history
     }
 

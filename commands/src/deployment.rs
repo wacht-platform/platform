@@ -86,9 +86,6 @@ impl Command for UpdateDeploymentAuthSettingsCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Debug log the incoming updates
-        println!("Received auth settings updates: {:?}", self.updates);
-
         let mut text_updates: Vec<(&str, String)> = Vec::new();
         let mut int_updates: Vec<(&str, i64)> = Vec::new();
         let mut jsonb_merges: Vec<(&str, Value)> = Vec::new();
@@ -224,10 +221,6 @@ impl Command for UpdateDeploymentAuthSettingsCommand {
         let has_jsonb_merges = !jsonb_merges.is_empty();
 
         if !has_text_updates && !has_int_updates && !has_jsonb_merges {
-            println!(
-                "No settings updates to apply for deployment_id: {}",
-                self.deployment_id
-            );
             return Ok(());
         }
 

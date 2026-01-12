@@ -72,7 +72,6 @@ pub async fn get_webhook_status(
                 failed_deliveries_24h: stats_data.failed_deliveries,
             }),
             Err(e) => {
-                eprintln!("Failed to get webhook stats: {:?}", e);
                 // Return empty stats when query fails (likely no data yet)
                 Some(dto::json::WebhookStats {
                     total_deliveries: 0,

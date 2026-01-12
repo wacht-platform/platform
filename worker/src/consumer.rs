@@ -577,7 +577,24 @@ impl NatsConsumer {
     }
 
     async fn handle_message(&self, message: async_nats::jetstream::Message) -> Result<()> {
-        let task_message: NatsTaskMessage = serde_json::from_slice(&message.payload)?;
+        // Debug log: show raw payload for troubleshooting
+        let raw_payload = String::from_utf8_lossy(&message.payload);
+        
+        let task_message: NatsTaskMessage = match serde_json::from_slice(&message.payload) {
+            Ok(msg) => msg,
+            Err(e) => {
+                error!(
+                    "Failed to deserialize NatsTaskMessage: {}. Raw payload (first 500 chars): {}",
+                    e,
+                    raw_payload.chars().take(500).collect::<String>()
+                );
+                // Ack to prevent infinite redelivery of malformed messages
+                if let Err(ack_err) = message.ack().await {
+                    error!("Failed to ack malformed message: {}", ack_err);
+                }
+                return Err(anyhow::anyhow!("Deserialization failed: {}", e));
+            }
+        };
 
         info!(
             "Received JetStream task: {} (ID: {})",

@@ -51,7 +51,6 @@ impl Command for TriggerWebhookEventCommand {
     type Output = TriggerWebhookEventResult;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        println!("{} {}", self.deployment_id, self.app_name);
         let app_info = query!(
             r#"
             SELECT name

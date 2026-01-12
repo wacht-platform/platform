@@ -272,11 +272,7 @@ impl AgentExecutor {
                 return Ok(());
             }
 
-            println!("Iteration: {}", iteration);
-
             let decision = self.decide_next_step().await?;
-
-            println!("Decision: {:#?}", decision);
 
             match self.process_decision(decision).await {
                 Ok(should_continue) => {
