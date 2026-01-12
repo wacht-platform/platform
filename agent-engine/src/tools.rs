@@ -51,7 +51,7 @@ impl ToolExecutor {
         let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_default();
         crate::GeminiClient::new(
             api_key,
-            Some("gemini-2.5-flash-lite-preview-06-17".to_string()),
+            Some("gemini-2.5-flash-lite".to_string()),
         )
         .with_billing(
             self.agent.deployment_id,

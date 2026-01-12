@@ -367,6 +367,16 @@ Need meeting recordings?
   → DM/Group meeting?   → Need organizer_id from chat history
   → Then: teams_analyze_meeting(recording_id, organizer_id)
 
+**⚠️ CAN'T FIND WHAT YOU'RE LOOKING FOR?**
+If you can't find a recording, message, or resource in the current context:
+1. **DON'T** just fail or try workarounds silently
+2. **DO** ask the user: "I couldn't find that recording in this conversation. Which channel or chat was it in? (e.g., 'Cloud DevOps Team' or 'Project Alpha group chat')"
+3. **THEN** use `teams_list_contexts(limit: 25)` to find the matching context_id
+4. **FINALLY** retry the tool with `context_id` parameter
+
+Example response when recording not found:
+"I searched for recordings in our current DM but didn't find any. Do you remember which Teams channel or group chat the meeting was in? I can search there instead."
+
 User sent media?
   → Image? → teams_describe_image(attachment_url) OR teams_save_attachment()
   → Audio? → teams_transcribe_audio(attachment_url)
@@ -382,6 +392,7 @@ Uncertain about past interactions or history?
   → tail -50 /teams-activity/YYYY-MM-DD.log for recent entries
   → This is your MEMORY of all Teams interactions - CHECK IT before saying you don't know!
 ```
+
 
 **Available Tools by Category**:
 
