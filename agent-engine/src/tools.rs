@@ -137,7 +137,7 @@ impl ToolExecutor {
         }
 
         let should_truncate =
-            tool.name != "read_file" && tool.name != "read_knowledge_base_documents";
+            tool.name != "read_file" && tool.name != "read_knowledge_base_documents" && tool.name != "teams_analyze_meeting";
 
         let result_str = serde_json::to_string_pretty(&final_result)?;
         let char_count = result_str.chars().count();
