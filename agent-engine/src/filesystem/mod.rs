@@ -46,6 +46,14 @@ impl AgentFilesystem {
             .join("uploads")
     }
 
+    pub fn persistent_workspace_path(&self) -> PathBuf {
+        self.base_path
+            .join(&self.deployment_id)
+            .join("persistent")
+            .join(&self.context_id)
+            .join("workspace")
+    }
+
     pub fn shared_kb_path(&self, kb_id: &str) -> PathBuf {
         self.base_path
             .join(&self.deployment_id)
@@ -69,10 +77,7 @@ impl AgentFilesystem {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to create execution root: {}", e)))?;
 
-        fs::create_dir_all(root.join("workspace"))
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to create workspace: {}", e)))?;
-
+        // Scratch is per-execution, create as regular directory
         fs::create_dir_all(root.join("scratch"))
             .await
             .map_err(|e| AppError::Internal(format!("Failed to create scratch: {}", e)))?;
@@ -81,6 +86,7 @@ impl AgentFilesystem {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to create knowledge dir: {}", e)))?;
 
+        // Uploads is persistent per context - symlink to persistent storage
         let persistent_uploads = self.persistent_uploads_path();
         fs::create_dir_all(&persistent_uploads).await.map_err(|e| {
             AppError::Internal(format!("Failed to create persistent uploads: {}", e))
@@ -91,6 +97,19 @@ impl AgentFilesystem {
             fs::symlink(&persistent_uploads, &uploads_link)
                 .await
                 .map_err(|e| AppError::Internal(format!("Failed to symlink uploads: {}", e)))?;
+        }
+
+        // Workspace is persistent per context - symlink to persistent storage
+        let persistent_workspace = self.persistent_workspace_path();
+        fs::create_dir_all(&persistent_workspace).await.map_err(|e| {
+            AppError::Internal(format!("Failed to create persistent workspace: {}", e))
+        })?;
+
+        let workspace_link = root.join("workspace");
+        if !workspace_link.exists() {
+            fs::symlink(&persistent_workspace, &workspace_link)
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to symlink workspace: {}", e)))?;
         }
 
         Ok(())
