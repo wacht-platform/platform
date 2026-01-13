@@ -94,6 +94,10 @@ When analyzing complex Teams scenarios (multi-party messaging, meeting recording
 - organizer_id is required for DM/group; auto-detected for channel
 - Recording processing takes time - consider retry strategies
 
+**Media Analysis**:
+- **Inline vs. Attachment**: Be aware that pasted images often appear as `<img>` tags in the HTML body, not as formal attachments.
+- **Strategy**: Always analyze the raw HTML body content if looking for media that isn't in the attachments list. The `src` attribute is your download target.
+
 **Permission Matrix**:
 - Bot must be installed for recipient to receive DMs
 - Graph API permissions vary: User.Read, Chat.Read, Channel.Read

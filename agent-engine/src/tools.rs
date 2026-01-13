@@ -1210,7 +1210,12 @@ impl ToolExecutor {
             &execution_id,
         );
 
-        let saved_path = filesystem.save_upload(filename, &bytes).await?;
+        let clean_filename = std::path::Path::new(filename)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("attachment");
+
+        let saved_path = filesystem.save_upload(clean_filename, &bytes).await?;
 
         Ok(serde_json::json!({
             "success": true,

@@ -427,7 +427,7 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_list_messages",
-                    "Get recent messages from a Teams conversation. Works for Team channels, group DMs, and 1:1 chats. Useful for finding meeting notifications, previous discussions, or context. Use context_id to read from another channel/chat.",
+                    "Get recent messages from a Teams conversation. Works for Team channels, group DMs, and 1:1 chats. Useful for finding meeting notifications, previous discussions, or context. Use context_id to read from another channel/chat. NOTE: Pinned/Inline images appear as <img> tags in the body HTML, not always as attachments - look for 'src' attributes.",
                     UseExternalServiceToolType::TeamsListMessages,
                     vec![
                         SchemaField {
@@ -538,7 +538,7 @@ impl AgentExecutorBuilder {
                 ),
                 (
                     "teams_save_attachment",
-                    "Save an image attachment from a Teams message to your uploads folder for later use. Use this when you need to keep an image for reference or processing.",
+                    "Save a file attachment (document, image, etc.) from a Teams message to your uploads folder for later use. Use this when you need to keep a file for reference or processing. Supports any file type. NOTE: For inline images (pasted in chat), extract the URL from the <img> 'src' attribute in the message body HTML.",
                     UseExternalServiceToolType::TeamsSaveAttachment,
                     vec![
                         SchemaField {

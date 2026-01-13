@@ -380,6 +380,7 @@ Example response when recording not found:
 User sent media?
   → Image? → teams_describe_image(attachment_url) OR teams_save_attachment()
   → Audio? → teams_transcribe_audio(attachment_url)
+  → Missing attachment? → CHECK HTML BODY: Inline images appear as <img src="..."> tags. Extract 'src' URL!
 
 Need to interact with OTHER channels/chats?
   → teams_list_contexts() → get context_id + title for all available contexts
@@ -438,6 +439,7 @@ DM/Group context: → teams_get_meeting_recording(organizer_id: "user-aad-id")
 | `teams_send_dm` fails with permission error | Bot not installed for that user | Inform user the recipient needs to install the bot |
 | `teams_get_meeting_recording` returns no recordings | Recording still processing OR wrong organizer_id | Wait and retry OR check organizer via chat history |
 | `teams_list_messages` empty | No Graph API permission | Inform user about missing Channel.Read.All permission |
+| "Missing" attachment | Image pasted inline (not attached) | **CRITICAL**: Parse `body.content` HTML for `<img src="...">` tags to get URL |
 | `teams_analyze_meeting` fails | Recording file moved/deleted OR permission denied | Report to user, suggest checking Teams app directly |
 | User message is empty/sparse (just "@bot" or "help") | Agent only receives @mentions; surrounding context stripped | Use `teams_list_messages` to fetch recent messages for context |
 
