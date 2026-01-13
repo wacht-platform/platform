@@ -745,6 +745,10 @@ impl ToolExecutor {
                 self.execute_clickup_command(tool, "search_tasks", execution_params, context_title)
                     .await
             }
+            UseExternalServiceToolType::ClickUpTaskAddAttachment => {
+                self.execute_clickup_add_attachment(tool, execution_params)
+                    .await
+            }
         }
     }
 
@@ -755,59 +759,218 @@ impl ToolExecutor {
         execution_params: &Value,
         _context_title: &str,
     ) -> Result<Value, AppError> {
+        // Get context to find context_group for token lookup
         let context =
             queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
                 .execute(&self.app_state)
                 .await?;
 
-        // Use generic context group, fallback to Teams context group if not present (legacy support) or fail
         let context_group = context.context_group.ok_or_else(|| {
             AppError::BadRequest("No context group found for ClickUp command".to_string())
         })?;
 
-        let payload = serde_json::json!({
-            "deployment_id": self.agent.deployment_id.to_string(),
-            "context_id": self.context_id.to_string(),
-            "context_group": context_group,
-            "agent_id": self.agent.id.to_string(),
-            "action": action,
-            "params": execution_params
-        });
+        // Get ClickUp access token
+        let access_token = queries::GetClickUpTokenQuery::new(
+            self.agent.deployment_id,
+            context_group,
+        )
+        .execute(&self.app_state)
+        .await?;
 
-        let subject = "integrations.clickup.command";
+        // Create ClickUp client
+        let client = crate::clickup::ClickUpClient::new(access_token);
 
-        let response = self
-            .app_state
-            .nats_client
-            .request(subject.to_string(), serde_json::to_vec(&payload)?.into())
-            .await
-            .map_err(|e| {
-                AppError::External(format!("ClickUp integration request failed: {}", e))
-            })?;
+        // Execute action
+        let result = match action {
+            "get_current_user" => client.get_current_user().await?,
+            "get_teams" => client.get_teams().await?,
+            "get_spaces" => {
+                let team_id = execution_params
+                    .get("team_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("team_id is required".to_string()))?;
+                client.get_spaces(team_id).await?
+            }
+            "get_space_lists" => {
+                let space_id = execution_params
+                    .get("space_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("space_id is required".to_string()))?;
+                client.get_space_lists(space_id).await?
+            }
+            "get_task" => {
+                let task_id = execution_params
+                    .get("task_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("task_id is required".to_string()))?;
+                client.get_task(task_id).await?
+            }
+            "get_tasks" => {
+                let list_id = execution_params
+                    .get("list_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("list_id is required".to_string()))?;
+                client.get_tasks(list_id, execution_params).await?
+            }
+            "search_tasks" => {
+                let team_id = execution_params
+                    .get("team_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("team_id is required".to_string()))?;
+                client.search_tasks(team_id, execution_params).await?
+            }
+            "create_task" => {
+                let list_id = execution_params
+                    .get("list_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("list_id is required".to_string()))?;
+                client.create_task(list_id, execution_params).await?
+            }
+            "create_list" => {
+                let space_id = execution_params
+                    .get("space_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("space_id is required".to_string()))?;
+                client.create_list(space_id, execution_params).await?
+            }
+            "update_task" => {
+                let task_id = execution_params
+                    .get("task_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("task_id is required".to_string()))?;
+                client.update_task(task_id, execution_params).await?
+            }
+            "add_comment" => {
+                let task_id = execution_params
+                    .get("task_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("task_id is required".to_string()))?;
+                client.add_comment(task_id, execution_params).await?
+            }
+            "add_attachment" => {
+                let task_id = execution_params
+                    .get("task_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("task_id is required".to_string()))?;
+                let filename = execution_params
+                    .get("filename")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("attachment");
+                let mime_type = execution_params
+                    .get("mime_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("application/octet-stream");
+                let file_base64 = execution_params
+                    .get("file_data")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("file_data is required".to_string()))?;
+                
+                let file_data = base64::engine::general_purpose::STANDARD
+                    .decode(file_base64)
+                    .map_err(|e| AppError::BadRequest(format!("Invalid base64 file data: {}", e)))?;
+                
+                client.add_attachment(task_id, filename, mime_type, file_data).await?
+            }
+            _ => {
+                return Err(AppError::BadRequest(format!("Unknown ClickUp action: {}", action)));
+            }
+        };
 
-        let response_data: Value = serde_json::from_slice(&response.payload)?;
-
-        if response_data.get("status") == Some(&serde_json::json!("error")) {
-            let error_msg = response_data
-                .get("error")
-                .and_then(|e| e.as_str())
-                .unwrap_or("Unknown error from ClickUp integration");
-            return Ok(serde_json::json!({
-                "success": false,
-                "tool": tool.name,
-                "error": error_msg
-            }));
-        }
-
-        let empty_obj = serde_json::json!({});
-        let result_data = response_data.get("data").unwrap_or(&empty_obj);
-        
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
-            "result": result_data
+            "result": result
         }))
     }
+
+    async fn execute_clickup_add_attachment(
+        &self,
+        tool: &AiTool,
+        execution_params: &Value,
+    ) -> Result<Value, AppError> {
+        let task_id = execution_params
+            .get("task_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::BadRequest("task_id is required".to_string()))?;
+
+        let file_path = execution_params
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::BadRequest("file_path is required".to_string()))?;
+
+        // Create filesystem to read the file
+        let execution_id = self
+            .app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
+            .to_string();
+
+        let filesystem = AgentFilesystem::new(
+            &self.agent.deployment_id.to_string(),
+            &self.agent.id.to_string(),
+            &self.context_id.to_string(),
+            &execution_id,
+        );
+
+        // Read the file from the agent filesystem
+        let file_bytes = filesystem.read_file_bytes(file_path).await?;
+        
+        // Infer filename from path
+        let filename = std::path::Path::new(file_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("attachment");
+
+        // Infer mime type from extension
+        let extension = std::path::Path::new(file_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        
+        let mime_type = match extension.to_lowercase().as_str() {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            "pdf" => "application/pdf",
+            "txt" => "text/plain",
+            "csv" => "text/csv",
+            "json" => "application/json",
+            "xml" => "application/xml",
+            "zip" => "application/zip",
+            "doc" => "application/msword",
+            "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xls" => "application/vnd.ms-excel",
+            "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            _ => "application/octet-stream",
+        };
+
+        // Encode file as base64 for NATS transport
+        let file_base64 = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
+        let file_size = file_bytes.len();
+
+        // Build params with file data and reuse execute_clickup_command
+        let enhanced_params = serde_json::json!({
+            "task_id": task_id,
+            "filename": filename,
+            "mime_type": mime_type,
+            "file_data": file_base64
+        });
+
+        let mut result = self
+            .execute_clickup_command(tool, "add_attachment", &enhanced_params, "")
+            .await?;
+
+        // Add file info to the response
+        if let Some(obj) = result.as_object_mut() {
+            obj.insert("uploaded_file".to_string(), serde_json::json!(filename));
+            obj.insert("file_size_bytes".to_string(), serde_json::json!(file_size));
+        }
+
+        Ok(result)
+    }
+
 
     async fn execute_teams_command(
         &self,

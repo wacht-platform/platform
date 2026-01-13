@@ -1,6 +1,7 @@
 pub mod context;
 pub mod executor;
 pub mod filesystem;
+pub mod clickup;
 pub mod gemini;
 pub mod handler;
 pub mod teams_logger;

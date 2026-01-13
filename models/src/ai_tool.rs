@@ -162,6 +162,8 @@ pub enum UseExternalServiceToolType {
     ClickUpGetTasks,
     #[serde(rename = "clickup_search_tasks")]
     ClickUpSearchTasks,
+    #[serde(rename = "clickup_task_add_attachment")]
+    ClickUpTaskAddAttachment,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

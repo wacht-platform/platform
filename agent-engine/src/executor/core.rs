@@ -956,6 +956,25 @@ impl AgentExecutorBuilder {
                         },
                     ]
                 ),
+                (
+                    "clickup_task_add_attachment",
+                    "Upload a file from the agent filesystem as an attachment to a ClickUp task. The file can be any image, document, or other file from /uploads/, /workspace/, or /scratch/ directories.",
+                    UseExternalServiceToolType::ClickUpTaskAddAttachment,
+                    vec![
+                        SchemaField {
+                            name: "task_id".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("The task ID to attach the file to.".to_string()),
+                            required: true, ..Default::default()
+                        },
+                        SchemaField {
+                            name: "file_path".to_string(),
+                            field_type: "STRING".to_string(),
+                            description: Some("Path to the file in the agent filesystem (e.g., /uploads/screenshot.png, /workspace/report.pdf).".to_string()),
+                            required: true, ..Default::default()
+                        },
+                    ]
+                ),
             ];
 
             for (name, desc, service_type, schema) in clickup_tools {

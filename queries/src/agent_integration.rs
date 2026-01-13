@@ -180,3 +180,52 @@ impl Query for GetActiveIntegrationsForContextQuery {
             .collect())
     }
 }
+
+pub struct GetClickUpTokenQuery {
+    deployment_id: i64,
+    context_group: String,
+}
+
+impl GetClickUpTokenQuery {
+    pub fn new(deployment_id: i64, context_group: String) -> Self {
+        Self {
+            deployment_id,
+            context_group,
+        }
+    }
+}
+
+impl Query for GetClickUpTokenQuery {
+    type Output = String;
+
+    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+        let row: Option<(Option<serde_json::Value>,)> = sqlx::query_as(
+            r#"
+            SELECT aai.connection_metadata
+            FROM active_agent_integrations aai
+            JOIN agent_integrations i ON i.id = aai.integration_id
+            WHERE aai.deployment_id = $1
+              AND aai.context_group = $2
+              AND i.integration_type = 'clickup'
+            LIMIT 1
+            "#,
+        )
+        .bind(self.deployment_id)
+        .bind(&self.context_group)
+        .fetch_optional(&app_state.db_pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        let metadata = row
+            .ok_or_else(|| AppError::NotFound("No active ClickUp integration found".to_string()))?
+            .0
+            .ok_or_else(|| AppError::NotFound("ClickUp connection metadata is missing".to_string()))?;
+
+        let access_token = metadata
+            .get("accessToken")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AppError::NotFound("ClickUp access token not found in metadata".to_string()))?;
+
+        Ok(access_token.to_string())
+    }
+}
