@@ -107,7 +107,7 @@ impl ToolExecutor {
                     .await?
             }
             AiToolConfiguration::UseExternalService(config) => {
-                self.execute_external_service_tool(tool, config, &execution_params, context_title)
+                self.execute_external_service_tool(tool, config, &execution_params, context_title, filesystem)
                     .await?
             }
         };
@@ -628,6 +628,7 @@ impl ToolExecutor {
         config: &UseExternalServiceToolConfiguration,
         execution_params: &Value,
         context_title: &str,
+        filesystem: &AgentFilesystem,
     ) -> Result<Value, AppError> {
         match config.service_type {
             UseExternalServiceToolType::TeamsListUsers => {
@@ -746,7 +747,7 @@ impl ToolExecutor {
                     .await
             }
             UseExternalServiceToolType::ClickUpTaskAddAttachment => {
-                self.execute_clickup_add_attachment(tool, execution_params)
+                self.execute_clickup_add_attachment(tool, execution_params, filesystem)
                     .await
             }
         }
@@ -887,6 +888,7 @@ impl ToolExecutor {
         &self,
         tool: &AiTool,
         execution_params: &Value,
+        filesystem: &AgentFilesystem,
     ) -> Result<Value, AppError> {
         let task_id = execution_params
             .get("task_id")
@@ -897,21 +899,6 @@ impl ToolExecutor {
             .get("file_path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| AppError::BadRequest("file_path is required".to_string()))?;
-
-        // Create filesystem to read the file
-        let execution_id = self
-            .app_state
-            .sf
-            .next_id()
-            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
-            .to_string();
-
-        let filesystem = AgentFilesystem::new(
-            &self.agent.deployment_id.to_string(),
-            &self.agent.id.to_string(),
-            &self.context_id.to_string(),
-            &execution_id,
-        );
 
         // Read the file from the agent filesystem
         let file_bytes = filesystem.read_file_bytes(file_path).await?;
