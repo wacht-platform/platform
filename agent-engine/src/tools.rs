@@ -116,8 +116,19 @@ impl ToolExecutor {
         if result.is_object() && result.get("structure_hint").is_none() {
             let data_to_analyze = result.get("data")
                 .or_else(|| result.get("result"))
+                .or_else(|| result.get("stdout"))
                 .unwrap_or(&result);
-            let hint = infer_schema_hint(data_to_analyze);
+            
+            let hint = if let Some(string_content) = data_to_analyze.as_str() {
+                if let Ok(parsed) = serde_json::from_str::<Value>(string_content) {
+                    format!("(parsed from string) {}", infer_schema_hint(&parsed))
+                } else {
+                    "string".to_string()
+                }
+            } else {
+                infer_schema_hint(data_to_analyze)
+            };
+            
             if let Some(obj) = result.as_object_mut() {
                 obj.insert("structure_hint".to_string(), serde_json::json!(hint));
             }
@@ -183,9 +194,17 @@ impl ToolExecutor {
 
             let preview: String = result_str.chars().take(threshold).collect();
 
+            // Extract the already-computed structure_hint from final_result
+            let structure_hint = final_result
+                .get("structure_hint")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+
             return Ok(serde_json::json!({
                 "preview": preview,
                 "truncated": true,
+                "structure_hint": structure_hint,
                 "original_stats": {
                     "size_bytes": size_bytes,
                     "lines": lines,
@@ -780,16 +799,13 @@ impl ToolExecutor {
             }));
         }
 
-        // Build response with dynamically inferred structure hint
         let empty_obj = serde_json::json!({});
         let result_data = response_data.get("data").unwrap_or(&empty_obj);
-        let structure_hint = infer_schema_hint(result_data);
         
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
-            "result": result_data,
-            "structure_hint": structure_hint
+            "result": result_data
         }))
     }
 
@@ -950,14 +966,11 @@ impl ToolExecutor {
             }
             _ => {}
         }
-        // Build response with dynamically inferred structure hint
-        let structure_hint = infer_schema_hint(&response_data);
         
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
-            "result": response_data,
-            "structure_hint": structure_hint
+            "result": response_data
         }))
     }
 
@@ -1556,3 +1569,5 @@ fn infer_type_hint(value: &Value, depth: usize) -> String {
         Value::Array(_) | Value::Object(_) => infer_schema_recursive(value, depth),
     }
 }
+
+
