@@ -22,7 +22,7 @@ impl Query for GetAgentSessionQuery {
         let result = sqlx::query_as::<_, AgentSession>(
             r#"
             SELECT id, session_id, deployment_id, identifier, context_group, 
-                   agent_ids, expires_at, created_at, deleted_at
+                   agent_ids, expires_at, deleted_at
             FROM agent_sessions
             WHERE session_id = $1 
               AND deployment_id = $2

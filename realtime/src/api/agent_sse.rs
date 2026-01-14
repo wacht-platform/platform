@@ -10,6 +10,7 @@ use common::state::AppState;
 use common::utils::jwt::verify_token;
 use dto::json::StreamEvent;
 use futures::StreamExt;
+use models::ConversationContent;
 use queries::{GetAgentSessionQuery, GetDeploymentWithKeyPairQuery, Query};
 use serde::Deserialize;
 use std::time::Duration;
@@ -215,6 +216,14 @@ async fn subscribe_and_stream(
                     }
                 };
 
+                // Filter conversation messages to only include displayable types
+                // Matches the Go frontend API's GetContextMessages allowed types
+                if let StreamEvent::ConversationMessage(ref conv) = payload {
+                    if !is_displayable_message_type(&conv.content) {
+                        continue;
+                    }
+                }
+
                 let event_type = get_event_type(&payload);
                 let sse_data = format!(
                     "event: {}\ndata: {}\n\n",
@@ -234,6 +243,19 @@ async fn subscribe_and_stream(
     }
 
     Ok(())
+}
+
+/// Check if a conversation content type should be sent to the frontend
+/// Matches the allowed types in Go frontend API's GetContextMessages
+fn is_displayable_message_type(content: &ConversationContent) -> bool {
+    matches!(
+        content,
+        ConversationContent::UserMessage { .. }
+            | ConversationContent::AgentResponse { .. }
+            | ConversationContent::AssistantAcknowledgment { .. }
+            | ConversationContent::SystemDecision { .. }
+            | ConversationContent::UserInputRequest { .. }
+    )
 }
 
 fn get_event_type(event: &StreamEvent) -> &'static str {
