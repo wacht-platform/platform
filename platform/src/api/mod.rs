@@ -1,4 +1,5 @@
 pub mod agent_integrations;
+pub mod agent_tickets;
 pub mod ai_agents;
 pub mod ai_execution_context;
 pub mod ai_knowledge_base;

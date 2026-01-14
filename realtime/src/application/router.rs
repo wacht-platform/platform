@@ -1,4 +1,4 @@
-use crate::api::{agent, notifications};
+use crate::api::{agent, agent_sse, notifications};
 use crate::middleware::HostExtractorMiddleware;
 use axum::routing::get;
 use axum::{Router, middleware};
@@ -9,6 +9,7 @@ use tower_http::trace::TraceLayer;
 fn router() -> Router<AppState> {
     Router::new()
         .route("/agent", get(agent::agent_stream_handler))
+        .route("/agent/stream", get(agent_sse::agent_sse_stream_handler))
         .route(
             "/notifications",
             get(notifications::notification_stream_handler),

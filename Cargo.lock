@@ -4246,6 +4246,7 @@ dependencies = [
  "serde_json",
  "tiktoken-rs 0.5.9",
  "tokio",
+ "tokio-stream",
  "tower-http",
  "tracing",
  "tracing-subscriber",

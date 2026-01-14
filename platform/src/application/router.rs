@@ -417,14 +417,9 @@ fn console_specific_routes() -> Router<AppState> {
             post(api::api_key_console::rotate_api_key),
         )
         .route(
-            "/token/agent",
-            post(api::token::generate_agent_context_token),
-        )
-        .route(
             "/settings/email-provider/smtp/verify",
             post(api::settings::verify_smtp_connection),
         )
-        // Enterprise SSO routes
         .route(
             "/organizations/{org_id}/domains",
             post(api::enterprise_sso::create_domain_handler)
@@ -453,6 +448,10 @@ fn console_specific_routes() -> Router<AppState> {
             get(api::enterprise_sso::get_scim_token_handler)
                 .post(api::enterprise_sso::generate_scim_token_handler)
                 .delete(api::enterprise_sso::revoke_scim_token_handler),
+        )
+        .route(
+            "/agent/tickets",
+            post(api::agent_tickets::generate_agent_ticket),
         )
 }
 
@@ -560,10 +559,6 @@ fn backend_specific_routes() -> Router<AppState> {
         )
         .route("/token", post(api::token::generate_token))
         .route(
-            "/token/agent",
-            post(api::token::generate_agent_context_token),
-        )
-        .route(
             "/agent-execution-contexts",
             get(api::ai_execution_context::get_execution_contexts_backend)
                 .post(api::ai_execution_context::create_execution_context_backend),
@@ -575,6 +570,10 @@ fn backend_specific_routes() -> Router<AppState> {
         .route(
             "/agent-execution-contexts/{context_id}/execute",
             post(api::ai_execution_context::execute_agent_async),
+        )
+        .route(
+            "/agent/tickets",
+            post(api::agent_tickets::generate_agent_ticket),
         )
 }
 

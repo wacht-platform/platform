@@ -28,15 +28,18 @@ impl AgentExecutor {
                     continue;
                 }
 
-                if let Some(result) = task_execution.get_mut("result") {
-                    if let Some(output) = result.get_mut("output") {
-                        let output_str = output.to_string();
-                        if output_str.len() > 500 {
-                            *output = serde_json::json!({
-                                "truncated": true,
-                                "preview": output_str.chars().take(500).collect::<String>(),
-                                "note": "Historical output truncated to save context."
-                            });
+                // Truncate large outputs in historical action results
+                if let Some(ref mut results) = task_execution.actual_result {
+                    for result in results.iter_mut() {
+                        if let Some(ref mut output) = result.result {
+                            let output_str = output.to_string();
+                            if output_str.len() > 500 {
+                                *output = serde_json::json!({
+                                    "truncated": true,
+                                    "preview": output_str.chars().take(500).collect::<String>(),
+                                    "note": "Historical output truncated to save context."
+                                });
+                            }
                         }
                     }
                 }

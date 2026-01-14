@@ -52,6 +52,7 @@ pub mod hybrid_search;
 pub mod integration_linking;
 pub mod memory;
 pub mod memory_boundaries;
+pub mod agent_session;
 pub mod utils;
 pub mod webhook_analytics;
 
@@ -118,5 +119,6 @@ pub use conversation::*;
 pub use integration_linking::*;
 pub use memory::*;
 pub use memory_boundaries::*;
+pub use agent_session::*;
 pub use notification::*;
 pub use webhook::*;

@@ -24,6 +24,83 @@ pub enum ConversationMessageType {
     PlatformFunctionResult,
 }
 
+// ============================================================================
+// Task Execution Types (used in ActionExecutionResult)
+// ============================================================================
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskType {
+    ToolCall,
+    WorkflowCall,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ExecutionAction {
+    #[serde(rename = "type")]
+    pub action_type: TaskType,
+    pub details: Value,
+    pub purpose: String,
+    #[serde(default = "default_context_messages")]
+    pub context_messages: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clear_actionable_id: Option<String>,
+}
+
+fn default_context_messages() -> u32 {
+    1
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ActionsList {
+    #[serde(rename = "action")]
+    pub actions: Vec<ExecutionAction>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ActionResult {
+    pub action: String,
+    pub status: ActionResultStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionResultStatus {
+    Success,
+    Error,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct TaskExecution {
+    pub approach: String,
+    pub actions: ActionsList,
+    pub expected_result: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_result: Option<Vec<ActionResult>>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionExecutionStatus {
+    Pending,
+    Completed,
+    Failed,
+}
+
+impl Default for ActionExecutionStatus {
+    fn default() -> Self {
+        Self::Pending
+    }
+}
+
+// ============================================================================
+// Conversation Content
+// ============================================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConversationContent {
@@ -48,8 +125,9 @@ pub enum ConversationContent {
         thought_signature: Option<String>,
     },
     ActionExecutionResult {
-        task_execution: Value,
-        execution_status: String,
+        task_execution: TaskExecution,
+        execution_status: ActionExecutionStatus,
+        #[serde(skip_serializing_if = "Option::is_none")]
         blocking_reason: Option<String>,
     },
     SystemDecision {

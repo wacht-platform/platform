@@ -15,7 +15,6 @@ use dto::{
 use models::{AiWorkflow, AiWorkflowWithDetails};
 use queries::{GetAiWorkflowByIdQuery, GetAiWorkflowsQuery, Query as QueryTrait};
 
-// Unified parameter extraction for AI workflow routes
 #[derive(Deserialize)]
 pub struct WorkflowParams {
     pub workflow_id: i64,

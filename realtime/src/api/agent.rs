@@ -36,23 +36,22 @@ pub async fn agent_stream_handler(
     ws: upgrade::IncomingUpgrade,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let token = params.get("token").cloned();
-
-    if token.is_none() {
-        warn!("WebSocket connection attempted without authentication token");
+    let session_id = params.get("session_id").cloned();
+    if session_id.is_none() {
+        warn!("WebSocket connection attempted without session_id");
         return axum::response::Response::builder()
             .status(401)
-            .body(axum::body::Body::from("Authentication required"))
+            .body(axum::body::Body::from("session_id required"))
             .unwrap()
             .into_response();
     }
 
-    let token = token.unwrap();
+    let session_id = session_id.unwrap();
 
     let (response, fut) = ws.upgrade().unwrap();
 
     tokio::task::spawn(
-        async move { if let Err(_e) = handle_client(fut, state, host, token).await {} },
+        async move { if let Err(_e) = handle_client(fut, state, host, session_id).await {} },
     );
 
     response.into_response()
@@ -62,7 +61,7 @@ async fn handle_client(
     fut: upgrade::UpgradeFut,
     app_state: AppState,
     host: String,
-    token: String,
+    session_id_str: String,
 ) -> Result<(), FastWebSocketError> {
     let mut ws = FragmentCollector::new(fut.await?);
 
@@ -85,12 +84,12 @@ async fn handle_client(
         }
     };
 
-    let claims = match verify_agent_context_token(&token, "ES256", &public_key, None) {
-        Ok(claims) => claims,
-        Err(e) => {
-            error!("Failed to verify token for host {}: {}", host, e);
+    let session_id: i64 = match session_id_str.parse() {
+        Ok(id) => id,
+        Err(_) => {
+            warn!("Invalid session_id format: {}", session_id_str);
             let error_msg = WebSocketError {
-                error: "Invalid authentication token".to_string(),
+                error: "Invalid session ID".to_string(),
             };
             let _ = ws
                 .write_frame(Frame::text(fastwebsockets::Payload::Owned(
@@ -101,20 +100,72 @@ async fn handle_client(
         }
     };
 
-    let user_id = claims.sub.clone();
+    let agent_session = match queries::GetAgentSessionQuery::new(session_id, deployment_id as i64)
+        .execute(&app_state)
+        .await
+    {
+        Ok(Some(session)) => session,
+        Ok(None) => {
+            warn!("No active agent session for session_id {} on deployment {}", session_id, deployment_id);
+            let error_msg = WebSocketError {
+                error: "No active agent session. Please exchange your ticket first.".to_string(),
+            };
+            let _ = ws
+                .write_frame(Frame::text(fastwebsockets::Payload::Owned(
+                    serde_json::to_vec(&error_msg).unwrap(),
+                )))
+                .await;
+            return Ok(());
+        }
+        Err(e) => {
+            error!("Failed to query agent session: {}", e);
+            let error_msg = WebSocketError {
+                error: "Failed to verify agent session".to_string(),
+            };
+            let _ = ws
+                .write_frame(Frame::text(fastwebsockets::Payload::Owned(
+                    serde_json::to_vec(&error_msg).unwrap(),
+                )))
+                .await;
+            return Ok(());
+        }
+    };
+
+    if !agent_session.is_active() {
+        warn!("Agent session {} is expired or deleted", agent_session.id);
+        let error_msg = WebSocketError {
+            error: "Agent session expired".to_string(),
+        };
+        let _ = ws
+            .write_frame(Frame::text(fastwebsockets::Payload::Owned(
+                serde_json::to_vec(&error_msg).unwrap(),
+            )))
+            .await;
+        return Ok(());
+    }
+
+    let user_id = session_id.to_string();
+    let context_group = agent_session.context_group.clone();
+    
+    let audience = if !agent_session.agent_ids.is_empty() {
+        Some(agent_session.agent_ids[0].to_string())
+    } else {
+        None
+    };
 
     tracing::info!(
-        "WebSocket connection for deployment {} (host: {}, user: {:?})",
+        "WebSocket connection for deployment {} (host: {}, session: {}, context: {})",
         deployment_id,
         host,
-        user_id
+        session_id,
+        context_group
     );
 
     let (sender, mut receiver) = mpsc::unbounded_channel::<WebsocketMessage<Value>>();
     let session = Arc::new(Mutex::new(
         SessionState::new(sender.clone(), app_state.clone(), deployment_id)
-            .with_user(user_id.clone())
-            .with_audience(claims.aud.clone()),
+            .with_user(Some(user_id.clone()))
+            .with_audience(audience),
     ));
     let channel_ready = Arc::new(Notify::new());
 
@@ -161,8 +212,8 @@ async fn handle_client(
                         name: Some(format!("receiver-{sid}")),
                         filter_subject: format!("agent_execution_stream.context:{context_id}"),
                         inactive_threshold: Duration::from_secs(20),
-                        ack_wait: Duration::from_secs(5), // Faster acknowledgment timeout
-                        deliver_policy: jetstream::consumer::DeliverPolicy::New, // Only new messages from now
+                        ack_wait: Duration::from_secs(5),
+                        deliver_policy: jetstream::consumer::DeliverPolicy::New,
                         ..Default::default()
                     },
                 )
@@ -176,7 +227,6 @@ async fn handle_client(
                     msg = msg_stream.next() => {
                         match msg {
                             Some(Ok(message)) => {
-                                // Get message type from headers
                                 let message_type_header = message.headers
                                     .as_ref()
                                     .and_then(|h| h.get("message_type"))
@@ -482,7 +532,6 @@ async fn handle_execution_message(
             };
             let _ = sender.send(status_message);
 
-            // 1. Upload images to S3 via agent storage command
             use commands::{Command, CreateConversationCommand};
             use models::{ConversationContent, ConversationMessageType};
 
@@ -498,7 +547,6 @@ async fn handle_execution_message(
                     }
                 };
 
-            // 2. Persist conversation to DB
             let conversation_id = app_state.sf.next_id().unwrap_or(0) as i64;
             let create_result = CreateConversationCommand::new(
                 conversation_id,
@@ -527,7 +575,6 @@ async fn handle_execution_message(
                 return;
             }
 
-            // 3. Publish execution request to NATS (worker will execute agent)
             if let Err(e) = PublishAgentExecutionCommand::new_message(
                 deployment_id,
                 context_id,
@@ -551,7 +598,6 @@ async fn handle_execution_message(
                 return;
             }
 
-            // Status updates will come via NATS subscription (already set up in handle_client)
             tracing::info!(
                 "Published agent execution request for context {}",
                 context_id
@@ -625,7 +671,6 @@ async fn handle_execution_message(
         WebsocketMessageType::UserInputResponse(input) => {
             tracing::info!("Received user input response: {}", input);
 
-            // Persist user input as conversation first
             use commands::{Command, CreateConversationCommand};
             use models::{ConversationContent, ConversationMessageType};
 
@@ -657,7 +702,6 @@ async fn handle_execution_message(
                 return;
             }
 
-            // Publish user input response to NATS (worker will handle resume)
             if let Err(e) = PublishAgentExecutionCommand::user_input_response(
                 deployment_id,
                 context_id,
@@ -683,7 +727,6 @@ async fn handle_execution_message(
             }
         }
         WebsocketMessageType::CancelExecution => {
-            // Update context status to cancelled
             use commands::{Command, UpdateExecutionContextQuery};
 
             let _ = UpdateExecutionContextQuery::new(context_id, deployment_id)
@@ -691,7 +734,6 @@ async fn handle_execution_message(
                 .execute(&app_state)
                 .await;
 
-            // Send cancellation confirmation
             let message = WebsocketMessage {
                 message_id: message.message_id,
                 message_type: WebsocketMessageType::ExecutionCancelled,

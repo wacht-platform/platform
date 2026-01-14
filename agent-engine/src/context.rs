@@ -1570,7 +1570,7 @@ impl ContextOrchestrator {
                         format!("Acknowledgment: {acknowledgment_message}")
                     }
                     ConversationContent::ActionExecutionResult { task_execution, .. } => {
-                        format!("Task execution: {task_execution}")
+                        format!("Task execution: {:?}", task_execution)
                     }
                     ConversationContent::ContextResults {
                         query,

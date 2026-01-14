@@ -65,3 +65,5 @@ pub use hybrid_search::*;
 pub use sms::*;
 pub use webhook::*;
 pub use webhook_analytics::*;
+pub mod agent_session;
+pub use agent_session::*;

@@ -11,10 +11,10 @@ use dto::json::agent_executor::{
 use dto::json::agent_responses::{ActionsList, TaskExecution, TaskType};
 use dto::json::{
     StepDecisionContext, StreamEvent, UserInputOutputState, WorkflowExecutionResult,
-    WorkflowTaskExecution,
 };
 use models::{
     AgentExecutionState, ConversationContent, ConversationMessageType, ExecutionContextStatus,
+    ActionExecutionStatus, ActionResult, ActionResultStatus,
 };
 use queries::Query;
 use serde_json::{json, Value};
@@ -221,41 +221,46 @@ impl AgentExecutor {
 
             let workflow_result: WorkflowExecutionResult = serde_json::from_value(result)?;
 
-            if workflow_result.execution_status == "pending" {
-                let task_execution = WorkflowTaskExecution {
-                    execution_type: "workflow".to_string(),
-                    workflow_id,
-                    result: workflow_result.clone(),
-                };
+            let execution_status = if workflow_result.execution_status == "pending" {
+                ActionExecutionStatus::Pending
+            } else if workflow_result.execution_status == "failed" {
+                ActionExecutionStatus::Failed
+            } else {
+                ActionExecutionStatus::Completed
+            };
 
-                self.store_conversation(
-                    ConversationContent::ActionExecutionResult {
-                        task_execution: serde_json::to_value(&task_execution)?,
-                        execution_status: "pending".to_string(),
-                        blocking_reason: None,
-                    },
-                    ConversationMessageType::ActionExecutionResult,
-                )
-                .await?;
+            // Wrap workflow result as an ActionResult for unified model
+            let workflow_action_result = ActionResult {
+                action: format!("workflow_{}", workflow_id),
+                status: if execution_status == ActionExecutionStatus::Failed {
+                    ActionResultStatus::Error
+                } else {
+                    ActionResultStatus::Success
+                },
+                result: Some(serde_json::to_value(&workflow_result)?),
+                error: None,
+            };
 
-                return Ok(());
-            }
-
-            let task_execution = WorkflowTaskExecution {
-                execution_type: "workflow".to_string(),
-                workflow_id,
-                result: workflow_result.clone(),
+            let task_execution = TaskExecution {
+                approach: format!("Executing workflow {}", workflow_id),
+                actions: ActionsList { actions: vec![] }, // Workflows don't have granular actions
+                expected_result: "Workflow execution results".to_string(),
+                actual_result: Some(vec![workflow_action_result]),
             };
 
             self.store_conversation(
                 ConversationContent::ActionExecutionResult {
-                    task_execution: serde_json::to_value(&task_execution)?,
-                    execution_status: workflow_result.execution_status,
+                    task_execution,
+                    execution_status: execution_status.clone(),
                     blocking_reason: None,
                 },
                 ConversationMessageType::ActionExecutionResult,
             )
             .await?;
+
+            if execution_status == ActionExecutionStatus::Pending {
+                return Ok(());
+            }
 
             self.current_workflow_id = None;
             self.current_workflow_state = None;
@@ -380,7 +385,7 @@ impl AgentExecutor {
 
                     let results = futures::future::join_all(futures).await;
 
-                    let mut all_results = Vec::new();
+                    let mut all_results: Vec<ActionResult> = Vec::new();
                     let mut any_pending = false;
 
                     for (action, result) in actions_to_execute.iter().zip(results.into_iter()) {
@@ -412,18 +417,20 @@ impl AgentExecutor {
 
                                     self.task_results.insert(task_id, task_result);
                                 }
-                                all_results.push(serde_json::json!({
-                                    "action": action.purpose,
-                                    "status": "success",
-                                    "result": result_value
-                                }));
+                                all_results.push(ActionResult {
+                                    action: action.purpose.clone(),
+                                    status: ActionResultStatus::Success,
+                                    result: Some(result_value),
+                                    error: None,
+                                });
                             }
                             Err(e) => {
-                                all_results.push(serde_json::json!({
-                                    "action": action.purpose,
-                                    "status": "error",
-                                    "error": e.to_string()
-                                }));
+                                all_results.push(ActionResult {
+                                    action: action.purpose.clone(),
+                                    status: ActionResultStatus::Error,
+                                    result: None,
+                                    error: Some(e.to_string()),
+                                });
                             }
                         }
                     }
@@ -460,14 +467,13 @@ impl AgentExecutor {
                             actions: actions_to_execute,
                         },
                         expected_result: "Execution results".to_string(),
-                        actual_result: Some(serde_json::Value::Array(all_results)),
+                        actual_result: Some(all_results),
                     };
 
                     self.store_conversation(
                         ConversationContent::ActionExecutionResult {
-                            task_execution: serde_json::to_value(&execution)?,
-                            execution_status: if any_pending { "pending" } else { "completed" }
-                                .to_string(),
+                            task_execution: execution,
+                            execution_status: if any_pending { ActionExecutionStatus::Pending } else { ActionExecutionStatus::Completed },
                             blocking_reason: None,
                         },
                         ConversationMessageType::ActionExecutionResult,

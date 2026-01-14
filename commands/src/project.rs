@@ -567,7 +567,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         let hostname = format!("{}-{}", random_name, count);
 
         let backend_host = format!("{}.frontend-api.services", hostname);
-        let frontend_host = format!("{}.wacht.tech", hostname);
+        let frontend_host = format!("{}.trywacht.xyz", hostname);
         let mut publishable_key = String::from("pk_test_");
 
         let base64_backend_host = BASE64_STANDARD.encode(format!("https://{}", backend_host));
@@ -690,7 +690,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         .await?;
 
         let ui_settings =
-            self.create_ui_settings(deployment_row.id, format!("{}.wacht.tech", hostname));
+            self.create_ui_settings(deployment_row.id, format!("{}.trywacht.xyz", hostname));
 
         let staging_ui_settings_query = format!(
             r#"
@@ -741,7 +741,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             .bind(ui_settings.use_initials_for_organization_profile_image)
             .bind(&ui_settings.default_user_profile_image_url)
             .bind(&ui_settings.default_organization_profile_image_url)
-            .bind(format!("https://{}.wacht.tech/waitlist", hostname))
+            .bind(format!("https://{}.trywacht.xyz/waitlist", hostname))
             .bind("")
             .bind(chrono::Utc::now())
             .bind(chrono::Utc::now())
