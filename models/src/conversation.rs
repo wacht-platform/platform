@@ -10,6 +10,16 @@ pub struct ImageData {
     pub size_bytes: Option<u64>,
 }
 
+/// Generic file attachment data (stored)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileData {
+    pub filename: String,
+    pub mime_type: String,
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ConversationMessageType {
@@ -109,7 +119,7 @@ pub enum ConversationContent {
         #[serde(skip_serializing_if = "Option::is_none")]
         sender_name: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        images: Option<Vec<ImageData>>,
+        files: Option<Vec<FileData>>,
     },
     AgentResponse {
         response: String,

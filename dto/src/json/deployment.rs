@@ -78,7 +78,7 @@ pub enum ExecuteAgentRequestType {
     #[serde(rename = "new_message")]
     NewMessage {
         message: String,
-        images: Option<Vec<crate::json::agent_executor::ImageData>>,
+        files: Option<Vec<crate::json::agent_executor::FileData>>,
     },
 
     #[serde(rename = "user_input_response")]

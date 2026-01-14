@@ -2,7 +2,7 @@ use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use axum::extract::{Json, Path, Query, State};
 
-use commands::agent_execution::{PublishAgentExecutionCommand, UploadImagesToS3Command};
+use commands::agent_execution::{PublishAgentExecutionCommand, UploadFilesToS3Command, UploadImagesToS3Command};
 use commands::{
     Command, CreateConversationCommand, CreateExecutionContextCommand,
     UpdateExecutionContextCommand,
@@ -214,14 +214,14 @@ pub async fn execute_agent_async(
     let agent_name = request.agent_name.clone();
 
     match request.execution_type {
-        ExecuteAgentRequestType::NewMessage { message, images } => {
-            let model_images = match UploadImagesToS3Command::new(deployment_id, context_id, images)
+        ExecuteAgentRequestType::NewMessage { message, files } => {
+            let model_files = match UploadFilesToS3Command::new(deployment_id, context_id, files)
                 .execute(&app_state)
                 .await
             {
-                Ok(imgs) => imgs,
+                Ok(files) => files,
                 Err(e) => {
-                    error!("Failed to upload images: {}", e);
+                    error!("Failed to upload files: {}", e);
                     None
                 }
             };
@@ -236,7 +236,7 @@ pub async fn execute_agent_async(
                 ConversationContent::UserMessage {
                     message,
                     sender_name: None,
-                    images: model_images,
+                    files: model_files,
                 },
                 ConversationMessageType::UserMessage,
             )
@@ -275,7 +275,7 @@ pub async fn execute_agent_async(
                 ConversationContent::UserMessage {
                     message,
                     sender_name: None,
-                    images: None,
+                    files: None,
                 },
                 ConversationMessageType::UserMessage,
             )

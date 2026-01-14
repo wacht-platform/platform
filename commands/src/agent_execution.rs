@@ -1,7 +1,7 @@
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::{AgentExecutionRequest, AgentExecutionType, NatsTaskMessage};
-use models::ImageData;
+use models::{FileData, ImageData};
 
 use crate::{Command, WriteToAgentStorageCommand};
 
@@ -64,6 +64,78 @@ impl Command for UploadImagesToS3Command {
             uploaded.push(ImageData {
                 mime_type: img.mime_type,
                 url: format!("/uploads/{}", filename), // Relative path for agent filesystem
+                size_bytes: Some(bytes.len() as u64),
+            });
+        }
+
+        if uploaded.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(uploaded))
+        }
+    }
+}
+
+/// Command to upload generic files to S3 storage
+/// Returns a vector of FileData with relative URLs
+pub struct UploadFilesToS3Command {
+    deployment_id: i64,
+    context_id: i64,
+    files: Option<Vec<dto::json::agent_executor::FileData>>,
+}
+
+impl UploadFilesToS3Command {
+    pub fn new(
+        deployment_id: i64,
+        context_id: i64,
+        files: Option<Vec<dto::json::agent_executor::FileData>>,
+    ) -> Self {
+        Self {
+            deployment_id,
+            context_id,
+            files,
+        }
+    }
+}
+
+impl Command for UploadFilesToS3Command {
+    type Output = Option<Vec<FileData>>;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+
+        let Some(files) = self.files else {
+            return Ok(None);
+        };
+
+        let mut uploaded = Vec::new();
+
+        for file in files {
+            // Decode base64 file data
+            let bytes = STANDARD
+                .decode(&file.data)
+                .map_err(|e| AppError::BadRequest(format!("Invalid base64 file data: {}", e)))?;
+
+            // Generate unique filename with original name preserved
+            let safe_filename = file.filename.replace(['/', '\\', '..'], "_");
+            let filename = format!("{}_{}", app_state.sf.next_id()?, safe_filename);
+
+            // S3 key: {deployment}/persistent/{context}/uploads/{filename}
+            let key = format!(
+                "{}/persistent/{}/uploads/{}",
+                self.deployment_id, self.context_id, filename
+            );
+
+            // Upload to S3 via agent storage command
+            WriteToAgentStorageCommand::new(key, bytes.clone())
+                .with_content_type(file.mime_type.clone())
+                .execute(app_state)
+                .await?;
+
+            uploaded.push(FileData {
+                filename: file.filename,
+                mime_type: file.mime_type,
+                url: format!("/uploads/{}", filename),
                 size_bytes: Some(bytes.len() as u64),
             });
         }

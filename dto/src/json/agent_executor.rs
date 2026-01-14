@@ -138,6 +138,14 @@ pub struct ImageData {
     pub data: String,
 }
 
+/// Generic file data for any file type upload
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileData {
+    pub filename: String,
+    pub mime_type: String,
+    pub data: String, // base64 encoded
+}
+
 #[derive(Clone, Debug)]
 pub struct ConverseRequest {
     pub conversation_id: i64,

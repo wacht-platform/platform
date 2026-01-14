@@ -554,7 +554,7 @@ async fn handle_execution_message(
                 ConversationContent::UserMessage {
                     message: user_message,
                     sender_name: None,
-                    images: model_images,
+                    files: None,
                 },
                 ConversationMessageType::UserMessage,
             )
@@ -681,7 +681,7 @@ async fn handle_execution_message(
                 ConversationContent::UserMessage {
                     message: input,
                     sender_name: None,
-                    images: None,
+                    files: None,
                 },
                 ConversationMessageType::UserMessage,
             )

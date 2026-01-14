@@ -314,7 +314,6 @@ impl ToolExecutor {
 
                     "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg" => {
                         let bytes = filesystem.read_file_bytes(path).await?;
-                        let base64_data = base64::engine::general_purpose::STANDARD.encode(&bytes);
 
                         let mime_type = match extension.as_str() {
                             "jpg" | "jpeg" => "image/jpeg",
@@ -333,8 +332,7 @@ impl ToolExecutor {
                             "file_type": "image",
                             "mime_type": mime_type,
                             "size_bytes": bytes.len(),
-                            "base64_data": base64_data,
-                            "note": "Image encoded as base64. Can be passed to vision-capable LLM for analysis."
+                            "note": "This is an image file. To visually analyze its contents, ask the user to re-upload or re-attach this image in their next message. Reading an image file only provides metadata, not visual analysis capability."
                         }))
                     }
 
@@ -1343,7 +1341,7 @@ impl ToolExecutor {
         let content = models::ConversationContent::UserMessage {
             message: relayed_message.clone(),
             sender_name: Some(format!("Cross-context relay from #{}", self.context_id)),
-            images: None,
+            files: None,
         };
 
         let conversation_cmd = commands::CreateConversationCommand::new(
