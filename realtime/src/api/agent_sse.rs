@@ -172,6 +172,8 @@ async fn subscribe_and_stream(
     tx: tokio::sync::mpsc::Sender<Result<String, std::io::Error>>,
     app_state: AppState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    info!("SSE: Creating/getting stream for context {}", context_id);
+    
     let stream = js
         .get_or_create_stream(jetstream::stream::Config {
             name: "agent_execution_stream".to_string(),
@@ -182,26 +184,36 @@ async fn subscribe_and_stream(
 
     let consumer_id = app_state.sf.next_id().unwrap_or(0);
     let consumer_name = format!("sse_consumer_{}", consumer_id);
+    
+    info!("SSE: Creating consumer {} for context {}", consumer_name, context_id);
+    
     let consumer: PullConsumer = stream
         .create_consumer(jetstream::consumer::pull::Config {
-            name: Some(consumer_name),
+            name: Some(consumer_name.clone()),
             filter_subject: format!("agent_execution_stream.context:{}", context_id),
-            inactive_threshold: Duration::from_secs(60),
-            ack_wait: Duration::from_secs(5),
+            inactive_threshold: Duration::from_secs(300), // Increased from 60 to 300 seconds
+            ack_wait: Duration::from_secs(30),
             deliver_policy: jetstream::consumer::DeliverPolicy::New,
             ..Default::default()
         })
         .await?;
+
+    info!("SSE: Consumer {} created, sending connected event", consumer_name);
 
     let connected_event = format!(
         "event: connected\ndata: {}\n\n",
         serde_json::json!({"context_id": context_id})
     );
     if tx.send(Ok(connected_event)).await.is_err() {
+        warn!("SSE: Failed to send connected event, client disconnected");
         return Ok(());
     }
 
+    info!("SSE: Starting message consumption for context {}", context_id);
+    
     let mut messages = consumer.messages().await?;
+    
+    info!("SSE: Message stream established for context {}", context_id);
     
     while let Some(msg_result) = messages.next().await {
         match msg_result {
@@ -283,6 +295,7 @@ async fn subscribe_and_stream(
                 );
 
                 if tx.send(Ok(sse_data)).await.is_err() {
+                    warn!("SSE: Client disconnected, closing stream");
                     break;
                 }
             }
@@ -293,6 +306,7 @@ async fn subscribe_and_stream(
         }
     }
 
+    info!("SSE: Message loop ended, stream closing");
     Ok(())
 }
 
