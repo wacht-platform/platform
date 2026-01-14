@@ -28,8 +28,6 @@ pub struct AgentSession {
     pub context_group: String,
     pub agent_ids: Vec<i64>,
     pub expires_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 impl AgentSession {
