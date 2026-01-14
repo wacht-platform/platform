@@ -280,10 +280,19 @@ async fn publish_stream_event(
     headers.insert("deployment_id", deployment_id.to_string().as_str());
 
     // 1. Publish to Realtime Stream
+    tracing::info!(
+        "Publishing {} to subject {} for context {}",
+        message_type,
+        subject,
+        context_key
+    );
+    
     jetstream
-        .publish_with_headers(subject, headers, payload.clone().into())
+        .publish_with_headers(subject.clone(), headers, payload.clone().into())
         .await
         .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {e}")))?;
+
+    tracing::info!("Successfully published {} to {}", message_type, subject);
 
     // 2. Trigger Webhook Directly (Streamlined)
     use commands::{Command, TriggerWebhookEventCommand};
