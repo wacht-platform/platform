@@ -44,6 +44,6 @@ impl AgentSession {
     }
 
     pub fn is_active(&self) -> bool {
-        self.deleted_at.is_none() && !self.is_expired()
+        self.is_expired()
     }
 }
