@@ -208,27 +208,78 @@ async fn subscribe_and_stream(
             Ok(message) => {
                 let _ = message.ack().await;
 
-                let payload = match serde_json::from_slice::<StreamEvent>(&message.payload) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        warn!("Failed to parse message: {}", e);
+                // Get message_type from headers
+                let message_type = message
+                    .headers
+                    .as_ref()
+                    .and_then(|h| h.get("message_type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+
+                // Parse payload based on message_type header
+                let (event_type, payload) = match message_type {
+                    "conversation_message" => {
+                        match serde_json::from_slice::<models::ConversationRecord>(&message.payload) {
+                            Ok(conv) => {
+                                // Filter conversation messages to only include displayable types
+                                if !is_displayable_message_type(&conv.content) {
+                                    continue;
+                                }
+                                let stream_event = StreamEvent::ConversationMessage(conv);
+                                ("conversation_message", serde_json::to_string(&stream_event).unwrap_or_default())
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse conversation message: {}", e);
+                                continue;
+                            }
+                        }
+                    }
+                    "platform_event" => {
+                        match serde_json::from_slice::<dto::json::PlatformEventPayload>(&message.payload) {
+                            Ok(event) => {
+                                let stream_event = StreamEvent::PlatformEvent(event.event_label, event.event_data);
+                                ("platform_event", serde_json::to_string(&stream_event).unwrap_or_default())
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse platform event: {}", e);
+                                continue;
+                            }
+                        }
+                    }
+                    "platform_function" => {
+                        match serde_json::from_slice::<dto::json::PlatformFunctionPayload>(&message.payload) {
+                            Ok(func) => {
+                                let stream_event = StreamEvent::PlatformFunction(func.function_name, func.function_data);
+                                ("platform_function", serde_json::to_string(&stream_event).unwrap_or_default())
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse platform function: {}", e);
+                                continue;
+                            }
+                        }
+                    }
+                    "user_input_request" => {
+                        match serde_json::from_slice::<models::ConversationContent>(&message.payload) {
+                            Ok(content) => {
+                                let stream_event = StreamEvent::UserInputRequest(content);
+                                ("user_input_request", serde_json::to_string(&stream_event).unwrap_or_default())
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse user input request: {}", e);
+                                continue;
+                            }
+                        }
+                    }
+                    _ => {
+                        warn!("Unknown message type: {}", message_type);
                         continue;
                     }
                 };
 
-                // Filter conversation messages to only include displayable types
-                // Matches the Go frontend API's GetContextMessages allowed types
-                if let StreamEvent::ConversationMessage(ref conv) = payload {
-                    if !is_displayable_message_type(&conv.content) {
-                        continue;
-                    }
-                }
-
-                let event_type = get_event_type(&payload);
                 let sse_data = format!(
                     "event: {}\ndata: {}\n\n",
                     event_type,
-                    serde_json::to_string(&payload).unwrap_or_default()
+                    payload
                 );
 
                 if tx.send(Ok(sse_data)).await.is_err() {
