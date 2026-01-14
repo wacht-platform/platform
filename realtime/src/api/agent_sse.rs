@@ -213,7 +213,7 @@ async fn subscribe_and_stream(
                     .headers
                     .as_ref()
                     .and_then(|h| h.get("message_type"))
-                    .and_then(|v| v.as_str())
+                    .map(|v| v.as_str())
                     .unwrap_or("unknown");
 
                 // Parse payload based on message_type header
