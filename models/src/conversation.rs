@@ -175,6 +175,7 @@ pub enum ConversationContent {
 /// Conversation record
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationRecord {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
     pub context_id: i64,
     pub timestamp: DateTime<Utc>,
