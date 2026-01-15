@@ -37,10 +37,6 @@ impl NsJailExecutor {
         let knowledge_path = resolve_path("knowledge");
         let teams_activity_path = resolve_path("teams-activity");
         
-        // Minimal configuration for running Python
-        // We mount /usr, /lib, /lib64, /bin because host python relies on them used shared libs.
-        // We strictly bind-mount the execution root.
-        // We also mount alias paths so scripts can use /teams-activity/, /knowledge/, etc.
         let config = format!(
             r#"
 name: "agent-python-sandbox"
@@ -198,6 +194,17 @@ mount {{
     is_bind: true
     rw: true
 }}
+
+# Explicitly mount workspace to /app/workspace to fix broken symlinks
+# Since /app is a bind mount of exec_root, 'workspace' inside it might be a broken symlink
+# Shadowing it with a direct mount fixes this and allows relative paths from cwd=/app
+mount {{
+    src: "{workspace}"
+    dst: "/app/workspace"
+    is_bind: true
+    rw: true
+    mandatory: false
+}}
 "#,
             exec_root = exec_root_str,
             workspace = workspace_path,
@@ -249,9 +256,8 @@ impl PythonExecutor for NsJailExecutor {
 
         let script_relative = script_path.to_string_lossy();
         
-        let script_inside_jail = if script_relative.starts_with("/workspace/") {
-            format!("/app/workspace/{}", &script_relative["/workspace/".len()..])
-        } else if script_relative.starts_with("/scratch/")
+        let script_inside_jail = if script_relative.starts_with("/workspace/")
+            || script_relative.starts_with("/scratch/")
             || script_relative.starts_with("/knowledge/")
             || script_relative.starts_with("/uploads/")
             || script_relative.starts_with("/teams-activity/")
