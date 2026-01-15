@@ -19,7 +19,7 @@ pub struct GenerateAgentTicketResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TicketPayload {
-    deployment_id: i64,
+    deployment_id: String,
     identifier: String,
     context_group: String,
     agent_ids: Vec<String>,
@@ -50,7 +50,7 @@ pub async fn generate_agent_ticket(
     let expires_at = chrono::Utc::now().timestamp() + ttl_seconds as i64;
 
     let payload = TicketPayload {
-        deployment_id,
+        deployment_id: deployment_id.to_string(),
         identifier: "static".to_string(),
         context_group: request.context_group,
         agent_ids: request.agent_ids,
