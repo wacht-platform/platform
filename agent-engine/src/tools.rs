@@ -114,20 +114,19 @@ impl ToolExecutor {
 
         let mut result = result;
         if result.is_object() && result.get("structure_hint").is_none() {
-            let data_to_analyze = result.get("data")
-                .or_else(|| result.get("result"))
-                .or_else(|| result.get("stdout"))
-                .unwrap_or(&result);
-            
-            let hint = if let Some(string_content) = data_to_analyze.as_str() {
-                if let Ok(parsed) = serde_json::from_str::<Value>(string_content) {
-                    format!("(parsed from string) {}", infer_schema_hint(&parsed))
-                } else {
-                    "string".to_string()
+            let mut special_hint = None;
+            for key in ["data", "result", "stdout"] {
+                if let Some(val) = result.get(key) {
+                    if let Some(s) = val.as_str() {
+                        if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                            special_hint = Some(format!("(key '{}' contains parsed JSON) {}", key, infer_schema_hint(&parsed)));
+                            break;
+                        }
+                    }
                 }
-            } else {
-                infer_schema_hint(data_to_analyze)
-            };
+            }
+            
+            let hint = special_hint.unwrap_or_else(|| infer_schema_hint(&result));
             
             if let Some(obj) = result.as_object_mut() {
                 obj.insert("structure_hint".to_string(), serde_json::json!(hint));
@@ -787,13 +786,15 @@ impl ToolExecutor {
                 let team_id = execution_params
                     .get("team_id")
                     .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("team_id is required".to_string()))?;
-                client.get_spaces(team_id).await?
+                client.get_spaces(team_id, execution_params).await?
             }
             "get_space_lists" => {
                 let space_id = execution_params
                     .get("space_id")
                     .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("space_id is required".to_string()))?;
                 client.get_space_lists(space_id).await?
             }
@@ -801,6 +802,7 @@ impl ToolExecutor {
                 let task_id = execution_params
                     .get("task_id")
                     .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("task_id is required".to_string()))?;
                 client.get_task(task_id).await?
             }
@@ -808,6 +810,7 @@ impl ToolExecutor {
                 let list_id = execution_params
                     .get("list_id")
                     .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("list_id is required".to_string()))?;
                 client.get_tasks(list_id, execution_params).await?
             }
@@ -815,6 +818,7 @@ impl ToolExecutor {
                 let team_id = execution_params
                     .get("team_id")
                     .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("team_id is required".to_string()))?;
                 client.search_tasks(team_id, execution_params).await?
             }
@@ -822,6 +826,7 @@ impl ToolExecutor {
                 let list_id = execution_params
                     .get("list_id")
                     .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("list_id is required".to_string()))?;
                 client.create_task(list_id, execution_params).await?
             }
@@ -829,6 +834,7 @@ impl ToolExecutor {
                 let space_id = execution_params
                     .get("space_id")
                     .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("space_id is required".to_string()))?;
                 client.create_list(space_id, execution_params).await?
             }
@@ -836,6 +842,7 @@ impl ToolExecutor {
                 let task_id = execution_params
                     .get("task_id")
                     .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("task_id is required".to_string()))?;
                 client.update_task(task_id, execution_params).await?
             }
@@ -843,6 +850,7 @@ impl ToolExecutor {
                 let task_id = execution_params
                     .get("task_id")
                     .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("task_id is required".to_string()))?;
                 client.add_comment(task_id, execution_params).await?
             }
@@ -850,6 +858,7 @@ impl ToolExecutor {
                 let task_id = execution_params
                     .get("task_id")
                     .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("task_id is required".to_string()))?;
                 let filename = execution_params
                     .get("filename")

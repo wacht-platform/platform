@@ -42,9 +42,20 @@ impl ClickUpClient {
         self.handle_response(resp).await
     }
 
-    pub async fn get_spaces(&self, team_id: &str) -> Result<Value, AppError> {
+    pub async fn get_spaces(&self, team_id: &str, params: &Value) -> Result<Value, AppError> {
+        let mut url = format!("https://api.clickup.com/api/v2/team/{}/space", team_id);
+        
+        let mut query_params = vec![];
+        if let Some(archived) = params.get("archived").and_then(|v| v.as_bool()) {
+            query_params.push(format!("archived={}", archived));
+        }
+        
+        if !query_params.is_empty() {
+            url = format!("{}?{}", url, query_params.join("&"));
+        }
+
         let resp = self.client
-            .get(format!("https://api.clickup.com/api/v2/team/{}/space", team_id))
+            .get(&url)
             .header("Authorization", self.auth_header())
             .send()
             .await
