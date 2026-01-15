@@ -249,8 +249,9 @@ impl PythonExecutor for NsJailExecutor {
 
         let script_relative = script_path.to_string_lossy();
         
-        let script_inside_jail = if script_relative.starts_with("/workspace/")
-            || script_relative.starts_with("/scratch/")
+        let script_inside_jail = if script_relative.starts_with("/workspace/") {
+            format!("/app/workspace/{}", &script_relative["/workspace/".len()..])
+        } else if script_relative.starts_with("/scratch/")
             || script_relative.starts_with("/knowledge/")
             || script_relative.starts_with("/uploads/")
             || script_relative.starts_with("/teams-activity/")
