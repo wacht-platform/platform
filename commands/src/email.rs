@@ -5,6 +5,22 @@ use common::state::AppState;
 use models::{CustomSmtpConfig, EmailProvider};
 use queries::{GetEmailTemplateByNameQuery, Query};
 
+/// Wraps email content with the standard HTML boilerplate.
+/// This ensures consistent styling across all emails.
+fn wrap_email_content(content: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:48px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background-color:#ffffff;color:#111827;">
+    <div style="max-width:640px;margin:0 auto;">
+{}
+    </div>
+</body>
+</html>"#,
+        content
+    )
+}
+
 pub struct SendEmailCommand {
     deployment_id: i64,
     template_name: String,
@@ -58,10 +74,13 @@ impl Command for SendEmailCommand {
             .render_template(&template.template_subject, &self.variables)
             .map_err(|e| AppError::BadRequest(format!("Failed to render subject: {}", e)))?;
 
-        let body_html = app_state
+        let body_content = app_state
             .handlebars
             .render_template(&template.template_data, &self.variables)
             .map_err(|e| AppError::BadRequest(format!("Failed to render body: {}", e)))?;
+
+        // Wrap the content with HTML boilerplate
+        let body_html = wrap_email_content(&body_content);
 
         let body_text =
             html2text::from_read(body_html.as_bytes(), 80).unwrap_or_else(|_| body_html.clone());
