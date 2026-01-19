@@ -4,7 +4,7 @@ use common::state::AppState;
 use dto::json::StreamEvent;
 use futures::StreamExt;
 use models::AiAgentWithFeatures;
-use queries::{GetExecutionContextQuery, Query};
+use queries::Query;
 use tracing::{error, warn};
 
 pub struct AgentHandler {
@@ -29,29 +29,32 @@ impl AgentHandler {
         let execution_id = self.app_state.sf.next_id()? as i64;
         let context_key = request.context_id.to_string();
         let deployment_id = request.agent.deployment_id;
-        let agent_id = request.agent.id;
 
         let kv = self.get_key_value_store().await?;
         let watch = self.create_watcher(&kv, &context_key).await?;
-        self.spawn_message_publisher(receiver, context_key.clone(), deployment_id, agent_id);
 
-        let context = GetExecutionContextQuery::new(request.context_id, deployment_id)
+        // Fetch AI settings early
+        let deployment_ai_settings = queries::GetDeploymentAiSettingsQuery::new(deployment_id)
             .execute(&self.app_state)
-            .await?;
+            .await
+            .ok()
+            .flatten();
 
-        // Extract title ensuring we have a reasonable default
-        let context_title = if context.title.is_empty() {
-            format!("Context {}", request.context_id)
-        } else {
-            context.title.clone()
-        };
+        // Create shared execution context
+        let execution_context = crate::execution_context::ExecutionContext::new(
+            self.app_state.clone(),
+            request.agent.clone(),
+            request.context_id,
+            deployment_ai_settings,
+        );
+
+        self.spawn_message_publisher(receiver, context_key.clone(), execution_context.clone());
+
+        let context = execution_context.get_context().await?;
 
         let mut executor = AgentExecutor::new(
-            request.agent,
-            request.context_id,
-            self.app_state.clone(),
+            execution_context,
             sender,
-            context_title,
         )
         .await?;
 
@@ -118,17 +121,13 @@ impl AgentHandler {
         &self,
         mut receiver: tokio::sync::mpsc::Receiver<StreamEvent>,
         context_key: String,
-        deployment_id: i64,
-        agent_id: i64,
+        ctx: std::sync::Arc<crate::execution_context::ExecutionContext>,
     ) {
-        let app_state = self.app_state.clone();
         tokio::spawn(async move {
             while let Some(message) = receiver.recv().await {
                 let _ = publish_stream_event(
-                    &app_state,
+                    ctx.clone(),
                     &context_key,
-                    deployment_id,
-                    agent_id,
                     message,
                 )
                 .await;
@@ -186,12 +185,13 @@ impl AgentHandler {
 }
 
 async fn publish_stream_event(
-    app_state: &AppState,
+    ctx: std::sync::Arc<crate::execution_context::ExecutionContext>,
     context_key: &str,
-    deployment_id: i64,
-    agent_id: i64,
     event: StreamEvent,
 ) -> Result<(), AppError> {
+    let app_state = &ctx.app_state;
+    let deployment_id = ctx.agent.deployment_id;
+    let agent_id = ctx.agent.id;
     let jetstream = &app_state.nats_jetstream;
     let subject = format!("agent_execution_stream.context:{context_key}");
 
@@ -201,41 +201,36 @@ async fn publish_stream_event(
             if let models::ConversationContent::AgentResponse { response, .. } =
                 &conversation_content.content
             {
-                if let Ok(ctx_id) = context_key.parse::<i64>() {
-                    if let Ok(ctx) = GetExecutionContextQuery::new(ctx_id, deployment_id)
-                        .execute(app_state)
-                        .await
-                    {
-                        if ctx.source.as_deref() == Some("teams") {
-                            if let Some(group) = &ctx.context_group {
-                                if !group.is_empty() {
-                                    let mut location = String::new();
-                                    if let Some(meta) = &ctx.external_resource_metadata {
-                                        if let Some(channel_name) =
-                                            meta.get("channelName").and_then(|v| v.as_str())
-                                        {
-                                            location = format!(" [Channel: {}]", channel_name);
-                                        }
+                if let Ok(ctx_data) = ctx.get_context().await {
+                    if ctx_data.source.as_deref() == Some("teams") {
+                        if let Some(group) = &ctx_data.context_group {
+                            if !group.is_empty() {
+                                let mut location = String::new();
+                                if let Some(meta) = &ctx_data.external_resource_metadata {
+                                    if let Some(channel_name) =
+                                        meta.get("channelName").and_then(|v| v.as_str())
+                                    {
+                                        location = format!(" [Channel: {}]", channel_name);
                                     }
-
-                                    let title = if ctx.title.is_empty() {
-                                        format!("Context {}", ctx.id)
-                                    } else {
-                                        ctx.title.clone()
-                                    };
-                                    let logger = TeamsActivityLogger::new(
-                                        &deployment_id.to_string(),
-                                        &agent_id.to_string(),
-                                        group,
-                                        &title,
-                                    );
-                                    let _ = logger
-                                        .append_entry(
-                                            "RESPONSE",
-                                            &format!("To User{}: {}", location, response),
-                                        )
-                                        .await;
                                 }
+
+                                let title = if ctx_data.title.is_empty() {
+                                    format!("Context {}", ctx_data.id)
+                                } else {
+                                    ctx_data.title.clone()
+                                };
+                                let logger = TeamsActivityLogger::new(
+                                    &deployment_id.to_string(),
+                                    &agent_id.to_string(),
+                                    group,
+                                    &title,
+                                );
+                                let _ = logger
+                                    .append_entry(
+                                        "RESPONSE",
+                                        &format!("To User{}: {}", location, response),
+                                    )
+                                    .await;
                             }
                         }
                     }

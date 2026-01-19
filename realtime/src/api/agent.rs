@@ -8,7 +8,6 @@ use axum::extract::{Query as QueryParams, State};
 use axum::response::IntoResponse;
 use commands::agent_execution::{PublishAgentExecutionCommand, UploadImagesToS3Command};
 use common::state::AppState;
-use common::utils::jwt::verify_agent_context_token;
 use dto::json::{ExecutionStatusUpdate, SessionConnectedMessage, WebSocketError};
 use fastwebsockets::FragmentCollector;
 use fastwebsockets::Frame;
@@ -65,7 +64,7 @@ async fn handle_client(
 ) -> Result<(), FastWebSocketError> {
     let mut ws = FragmentCollector::new(fut.await?);
 
-    let (deployment_id, public_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
+    let (deployment_id, _) = match GetDeploymentWithKeyPairQuery::new(host.clone())
         .execute(&app_state)
         .await
     {

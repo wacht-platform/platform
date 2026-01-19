@@ -1,4 +1,5 @@
 pub mod context;
+pub mod execution_context;
 pub mod executor;
 pub mod filesystem;
 pub mod clickup;
@@ -9,6 +10,7 @@ pub mod template;
 pub mod tools;
 
 pub use context::ContextOrchestrator;
+pub use execution_context::ExecutionContext;
 pub use executor::{AgentExecutor, ResumeContext};
 pub use gemini::GeminiClient;
 pub use handler::{AgentHandler, ExecutionRequest};

@@ -71,8 +71,7 @@ pub async fn get_webhook_status(
                 active_endpoints: stats_data.endpoint_performance.len() as i64,
                 failed_deliveries_24h: stats_data.failed_deliveries,
             }),
-            Err(e) => {
-                // Return empty stats when query fails (likely no data yet)
+            Err(_) => {
                 Some(dto::json::WebhookStats {
                     total_deliveries: 0,
                     success_rate: 0.0,

@@ -26,20 +26,13 @@ use std::collections::HashMap;
 use std::io::Read;
 
 pub struct ToolExecutor {
-    app_state: AppState,
-    agent: AiAgentWithFeatures,
-    context_id: i64,
+    ctx: std::sync::Arc<crate::execution_context::ExecutionContext>,
     channel: Option<tokio::sync::mpsc::Sender<StreamEvent>>,
 }
 
 impl ToolExecutor {
-    pub fn new(app_state: AppState, agent: AiAgentWithFeatures, context_id: i64) -> Self {
-        Self {
-            app_state,
-            agent,
-            context_id,
-            channel: None,
-        }
+    pub fn new(ctx: std::sync::Arc<crate::execution_context::ExecutionContext>) -> Self {
+        Self { ctx, channel: None }
     }
 
     pub fn with_channel(mut self, channel: tokio::sync::mpsc::Sender<StreamEvent>) -> Self {
@@ -47,16 +40,29 @@ impl ToolExecutor {
         self
     }
 
-    fn create_lite_llm(&self) -> crate::GeminiClient {
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_default();
-        crate::GeminiClient::new(
-            api_key,
-            Some("gemini-2.5-flash-lite".to_string()),
-        )
-        .with_billing(
-            self.agent.deployment_id,
-            self.app_state.redis_client.clone(),
-        )
+    // Accessor methods for backward compatibility
+    #[inline]
+    fn app_state(&self) -> &AppState {
+        &self.ctx.app_state
+    }
+
+    #[inline]
+    fn agent(&self) -> &AiAgentWithFeatures {
+        &self.ctx.agent
+    }
+
+    #[inline]
+    fn context_id(&self) -> i64 {
+        self.ctx.context_id
+    }
+
+    async fn create_lite_llm(&self) -> crate::GeminiClient {
+        self.ctx.create_llm("gemini-2.5-flash-lite").await.unwrap_or_else(|_| {
+            let api_key = std::env::var("GEMINI_API_KEY").unwrap();
+            crate::GeminiClient::new(api_key, "gemini-2.5-flash-lite".to_string())
+                .with_billing(self.agent().deployment_id, self.app_state().redis_client.clone())
+                .with_nats(self.app_state().nats_client.clone())
+        })
     }
 
     pub async fn execute_tool_immediately(
@@ -476,7 +482,7 @@ impl ToolExecutor {
                 let embeddings =
                     commands::GenerateEmbeddingsCommand::new(vec![content.to_string()])
                         .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-                        .execute(&self.app_state)
+                        .execute(self.app_state())
                         .await?;
 
                 if embeddings.is_empty() {
@@ -488,12 +494,12 @@ impl ToolExecutor {
                 let embedding = &embeddings[0];
 
                 let similar = queries::FindSimilarMemoriesQuery {
-                    agent_id: self.agent.id,
+                    agent_id: self.agent().id,
                     embedding: embedding.clone(),
                     threshold: 0.70,
                     limit: 5,
                 }
-                .execute(&self.app_state)
+                .execute(self.app_state())
                 .await?;
 
                 let exact_dupe = similar.iter().find(|m| m.similarity > 0.95);
@@ -532,7 +538,7 @@ impl ToolExecutor {
                     )
                     .map_err(|e| AppError::Internal(format!("Template error: {}", e)))?;
 
-                    let llm = self.create_lite_llm();
+                    let llm = self.create_lite_llm().await;
 
                     let (response, _): (dto::json::agent_memory::MemoryConsolidationResponse, _) =
                         llm.generate_structured_content(request_body)
@@ -560,7 +566,7 @@ impl ToolExecutor {
 
                     for id in &consolidated_ids {
                         if let Ok(mem) = (queries::GetMemoryByIdQuery { memory_id: *id })
-                            .execute(&self.app_state)
+                            .execute(self.app_state())
                             .await
                         {
                             _total_access_count += mem.access_count;
@@ -574,30 +580,30 @@ impl ToolExecutor {
                     let new_embeddings =
                         commands::GenerateEmbeddingsCommand::new(vec![final_content.clone()])
                             .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-                            .execute(&self.app_state)
+                            .execute(self.app_state())
                             .await?;
                     new_embeddings.get(0).cloned().unwrap_or(embedding.clone())
                 } else {
                     embedding.clone()
                 };
 
-                let memory_id = self.app_state.sf.next_id()? as i64;
+                let memory_id = self.app_state().sf.next_id()? as i64;
                 let create_cmd = commands::CreateMemoryCommand {
                     id: memory_id,
                     content: final_content.clone(),
                     embedding: final_embedding,
                     memory_category: category.clone(),
-                    creation_context_id: Some(self.context_id),
-                    agent_id: Some(self.agent.id),
+                    creation_context_id: Some(self.context_id()),
+                    agent_id: Some(self.agent().id),
                     initial_importance: importance,
                 };
-                let memory = create_cmd.execute(&self.app_state).await?;
+                let memory = create_cmd.execute(self.app_state()).await?;
 
                 if !consolidated_ids.is_empty() {
                     commands::DeleteMemoriesCommand {
                         memory_ids: consolidated_ids.clone(),
                     }
-                    .execute(&self.app_state)
+                    .execute(self.app_state())
                     .await
                     .ok();
                 }
@@ -757,26 +763,7 @@ impl ToolExecutor {
         execution_params: &Value,
         _context_title: &str,
     ) -> Result<Value, AppError> {
-        // Get context to find context_group for token lookup
-        let context =
-            queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                .execute(&self.app_state)
-                .await?;
-
-        let context_group = context.context_group.ok_or_else(|| {
-            AppError::BadRequest("No context group found for ClickUp command".to_string())
-        })?;
-
-        // Get ClickUp access token
-        let access_token = queries::GetClickUpTokenQuery::new(
-            self.agent.deployment_id,
-            context_group,
-        )
-        .execute(&self.app_state)
-        .await?;
-
-        // Create ClickUp client
-        let client = crate::clickup::ClickUpClient::new(access_token);
+        let client = self.ctx.get_clickup_client().await?;
 
         // Execute action
         let result = match action {
@@ -979,18 +966,20 @@ impl ToolExecutor {
                 .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
         });
 
-        // Get the context to find the context_group (use target if provided, else current)
-        let effective_context_id = target_context_id.unwrap_or(self.context_id);
-        let context =
-            queries::GetExecutionContextQuery::new(effective_context_id, self.agent.deployment_id)
-                .execute(&self.app_state)
+        // Get the context - use cached context for current, query for cross-context
+        let (context, effective_context_id) = if let Some(target_id) = target_context_id {
+            let ctx = self.ctx.get_context_by_id(target_id)
                 .await
                 .map_err(|_| {
                     AppError::BadRequest(format!(
                         "Context {} not found or not accessible",
-                        effective_context_id
+                        target_id
                     ))
                 })?;
+            (ctx, target_id)
+        } else {
+            (self.ctx.get_context().await?, self.ctx.context_id)
+        };
 
         // Validate that target context is a Teams context if cross-context
         if target_context_id.is_some() {
@@ -1010,16 +999,16 @@ impl ToolExecutor {
             if let Some(obj) = params.as_object_mut() {
                 obj.insert(
                     "source_context_id".to_string(),
-                    serde_json::json!(self.context_id.to_string()),
+                    serde_json::json!(self.ctx.context_id.to_string()),
                 );
             }
         }
 
         let payload = serde_json::json!({
-            "deployment_id": self.agent.deployment_id.to_string(),
+            "deployment_id": self.ctx.agent.deployment_id.to_string(),
             "context_id": effective_context_id.to_string(),
             "context_group": context_group,
-            "agent_id": self.agent.id.to_string(),
+            "agent_id": self.ctx.agent.id.to_string(),
             "action": action,
             "params": params
         });
@@ -1028,7 +1017,7 @@ impl ToolExecutor {
 
         // NATS client has 5-minute request_timeout configured globally in common/state.rs
         let response = self
-            .app_state
+            .app_state()
             .nats_client
             .request(subject.to_string(), serde_json::to_vec(&payload)?.into())
             .await
@@ -1063,8 +1052,8 @@ impl ToolExecutor {
 
         // Log success
         let logger = TeamsActivityLogger::new(
-            &self.agent.deployment_id.to_string(),
-            &self.agent.id.to_string(),
+            &self.agent().deployment_id.to_string(),
+            &self.agent().id.to_string(),
             &context_group,
             context_title,
         );
@@ -1147,10 +1136,7 @@ impl ToolExecutor {
             .ok_or_else(|| AppError::BadRequest("filename is required".to_string()))?;
 
         // Get context group for NATS routing
-        let context =
-            queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                .execute(&self.app_state)
-                .await?;
+        let context = self.ctx.get_context().await?;
 
         let context_group = context
             .context_group
@@ -1158,16 +1144,16 @@ impl ToolExecutor {
 
         // Request worker to download the image and return base64 data
         let payload = serde_json::json!({
-            "deployment_id": self.agent.deployment_id.to_string(),
-            "context_id": self.context_id.to_string(),
+            "deployment_id": self.agent().deployment_id.to_string(),
+            "context_id": self.context_id().to_string(),
             "context_group": context_group,
-            "agent_id": self.agent.id.to_string(),
+            "agent_id": self.agent().id.to_string(),
             "action": "download_attachment",
             "params": { "attachment_url": attachment_url }
         });
 
         let response = self
-            .app_state
+            .app_state()
             .nats_client
             .request(
                 "integrations.teams.command".to_string(),
@@ -1204,16 +1190,16 @@ impl ToolExecutor {
 
         // Create filesystem instance for saving
         let execution_id = self
-            .app_state
+            .app_state()
             .sf
             .next_id()
             .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
             .to_string();
 
         let filesystem = AgentFilesystem::new(
-            &self.agent.deployment_id.to_string(),
-            &self.agent.id.to_string(),
-            &self.context_id.to_string(),
+            &self.agent().deployment_id.to_string(),
+            &self.agent().id.to_string(),
+            &self.context_id().to_string(),
             &execution_id,
         );
 
@@ -1250,10 +1236,7 @@ impl ToolExecutor {
             .unwrap_or(0) as u32;
 
         // Get current context to find the context_group
-        let current_context =
-            queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                .execute(&self.app_state)
-                .await?;
+        let current_context = self.ctx.get_context().await?;
 
         let context_group = current_context.context_group.ok_or_else(|| {
             AppError::BadRequest(
@@ -1262,12 +1245,12 @@ impl ToolExecutor {
         })?;
 
         // Query all Teams contexts in the same context_group
-        let contexts = queries::ListExecutionContextsQuery::new(self.agent.deployment_id)
+        let contexts = queries::ListExecutionContextsQuery::new(self.ctx.agent.deployment_id)
             .with_source_filter("teams".to_string())
             .with_context_group_filter(context_group.clone())
             .with_limit(limit)
             .with_offset(offset)
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await?;
 
         let result: Vec<serde_json::Value> = contexts
@@ -1278,7 +1261,7 @@ impl ToolExecutor {
                     "title": ctx.title,
                     "status": ctx.status.to_string(),
                     "last_activity": ctx.last_activity_at.to_rfc3339(),
-                    "is_current": ctx.id == self.context_id
+                    "is_current": ctx.id == self.context_id()
                 })
             })
             .collect();
@@ -1320,26 +1303,22 @@ impl ToolExecutor {
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
-        let target_context =
-            queries::GetExecutionContextQuery::new(target_context_id, self.agent.deployment_id)
-                .execute(&self.app_state)
-                .await
-                .map_err(|_| {
-                    AppError::BadRequest(format!(
-                        "Target context {} not found or not accessible",
-                        target_context_id
-                    ))
-                })?;
+        let target_context = self.ctx.get_context_by_id(target_context_id)
+            .await
+            .map_err(|_| {
+                AppError::BadRequest(format!(
+                    "Target context {} not found or not accessible",
+                    target_context_id
+                ))
+            })?;
 
-        let conversation_id = self
-            .app_state
-            .sf
+        let conversation_id = self.ctx.app_state.sf
             .next_id()
             .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
             as i64;
         let relayed_message = format!(
             "[Cross-context message from context #{}] {}{}",
-            self.context_id,
+            self.context_id(),
             message,
             actionable_id
                 .as_ref()
@@ -1349,7 +1328,7 @@ impl ToolExecutor {
 
         let content = models::ConversationContent::UserMessage {
             message: relayed_message.clone(),
-            sender_name: Some(format!("Cross-context relay from #{}", self.context_id)),
+            sender_name: Some(format!("Cross-context relay from #{}", self.context_id())),
             files: None,
         };
 
@@ -1359,18 +1338,18 @@ impl ToolExecutor {
             content,
             models::ConversationMessageType::UserMessage,
         );
-        conversation_cmd.execute(&self.app_state).await?;
+        conversation_cmd.execute(self.app_state()).await?;
 
         if trigger_execution {
             let exec_cmd = commands::PublishAgentExecutionCommand::new_message(
-                self.agent.deployment_id,
+                self.agent().deployment_id,
                 target_context_id,
-                Some(self.agent.id),
+                Some(self.agent().id),
                 None,
                 conversation_id,
             );
 
-            if let Err(e) = exec_cmd.execute(&self.app_state).await {
+            if let Err(e) = exec_cmd.execute(self.app_state()).await {
                 tracing::error!(
                     target_context_id = target_context_id,
                     error = %e,
@@ -1386,10 +1365,7 @@ impl ToolExecutor {
 
         // Clear the fulfilled actionable from the current context
         if let Some(ref fulfilled_id) = actionable_id {
-            let current_context =
-                queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                    .execute(&self.app_state)
-                    .await?;
+            let current_context = self.ctx.get_context().await?;
 
             if let Some(mut metadata) = current_context.external_resource_metadata {
                 if let Some(actionables) = metadata.get_mut("actionables") {
@@ -1400,15 +1376,15 @@ impl ToolExecutor {
 
                         // Update the context with cleaned actionables
                         commands::UpdateExecutionContextQuery::new(
-                            self.context_id,
-                            self.agent.deployment_id,
+                            self.ctx.context_id,
+                            self.ctx.agent.deployment_id,
                         )
                         .with_external_resource_metadata(metadata)
-                        .execute(&self.app_state)
+                        .execute(&self.ctx.app_state)
                         .await?;
 
                         tracing::info!(
-                            context_id = self.context_id,
+                            context_id = self.ctx.context_id,
                             actionable_id = %fulfilled_id,
                             "Cleared fulfilled actionable from context"
                         );
@@ -1581,7 +1557,7 @@ impl ToolExecutor {
             }
         }
 
-        let execution_id = self.app_state.sf.next_id()? as u64;
+        let execution_id = self.app_state().sf.next_id()? as u64;
 
         let function_data = PlatformFunctionData {
             execution_id: execution_id.to_string(),
@@ -1624,7 +1600,7 @@ impl ToolExecutor {
             })?;
 
         let embeddings_command = GenerateEmbeddingsCommand::new(vec![query.to_string()]);
-        let embeddings = embeddings_command.execute(&self.app_state).await?;
+        let embeddings = embeddings_command.execute(self.app_state()).await?;
         let query_embedding = embeddings
             .into_iter()
             .next()
@@ -1637,7 +1613,7 @@ impl ToolExecutor {
             limit,
         );
 
-        let search_results = search_command.execute(&self.app_state).await?;
+        let search_results = search_command.execute(self.app_state()).await?;
 
         let threshold = config.search_settings.similarity_threshold.unwrap_or(0.7);
         let mut all_results: Vec<ToolKnowledgeBaseSearchResult> = search_results

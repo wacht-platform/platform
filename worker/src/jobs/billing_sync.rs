@@ -42,12 +42,12 @@ fn get_metric_config(metric: &str) -> MetricConfig {
             event_name: "webhooks.sent",
             use_last_aggregation: false,
         },
-        "ai_tokens_input" => MetricConfig {
-            event_name: "ai.tokens.input",
+        "ai_token_input_cost" => MetricConfig {
+            event_name: "ai.token.input.cost",
             use_last_aggregation: false,
         },
-        "ai_tokens_output" => MetricConfig {
-            event_name: "ai.tokens.output",
+        "ai_token_output_cost" => MetricConfig {
+            event_name: "ai.token.output.cost",
             use_last_aggregation: false,
         },
         "sms_cost" => MetricConfig {
@@ -186,8 +186,8 @@ async fn sync_deployment(
         local metrics_key = prefix .. ':metrics'
         local emails_current = tonumber(redis.call('ZSCORE', metrics_key, 'emails') or 0)
         local webhooks_current = tonumber(redis.call('ZSCORE', metrics_key, 'webhooks') or 0)
-        local ai_input_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_tokens_input') or 0)
-        local ai_output_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_tokens_output') or 0)
+        local ai_input_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_token_input_cost_cents') or 0)
+        local ai_output_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_token_output_cost_cents') or 0)
         local sms_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'sms_cost_cents') or 0)
         local storage_current = tonumber(redis.call('ZSCORE', metrics_key, 'storage_gb') or 0)
         local api_checks_current = tonumber(redis.call('ZSCORE', metrics_key, 'api_checks') or 0)
@@ -199,8 +199,8 @@ async fn sync_deployment(
         local projects_last = tonumber(redis.call('ZSCORE', last_synced_key, 'projects') or 0)
         local emails_last = tonumber(redis.call('ZSCORE', last_synced_key, 'emails') or 0)
         local webhooks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'webhooks') or 0)
-        local ai_input_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_tokens_input') or 0)
-        local ai_output_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_tokens_output') or 0)
+        local ai_input_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_input_cost') or 0)
+        local ai_output_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_output_cost') or 0)
         local sms_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'sms_cost_cents') or 0)
         local storage_last = tonumber(redis.call('ZSCORE', last_synced_key, 'storage_gb') or 0)
         local api_checks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'api_checks') or 0)
@@ -211,8 +211,8 @@ async fn sync_deployment(
         local projects_delta = projects_current - projects_last
         local emails_delta = emails_current - emails_last
         local webhooks_delta = webhooks_current - webhooks_last
-        local ai_input_delta = ai_input_current - ai_input_last
-        local ai_output_delta = ai_output_current - ai_output_last
+        local ai_input_cost_delta = ai_input_cost_current - ai_input_cost_last
+        local ai_output_cost_delta = ai_output_cost_current - ai_output_cost_last
         local sms_cost_delta = sms_cost_current - sms_cost_last
         local storage_delta = storage_current - storage_last
         local api_checks_delta = api_checks_current - api_checks_last
@@ -223,8 +223,8 @@ async fn sync_deployment(
         redis.call('ZADD', last_synced_key, projects_current, 'projects')
         redis.call('ZADD', last_synced_key, emails_current, 'emails')
         redis.call('ZADD', last_synced_key, webhooks_current, 'webhooks')
-        redis.call('ZADD', last_synced_key, ai_input_current, 'ai_tokens_input')
-        redis.call('ZADD', last_synced_key, ai_output_current, 'ai_tokens_output')
+        redis.call('ZADD', last_synced_key, ai_input_cost_current, 'ai_token_input_cost')
+        redis.call('ZADD', last_synced_key, ai_output_cost_current, 'ai_token_output_cost')
         redis.call('ZADD', last_synced_key, sms_cost_current, 'sms_cost_cents')
         redis.call('ZADD', last_synced_key, storage_current, 'storage_gb')
         redis.call('ZADD', last_synced_key, api_checks_current, 'api_checks')
@@ -237,8 +237,8 @@ async fn sync_deployment(
             tostring(projects_current), tostring(projects_delta),
             tostring(emails_current), tostring(emails_delta),
             tostring(webhooks_current), tostring(webhooks_delta),
-            tostring(ai_input_current), tostring(ai_input_delta),
-            tostring(ai_output_current), tostring(ai_output_delta),
+            tostring(ai_input_cost_current), tostring(ai_input_cost_delta),
+            tostring(ai_output_cost_current), tostring(ai_output_cost_delta),
             tostring(sms_cost_current), tostring(sms_cost_delta),
             tostring(storage_current), tostring(storage_delta),
             tostring(api_checks_current), tostring(api_checks_delta)
@@ -280,12 +280,12 @@ async fn sync_deployment(
             results[11].parse::<i64>().unwrap_or(0),
         ),
         (
-            "ai_tokens_input",
+            "ai_token_input_cost",
             results[12].parse::<i64>().unwrap_or(0),
             results[13].parse::<i64>().unwrap_or(0),
         ),
         (
-            "ai_tokens_output",
+            "ai_token_output_cost",
             results[14].parse::<i64>().unwrap_or(0),
             results[15].parse::<i64>().unwrap_or(0),
         ),
@@ -364,6 +364,11 @@ async fn sync_to_dodo(
     };
 
     let customer_id = subscription_info.provider_customer_id;
+
+    // Filter: Do not send usage events for Starter plan (flat-rate)
+    if subscription_info.plan_name == "starter" {
+        return;
+    }
 
     for (metric_name, current, delta) in metrics {
         if *delta <= 0 {

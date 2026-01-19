@@ -249,6 +249,11 @@ fn get_default_webhook_events() -> Vec<WebhookEventDefinition> {
             schema: None,
         },
         WebhookEventDefinition {
+            name: "agent.model.usage".to_string(),
+            description: "AI model usage recorded (token consumption)".to_string(),
+            schema: None,
+        },
+        WebhookEventDefinition {
             name: "waitlist.entry.created".to_string(),
             description: "New waitlist entry added".to_string(),
             schema: None,
@@ -1944,6 +1949,20 @@ impl Command for CreateStagingDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
+        // Create empty AI settings row for this deployment
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_ai_settings (id, deployment_id, created_at, updated_at)
+            VALUES ($1, $2, $3, $4)
+            "#,
+            app_state.sf.next_id()? as i64,
+            deployment_row.id,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
         // Use pre-generated key pair
         sqlx::query!(
             r#"
@@ -2680,7 +2699,19 @@ impl Command for CreateProductionDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
-        // Use pre-generated key pair
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_ai_settings (id, deployment_id, created_at, updated_at)
+            VALUES ($1, $2, $3, $4)
+            "#,
+            app_state.sf.next_id()? as i64,
+            deployment_row.id,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
         sqlx::query!(
             r#"
             INSERT INTO deployment_key_pairs (

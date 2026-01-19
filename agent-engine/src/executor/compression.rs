@@ -163,7 +163,7 @@ impl AgentExecutor {
         })?;
 
         let (summary_response, _) = self
-            .create_weak_llm()?
+            .create_weak_llm().await?
             .generate_structured_content::<serde_json::Value>(request_body)
             .await
             .map_err(|e| AppError::Internal(format!("Summary generation failed: {e}")))?;
@@ -197,10 +197,10 @@ impl AgentExecutor {
         };
 
         // Store summary conversation
-        if let Ok(id) = self.app_state.sf.next_id() {
+        if let Ok(id) = self.ctx.app_state.sf.next_id() {
             let command = CreateConversationCommand::new(
                 id as i64,
-                self.context_id,
+                self.ctx.context_id,
                 ConversationContent::ExecutionSummary {
                     user_message: user_request,
                     agent_execution,
@@ -208,7 +208,7 @@ impl AgentExecutor {
                 },
                 ConversationMessageType::ExecutionSummary,
             );
-            command.execute(&self.app_state).await?;
+            command.execute(&self.ctx.app_state).await?;
         }
 
         Ok(token_count)
@@ -223,7 +223,7 @@ impl AgentExecutor {
 
         let embeddings = match GenerateEmbeddingsCommand::new(memory_contents.clone())
             .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await
         {
             Ok(e) => e,
@@ -250,17 +250,17 @@ impl AgentExecutor {
                 .and_then(|i| i.as_f64())
                 .unwrap_or(0.5);
 
-            if let Ok(id) = self.app_state.sf.next_id() {
+            if let Ok(id) = self.ctx.app_state.sf.next_id() {
                 let create_cmd = CreateMemoryCommand {
                     id: id as i64,
                     content: content.to_string(),
                     embedding: embedding.clone(),
                     memory_category: category,
-                    creation_context_id: Some(self.context_id),
-                    agent_id: Some(self.agent.id),
+                    creation_context_id: Some(self.ctx.context_id),
+                    agent_id: Some(self.ctx.agent.id),
                     initial_importance: importance,
                 };
-                let _ = create_cmd.execute(&self.app_state).await;
+                let _ = create_cmd.execute(&self.ctx.app_state).await;
             }
         }
     }

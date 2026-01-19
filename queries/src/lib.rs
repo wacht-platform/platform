@@ -67,3 +67,5 @@ pub use webhook::*;
 pub use webhook_analytics::*;
 pub mod agent_session;
 pub use agent_session::*;
+pub mod ai_settings;
+pub use ai_settings::*;

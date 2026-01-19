@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT s.provider_customer_id, s.provider_subscription_id, dp.plan_name\n            FROM deployments d\n            JOIN projects p ON d.project_id = p.id\n            JOIN billing_accounts ba ON p.billing_account_id = ba.id\n            JOIN subscriptions s ON s.billing_account_id = ba.id\n            LEFT JOIN dodo_products dp ON s.product_id = dp.product_id\n            WHERE d.id = $1 AND s.status = 'active'\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider_customer_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider_subscription_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "plan_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e7060baf81bb38d197489aefcb0343ab67295fff27f5a6cc8e276106f3becf01"
+}

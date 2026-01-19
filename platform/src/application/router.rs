@@ -216,6 +216,10 @@ fn base_deployment_routes() -> Router<AppState> {
             patch(api::b2b::update_deployment_b2b_settings),
         )
         .route(
+            "/settings/ai-settings",
+            get(api::ai_settings::get_ai_settings).put(api::ai_settings::update_ai_settings),
+        )
+        .route(
             "/email-templates/{template_name}",
             get(api::settings::get_deployment_email_template),
         )

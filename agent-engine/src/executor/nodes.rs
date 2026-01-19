@@ -94,7 +94,7 @@ impl AgentExecutor {
         })?;
 
         let (evaluation, _) = self
-            .create_weak_llm()?
+            .create_weak_llm().await?
             .generate_structured_content::<dto::json::agent_responses::TriggerEvaluation>(
                 request_body,
             )
@@ -221,7 +221,7 @@ impl AgentExecutor {
         };
 
         let request_body = serde_json::to_string(&generation_config)?;
-        let llm = self.create_weak_llm()?;
+        let llm = self.create_weak_llm().await?;
         let (response, _): (Value, _) = llm
             .generate_structured_content(request_body)
             .await
@@ -293,7 +293,7 @@ impl AgentExecutor {
         .map_err(|e| AppError::Internal(format!("Failed to render switch case template: {e}")))?;
 
         let (evaluation, _) = self
-            .create_weak_llm()?
+            .create_weak_llm().await?
             .generate_structured_content::<SwitchCaseEvaluation>(request_body)
             .await?;
 
@@ -335,12 +335,12 @@ impl AgentExecutor {
         _channel: tokio::sync::mpsc::Sender<StreamEvent>,
     ) -> Result<Value, AppError> {
         let tool = GetToolByIdQuery::new(config.tool_id)
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await?;
 
         let parameters = config.input_parameters.clone();
 
-        let title = &self.context_title;
+        let title = self.ctx.context_title().await?;
         let result = self
             .tool_executor
             .execute_tool_immediately(
@@ -348,7 +348,7 @@ impl AgentExecutor {
                 json!(parameters),
                 &self.filesystem,
                 &self.shell,
-                title,
+                &title,
             )
             .await?;
 

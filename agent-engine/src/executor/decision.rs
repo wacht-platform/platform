@@ -39,9 +39,9 @@ impl AgentExecutor {
         &mut self,
         resume_context: ResumeContext,
     ) -> Result<(), AppError> {
-        let context_id = self.context_id;
-        let deployment_id = self.agent.deployment_id;
-        let app_state = self.app_state.clone();
+        let context_id = self.ctx.context_id;
+        let deployment_id = self.ctx.agent.deployment_id;
+        let app_state = self.ctx.app_state.clone();
 
         let immediate_context = self.get_immediate_context().await?;
         self.conversations = immediate_context.conversations;
@@ -134,7 +134,7 @@ impl AgentExecutor {
     async fn run_inner(&mut self, request: ConverseRequest) -> Result<(), AppError> {
         // Fetch the conversation from DB - it must already be persisted
         let conversation = queries::GetConversationByIdQuery::new(request.conversation_id)
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await?;
 
         // Extract user message from conversation content
@@ -154,10 +154,7 @@ impl AgentExecutor {
         // Log incoming message if from Teams integration
         if let Some(user) = &sender_name {
             // Fetch context to check source and get metadata
-            if let Ok(ctx) =
-                queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                    .execute(&self.app_state)
-                    .await
+            if let Ok(ctx) = self.ctx.get_context().await
             {
                 if ctx.source.as_deref() == Some("teams") {
                     if let Some(group) = &ctx.context_group {
@@ -177,8 +174,8 @@ impl AgentExecutor {
                                 ctx.title.clone()
                             };
                             let logger = crate::teams_logger::TeamsActivityLogger::new(
-                                &self.agent.deployment_id.to_string(),
-                                &self.agent.id.to_string(),
+                                &self.ctx.agent.deployment_id.to_string(),
+                                &self.ctx.agent.id.to_string(),
                                 group,
                                 &title,
                             );
@@ -312,7 +309,7 @@ impl AgentExecutor {
 
                 if last_was_ack {
                     tracing::warn!(
-                        context_id = self.context_id,
+                        context_id = self.ctx.context_id,
                         "Detected consecutive acknowledgment attempt - potential loop. Skipping duplicate acknowledgment and forcing action."
                     );
                     self.store_conversation(
@@ -454,10 +451,10 @@ impl AgentExecutor {
                             pending_input_request: None,
                         };
 
-                        UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                        UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
                             .with_execution_state(execution_state)
                             .with_status(ExecutionContextStatus::WaitingForInput)
-                            .execute(&self.app_state)
+                            .execute(&self.ctx.app_state)
                             .await?;
                     }
 
@@ -531,9 +528,9 @@ impl AgentExecutor {
                     .await?;
                 }
 
-                UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+                UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
                     .with_status(ExecutionContextStatus::Idle)
-                    .execute(&self.app_state)
+                    .execute(&self.ctx.app_state)
                     .await?;
                 Ok(false)
             }
@@ -544,10 +541,8 @@ impl AgentExecutor {
 
     async fn decide_next_step(&mut self) -> Result<StepDecision, AppError> {
         // Fetch the execution context to get title and actionables from metadata
-        let exec_context =
-            queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                .execute(&self.app_state)
-                .await?;
+        let exec_context = self.ctx.get_context().await?;
+        let integration_status = self.ctx.integration_status().await?;
 
         // Parse actionables from external_resource_metadata if present
         let actionables: Vec<dto::json::Actionable> = exec_context
@@ -558,7 +553,7 @@ impl AgentExecutor {
             .unwrap_or_default();
 
         tracing::info!(
-            context_id = self.context_id,
+            context_id = self.ctx.context_id,
             actionable_count = actionables.len(),
             actionables = ?actionables,
             "Loaded actionables for decision"
@@ -580,21 +575,15 @@ impl AgentExecutor {
                 .iter()
                 .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
                 .collect(),
-            available_tools: self
-                .agent
-                .tools
+            available_tools: self.ctx.agent.tools
                 .iter()
                 .map(|t| serde_json::to_value(t).unwrap())
                 .collect(),
-            available_workflows: self
-                .agent
-                .workflows
+            available_workflows: self.ctx.agent.workflows
                 .iter()
                 .map(|w| serde_json::to_value(w).unwrap())
                 .collect(),
-            available_knowledge_bases: self
-                .agent
-                .knowledge_bases
+            available_knowledge_bases: self.ctx.agent.knowledge_bases
                 .iter()
                 .map(|kb| serde_json::to_value(kb).unwrap())
                 .collect(),
@@ -602,10 +591,10 @@ impl AgentExecutor {
                 current_iteration: 1,
                 max_iterations: MAX_LOOP_ITERATIONS,
             },
-            teams_enabled: self.teams_enabled,
-            clickup_enabled: self.clickup_enabled,
-            context_id: self.context_id,
-            context_title: exec_context.title,
+            teams_enabled: integration_status.teams_enabled,
+            clickup_enabled: integration_status.clickup_enabled,
+            context_id: self.ctx.context_id,
+            context_title: exec_context.title.clone(),
             context_source: exec_context.source.clone(),
             teams_context: if exec_context.source.as_deref() == Some("teams") {
                 exec_context
@@ -637,8 +626,8 @@ impl AgentExecutor {
 
         // Inject agent identity into context
         if let Some(obj) = context_json.as_object_mut() {
-            obj.insert("agent_name".to_string(), json!(self.agent.name));
-            if let Some(desc) = &self.agent.description {
+            obj.insert("agent_name".to_string(), json!(self.ctx.agent.name));
+            if let Some(desc) = &self.ctx.agent.description {
                 obj.insert("agent_description".to_string(), json!(desc));
             }
         }
@@ -660,7 +649,7 @@ impl AgentExecutor {
             })?;
 
         let (mut decision, signature) = self
-            .create_strong_llm()?
+            .create_strong_llm().await?
             .generate_structured_content::<StepDecision>(request_body)
             .await?;
 
@@ -689,15 +678,15 @@ impl AgentExecutor {
                 "conversation_history": self.get_conversation_history_for_llm().await,
                 "user_request": self.user_request,
                 "task_results": self.task_results,
-                "available_tools": self.agent.tools.clone(),
-                "available_workflows": self.agent.workflows.clone(),
-                "available_knowledge_bases": self.agent.knowledge_bases.clone(),
+                "available_tools": self.ctx.agent.tools.clone(),
+                "available_workflows": self.ctx.agent.workflows.clone(),
+                "available_knowledge_bases": self.ctx.agent.knowledge_bases.clone(),
             }),
         )
         .map_err(|e| AppError::Internal(format!("Failed to render summary template: {e}")))?;
 
         let (summary, _) = self
-            .create_weak_llm()?
+            .create_weak_llm().await?
             .generate_structured_content::<Value>(request_body)
             .await?;
 
@@ -711,9 +700,9 @@ impl AgentExecutor {
         )
         .await?;
 
-        UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+        UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
             .with_status(ExecutionContextStatus::Idle)
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await?;
 
         Ok(())
@@ -799,9 +788,9 @@ impl AgentExecutor {
                 "conversation_history": self.get_conversation_history_for_llm().await,
                 "current_objective": self.current_objective,
                 "working_memory": self.get_working_memory(),
-                "available_tools": self.agent.tools.clone(),
-                "available_workflows": self.agent.workflows.clone(),
-                "available_knowledge_bases": self.agent.knowledge_bases.clone(),
+                "available_tools": self.ctx.agent.tools.clone(),
+                "available_workflows": self.ctx.agent.workflows.clone(),
+                "available_knowledge_bases": self.ctx.agent.knowledge_bases.clone(),
             }),
         )
         .map_err(|e| {
@@ -809,7 +798,7 @@ impl AgentExecutor {
         })?;
 
         let (response, _) = self
-            .create_weak_llm()?
+            .create_weak_llm().await?
             .generate_structured_content::<serde_json::Value>(request_body)
             .await?;
         Ok(response)
@@ -864,36 +853,18 @@ impl AgentExecutor {
     }
 
     /// Strong LLM - Used for step decisions (requires good reasoning)
-    pub(super) fn create_strong_llm(&self) -> Result<GeminiClient, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
-        Ok(
-            GeminiClient::new(api_key, Some("gemini-3-flash-preview".to_string())).with_billing(
-                self.agent.deployment_id,
-                self.app_state.redis_client.clone(),
-            ),
-        )
+    pub(super) async fn create_strong_llm(&self) -> Result<GeminiClient, AppError> {
+        self.ctx.create_llm("gemini-3-flash-preview").await
     }
 
     /// Weak LLM - Used for simple tasks (parameter generation, summaries, etc.)
-    pub(super) fn create_weak_llm(&self) -> Result<GeminiClient, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
-        Ok(
-            GeminiClient::new(api_key, Some("gemini-2.5-flash".to_string())).with_billing(
-                self.agent.deployment_id,
-                self.app_state.redis_client.clone(),
-            ),
-        )
+    pub(super) async fn create_weak_llm(&self) -> Result<GeminiClient, AppError> {
+        self.ctx.create_llm("gemini-2.5-flash").await
     }
 
     /// Reasoning LLM - Used for complex reasoning tasks with extended thinking
-    pub(super) fn create_reasoning_llm(&self) -> Result<GeminiClient, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
-        Ok(
-            GeminiClient::new(api_key, Some("gemini-3-pro-preview".to_string())).with_billing(
-                self.agent.deployment_id,
-                self.app_state.redis_client.clone(),
-            ),
-        )
+    pub(super) async fn create_reasoning_llm(&self) -> Result<GeminiClient, AppError> {
+        self.ctx.create_llm("gemini-3-pro-preview").await
     }
 
     /// Execute deep reasoning using the reasoning LLM with extended thinking budget
@@ -901,10 +872,8 @@ impl AgentExecutor {
         &self,
         directive: &DeepReasoningDirective,
     ) -> Result<(DeepReasoningResult, Option<String>), AppError> {
-        let exec_context =
-            queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                .execute(&self.app_state)
-                .await?;
+        let exec_context = self.ctx.get_context().await?;
+        let integration_status = self.ctx.integration_status().await?;
 
         let actionables: Vec<dto::json::Actionable> = exec_context
             .external_resource_metadata
@@ -914,8 +883,8 @@ impl AgentExecutor {
             .unwrap_or_default();
 
         let context = serde_json::json!({
-            "agent_name": self.agent.name,
-            "agent_description": self.agent.description,
+            "agent_name": self.ctx.agent.name,
+            "agent_description": self.ctx.agent.description,
             "problem_statement": directive.problem_statement,
             "context_summary": directive.context_summary,
             "expected_output_type": format!("{:?}", directive.expected_output_type).to_lowercase(),
@@ -924,16 +893,16 @@ impl AgentExecutor {
             "current_objective": self.current_objective,
             "conversation_insights": self.conversation_insights,
             "task_results": self.task_results,
-            "available_tools": self.agent.tools,
-            "available_workflows": self.agent.workflows,
-            "available_knowledge_bases": self.agent.knowledge_bases,
+            "available_tools": &self.ctx.agent.tools,
+            "available_workflows": &self.ctx.agent.workflows,
+            "available_knowledge_bases": &self.ctx.agent.knowledge_bases,
             "iteration_info": dto::json::IterationInfo {
                 current_iteration: 1,
                 max_iterations: MAX_LOOP_ITERATIONS,
             },
-            "teams_enabled": self.teams_enabled,
-            "context_id": self.context_id,
-            "context_title": exec_context.title,
+            "teams_enabled": integration_status.teams_enabled,
+            "context_id": self.ctx.context_id,
+            "context_title": exec_context.title.clone(),
             "actionables": actionables,
         });
 
@@ -942,7 +911,7 @@ impl AgentExecutor {
                 AppError::Internal(format!("Failed to render deep reasoning template: {e}"))
             })?;
 
-        self.create_reasoning_llm()?
+        self.create_reasoning_llm().await?
             .generate_structured_content::<DeepReasoningResult>(request_body)
             .await
     }

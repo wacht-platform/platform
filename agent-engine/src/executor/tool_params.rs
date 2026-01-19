@@ -9,7 +9,6 @@ use models::{
     AiTool, AiToolConfiguration, ApiToolConfiguration, PlatformFunctionToolConfiguration,
     SchemaField,
 };
-use queries::Query;
 use serde_json::{json, Value};
 use tracing::{info, warn};
 
@@ -31,9 +30,7 @@ impl AgentExecutor {
                     parameters = %tool_call.parameters,
                     "Parsed tool call"
                 );
-                let tool = self
-                    .agent
-                    .tools
+                let tool = self.ctx.agent.tools
                     .iter()
                     .find(|t| t.name == tool_call.tool_name)
                     .ok_or_else(|| {
@@ -41,14 +38,14 @@ impl AgentExecutor {
                         AppError::BadRequest(format!("Tool '{}' not found", tool_call.tool_name))
                     })?;
 
-                let title = &self.context_title;
+                let title = self.ctx.context_title().await?;
                 self.tool_executor
                     .execute_tool_immediately(
                         tool,
                         tool_call.parameters,
                         &self.filesystem,
                         &self.shell,
-                        title,
+                        &title,
                     )
                     .await
             }
@@ -87,7 +84,7 @@ impl AgentExecutor {
 
                 self.execute_workflow_task(
                     &workflow_call,
-                    &self.agent.workflows,
+                    &self.ctx.agent.workflows,
                     &conversation_context,
                     &memory_context,
                     self.channel.clone(),
@@ -97,11 +94,7 @@ impl AgentExecutor {
         };
 
         if let Some(ref actionable_id) = action.clear_actionable_id {
-            if let Ok(current_context) =
-                queries::GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-                    .execute(&self.app_state)
-                    .await
-            {
+            if let Ok(current_context) = self.ctx.get_context().await {
                 if let Some(mut metadata) = current_context.external_resource_metadata {
                     if let Some(actionables) = metadata.get_mut("actionables") {
                         if let Some(arr) = actionables.as_array_mut() {
@@ -113,15 +106,15 @@ impl AgentExecutor {
 
                             if arr.len() < original_len {
                                 let _ = commands::UpdateExecutionContextQuery::new(
-                                    self.context_id,
-                                    self.agent.deployment_id,
+                                    current_context.id,
+                                    current_context.deployment_id,
                                 )
                                 .with_external_resource_metadata(metadata)
-                                .execute(&self.app_state)
+                                .execute(&self.ctx.app_state)
                                 .await;
 
                                 tracing::info!(
-                                    context_id = self.context_id,
+                                    context_id = current_context.id,
                                     actionable_id = %actionable_id,
                                     "Cleared actionable from context after tool execution"
                                 );
@@ -228,8 +221,7 @@ impl AgentExecutor {
     }
 
     fn find_tool(&self, tool_name: &str) -> Result<&AiTool, AppError> {
-        self.agent
-            .tools
+        self.ctx.agent.tools
             .iter()
             .find(|t| t.name == tool_name)
             .ok_or_else(|| AppError::BadRequest(format!("Tool '{tool_name}' not found")))
@@ -465,7 +457,7 @@ impl AgentExecutor {
             "current_objective": self.current_objective,
             "conversation_insights": self.conversation_insights,
             "action_purpose": action_purpose,
-            "available_paths": self.get_available_paths(),
+            "available_paths": self.get_available_paths().await,
         });
 
         if let Some(ref sys_instructions) = self.system_instructions {
@@ -488,7 +480,7 @@ impl AgentExecutor {
                 })?;
 
         let (response, _) = self
-            .create_weak_llm()?
+            .create_weak_llm().await?
             .generate_structured_content::<ParameterGenerationResponse>(request_body)
             .await?;
 
@@ -510,7 +502,7 @@ impl AgentExecutor {
 
     /// Get available filesystem paths for parameter generation context.
     /// Lists standard paths first, then Teams activity path if Teams integration is enabled.
-    fn get_available_paths(&self) -> Value {
+    async fn get_available_paths(&self) -> Value {
         let mut paths = vec![
             json!({
                 "path": "/knowledge/",
@@ -531,11 +523,13 @@ impl AgentExecutor {
         ];
 
         // Teams activity path - only if Teams integration is enabled
-        if self.teams_enabled {
-            paths.push(json!({
-                "path": "/teams-activity/",
-                "description": "Teams conversation activity logs - contains daily log files named like 'YYYY-MM-DD.log' or 'Teams DM {Name}_YYYY-MM-DD.log'"
-            }));
+        if let Ok(status) = self.ctx.integration_status().await {
+            if status.teams_enabled {
+                paths.push(json!({
+                    "path": "/teams-activity/",
+                    "description": "Teams conversation activity logs - contains daily log files named like 'YYYY-MM-DD.log' or 'Teams DM {Name}_YYYY-MM-DD.log'"
+                }));
+            }
         }
 
         json!(paths)

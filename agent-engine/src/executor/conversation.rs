@@ -33,12 +33,12 @@ impl AgentExecutor {
         message_type: ConversationMessageType,
     ) -> Result<ConversationRecord, AppError> {
         let command = CreateConversationCommand::new(
-            self.app_state.sf.next_id()? as i64,
-            self.context_id,
+            self.ctx.app_state.sf.next_id()? as i64,
+            self.ctx.context_id,
             content,
             message_type,
         );
-        command.execute(&self.app_state).await
+        command.execute(&self.ctx.app_state).await
     }
 
     pub(super) async fn store_user_message(
@@ -46,7 +46,7 @@ impl AgentExecutor {
         message: String,
         images: Option<Vec<dto::json::agent_executor::ImageData>>,
     ) -> Result<ConversationRecord, AppError> {
-        let model_images = if let Some(imgs) = images {
+        let _model_images = if let Some(imgs) = images {
             let mut uploaded_images = Vec::new();
 
             for img in imgs {
@@ -56,7 +56,7 @@ impl AgentExecutor {
                 })?;
 
                 let file_extension = img.mime_type.split('/').last().unwrap_or("png");
-                let filename = format!("{}.{}", self.app_state.sf.next_id()?, file_extension);
+                let filename = format!("{}.{}", self.ctx.app_state.sf.next_id()?, file_extension);
 
                 let relative_path = self.filesystem.save_upload(&filename, &bytes).await?;
 
@@ -73,8 +73,8 @@ impl AgentExecutor {
         };
 
         let command = CreateConversationCommand::new(
-            self.app_state.sf.next_id()? as i64,
-            self.context_id,
+            self.ctx.app_state.sf.next_id()? as i64,
+            self.ctx.context_id,
             ConversationContent::UserMessage {
                 message,
                 sender_name: None,
@@ -82,7 +82,7 @@ impl AgentExecutor {
             },
             ConversationMessageType::UserMessage,
         );
-        let conversation = command.execute(&self.app_state).await?;
+        let conversation = command.execute(&self.ctx.app_state).await?;
 
         let _ = self
             .channel
@@ -345,10 +345,10 @@ impl AgentExecutor {
             pending_input_request: Some(user_input_state),
         };
 
-        UpdateExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
+        UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
             .with_execution_state(execution_state)
             .with_status(ExecutionContextStatus::WaitingForInput)
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await?;
 
         Ok(())

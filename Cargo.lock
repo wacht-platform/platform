@@ -1156,6 +1156,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rust_decimal",
+ "scraper",
  "serde",
  "serde_json",
  "sha2",

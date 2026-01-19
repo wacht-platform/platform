@@ -24,3 +24,4 @@ pub mod upload;
 pub mod user;
 pub mod webhook;
 pub mod webhook_console;
+pub mod ai_settings;

@@ -12,6 +12,7 @@ mod decision;
 mod memory;
 mod nodes;
 pub mod python;
+mod tool_definitions;
 mod tool_params;
 mod workflow;
 

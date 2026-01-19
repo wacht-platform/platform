@@ -367,12 +367,9 @@ pub struct CheckoutCustomer {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckoutSession {
+    #[serde(alias = "session_id")]
     pub checkout_id: String,
     pub checkout_url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub customer_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<JsonValue>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -445,6 +442,7 @@ pub struct Customer {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PortalSession {
+    #[serde(alias = "link")]
     pub url: String,
 }
 

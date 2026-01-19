@@ -199,18 +199,28 @@ struct SearchProgressData {
 }
 
 pub struct ContextOrchestrator {
-    app_state: AppState,
-    agent: AiAgentWithFeatures,
-    context_id: i64,
+    ctx: std::sync::Arc<crate::execution_context::ExecutionContext>,
 }
 
 impl ContextOrchestrator {
-    pub fn new(app_state: AppState, agent: AiAgentWithFeatures, context_id: i64) -> Self {
-        Self {
-            app_state,
-            agent,
-            context_id,
-        }
+    pub fn new(ctx: std::sync::Arc<crate::execution_context::ExecutionContext>) -> Self {
+        Self { ctx }
+    }
+
+    // Accessor methods for backward compatibility
+    #[inline]
+    fn app_state(&self) -> &AppState {
+        &self.ctx.app_state
+    }
+
+    #[inline]
+    fn agent(&self) -> &AiAgentWithFeatures {
+        &self.ctx.agent
+    }
+
+    #[inline]
+    fn context_id(&self) -> i64 {
+        self.ctx.context_id
     }
 
     fn get_pattern_guidance(&self, pattern: dto::json::agent_executor::SearchPattern) -> String {
@@ -277,7 +287,7 @@ impl ContextOrchestrator {
     ) -> Result<Vec<ContextSearchResult>, AppError> {
         tracing::info!(
             "Starting context gathering for agent {} with objective: {:?}, pattern: {:?}, depth: {:?}",
-            self.agent.id,
+            self.agent().id,
             current_objective.as_ref().map(|o| &o.primary_goal),
             search_pattern,
             expected_depth
@@ -586,7 +596,7 @@ impl ContextOrchestrator {
                 seen_documents.insert(doc_key);
 
                 let kb_name = self
-                    .agent
+                    .agent()
                     .knowledge_bases
                     .iter()
                     .find(|kb| kb.id == *kb_id)
@@ -741,7 +751,7 @@ impl ContextOrchestrator {
             "conversation_history": self.format_conversation_history(conversations),
             "memories": self.format_memories_for_template(memories),
             "current_objective": current_objective,
-            "available_knowledge_bases": self.agent.knowledge_bases.clone(),
+            "available_knowledge_bases": self.agent().knowledge_bases.clone(),
             "has_previous_searches": !previous_searches.is_empty(),
             "previous_search_count": previous_searches.len(),
             "previous_search_results": previous_searches,
@@ -765,7 +775,7 @@ impl ContextOrchestrator {
                 .map_err(|e| AppError::Internal(format!("Failed to render template: {e}")))?;
 
         let (derivation, _) = self
-            .create_gemini_client()?
+            .create_gemini_client().await?
             .generate_structured_content::<ContextSearchDerivation>(request_body)
             .await?;
 
@@ -896,7 +906,7 @@ impl ContextOrchestrator {
         filters: &ContextFilters,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
         let kb_ids =
-            kb_ids.unwrap_or_else(|| self.agent.knowledge_bases.iter().map(|kb| kb.id).collect());
+            kb_ids.unwrap_or_else(|| self.agent().knowledge_bases.iter().map(|kb| kb.id).collect());
 
         tracing::debug!(
             "Executing KB search - Query: '{}', KB IDs: {:?}, Mode: {:?}",
@@ -945,7 +955,7 @@ impl ContextOrchestrator {
     async fn generate_embedding(&self, query: &str) -> Result<Vec<f32>, AppError> {
         let embedding_result = GenerateEmbeddingCommand::new(query.to_string())
             .with_task_type("RETRIEVAL_QUERY".to_string())
-            .execute(&self.app_state)
+            .execute(self.app_state())
             .await?;
         Ok(embedding_result)
     }
@@ -959,10 +969,10 @@ impl ContextOrchestrator {
         let results = FullTextSearchKnowledgeBaseQuery {
             knowledge_base_ids: kb_ids.to_vec(),
             query_text: query.to_string(),
-            deployment_id: self.agent.deployment_id,
+            deployment_id: self.agent().deployment_id,
             max_results: max_results as i32,
         }
-        .execute(&self.app_state)
+        .execute(self.app_state())
         .await?;
 
         Ok(results
@@ -1006,7 +1016,7 @@ impl ContextOrchestrator {
             query_embedding.to_vec(),
             max_results as u64,
         )
-        .execute(&self.app_state)
+        .execute(self.app_state())
         .await?;
 
         tracing::debug!("Vector search returned {} results", results.len());
@@ -1054,10 +1064,10 @@ impl ContextOrchestrator {
             query_embedding: query_embedding.to_vec(),
             vector_weight: vector_weight as f64,
             text_weight: text_weight as f64,
-            deployment_id: self.agent.deployment_id,
+            deployment_id: self.agent().deployment_id,
             max_results: max_results as i32,
         }
-        .execute(&self.app_state)
+        .execute(self.app_state())
         .await?;
 
         Ok(results
@@ -1103,7 +1113,7 @@ impl ContextOrchestrator {
                 .collect()
         } else {
             // If no specific KBs provided, use all available KBs
-            self.agent.knowledge_bases.iter().map(|kb| kb.id).collect()
+            self.agent().knowledge_bases.iter().map(|kb| kb.id).collect()
         };
 
         if kb_ids.is_empty() {
@@ -1132,7 +1142,7 @@ impl ContextOrchestrator {
             // Fetch limit + 1 to check if there's a next page for this KB
             let fetch_limit = (per_kb_limit + 1) as usize;
             let documents = GetKnowledgeBaseDocumentsQuery::new(*kb_id, fetch_limit, offset)
-                .execute(&self.app_state)
+                .execute(self.app_state())
                 .await
                 .map_err(|e| {
                     AppError::Internal(format!("Failed to fetch documents from KB {kb_id}: {e}"))
@@ -1199,7 +1209,7 @@ impl ContextOrchestrator {
                 .iter()
                 .map(|kb_id| {
                     let kb_name = self
-                        .agent
+                        .agent()
                         .knowledge_bases
                         .iter()
                         .find(|kb| kb.id == *kb_id)
@@ -1327,7 +1337,7 @@ impl ContextOrchestrator {
 
             query = query.with_limit(limit_per_document);
 
-            match query.execute(&self.app_state).await {
+            match query.execute(self.app_state()).await {
                 Ok(chunks) => {
                     if chunks.is_empty() {
                         tracing::warn!(
@@ -1521,12 +1531,8 @@ impl ContextOrchestrator {
         }
     }
 
-    fn create_gemini_client(&self) -> Result<GeminiClient, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
-        Ok(GeminiClient::new(
-            api_key,
-            Some("gemini-2.5-flash-lite".to_string()),
-        ))
+    async fn create_gemini_client(&self) -> Result<GeminiClient, AppError> {
+        self.ctx.create_llm("gemini-2.5-flash-lite").await
     }
 
     fn format_memories_for_template(&self, memories: &[models::MemoryRecord]) -> Vec<Value> {
@@ -1550,10 +1556,10 @@ impl ContextOrchestrator {
         max_results: usize,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
         let conversations = SearchConversationsQuery {
-            context_id: self.context_id,
+            context_id: self.context_id(),
             limit: max_results as i64,
         }
-        .execute(&self.app_state)
+        .execute(self.app_state())
         .await?;
 
         Ok(conversations

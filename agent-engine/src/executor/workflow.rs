@@ -280,7 +280,8 @@ impl AgentExecutor {
             AppError::Internal("No workflow ID found in resume state".to_string())
         })?;
 
-        let workflow = self
+        let ctx = self.ctx.clone();
+        let workflow = ctx
             .agent
             .workflows
             .iter()

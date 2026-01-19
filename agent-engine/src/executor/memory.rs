@@ -28,7 +28,6 @@ impl AgentExecutor {
                     continue;
                 }
 
-                // Truncate large outputs in historical action results
                 if let Some(ref mut results) = task_execution.actual_result {
                     for result in results.iter_mut() {
                         if let Some(ref mut output) = result.result {
@@ -66,7 +65,7 @@ impl AgentExecutor {
         let embedding = if !directive.focus.is_empty() {
             match GenerateEmbeddingsCommand::new(vec![directive.focus.clone()])
                 .with_task_type("RETRIEVAL_QUERY".to_string())
-                .execute(&self.app_state)
+                .execute(&self.ctx.app_state)
                 .await
             {
                 Ok(embeddings) if !embeddings.is_empty() => Some(embeddings[0].clone()),
@@ -110,10 +109,10 @@ impl AgentExecutor {
 
     async fn get_mru_memories(&self, limit: usize) -> Result<Vec<MemoryRecord>, AppError> {
         GetMRUMemoriesQuery {
-            context_id: self.context_id,
+            context_id: self.ctx.context_id,
             limit: limit as i64,
         }
-        .execute(&self.app_state)
+        .execute(&self.ctx.app_state)
         .await
     }
 
@@ -131,7 +130,7 @@ impl AgentExecutor {
             let command = UpdateMemoryAccessCommand {
                 memory_id: *memory_id,
             };
-            if let Err(e) = command.execute(&self.app_state).await {
+            if let Err(e) = command.execute(&self.ctx.app_state).await {
                 tracing::warn!("Failed to reinforce memory {}: {}", memory_id, e);
             }
         }
@@ -149,21 +148,21 @@ impl AgentExecutor {
             let results = SearchMemoriesWithDecayQuery {
                 query_embedding: embed,
                 limit,
-                context_id: Some(self.context_id),
+                context_id: Some(self.ctx.context_id),
                 agent_id: None,
                 categories: Some(directive.categories.clone()),
             }
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await?;
 
             Ok(results.into_iter().map(|r| r.memory).collect())
         } else {
             GetSessionMemoriesQuery {
-                context_id: self.context_id,
+                context_id: self.ctx.context_id,
                 categories: Some(directive.categories.clone()),
                 limit,
             }
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await
         }
     }
@@ -179,20 +178,20 @@ impl AgentExecutor {
                 query_embedding: embed,
                 limit,
                 context_id: None,
-                agent_id: Some(self.agent.id),
+                agent_id: Some(self.ctx.agent.id),
                 categories: Some(directive.categories.clone()),
             }
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await?;
 
             Ok(results.into_iter().map(|r| r.memory).collect())
         } else {
             GetAgentMemoriesQuery {
-                agent_id: self.agent.id,
+                agent_id: self.ctx.agent.id,
                 categories: Some(directive.categories.clone()),
                 limit,
             }
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await
         }
     }
@@ -207,11 +206,11 @@ impl AgentExecutor {
             let results = SearchMemoriesWithDecayQuery {
                 query_embedding: embed,
                 limit,
-                context_id: Some(self.context_id),
-                agent_id: Some(self.agent.id),
+                context_id: Some(self.ctx.context_id),
+                agent_id: Some(self.ctx.agent.id),
                 categories: Some(directive.categories.clone()),
             }
-            .execute(&self.app_state)
+            .execute(&self.ctx.app_state)
             .await?;
 
             Ok(results.into_iter().map(|r| r.memory).collect())
@@ -239,9 +238,9 @@ impl AgentExecutor {
         &self,
     ) -> Result<Vec<models::ConversationRecord>, AppError> {
         let records = GetLLMConversationHistoryQuery {
-            context_id: self.context_id,
+            context_id: self.ctx.context_id,
         }
-        .execute(&self.app_state)
+        .execute(&self.ctx.app_state)
         .await?;
 
         Ok(records)

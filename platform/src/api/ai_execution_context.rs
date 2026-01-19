@@ -2,7 +2,7 @@ use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use axum::extract::{Json, Path, Query, State};
 
-use commands::agent_execution::{PublishAgentExecutionCommand, UploadFilesToS3Command, UploadImagesToS3Command};
+use commands::agent_execution::{PublishAgentExecutionCommand, UploadFilesToS3Command};
 use commands::{
     Command, CreateConversationCommand, CreateExecutionContextCommand,
     UpdateExecutionContextCommand,

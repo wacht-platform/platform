@@ -98,3 +98,5 @@ pub use webhook_endpoint::*;
 pub use webhook_storage::*;
 pub use webhook_subscription::*;
 pub use webhook_trigger::*;
+pub mod ai_settings;
+pub use ai_settings::*;

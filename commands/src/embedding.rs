@@ -81,9 +81,7 @@ impl Command for GenerateEmbeddingCommand {
     type Output = Vec<f32>;
 
     async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY").map_err(|_| {
-            AppError::Internal("GEMINI_API_KEY environment variable not set".to_string())
-        })?;
+        let api_key = std::env::var("GEMINI_API_KEY").unwrap();
 
         let model = std::env::var("GEMINI_EMBEDDING_MODEL")
             .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
@@ -157,21 +155,17 @@ impl Command for GenerateEmbeddingsCommand {
             return Ok(vec![]);
         }
 
-        let api_key = std::env::var("GEMINI_API_KEY").map_err(|_| {
-            AppError::Internal("GEMINI_API_KEY environment variable not set".to_string())
-        })?;
+        let api_key = std::env::var("GEMINI_API_KEY").unwrap();
 
         let model = std::env::var("GEMINI_EMBEDDING_MODEL")
             .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
 
         let client = reqwest::Client::new();
 
-        // Split texts into chunks of 100 (Gemini's batch limit)
         const BATCH_SIZE: usize = 100;
         let mut all_embeddings = Vec::new();
 
         for chunk in self.texts.chunks(BATCH_SIZE) {
-            // Create batch request for this chunk
             let requests: Vec<EmbedContentRequestItem> = chunk
                 .iter()
                 .map(|text| EmbedContentRequestItem {

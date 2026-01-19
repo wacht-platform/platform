@@ -9,6 +9,7 @@ mod deployment_keypair;
 
 mod deployment_restrictions;
 mod deployment_sms_template;
+mod deployment_ai_settings;
 mod deployment_social_connection;
 mod deployment_ui_settings;
 mod deployment_waitlist_user;
@@ -81,6 +82,7 @@ pub use deployment_jwt_template::*;
 pub use deployment_keypair::*;
 pub use deployment_restrictions::*;
 pub use deployment_sms_template::*;
+pub use deployment_ai_settings::*;
 pub use deployment_social_connection::*;
 pub use deployment_ui_settings::*;
 pub use deployment_waitlist_user::*;

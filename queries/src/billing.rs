@@ -170,6 +170,7 @@ impl Query for GetSubscriptionByProviderIdQuery {
 pub struct ProviderSubscriptionInfo {
     pub provider_customer_id: String,
     pub provider_subscription_id: String,
+    pub plan_name: String,
 }
 
 pub struct GetDeploymentProviderSubscriptionQuery {
@@ -188,11 +189,12 @@ impl Query for GetDeploymentProviderSubscriptionQuery {
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
         let row = sqlx::query!(
             r#"
-            SELECT s.provider_customer_id, s.provider_subscription_id
+            SELECT s.provider_customer_id, s.provider_subscription_id, dp.plan_name
             FROM deployments d
             JOIN projects p ON d.project_id = p.id
             JOIN billing_accounts ba ON p.billing_account_id = ba.id
             JOIN subscriptions s ON s.billing_account_id = ba.id
+            LEFT JOIN dodo_products dp ON s.product_id = dp.product_id
             WHERE d.id = $1 AND s.status = 'active'
             LIMIT 1
             "#,
@@ -204,6 +206,7 @@ impl Query for GetDeploymentProviderSubscriptionQuery {
         Ok(row.map(|r| ProviderSubscriptionInfo {
             provider_customer_id: r.provider_customer_id,
             provider_subscription_id: r.provider_subscription_id,
+            plan_name: r.plan_name,
         }))
     }
 }
