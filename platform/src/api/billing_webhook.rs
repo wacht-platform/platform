@@ -5,7 +5,9 @@ use axum::{
 use commands::{
     Command,
     billing::{UpdateBillingAccountStatusCommand, UpsertInvoiceCommand, UpsertSubscriptionCommand},
+    pulse::AddPulseCreditsCommand,
 };
+use models::pulse_transaction::PulseTransactionType;
 use common::dodo::DodoClient;
 use common::state::AppState;
 use queries::{Query, billing::GetBillingAccountByProviderCustomerIdQuery};
@@ -100,6 +102,10 @@ async fn handle_subscription_active(
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
     let status = data["status"].as_str().unwrap_or("active");
+    let previous_billing_date = data["previous_billing_date"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
 
     if customer_id.is_empty() || subscription_id.is_empty() {
         warn!("Missing customer_id or subscription_id in subscription webhook");
@@ -122,6 +128,7 @@ async fn handle_subscription_active(
         provider_subscription_id: subscription_id.to_string(),
         product_id,
         status: status.to_string(),
+        previous_billing_date,
     }
     .execute(app_state)
     .await
@@ -132,7 +139,7 @@ async fn handle_subscription_active(
 
     UpdateBillingAccountStatusCommand {
         owner_id: owner_id.clone(),
-        status: "active".to_string(),
+        status: status.to_string(),
     }
     .execute(app_state)
     .await
@@ -156,6 +163,10 @@ async fn handle_subscription_renewed(
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
+    let previous_billing_date = data["previous_billing_date"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
@@ -166,6 +177,7 @@ async fn handle_subscription_renewed(
             provider_subscription_id: subscription_id.to_string(),
             product_id,
             status: "active".to_string(),
+            previous_billing_date,
         }
         .execute(app_state)
         .await
@@ -191,12 +203,34 @@ async fn handle_subscription_plan_changed(
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let new_product_id = data["product_id"].as_str().unwrap_or("");
 
+    let previous_billing_date = data["previous_billing_date"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
-    info!(
-        "Plan changed for subscription {} to product {} (owner: {})",
-        subscription_id, new_product_id, owner_id
-    );
+    if !owner_id.is_empty() {
+        UpsertSubscriptionCommand {
+            owner_id: owner_id.clone(),
+            provider_customer_id: customer_id.to_string(),
+            provider_subscription_id: subscription_id.to_string(),
+            product_id: Some(new_product_id.to_string()),
+            status: "active".to_string(),
+            previous_billing_date,
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update subscription on plan change: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        info!(
+            "Plan changed for subscription {} to product {} (owner: {})",
+            subscription_id, new_product_id, owner_id
+        );
+    }
 
     Ok(())
 }
@@ -208,6 +242,12 @@ async fn handle_subscription_cancelled(
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
+    let previous_billing_date = data["previous_billing_date"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
+    let status = data["status"].as_str().unwrap_or("cancelled");
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
@@ -217,7 +257,8 @@ async fn handle_subscription_cancelled(
             provider_customer_id: customer_id.to_string(),
             provider_subscription_id: subscription_id.to_string(),
             product_id,
-            status: "cancelled".to_string(),
+            status: status.to_string(),
+            previous_billing_date,
         }
         .execute(app_state)
         .await
@@ -228,7 +269,7 @@ async fn handle_subscription_cancelled(
 
         UpdateBillingAccountStatusCommand {
             owner_id: owner_id.clone(),
-            status: "cancelled".to_string(),
+            status: status.to_string(),
         }
         .execute(app_state)
         .await
@@ -253,6 +294,12 @@ async fn handle_subscription_on_hold(
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
+    let previous_billing_date = data["previous_billing_date"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
+    let status = data["status"].as_str().unwrap_or("on_hold");
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
@@ -262,7 +309,8 @@ async fn handle_subscription_on_hold(
             provider_customer_id: customer_id.to_string(),
             provider_subscription_id: subscription_id.to_string(),
             product_id,
-            status: "on_hold".to_string(),
+            status: status.to_string(),
+            previous_billing_date,
         }
         .execute(app_state)
         .await
@@ -273,7 +321,7 @@ async fn handle_subscription_on_hold(
 
         UpdateBillingAccountStatusCommand {
             owner_id: owner_id.clone(),
-            status: "paused".to_string(),
+            status: status.to_string(),
         }
         .execute(app_state)
         .await
@@ -298,6 +346,12 @@ async fn handle_subscription_failed(
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
+    let previous_billing_date = data["previous_billing_date"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
+    let status = data["status"].as_str().unwrap_or("failed");
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
@@ -307,7 +361,8 @@ async fn handle_subscription_failed(
             provider_customer_id: customer_id.to_string(),
             provider_subscription_id: subscription_id.to_string(),
             product_id,
-            status: "failed".to_string(),
+            status: status.to_string(),
+            previous_billing_date,
         }
         .execute(app_state)
         .await
@@ -318,7 +373,7 @@ async fn handle_subscription_failed(
 
         UpdateBillingAccountStatusCommand {
             owner_id: owner_id.clone(),
-            status: "failed".to_string(),
+            status: status.to_string(),
         }
         .execute(app_state)
         .await
@@ -343,6 +398,12 @@ async fn handle_subscription_expired(
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
+    let previous_billing_date = data["previous_billing_date"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+
+    let status = data["status"].as_str().unwrap_or("expired");
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
@@ -352,7 +413,8 @@ async fn handle_subscription_expired(
             provider_customer_id: customer_id.to_string(),
             provider_subscription_id: subscription_id.to_string(),
             product_id,
-            status: "expired".to_string(),
+            status: status.to_string(),
+            previous_billing_date,
         }
         .execute(app_state)
         .await
@@ -363,7 +425,7 @@ async fn handle_subscription_expired(
 
         UpdateBillingAccountStatusCommand {
             owner_id: owner_id.clone(),
-            status: "expired".to_string(),
+            status: status.to_string(),
         }
         .execute(app_state)
         .await
@@ -415,7 +477,7 @@ async fn handle_payment_succeeded(
             amount_paid_cents: amount,
             currency: currency.to_string(),
             status: "paid".to_string(),
-            invoice_pdf_url: data["payment_link"].as_str().map(|s| s.to_string()),
+            invoice_pdf_url: Some(format!("https://live.dodopayments.com/invoices/payments/{}", payment_id)),
             hosted_invoice_url: None,
             invoice_number: None,
             due_date: None,
@@ -432,6 +494,29 @@ async fn handle_payment_succeeded(
         })?;
 
         info!("Payment {} succeeded for owner {}", payment_id, owner_id);
+
+        if let Some(metadata) = data["metadata"].as_object() {
+            if metadata.get("type").and_then(|v| v.as_str()) == Some("pulse_purchase") {
+                let pulse_to_add = ((amount as f64 * 0.96) - 50.0).floor() as i64;
+
+                if pulse_to_add > 0 {
+                    AddPulseCreditsCommand {
+                        owner_id: owner_id.clone(),
+                        amount_pulse_cents: pulse_to_add,
+                        transaction_type: PulseTransactionType::Purchase,
+                        reference_id: Some(payment_id.to_string()),
+                    }
+                    .execute(app_state)
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to add Pulse credits from webhook: {}", e);
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })?;
+                } else {
+                    warn!("Pulse purchase amount {} too low to add credits for owner {}", amount, owner_id);
+                }
+            }
+        }
     }
 
     Ok(())

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, created_at, updated_at\n            FROM subscriptions WHERE provider_subscription_id = $1\n            ",
+  "query": "\n            SELECT id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at\n            FROM subscriptions WHERE provider_subscription_id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -35,11 +35,16 @@
       },
       {
         "ordinal": 6,
-        "name": "created_at",
+        "name": "previous_billing_date",
         "type_info": "Timestamptz"
       },
       {
         "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -57,8 +62,9 @@
       true,
       false,
       true,
+      true,
       true
     ]
   },
-  "hash": "1683cabebc11659953a7a4211f0c081c8e298e6183aea642bd8bb46f6ec9440b"
+  "hash": "58e1265020776c9fe86e691a07ce19dcc2781616e0595c246754b08e723fa8f3"
 }

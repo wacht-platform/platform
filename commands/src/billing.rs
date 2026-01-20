@@ -1,5 +1,5 @@
 use crate::Command;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use common::error::AppError;
 use common::state::AppState;
 use models::billing::Subscription;
@@ -342,6 +342,7 @@ pub struct UpsertSubscriptionCommand {
     pub provider_subscription_id: String,
     pub product_id: Option<String>,
     pub status: String,
+    pub previous_billing_date: Option<DateTime<Utc>>,
 }
 
 impl Command for UpsertSubscriptionCommand {
@@ -380,14 +381,16 @@ impl Command for UpsertSubscriptionCommand {
                     provider_subscription_id = $2,
                     product_id = $3,
                     status = $4,
+                    previous_billing_date = $5,
                     updated_at = NOW()
-                WHERE id = $5
+                WHERE id = $6
                 RETURNING *
                 "#,
                 self.provider_customer_id,
                 self.provider_subscription_id,
                 self.product_id,
                 self.status,
+                self.previous_billing_date,
                 id
             )
             .fetch_one(&state.db_pool)
@@ -404,9 +407,10 @@ impl Command for UpsertSubscriptionCommand {
                     provider_subscription_id,
                     product_id,
                     status,
+                    previous_billing_date,
                     created_at,
                     updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
                 RETURNING *
                 "#,
                 id,
@@ -414,7 +418,8 @@ impl Command for UpsertSubscriptionCommand {
                 self.provider_customer_id,
                 self.provider_subscription_id,
                 self.product_id,
-                self.status
+                self.status,
+                self.previous_billing_date
             )
             .fetch_one(&state.db_pool)
             .await?
@@ -615,7 +620,8 @@ impl Command for CompleteBillingSyncRunCommand {
 
 pub struct UpsertUsageSnapshotCommand {
     pub deployment_id: i64,
-    pub billing_period: NaiveDate,
+    pub billing_account_id: i64,
+    pub billing_period: DateTime<Utc>,
     pub metric_name: String,
     pub quantity: i64,
     pub cost_cents: Option<Decimal>,
@@ -627,14 +633,16 @@ impl Command for UpsertUsageSnapshotCommand {
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
         sqlx::query!(
             "INSERT INTO billing_usage_snapshots
-             (deployment_id, billing_period, metric_name, quantity, cost_cents, min_event_id, max_event_id)
-             VALUES ($1, $2, $3, $4, $5, 0, 0)
+             (deployment_id, billing_account_id, billing_period, metric_name, quantity, cost_cents, min_event_id, max_event_id)
+             VALUES ($1, $2, $3, $4, $5, $6, 0, 0)
              ON CONFLICT (deployment_id, billing_period, metric_name)
              DO UPDATE SET
-                quantity = billing_usage_snapshots.quantity + $4,
-                cost_cents = COALESCE(billing_usage_snapshots.cost_cents, 0) + COALESCE($5, 0),
+                billing_account_id = EXCLUDED.billing_account_id,
+                quantity = billing_usage_snapshots.quantity + $5,
+                cost_cents = COALESCE(billing_usage_snapshots.cost_cents, 0) + COALESCE($6, 0),
                 updated_at = NOW()",
             self.deployment_id,
+            self.billing_account_id,
             self.billing_period,
             self.metric_name,
             self.quantity,

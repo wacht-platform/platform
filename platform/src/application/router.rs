@@ -323,17 +323,16 @@ fn billing_routes() -> Router<AppState> {
             "/billing",
             get(api::billing::get_billing_account).patch(api::billing::update_billing_account),
         )
-        .route("/billing/plans", get(api::billing::get_plans))
         .route("/billing/checkout", post(api::billing::create_checkout))
+        .route("/billing/pulse/buy", post(api::billing::create_pulse_checkout))
         .route("/billing/portal", get(api::billing::get_portal_url))
-        .route("/billing/cancel", post(api::billing::cancel_subscription))
-        .route(
-            "/billing/usage",
-            get(api::billing::get_current_usage).post(api::billing::record_usage),
-        )
+        .route("/billing/usage", get(api::billing::get_current_usage))
         .route("/billing/invoices", get(api::billing::list_invoices))
-        .route("/billing/invoices/{id}", get(api::billing::get_invoice))
         .route("/billing/change-plan", post(api::billing::change_plan))
+        .route(
+            "/billing/pulse/transactions",
+            get(api::billing::list_pulse_transactions),
+        )
 }
 
 fn console_specific_routes() -> Router<AppState> {

@@ -353,6 +353,8 @@ pub struct CreateCheckoutParams {
 pub struct ProductCartItem {
     pub product_id: String,
     pub quantity: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amount: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

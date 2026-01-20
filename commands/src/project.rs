@@ -533,9 +533,9 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         let mut tx = app_state.db_pool.begin().await?;
 
-        let billing_account_id: i64 = if let Some(ref owner_id) = self.owner_id {
-            sqlx::query_scalar!(
-                "SELECT id FROM billing_accounts WHERE owner_id = $1",
+        let billing_account = if let Some(ref owner_id) = self.owner_id {
+            sqlx::query!(
+                "SELECT id, status FROM billing_accounts WHERE owner_id = $1",
                 owner_id
             )
             .fetch_optional(&mut *tx)
@@ -546,6 +546,15 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
                 "Project must have an owner".to_string(),
             ));
         };
+
+        if billing_account.status != "active" {
+            return Err(AppError::Validation(format!(
+                "Cannot create project. Billing account status is {}",
+                billing_account.status
+            )));
+        }
+
+        let billing_account_id = billing_account.id;
 
         let owner_id = self
             .owner_id
@@ -1643,7 +1652,12 @@ impl Command for CreateStagingDeploymentCommand {
         let mut tx = app_state.db_pool.begin().await?;
 
         let project = sqlx::query!(
-            "SELECT name FROM projects WHERE id = $1 AND deleted_at IS NULL",
+            r#"
+            SELECT p.name, ba.status
+            FROM projects p
+            JOIN billing_accounts ba ON p.billing_account_id = ba.id
+            WHERE p.id = $1 AND p.deleted_at IS NULL
+            "#,
             self.project_id
         )
         .fetch_optional(&mut *tx)
@@ -1651,6 +1665,13 @@ impl Command for CreateStagingDeploymentCommand {
         .ok_or_else(|| {
             AppError::NotFound(format!("Project with id {} not found", self.project_id))
         })?;
+
+        if project.status != "active" {
+            return Err(AppError::Validation(format!(
+                "Cannot create deployment. Billing account status is {}",
+                project.status
+            )));
+        }
 
         // Check staging deployment limit (max 3)
         let staging_count = sqlx::query!(
@@ -2242,7 +2263,12 @@ impl Command for CreateProductionDeploymentCommand {
         let mut tx = app_state.db_pool.begin().await?;
 
         let project = sqlx::query!(
-            "SELECT name FROM projects WHERE id = $1 AND deleted_at IS NULL",
+            r#"
+            SELECT p.name, ba.status
+            FROM projects p
+            JOIN billing_accounts ba ON p.billing_account_id = ba.id
+            WHERE p.id = $1 AND p.deleted_at IS NULL
+            "#,
             self.project_id
         )
         .fetch_optional(&mut *tx)
@@ -2250,6 +2276,13 @@ impl Command for CreateProductionDeploymentCommand {
         .ok_or_else(|| {
             AppError::NotFound(format!("Project with id {} not found", self.project_id))
         })?;
+
+        if project.status != "active" {
+            return Err(AppError::Validation(format!(
+                "Cannot create deployment. Billing account status is {}",
+                project.status
+            )));
+        }
 
         let existing_production = sqlx::query!(
             "SELECT id FROM deployments WHERE project_id = $1 AND mode = 'production' AND deleted_at IS NULL",

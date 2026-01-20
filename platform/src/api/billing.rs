@@ -1,7 +1,8 @@
 use axum::{extract::State, http::StatusCode, response::Json};
-use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use tracing::error;
+
+use crate::application::response::{ApiResult, PaginatedResponse};
 
 use commands::{
     Command,
@@ -18,13 +19,11 @@ use models::billing::BillingAccountWithSubscription;
 use queries::{
     Query as QueryTrait,
     billing::{
-        DodoProduct, GetAllDodoProductsQuery, GetBillingAccountQuery, GetDeploymentUsageQuery,
-        GetDodoProductQuery, UsageSnapshot,
+        GetBillingAccountQuery, GetBillingAccountUsageQuery, GetDodoProductQuery, UsageSnapshot,
     },
 };
 use wacht::middleware::RequireAuth;
 
-use crate::middleware::RequireDeployment;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCheckoutRequest {
@@ -64,7 +63,7 @@ pub struct UpdateBillingAccountRequest {
 pub async fn get_billing_account(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
-) -> Result<Json<Option<BillingAccountWithSubscription>>, StatusCode> {
+) -> ApiResult<Option<BillingAccountWithSubscription>> {
     let owner_id = if let Some(org_id) = auth.organization_id {
         format!("org_{}", org_id)
     } else {
@@ -73,20 +72,16 @@ pub async fn get_billing_account(
 
     let account = GetBillingAccountQuery::new(owner_id)
         .execute(&state)
-        .await
-        .map_err(|e| {
-            error!("Failed to get billing account: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+        .await?;
 
-    Ok(Json(account))
+    Ok(account.into())
 }
 
 pub async fn create_checkout(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
     Json(req): Json<CreateCheckoutRequest>,
-) -> Result<Json<CheckoutResponse>, StatusCode> {
+) -> ApiResult<CheckoutResponse> {
     let owner_id = if let Some(org_id) = auth.organization_id {
         format!("org_{}", org_id)
     } else {
@@ -101,21 +96,17 @@ pub async fn create_checkout(
 
     let existing = GetBillingAccountQuery::new(owner_id.clone())
         .execute(&state)
-        .await
-        .map_err(|e| {
-            error!("Failed to get existing billing account: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+        .await?;
 
     if let Some(account) = existing.clone() {
         if account.subscription.is_some() {
-            return Err(StatusCode::CONFLICT);
+            return Err((StatusCode::CONFLICT, "Subscription already exists").into());
         }
     }
 
     let dodo = DodoClient::new().map_err(|e| {
         error!("Failed to create Dodo client: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (StatusCode::INTERNAL_SERVER_ERROR, "Payment gateway initialization failed")
     })?;
 
     let provider_customer_id = if let Some(ref account) = existing {
@@ -131,7 +122,7 @@ pub async fn create_checkout(
                 .await
                 .map_err(|e| {
                     error!("Failed to create Dodo customer: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create customer")
                 })?;
 
             SetProviderCustomerIdCommand {
@@ -139,11 +130,7 @@ pub async fn create_checkout(
                 provider_customer_id: customer.customer_id.clone(),
             }
             .execute(&state)
-            .await
-            .map_err(|e| {
-                error!("Failed to save provider customer id: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+            .await?;
 
             customer.customer_id
         }
@@ -163,11 +150,7 @@ pub async fn create_checkout(
             country: None,
         }
         .execute(&state)
-        .await
-        .map_err(|e| {
-            error!("Failed to create billing account: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+        .await?;
 
         let customer = dodo
             .create_customer(CreateCustomerParams {
@@ -178,7 +161,7 @@ pub async fn create_checkout(
             .await
             .map_err(|e| {
                 error!("Failed to create Dodo customer: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
+                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create customer")
             })?;
 
         SetProviderCustomerIdCommand {
@@ -186,31 +169,24 @@ pub async fn create_checkout(
             provider_customer_id: customer.customer_id.clone(),
         }
         .execute(&state)
-        .await
-        .map_err(|e| {
-            error!("Failed to save provider customer id: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+        .await?;
 
         customer.customer_id
     };
 
     let product = GetDodoProductQuery::new(&req.plan_name)
         .execute(&state)
-        .await
-        .map_err(|e| {
-            error!("Failed to get product: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
+        .await?
         .ok_or_else(|| {
             error!("Product not found for plan: {}", req.plan_name);
-            StatusCode::NOT_FOUND
+            (StatusCode::NOT_FOUND, "Plan not found")
         })?;
 
     let params = CreateCheckoutParams {
         product_cart: vec![ProductCartItem {
             product_id: product.product_id,
             quantity: 1,
+            amount: None,
         }],
         return_url: req.return_url,
         customer: Some(CheckoutCustomer {
@@ -227,20 +203,21 @@ pub async fn create_checkout(
 
     let checkout = dodo.create_checkout_session(params).await.map_err(|e| {
         error!("Failed to create checkout session: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (StatusCode::INTERNAL_SERVER_ERROR, "Checkout initialization failed")
     })?;
 
-    Ok(Json(CheckoutResponse {
+    Ok(CheckoutResponse {
         checkout_id: checkout.checkout_id,
         checkout_url: checkout.checkout_url,
-    }))
+    }
+    .into())
 }
 
 pub async fn update_billing_account(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
     Json(req): Json<UpdateBillingAccountRequest>,
-) -> Result<StatusCode, StatusCode> {
+) -> ApiResult<()> {
     let owner_id = if let Some(org_id) = auth.organization_id {
         format!("org_{}", org_id)
     } else {
@@ -249,9 +226,8 @@ pub async fn update_billing_account(
 
     let existing = GetBillingAccountQuery::new(owner_id.clone())
         .execute(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .await?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
 
     let command = UpdateBillingAccountCommand {
         id: existing.billing_account.id,
@@ -269,16 +245,15 @@ pub async fn update_billing_account(
 
     command
         .execute(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .await?;
 
-    Ok(StatusCode::OK)
+    Ok(().into())
 }
 
 pub async fn get_portal_url(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
-) -> Result<Json<PortalResponse>, StatusCode> {
+) -> ApiResult<PortalResponse> {
     let owner_id = if let Some(org_id) = auth.organization_id {
         format!("org_{}", org_id)
     } else {
@@ -287,118 +262,36 @@ pub async fn get_portal_url(
 
     let account = GetBillingAccountQuery::new(owner_id)
         .execute(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .await?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
 
     let provider_customer_id = account
         .billing_account
         .provider_customer_id
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Payment provider customer not found"))?;
 
-    let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let dodo = DodoClient::new().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let portal = dodo
         .create_portal_session(&provider_customer_id)
         .await
         .map_err(|e| {
             error!("Failed to create portal session: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create portal session")
         })?;
 
-    Ok(Json(PortalResponse {
+    Ok(PortalResponse {
         portal_url: portal.url,
-    }))
+    }
+    .into())
 }
 
-pub async fn cancel_subscription(
-    State(state): State<AppState>,
-    RequireAuth(auth): RequireAuth,
-) -> Result<StatusCode, StatusCode> {
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
 
-    let account = GetBillingAccountQuery::new(owner_id)
-        .execute(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    let subscription = account.subscription.ok_or(StatusCode::NOT_FOUND)?;
-
-    let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    dodo.cancel_subscription(&subscription.provider_subscription_id, "cancelled")
-        .await
-        .map_err(|e| {
-            error!("Failed to cancel subscription: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    Ok(StatusCode::OK)
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RecordUsageRequest {
-    pub event_name: String,
-    pub quantity: i64,
-}
-
-pub async fn record_usage(
-    State(state): State<AppState>,
-    RequireAuth(auth): RequireAuth,
-    Json(req): Json<RecordUsageRequest>,
-) -> Result<StatusCode, StatusCode> {
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
-
-    let account = GetBillingAccountQuery::new(owner_id.clone())
-        .execute(&state)
-        .await
-        .map_err(|e| {
-            error!("Failed to get billing account: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    let provider_customer_id = account
-        .billing_account
-        .provider_customer_id
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    let dodo = DodoClient::new().map_err(|e| {
-        error!("Failed to create Dodo client: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let event_id = format!("{}_{}", owner_id, chrono::Utc::now().timestamp_millis());
-
-    dodo.ingest_usage_events(
-        &provider_customer_id,
-        &req.event_name,
-        req.quantity,
-        &event_id,
-        false,
-    )
-    .await
-    .map_err(|e| {
-        error!("Failed to record usage: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    Ok(StatusCode::OK)
-}
 
 pub async fn list_invoices(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> ApiResult<serde_json::Value> {
     let owner_id = if let Some(org_id) = auth.organization_id {
         format!("org_{}", org_id)
     } else {
@@ -407,42 +300,27 @@ pub async fn list_invoices(
 
     let account = GetBillingAccountQuery::new(owner_id)
         .execute(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .await?;
 
     if let Some(account) = account {
         if let Some(provider_customer_id) = account.billing_account.provider_customer_id {
-            let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let dodo = DodoClient::new().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
             let payments = dodo
                 .list_payments(Some(&provider_customer_id))
                 .await
                 .map_err(|e| {
                     error!("Failed to list payments: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to list payments")
                 })?;
 
-            return Ok(Json(serde_json::json!({ "items": payments.items })));
+            return Ok(serde_json::json!({ "items": payments.items }).into());
         }
     }
 
-    Ok(Json(serde_json::json!({ "items": [] })))
+    Ok(serde_json::json!({ "items": [] }).into())
 }
 
-pub async fn get_invoice(
-    State(_state): State<AppState>,
-    RequireAuth(_auth): RequireAuth,
-    axum::extract::Path(payment_id): axum::extract::Path<String>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
-    let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let invoice = dodo.get_payment_invoice(&payment_id).await.map_err(|e| {
-        error!("Failed to get invoice: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    Ok(Json(serde_json::to_value(invoice).unwrap_or_default()))
-}
 
 #[derive(Debug, Deserialize)]
 pub struct ChangePlanRequest {
@@ -454,7 +332,7 @@ pub async fn change_plan(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
     Json(req): Json<ChangePlanRequest>,
-) -> Result<StatusCode, StatusCode> {
+) -> ApiResult<()> {
     let owner_id = if let Some(org_id) = auth.organization_id {
         format!("org_{}", org_id)
     } else {
@@ -463,25 +341,20 @@ pub async fn change_plan(
 
     let account = GetBillingAccountQuery::new(owner_id)
         .execute(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .await?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
 
-    let subscription = account.subscription.ok_or(StatusCode::NOT_FOUND)?;
+    let subscription = account.subscription.ok_or_else(|| (StatusCode::NOT_FOUND, "Subscription not found"))?;
 
     let product = GetDodoProductQuery::new(&req.plan_name)
         .execute(&state)
-        .await
-        .map_err(|e| {
-            error!("Failed to get product: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
+        .await?
         .ok_or_else(|| {
             error!("Product not found for plan: {}", req.plan_name);
-            StatusCode::NOT_FOUND
+            (StatusCode::NOT_FOUND, "Plan not found")
         })?;
 
-    let dodo = DodoClient::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let dodo = DodoClient::new().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     dodo.change_plan(
         &subscription.provider_subscription_id,
@@ -493,22 +366,12 @@ pub async fn change_plan(
     .await
     .map_err(|e| {
         error!("Failed to change plan: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to change plan")
     })?;
 
-    Ok(StatusCode::OK)
+    Ok(().into())
 }
 
-pub async fn get_plans(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<DodoProduct>>, StatusCode> {
-    let products = GetAllDodoProductsQuery.execute(&state).await.map_err(|e| {
-        error!("Failed to get plans: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    Ok(Json(products))
-}
 
 #[derive(Debug, Serialize)]
 pub struct UsageResponse {
@@ -518,22 +381,147 @@ pub struct UsageResponse {
 
 pub async fn get_current_usage(
     State(state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-) -> Result<Json<UsageResponse>, StatusCode> {
-    let now = chrono::Utc::now();
-    let billing_period = chrono::NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
-        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    RequireAuth(auth): RequireAuth,
+) -> ApiResult<UsageResponse> {
+    // 1. Determine owner_id from auth context
+    let owner_id = if let Some(org_id) = auth.organization_id {
+        format!("org_{}", org_id)
+    } else {
+        format!("user_{}", auth.user_id)
+    };
 
-    let snapshots = GetDeploymentUsageQuery::new(deployment_id, billing_period)
+    // 2. Fetch Billing Account & Subscription
+    let account_with_sub = GetBillingAccountQuery::new(owner_id)
         .execute(&state)
-        .await
-        .map_err(|e| {
-            error!("Failed to get deployment usage: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+        .await?
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "Billing account not found",
+            )
         })?;
 
-    Ok(Json(UsageResponse {
+    let subscription = account_with_sub.subscription.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            "No active subscription found for this billing account",
+        )
+    })?;
+
+    // 3. Get Billing Period (Start Date)
+    let billing_period_timestamp = subscription
+        .previous_billing_date
+        .ok_or_else(|| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Subscription missing previous_billing_date",
+            )
+        })?;
+
+    // 4. Fetch Usage for the Billing Account
+    let snapshots = GetBillingAccountUsageQuery::new(
+        account_with_sub.billing_account.id,
+        billing_period_timestamp,
+    )
+    .execute(&state)
+    .await?;
+
+    Ok(UsageResponse {
         snapshots,
-        billing_period: format!("{}-{:02}", now.year(), now.month()),
-    }))
+        billing_period: billing_period_timestamp.to_rfc3339(),
+    }
+    .into())
+}
+#[derive(Debug, Deserialize)]
+pub struct CreatePulseCheckoutRequest {
+    pub pulse_amount: i64, // e.g., 1000 for $10 worth of Pulse
+    pub return_url: String,
+}
+
+pub async fn create_pulse_checkout(
+    State(state): State<AppState>,
+    RequireAuth(auth): RequireAuth,
+    Json(req): Json<CreatePulseCheckoutRequest>,
+) -> ApiResult<CheckoutResponse> {
+    let owner_id = if let Some(org_id) = auth.organization_id {
+        format!("org_{}", org_id)
+    } else {
+        format!("user_{}", auth.user_id)
+    };
+
+    let existing = GetBillingAccountQuery::new(owner_id.clone())
+        .execute(&state)
+        .await?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
+
+    let provider_customer_id = existing
+        .billing_account
+        .provider_customer_id
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Payment provider customer not found"))?;
+
+    let product = GetDodoProductQuery::new("pulse_credits")
+        .execute(&state)
+        .await?
+        .ok_or_else(|| {
+            error!("Product 'pulse_credits' not found");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Pulse product configuration missing")
+        })?;
+
+    let total_charge = ((req.pulse_amount + 50) as f64 / 0.96).ceil() as i64;
+
+    let dodo = DodoClient::new().map_err(|e| {
+        error!("Failed to create Dodo client: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Payment gateway initialization failed")
+    })?;
+
+    let params = CreateCheckoutParams {
+        product_cart: vec![ProductCartItem {
+            product_id: product.product_id,
+            quantity: 1,
+            amount: Some(total_charge),
+        }],
+        return_url: req.return_url,
+        customer: Some(CheckoutCustomer {
+            customer_id: Some(provider_customer_id),
+            email: Some(existing.billing_account.billing_email),
+            name: Some(existing.billing_account.legal_name),
+        }),
+        metadata: Some(serde_json::json!({
+            "type": "pulse_purchase",
+            "owner_id": owner_id,
+        })),
+        discount_code: None,
+    };
+
+    let checkout = dodo.create_checkout_session(params).await.map_err(|e| {
+        error!("Failed to create pulse checkout session: {}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create checkout session")
+    })?;
+
+    Ok(CheckoutResponse {
+        checkout_id: checkout.checkout_id,
+        checkout_url: checkout.checkout_url,
+    }
+    .into())
+}
+pub async fn list_pulse_transactions(
+    State(state): State<AppState>,
+    RequireAuth(auth): RequireAuth,
+) -> ApiResult<PaginatedResponse<models::pulse_transaction::PulseTransaction>> {
+    let owner_id = if let Some(org_id) = auth.organization_id {
+        format!("org_{}", org_id)
+    } else {
+        format!("user_{}", auth.user_id)
+    };
+
+    let account = GetBillingAccountQuery::new(owner_id)
+        .execute(&state)
+        .await?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
+
+    let transactions = queries::billing::ListPulseTransactionsQuery::new(account.billing_account.id)
+        .execute(&state)
+        .await?;
+
+    Ok(PaginatedResponse::from(transactions).into())
 }

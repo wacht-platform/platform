@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                UPDATE subscriptions SET\n                    provider_customer_id = $1,\n                    provider_subscription_id = $2,\n                    product_id = $3,\n                    status = $4,\n                    updated_at = NOW()\n                WHERE id = $5\n                RETURNING *\n                ",
+  "query": "\n                INSERT INTO subscriptions (\n                    id,\n                    billing_account_id,\n                    provider_customer_id,\n                    provider_subscription_id,\n                    product_id,\n                    status,\n                    previous_billing_date,\n                    created_at,\n                    updated_at\n                ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())\n                RETURNING *\n                ",
   "describe": {
     "columns": [
       {
@@ -42,15 +42,22 @@
         "ordinal": 7,
         "name": "product_id",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "previous_billing_date",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
+        "Int8",
+        "Int8",
         "Varchar",
         "Varchar",
         "Varchar",
         "Varchar",
-        "Int8"
+        "Timestamptz"
       ]
     },
     "nullable": [
@@ -61,8 +68,9 @@
       true,
       true,
       false,
+      true,
       true
     ]
   },
-  "hash": "e24614a20d86971b3b20795bdb2a2c27f8ea614bd805d9abd1abf071d7104a6b"
+  "hash": "0e0afcfd5702e76db7fdce2e62634026d0adfb5dcb0c016a8a115ff102ef3571"
 }

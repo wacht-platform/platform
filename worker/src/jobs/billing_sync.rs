@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::{Datelike, NaiveDate, Utc};
 use commands::{
     Command,
     billing::{
@@ -7,7 +6,10 @@ use commands::{
     },
 };
 use common::{DodoClient, state::AppState};
-use queries::{GetDeploymentProviderSubscriptionQuery, Query};
+use queries::{
+    Query,
+    billing::{GetDeploymentProviderSubscriptionQuery, ProviderSubscriptionInfo},
+};
 use redis::AsyncCommands as _;
 use tracing::{error, info, warn};
 
@@ -73,17 +75,13 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
         .get_multiplexed_async_connection()
         .await?;
 
-    let now = Utc::now();
-    let billing_period = format!("{}-{:02}", now.year(), now.month());
-    let billing_period_date = NaiveDate::from_ymd_opt(now.year(), now.month(), 1).unwrap();
-
-    info!("[BILLING SYNC] Billing period: {}", billing_period);
+    info!("[BILLING SYNC] Starting sync for current billing cycles");
 
     let sync_run_id = CreateBillingSyncRunCommand { from_event_id: 0 }
         .execute(app_state)
         .await?;
 
-    let dirty_key = format!("billing:{}:dirty_deployments", billing_period);
+    let dirty_key = "billing:dirty_deployments";
     let dirty: Vec<(i64, f64)> = redis
         .zrangebyscore_withscores(&dirty_key, 1.0, f64::MAX)
         .await?;
@@ -120,8 +118,6 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
             &mut redis,
             app_state,
             deployment_id,
-            &billing_period,
-            billing_period_date,
             &dirty_key,
             dodo_client.as_ref(),
         )
@@ -168,12 +164,30 @@ async fn sync_deployment(
     redis: &mut redis::aio::MultiplexedConnection,
     app_state: &AppState,
     deployment_id: &i64,
-    billing_period: &str,
-    billing_period_date: NaiveDate,
     dirty_key: &str,
     dodo_client: Option<&DodoClient>,
 ) -> Result<i64> {
-    let prefix = format!("billing:{}:deployment:{}", billing_period, *deployment_id);
+    let subscription_info = GetDeploymentProviderSubscriptionQuery::new(*deployment_id)
+        .execute(app_state)
+        .await?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Deployment {} has no active subscription - cannot determine billing period",
+                deployment_id
+            )
+        })?;
+
+    let billing_period_timestamp = subscription_info
+        .previous_billing_date
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Deployment {} subscription missing previous_billing_date - cannot determine billing period",
+                deployment_id
+            )
+        })?;
+
+    let billing_period_unix = billing_period_timestamp.timestamp();
+    let prefix = format!("billing:{}:deployment:{}", billing_period_unix, *deployment_id);
 
     let lua_script = r#"
         local prefix = ARGV[1]
@@ -317,7 +331,8 @@ async fn sync_deployment(
 
         UpsertUsageSnapshotCommand {
             deployment_id: *deployment_id,
-            billing_period: billing_period_date,
+            billing_account_id: subscription_info.billing_account_id.clone(),
+            billing_period: billing_period_timestamp,
             metric_name: metric_name.to_string(),
             quantity: *delta,
             cost_cents: None,
@@ -327,7 +342,7 @@ async fn sync_deployment(
     }
 
     if let Some(dodo) = dodo_client {
-        sync_to_dodo(dodo, app_state, *deployment_id, &metrics).await;
+        sync_to_dodo(dodo, app_state, *deployment_id, &metrics, &subscription_info).await;
     }
 
     if total_units_synced > 0 {
@@ -344,28 +359,10 @@ async fn sync_to_dodo(
     app_state: &AppState,
     deployment_id: i64,
     metrics: &[(&str, i64, i64)],
+    subscription_info: &ProviderSubscriptionInfo,
 ) {
-    let subscription_info = match GetDeploymentProviderSubscriptionQuery::new(deployment_id)
-        .execute(app_state)
-        .await
-    {
-        Ok(Some(info)) => info,
-        Ok(None) => {
-            info!(
-                "[DODO] Deployment {} has no subscription configured",
-                deployment_id
-            );
-            return;
-        }
-        Err(e) => {
-            error!("[DODO] Failed to fetch deployment {}: {}", deployment_id, e);
-            return;
-        }
-    };
+    let customer_id = &subscription_info.provider_customer_id;
 
-    let customer_id = subscription_info.provider_customer_id;
-
-    // Filter: Do not send usage events for Starter plan (flat-rate)
     if subscription_info.plan_name == "starter" {
         return;
     }

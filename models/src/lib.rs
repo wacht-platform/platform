@@ -71,6 +71,7 @@ pub mod notification;
 pub mod billing;
 pub mod billing_invoice;
 pub mod plan_features;
+pub mod pulse_transaction;
 
 pub use deployment::*;
 pub use deployment_auth_settings::*;
@@ -124,3 +125,4 @@ pub use memory_boundaries::*;
 pub use agent_session::*;
 pub use notification::*;
 pub use webhook::*;
+pub use pulse_transaction::*;

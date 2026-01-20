@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct BillingAccount {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -22,11 +22,12 @@ pub struct BillingAccount {
     pub payment_method_status: Option<String>,
     pub currency: String,
     pub locale: String,
+    pub pulse_balance_cents: i64,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Subscription {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -36,6 +37,7 @@ pub struct Subscription {
     pub provider_subscription_id: String,
     pub product_id: Option<String>,
     pub status: String,
+    pub previous_billing_date: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
 }

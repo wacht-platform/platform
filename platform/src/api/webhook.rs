@@ -318,7 +318,7 @@ pub async fn batch_trigger_webhook_events(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
     Json(request): Json<BatchTriggerWebhookEventsRequest>,
-) -> ApiResult<Vec<TriggerWebhookEventResponse>> {
+) -> ApiResult<PaginatedResponse<TriggerWebhookEventResponse>> {
     let results = BatchTriggerWebhookEventsCommand {
         deployment_id,
         app_name,
@@ -344,7 +344,7 @@ pub async fn batch_trigger_webhook_events(
         })
         .collect();
 
-    Ok(response.into())
+    Ok(PaginatedResponse::from(response).into())
 }
 
 pub async fn replay_webhook_delivery(
