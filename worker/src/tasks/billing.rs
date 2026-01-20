@@ -8,6 +8,8 @@ pub struct BillingEventTask {
     pub deployment_id: i64,
     pub event_type: String,
     pub resource_id: i64,
+    #[serde(default)]
+    pub cost_cents: Option<i64>, // For AI token costs, SMS costs, etc.
 }
 
 pub async fn process_billing_event(
@@ -42,6 +44,33 @@ pub async fn process_billing_event(
         "project_created" => {
             pipe.pfadd(&format!("{}:projects", prefix), task.resource_id);
             pipe.expire(&format!("{}:projects", prefix), 5184000);
+        }
+        "email_sent" => {
+            pipe.zincr(&format!("{}:metrics", prefix), "emails", 1);
+            pipe.expire(&format!("{}:metrics", prefix), 5184000);
+        }
+        "webhook_sent" => {
+            pipe.zincr(&format!("{}:metrics", prefix), "webhooks", 1);
+            pipe.expire(&format!("{}:metrics", prefix), 5184000);
+        }
+        "api_check" => {
+            pipe.zincr(&format!("{}:metrics", prefix), "api_checks", 1);
+            pipe.expire(&format!("{}:metrics", prefix), 5184000);
+        }
+        "ai_token_input" => {
+            let cost = task.cost_cents.unwrap_or(0);
+            pipe.zincr(&format!("{}:metrics", prefix), "ai_token_input_cost_cents", cost);
+            pipe.expire(&format!("{}:metrics", prefix), 5184000);
+        }
+        "ai_token_output" => {
+            let cost = task.cost_cents.unwrap_or(0);
+            pipe.zincr(&format!("{}:metrics", prefix), "ai_token_output_cost_cents", cost);
+            pipe.expire(&format!("{}:metrics", prefix), 5184000);
+        }
+        "sms_sent" => {
+            let cost = task.cost_cents.unwrap_or(0);
+            pipe.zincr(&format!("{}:metrics", prefix), "sms_cost_cents", cost);
+            pipe.expire(&format!("{}:metrics", prefix), 5184000);
         }
         _ => {
             return Err(anyhow::anyhow!("Unknown event type: {}", task.event_type));

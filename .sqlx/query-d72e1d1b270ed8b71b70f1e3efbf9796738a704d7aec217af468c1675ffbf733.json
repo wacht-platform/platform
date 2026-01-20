@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT s.provider_customer_id, s.provider_subscription_id, s.billing_account_id, ba.owner_id, dp.plan_name, s.previous_billing_date\n            FROM deployments d\n            JOIN projects p ON d.project_id = p.id\n            JOIN billing_accounts ba ON p.billing_account_id = ba.id\n            JOIN subscriptions s ON s.billing_account_id = ba.id\n            LEFT JOIN dodo_products dp ON s.product_id = dp.product_id\n            WHERE d.id = $1 AND s.status = 'active'\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider_customer_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider_subscription_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "billing_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "owner_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "plan_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "previous_billing_date",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "d72e1d1b270ed8b71b70f1e3efbf9796738a704d7aec217af468c1675ffbf733"
+}

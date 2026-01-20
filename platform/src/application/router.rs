@@ -18,10 +18,15 @@ fn health_routes() -> Router<AppState> {
 }
 
 fn public_webhook_routes() -> Router<AppState> {
-    Router::new().route(
-        "/webhooks/dodo",
-        post(api::billing_webhook::handle_dodo_webhook),
-    )
+    Router::new()
+        .route(
+            "/webhooks/dodo",
+            post(api::billing_webhook::handle_dodo_webhook),
+        )
+        .route(
+            "/webhooks/prelude/:deployment_id",
+            post(api::prelude_webhook::handle_prelude_webhook),
+        )
 }
 
 fn project_routes() -> Router<AppState> {

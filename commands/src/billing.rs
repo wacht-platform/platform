@@ -105,75 +105,98 @@ impl Command for UpdateBillingAccountCommand {
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
         let mut query = String::from("UPDATE billing_accounts SET updated_at = NOW()");
-        let mut params: Vec<String> = Vec::new();
         let mut param_count = 1;
 
-        if let Some(legal_name) = self.legal_name {
+        if self.legal_name.is_some() {
             query.push_str(&format!(", legal_name = ${}", param_count));
-            params.push(legal_name);
             param_count += 1;
         }
 
-        if let Some(billing_email) = self.billing_email {
+        if self.billing_email.is_some() {
             query.push_str(&format!(", billing_email = ${}", param_count));
-            params.push(billing_email);
             param_count += 1;
         }
 
-        if let Some(billing_phone) = self.billing_phone {
+        if self.billing_phone.is_some() {
             query.push_str(&format!(", billing_phone = ${}", param_count));
-            params.push(billing_phone);
             param_count += 1;
         }
 
-        if let Some(tax_id) = self.tax_id {
+        if self.tax_id.is_some() {
             query.push_str(&format!(", tax_id = ${}", param_count));
-            params.push(tax_id);
             param_count += 1;
         }
 
-        if let Some(address_line1) = self.address_line1 {
+        if self.address_line1.is_some() {
             query.push_str(&format!(", address_line1 = ${}", param_count));
-            params.push(address_line1);
             param_count += 1;
         }
 
-        if let Some(address_line2) = self.address_line2 {
+        if self.address_line2.is_some() {
             query.push_str(&format!(", address_line2 = ${}", param_count));
-            params.push(address_line2);
             param_count += 1;
         }
 
-        if let Some(city) = self.city {
+        if self.city.is_some() {
             query.push_str(&format!(", city = ${}", param_count));
-            params.push(city);
             param_count += 1;
         }
 
-        if let Some(state) = self.state {
+        if self.state.is_some() {
             query.push_str(&format!(", state = ${}", param_count));
-            params.push(state);
             param_count += 1;
         }
 
-        if let Some(postal_code) = self.postal_code {
+        if self.postal_code.is_some() {
             query.push_str(&format!(", postal_code = ${}", param_count));
-            params.push(postal_code);
             param_count += 1;
         }
 
-        if let Some(country) = self.country {
+        if self.country.is_some() {
             query.push_str(&format!(", country = ${}", param_count));
-            params.push(country);
             param_count += 1;
         }
 
         query.push_str(&format!(" WHERE id = ${}", param_count));
 
-        sqlx::query(&query)
-            .bind(self.id)
-            .execute(&state.db_pool)
-            .await?;
+        let mut q = sqlx::query(&query);
+        
+        // Bind all parameters in the same order they were added to the query
+        if let Some(legal_name) = self.legal_name {
+            q = q.bind(legal_name);
+        }
+        if let Some(billing_email) = self.billing_email {
+            q = q.bind(billing_email);
+        }
+        if let Some(billing_phone) = self.billing_phone {
+            q = q.bind(billing_phone);
+        }
+        if let Some(tax_id) = self.tax_id {
+            q = q.bind(tax_id);
+        }
+        if let Some(address_line1) = self.address_line1 {
+            q = q.bind(address_line1);
+        }
+        if let Some(address_line2) = self.address_line2 {
+            q = q.bind(address_line2);
+        }
+        if let Some(city) = self.city {
+            q = q.bind(city);
+        }
+        if let Some(state) = self.state {
+            q = q.bind(state);
+        }
+        if let Some(postal_code) = self.postal_code {
+            q = q.bind(postal_code);
+        }
+        if let Some(country) = self.country {
+            q = q.bind(country);
+        }
+        
+        // Finally bind the id for the WHERE clause
+        q = q.bind(self.id);
+        
+        q.execute(&state.db_pool).await?;
 
         Ok(())
     }

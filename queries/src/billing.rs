@@ -1,4 +1,5 @@
 use crate::Query;
+use sqlx::Row;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
 use common::state::AppState;
@@ -125,6 +126,7 @@ pub struct ProviderSubscriptionInfo {
     pub provider_customer_id: String,
     pub provider_subscription_id: String,
     pub billing_account_id: i64,
+    pub owner_id: String,
     pub plan_name: String,
     pub previous_billing_date: Option<DateTime<Utc>>,
 }
@@ -145,7 +147,7 @@ impl Query for GetDeploymentProviderSubscriptionQuery {
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
         let row = sqlx::query!(
             r#"
-            SELECT s.provider_customer_id, s.provider_subscription_id, s.billing_account_id, dp.plan_name, s.previous_billing_date
+            SELECT s.provider_customer_id, s.provider_subscription_id, s.billing_account_id, ba.owner_id, dp.plan_name, s.previous_billing_date
             FROM deployments d
             JOIN projects p ON d.project_id = p.id
             JOIN billing_accounts ba ON p.billing_account_id = ba.id
@@ -163,6 +165,7 @@ impl Query for GetDeploymentProviderSubscriptionQuery {
             provider_customer_id: r.provider_customer_id,
             provider_subscription_id: r.provider_subscription_id,
             billing_account_id: r.billing_account_id,
+            owner_id: r.owner_id,
             plan_name: r.plan_name,
             previous_billing_date: r.previous_billing_date,
         }))
@@ -432,5 +435,69 @@ impl Query for ListPulseTransactionsQuery {
         .await?;
 
         Ok(rows)
+    }
+}
+
+pub struct ListBillingInvoicesQuery {
+    pub billing_account_id: i64,
+}
+
+impl ListBillingInvoicesQuery {
+    pub fn new(billing_account_id: i64) -> Self {
+        Self { billing_account_id }
+    }
+}
+
+impl Query for ListBillingInvoicesQuery {
+    type Output = Vec<models::billing_invoice::BillingInvoice>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT 
+                id, created_at, updated_at, billing_account_id, subscription_id,
+                provider_payment_id, provider_customer_id, amount_due_cents,
+                amount_paid_cents, currency, status,
+                invoice_pdf_url, hosted_invoice_url, invoice_number, due_date,
+                paid_at, period_start, period_end, attempt_count, next_payment_attempt,
+                metadata
+            FROM billing_invoices
+            WHERE billing_account_id = $1
+            ORDER BY created_at DESC
+            "#
+        )
+        .bind(self.billing_account_id)
+        .fetch_all(&state.db_pool)
+        .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let invoice = models::billing_invoice::BillingInvoice {
+                id: row.try_get("id")?,
+                created_at: row.try_get("created_at")?,
+                updated_at: row.try_get("updated_at")?,
+                billing_account_id: row.try_get("billing_account_id")?,
+                subscription_id: row.try_get("subscription_id")?,
+                provider_payment_id: row.try_get("provider_payment_id")?,
+                provider_customer_id: row.try_get("provider_customer_id")?,
+                amount_due_cents: row.try_get("amount_due_cents")?,
+                amount_paid_cents: row.try_get("amount_paid_cents")?,
+                currency: row.try_get("currency")?,
+                status: row.try_get("status")?,
+                invoice_pdf_url: row.try_get("invoice_pdf_url")?,
+                hosted_invoice_url: row.try_get("hosted_invoice_url")?,
+                invoice_number: row.try_get("invoice_number")?,
+                due_date: row.try_get("due_date")?,
+                paid_at: row.try_get("paid_at")?,
+                period_start: row.try_get("period_start")?,
+                period_end: row.try_get("period_end")?,
+                attempt_count: row.try_get("attempt_count")?,
+                next_payment_attempt: row.try_get("next_payment_attempt")?,
+                metadata: row.try_get("metadata")?,
+            };
+            results.push(invoice);
+        }
+
+        Ok(results)
     }
 }

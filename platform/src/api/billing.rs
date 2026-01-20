@@ -12,14 +12,15 @@ use commands::{
 };
 use common::dodo::{
     ChangePlanParams, CheckoutCustomer, CreateCheckoutParams, CreateCustomerParams, DodoClient,
-    ProductCartItem,
+    ProductCartItem, UpdateCustomerParams,
 };
 use common::state::AppState;
 use models::billing::BillingAccountWithSubscription;
 use queries::{
     Query as QueryTrait,
     billing::{
-        GetBillingAccountQuery, GetBillingAccountUsageQuery, GetDodoProductQuery, UsageSnapshot,
+        GetBillingAccountQuery, GetBillingAccountUsageQuery, GetDodoProductQuery, 
+        UsageSnapshot,
     },
 };
 use wacht::middleware::RequireAuth;
@@ -99,8 +100,10 @@ pub async fn create_checkout(
         .await?;
 
     if let Some(account) = existing.clone() {
-        if account.subscription.is_some() {
-            return Err((StatusCode::CONFLICT, "Subscription already exists").into());
+        if let Some(ref subscription) = account.subscription {
+            if subscription.status == "active" {
+                return Err((StatusCode::CONFLICT, "Subscription already exists").into());
+            }
         }
     }
 
@@ -110,7 +113,34 @@ pub async fn create_checkout(
     })?;
 
     let provider_customer_id = if let Some(ref account) = existing {
+        UpdateBillingAccountCommand {
+            id: account.billing_account.id,
+            legal_name: Some(req.legal_name.clone()),
+            billing_email: Some(req.billing_email.clone()),
+            billing_phone: req.billing_phone.clone(),
+            tax_id: req.tax_id.clone(),
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
+        }
+        .execute(&state)
+        .await?;
+
         if let Some(ref cid) = account.billing_account.provider_customer_id {
+            let _ = dodo
+                .update_customer(
+                    cid,
+                    UpdateCustomerParams {
+                        email: Some(req.billing_email.clone()),
+                        name: Some(req.legal_name.clone()),
+                        metadata: None,
+                    },
+                )
+                .await;
+
             cid.clone()
         } else {
             let customer = dodo
@@ -300,25 +330,14 @@ pub async fn list_invoices(
 
     let account = GetBillingAccountQuery::new(owner_id)
         .execute(&state)
+        .await?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
+
+    let invoices = queries::billing::ListBillingInvoicesQuery::new(account.billing_account.id)
+        .execute(&state)
         .await?;
 
-    if let Some(account) = account {
-        if let Some(provider_customer_id) = account.billing_account.provider_customer_id {
-            let dodo = DodoClient::new().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-            let payments = dodo
-                .list_payments(Some(&provider_customer_id))
-                .await
-                .map_err(|e| {
-                    error!("Failed to list payments: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to list payments")
-                })?;
-
-            return Ok(serde_json::json!({ "items": payments.items }).into());
-        }
-    }
-
-    Ok(serde_json::json!({ "items": [] }).into())
+    Ok(serde_json::json!({ "items": invoices }).into())
 }
 
 

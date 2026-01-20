@@ -1,11 +1,14 @@
 use anyhow::Result;
+use chrono::Datelike;
 use commands::{
     Command,
     billing::{
         CompleteBillingSyncRunCommand, CreateBillingSyncRunCommand, UpsertUsageSnapshotCommand,
     },
+    pulse::DeductPulseCreditsCommand,
 };
 use common::{DodoClient, state::AppState};
+use models::pulse_transaction::PulseTransactionType;
 use queries::{
     Query,
     billing::{GetDeploymentProviderSubscriptionQuery, ProviderSubscriptionInfo},
@@ -44,11 +47,11 @@ fn get_metric_config(metric: &str) -> MetricConfig {
             event_name: "webhooks.sent",
             use_last_aggregation: false,
         },
-        "ai_token_input_cost" => MetricConfig {
+        "ai_token_input_cost_cents" => MetricConfig {
             event_name: "ai.token.input.cost",
             use_last_aggregation: false,
         },
-        "ai_token_output_cost" => MetricConfig {
+        "ai_token_output_cost_cents" => MetricConfig {
             event_name: "ai.token.output.cost",
             use_last_aggregation: false,
         },
@@ -81,7 +84,7 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
         .execute(app_state)
         .await?;
 
-    let dirty_key = "billing:dirty_deployments";
+    let dirty_key = format!("billing:{}:dirty_deployments", format!("{}-{:02}", chrono::Utc::now().year(), chrono::Utc::now().month()));
     let dirty: Vec<(i64, f64)> = redis
         .zrangebyscore_withscores(&dirty_key, 1.0, f64::MAX)
         .await?;
@@ -186,8 +189,20 @@ async fn sync_deployment(
             )
         })?;
 
-    let billing_period_unix = billing_period_timestamp.timestamp();
-    let prefix = format!("billing:{}:deployment:{}", billing_period_unix, *deployment_id);
+    // Always read from current month and previous month (for cross-month billing periods)
+    let now = chrono::Utc::now();
+    let current_month = format!("{}-{:02}", now.year(), now.month());
+    
+    // Optimization: Only read previous month in first 2 days of the month
+    let should_read_prev_month = now.day() <= 2;
+    let prev_month = if should_read_prev_month {
+        let prev = now - chrono::Duration::days(30);
+        Some(format!("{}-{:02}", prev.year(), prev.month()))
+    } else {
+        None
+    };
+
+    let current_prefix = format!("billing:{}:deployment:{}", current_month, *deployment_id);
 
     let lua_script = r#"
         local prefix = ARGV[1]
@@ -260,70 +275,83 @@ async fn sync_deployment(
     "#;
 
     let script = redis::Script::new(lua_script);
-    let results: Vec<String> = script.arg(&prefix).invoke_async(redis).await?;
+    let results: Vec<String> = script.arg(&current_prefix).invoke_async(redis).await?;
+
+    // If in first 2 days of month, also fetch previous month and aggregate
+    let prev_results: Option<Vec<String>> = if let Some(prev_month_str) = &prev_month {
+        let prev_prefix = format!("billing:{}:deployment:{}", prev_month_str, *deployment_id);
+        Some(script.arg(&prev_prefix).invoke_async(redis).await?)
+    } else {
+        None
+    };
+
+    // Helper to aggregate current + previous month values
+    let aggregate = |current_idx: usize, prev_idx: usize| -> i64 {
+        let current_val = results[current_idx].parse::<i64>().unwrap_or(0);
+        let prev_val = prev_results.as_ref()
+            .and_then(|r| r.get(prev_idx))
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(0);
+        current_val + prev_val
+    };
 
     let metrics = vec![
-        (
-            "mau",
-            results[0].parse::<i64>().unwrap_or(0),
-            results[1].parse::<i64>().unwrap_or(0),
-        ),
-        (
-            "mao",
-            results[2].parse::<i64>().unwrap_or(0),
-            results[3].parse::<i64>().unwrap_or(0),
-        ),
-        (
-            "maw",
-            results[4].parse::<i64>().unwrap_or(0),
-            results[5].parse::<i64>().unwrap_or(0),
-        ),
-        (
-            "projects",
-            results[6].parse::<i64>().unwrap_or(0),
-            results[7].parse::<i64>().unwrap_or(0),
-        ),
-        (
-            "emails",
-            results[8].parse::<i64>().unwrap_or(0),
-            results[9].parse::<i64>().unwrap_or(0),
-        ),
-        (
-            "webhooks",
-            results[10].parse::<i64>().unwrap_or(0),
-            results[11].parse::<i64>().unwrap_or(0),
-        ),
-        (
-            "ai_token_input_cost",
-            results[12].parse::<i64>().unwrap_or(0),
-            results[13].parse::<i64>().unwrap_or(0),
-        ),
-        (
-            "ai_token_output_cost",
-            results[14].parse::<i64>().unwrap_or(0),
-            results[15].parse::<i64>().unwrap_or(0),
-        ),
-        (
-            "sms_cost",
-            results[16].parse::<i64>().unwrap_or(0),
-            results[17].parse::<i64>().unwrap_or(0),
-        ),
-        (
-            "storage",
-            results[18].parse::<i64>().unwrap_or(0),
-            results[19].parse::<i64>().unwrap_or(0),
-        ),
-        (
-            "api_checks",
-            results[20].parse::<i64>().unwrap_or(0),
-            results[21].parse::<i64>().unwrap_or(0),
-        ),
+        ("mau", aggregate(0, 0), aggregate(1, 1)),
+        ("mao", aggregate(2, 2), aggregate(3, 3)),
+        ("maw", aggregate(4, 4), aggregate(5, 5)),
+        ("projects", aggregate(6, 6), aggregate(7, 7)),
+        ("emails", aggregate(8, 8), aggregate(9, 9)),
+        ("webhooks", aggregate(10, 10), aggregate(11, 11)),
+        ("ai_token_input_cost_cents", aggregate(12, 12), aggregate(13, 13)),
+        ("ai_token_output_cost_cents", aggregate(14, 14), aggregate(15, 15)),
+        ("sms_cost", aggregate(16, 16), aggregate(17, 17)),
+        ("storage", aggregate(18, 18), aggregate(19, 19)),
+        ("api_checks", aggregate(20, 20), aggregate(21, 21)),
     ];
 
     let mut total_units_synced = 0i64;
 
     for (metric_name, _current, delta) in &metrics {
         if *delta <= 0 {
+            continue;
+        }
+
+        // Handle AI/SMS costs via Pulse credits (skip PostgreSQL and Dodo)
+        if matches!(*metric_name, "ai_token_input_cost_cents" | "ai_token_output_cost_cents" | "sms_cost_cents") {
+            let transaction_type = if metric_name.starts_with("ai") {
+                PulseTransactionType::UsageAi
+            } else {
+                PulseTransactionType::UsageSms
+            };
+
+            match (DeductPulseCreditsCommand {
+                owner_id: subscription_info.owner_id.clone(),
+                amount_pulse_cents: *delta,
+                transaction_type,
+                reference_id: Some(app_state.sf.next_id().unwrap().to_string()),
+            })
+            .execute(app_state)
+            .await
+            {
+                Ok(Ok(_)) => {
+                    info!(
+                        "[BILLING SYNC] Deducted {} Pulse cents for {} from deployment {}",
+                        delta, metric_name, deployment_id
+                    );
+                }
+                Ok(Err(e)) => {
+                    warn!(
+                        "[BILLING SYNC] Insufficient Pulse credits for deployment {}: {} - allowing negative balance",
+                        deployment_id, e
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        "[BILLING SYNC] Failed to deduct Pulse credits for deployment {}: {}",
+                        deployment_id, e
+                    );
+                }
+            }
             continue;
         }
 

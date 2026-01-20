@@ -61,7 +61,7 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for InvoiceStatus {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct BillingInvoice {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,

@@ -12,6 +12,7 @@ pub mod api_key_console;
 pub mod b2b;
 pub mod billing;
 pub mod billing_webhook;
+pub mod prelude_webhook;
 pub mod connection;
 pub mod enterprise_sso;
 pub mod health;

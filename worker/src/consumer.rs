@@ -8,7 +8,7 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 
 use crate::tasks::{
-    agent, analytics, billing, document, email, embedding, sms, teams_activity, token, webhook,
+    agent, analytics, billing, document, email, embedding, teams_activity, token, webhook,
     webhook_event, webhook_replay_batch,
 };
 use dto::json::NatsTaskMessage;
@@ -271,25 +271,6 @@ impl NatsConsumer {
                         task.deployment_id,
                         &task.recipient,
                         task.deployment_invitation_id,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "sms.send_otp".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: sms::SMSOTPTask = serde_json::from_value(payload).map_err(|e| {
-                        TaskError::Permanent(format!("Failed to deserialize SMS OTP task: {}", e))
-                    })?;
-                    sms::send_otp_sms(
-                        task.deployment_id,
-                        &task.phone_number,
-                        &task.country_code,
                         &app_state,
                     )
                     .await
