@@ -22,6 +22,8 @@ pub mod ai_workflows;
 pub mod api_key;
 pub mod api_key_app;
 pub mod billing;
+pub mod sync_billing_metrics;
+pub mod storage;
 pub mod conversation;
 pub mod create_organization;
 pub mod create_workspace;
@@ -78,6 +80,8 @@ pub use user_identifiers::*;
 pub use workspace_member::*;
 pub use workspace_role::*;
 pub use pulse::*;
+pub use sync_billing_metrics::*;
+pub use storage::*;
 
 pub use agent_execution::*;
 pub use agent_integration::*;

@@ -27,6 +27,7 @@ pub mod segments;
 pub mod signin;
 pub mod user;
 pub mod workspace;
+pub mod storage;
 
 pub mod agent_execution_context;
 pub mod agent_integration;
@@ -51,6 +52,7 @@ pub use project::*;
 pub use signin::*;
 pub use user::*;
 pub use workspace::*;
+pub use storage::*;
 pub mod agent_memory;
 pub mod api_key;
 pub mod api_key_gateway;

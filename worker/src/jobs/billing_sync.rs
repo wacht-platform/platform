@@ -3,11 +3,12 @@ use chrono::Datelike;
 use commands::{
     Command,
     billing::{
-        CompleteBillingSyncRunCommand, CreateBillingSyncRunCommand, UpsertUsageSnapshotCommand,
+        CompleteBillingSyncRunCommand, CreateBillingSyncRunCommand,
     },
     pulse::DeductPulseCreditsCommand,
 };
 use common::{DodoClient, state::AppState};
+use commands::SyncBillingMetricsCommand;
 use models::pulse_transaction::PulseTransactionType;
 use queries::{
     Query,
@@ -37,15 +38,15 @@ fn get_metric_config(metric: &str) -> MetricConfig {
         },
         "storage" => MetricConfig {
             event_name: "storage.used",
-            use_last_aggregation: false,
+            use_last_aggregation: true,
         },
         "emails" => MetricConfig {
-            event_name: "emails.sent",
-            use_last_aggregation: false,
+            event_name: "emails.total",
+            use_last_aggregation: true, 
         },
         "webhooks" => MetricConfig {
-            event_name: "webhooks.sent",
-            use_last_aggregation: false,
+            event_name: "webhooks.total",
+            use_last_aggregation: true, 
         },
         "ai_token_input_cost_cents" => MetricConfig {
             event_name: "ai.token.input.cost",
@@ -60,8 +61,8 @@ fn get_metric_config(metric: &str) -> MetricConfig {
             use_last_aggregation: false,
         },
         "api_checks" => MetricConfig {
-            event_name: "api.checks",
-            use_last_aggregation: false,
+            event_name: "api.checks.total",
+            use_last_aggregation: true,
         },
         _ => MetricConfig {
             event_name: "unknown",
@@ -189,11 +190,9 @@ async fn sync_deployment(
             )
         })?;
 
-    // Always read from current month and previous month (for cross-month billing periods)
     let now = chrono::Utc::now();
     let current_month = format!("{}-{:02}", now.year(), now.month());
     
-    // Optimization: Only read previous month in first 2 days of the month
     let should_read_prev_month = now.day() <= 2;
     let prev_month = if should_read_prev_month {
         let prev = now - chrono::Duration::days(30);
@@ -218,7 +217,6 @@ async fn sync_deployment(
         local ai_input_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_token_input_cost_cents') or 0)
         local ai_output_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_token_output_cost_cents') or 0)
         local sms_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'sms_cost_cents') or 0)
-        local storage_current = tonumber(redis.call('ZSCORE', metrics_key, 'storage_gb') or 0)
         local api_checks_current = tonumber(redis.call('ZSCORE', metrics_key, 'api_checks') or 0)
 
         local last_synced_key = prefix .. ':last_synced'
@@ -231,7 +229,6 @@ async fn sync_deployment(
         local ai_input_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_input_cost') or 0)
         local ai_output_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_output_cost') or 0)
         local sms_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'sms_cost_cents') or 0)
-        local storage_last = tonumber(redis.call('ZSCORE', last_synced_key, 'storage_gb') or 0)
         local api_checks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'api_checks') or 0)
 
         local mau_delta = mau_current - mau_last
@@ -243,21 +240,7 @@ async fn sync_deployment(
         local ai_input_cost_delta = ai_input_cost_current - ai_input_cost_last
         local ai_output_cost_delta = ai_output_cost_current - ai_output_cost_last
         local sms_cost_delta = sms_cost_current - sms_cost_last
-        local storage_delta = storage_current - storage_last
         local api_checks_delta = api_checks_current - api_checks_last
-
-        redis.call('ZADD', last_synced_key, mau_current, 'mau')
-        redis.call('ZADD', last_synced_key, mao_current, 'mao')
-        redis.call('ZADD', last_synced_key, maw_current, 'maw')
-        redis.call('ZADD', last_synced_key, projects_current, 'projects')
-        redis.call('ZADD', last_synced_key, emails_current, 'emails')
-        redis.call('ZADD', last_synced_key, webhooks_current, 'webhooks')
-        redis.call('ZADD', last_synced_key, ai_input_cost_current, 'ai_token_input_cost')
-        redis.call('ZADD', last_synced_key, ai_output_cost_current, 'ai_token_output_cost')
-        redis.call('ZADD', last_synced_key, sms_cost_current, 'sms_cost_cents')
-        redis.call('ZADD', last_synced_key, storage_current, 'storage_gb')
-        redis.call('ZADD', last_synced_key, api_checks_current, 'api_checks')
-        redis.call('EXPIRE', last_synced_key, 5184000)
 
         return {
             tostring(mau_current), tostring(mau_delta),
@@ -269,23 +252,18 @@ async fn sync_deployment(
             tostring(ai_input_cost_current), tostring(ai_input_cost_delta),
             tostring(ai_output_cost_current), tostring(ai_output_cost_delta),
             tostring(sms_cost_current), tostring(sms_cost_delta),
-            tostring(storage_current), tostring(storage_delta),
             tostring(api_checks_current), tostring(api_checks_delta)
         }
     "#;
 
     let script = redis::Script::new(lua_script);
     let results: Vec<String> = script.arg(&current_prefix).invoke_async(redis).await?;
-
-    // If in first 2 days of month, also fetch previous month and aggregate
     let prev_results: Option<Vec<String>> = if let Some(prev_month_str) = &prev_month {
         let prev_prefix = format!("billing:{}:deployment:{}", prev_month_str, *deployment_id);
         Some(script.arg(&prev_prefix).invoke_async(redis).await?)
     } else {
         None
     };
-
-    // Helper to aggregate current + previous month values
     let aggregate = |current_idx: usize, prev_idx: usize| -> i64 {
         let current_val = results[current_idx].parse::<i64>().unwrap_or(0);
         let prev_val = prev_results.as_ref()
@@ -305,18 +283,14 @@ async fn sync_deployment(
         ("ai_token_input_cost_cents", aggregate(12, 12), aggregate(13, 13)),
         ("ai_token_output_cost_cents", aggregate(14, 14), aggregate(15, 15)),
         ("sms_cost", aggregate(16, 16), aggregate(17, 17)),
-        ("storage", aggregate(18, 18), aggregate(19, 19)),
-        ("api_checks", aggregate(20, 20), aggregate(21, 21)),
     ];
-
     let mut total_units_synced = 0i64;
+    let mut metrics_to_sync = Vec::new();
 
-    for (metric_name, _current, delta) in &metrics {
+    for (metric_name, current, delta) in &metrics {
         if *delta <= 0 {
             continue;
         }
-
-        // Handle AI/SMS costs via Pulse credits (skip PostgreSQL and Dodo)
         if matches!(*metric_name, "ai_token_input_cost_cents" | "ai_token_output_cost_cents" | "sms_cost_cents") {
             let transaction_type = if metric_name.starts_with("ai") {
                 PulseTransactionType::UsageAi
@@ -356,22 +330,22 @@ async fn sync_deployment(
         }
 
         total_units_synced += delta;
+        metrics_to_sync.push((metric_name.to_string(), *current));
+    }
 
-        UpsertUsageSnapshotCommand {
+    let metrics_for_dodo = if !metrics_to_sync.is_empty() {
+        SyncBillingMetricsCommand {
             deployment_id: *deployment_id,
             billing_account_id: subscription_info.billing_account_id.clone(),
             billing_period: billing_period_timestamp,
-            metric_name: metric_name.to_string(),
-            quantity: *delta,
-            cost_cents: None,
+            metrics: metrics_to_sync,
+            redis_prefix: current_prefix.clone(),
         }
         .execute(app_state)
-        .await?;
-    }
-
-    if let Some(dodo) = dodo_client {
-        sync_to_dodo(dodo, app_state, *deployment_id, &metrics, &subscription_info).await;
-    }
+        .await?
+    } else {
+        Vec::new()
+    };
 
     if total_units_synced > 0 {
         let _: () = redis
@@ -379,14 +353,20 @@ async fn sync_deployment(
             .await?;
     }
 
+    if let Some(dodo) = dodo_client {
+        if !metrics_for_dodo.is_empty() {
+            sync_to_dodo_with_data(dodo, app_state, *deployment_id, &metrics_for_dodo, &subscription_info).await;
+        }
+    }
+
     Ok(total_units_synced)
 }
 
-async fn sync_to_dodo(
+async fn sync_to_dodo_with_data(
     dodo_client: &DodoClient,
-    app_state: &AppState,
+    _app_state: &AppState,
     deployment_id: i64,
-    metrics: &[(&str, i64, i64)],
+    metrics_data: &[(String, i64)],
     subscription_info: &ProviderSubscriptionInfo,
 ) {
     let customer_id = &subscription_info.provider_customer_id;
@@ -395,34 +375,24 @@ async fn sync_to_dodo(
         return;
     }
 
-    for (metric_name, current, delta) in metrics {
-        if *delta <= 0 {
-            continue;
-        }
-
+    for (metric_name, current_value) in metrics_data {
         let config = get_metric_config(metric_name);
         if config.event_name == "unknown" {
             continue;
         }
 
-        let value_to_send = if config.use_last_aggregation {
-            *current
-        } else {
-            *delta
-        };
-
         let event_id = format!(
             "{}_{}_{}",
+            config.event_name,
             deployment_id,
-            metric_name,
-            chrono::Utc::now().timestamp_millis()
+            chrono::Utc::now().timestamp()
         );
 
         match dodo_client
             .ingest_usage_events(
-                &customer_id,
+                customer_id,
                 config.event_name,
-                value_to_send,
+                *current_value,
                 &event_id,
                 config.use_last_aggregation,
             )
@@ -430,8 +400,8 @@ async fn sync_to_dodo(
         {
             Ok(_) => {
                 info!(
-                    "[DODO] ✅ Synced {}={} (delta={}) for deployment {}",
-                    config.event_name, value_to_send, delta, deployment_id
+                    "[DODO] ✅ Synced {}={} for deployment {}",
+                    config.event_name, current_value, deployment_id
                 );
             }
             Err(e) => {

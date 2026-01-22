@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE deployment_storage_usage SET is_dirty = false WHERE deployment_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1225bbff095f93f9cdf74fb7eab25387799e7f5ebb79d88cb00ac8e3c28b5e27"
+}

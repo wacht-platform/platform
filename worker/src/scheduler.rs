@@ -37,6 +37,24 @@ impl JobScheduler {
             }
         });
 
+        let storage_state = self.app_state.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(3600));
+            loop {
+                interval.tick().await;
+                info!("Running storage sync job...");
+
+                match jobs::storage_sync::sync_storage_to_dodo(&storage_state).await {
+                    Ok(result) => {
+                        info!("Storage sync completed: {}", result);
+                    }
+                    Err(e) => {
+                        error!("Storage sync failed: {}", e);
+                    }
+                }
+            }
+        });
+
         info!("Job scheduler started successfully");
         Ok(())
     }
