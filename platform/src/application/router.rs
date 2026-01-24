@@ -24,7 +24,7 @@ fn public_webhook_routes() -> Router<AppState> {
             post(api::billing_webhook::handle_dodo_webhook),
         )
         .route(
-            "/webhooks/prelude/:deployment_id",
+            "/webhooks/prelude/{deployment_id}",
             post(api::prelude_webhook::handle_prelude_webhook),
         )
 }
@@ -423,6 +423,11 @@ fn console_specific_routes() -> Router<AppState> {
         .route(
             "/api-keys/{key_id}/rotate",
             post(api::api_key_console::rotate_api_key),
+        )
+        .route(
+            "/settings/email-provider/smtp",
+            post(api::settings::update_smtp_config)
+                .delete(api::settings::remove_smtp_config),
         )
         .route(
             "/settings/email-provider/smtp/verify",

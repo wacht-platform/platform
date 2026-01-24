@@ -6,7 +6,7 @@ use common::state::AppState;
 
 use commands::{
     Command, CreateDeploymentJwtTemplateCommand, DeleteDeploymentJwtTemplateCommand,
-    GetDeploymentSmtpConfigCommand, RemoveDeploymentSmtpConfigCommand,
+    RemoveDeploymentSmtpConfigCommand,
     UpdateDeploymentAuthSettingsCommand, UpdateDeploymentDisplaySettingsCommand,
     UpdateDeploymentEmailTemplateCommand, UpdateDeploymentJwtTemplateCommand,
     UpdateDeploymentRestrictionsCommand, UpdateDeploymentSmtpConfigCommand,
@@ -171,26 +171,6 @@ pub async fn update_deployment_email_template(
         .await
         .map(Into::into)
         .map_err(Into::into)
-}
-
-pub async fn get_smtp_config(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-) -> ApiResult<Option<SmtpConfigResponse>> {
-    let config = GetDeploymentSmtpConfigCommand::new(deployment_id)
-        .execute(&app_state)
-        .await?;
-
-    Ok(config
-        .map(|c| SmtpConfigResponse {
-            host: c.host,
-            port: c.port,
-            username: c.username,
-            from_email: c.from_email,
-            use_tls: c.use_tls,
-            verified: c.verified,
-        })
-        .into())
 }
 
 pub async fn verify_smtp_connection(
