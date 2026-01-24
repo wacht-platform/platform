@@ -11,10 +11,6 @@ path = "src/bin/console-api.rs"
 name = "backend-api"
 path = "src/bin/backend-api.rs"
 
-[[bin]]
-name = "frontend-api"
-path = "src/bin/frontend-api.rs"
-
 [dependencies]
 models = { path = "../models" }
 dto = { path = "../dto" }
