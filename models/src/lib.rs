@@ -57,6 +57,8 @@ pub mod memory_boundaries;
 pub mod agent_session;
 pub mod utils;
 pub mod webhook_analytics;
+pub mod dtos;
+
 
 // Webhook models
 pub mod webhook;

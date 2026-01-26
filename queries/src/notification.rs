@@ -1,8 +1,7 @@
 use common::error::AppError;
 use common::state::AppState;
-use models::notification::{
-    Notification, NotificationListParams, NotificationListResponse, NotificationSeverity,
-};
+use models::notification::{Notification, NotificationSeverity};
+use models::dtos::notification::{NotificationListParams, NotificationListResponse};
 use sqlx::{Row, query, query_as};
 
 use super::Query;
@@ -75,8 +74,7 @@ impl Query for GetUserNotificationsQuery {
                 workspace_id: row.get("workspace_id"),
                 title: row.get("title"),
                 body: row.get("body"),
-                action_url: row.get("action_url"),
-                action_label: row.get("action_label"),
+                ctas: row.get("ctas"),
                 severity: {
                     let s: String = row.get("severity");
                     match s.as_str() {
@@ -172,7 +170,7 @@ impl Query for GetNotificationQuery {
             r#"
             SELECT
                 id, deployment_id, user_id, organization_id, workspace_id,
-                title, body, action_url, action_label, severity,
+                title, body, ctas, severity,
                 is_read, read_at, is_archived, archived_at,
                 metadata, created_at, updated_at, expires_at
             FROM notifications
@@ -192,8 +190,7 @@ impl Query for GetNotificationQuery {
             workspace_id: r.workspace_id,
             title: r.title,
             body: r.body,
-            action_url: r.action_url,
-            action_label: r.action_label,
+            ctas: r.ctas,
             severity: match r.severity.as_str() {
                 "success" => NotificationSeverity::Success,
                 "warning" => NotificationSeverity::Warning,

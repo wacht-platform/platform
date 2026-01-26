@@ -551,7 +551,21 @@ async fn handle_execution_message(
                 ConversationContent::UserMessage {
                     message: user_message,
                     sender_name: None,
-                    files: None,
+                    files: model_images.map(|imgs| {
+                        imgs.into_iter()
+                            .map(|img| models::FileData {
+                                filename: img
+                                    .url
+                                    .split('/')
+                                    .last()
+                                    .unwrap_or("image.png")
+                                    .to_string(),
+                                mime_type: img.mime_type,
+                                url: img.url,
+                                size_bytes: img.size_bytes,
+                            })
+                            .collect()
+                    }),
                 },
                 ConversationMessageType::UserMessage,
             )

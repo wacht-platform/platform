@@ -323,11 +323,4 @@ fn is_displayable_message_type(content: &ConversationContent) -> bool {
     )
 }
 
-fn get_event_type(event: &StreamEvent) -> &'static str {
-    match event {
-        StreamEvent::PlatformEvent(_, _) => "platform_event",
-        StreamEvent::PlatformFunction(_, _) => "platform_function",
-        StreamEvent::ConversationMessage(_) => "conversation_message",
-        StreamEvent::UserInputRequest(_) => "user_input_request",
-    }
-}
+

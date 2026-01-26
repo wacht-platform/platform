@@ -41,8 +41,7 @@ pub struct NotificationMessage {
     pub title: String,
     pub body: String,
     pub severity: String,
-    pub action_url: Option<String>,
-    pub action_label: Option<String>,
+    pub ctas: Option<serde_json::Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 

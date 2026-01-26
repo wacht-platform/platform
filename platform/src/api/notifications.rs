@@ -12,6 +12,7 @@ pub struct CreateNotificationRequest {
     pub body: String,
     pub action_url: Option<String>,
     pub action_label: Option<String>,
+    pub ctas: Option<serde_json::Value>,
     pub severity: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub expires_hours: Option<i64>,
@@ -26,10 +27,15 @@ pub async fn create_notification(
     let mut command =
         CreateNotificationCommand::new(deployment_id, request.user_id, request.title, request.body);
 
-    if let Some(url) = request.action_url {
-        if let Some(label) = request.action_label {
-            command = command.with_action(url, label);
-        }
+    if let Some(ctas) = request.ctas {
+        command = command.with_ctas(ctas);
+    } else if let Some(url) = request.action_url {
+        let label = request.action_label.unwrap_or_else(|| "View".to_string());
+        let ctas = serde_json::json!([{
+            "label": label,
+            "payload": url
+        }]);
+        command = command.with_ctas(ctas);
     }
 
     if let Some(severity_str) = request.severity {

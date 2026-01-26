@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id, deployment_id, user_id, organization_id, workspace_id,\n                title, body, action_url, action_label, severity,\n                is_read, read_at, is_archived, archived_at,\n                metadata, created_at, updated_at, expires_at\n            FROM notifications\n            WHERE id = $1 AND user_id = $2\n            ",
+  "query": "\n            SELECT\n                id, deployment_id, user_id, organization_id, workspace_id,\n                title, body, ctas, severity,\n                is_read, read_at, is_archived, archived_at,\n                metadata, created_at, updated_at, expires_at\n            FROM notifications\n            WHERE id = $1 AND user_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -40,56 +40,51 @@
       },
       {
         "ordinal": 7,
-        "name": "action_url",
-        "type_info": "Text"
+        "name": "ctas",
+        "type_info": "Jsonb"
       },
       {
         "ordinal": 8,
-        "name": "action_label",
-        "type_info": "Varchar"
-      },
-      {
-        "ordinal": 9,
         "name": "severity",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "is_read",
         "type_info": "Bool"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "read_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "is_archived",
         "type_info": "Bool"
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "archived_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "metadata",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 15,
+        "ordinal": 14,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 15,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 17,
+        "ordinal": 16,
         "name": "expires_at",
         "type_info": "Timestamptz"
       }
@@ -109,7 +104,6 @@
       false,
       false,
       true,
-      true,
       false,
       true,
       true,
@@ -121,5 +115,5 @@
       true
     ]
   },
-  "hash": "81bd13fb1bb796983268a0919b99460b879f72ebea85bf56430cbb5347aee1f9"
+  "hash": "e61125220dbebbca5eab4eb63272bcc8220ec2be85146c46b17be77ae888504b"
 }

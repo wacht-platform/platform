@@ -20,8 +20,7 @@ pub struct NotificationMessage {
     pub title: String,
     pub body: String,
     pub severity: String,
-    pub action_url: Option<String>,
-    pub action_label: Option<String>,
+    pub ctas: Option<JsonValue>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -36,8 +35,7 @@ pub struct CreateNotificationCommand {
     pub workspace_id: Option<i64>,
     pub title: String,
     pub body: String,
-    pub action_url: Option<String>,
-    pub action_label: Option<String>,
+    pub ctas: Option<JsonValue>,
     pub severity: NotificationSeverity,
     pub metadata: Option<JsonValue>,
     pub expires_at: Option<DateTime<Utc>>,
@@ -52,17 +50,15 @@ impl CreateNotificationCommand {
             workspace_id: None,
             title,
             body,
-            action_url: None,
-            action_label: None,
+            ctas: None,
             severity: NotificationSeverity::Info,
             metadata: None,
             expires_at: None,
         }
     }
 
-    pub fn with_action(mut self, url: String, label: String) -> Self {
-        self.action_url = Some(url);
-        self.action_label = Some(label);
+    pub fn with_ctas(mut self, ctas: JsonValue) -> Self {
+        self.ctas = Some(ctas);
         self
     }
 
@@ -106,12 +102,11 @@ impl Command for CreateNotificationCommand {
                 workspace_id,
                 title,
                 body,
-                action_url,
-                action_label,
+                ctas,
                 severity,
                 metadata,
                 expires_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *
             "#,
         )
@@ -121,8 +116,7 @@ impl Command for CreateNotificationCommand {
         .bind(self.workspace_id)
         .bind(self.title)
         .bind(self.body)
-        .bind(self.action_url)
-        .bind(self.action_label)
+        .bind(self.ctas)
         .bind(&self.severity)
         .bind(self.metadata)
         .bind(self.expires_at)
@@ -143,8 +137,7 @@ impl Command for CreateNotificationCommand {
             title: notification.title.clone(),
             body: notification.body.clone(),
             severity: notification.severity.to_string(),
-            action_url: notification.action_url.clone(),
-            action_label: notification.action_label.clone(),
+            ctas: notification.ctas.clone(),
             created_at: notification.created_at,
         };
 

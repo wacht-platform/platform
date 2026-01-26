@@ -646,68 +646,27 @@ impl Command for DeleteUserCommand {
             return Err(AppError::NotFound("User not found".to_string()));
         }
 
+        // Consolidate all deletions into a single roundtrip using CTEs for compile-time checks
         sqlx::query!(
-            "DELETE FROM social_connections WHERE user_id = $1",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM user_email_addresses WHERE user_id = $1",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM user_phone_numbers WHERE user_id = $1",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM workspace_membership_roles WHERE workspace_membership_id IN (SELECT id FROM workspace_memberships WHERE user_id = $1)",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM workspace_memberships WHERE user_id = $1",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM organization_membership_roles WHERE organization_membership_id IN (SELECT id FROM organization_memberships WHERE user_id = $1)",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM organization_memberships WHERE user_id = $1",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!(
-            "UPDATE sessions SET active_signin_id = NULL where active_signin_id IN (SELECT id FROM signins WHERE user_id = $1)",
-            self.user_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        sqlx::query!("DELETE FROM signins WHERE user_id = $1", self.user_id)
-            .execute(&mut *tx)
-            .await?;
-
-        sqlx::query!(
-            "DELETE FROM users WHERE id = $1 AND deployment_id = $2",
+            r#"
+            WITH 
+                deleted_social AS (DELETE FROM social_connections WHERE user_id = $1),
+                deleted_emails AS (DELETE FROM user_email_addresses WHERE user_id = $1),
+                deleted_phones AS (DELETE FROM user_phone_numbers WHERE user_id = $1),
+                deleted_segments AS (DELETE FROM user_segments WHERE user_id = $1),
+                deleted_authenticators AS (DELETE FROM user_authenticators WHERE user_id = $1),
+                deleted_passkeys AS (DELETE FROM user_passkeys WHERE user_id = $1),
+                deleted_notifications AS (DELETE FROM notifications WHERE user_id = $1),
+                deleted_scim_ext AS (DELETE FROM scim_external_ids WHERE user_id = $1),
+                deleted_scim_members AS (DELETE FROM scim_group_members WHERE user_id = $1),
+                deleted_workspace_roles AS (DELETE FROM workspace_membership_roles WHERE workspace_membership_id IN (SELECT id FROM workspace_memberships WHERE user_id = $1)),
+                deleted_workspaces AS (DELETE FROM workspace_memberships WHERE user_id = $1),
+                deleted_org_roles AS (DELETE FROM organization_membership_roles WHERE organization_membership_id IN (SELECT id FROM organization_memberships WHERE user_id = $1)),
+                deleted_orgs AS (DELETE FROM organization_memberships WHERE user_id = $1),
+                updated_sessions AS (UPDATE sessions SET active_signin_id = NULL WHERE active_signin_id IN (SELECT id FROM signins WHERE user_id = $1)),
+                deleted_signins AS (DELETE FROM signins WHERE user_id = $1)
+            DELETE FROM users WHERE id = $1 AND deployment_id = $2
+            "#,
             self.user_id,
             self.deployment_id
         )
