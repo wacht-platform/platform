@@ -462,10 +462,6 @@ fn console_specific_routes() -> Router<AppState> {
                 .post(api::enterprise_sso::generate_scim_token_handler)
                 .delete(api::enterprise_sso::revoke_scim_token_handler),
         )
-        .route(
-            "/session/tickets",
-            post(api::session_tickets::create_session_ticket),
-        )
 }
 
 fn backend_specific_routes() -> Router<AppState> {
@@ -582,10 +578,6 @@ fn backend_specific_routes() -> Router<AppState> {
         .route(
             "/agent-execution-contexts/{context_id}/execute",
             post(api::ai_execution_context::execute_agent_async),
-        )
-        .route(
-            "/session/tickets",
-            post(api::session_tickets::create_session_ticket),
         )
 }
 
