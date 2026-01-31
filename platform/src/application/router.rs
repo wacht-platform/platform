@@ -70,10 +70,6 @@ fn ai_routes() -> Router<AppState> {
                 .delete(api::ai_agents::delete_ai_agent),
         )
         .route(
-            "/ai/agents/{agent_id}/integrations",
-            get(api::ai_agents::get_agent_integrations),
-        )
-        .route(
             "/ai/agents/{agent_id}/details",
             get(api::ai_agents::get_ai_agent_details),
         )
