@@ -25,7 +25,7 @@ pub struct SessionTicketPayload {
 pub struct GenerateSessionTicketCommand {
     pub deployment_id: i64,
     pub ticket_type: SessionTicketType,
-    pub user_id: Option<i64>,
+    pub user_id: Option<String>,
     pub agent_ids: Option<Vec<String>>,
     pub context_group: Option<String>,
     pub expires_in: Option<u64>,
@@ -46,7 +46,7 @@ impl GenerateSessionTicketCommand {
         }
     }
 
-    pub fn with_user_id(mut self, user_id: i64) -> Self {
+    pub fn with_user_id(mut self, user_id: String) -> Self {
         self.user_id = Some(user_id);
         self
     }
@@ -108,6 +108,15 @@ impl crate::Command for GenerateSessionTicketCommand {
             None
         };
 
+        // Parse user_id if provided
+        let parsed_user_id = if let Some(user_id_str) = &self.user_id {
+            Some(user_id_str.parse::<i64>().map_err(|e| {
+                AppError::BadRequest(format!("Invalid user_id {}: {}", user_id_str, e))
+            })?)
+        } else {
+            None
+        };
+
         // Generate ticket ID using Snowflake
         let ticket_id = app_state
             .sf
@@ -123,7 +132,7 @@ impl crate::Command for GenerateSessionTicketCommand {
         let payload = SessionTicketPayload {
             ticket_type: self.ticket_type.clone(),
             deployment_id: self.deployment_id,
-            user_id: self.user_id,
+            user_id: parsed_user_id,
             agent_ids: parsed_agent_ids,
             context_group: self.context_group,
             expires_at,
