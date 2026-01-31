@@ -15,9 +15,9 @@ pub enum SessionTicketType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionTicketPayload {
     pub ticket_type: SessionTicketType,
-    pub deployment_id: i64,
-    pub user_id: Option<i64>,
-    pub agent_ids: Option<Vec<i64>>,
+    pub deployment_id: String,
+    pub user_id: Option<String>,
+    pub agent_ids: Option<Vec<String>>,
     pub context_group: Option<String>,
     pub expires_at: i64,
 }
@@ -95,28 +95,6 @@ impl crate::Command for GenerateSessionTicketCommand {
             }
         }
 
-        // Parse agent_ids if provided
-        let parsed_agent_ids = if let Some(agent_ids) = self.agent_ids {
-            let mut parsed = Vec::with_capacity(agent_ids.len());
-            for id_str in agent_ids {
-                parsed.push(id_str.parse::<i64>().map_err(|e| {
-                    AppError::BadRequest(format!("Invalid agent_id {}: {}", id_str, e))
-                })?);
-            }
-            Some(parsed)
-        } else {
-            None
-        };
-
-        // Parse user_id if provided
-        let parsed_user_id = if let Some(user_id_str) = &self.user_id {
-            Some(user_id_str.parse::<i64>().map_err(|e| {
-                AppError::BadRequest(format!("Invalid user_id {}: {}", user_id_str, e))
-            })?)
-        } else {
-            None
-        };
-
         // Generate ticket ID using Snowflake
         let ticket_id = app_state
             .sf
@@ -131,9 +109,9 @@ impl crate::Command for GenerateSessionTicketCommand {
         // Create payload
         let payload = SessionTicketPayload {
             ticket_type: self.ticket_type.clone(),
-            deployment_id: self.deployment_id,
-            user_id: parsed_user_id,
-            agent_ids: parsed_agent_ids,
+            deployment_id: self.deployment_id.to_string(),
+            user_id: self.user_id,
+            agent_ids: self.agent_ids,
             context_group: self.context_group,
             expires_at,
         };
