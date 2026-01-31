@@ -48,14 +48,6 @@ fn project_routes() -> Router<AppState> {
         )
 }
 
-fn ai_context_routes() -> Router<AppState> {
-    Router::new().route(
-        "/ai/execution-context",
-        get(api::ai_execution_context::get_execution_contexts)
-            .post(api::ai_execution_context::create_execution_context),
-    )
-}
-
 fn ai_routes() -> Router<AppState> {
     Router::new()
         // AI Agents
@@ -654,7 +646,6 @@ pub async fn create_console_router(state: AppState) -> Router {
 
     let protected_routes = Router::new()
         .merge(project_routes())
-        .merge(ai_context_routes())
         .merge(billing_routes())
         .nest("/deployments/{deployment_id}", deployment_routes)
         .layer(auth_layer);
@@ -674,7 +665,7 @@ pub async fn create_backend_router(state: AppState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let backend_routs = base_deployment_routes()
+    let backend_routes = base_deployment_routes()
         .merge(ai_routes())
         .merge(backend_specific_routes())
         .layer(axum::middleware::from_fn_with_state(
@@ -684,7 +675,7 @@ pub async fn create_backend_router(state: AppState) -> Router {
 
     Router::new()
         .merge(health_routes())
-        .merge(backend_routs)
+        .merge(backend_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
