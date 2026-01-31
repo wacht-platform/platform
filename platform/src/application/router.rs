@@ -64,8 +64,8 @@ fn base_deployment_routes() -> Router<AppState> {
         .route("/users/{user_id}", patch(api::user::update_user))
         .route("/users/{user_id}", delete(api::user::delete_user))
         .route(
-            "/users/{user_id}/impersonate",
-            post(api::user::impersonate_user),
+            "/session/tickets",
+            post(api::session_tickets::create_session_ticket),
         )
         .route(
             "/users/{user_id}/password",
@@ -463,8 +463,8 @@ fn console_specific_routes() -> Router<AppState> {
                 .delete(api::enterprise_sso::revoke_scim_token_handler),
         )
         .route(
-            "/agent/tickets",
-            post(api::agent_tickets::generate_agent_ticket),
+            "/session/tickets",
+            post(api::session_tickets::create_session_ticket),
         )
 }
 
@@ -570,7 +570,6 @@ fn backend_specific_routes() -> Router<AppState> {
             "/notifications",
             post(api::notifications::create_notification),
         )
-        .route("/token", post(api::token::generate_token))
         .route(
             "/agent-execution-contexts",
             get(api::ai_execution_context::get_execution_contexts_backend)
@@ -585,8 +584,8 @@ fn backend_specific_routes() -> Router<AppState> {
             post(api::ai_execution_context::execute_agent_async),
         )
         .route(
-            "/agent/tickets",
-            post(api::agent_tickets::generate_agent_ticket),
+            "/session/tickets",
+            post(api::session_tickets::create_session_ticket),
         )
 }
 
