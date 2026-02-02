@@ -6203,9 +6203,9 @@ checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 
 [[package]]
 name = "wacht"
-version = "0.0.1-alpha.9"
+version = "0.0.1-alpha.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ad1ef2abbef0cc3d541fec69cda3f4991ddd62ddacbb6a5038e1da83bff2a68"
+checksum = "e32500956b9748150cd5c28513d1096461cf65dfab65941c4493d5eb0a287880"
 dependencies = [
  "axum",
  "chrono",

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT k.id, k.app_id, a.name as app_name,\n                   k.deployment_id, k.name, k.key_prefix,\n                   k.key_suffix, k.key_hash,\n                   k.permissions as \"permissions: serde_json::Value\",\n                   k.metadata as \"metadata: serde_json::Value\",\n                   k.expires_at, k.last_used_at, k.is_active,\n                   k.created_at, k.updated_at,\n                   k.revoked_at, k.revoked_reason\n                FROM api_keys k\n                LEFT JOIN api_key_apps a ON k.app_id = a.id\n                WHERE k.key_hash = $1 AND k.is_active = true\n               ",
+  "query": "SELECT k.id, k.app_id, a.name as app_name,\n                   k.deployment_id, k.name, k.key_prefix,\n                   k.key_suffix, k.key_hash,\n                   k.permissions as \"permissions: serde_json::Value\",\n                   k.metadata as \"metadata: serde_json::Value\",\n                   k.expires_at, k.last_used_at, k.is_active,\n                   k.created_at, k.updated_at,\n                   k.revoked_at, k.revoked_reason\n                FROM api_keys k\n                LEFT JOIN api_auth_apps a ON k.app_id = a.id\n                WHERE k.key_hash = $1 AND k.is_active = true\n               ",
   "describe": {
     "columns": [
       {
@@ -114,5 +114,5 @@
       true
     ]
   },
-  "hash": "1a32d5d73c4f8d6358cb3a3113b6b9b9d35bcbd0ceb3930ad5b5b3797eadaf7e"
+  "hash": "22dbb45ac6e67f78b207ccd3557e2adf0126bf99afed54853eb905cd9887ea1b"
 }

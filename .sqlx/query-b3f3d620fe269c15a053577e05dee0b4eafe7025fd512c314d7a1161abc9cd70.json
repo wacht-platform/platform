@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE api_auth_apps\n            SET deleted_at = NOW()\n            WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b3f3d620fe269c15a053577e05dee0b4eafe7025fd512c314d7a1161abc9cd70"
+}

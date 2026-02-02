@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE api_key_apps\n            SET\n                name = COALESCE($3, name),\n                description = COALESCE($4, description),\n                is_active = COALESCE($5, is_active),\n                rate_limits = COALESCE($6, rate_limits),\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2\n            RETURNING id, deployment_id, name, description, is_active,\n                      rate_limits as \"rate_limits: serde_json::Value\",\n                      created_at, updated_at, deleted_at\n            ",
+  "query": "SELECT id, deployment_id, name, description, is_active,\n               rate_limits as \"rate_limits: serde_json::Value\",\n               created_at, updated_at, deleted_at\n               FROM api_auth_apps WHERE deployment_id = $1 AND name = $2 AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -52,11 +52,7 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8",
-        "Varchar",
-        "Text",
-        "Bool",
-        "Jsonb"
+        "Text"
       ]
     },
     "nullable": [
@@ -71,5 +67,5 @@
       true
     ]
   },
-  "hash": "255180200e4ca5c34d96875f6c1b9375fc7948a1ed9937368ca1e14e7350ff63"
+  "hash": "8a8bb18decbd76a724cff18907a245b56b1330be1bd55c3664844bdebd39e3eb"
 }

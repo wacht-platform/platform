@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use models::api_key::{ApiKey, ApiKeyApp, RateLimit};
+use models::api_key::{ApiKey, ApiAuthApp, RateLimit};
 use models::api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,7 +11,7 @@ use serde_json::Value;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiKeyStatus {
     pub is_activated: bool,
-    pub app: Option<ApiKeyApp>,
+    pub app: Option<ApiAuthApp>,
     pub keys: Option<Vec<ApiKey>>,
 }
 
@@ -25,7 +25,7 @@ pub struct ApiKeyStats {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiKeyActivationResponse {
-    pub app: ApiKeyApp,
+    pub app: ApiAuthApp,
     pub message: String,
 }
 

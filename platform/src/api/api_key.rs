@@ -29,7 +29,7 @@ pub async fn list_api_auth_apps(
         .execute(&app_state)
         .await?;
 
-    Ok(ListApiKeyAppsResponse {
+    Ok(ListApiAuthAppsResponse {
         total: apps.len(),
         apps,
     }

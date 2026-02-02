@@ -22,7 +22,7 @@ impl GetApiAuthAppsQuery {
     }
 }
 
-impl Query for GetApiKeyAppsQuery {
+impl Query for GetApiAuthAppsQuery {
     type Output = Vec<ApiAuthApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
@@ -106,7 +106,7 @@ impl Query for GetApiAuthAppByIdQuery {
         .fetch_optional(&app_state.db_pool)
         .await?;
 
-        Ok(rec.map(|rec| ApiKeyApp {
+        Ok(rec.map(|rec| ApiAuthApp {
             id: rec.id,
             deployment_id: rec.deployment_id,
             name: rec.name,
@@ -152,7 +152,7 @@ impl Query for GetApiAuthAppByNameQuery {
         .fetch_optional(&app_state.db_pool)
         .await?;
 
-        Ok(rec.map(|rec| ApiKeyApp {
+        Ok(rec.map(|rec| ApiAuthApp {
             id: rec.id,
             deployment_id: rec.deployment_id,
             name: rec.name,

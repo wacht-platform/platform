@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT k.id as id, a.name as app_name,\n            k.permissions as \"permissions: serde_json::Value\",\n            k.is_active as is_active,\n            k.expires_at as expires_at\n            FROM api_keys k\n            LEFT JOIN api_key_apps a ON k.app_id = a.id\n            WHERE k.key_hash = $1 AND k.is_active = true",
+  "query": "SELECT k.id as id, a.name as app_name,\n            k.permissions as \"permissions: serde_json::Value\",\n            k.is_active as is_active,\n            k.expires_at as expires_at\n            FROM api_keys k\n            LEFT JOIN api_auth_apps a ON k.app_id = a.id\n            WHERE k.key_hash = $1 AND k.is_active = true",
   "describe": {
     "columns": [
       {
@@ -42,5 +42,5 @@
       true
     ]
   },
-  "hash": "7938106b921d5726b992e735aae3936c6fcb1cdff7cfa9c8082565febddd3798"
+  "hash": "0c5e083b0a3c4950832def61a4219cd8fc3ebfa24bde8a729c34a79400ff5f19"
 }

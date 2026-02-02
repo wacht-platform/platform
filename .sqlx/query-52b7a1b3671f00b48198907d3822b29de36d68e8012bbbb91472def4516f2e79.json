@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, deployment_id, name, description, is_active,\n                   rate_limits as \"rate_limits: serde_json::Value\",\n                   created_at, updated_at, deleted_at\n                   FROM api_key_apps WHERE deployment_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",
+  "query": "SELECT id, deployment_id, name, description, is_active,\n                   rate_limits as \"rate_limits: serde_json::Value\",\n                   created_at, updated_at, deleted_at\n                   FROM api_auth_apps WHERE deployment_id = $1 AND is_active = true AND deleted_at IS NULL ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -66,5 +66,5 @@
       true
     ]
   },
-  "hash": "846a54a9632c6b61b2a840c0028b6a5c8c89934dd1b005893f389e99a3cd3728"
+  "hash": "52b7a1b3671f00b48198907d3822b29de36d68e8012bbbb91472def4516f2e79"
 }

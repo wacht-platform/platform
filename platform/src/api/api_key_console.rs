@@ -11,7 +11,7 @@ use common::state::AppState;
 use dto::json::api_key::{
     ApiKeyStats, ApiKeyStatus, CreateApiKeyRequest, ListApiKeysResponse, RevokeApiKeyRequest,
 };
-use models::api_key::{ApiKey, ApiKeyApp, ApiKeyWithSecret};
+use models::api_key::{ApiKey, ApiAuthApp, ApiKeyWithSecret};
 use queries::Query;
 
 // Get API key status for a deployment
@@ -21,19 +21,53 @@ pub async fn get_api_key_status(
     let app_name = deployment_id.to_string();
 
     // Try to get the app using SDK
-    let app = api_keys::get_api_key_app(&app_name)
+    let sdk_app = api_keys::get_api_auth_app(&app_name)
         .await
-        .ok()
-        .map(ApiKeyApp::from);
+        .ok();
 
-    let keys = if app.is_some() {
+    let sdk_keys = if sdk_app.is_some() {
         api_keys::list_api_keys(&app_name, Some(true))
             .await
             .ok()
-            .map(|keys| keys.into_iter().map(ApiKey::from).collect())
     } else {
         None
     };
+
+    // Convert SDK types to model types
+    let app = sdk_app.map(|sdk_app| ApiAuthApp {
+        id: sdk_app.id.parse().unwrap_or(0),
+        deployment_id: sdk_app.deployment_id.parse().unwrap_or(0),
+        name: sdk_app.name,
+        description: sdk_app.description,
+        is_active: sdk_app.is_active,
+        rate_limits: vec![],  // Console doesn't need rate limits
+        created_at: sdk_app.created_at,
+        updated_at: sdk_app.updated_at,
+        deleted_at: None,
+    });
+
+    let keys = sdk_keys.map(|keys| {
+        keys.into_iter()
+            .map(|sdk_key| ApiKey {
+                id: sdk_key.id.parse().unwrap_or(0),
+                app_id: sdk_key.app_id.parse().unwrap_or(0),
+                deployment_id: sdk_key.deployment_id.parse().unwrap_or(0),
+                name: sdk_key.name,
+                key_prefix: sdk_key.key_prefix,
+                key_suffix: sdk_key.key_suffix,
+                key_hash: String::new(),
+                permissions: sdk_key.permissions,
+                metadata: sdk_key.metadata,
+                expires_at: sdk_key.expires_at,
+                last_used_at: sdk_key.last_used_at,
+                is_active: sdk_key.is_active,
+                created_at: sdk_key.created_at,
+                updated_at: sdk_key.updated_at,
+                revoked_at: sdk_key.revoked_at,
+                revoked_reason: sdk_key.revoked_reason,
+            })
+            .collect()
+    });
 
     Ok(ApiKeyStatus {
         is_activated: app.is_some(),
@@ -50,14 +84,14 @@ pub async fn deactivate_api_keys(
     let app_name = deployment_id.to_string();
 
     // Update app to deactivate using SDK
-    let request = api_keys::UpdateApiKeyAppRequest {
+    let request = api_keys::UpdateApiAuthAppRequest {
         name: None,
         description: None,
         is_active: Some(false),
         rate_limits: None,
     };
 
-    api_keys::update_api_key_app(&app_name, request)
+    api_keys::update_api_auth_app(&app_name, request)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -75,7 +109,27 @@ pub async fn get_api_key_stats(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let keys: Vec<ApiKey> = sdk_keys.into_iter().map(ApiKey::from).collect();
+    let keys: Vec<ApiKey> = sdk_keys
+        .into_iter()
+        .map(|sdk_key| ApiKey {
+            id: sdk_key.id.parse().unwrap_or(0),
+            app_id: sdk_key.app_id.parse().unwrap_or(0),
+            deployment_id: sdk_key.deployment_id.parse().unwrap_or(0),
+            name: sdk_key.name,
+            key_prefix: sdk_key.key_prefix,
+            key_suffix: sdk_key.key_suffix,
+            key_hash: String::new(),
+            permissions: sdk_key.permissions,
+            metadata: sdk_key.metadata,
+            expires_at: sdk_key.expires_at,
+            last_used_at: sdk_key.last_used_at,
+            is_active: sdk_key.is_active,
+            created_at: sdk_key.created_at,
+            updated_at: sdk_key.updated_at,
+            revoked_at: sdk_key.revoked_at,
+            revoked_reason: sdk_key.revoked_reason,
+        })
+        .collect();
 
     let total_keys = keys.len() as i64;
     let active_keys = keys.iter().filter(|k| k.is_active).count() as i64;
@@ -122,7 +176,27 @@ pub async fn list_api_keys(
             }
         })?;
 
-    let keys: Vec<ApiKey> = sdk_keys.into_iter().map(ApiKey::from).collect();
+    let keys: Vec<ApiKey> = sdk_keys
+        .into_iter()
+        .map(|sdk_key| ApiKey {
+            id: sdk_key.id.parse().unwrap_or(0),
+            app_id: sdk_key.app_id.parse().unwrap_or(0),
+            deployment_id: sdk_key.deployment_id.parse().unwrap_or(0),
+            name: sdk_key.name,
+            key_prefix: sdk_key.key_prefix,
+            key_suffix: sdk_key.key_suffix,
+            key_hash: String::new(),
+            permissions: sdk_key.permissions,
+            metadata: sdk_key.metadata,
+            expires_at: sdk_key.expires_at,
+            last_used_at: sdk_key.last_used_at,
+            is_active: sdk_key.is_active,
+            created_at: sdk_key.created_at,
+            updated_at: sdk_key.updated_at,
+            revoked_at: sdk_key.revoked_at,
+            revoked_reason: sdk_key.revoked_reason,
+        })
+        .collect();
 
     Ok(ListApiKeysResponse { keys }.into())
 }
@@ -174,7 +248,31 @@ pub async fn create_api_key(
             }
         })?;
 
-    Ok(ApiKeyWithSecret::from(sdk_key).into())
+    // Manually convert SDK type to model type
+    let key = ApiKey {
+        id: sdk_key.key.id.parse().unwrap_or(0),
+        app_id: sdk_key.key.app_id.parse().unwrap_or(0),
+        deployment_id: sdk_key.key.deployment_id.parse().unwrap_or(0),
+        name: sdk_key.key.name,
+        key_prefix: sdk_key.key.key_prefix,
+        key_suffix: sdk_key.key.key_suffix,
+        key_hash: String::new(),
+        permissions: sdk_key.key.permissions,
+        metadata: sdk_key.key.metadata,
+        expires_at: sdk_key.key.expires_at,
+        last_used_at: sdk_key.key.last_used_at,
+        is_active: sdk_key.key.is_active,
+        created_at: sdk_key.key.created_at,
+        updated_at: sdk_key.key.updated_at,
+        revoked_at: sdk_key.key.revoked_at,
+        revoked_reason: sdk_key.key.revoked_reason,
+    };
+
+    Ok(ApiKeyWithSecret {
+        key,
+        secret: sdk_key.secret,
+    }
+    .into())
 }
 
 // Revoke an API key
@@ -214,5 +312,29 @@ pub async fn rotate_api_key(Path((_, key_id)): Path<(i64, i64)>) -> ApiResult<Ap
         }
     })?;
 
-    Ok(ApiKeyWithSecret::from(sdk_key).into())
+    // Manually convert SDK type to model type
+    let key = ApiKey {
+        id: sdk_key.key.id.parse().unwrap_or(0),
+        app_id: sdk_key.key.app_id.parse().unwrap_or(0),
+        deployment_id: sdk_key.key.deployment_id.parse().unwrap_or(0),
+        name: sdk_key.key.name,
+        key_prefix: sdk_key.key.key_prefix,
+        key_suffix: sdk_key.key.key_suffix,
+        key_hash: String::new(),
+        permissions: sdk_key.key.permissions,
+        metadata: sdk_key.key.metadata,
+        expires_at: sdk_key.key.expires_at,
+        last_used_at: sdk_key.key.last_used_at,
+        is_active: sdk_key.key.is_active,
+        created_at: sdk_key.key.created_at,
+        updated_at: sdk_key.key.updated_at,
+        revoked_at: sdk_key.key.revoked_at,
+        revoked_reason: sdk_key.key.revoked_reason,
+    };
+
+    Ok(ApiKeyWithSecret {
+        key,
+        secret: sdk_key.secret,
+    }
+    .into())
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, deployment_id, name, description, is_active,\n               rate_limits as \"rate_limits: serde_json::Value\",\n               created_at, updated_at, deleted_at\n               FROM api_key_apps WHERE deployment_id = $1 AND name = $2 AND deleted_at IS NULL",
+  "query": "\n            INSERT INTO api_auth_apps (id, deployment_id, name, description, rate_limits)\n            VALUES ($1, $2, $3, $4, $5)\n            RETURNING id, deployment_id, name, description, is_active,\n                      rate_limits as \"rate_limits: serde_json::Value\",\n                      created_at, updated_at, deleted_at\n            ",
   "describe": {
     "columns": [
       {
@@ -52,7 +52,10 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Text"
+        "Int8",
+        "Varchar",
+        "Text",
+        "Jsonb"
       ]
     },
     "nullable": [
@@ -67,5 +70,5 @@
       true
     ]
   },
-  "hash": "1e5f265c56bc9cf2ed6b4a501c40679109df76c4ffad2feb1f88a84a0fc3be51"
+  "hash": "4c6a379d8da577c9946ca6c466b8d91d0fedb9d0e249af72ef40a4f4d777bbc7"
 }
