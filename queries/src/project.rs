@@ -10,27 +10,24 @@ use super::Query;
 
 #[allow(dead_code)]
 pub struct GetProjectsWithDeploymentQuery {
-    oid: i64,
     owner_ids: Vec<String>,
 }
 
 impl GetProjectsWithDeploymentQuery {
-    pub fn new(oid: i64) -> Self {
+    pub fn new() -> Self {
         GetProjectsWithDeploymentQuery {
-            oid,
             owner_ids: Vec::new(),
         }
     }
 
     pub fn for_owner(owner_id: String) -> Self {
         GetProjectsWithDeploymentQuery {
-            oid: 0,
             owner_ids: vec![owner_id],
         }
     }
 
     pub fn for_owners(owner_ids: Vec<String>) -> Self {
-        GetProjectsWithDeploymentQuery { oid: 0, owner_ids }
+        GetProjectsWithDeploymentQuery { owner_ids }
     }
 
     pub fn for_user_or_organization(user_id: String, org_id: Option<String>) -> Self {
@@ -40,7 +37,7 @@ impl GetProjectsWithDeploymentQuery {
         } else {
             owner_ids.push(user_id);
         }
-        GetProjectsWithDeploymentQuery { oid: 0, owner_ids }
+        GetProjectsWithDeploymentQuery { owner_ids }
     }
 }
 

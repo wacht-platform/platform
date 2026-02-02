@@ -51,8 +51,12 @@ impl Query for GetBillingAccountQuery {
             // Then get the subscription if it exists
             let subscription = sqlx::query_as::<_, Subscription>(
                 r#"
-                SELECT id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
-                FROM subscriptions WHERE billing_account_id = $1
+                SELECT 
+                    s.id, s.billing_account_id, s.provider_customer_id, s.provider_subscription_id, 
+                    s.product_id, dp.plan_name, s.status, s.previous_billing_date, s.created_at, s.updated_at
+                FROM subscriptions s
+                LEFT JOIN dodo_products dp ON s.product_id = dp.product_id
+                WHERE s.billing_account_id = $1
                 "#
             )
             .bind(account.id)
@@ -85,14 +89,17 @@ impl Query for GetSubscriptionByProviderIdQuery {
     type Output = Option<BillingAccountWithSubscription>;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        let subscription = sqlx::query_as!(
-            Subscription,
+        let subscription = sqlx::query_as::<_, Subscription>(
             r#"
-            SELECT id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
-            FROM subscriptions WHERE provider_subscription_id = $1
-            "#,
-            &self.provider_subscription_id
+            SELECT 
+                s.id, s.billing_account_id, s.provider_customer_id, s.provider_subscription_id, 
+                s.product_id, dp.plan_name, s.status, s.previous_billing_date, s.created_at, s.updated_at
+            FROM subscriptions s
+            LEFT JOIN dodo_products dp ON s.product_id = dp.product_id
+            WHERE s.provider_subscription_id = $1
+            "#
         )
+        .bind(&self.provider_subscription_id)
         .fetch_optional(&state.db_pool)
         .await?;
 
