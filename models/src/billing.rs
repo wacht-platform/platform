@@ -36,6 +36,8 @@ pub struct Subscription {
     pub provider_customer_id: String,
     pub provider_subscription_id: String,
     pub product_id: Option<String>,
+    #[sqlx(default)]
+    pub plan_name: Option<String>,
     pub status: String,
     pub previous_billing_date: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,

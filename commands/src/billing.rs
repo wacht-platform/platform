@@ -215,8 +215,7 @@ impl Command for CreateSubscriptionCommand {
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
         let id = state.sf.next_id().unwrap() as i64;
 
-        let subscription = sqlx::query_as!(
-            Subscription,
+        let subscription = sqlx::query_as::<_, Subscription>(
             r#"
             INSERT INTO subscriptions (
                 id,
@@ -227,14 +226,14 @@ impl Command for CreateSubscriptionCommand {
                 created_at,
                 updated_at
             ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-            RETURNING *
-            "#,
-            id,
-            self.billing_account_id,
-            self.provider_customer_id,
-            self.provider_subscription_id,
-            self.status
+            RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
+            "#
         )
+        .bind(id)
+        .bind(self.billing_account_id)
+        .bind(&self.provider_customer_id)
+        .bind(&self.provider_subscription_id)
+        .bind(&self.status)
         .fetch_one(&state.db_pool)
         .await?;
 
@@ -251,17 +250,16 @@ impl Command for UpdateSubscriptionStatusCommand {
     type Output = Subscription;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        let subscription = sqlx::query_as!(
-            Subscription,
+        let subscription = sqlx::query_as::<_, Subscription>(
             r#"
             UPDATE subscriptions 
             SET status = $1, updated_at = NOW()
             WHERE id = $2
-            RETURNING *
-            "#,
-            self.status,
-            self.subscription_id
+            RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
+            "#
         )
+        .bind(&self.status)
+        .bind(self.subscription_id)
         .fetch_one(&state.db_pool)
         .await?;
 
@@ -396,8 +394,7 @@ impl Command for UpsertSubscriptionCommand {
         .await?;
 
         let subscription = if let Some(id) = existing_id {
-            sqlx::query_as!(
-                Subscription,
+            sqlx::query_as::<_, Subscription>(
                 r#"
                 UPDATE subscriptions SET
                     provider_customer_id = $1,
@@ -407,21 +404,20 @@ impl Command for UpsertSubscriptionCommand {
                     previous_billing_date = $5,
                     updated_at = NOW()
                 WHERE id = $6
-                RETURNING *
+                RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
                 "#,
-                self.provider_customer_id,
-                self.provider_subscription_id,
-                self.product_id,
-                self.status,
-                self.previous_billing_date,
-                id
             )
+            .bind(&self.provider_customer_id)
+            .bind(&self.provider_subscription_id)
+            .bind(&self.product_id)
+            .bind(&self.status)
+            .bind(self.previous_billing_date)
+            .bind(id)
             .fetch_one(&state.db_pool)
             .await?
         } else {
             let id = state.sf.next_id().unwrap() as i64;
-            sqlx::query_as!(
-                Subscription,
+            sqlx::query_as::<_, Subscription>(
                 r#"
                 INSERT INTO subscriptions (
                     id,
@@ -434,16 +430,16 @@ impl Command for UpsertSubscriptionCommand {
                     created_at,
                     updated_at
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-                RETURNING *
+                RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
                 "#,
-                id,
-                billing_account_id,
-                self.provider_customer_id,
-                self.provider_subscription_id,
-                self.product_id,
-                self.status,
-                self.previous_billing_date
             )
+            .bind(id)
+            .bind(billing_account_id)
+            .bind(&self.provider_customer_id)
+            .bind(&self.provider_subscription_id)
+            .bind(&self.product_id)
+            .bind(&self.status)
+            .bind(self.previous_billing_date)
             .fetch_one(&state.db_pool)
             .await?
         };

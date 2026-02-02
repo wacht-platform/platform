@@ -56,7 +56,6 @@ pub use storage::*;
 pub mod agent_memory;
 pub mod api_key;
 pub mod api_key_gateway;
-pub mod notification;
 pub mod sms;
 pub mod webhook;
 pub mod webhook_analytics;

@@ -106,7 +106,7 @@ impl Command for CreateNotificationCommand {
                 severity,
                 metadata,
                 expires_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, NOW() + INTERVAL '90 days'))
             RETURNING *
             "#,
         )
