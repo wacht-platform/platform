@@ -48,25 +48,103 @@ fn project_routes() -> Router<AppState> {
         )
 }
 
-fn ai_context_routes() -> Router<AppState> {
-    Router::new().route(
-        "/ai-execution-context",
-        get(api::ai_execution_context::get_execution_contexts)
-            .post(api::ai_execution_context::create_execution_context),
-    )
+fn ai_routes() -> Router<AppState> {
+    Router::new()
+        // AI Agents
+        .route(
+            "/ai/agents",
+            get(api::ai_agents::get_ai_agents).post(api::ai_agents::create_ai_agent),
+        )
+        .route(
+            "/ai/agents/{agent_id}",
+            get(api::ai_agents::get_ai_agent_by_id)
+                .patch(api::ai_agents::update_ai_agent)
+                .delete(api::ai_agents::delete_ai_agent),
+        )
+        .route(
+            "/ai/agents/{agent_id}/details",
+            get(api::ai_agents::get_ai_agent_details),
+        )
+        // AI Workflows
+        .route(
+            "/ai/workflows",
+            get(api::ai_workflows::get_ai_workflows).post(api::ai_workflows::create_ai_workflow),
+        )
+        .route(
+            "/ai/workflows/{workflow_id}",
+            get(api::ai_workflows::get_ai_workflow_by_id)
+                .patch(api::ai_workflows::update_ai_workflow)
+                .delete(api::ai_workflows::delete_ai_workflow),
+        )
+        // AI Tools
+        .route(
+            "/ai/tools",
+            get(api::ai_tools::get_ai_tools).post(api::ai_tools::create_ai_tool),
+        )
+        .route(
+            "/ai/tools/{tool_id}",
+            get(api::ai_tools::get_ai_tool_by_id)
+                .patch(api::ai_tools::update_ai_tool)
+                .delete(api::ai_tools::delete_ai_tool),
+        )
+        // AI Knowledge Bases
+        .route(
+            "/ai/knowledge-bases",
+            get(api::ai_knowledge_base::get_ai_knowledge_bases)
+                .post(api::ai_knowledge_base::create_ai_knowledge_base),
+        )
+        .route(
+            "/ai/knowledge-bases/{kb_id}",
+            get(api::ai_knowledge_base::get_ai_knowledge_base_by_id)
+                .patch(api::ai_knowledge_base::update_ai_knowledge_base)
+                .delete(api::ai_knowledge_base::delete_ai_knowledge_base),
+        )
+        .route(
+            "/ai/knowledge-bases/{kb_id}/documents",
+            get(api::ai_knowledge_base::get_knowledge_base_documents)
+                .post(api::ai_knowledge_base::upload_knowledge_base_document)
+                .layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
+        )
+        .route(
+            "/ai/knowledge-bases/{kb_id}/documents/{document_id}",
+            delete(api::ai_knowledge_base::delete_knowledge_base_document),
+        )
+        .route(
+            "/ai/knowledge-bases/search",
+            get(api::ai_knowledge_base_search::search_knowledge_base),
+        )
+        .route(
+            "/ai/knowledge-bases/{kb_id}/search",
+            get(api::ai_knowledge_base_search::search_specific_knowledge_base),
+        )
+        // Agent Integrations
+        .route(
+            "/ai/agents/{agent_id}/integrations",
+            get(api::agent_integrations::get_agent_integrations)
+                .post(api::agent_integrations::create_agent_integration),
+        )
+        .route(
+            "/ai/agents/{agent_id}/integrations/{integration_id}",
+            get(api::agent_integrations::get_agent_integration_by_id)
+                .patch(api::agent_integrations::update_agent_integration)
+                .delete(api::agent_integrations::delete_agent_integration),
+        )
+        // AI Settings
+        .route(
+            "/ai/settings",
+            get(api::ai_settings::get_ai_settings).put(api::ai_settings::update_ai_settings),
+        )
 }
 
-fn base_deployment_routes() -> Router<AppState> {
+// User Management Routes
+fn user_management_routes() -> Router<AppState> {
     Router::new()
+        // Users
         .route("/users", get(api::user::get_active_user_list))
         .route("/users", post(api::user::create_user))
         .route("/users/{user_id}/details", get(api::user::get_user_details))
         .route("/users/{user_id}", patch(api::user::update_user))
         .route("/users/{user_id}", delete(api::user::delete_user))
-        .route(
-            "/users/{user_id}/impersonate",
-            post(api::user::impersonate_user),
-        )
         .route(
             "/users/{user_id}/password",
             patch(api::user::update_user_password),
@@ -93,36 +171,32 @@ fn base_deployment_routes() -> Router<AppState> {
             "/users/{user_id}/social-connections/{connection_id}",
             delete(api::user::delete_user_social_connection),
         )
+        // Invitations
         .route(
-            "/invited-users",
+            "/invitations",
             get(api::user::get_invited_user_list).post(api::user::invite_user),
         )
         .route(
-            "/invited-users/{invitation_id}",
+            "/invitations/{invitation_id}",
             delete(api::user::delete_invitation),
         )
-        .route("/user-waitlist", get(api::user::get_user_waitlist))
+        // Waitlist
+        .route("/waitlist", get(api::user::get_user_waitlist))
         .route(
-            "/user-waitlist/{waitlist_user_id}/approve",
+            "/waitlist/{waitlist_user_id}/approve",
             post(api::user::approve_waitlist_user),
         )
-        .route("/", get(api::settings::get_deployment_with_settings))
+        // Session
         .route(
-            "/jwt-templates",
-            get(api::settings::get_deployment_jwt_templates),
+            "/session/tickets",
+            post(api::session_tickets::create_session_ticket),
         )
-        .route(
-            "/jwt-templates",
-            post(api::settings::create_deployment_jwt_template),
-        )
-        .route(
-            "/jwt-templates/{id}",
-            patch(api::settings::update_deployment_jwt_template),
-        )
-        .route(
-            "/jwt-templates/{id}",
-            delete(api::settings::delete_deployment_jwt_template),
-        )
+}
+
+// B2B Routes
+fn b2b_routes() -> Router<AppState> {
+    Router::new()
+        // Workspaces
         .route("/workspaces", get(api::b2b::get_workspace_list))
         .route(
             "/workspaces/{workspace_id}",
@@ -131,22 +205,8 @@ fn base_deployment_routes() -> Router<AppState> {
                 .delete(api::b2b::delete_workspace),
         )
         .route(
-            "/workspace-roles",
+            "/workspaces/roles",
             get(api::b2b::get_deployment_workspace_roles),
-        )
-        .route(
-            "/organizations",
-            get(api::b2b::get_organization_list).post(api::b2b::create_organization),
-        )
-        .route(
-            "/organizations/{organization_id}",
-            get(api::b2b::get_organization_details)
-                .patch(api::b2b::update_organization)
-                .delete(api::b2b::delete_organization),
-        )
-        .route(
-            "/organizations/{organization_id}/workspaces",
-            post(api::b2b::create_workspace_for_organization),
         )
         .route(
             "/workspaces/{workspace_id}/roles",
@@ -163,6 +223,21 @@ fn base_deployment_routes() -> Router<AppState> {
         .route(
             "/workspaces/{workspace_id}/members/{membership_id}",
             delete(api::b2b::remove_workspace_member).patch(api::b2b::update_workspace_member),
+        )
+        // Organizations
+        .route(
+            "/organizations",
+            get(api::b2b::get_organization_list).post(api::b2b::create_organization),
+        )
+        .route(
+            "/organizations/{organization_id}",
+            get(api::b2b::get_organization_details)
+                .patch(api::b2b::update_organization)
+                .delete(api::b2b::delete_organization),
+        )
+        .route(
+            "/organizations/{organization_id}/workspaces",
+            post(api::b2b::create_workspace_for_organization),
         )
         .route(
             "/organizations/{organization_id}/members",
@@ -182,9 +257,73 @@ fn base_deployment_routes() -> Router<AppState> {
             patch(api::b2b::update_organization_role).delete(api::b2b::delete_organization_role),
         )
         .route(
-            "/organization-roles",
+            "/organizations/roles",
             get(api::b2b::get_deployment_org_roles),
         )
+}
+
+// Settings Routes
+fn settings_routes() -> Router<AppState> {
+    Router::new()
+        // Deployment info
+        .route("/", get(api::settings::get_deployment_with_settings))
+        // JWT Templates (configuration)
+        .route(
+            "/jwt-templates",
+            get(api::settings::get_deployment_jwt_templates),
+        )
+        .route(
+            "/jwt-templates",
+            post(api::settings::create_deployment_jwt_template),
+        )
+        .route(
+            "/jwt-templates/{id}",
+            patch(api::settings::update_deployment_jwt_template),
+        )
+        .route(
+            "/jwt-templates/{id}",
+            delete(api::settings::delete_deployment_jwt_template),
+        )
+        // Settings
+        .route(
+            "/settings/auth",
+            patch(api::settings::update_deployment_auth_settings),
+        )
+        .route(
+            "/settings/display",
+            patch(api::settings::update_deployment_display_settings),
+        )
+        .route(
+            "/settings/restrictions",
+            patch(api::settings::update_deployment_restrictions),
+        )
+        .route(
+            "/settings/b2b",
+            patch(api::b2b::update_deployment_b2b_settings),
+        )
+        // Social Connections
+        .route(
+            "/settings/social-connections",
+            get(api::connection::get_deployment_social_connections),
+        )
+        .route(
+            "/settings/social-connections",
+            put(api::connection::upsert_deployment_social_connection),
+        )
+        // Email Templates
+        .route(
+            "/settings/email-templates/{template_name}",
+            get(api::settings::get_deployment_email_template),
+        )
+        .route(
+            "/settings/email-templates/{template_name}",
+            patch(api::settings::update_deployment_email_template),
+        )
+}
+
+// Segments Routes
+fn segments_routes() -> Router<AppState> {
+    Router::new()
         .route(
             "/segments",
             get(api::segments::list_segments).post(api::segments::create_segment),
@@ -196,121 +335,11 @@ fn base_deployment_routes() -> Router<AppState> {
         )
         .route("/segments/{id}/assign", post(api::segments::assign_segment))
         .route("/segments/{id}/remove", post(api::segments::remove_segment))
-        .route(
-            "/settings/auth-settings",
-            patch(api::settings::update_deployment_auth_settings),
-        )
-        .route(
-            "/settings/display-settings",
-            patch(api::settings::update_deployment_display_settings),
-        )
-        .route(
-            "/restrictions",
-            patch(api::settings::update_deployment_restrictions),
-        )
-        .route(
-            "/social-connections",
-            get(api::connection::get_deployment_social_connections),
-        )
-        .route(
-            "/social-connections",
-            put(api::connection::upsert_deployment_social_connection),
-        )
-        .route(
-            "/settings/b2b-settings",
-            patch(api::b2b::update_deployment_b2b_settings),
-        )
-        .route(
-            "/settings/ai-settings",
-            get(api::ai_settings::get_ai_settings).put(api::ai_settings::update_ai_settings),
-        )
-        .route(
-            "/email-templates/{template_name}",
-            get(api::settings::get_deployment_email_template),
-        )
-        .route(
-            "/email-templates/{template_name}",
-            patch(api::settings::update_deployment_email_template),
-        )
-        .route("/upload/{image_type}", post(api::upload::upload_image))
-        .route(
-            "/ai-agents",
-            get(api::ai_agents::get_ai_agents).post(api::ai_agents::create_ai_agent),
-        )
-        .route(
-            "/ai-agents/{agent_id}",
-            get(api::ai_agents::get_ai_agent_by_id)
-                .patch(api::ai_agents::update_ai_agent)
-                .delete(api::ai_agents::delete_ai_agent),
-        )
-        .route(
-            "/ai-agents/{agent_id}/integrations",
-            get(api::ai_agents::get_agent_integrations),
-        )
-        .route(
-            "/ai-agents/{agent_id}/details",
-            get(api::ai_agents::get_ai_agent_details),
-        )
-        .route(
-            "/ai-workflows",
-            get(api::ai_workflows::get_ai_workflows).post(api::ai_workflows::create_ai_workflow),
-        )
-        .route(
-            "/ai-workflows/{workflow_id}",
-            get(api::ai_workflows::get_ai_workflow_by_id)
-                .patch(api::ai_workflows::update_ai_workflow)
-                .delete(api::ai_workflows::delete_ai_workflow),
-        )
-        .route(
-            "/ai-tools",
-            get(api::ai_tools::get_ai_tools).post(api::ai_tools::create_ai_tool),
-        )
-        .route(
-            "/ai-tools/{tool_id}",
-            get(api::ai_tools::get_ai_tool_by_id)
-                .patch(api::ai_tools::update_ai_tool)
-                .delete(api::ai_tools::delete_ai_tool),
-        )
-        .route(
-            "/ai-knowledge-bases",
-            get(api::ai_knowledge_base::get_ai_knowledge_bases)
-                .post(api::ai_knowledge_base::create_ai_knowledge_base),
-        )
-        .route(
-            "/ai-knowledge-bases/{kb_id}",
-            get(api::ai_knowledge_base::get_ai_knowledge_base_by_id)
-                .patch(api::ai_knowledge_base::update_ai_knowledge_base)
-                .delete(api::ai_knowledge_base::delete_ai_knowledge_base),
-        )
-        .route(
-            "/ai-knowledge-bases/{kb_id}/documents",
-            get(api::ai_knowledge_base::get_knowledge_base_documents)
-                .post(api::ai_knowledge_base::upload_knowledge_base_document)
-                .layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
-        )
-        .route(
-            "/ai-knowledge-bases/{kb_id}/documents/{document_id}",
-            delete(api::ai_knowledge_base::delete_knowledge_base_document),
-        )
-        .route(
-            "/ai-knowledge-bases/search",
-            get(api::ai_knowledge_base_search::search_knowledge_base),
-        )
-        .route(
-            "/ai-knowledge-bases/{kb_id}/search",
-            get(api::ai_knowledge_base_search::search_specific_knowledge_base),
-        )
-        .route(
-            "/agents/{agent_id}/integrations",
-            get(api::agent_integrations::get_agent_integrations)
-                .post(api::agent_integrations::create_agent_integration),
-        )
-        .route(
-            "/agents/{agent_id}/integrations/{integration_id}",
-            get(api::agent_integrations::get_agent_integration_by_id)
-                .patch(api::agent_integrations::update_agent_integration)
-                .delete(api::agent_integrations::delete_agent_integration),
-        )
+}
+
+// Analytics Routes
+fn analytics_routes() -> Router<AppState> {
+    Router::new()
         .route("/analytics/stats", get(api::analytics::get_analytics_stats))
         .route(
             "/analytics/recent-signups",
@@ -320,6 +349,21 @@ fn base_deployment_routes() -> Router<AppState> {
             "/analytics/recent-signins",
             get(api::analytics::get_recent_signins),
         )
+}
+
+// Utility Routes
+fn utility_routes() -> Router<AppState> {
+    Router::new()
+        .route("/upload/{image_type}", post(api::upload::upload_image))
+}
+
+fn base_deployment_routes() -> Router<AppState> {
+    user_management_routes()
+        .merge(b2b_routes())
+        .merge(settings_routes())
+        .merge(segments_routes())
+        .merge(analytics_routes())
+        .merge(utility_routes())
 }
 
 fn billing_routes() -> Router<AppState> {
@@ -425,12 +469,12 @@ fn console_specific_routes() -> Router<AppState> {
             post(api::api_key_console::rotate_api_key),
         )
         .route(
-            "/settings/email-provider/smtp",
+            "/settings/email/smtp",
             post(api::settings::update_smtp_config)
                 .delete(api::settings::remove_smtp_config),
         )
         .route(
-            "/settings/email-provider/smtp/verify",
+            "/settings/email/smtp/verify",
             post(api::settings::verify_smtp_connection),
         )
         .route(
@@ -461,10 +505,6 @@ fn console_specific_routes() -> Router<AppState> {
             get(api::enterprise_sso::get_scim_token_handler)
                 .post(api::enterprise_sso::generate_scim_token_handler)
                 .delete(api::enterprise_sso::revoke_scim_token_handler),
-        )
-        .route(
-            "/agent/tickets",
-            post(api::agent_tickets::generate_agent_ticket),
         )
 }
 
@@ -570,23 +610,18 @@ fn backend_specific_routes() -> Router<AppState> {
             "/notifications",
             post(api::notifications::create_notification),
         )
-        .route("/token", post(api::token::generate_token))
         .route(
-            "/agent-execution-contexts",
+            "/ai/execution-contexts",
             get(api::ai_execution_context::get_execution_contexts_backend)
                 .post(api::ai_execution_context::create_execution_context_backend),
         )
         .route(
-            "/agent-execution-contexts/{context_id}",
+            "/ai/execution-contexts/{context_id}",
             patch(api::ai_execution_context::update_execution_context),
         )
         .route(
-            "/agent-execution-contexts/{context_id}/execute",
+            "/ai/execution-contexts/{context_id}/execute",
             post(api::ai_execution_context::execute_agent_async),
-        )
-        .route(
-            "/agent/tickets",
-            post(api::agent_tickets::generate_agent_ticket),
         )
 }
 
@@ -602,6 +637,7 @@ pub async fn create_console_router(state: AppState) -> Router {
     let auth_layer = AuthLayer::new();
 
     let deployment_routes = base_deployment_routes()
+        .merge(ai_routes())
         .merge(console_specific_routes())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -610,7 +646,6 @@ pub async fn create_console_router(state: AppState) -> Router {
 
     let protected_routes = Router::new()
         .merge(project_routes())
-        .merge(ai_context_routes())
         .merge(billing_routes())
         .nest("/deployments/{deployment_id}", deployment_routes)
         .layer(auth_layer);
@@ -630,7 +665,8 @@ pub async fn create_backend_router(state: AppState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let backend_routs = base_deployment_routes()
+    let backend_routes = base_deployment_routes()
+        .merge(ai_routes())
         .merge(backend_specific_routes())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -639,7 +675,7 @@ pub async fn create_backend_router(state: AppState) -> Router {
 
     Router::new()
         .merge(health_routes())
-        .merge(backend_routs)
+        .merge(backend_routes)
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)

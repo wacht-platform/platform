@@ -13,6 +13,7 @@ pub mod deployment_settings;
 pub mod execution_plan;
 pub mod nats;
 pub mod project;
+pub mod session_ticket;
 pub mod stage_execution;
 pub mod template_context;
 pub mod token;

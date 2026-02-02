@@ -1,5 +1,5 @@
 pub mod agent_integrations;
-pub mod agent_tickets;
+pub mod session_tickets;
 pub mod ai_agents;
 pub mod ai_execution_context;
 pub mod ai_knowledge_base;
@@ -20,7 +20,6 @@ pub mod notifications;
 pub mod project;
 pub mod segments;
 pub mod settings;
-pub mod token;
 pub mod upload;
 pub mod user;
 pub mod webhook;
