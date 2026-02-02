@@ -1,14 +1,14 @@
 use super::Query;
 use common::error::AppError;
 use common::state::AppState;
-use models::api_key::{ApiKey, ApiKeyApp, ApiKeyWithIdentifers};
+use models::api_key::{ApiKey, ApiAuthApp, ApiKeyWithIdentifers};
 
-pub struct GetApiKeyAppsQuery {
+pub struct GetApiAuthAppsQuery {
     pub deployment_id: i64,
     pub include_inactive: bool,
 }
 
-impl GetApiKeyAppsQuery {
+impl GetApiAuthAppsQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self {
             deployment_id,
@@ -23,7 +23,7 @@ impl GetApiKeyAppsQuery {
 }
 
 impl Query for GetApiKeyAppsQuery {
-    type Output = Vec<ApiKeyApp>;
+    type Output = Vec<ApiAuthApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let apps = if self.include_inactive {
@@ -31,14 +31,14 @@ impl Query for GetApiKeyAppsQuery {
                 r#"SELECT id, deployment_id, name, description, is_active,
                    rate_limits as "rate_limits: serde_json::Value",
                    created_at, updated_at, deleted_at
-                   FROM api_key_apps WHERE deployment_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC"#,
+                   FROM api_auth_apps WHERE deployment_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC"#,
                 self.deployment_id
             )
             .fetch_all(&app_state.db_pool)
             .await?;
 
             recs.into_iter()
-                .map(|rec| ApiKeyApp {
+                .map(|rec| ApiAuthApp {
                     id: rec.id,
                     deployment_id: rec.deployment_id,
                     name: rec.name,
@@ -58,14 +58,14 @@ impl Query for GetApiKeyAppsQuery {
                 r#"SELECT id, deployment_id, name, description, is_active,
                    rate_limits as "rate_limits: serde_json::Value",
                    created_at, updated_at, deleted_at
-                   FROM api_key_apps WHERE deployment_id = $1 AND is_active = true AND deleted_at IS NULL ORDER BY created_at DESC"#,
+                   FROM api_auth_apps WHERE deployment_id = $1 AND is_active = true AND deleted_at IS NULL ORDER BY created_at DESC"#,
                 self.deployment_id
             )
             .fetch_all(&app_state.db_pool)
             .await?;
 
             recs.into_iter()
-                .map(|rec| ApiKeyApp {
+                .map(|rec| ApiAuthApp {
                     id: rec.id,
                     deployment_id: rec.deployment_id,
                     name: rec.name,
@@ -86,20 +86,20 @@ impl Query for GetApiKeyAppsQuery {
     }
 }
 
-pub struct GetApiKeyAppByIdQuery {
+pub struct GetApiAuthAppByIdQuery {
     pub app_id: i64,
     pub deployment_id: i64,
 }
 
-impl Query for GetApiKeyAppByIdQuery {
-    type Output = Option<ApiKeyApp>;
+impl Query for GetApiAuthAppByIdQuery {
+    type Output = Option<ApiAuthApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
             r#"SELECT id, deployment_id, name, description, is_active,
                rate_limits as "rate_limits: serde_json::Value",
                created_at, updated_at, deleted_at
-               FROM api_key_apps WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL"#,
+               FROM api_auth_apps WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL"#,
             self.app_id,
             self.deployment_id
         )
@@ -123,12 +123,12 @@ impl Query for GetApiKeyAppByIdQuery {
     }
 }
 
-pub struct GetApiKeyAppByNameQuery {
+pub struct GetApiAuthAppByNameQuery {
     pub deployment_id: i64,
     pub name: String,
 }
 
-impl GetApiKeyAppByNameQuery {
+impl GetApiAuthAppByNameQuery {
     pub fn new(deployment_id: i64, name: String) -> Self {
         Self {
             deployment_id,
@@ -137,15 +137,15 @@ impl GetApiKeyAppByNameQuery {
     }
 }
 
-impl Query for GetApiKeyAppByNameQuery {
-    type Output = Option<ApiKeyApp>;
+impl Query for GetApiAuthAppByNameQuery {
+    type Output = Option<ApiAuthApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
             r#"SELECT id, deployment_id, name, description, is_active,
                rate_limits as "rate_limits: serde_json::Value",
                created_at, updated_at, deleted_at
-               FROM api_key_apps WHERE deployment_id = $1 AND name = $2 AND deleted_at IS NULL"#,
+               FROM api_auth_apps WHERE deployment_id = $1 AND name = $2 AND deleted_at IS NULL"#,
             self.deployment_id,
             self.name
         )
@@ -298,7 +298,7 @@ impl Query for GetApiKeyByHashQuery {
                    k.created_at, k.updated_at,
                    k.revoked_at, k.revoked_reason
                 FROM api_keys k
-                LEFT JOIN api_key_apps a ON k.app_id = a.id
+                LEFT JOIN api_auth_apps a ON k.app_id = a.id
                 WHERE k.key_hash = $1 AND k.is_active = true
                "#,
             self.key_hash
@@ -350,7 +350,7 @@ impl Query for GetApiKeyIdentifiersByHashQuery {
             k.is_active as is_active,
             k.expires_at as expires_at
             FROM api_keys k
-            LEFT JOIN api_key_apps a ON k.app_id = a.id
+            LEFT JOIN api_auth_apps a ON k.app_id = a.id
             WHERE k.key_hash = $1 AND k.is_active = true"#,
             self.key_hash
         )

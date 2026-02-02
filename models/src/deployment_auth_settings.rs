@@ -346,6 +346,7 @@ pub struct DeploymentAuthSettings {
     pub session_token_lifetime: i64,
     pub session_validity_period: i64,
     pub session_inactive_timeout: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
 }
 

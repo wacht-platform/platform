@@ -21,8 +21,11 @@ pub struct UserDetails {
     pub second_factor_policy: SecondFactorPolicy,
     pub availability: String,
     pub last_password_reset_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::utils::serde::i64_as_string_option")]
     pub active_organization_membership_id: Option<i64>,
+    #[serde(with = "crate::utils::serde::i64_as_string_option")]
     pub active_workspace_membership_id: Option<i64>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub public_metadata: Value,
     pub private_metadata: Value,

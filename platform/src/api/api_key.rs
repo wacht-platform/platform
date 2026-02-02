@@ -6,24 +6,25 @@ use crate::middleware::RequireDeployment;
 use commands::{
     Command,
     api_key::{CreateApiKeyCommand, RevokeApiKeyCommand, RotateApiKeyCommand},
-    api_key_app::{CreateApiKeyAppCommand, DeleteApiKeyAppCommand, UpdateApiKeyAppCommand},
+    api_key_app::{CreateApiAuthAppCommand, DeleteApiAuthAppCommand, UpdateApiAuthAppCommand},
 };
 use common::state::AppState;
 use dto::json::api_key::*;
-use models::api_key::{ApiKeyApp, ApiKeyWithSecret};
+use models::api_key::{ApiAuthApp, ApiKeyWithSecret};
+
 use queries::{
     Query as QueryTrait,
-    api_key::{GetApiKeyAppByNameQuery, GetApiKeyAppsQuery, GetApiKeysByAppQuery},
+    api_key::{GetApiAuthAppByNameQuery, GetApiAuthAppsQuery, GetApiKeysByAppQuery},
 };
 
-pub async fn list_api_key_apps(
+pub async fn list_api_auth_apps(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Query(params): Query<ListApiKeyAppsQuery>,
-) -> ApiResult<ListApiKeyAppsResponse> {
+    Query(params): Query<ListApiAuthAppsQuery>,
+) -> ApiResult<ListApiAuthAppsResponse> {
     let include_inactive = params.include_inactive.unwrap_or(false);
 
-    let apps = GetApiKeyAppsQuery::new(deployment_id)
+    let apps = GetApiAuthAppsQuery::new(deployment_id)
         .with_inactive(include_inactive)
         .execute(&app_state)
         .await?;
@@ -35,12 +36,12 @@ pub async fn list_api_key_apps(
     .into())
 }
 
-pub async fn get_api_key_app(
+pub async fn get_api_auth_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
-) -> ApiResult<ApiKeyApp> {
-    let app = GetApiKeyAppByNameQuery::new(deployment_id, app_name)
+) -> ApiResult<ApiAuthApp> {
+    let app = GetApiAuthAppByNameQuery::new(deployment_id, app_name)
         .execute(&app_state)
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
@@ -48,12 +49,12 @@ pub async fn get_api_key_app(
     Ok(app.into())
 }
 
-pub async fn create_api_key_app(
+pub async fn create_api_auth_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Json(request): Json<CreateApiKeyAppRequest>,
-) -> ApiResult<ApiKeyApp> {
-    let mut command = CreateApiKeyAppCommand::new(deployment_id, request.name);
+    Json(request): Json<CreateApiAuthAppRequest>,
+) -> ApiResult<ApiAuthApp> {
+    let mut command = CreateApiAuthAppCommand::new(deployment_id, request.name);
 
     if let Some(description) = request.description {
         command = command.with_description(description);
@@ -69,18 +70,18 @@ pub async fn create_api_key_app(
     Ok(app.into())
 }
 
-pub async fn update_api_key_app(
+pub async fn update_api_auth_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
-    Json(request): Json<UpdateApiKeyAppRequest>,
-) -> ApiResult<ApiKeyApp> {
-    let app = GetApiKeyAppByNameQuery::new(deployment_id, app_name)
+    Json(request): Json<UpdateApiAuthAppRequest>,
+) -> ApiResult<ApiAuthApp> {
+    let app = GetApiAuthAppByNameQuery::new(deployment_id, app_name)
         .execute(&app_state)
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
 
-    let command = UpdateApiKeyAppCommand {
+    let command = UpdateApiAuthAppCommand {
         app_id: app.id,
         deployment_id,
         name: request.name,
@@ -93,18 +94,18 @@ pub async fn update_api_key_app(
     Ok(app.into())
 }
 
-pub async fn delete_api_key_app(
+pub async fn delete_api_auth_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_name): Path<String>,
 ) -> ApiResult<()> {
     // First get the app by name to find its ID
-    let app = GetApiKeyAppByNameQuery::new(deployment_id, app_name)
+    let app = GetApiAuthAppByNameQuery::new(deployment_id, app_name)
         .execute(&app_state)
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
 
-    let command = DeleteApiKeyAppCommand {
+    let command = DeleteApiAuthAppCommand {
         app_id: app.id,
         deployment_id,
     };
@@ -120,7 +121,7 @@ pub async fn list_api_keys(
     Query(params): Query<ListApiKeysQuery>,
 ) -> ApiResult<ListApiKeysResponse> {
     // First get the app by name to find its ID
-    let app = GetApiKeyAppByNameQuery::new(deployment_id, app_name)
+    let app = GetApiAuthAppByNameQuery::new(deployment_id, app_name)
         .execute(&app_state)
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
@@ -142,7 +143,7 @@ pub async fn create_api_key(
     Json(request): Json<CreateApiKeyRequest>,
 ) -> ApiResult<ApiKeyWithSecret> {
     // First get the app by name to find its ID
-    let app = GetApiKeyAppByNameQuery::new(deployment_id, app_name)
+    let app = GetApiAuthAppByNameQuery::new(deployment_id, app_name)
         .execute(&app_state)
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;

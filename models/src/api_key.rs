@@ -168,7 +168,7 @@ impl RateLimit {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct ApiKeyApp {
+pub struct ApiAuthApp {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
     #[serde(with = "crate::utils::serde::i64_as_string")]
@@ -183,7 +183,7 @@ pub struct ApiKeyApp {
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
-impl ApiKeyApp {
+impl ApiAuthApp {
     /// Get default rate limits if none are configured
     pub fn effective_rate_limits(&self) -> Vec<RateLimit> {
         if self.rate_limits.is_empty() {
@@ -257,8 +257,8 @@ pub struct ApiKeyScope {
 }
 
 // Conversions from SDK types to model types
-impl From<wacht::api::api_keys::ApiKeyApp> for ApiKeyApp {
-    fn from(sdk_app: wacht::api::api_keys::ApiKeyApp) -> Self {
+impl From<wacht::api::api_keys::ApiAuthApp> for ApiAuthApp {
+    fn from(sdk_app: wacht::api::api_keys::ApiAuthApp) -> Self {
         let rate_limits = sdk_app
             .rate_limits
             .into_iter()

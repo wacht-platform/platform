@@ -47,7 +47,7 @@ impl Query for GetApiKeyGatewayDataQuery {
                 a.name as app_name,
                 a.rate_limits as "rate_limits: serde_json::Value"
             FROM api_keys k
-            INNER JOIN api_key_apps a ON k.app_id = a.id
+            INNER JOIN api_auth_apps a ON k.app_id = a.id
             WHERE k.key_hash = $1
                 AND k.is_active = true
                 AND a.is_active = true

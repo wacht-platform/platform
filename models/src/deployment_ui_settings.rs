@@ -41,6 +41,7 @@ pub struct DeploymentUISettings {
     pub id: i64,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub app_name: String,
     pub tos_page_url: String,

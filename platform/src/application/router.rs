@@ -582,30 +582,30 @@ fn backend_specific_routes() -> Router<AppState> {
             "/webhooks/apps/{app_name}/timeseries",
             get(api::webhook::get_webhook_timeseries),
         )
-        .route("/api-keys/apps", get(api::api_key::list_api_key_apps))
-        .route("/api-keys/apps", post(api::api_key::create_api_key_app))
+        .route("/api-auth/apps", get(api::api_key::list_api_auth_apps))
+        .route("/api-auth/apps", post(api::api_key::create_api_auth_app))
         .route(
-            "/api-keys/apps/{app_name}",
-            get(api::api_key::get_api_key_app),
+            "/api-auth/apps/{app_name}",
+            get(api::api_key::get_api_auth_app),
         )
         .route(
-            "/api-keys/apps/{app_name}",
-            patch(api::api_key::update_api_key_app),
+            "/api-auth/apps/{app_name}",
+            patch(api::api_key::update_api_auth_app),
         )
         .route(
-            "/api-keys/apps/{app_name}",
-            delete(api::api_key::delete_api_key_app),
+            "/api-auth/apps/{app_name}",
+            delete(api::api_key::delete_api_auth_app),
         )
         .route(
-            "/api-keys/apps/{app_name}/keys",
+            "/api-auth/apps/{app_name}/keys",
             get(api::api_key::list_api_keys),
         )
         .route(
-            "/api-keys/apps/{app_name}/keys",
+            "/api-auth/apps/{app_name}/keys",
             post(api::api_key::create_api_key),
         )
-        .route("/api-keys/revoke", post(api::api_key::revoke_api_key))
-        .route("/api-keys/rotate", post(api::api_key::rotate_api_key))
+        .route("/api-auth/keys/revoke", post(api::api_key::revoke_api_key))
+        .route("/api-auth/keys/rotate", post(api::api_key::rotate_api_key))
         .route(
             "/notifications",
             post(api::notifications::create_notification),

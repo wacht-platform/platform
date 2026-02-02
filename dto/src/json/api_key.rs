@@ -34,25 +34,25 @@ pub struct ApiKeyActivationResponse {
 // =====================================================
 
 #[derive(Debug, Deserialize)]
-pub struct ListApiKeyAppsQuery {
+pub struct ListApiAuthAppsQuery {
     pub include_inactive: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct ListApiKeyAppsResponse {
-    pub apps: Vec<ApiKeyApp>,
+pub struct ListApiAuthAppsResponse {
+    pub apps: Vec<ApiAuthApp>,
     pub total: usize,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CreateApiKeyAppRequest {
+pub struct CreateApiAuthAppRequest {
     pub name: String,
     pub description: Option<String>,
     pub rate_limits: Option<Vec<RateLimit>>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct UpdateApiKeyAppRequest {
+pub struct UpdateApiAuthAppRequest {
     pub name: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,

@@ -1,16 +1,16 @@
 use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
-use models::api_key::{ApiKeyApp, RateLimit};
+use models::api_key::{ApiAuthApp, RateLimit};
 
-pub struct CreateApiKeyAppCommand {
+pub struct CreateApiAuthAppCommand {
     pub deployment_id: i64,
     pub name: String,
     pub description: Option<String>,
     pub rate_limits: Vec<RateLimit>,
 }
 
-impl CreateApiKeyAppCommand {
+impl CreateApiAuthAppCommand {
     pub fn new(deployment_id: i64, name: String) -> Self {
         Self {
             deployment_id,
@@ -39,8 +39,8 @@ impl CreateApiKeyAppCommand {
     }
 }
 
-impl Command for CreateApiKeyAppCommand {
-    type Output = ApiKeyApp;
+impl Command for CreateApiAuthAppCommand {
+    type Output = ApiAuthApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let app_id = app_state.sf.next_id()? as i64;
@@ -50,7 +50,7 @@ impl Command for CreateApiKeyAppCommand {
 
         let rec = sqlx::query!(
             r#"
-            INSERT INTO api_key_apps (id, deployment_id, name, description, rate_limits)
+            INSERT INTO api_auth_apps (id, deployment_id, name, description, rate_limits)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING id, deployment_id, name, description, is_active,
                       rate_limits as "rate_limits: serde_json::Value",
@@ -65,7 +65,7 @@ impl Command for CreateApiKeyAppCommand {
         .fetch_one(&app_state.db_pool)
         .await?;
 
-        Ok(ApiKeyApp {
+        Ok(ApiAuthApp {
             id: rec.id,
             deployment_id: rec.deployment_id,
             name: rec.name,
@@ -82,7 +82,7 @@ impl Command for CreateApiKeyAppCommand {
     }
 }
 
-pub struct UpdateApiKeyAppCommand {
+pub struct UpdateApiAuthAppCommand {
     pub app_id: i64,
     pub deployment_id: i64,
     pub name: Option<String>,
@@ -91,8 +91,8 @@ pub struct UpdateApiKeyAppCommand {
     pub rate_limits: Option<Vec<RateLimit>>,
 }
 
-impl Command for UpdateApiKeyAppCommand {
-    type Output = ApiKeyApp;
+impl Command for UpdateApiAuthAppCommand {
+    type Output = ApiAuthApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         if let Some(ref rate_limits) = self.rate_limits {
@@ -112,7 +112,7 @@ impl Command for UpdateApiKeyAppCommand {
 
         let rec = sqlx::query!(
             r#"
-            UPDATE api_key_apps
+            UPDATE api_auth_apps
             SET
                 name = COALESCE($3, name),
                 description = COALESCE($4, description),
@@ -134,7 +134,7 @@ impl Command for UpdateApiKeyAppCommand {
         .fetch_one(&app_state.db_pool)
         .await?;
 
-        Ok(ApiKeyApp {
+        Ok(ApiAuthApp {
             id: rec.id,
             deployment_id: rec.deployment_id,
             name: rec.name,
@@ -151,18 +151,18 @@ impl Command for UpdateApiKeyAppCommand {
     }
 }
 
-pub struct DeleteApiKeyAppCommand {
+pub struct DeleteApiAuthAppCommand {
     pub app_id: i64,
     pub deployment_id: i64,
 }
 
-impl Command for DeleteApiKeyAppCommand {
+impl Command for DeleteApiAuthAppCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let result = sqlx::query!(
             r#"
-            UPDATE api_key_apps
+            UPDATE api_auth_apps
             SET deleted_at = NOW()
             WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL
             "#,
@@ -173,7 +173,7 @@ impl Command for DeleteApiKeyAppCommand {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("API key app not found".to_string()));
+            return Err(AppError::NotFound("API auth app not found".to_string()));
         }
 
         Ok(())

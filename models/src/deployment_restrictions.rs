@@ -11,6 +11,7 @@ pub struct DeploymentRestrictions {
     pub id: i64,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub allowlist_enabled: bool,
     pub blocklist_enabled: bool,
