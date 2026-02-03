@@ -28,13 +28,13 @@ Extract and categorize memories from this execution:
 
 ### Memory Categories:
 - **working**: Active context, current state, temporary information
-- **procedural**: How-to knowledge, successful approaches, workflows that worked
+- **procedural**: How-to knowledge, successful approaches
 - **semantic**: Facts, information, data points discovered
 - **episodic**: Specific events, interactions, or outcomes worth remembering
 
 ### Category Selection Guide:
 - Use **working** for: User preferences, current project details, active configurations, recent discoveries, ongoing tasks
-- Use **procedural** for: Successful workflows, effective search strategies, problem-solving patterns
+- Use **procedural** for: Effective search strategies, problem-solving patterns
 - Use **semantic** for: Technical facts, API details, system configurations that won't change
 - Use **episodic** for: Specific error resolutions, unique interactions, one-time events
 

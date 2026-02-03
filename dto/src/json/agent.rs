@@ -67,12 +67,6 @@ pub struct ToolCall {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WorkflowCall {
-    pub workflow_name: String,
-    pub inputs: Value,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename = "self_evaluation")]
 pub struct SelfEvaluation {
     pub progress_assessment: ProgressAssessment,

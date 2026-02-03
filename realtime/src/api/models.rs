@@ -22,8 +22,6 @@ pub enum WebsocketMessageType {
     ReasoningUpdate(u64),
     #[serde(rename = "tool_execution")]
     ToolExecution(u64),
-    #[serde(rename = "workflow_execution")]
-    WorkflowExecution(u64),
     #[serde(rename = "session_connect")]
     SessionConnect(String, String),
     #[serde(rename = "session_connected")]

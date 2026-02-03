@@ -19,7 +19,7 @@ This API handles all the admin stuff - creating deployments, managing users, set
 - Member invitations and management
 
 **AI tools**
-- AI agents and workflows
+- AI agents with knowledge base integration
 - Knowledge base management (supports PDFs)
 - REST API tools and platform events
 

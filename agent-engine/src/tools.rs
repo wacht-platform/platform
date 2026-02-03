@@ -3,21 +3,19 @@ use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
 use crate::teams_logger::TeamsActivityLogger;
 use base64::Engine;
 use chrono;
-use commands::{Command, GenerateEmbeddingsCommand, SearchKnowledgeBaseEmbeddingsCommand};
+use commands::Command;
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::{
-    ApiToolResult, KnowledgeBaseToolResult, PlatformEventResult, PlatformFunctionData,
-    PlatformFunctionResult, StreamEvent, ToolKnowledgeBaseSearchResult,
+    ApiToolResult, PlatformEventResult, PlatformFunctionData, PlatformFunctionResult, StreamEvent,
 };
 use flate2::read::GzDecoder;
 use models::AiAgentWithFeatures;
 use models::HttpMethod;
 use models::{AiTool, AiToolConfiguration, InternalToolType, UseExternalServiceToolType};
 use models::{
-    ApiToolConfiguration, InternalToolConfiguration, KnowledgeBaseToolConfiguration,
-    PlatformEventToolConfiguration, PlatformFunctionToolConfiguration,
-    UseExternalServiceToolConfiguration,
+    ApiToolConfiguration, InternalToolConfiguration, PlatformEventToolConfiguration,
+    PlatformFunctionToolConfiguration, UseExternalServiceToolConfiguration,
 };
 use queries::Query;
 use rand;
@@ -57,12 +55,18 @@ impl ToolExecutor {
     }
 
     async fn create_lite_llm(&self) -> crate::GeminiClient {
-        self.ctx.create_llm("gemini-2.5-flash-lite").await.unwrap_or_else(|_| {
-            let api_key = std::env::var("GEMINI_API_KEY").unwrap();
-            crate::GeminiClient::new(api_key, "gemini-2.5-flash-lite".to_string())
-                .with_billing(self.agent().deployment_id, self.app_state().redis_client.clone())
-                .with_nats(self.app_state().nats_client.clone())
-        })
+        self.ctx
+            .create_llm("gemini-2.5-flash-lite")
+            .await
+            .unwrap_or_else(|_| {
+                let api_key = std::env::var("GEMINI_API_KEY").unwrap();
+                crate::GeminiClient::new(api_key, "gemini-2.5-flash-lite".to_string())
+                    .with_billing(
+                        self.agent().deployment_id,
+                        self.app_state().redis_client.clone(),
+                    )
+                    .with_nats(self.app_state().nats_client.clone())
+            })
     }
 
     pub async fn execute_tool_immediately(
@@ -90,12 +94,6 @@ impl ToolExecutor {
                     .await?;
                 serde_json::to_value(result)?
             }
-            AiToolConfiguration::KnowledgeBase(config) => {
-                let result = self
-                    .execute_knowledge_base_tool(tool, config, &execution_params)
-                    .await?;
-                serde_json::to_value(result)?
-            }
             AiToolConfiguration::PlatformEvent(config) => {
                 let result = self
                     .execute_platform_event_tool(tool, config, &execution_params)
@@ -113,8 +111,14 @@ impl ToolExecutor {
                     .await?
             }
             AiToolConfiguration::UseExternalService(config) => {
-                self.execute_external_service_tool(tool, config, &execution_params, context_title, filesystem)
-                    .await?
+                self.execute_external_service_tool(
+                    tool,
+                    config,
+                    &execution_params,
+                    context_title,
+                    filesystem,
+                )
+                .await?
             }
         };
 
@@ -125,15 +129,19 @@ impl ToolExecutor {
                 if let Some(val) = result.get(key) {
                     if let Some(s) = val.as_str() {
                         if let Ok(parsed) = serde_json::from_str::<Value>(s) {
-                            special_hint = Some(format!("(key '{}' contains parsed JSON) {}", key, infer_schema_hint(&parsed)));
+                            special_hint = Some(format!(
+                                "(key '{}' contains parsed JSON) {}",
+                                key,
+                                infer_schema_hint(&parsed)
+                            ));
                             break;
                         }
                     }
                 }
             }
-            
+
             let hint = special_hint.unwrap_or_else(|| infer_schema_hint(&result));
-            
+
             if let Some(obj) = result.as_object_mut() {
                 obj.insert("structure_hint".to_string(), serde_json::json!(hint));
             }
@@ -163,8 +171,9 @@ impl ToolExecutor {
             }
         }
 
-        let should_truncate =
-            tool.name != "read_file" && tool.name != "read_knowledge_base_documents" && tool.name != "teams_analyze_meeting";
+        let should_truncate = tool.name != "read_file"
+            && tool.name != "read_knowledge_base_documents"
+            && tool.name != "teams_analyze_meeting";
 
         let result_str = serde_json::to_string_pretty(&final_result)?;
         let char_count = result_str.chars().count();
@@ -859,15 +868,22 @@ impl ToolExecutor {
                     .get("file_data")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::BadRequest("file_data is required".to_string()))?;
-                
+
                 let file_data = base64::engine::general_purpose::STANDARD
                     .decode(file_base64)
-                    .map_err(|e| AppError::BadRequest(format!("Invalid base64 file data: {}", e)))?;
-                
-                client.add_attachment(task_id, filename, mime_type, file_data).await?
+                    .map_err(|e| {
+                        AppError::BadRequest(format!("Invalid base64 file data: {}", e))
+                    })?;
+
+                client
+                    .add_attachment(task_id, filename, mime_type, file_data)
+                    .await?
             }
             _ => {
-                return Err(AppError::BadRequest(format!("Unknown ClickUp action: {}", action)));
+                return Err(AppError::BadRequest(format!(
+                    "Unknown ClickUp action: {}",
+                    action
+                )));
             }
         };
 
@@ -896,7 +912,7 @@ impl ToolExecutor {
 
         // Read the file from the agent filesystem
         let file_bytes = filesystem.read_file_bytes(file_path).await?;
-        
+
         // Infer filename from path
         let filename = std::path::Path::new(file_path)
             .file_name()
@@ -908,7 +924,7 @@ impl ToolExecutor {
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-        
+
         let mime_type = match extension.to_lowercase().as_str() {
             "png" => "image/png",
             "jpg" | "jpeg" => "image/jpeg",
@@ -952,7 +968,6 @@ impl ToolExecutor {
         Ok(result)
     }
 
-
     async fn execute_teams_command(
         &self,
         tool: &AiTool,
@@ -968,14 +983,9 @@ impl ToolExecutor {
 
         // Get the context - use cached context for current, query for cross-context
         let (context, effective_context_id) = if let Some(target_id) = target_context_id {
-            let ctx = self.ctx.get_context_by_id(target_id)
-                .await
-                .map_err(|_| {
-                    AppError::BadRequest(format!(
-                        "Context {} not found or not accessible",
-                        target_id
-                    ))
-                })?;
+            let ctx = self.ctx.get_context_by_id(target_id).await.map_err(|_| {
+                AppError::BadRequest(format!("Context {} not found or not accessible", target_id))
+            })?;
             (ctx, target_id)
         } else {
             (self.ctx.get_context().await?, self.ctx.context_id)
@@ -1112,7 +1122,7 @@ impl ToolExecutor {
             }
             _ => {}
         }
-        
+
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
@@ -1303,7 +1313,9 @@ impl ToolExecutor {
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
-        let target_context = self.ctx.get_context_by_id(target_context_id)
+        let target_context = self
+            .ctx
+            .get_context_by_id(target_context_id)
             .await
             .map_err(|_| {
                 AppError::BadRequest(format!(
@@ -1312,7 +1324,10 @@ impl ToolExecutor {
                 ))
             })?;
 
-        let conversation_id = self.ctx.app_state.sf
+        let conversation_id = self
+            .ctx
+            .app_state
+            .sf
             .next_id()
             .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
             as i64;
@@ -1583,74 +1598,6 @@ impl ToolExecutor {
             status: "pending".to_string(),
         })
     }
-
-    async fn execute_knowledge_base_tool(
-        &self,
-        tool: &AiTool,
-        config: &KnowledgeBaseToolConfiguration,
-        execution_params: &Value,
-    ) -> Result<KnowledgeBaseToolResult, AppError> {
-        let query = execution_params
-            .get("query")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                AppError::Internal(
-                    "Query parameter is required for knowledge base search".to_string(),
-                )
-            })?;
-
-        let embeddings_command = GenerateEmbeddingsCommand::new(vec![query.to_string()]);
-        let embeddings = embeddings_command.execute(self.app_state()).await?;
-        let query_embedding = embeddings
-            .into_iter()
-            .next()
-            .ok_or_else(|| AppError::Internal("Failed to generate query embedding".to_string()))?;
-
-        let limit = config.search_settings.max_results.unwrap_or(10) as u64;
-        let search_command = SearchKnowledgeBaseEmbeddingsCommand::new(
-            config.knowledge_base_ids.clone(),
-            query_embedding,
-            limit,
-        );
-
-        let search_results = search_command.execute(self.app_state()).await?;
-
-        let threshold = config.search_settings.similarity_threshold.unwrap_or(0.7);
-        let mut all_results: Vec<ToolKnowledgeBaseSearchResult> = search_results
-            .into_iter()
-            .filter(|result| result.score >= threshold as f64)
-            .map(|result| ToolKnowledgeBaseSearchResult {
-                content: result.content,
-                knowledge_base_id: result.knowledge_base_id.to_string(),
-                similarity_score: result.score,
-                chunk_index: result.chunk_index,
-                document_id: result.document_id.to_string(),
-                document_title: result.document_title,
-                document_description: result.document_description,
-            })
-            .collect();
-
-        if config.search_settings.sort_by_relevance {
-            all_results.sort_by(|a, b| {
-                b.similarity_score
-                    .partial_cmp(&a.similarity_score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-        }
-
-        let max_results = config.search_settings.max_results.unwrap_or(10) as usize;
-        all_results.truncate(max_results);
-
-        Ok(KnowledgeBaseToolResult {
-            success: true,
-            tool: tool.name.clone(),
-            query: query.to_string(),
-            knowledge_base_ids: config.knowledge_base_ids.clone(),
-            results: all_results.clone(),
-            total_results: all_results.len(),
-            search_settings: serde_json::to_value(&config.search_settings)?,
-        })
-    }
 }
 
 /// Dynamically analyze JSON value and generate a human-readable structure hint.
@@ -1691,8 +1638,11 @@ fn infer_type_hint(value: &Value, depth: usize) -> String {
         Value::Null => "null".to_string(),
         Value::Bool(_) => "bool".to_string(),
         Value::Number(n) => {
-            if n.is_i64() { "int".to_string() }
-            else { "number".to_string() }
+            if n.is_i64() {
+                "int".to_string()
+            } else {
+                "number".to_string()
+            }
         }
         Value::String(s) => {
             // Give better hints for common patterns
@@ -1707,5 +1657,3 @@ fn infer_type_hint(value: &Value, depth: usize) -> String {
         Value::Array(_) | Value::Object(_) => infer_schema_recursive(value, depth),
     }
 }
-
-

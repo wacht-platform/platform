@@ -51,7 +51,6 @@ impl Query for GetAiAgentsQuery {
                 a.id, a.created_at, a.updated_at, a.name, a.description,
                 a.configuration, a.deployment_id,
                 COALESCE(jsonb_array_length(a.configuration->'tool_ids'), 0) as tools_count,
-                COALESCE(jsonb_array_length(a.configuration->'workflow_ids'), 0) as workflows_count,
                 COALESCE(jsonb_array_length(a.configuration->'knowledge_base_ids'), 0) as knowledge_bases_count
             FROM ai_agents a
             WHERE a.deployment_id = $1"#;
@@ -87,7 +86,6 @@ impl Query for GetAiAgentsQuery {
                 configuration: row.get("configuration"),
                 deployment_id: row.get("deployment_id"),
                 tools_count: row.get::<Option<i32>, _>("tools_count").unwrap_or(0) as i64,
-                workflows_count: row.get::<Option<i32>, _>("workflows_count").unwrap_or(0) as i64,
                 knowledge_bases_count: row
                     .get::<Option<i32>, _>("knowledge_bases_count")
                     .unwrap_or(0) as i64,
@@ -120,7 +118,6 @@ impl Query for GetAiAgentByIdQuery {
                 a.id, a.created_at, a.updated_at, a.name, a.description,
                 a.configuration, a.deployment_id,
                 COALESCE(jsonb_array_length(a.configuration->'tool_ids'), 0) as tools_count,
-                COALESCE(jsonb_array_length(a.configuration->'workflow_ids'), 0) as workflows_count,
                 COALESCE(jsonb_array_length(a.configuration->'knowledge_base_ids'), 0) as knowledge_bases_count
             FROM ai_agents a
             WHERE a.id = $1 AND a.deployment_id = $2
@@ -141,7 +138,6 @@ impl Query for GetAiAgentByIdQuery {
             configuration: agent.configuration,
             deployment_id: agent.deployment_id,
             tools_count: agent.tools_count.unwrap_or(0) as i64,
-            workflows_count: agent.workflows_count.unwrap_or(0) as i64,
             knowledge_bases_count: agent.knowledge_bases_count.unwrap_or(0) as i64,
         })
     }
@@ -219,7 +215,6 @@ impl Query for GetAiAgentByNameWithFeatures {
                 a.deployment_id,
                 a.configuration,
                 tools.list as tools,
-                workflows.list as workflows,
                 knowledge_bases.list as knowledge_bases,
                 integrations.list as integrations
             FROM
@@ -242,24 +237,6 @@ impl Query for GetAiAgentByNameWithFeatures {
                     AND jsonb_typeof(a.configuration->'tool_ids') = 'array'
                     AND t.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'tool_ids'))
             ) tools ON true
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(jsonb_agg(
-                    jsonb_build_object(
-                        'id', w.id::text,
-                        'created_at', w.created_at,
-                        'updated_at', w.updated_at,
-                        'name', w.name,
-                        'description', w.description,
-                        'deployment_id', w.deployment_id::text,
-                        'configuration', w.configuration,
-                        'workflow_definition', w.workflow_definition
-                    )
-                ), '[]'::jsonb) as list
-                FROM ai_workflows w
-                WHERE w.deployment_id = a.deployment_id
-                    AND jsonb_typeof(a.configuration->'workflow_ids') = 'array'
-                    AND w.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'workflow_ids'))
-            ) workflows ON true
             LEFT JOIN LATERAL (
                 SELECT COALESCE(jsonb_agg(
                     jsonb_build_object(
@@ -306,8 +283,6 @@ impl Query for GetAiAgentByNameWithFeatures {
 
         let tools = serde_json::from_value(row.get("tools"))
             .map_err(|e| AppError::Internal(format!("Failed to deserialize tools: {}", e)))?;
-        let workflows = serde_json::from_value(row.get("workflows"))
-            .map_err(|e| AppError::Internal(format!("Failed to deserialize workflows: {}", e)))?;
         let knowledge_bases = serde_json::from_value(row.get("knowledge_bases")).map_err(|e| {
             AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
         })?;
@@ -324,7 +299,6 @@ impl Query for GetAiAgentByNameWithFeatures {
             deployment_id: row.get("deployment_id"),
             configuration: row.get("configuration"),
             tools,
-            workflows,
             knowledge_bases,
             integrations,
         })
@@ -356,7 +330,6 @@ impl Query for GetAiAgentByIdWithFeatures {
                 a.deployment_id,
                 a.configuration,
                 tools.list as tools,
-                workflows.list as workflows,
                 knowledge_bases.list as knowledge_bases,
                 integrations.list as integrations
             FROM ai_agents a
@@ -378,24 +351,6 @@ impl Query for GetAiAgentByIdWithFeatures {
                     AND jsonb_typeof(a.configuration->'tool_ids') = 'array'
                     AND t.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'tool_ids'))
             ) tools ON true
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(jsonb_agg(
-                    jsonb_build_object(
-                        'id', w.id::text,
-                        'created_at', w.created_at,
-                        'updated_at', w.updated_at,
-                        'name', w.name,
-                        'description', w.description,
-                        'deployment_id', w.deployment_id::text,
-                        'configuration', w.configuration,
-                        'workflow_definition', w.workflow_definition
-                    )
-                ), '[]'::jsonb) as list
-                FROM ai_workflows w
-                WHERE w.deployment_id = a.deployment_id
-                    AND jsonb_typeof(a.configuration->'workflow_ids') = 'array'
-                    AND w.id IN (SELECT value::bigint FROM jsonb_array_elements_text(a.configuration->'workflow_ids'))
-            ) workflows ON true
             LEFT JOIN LATERAL (
                 SELECT COALESCE(jsonb_agg(
                     jsonb_build_object(
@@ -439,8 +394,6 @@ impl Query for GetAiAgentByIdWithFeatures {
 
         let tools = serde_json::from_value(row.get("tools"))
             .map_err(|e| AppError::Internal(format!("Failed to deserialize tools: {}", e)))?;
-        let workflows = serde_json::from_value(row.get("workflows"))
-            .map_err(|e| AppError::Internal(format!("Failed to deserialize workflows: {}", e)))?;
         let knowledge_bases = serde_json::from_value(row.get("knowledge_bases")).map_err(|e| {
             AppError::Internal(format!("Failed to deserialize knowledge bases: {}", e))
         })?;
@@ -457,7 +410,6 @@ impl Query for GetAiAgentByIdWithFeatures {
             deployment_id: row.get("deployment_id"),
             configuration: row.get("configuration"),
             tools,
-            workflows,
             knowledge_bases,
             integrations,
         })

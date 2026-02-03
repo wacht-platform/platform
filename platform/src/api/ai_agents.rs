@@ -80,7 +80,7 @@ pub async fn get_ai_agent_by_id(
         .map_err(Into::into)
 }
 
-/// Get full agent details including integrations, tools, workflows, knowledge bases
+/// Get full agent details including integrations, tools, knowledge bases
 pub async fn get_ai_agent_details(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -140,11 +140,9 @@ pub async fn get_ai_agent_details(
         description: agent.description,
         configuration: agent.configuration,
         tools_count: agent.tools_count,
-        workflows_count: agent.workflows_count,
         knowledge_bases_count: agent.knowledge_bases_count,
         integrations: integrations_with_urls,
         tools: vec![],           // TODO: fetch tools if needed
-        workflows: vec![],       // TODO: fetch workflows if needed
         knowledge_bases: vec![], // TODO: fetch knowledge bases if needed
     }
     .into())
@@ -271,10 +269,8 @@ pub struct AgentDetailsResponse {
     pub description: Option<String>,
     pub configuration: serde_json::Value,
     pub tools_count: i64,
-    pub workflows_count: i64,
     pub knowledge_bases_count: i64,
     pub integrations: Vec<IntegrationWithUrl>,
     pub tools: Vec<serde_json::Value>,
-    pub workflows: Vec<serde_json::Value>,
     pub knowledge_bases: Vec<serde_json::Value>,
 }

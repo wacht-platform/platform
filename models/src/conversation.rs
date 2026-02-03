@@ -42,7 +42,6 @@ pub enum ConversationMessageType {
 #[serde(rename_all = "snake_case")]
 pub enum TaskType {
     ToolCall,
-    WorkflowCall,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

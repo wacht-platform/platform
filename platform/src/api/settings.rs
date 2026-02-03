@@ -16,7 +16,7 @@ use dto::{
     json::{
         DeploymentAuthSettingsUpdates, DeploymentDisplaySettingsUpdates,
         DeploymentRestrictionsUpdates, NewDeploymentJwtTemplate, PartialDeploymentJwtTemplate,
-        SmtpConfigRequest, SmtpConfigResponse,
+        SmtpConfigRequest, SmtpConfigResponse, SmtpVerifyResponse,
     },
     params::deployment::DeploymentNameParams,
 };
@@ -177,7 +177,7 @@ pub async fn verify_smtp_connection(
     State(app_state): State<AppState>,
     RequireDeployment(_deployment_id): RequireDeployment,
     Json(config): Json<SmtpConfigRequest>,
-) -> ApiResult<()> {
+) -> ApiResult<SmtpVerifyResponse> {
     VerifySmtpConnectionCommand::new(
         config.host,
         config.port,
@@ -188,6 +188,10 @@ pub async fn verify_smtp_connection(
     )
     .execute(&app_state)
     .await
+    .map(|_| SmtpVerifyResponse {
+        success: true,
+        message: Some("SMTP connection verified successfully".to_string()),
+    })
     .map(Into::into)
     .map_err(Into::into)
 }

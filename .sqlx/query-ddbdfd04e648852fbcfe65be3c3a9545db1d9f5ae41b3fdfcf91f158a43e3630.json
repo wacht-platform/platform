@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                a.id, a.created_at, a.updated_at, a.name, a.description,\n                a.configuration, a.deployment_id,\n                COALESCE(jsonb_array_length(a.configuration->'tool_ids'), 0) as tools_count,\n                COALESCE(jsonb_array_length(a.configuration->'workflow_ids'), 0) as workflows_count,\n                COALESCE(jsonb_array_length(a.configuration->'knowledge_base_ids'), 0) as knowledge_bases_count\n            FROM ai_agents a\n            WHERE a.id = $1 AND a.deployment_id = $2\n            ",
+  "query": "\n            SELECT\n                a.id, a.created_at, a.updated_at, a.name, a.description,\n                a.configuration, a.deployment_id,\n                COALESCE(jsonb_array_length(a.configuration->'tool_ids'), 0) as tools_count,\n                COALESCE(jsonb_array_length(a.configuration->'knowledge_base_ids'), 0) as knowledge_bases_count\n            FROM ai_agents a\n            WHERE a.id = $1 AND a.deployment_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -45,11 +45,6 @@
       },
       {
         "ordinal": 8,
-        "name": "workflows_count",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 9,
         "name": "knowledge_bases_count",
         "type_info": "Int4"
       }
@@ -69,9 +64,8 @@
       false,
       false,
       null,
-      null,
       null
     ]
   },
-  "hash": "599358c6f3f2ab9ff095b73530d59bf9770cc0c3ae5a82c8eb48901f5e24de08"
+  "hash": "ddbdfd04e648852fbcfe65be3c3a9545db1d9f5ae41b3fdfcf91f158a43e3630"
 }

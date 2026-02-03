@@ -31,7 +31,7 @@ impl CreateAiToolCommand {
         }
     }
 
-    async fn validate(&self, app_state: &AppState) -> Result<(), AppError> {
+    async fn validate(&self) -> Result<(), AppError> {
         if self.name.trim().is_empty() {
             return Err(AppError::BadRequest("Tool name is required".to_string()));
         }
@@ -47,28 +47,6 @@ impl CreateAiToolCommand {
                     return Err(AppError::BadRequest(
                         "API endpoint must be a valid URL (http:// or https://)".to_string(),
                     ));
-                }
-            }
-            AiToolConfiguration::KnowledgeBase(config) => {
-                if config.knowledge_base_ids.is_empty() {
-                    return Err(AppError::BadRequest(
-                        "At least one knowledge base selection is required".to_string(),
-                    ));
-                }
-
-                // Check if all knowledge bases exist and belong to the same deployment
-                let kb_count = sqlx::query!(
-                    "SELECT COUNT(*) as count FROM ai_knowledge_bases WHERE id = ANY($1) AND deployment_id = $2",
-                    &config.knowledge_base_ids,
-                    self.deployment_id
-                )
-                .fetch_one(&app_state.db_pool)
-                .await
-                .map_err(|e| AppError::Database(e))?;
-
-                let found_count = kb_count.count.unwrap_or(0) as usize;
-                if found_count != config.knowledge_base_ids.len() {
-                    return Err(AppError::BadRequest("One or more selected knowledge bases do not exist or do not belong to this deployment".to_string()));
                 }
             }
             AiToolConfiguration::PlatformEvent(config) => {
@@ -100,7 +78,7 @@ impl Command for CreateAiToolCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         // Validate the tool configuration
-        self.validate(&app_state).await?;
+        self.validate().await?;
 
         let tool_id = app_state.sf.next_id()? as i64;
         let now = Utc::now();
@@ -185,7 +163,7 @@ impl UpdateAiToolCommand {
         self
     }
 
-    async fn validate(&self, app_state: &AppState) -> Result<(), AppError> {
+    async fn validate(&self) -> Result<(), AppError> {
         // Basic validation
         if let Some(name) = &self.name {
             if name.trim().is_empty() {
@@ -206,28 +184,6 @@ impl UpdateAiToolCommand {
                         return Err(AppError::BadRequest(
                             "API endpoint must be a valid URL (http:// or https://)".to_string(),
                         ));
-                    }
-                }
-                AiToolConfiguration::KnowledgeBase(config) => {
-                    if config.knowledge_base_ids.is_empty() {
-                        return Err(AppError::BadRequest(
-                            "At least one knowledge base selection is required".to_string(),
-                        ));
-                    }
-
-                    // Check if all knowledge bases exist and belong to the same deployment
-                    let kb_count = sqlx::query!(
-                        "SELECT COUNT(*) as count FROM ai_knowledge_bases WHERE id = ANY($1) AND deployment_id = $2",
-                        &config.knowledge_base_ids,
-                        self.deployment_id
-                    )
-                    .fetch_one(&app_state.db_pool)
-                    .await
-                    .map_err(|e| AppError::Database(e))?;
-
-                    let found_count = kb_count.count.unwrap_or(0) as usize;
-                    if found_count != config.knowledge_base_ids.len() {
-                        return Err(AppError::BadRequest("One or more selected knowledge bases do not exist or do not belong to this deployment".to_string()));
                     }
                 }
                 AiToolConfiguration::PlatformEvent(config) => {
@@ -260,7 +216,7 @@ impl Command for UpdateAiToolCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         // Validate the tool configuration
-        self.validate(&app_state).await?;
+        self.validate().await?;
 
         let now = Utc::now();
 

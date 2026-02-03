@@ -59,14 +59,14 @@ pub struct KnowledgeBaseToolResult {
     pub knowledge_base_ids: Vec<i64>,
     pub results: Vec<ToolKnowledgeBaseSearchResult>,
     pub total_results: usize,
-    pub search_settings: Value, // Could be replaced with proper SearchSettings struct
+    pub search_settings: Value,
 }
 
 // Task Execution Results
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskExecutionResult {
     pub approach: String,
-    pub actions: Vec<Value>, // Could be ExecutionAction structs
+    pub actions: Vec<Value>,
     pub expected_result: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual_result: Option<Value>,

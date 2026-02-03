@@ -17,6 +17,8 @@ use super::Query;
 pub struct GetWebhookAppsQuery {
     deployment_id: i64,
     include_inactive: bool,
+    limit: Option<i64>,
+    offset: Option<i64>,
 }
 
 impl GetWebhookAppsQuery {
@@ -24,11 +26,19 @@ impl GetWebhookAppsQuery {
         Self {
             deployment_id,
             include_inactive: false,
+            limit: None,
+            offset: None,
         }
     }
 
     pub fn with_inactive(mut self, include: bool) -> Self {
         self.include_inactive = include;
+        self
+    }
+
+    pub fn with_pagination(mut self, limit: Option<i64>, offset: Option<i64>) -> Self {
+        self.limit = limit;
+        self.offset = offset;
         self
     }
 }
@@ -37,6 +47,9 @@ impl Query for GetWebhookAppsQuery {
     type Output = Vec<WebhookApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let limit = self.limit.unwrap_or(50);
+        let offset = self.offset.unwrap_or(0);
+
         let apps = if self.include_inactive {
             query_as!(
                 WebhookApp,
@@ -51,8 +64,11 @@ impl Query for GetWebhookAppsQuery {
                 FROM webhook_apps
                 WHERE deployment_id = $1
                 ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
                 "#,
-                self.deployment_id
+                self.deployment_id,
+                limit + 1,
+                offset
             )
             .fetch_all(&app_state.db_pool)
             .await?
@@ -70,8 +86,11 @@ impl Query for GetWebhookAppsQuery {
                 FROM webhook_apps
                 WHERE deployment_id = $1 AND is_active = true
                 ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
                 "#,
-                self.deployment_id
+                self.deployment_id,
+                limit + 1,
+                offset
             )
             .fetch_all(&app_state.db_pool)
             .await?

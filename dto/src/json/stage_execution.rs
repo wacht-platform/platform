@@ -56,8 +56,6 @@ pub struct ActionExecution {
 pub enum ActionExecutionDetails {
     #[serde(rename = "tool_call")]
     ToolCall(ToolCallExecution),
-    #[serde(rename = "workflow_call")]
-    WorkflowCall(WorkflowCallExecution),
     #[serde(rename = "context_search")]
     ContextSearch(ContextSearchExecution),
     #[serde(rename = "memory_operation")]
@@ -69,13 +67,6 @@ pub struct ToolCallExecution {
     pub tool_name: String,
     #[serde(deserialize_with = "deserialize_json_value")]
     pub parameters: Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowCallExecution {
-    pub workflow_name: String,
-    #[serde(deserialize_with = "deserialize_json_value")]
-    pub inputs: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

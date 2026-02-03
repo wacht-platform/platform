@@ -35,7 +35,6 @@ pub struct AiToolWithDetails {
 #[serde(rename_all = "snake_case")]
 pub enum AiToolType {
     Api,
-    KnowledgeBase,
     PlatformEvent,
     PlatformFunction,
     Internal,
@@ -46,7 +45,6 @@ pub enum AiToolType {
 #[serde(tag = "type")]
 pub enum AiToolConfiguration {
     Api(ApiToolConfiguration),
-    KnowledgeBase(KnowledgeBaseToolConfiguration),
     PlatformEvent(PlatformEventToolConfiguration),
     PlatformFunction(PlatformFunctionToolConfiguration),
     Internal(InternalToolConfiguration),
@@ -61,21 +59,6 @@ pub struct ApiToolConfiguration {
     pub request_body_schema: Option<Vec<SchemaField>>,
     pub url_params_schema: Option<Vec<SchemaField>>,
     pub timeout_seconds: Option<u32>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct KnowledgeBaseToolConfiguration {
-    #[serde(with = "crate::utils::serde::vec_i64_as_string")]
-    pub knowledge_base_ids: Vec<i64>,
-    pub search_settings: KnowledgeBaseSearchSettings,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct KnowledgeBaseSearchSettings {
-    pub max_results: Option<u32>,
-    pub similarity_threshold: Option<f32>,
-    pub include_metadata: bool,
-    pub sort_by_relevance: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -192,7 +175,6 @@ impl From<String> for AiToolType {
     fn from(tool_type: String) -> Self {
         match tool_type.as_str() {
             "api" => AiToolType::Api,
-            "knowledge_base" => AiToolType::KnowledgeBase,
             "platform_event" => AiToolType::PlatformEvent,
             "platform_function" => AiToolType::PlatformFunction,
             "internal" => AiToolType::Internal,
@@ -206,7 +188,6 @@ impl From<AiToolType> for String {
     fn from(tool_type: AiToolType) -> Self {
         match tool_type {
             AiToolType::Api => "api".to_string(),
-            AiToolType::KnowledgeBase => "knowledge_base".to_string(),
             AiToolType::PlatformEvent => "platform_event".to_string(),
             AiToolType::PlatformFunction => "platform_function".to_string(),
             AiToolType::Internal => "internal".to_string(),
@@ -240,17 +221,6 @@ impl From<HttpMethod> for String {
     }
 }
 
-impl Default for KnowledgeBaseSearchSettings {
-    fn default() -> Self {
-        Self {
-            max_results: Some(10),
-            similarity_threshold: Some(0.7),
-            include_metadata: true,
-            sort_by_relevance: true,
-        }
-    }
-}
-
 impl Default for AiToolConfiguration {
     fn default() -> Self {
         AiToolConfiguration::Api(ApiToolConfiguration {
@@ -273,15 +243,6 @@ impl Default for ApiToolConfiguration {
             request_body_schema: None,
             url_params_schema: None,
             timeout_seconds: Some(30),
-        }
-    }
-}
-
-impl Default for KnowledgeBaseToolConfiguration {
-    fn default() -> Self {
-        Self {
-            knowledge_base_ids: vec![],
-            search_settings: KnowledgeBaseSearchSettings::default(),
         }
     }
 }

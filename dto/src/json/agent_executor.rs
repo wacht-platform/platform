@@ -183,13 +183,6 @@ pub struct PlanAnalysis {
     pub tradeoffs: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WorkflowValidationResult {
-    pub ready_to_execute: bool,
-    pub missing_requirements: Vec<String>,
-    pub validation_message: String,
-}
-
 // Context Hints - returned by gather_context for main agent to explore
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContextHints {

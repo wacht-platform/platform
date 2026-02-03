@@ -13,8 +13,6 @@ pub struct ContextMetadata {
     pub query: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workflow_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,13 +49,6 @@ pub struct ToolCallResult {
     pub result: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowCallResult {
-    pub workflow_name: String,
-    pub inputs: HashMap<String, Value>,
-    pub result: Value,
-}
-
 // Parameter Generation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiToolParameters {
@@ -70,14 +61,6 @@ pub struct ApiToolParameters {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnowledgeBaseParameters {
     pub query: String,
-}
-
-// User Input State
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserInputOutputState {
-    pub value: String,
-    #[serde(rename = "type")]
-    pub output_type: String, // "user_input"
 }
 
 // Platform Function Result Storage

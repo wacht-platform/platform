@@ -7,12 +7,11 @@ use dto::json::agent_executor::{ConversationInsights, ObjectiveDefinition, TaskE
 use dto::json::StreamEvent;
 use models::{
     AgentExecutionState, ConversationRecord, ExecutionContextStatus,
-    MemoryRecord, WorkflowExecutionState,
+    MemoryRecord,
 };
 use models::{
     AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration, UseExternalServiceToolConfiguration, UseExternalServiceToolType,
 };
-use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -33,10 +32,6 @@ pub struct AgentExecutor {
     pub(super) current_objective: Option<ObjectiveDefinition>,
     pub(super) conversation_insights: Option<ConversationInsights>,
     pub(super) task_results: HashMap<String, TaskExecutionResult>,
-    pub(super) current_workflow_id: Option<i64>,
-    pub(super) current_workflow_state: Option<HashMap<String, Value>>,
-    pub(super) current_workflow_node_id: Option<String>,
-    pub(super) current_workflow_execution_path: Vec<String>,
     pub(super) system_instructions: Option<String>,
     pub(super) filesystem: AgentFilesystem,
     pub(super) shell: ShellExecutor,
@@ -186,7 +181,7 @@ impl AgentExecutorBuilder {
                 id: -1,
                 name: "spawn_context_execution".to_string(),
                 description: Some(
-                    "Spawn a new agent execution in another context. Just like you are currently running in your context with your own conversation history, tools, and workflows - this will start a separate, self-contained agent instance in the target context. The spawned instance will receive your message as input and operate independently with its own context, history, and available tools. Use this to delegate tasks, notify other channels, or hand off work.".to_string()
+                    "Spawn a new agent execution in another context. Just like you are currently running in your context with your own conversation history and tools - this will start a separate, self-contained agent instance in the target context. The spawned instance will receive your message as input and operate independently with its own context, history, and available tools. Use this to delegate tasks, notify other channels, or hand off work.".to_string()
                 ),
                 tool_type: AiToolType::UseExternalService,
                 deployment_id: self.ctx.agent.deployment_id,
@@ -216,10 +211,6 @@ impl AgentExecutorBuilder {
             current_objective: None,
             conversation_insights: None,
             task_results: HashMap::new(),
-            current_workflow_id: None,
-            current_workflow_state: None,
-            current_workflow_node_id: None,
-            current_workflow_execution_path: Vec::new(),
             system_instructions: None,
             filesystem,
             shell,
@@ -269,31 +260,6 @@ impl AgentExecutor {
             self.conversation_insights = serde_json::from_value(insights).ok();
         }
 
-        if let Some(workflow_state) = state.workflow_state {
-            self.current_workflow_id = Some(workflow_state.workflow_id);
-            self.current_workflow_state = Some(workflow_state.workflow_state);
-            self.current_workflow_node_id = Some(workflow_state.current_node_id);
-            self.current_workflow_execution_path = workflow_state.execution_path;
-        }
-
         Ok(())
-    }
-
-    pub(super) fn get_current_workflow_state(&self) -> Option<WorkflowExecutionState> {
-        match (
-            self.current_workflow_id,
-            &self.current_workflow_state,
-            &self.current_workflow_node_id,
-        ) {
-            (Some(workflow_id), Some(workflow_state), Some(node_id)) => {
-                Some(WorkflowExecutionState {
-                    workflow_id,
-                    workflow_state: workflow_state.clone(),
-                    current_node_id: node_id.clone(),
-                    execution_path: self.current_workflow_execution_path.clone(),
-                })
-            }
-            _ => None,
-        }
     }
 }

@@ -10,7 +10,7 @@ use dto::json::agent_executor::{
 };
 use dto::json::agent_responses::{ActionsList, TaskExecution, TaskType};
 use dto::json::{
-    StepDecisionContext, StreamEvent, UserInputOutputState, WorkflowExecutionResult,
+    StepDecisionContext, StreamEvent,
 };
 use models::{
     AgentExecutionState, ConversationContent, ConversationMessageType, ExecutionContextStatus,
@@ -65,41 +65,14 @@ impl AgentExecutor {
                     .channel
                     .send(StreamEvent::ConversationMessage(conversation))
                     .await;
-
-                if let Some(workflow_state) = &mut self.current_workflow_state {
-                    for (key, value) in workflow_state.clone().iter() {
-                        if key.ends_with("_output") {
-                            if let Some(stored_exec_id) =
-                                value.get("execution_id").and_then(|v| v.as_str())
-                            {
-                                if stored_exec_id == &execution_id {
-                                    workflow_state.insert(key.clone(), result.clone());
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
             }
             ResumeContext::UserInput(input) => {
                 let conversation = self.store_user_message(input.clone(), None).await?;
-                if let Some(workflow_state) = &mut self.current_workflow_state {
-                    if let Some(node_id) = &self.current_workflow_node_id {
-                        let node_output_key = format!("{}_output", node_id);
-                        let user_input_output = UserInputOutputState {
-                            value: input,
-                            output_type: "user_input".to_string(),
-                        };
-                        workflow_state
-                            .insert(node_output_key, serde_json::to_value(&user_input_output)?);
-                    }
-                } else {
-                    self.conversations.push(conversation.clone());
-                    let _ = self
-                        .channel
-                        .send(StreamEvent::ConversationMessage(conversation))
-                        .await;
-                }
+                self.conversations.push(conversation.clone());
+                let _ = self
+                    .channel
+                    .send(StreamEvent::ConversationMessage(conversation))
+                    .await;
             }
         }
 
@@ -213,58 +186,6 @@ impl AgentExecutor {
     }
 
     pub(super) async fn repl(&mut self) -> Result<(), AppError> {
-        if let Some(workflow_id) = self.current_workflow_id {
-            let result = self.resume_workflow_execution().await?;
-
-            let workflow_result: WorkflowExecutionResult = serde_json::from_value(result)?;
-
-            let execution_status = if workflow_result.execution_status == "pending" {
-                ActionExecutionStatus::Pending
-            } else if workflow_result.execution_status == "failed" {
-                ActionExecutionStatus::Failed
-            } else {
-                ActionExecutionStatus::Completed
-            };
-
-            // Wrap workflow result as an ActionResult for unified model
-            let workflow_action_result = ActionResult {
-                action: format!("workflow_{}", workflow_id),
-                status: if execution_status == ActionExecutionStatus::Failed {
-                    ActionResultStatus::Error
-                } else {
-                    ActionResultStatus::Success
-                },
-                result: Some(serde_json::to_value(&workflow_result)?),
-                error: None,
-            };
-
-            let task_execution = TaskExecution {
-                approach: format!("Executing workflow {}", workflow_id),
-                actions: ActionsList { actions: vec![] }, // Workflows don't have granular actions
-                expected_result: "Workflow execution results".to_string(),
-                actual_result: Some(vec![workflow_action_result]),
-            };
-
-            self.store_conversation(
-                ConversationContent::ActionExecutionResult {
-                    task_execution,
-                    execution_status: execution_status.clone(),
-                    blocking_reason: None,
-                },
-                ConversationMessageType::ActionExecutionResult,
-            )
-            .await?;
-
-            if execution_status == ActionExecutionStatus::Pending {
-                return Ok(());
-            }
-
-            self.current_workflow_id = None;
-            self.current_workflow_state = None;
-            self.current_workflow_node_id = None;
-            self.current_workflow_execution_path = Vec::new();
-        }
-
         let mut iteration = 0;
         loop {
             iteration += 1;
@@ -395,7 +316,6 @@ impl AgentExecutor {
                                 } else {
                                     let task_type_str = match action.action_type {
                                         TaskType::ToolCall => "tool_call",
-                                        TaskType::WorkflowCall => "workflow_call",
                                     };
                                     let task_id = format!(
                                         "{}_{}_{}",
@@ -447,7 +367,6 @@ impl AgentExecutor {
                                 .conversation_insights
                                 .as_ref()
                                 .map(|c| serde_json::to_value(c).unwrap()),
-                            workflow_state: None,
                             pending_input_request: None,
                         };
 
@@ -579,10 +498,6 @@ impl AgentExecutor {
                 .iter()
                 .map(|t| serde_json::to_value(t).unwrap())
                 .collect(),
-            available_workflows: self.ctx.agent.workflows
-                .iter()
-                .map(|w| serde_json::to_value(w).unwrap())
-                .collect(),
             available_knowledge_bases: self.ctx.agent.knowledge_bases
                 .iter()
                 .map(|kb| serde_json::to_value(kb).unwrap())
@@ -679,7 +594,6 @@ impl AgentExecutor {
                 "user_request": self.user_request,
                 "task_results": self.task_results,
                 "available_tools": self.ctx.agent.tools.clone(),
-                "available_workflows": self.ctx.agent.workflows.clone(),
                 "available_knowledge_bases": self.ctx.agent.knowledge_bases.clone(),
             }),
         )
@@ -789,7 +703,6 @@ impl AgentExecutor {
                 "current_objective": self.current_objective,
                 "working_memory": self.get_working_memory(),
                 "available_tools": self.ctx.agent.tools.clone(),
-                "available_workflows": self.ctx.agent.workflows.clone(),
                 "available_knowledge_bases": self.ctx.agent.knowledge_bases.clone(),
             }),
         )
@@ -894,7 +807,6 @@ impl AgentExecutor {
             "conversation_insights": self.conversation_insights,
             "task_results": self.task_results,
             "available_tools": &self.ctx.agent.tools,
-            "available_workflows": &self.ctx.agent.workflows,
             "available_knowledge_bases": &self.ctx.agent.knowledge_bases,
             "iteration_info": dto::json::IterationInfo {
                 current_iteration: 1,

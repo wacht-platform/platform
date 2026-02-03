@@ -6,7 +6,6 @@ use serde_json::Value;
 
 pub fn register_all_helpers(hb: &mut Handlebars) {
     hb.register_helper("format_tools", Box::new(FormatToolsHelper));
-    hb.register_helper("format_workflows", Box::new(FormatWorkflowsHelper));
     hb.register_helper(
         "format_knowledge_bases",
         Box::new(FormatKnowledgeBasesHelper),
@@ -182,42 +181,6 @@ impl handlebars::HelperDef for FormatToolsHelper {
             .collect();
 
         out.write(&formatted_tools.join("\n"))?;
-        Ok(())
-    }
-}
-
-pub struct FormatWorkflowsHelper;
-
-impl handlebars::HelperDef for FormatWorkflowsHelper {
-    fn call<'reg: 'rc, 'rc>(
-        &self,
-        h: &Helper,
-        _: &Handlebars,
-        _: &Context,
-        _: &mut RenderContext,
-        out: &mut dyn Output,
-    ) -> HelperResult {
-        let workflows = h
-            .param(0)
-            .and_then(|v| v.value().as_array())
-            .ok_or_else(|| RenderErrorReason::InvalidParamType("Expected workflows array"))?;
-
-        let formatted_workflows: Vec<String> = workflows
-            .iter()
-            .map(|workflow| {
-                let name = workflow
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown");
-                let description = workflow
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("No description");
-                format!("- {name}: {description}")
-            })
-            .collect();
-
-        out.write(&formatted_workflows.join("\n"))?;
         Ok(())
     }
 }
@@ -474,12 +437,8 @@ impl handlebars::HelperDef for FormatCapabilitiesHelper {
             .param(0)
             .and_then(|v| v.value().as_array())
             .unwrap_or(&empty_vec);
-        let workflows = h
-            .param(1)
-            .and_then(|v| v.value().as_array())
-            .unwrap_or(&empty_vec);
         let knowledge_bases = h
-            .param(2)
+            .param(1)
             .and_then(|v| v.value().as_array())
             .unwrap_or(&empty_vec);
 
@@ -493,22 +452,6 @@ impl handlebars::HelperDef for FormatCapabilitiesHelper {
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown");
                 let description = tool
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("No description");
-                output.push_str(&format!("- {name}: {description}\n"));
-            }
-            output.push('\n');
-        }
-
-        if !workflows.is_empty() {
-            output.push_str("Workflows Available:\n");
-            for workflow in workflows {
-                let name = workflow
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown");
-                let description = workflow
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");

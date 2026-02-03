@@ -1152,7 +1152,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         sqlx::query!(
             r#"
-            INSERT INTO api_key_apps (id, deployment_id, name, description, is_active, rate_limits, created_at, updated_at)
+            INSERT INTO api_auth_apps (id, deployment_id, name, description, is_active, rate_limits, created_at, updated_at)
             VALUES ($1, $2, $3, $4, true, $5, $6, $7)
             "#,
             app_state.sf.next_id()? as i64,
@@ -2144,7 +2144,7 @@ impl Command for CreateStagingDeploymentCommand {
 
         sqlx::query!(
             r#"
-            INSERT INTO api_key_apps (id, deployment_id, name, description, is_active, rate_limits, created_at, updated_at)
+            INSERT INTO api_auth_apps (id, deployment_id, name, description, is_active, rate_limits, created_at, updated_at)
             VALUES ($1, $2, $3, $4, true, $5, $6, $7)
             "#,
             app_state.sf.next_id()? as i64,
@@ -2939,7 +2939,7 @@ impl Command for CreateProductionDeploymentCommand {
 
         sqlx::query!(
             r#"
-            INSERT INTO api_key_apps (id, deployment_id, name, description, is_active, rate_limits, created_at, updated_at)
+            INSERT INTO api_auth_apps (id, deployment_id, name, description, is_active, rate_limits, created_at, updated_at)
             VALUES ($1, $2, $3, $4, true, $5, $6, $7)
             "#,
             app_state.sf.next_id()? as i64,

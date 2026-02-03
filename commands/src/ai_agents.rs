@@ -201,14 +201,6 @@ impl Command for DeleteAiAgentCommand {
         .map_err(|e| AppError::Database(e))?;
 
         sqlx::query!(
-            "DELETE FROM ai_agent_workflows WHERE agent_id = $1",
-            self.agent_id
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-        sqlx::query!(
             "DELETE FROM ai_agent_knowledge_bases WHERE agent_id = $1",
             self.agent_id
         )

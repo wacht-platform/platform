@@ -31,10 +31,6 @@ impl AgentTemplates {
     pub const PARAMETER_GENERATION: &'static str = "parameter_generation_prompt";
     pub const CONTEXT_SEARCH_DERIVATION: &'static str = "context_search_derivation_prompt";
 
-    // Workflow node templates
-    pub const SWITCH_CASE_EVALUATION: &'static str = "switch_case_evaluation_prompt";
-    pub const TRIGGER_EVALUATION: &'static str = "trigger_evaluation_prompt";
-
     // Memory templates
     pub const MEMORY_CONSOLIDATION: &'static str = "memory_consolidation_prompt";
 }
@@ -66,12 +62,6 @@ pub fn render_template_with_prompt(
         }
         AgentTemplates::CONTEXT_SEARCH_DERIVATION => {
             prompt_loader::get_prompt("context_search_derivation_system")
-        }
-        AgentTemplates::SWITCH_CASE_EVALUATION => {
-            prompt_loader::get_prompt("switch_case_evaluation_system")
-        }
-        AgentTemplates::TRIGGER_EVALUATION => {
-            prompt_loader::get_prompt("trigger_evaluation_system")
         }
         AgentTemplates::MEMORY_CONSOLIDATION => {
             prompt_loader::get_prompt("memory_consolidation_system")

@@ -38,16 +38,6 @@ static PROMPTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         include_str!("prompts/context_search_derivation_prompt.md"),
     );
 
-    // Workflow node prompts
-    m.insert(
-        "switch_case_evaluation_system",
-        include_str!("prompts/switch_case_evaluation_system.md"),
-    );
-    m.insert(
-        "trigger_evaluation_system",
-        include_str!("prompts/trigger_evaluation_system.md"),
-    );
-
     // Memory prompts
     m.insert(
         "memory_consolidation_system",

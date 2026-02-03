@@ -278,3 +278,9 @@ pub struct SmtpConfigResponse {
     pub use_tls: bool,
     pub verified: bool,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct SmtpVerifyResponse {
+    pub success: bool,
+    pub message: Option<String>,
+}

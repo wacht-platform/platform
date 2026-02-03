@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateNotificationRequest {
-    pub user_id: i64,
+    pub user_id: String,
     pub title: String,
     pub body: String,
     pub action_url: Option<String>,
@@ -24,8 +24,16 @@ pub async fn create_notification(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateNotificationRequest>,
 ) -> ApiResult<Notification> {
+    // Parse user_id from string to i64
+    let user_id = request.user_id.parse::<i64>().map_err(|_| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("Invalid user_id format: {}", request.user_id),
+        )
+    })?;
+
     let mut command =
-        CreateNotificationCommand::new(deployment_id, request.user_id, request.title, request.body);
+        CreateNotificationCommand::new(deployment_id, user_id, request.title, request.body);
 
     if let Some(ctas) = request.ctas {
         command = command.with_ctas(ctas);

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT deployment_id as \"deployment_id!\",\n                       name as \"name!\",\n                       description,\n                       signing_secret as \"signing_secret!\",\n                       is_active as \"is_active!\",\n                       created_at as \"created_at!\",\n                       updated_at as \"updated_at!\"\n                FROM webhook_apps\n                WHERE deployment_id = $1 AND is_active = true\n                ORDER BY created_at DESC\n                ",
+  "query": "\n                SELECT deployment_id as \"deployment_id!\",\n                       name as \"name!\",\n                       description,\n                       signing_secret as \"signing_secret!\",\n                       is_active as \"is_active!\",\n                       created_at as \"created_at!\",\n                       updated_at as \"updated_at!\"\n                FROM webhook_apps\n                WHERE deployment_id = $1\n                ORDER BY created_at DESC\n                LIMIT $2 OFFSET $3\n                ",
   "describe": {
     "columns": [
       {
@@ -41,6 +41,8 @@
     ],
     "parameters": {
       "Left": [
+        "Int8",
+        "Int8",
         "Int8"
       ]
     },
@@ -54,5 +56,5 @@
       true
     ]
   },
-  "hash": "93ab1c2db282f76fc7b12f61754b9cba75e2c4111247d3c787672624ac53786d"
+  "hash": "9cdebd4e82c2d046f12b9e1db9ef0c522c452a88958b50f848c6bd22c81cee8d"
 }

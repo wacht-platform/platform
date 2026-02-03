@@ -33,17 +33,27 @@ pub async fn list_webhook_apps(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ListWebhookAppsQuery>,
-) -> ApiResult<ListWebhookAppsResponse> {
+) -> ApiResult<PaginatedResponse<WebhookApp>> {
     let include_inactive = params.include_inactive.unwrap_or(false);
+    let limit = params.limit.unwrap_or(50) as u64;
+    let offset = params.offset.unwrap_or(0) as u64;
 
-    let apps = GetWebhookAppsQuery::new(deployment_id)
+    let mut apps = GetWebhookAppsQuery::new(deployment_id)
         .with_inactive(include_inactive)
+        .with_pagination(Some(limit as i64 + 1), Some(offset as i64))
         .execute(&app_state)
         .await?;
 
-    Ok(ListWebhookAppsResponse {
-        total: apps.len(),
-        apps,
+    let has_more = apps.len() > limit as usize;
+    if has_more {
+        apps.pop();
+    }
+
+    Ok(PaginatedResponse {
+        data: apps,
+        has_more,
+        limit: Some(limit as i32),
+        offset: Some(offset as i32),
     }
     .into())
 }
@@ -634,19 +644,11 @@ pub async fn get_app_webhook_deliveries(
     Path(app_name): Path<String>,
     Query(params): Query<GetAppWebhookDeliveriesQuery>,
 ) -> ApiResult<PaginatedResponse<WebhookDeliveryListResponse>> {
-    tracing::info!(
-        "get_app_webhook_deliveries called - deployment_id: {}, app_name: {}, limit: {:?}, offset: {:?}",
-        deployment_id,
-        app_name,
-        params.limit,
-        params.offset
-    );
-
     let limit = params.limit.unwrap_or(100);
     let offset = params.offset.unwrap_or(0);
 
     // Fetch one extra to determine if there are more
-    let delivery_rows = match app_state
+    let delivery_rows = app_state
         .clickhouse_service
         .get_webhook_deliveries(
             deployment_id,
@@ -656,20 +658,7 @@ pub async fn get_app_webhook_deliveries(
             (limit + 1) as usize,
             offset as usize,
         )
-        .await
-    {
-        Ok(d) => {
-            tracing::info!(
-                "Successfully fetched {} deliveries from ClickHouse",
-                d.len()
-            );
-            d
-        }
-        Err(e) => {
-            tracing::error!("Failed to fetch deliveries from ClickHouse: {:?}", e);
-            return Err(e.into());
-        }
-    };
+        .await?;
 
     let has_more = delivery_rows.len() > limit as usize;
     let mut deliveries: Vec<WebhookDeliveryListResponse> =
@@ -678,8 +667,6 @@ pub async fn get_app_webhook_deliveries(
     if has_more {
         deliveries.truncate(limit as usize);
     }
-
-    tracing::info!("Returning {} deliveries", deliveries.len());
 
     Ok(PaginatedResponse {
         data: deliveries,

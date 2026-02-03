@@ -162,13 +162,6 @@ pub struct GetToolsQuery {
 }
 
 #[derive(Deserialize)]
-pub struct GetWorkflowsQuery {
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
-    pub search: Option<String>,
-}
-
-#[derive(Deserialize)]
 pub struct GetKnowledgeBasesQuery {
     pub limit: Option<usize>,
     pub offset: Option<usize>,

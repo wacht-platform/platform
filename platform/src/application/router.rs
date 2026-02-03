@@ -65,17 +65,6 @@ fn ai_routes() -> Router<AppState> {
             "/ai/agents/{agent_id}/details",
             get(api::ai_agents::get_ai_agent_details),
         )
-        // AI Workflows
-        .route(
-            "/ai/workflows",
-            get(api::ai_workflows::get_ai_workflows).post(api::ai_workflows::create_ai_workflow),
-        )
-        .route(
-            "/ai/workflows/{workflow_id}",
-            get(api::ai_workflows::get_ai_workflow_by_id)
-                .patch(api::ai_workflows::update_ai_workflow)
-                .delete(api::ai_workflows::delete_ai_workflow),
-        )
         // AI Tools
         .route(
             "/ai/tools",
@@ -108,14 +97,6 @@ fn ai_routes() -> Router<AppState> {
         .route(
             "/ai/knowledge-bases/{kb_id}/documents/{document_id}",
             delete(api::ai_knowledge_base::delete_knowledge_base_document),
-        )
-        .route(
-            "/ai/knowledge-bases/search",
-            get(api::ai_knowledge_base_search::search_knowledge_base),
-        )
-        .route(
-            "/ai/knowledge-bases/{kb_id}/search",
-            get(api::ai_knowledge_base_search::search_specific_knowledge_base),
         )
         // Agent Integrations
         .route(
@@ -309,6 +290,16 @@ fn settings_routes() -> Router<AppState> {
         .route(
             "/settings/social-connections",
             put(api::connection::upsert_deployment_social_connection),
+        )
+        // SMTP Configuration
+        .route(
+            "/settings/email/smtp",
+            post(api::settings::update_smtp_config)
+                .delete(api::settings::remove_smtp_config),
+        )
+        .route(
+            "/settings/email/smtp/verify",
+            post(api::settings::verify_smtp_connection),
         )
         // Email Templates
         .route(

@@ -1,5 +1,6 @@
 use crate::{application::response::ApiResult, middleware::RequireDeployment};
 use common::state::AppState;
+use serde::Deserialize;
 
 use commands::{Command, UpdateDeploymentDisplaySettingsCommand, UploadToCdnCommand};
 use dto::json::{DeploymentDisplaySettingsUpdates, UploadResult};
@@ -9,10 +10,18 @@ use axum::{
     http::StatusCode,
 };
 
+/// Path extractor that captures deployment_id (optional for backend) and image_type
+#[derive(Debug, Deserialize)]
+pub struct UploadPathParams {
+    #[serde(rename = "deployment_id")]
+    pub _deployment_id: Option<i64>,
+    pub image_type: String,
+}
+
 pub async fn upload_image(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    Path((_, image_type)): Path<(i64, String)>,
+    Path(params): Path<UploadPathParams>,
     mut multipart: Multipart,
 ) -> ApiResult<UploadResult> {
     let mut image_buffer: Vec<u8> = Vec::new();
@@ -69,7 +78,7 @@ pub async fn upload_image(
             .into());
     }
 
-    let file_path = match image_type.as_str() {
+    let file_path = match params.image_type.as_str() {
         "logo" => {
             updates.logo_image_url = Some(format!(
                 "https://cdn.wacht.services/deployments/{}/logo.{}",

@@ -110,17 +110,7 @@ pub struct AgentExecutionState {
     pub task_results: HashMap<String, serde_json::Value>,
     pub current_objective: Option<serde_json::Value>,
     pub conversation_insights: Option<serde_json::Value>,
-    pub workflow_state: Option<WorkflowExecutionState>,
     pub pending_input_request: Option<UserInputRequestState>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct WorkflowExecutionState {
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub workflow_id: i64,
-    pub workflow_state: HashMap<String, serde_json::Value>,
-    pub current_node_id: String,
-    pub execution_path: Vec<String>, // Path of node IDs to reach current position
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

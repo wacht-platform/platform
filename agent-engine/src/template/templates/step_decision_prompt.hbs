@@ -99,20 +99,16 @@ presence checks, or if your message ends with a question. Only true for explicit
 "properties": {
 "type": {
 "type": "STRING",
-"enum": ["tool_call", "workflow_call"],
+"enum": ["tool_call"],
 "description": "The type of action to execute"
 },
 "details": {
 "type": "OBJECT",
-"description": "Action details containing tool/workflow information",
+"description": "Action details containing tool information",
 "properties": {
 "tool_name": {
 "type": "STRING",
-"description": "The name of the tool to execute (required for tool_call)"
-},
-"workflow_name": {
-"type": "STRING",
-"description": "The name of the workflow to execute (required for workflow_call)"
+"description": "The name of the tool to execute"
 }
 }
 },

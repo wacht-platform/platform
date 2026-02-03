@@ -24,10 +24,6 @@ You receive complex problems that require careful, systematic thinking. Unlike q
 **Tools**: {{format_tools available_tools}}
 {{/if}}
 
-{{#if available_workflows}}
-**Workflows**: {{format_workflows available_workflows}}
-{{/if}}
-
 {{#if available_knowledge_bases}}
 **Knowledge Bases**: {{format_knowledge_bases available_knowledge_bases}}
 {{/if}}

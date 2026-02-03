@@ -4,7 +4,7 @@ use crate::template::{render_template_with_prompt, AgentTemplates};
 use commands::Command;
 use common::error::AppError;
 use dto::json::agent_responses::{ExecutionAction, ParameterGenerationResponse, TaskType};
-use dto::json::{ToolCall, WorkflowCall};
+use dto::json::ToolCall;
 use models::{
     AiTool, AiToolConfiguration, ApiToolConfiguration, PlatformFunctionToolConfiguration,
     SchemaField,
@@ -48,48 +48,6 @@ impl AgentExecutor {
                         &title,
                     )
                     .await
-            }
-            TaskType::WorkflowCall => {
-                let workflow_call = self.parse_workflow_call(&action.details)?;
-
-                let conversation_context: Vec<Value> = self
-                    .conversations
-                    .iter()
-                    .map(|conv| {
-                        json!({
-                            "id": conv.id,
-                            "message_type": conv.message_type,
-                            "content": conv.content,
-                            "timestamp": conv.timestamp,
-                            "type": "conversation"
-                        })
-                    })
-                    .collect();
-
-                let memory_context: Vec<Value> = self
-                    .memories
-                    .iter()
-                    .map(|mem| {
-                        json!({
-                            "id": mem.id,
-                            "content": mem.content,
-                            "category": mem.memory_category,
-                            "temporal_score": mem.base_temporal_score,
-                            "access_count": mem.access_count,
-                            "timestamp": mem.last_accessed_at,
-                            "type": "memory"
-                        })
-                    })
-                    .collect();
-
-                self.execute_workflow_task(
-                    &workflow_call,
-                    &self.ctx.agent.workflows,
-                    &conversation_context,
-                    &memory_context,
-                    self.channel.clone(),
-                )
-                .await
             }
         };
 
@@ -211,7 +169,7 @@ impl AgentExecutor {
 
         let tool = self.find_tool(tool_name)?;
         let params = self
-            .get_tool_parameters(tool, details, action_purpose, context_messages)
+            .get_tool_parameters(tool, action_purpose, context_messages)
             .await?;
 
         Ok(ToolCall {
@@ -230,7 +188,6 @@ impl AgentExecutor {
     async fn get_tool_parameters(
         &self,
         tool: &AiTool,
-        details: &Value,
         action_purpose: &str,
         context_messages: u32,
     ) -> Result<Value, AppError> {
@@ -246,7 +203,7 @@ impl AgentExecutor {
             };
         }
 
-        Ok(self.get_default_tool_parameters(tool, details))
+Ok(self.get_default_tool_parameters(tool))
     }
 
     fn tool_needs_llm_params(&self, tool: &AiTool) -> bool {
@@ -269,15 +226,8 @@ impl AgentExecutor {
         }
     }
 
-    fn get_default_tool_parameters(&self, tool: &AiTool, details: &Value) -> Value {
+    fn get_default_tool_parameters(&self, tool: &AiTool) -> Value {
         match &tool.configuration {
-            AiToolConfiguration::KnowledgeBase(_) => {
-                json!({
-                    "query": details.get("query")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(&self.user_request)
-                })
-            }
             AiToolConfiguration::PlatformEvent(event_config) => {
                 event_config.event_data.clone().unwrap_or(json!({}))
             }
@@ -485,19 +435,6 @@ impl AgentExecutor {
             .await?;
 
         Ok(response)
-    }
-
-    pub(super) fn parse_workflow_call(&self, details: &Value) -> Result<WorkflowCall, AppError> {
-        let workflow_name = details["workflow_name"]
-            .as_str()
-            .ok_or_else(|| AppError::BadRequest("Workflow name not specified".to_string()))?;
-
-        let inputs = details.get("inputs").cloned().unwrap_or(json!({}));
-
-        Ok(WorkflowCall {
-            workflow_name: workflow_name.to_string(),
-            inputs,
-        })
     }
 
     /// Get available filesystem paths for parameter generation context.

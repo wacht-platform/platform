@@ -94,12 +94,15 @@ impl AppState {
         let encryption_service = EncryptionService::new(&env("SMTP_ENCRYPTION_KEY")?)?;
 
         let agent_storage_client = if let Ok(gateway_url) = env("AGENT_STORAGE_GATEWAY_URL") {
-            Some(S3Client::new(
+            let access_key = env("AGENT_STORAGE_ACCESS_KEY").unwrap();
+            let secret_key = env("AGENT_STORAGE_SECRET_KEY").unwrap();
+
+            let client = S3Client::new(
                 &aws_config::defaults(BehaviorVersion::latest())
                     .endpoint_url(gateway_url)
                     .credentials_provider(aws_sdk_s3::config::Credentials::new(
-                        env("AGENT_STORAGE_ACCESS_KEY").unwrap_or_default(),
-                        env("AGENT_STORAGE_SECRET_KEY").unwrap_or_default(),
+                        access_key,
+                        secret_key,
                         None,
                         None,
                         "AgentStorage",
@@ -107,7 +110,9 @@ impl AppState {
                     .region(Region::new("us-east-1"))
                     .load()
                     .await,
-            ))
+            );
+
+            Some(client)
         } else {
             None
         };

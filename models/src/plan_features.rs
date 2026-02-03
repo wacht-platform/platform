@@ -6,7 +6,6 @@ use std::collections::HashSet;
 pub enum PlanFeature {
     Webhooks,
     AiAgents,
-    AiWorkflows,
     AiTools,
     AiKnowledgeBase,
     ApiKeys,
@@ -52,7 +51,6 @@ impl PlanTier {
                 HashSet::from([
                     Webhooks,
                     AiAgents,
-                    AiWorkflows,
                     AiTools,
                     AiKnowledgeBase,
                     ApiKeys,

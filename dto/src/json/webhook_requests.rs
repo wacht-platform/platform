@@ -11,12 +11,8 @@ use serde_json::Value;
 #[derive(Debug, Deserialize)]
 pub struct ListWebhookAppsQuery {
     pub include_inactive: Option<bool>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ListWebhookAppsResponse {
-    pub apps: Vec<models::webhook::WebhookApp>,
-    pub total: usize,
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]

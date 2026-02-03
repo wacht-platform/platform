@@ -106,7 +106,6 @@ pub struct ExecutionAction {
 #[serde(rename_all = "snake_case")]
 pub enum ActionType {
     ToolCall,
-    WorkflowCall,
     KnowledgeSearch,
     MemoryOperation,
     ContextSearch,

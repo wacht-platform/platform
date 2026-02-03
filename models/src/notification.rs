@@ -6,12 +6,17 @@ use sqlx::FromRow;
 // Main notification model matching the database schema
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Notification {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
 
     // Recipients
+    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub user_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string_option")]
     pub organization_id: Option<i64>,
+    #[serde(with = "crate::utils::serde::i64_as_string_option")]
     pub workspace_id: Option<i64>,
 
     // Content

@@ -13,7 +13,6 @@ pub struct StepDecisionContext {
     pub conversation_insights: Option<Value>,
     pub task_results: HashMap<String, Value>,
     pub available_tools: Vec<Value>,
-    pub available_workflows: Vec<Value>,
     pub available_knowledge_bases: Vec<Value>,
     pub iteration_info: IterationInfo,
     #[serde(default)]
@@ -66,7 +65,6 @@ pub struct ValidationContext {
     pub current_objective: Option<Value>,
     pub task_results: HashMap<String, Value>,
     pub available_tools: Vec<Value>,
-    pub available_workflows: Vec<Value>,
     pub available_knowledge_bases: Vec<Value>,
 }
 
@@ -77,40 +75,7 @@ pub struct UserInputRequestContext {
     pub current_objective: Option<Value>,
     pub working_memory: HashMap<String, Value>,
     pub available_tools: Vec<Value>,
-    pub available_workflows: Vec<Value>,
     pub available_knowledge_bases: Vec<Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TriggerEvaluationContext {
-    pub trigger_condition: String,
-    pub trigger_description: String,
-    pub workflow_state: WorkflowStateSummary,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowStateSummary {
-    pub inputs: Value,
-    pub total_context_items: i32,
-    pub has_conversation_history: bool,
-    pub has_memory_context: bool,
-    #[serde(flatten)]
-    pub outputs: HashMap<String, Value>, // node outputs
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SwitchCaseContext {
-    pub switch_value: Value,
-    pub cases: Vec<CaseDescription>,
-    pub has_default: bool,
-    pub workflow_state: HashMap<String, Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CaseDescription {
-    pub index: usize,
-    pub label: String,
-    pub condition: String,
 }
 
 // LLM Generation Config

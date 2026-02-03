@@ -341,7 +341,6 @@ impl AgentExecutor {
                 .conversation_insights
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
-            workflow_state: self.get_current_workflow_state(),
             pending_input_request: Some(user_input_state),
         };
 
