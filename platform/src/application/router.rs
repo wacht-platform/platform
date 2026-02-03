@@ -294,8 +294,7 @@ fn settings_routes() -> Router<AppState> {
         // SMTP Configuration
         .route(
             "/settings/email/smtp",
-            post(api::settings::update_smtp_config)
-                .delete(api::settings::remove_smtp_config),
+            post(api::settings::update_smtp_config).delete(api::settings::remove_smtp_config),
         )
         .route(
             "/settings/email/smtp/verify",
@@ -344,8 +343,7 @@ fn analytics_routes() -> Router<AppState> {
 
 // Utility Routes
 fn utility_routes() -> Router<AppState> {
-    Router::new()
-        .route("/upload/{image_type}", post(api::upload::upload_image))
+    Router::new().route("/upload/{image_type}", post(api::upload::upload_image))
 }
 
 fn base_deployment_routes() -> Router<AppState> {
@@ -364,7 +362,10 @@ fn billing_routes() -> Router<AppState> {
             get(api::billing::get_billing_account).patch(api::billing::update_billing_account),
         )
         .route("/billing/checkout", post(api::billing::create_checkout))
-        .route("/billing/pulse/buy", post(api::billing::create_pulse_checkout))
+        .route(
+            "/billing/pulse/buy",
+            post(api::billing::create_pulse_checkout),
+        )
         .route("/billing/portal", get(api::billing::get_portal_url))
         .route("/billing/usage", get(api::billing::get_current_usage))
         .route("/billing/invoices", get(api::billing::list_invoices))
@@ -458,15 +459,6 @@ fn console_specific_routes() -> Router<AppState> {
         .route(
             "/api-keys/{key_id}/rotate",
             post(api::api_key_console::rotate_api_key),
-        )
-        .route(
-            "/settings/email/smtp",
-            post(api::settings::update_smtp_config)
-                .delete(api::settings::remove_smtp_config),
-        )
-        .route(
-            "/settings/email/smtp/verify",
-            post(api::settings::verify_smtp_connection),
         )
         .route(
             "/organizations/{org_id}/domains",
