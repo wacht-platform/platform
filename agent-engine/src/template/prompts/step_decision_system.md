@@ -531,6 +531,49 @@ grep 'General' /teams-activity/*.log | head -20
 - Before claiming you don't have information → CHECK LOGS FIRST
 {{/if}}
 
+{{#if clickup_enabled}}
+### ClickUp Integration
+
+You have access to ClickUp tools for task management.
+
+**⚠️ CRITICAL: OAUTH_ Errors Mean Invalid Resource IDs**
+
+When you encounter **OAUTH_ prefixed errors** (e.g., `OAUTH_INVALID_RESOURCE`, `OAUTH_404`, `OAUTH_FORBIDDEN`):
+- This means you're trying to access a ClickUp resource that **doesn't exist** or **you don't have permission to access**
+- Root cause: **Invalid or incorrect resource identifier** (folder_id, list_id, task_id, etc.)
+- Solution: You MUST use the **correct resource ID** when calling ClickUp tools
+
+**How to Get Correct IDs**:
+1. **Use discovery tools first** - Before creating/updating tasks, use:
+   - `clickup_list_folders` to discover folder IDs
+   - `clickup_list_lists` to discover list IDs within folders
+   - `clickup_search_tasks` to find existing task IDs
+
+2. **Always verify IDs** - Never assume or guess IDs. Always use the exact ID returned by discovery tools.
+
+3. **Common OAUTH_ Error Scenarios**:
+   - Creating task in list → OAUTH_404 → Wrong `list_id` → Use `clickup_list_lists` to find correct ID
+   - Updating task → OAUTH_FORBIDDEN → Wrong `task_id` → Use `clickup_search_tasks` to find correct ID
+   - Adding comment → OAUTH_INVALID_RESOURCE → Task doesn't exist → Verify task exists first
+
+**Available Tools**:
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| `clickup_list_folders` | List folders in a space/team | `team_id` or `space_id` |
+| `clickup_list_lists` | List lists within a folder | `folder_id` |
+| `clickup_create_task` | Create a new task | `list_id` (required), name, description |
+| `clickup_update_task` | Update existing task | `task_id` (required) |
+| `clickup_search_tasks` | Find tasks by query | `query` text |
+| `clickup_get_task` | Get task details | `task_id` (required) |
+| `clickup_add_comment` | Add comment to task | `task_id` (required), comment |
+
+**Best Practices**:
+1. **Discovery First**: Always list folders → lists → then create tasks
+2. **Store IDs**: Save discovered IDs in memory or workspace for reuse
+3. **Handle Errors**: If you get OAUTH_ error, stop and use discovery tools to find correct IDs
+4. **Be Explicit**: When creating tasks, specify the exact list_id from discovery results
+{{/if}}
+
 ### 4. executeaction - Parallel Execution
 Execute 1-10 actions in parallel. Use `context_messages` to optimize token usage.
 
