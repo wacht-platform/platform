@@ -397,7 +397,8 @@ impl Query for GetOrganizationDetailsQuery {
         let segments = sqlx::query_as!(
             models::Segment,
             r#"
-            SELECT s.*
+            SELECT s.id, s.created_at, s.updated_at, s.deleted_at, s.deployment_id, s.name,
+                   s.type as "segment_type: _"
             FROM segments s
             JOIN organization_segments os ON s.id = os.segment_id
             WHERE os.organization_id = $1
@@ -489,7 +490,8 @@ impl Query for GetWorkspaceDetailsQuery {
         let segments = sqlx::query_as!(
             models::Segment,
             r#"
-            SELECT s.*
+            SELECT s.id, s.created_at, s.updated_at, s.deleted_at, s.deployment_id, s.name,
+                   s.type as "segment_type: _"
             FROM segments s
             JOIN workspace_segments ws ON s.id = ws.segment_id
             WHERE ws.workspace_id = $1

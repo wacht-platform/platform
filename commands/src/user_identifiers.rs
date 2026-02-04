@@ -336,6 +336,7 @@ impl Command for UpdateUserPhoneCommand {
     type Output = UserPhoneNumber;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        // Handle is_primary first
         if let Some(is_primary) = self.request.is_primary {
             if is_primary {
                 sqlx::query!(
@@ -348,44 +349,24 @@ impl Command for UpdateUserPhoneCommand {
             }
         }
 
-        match (
-            &self.request.phone_number,
-            self.request.verified,
-            self.request.is_primary,
-        ) {
-            (Some(phone_number), Some(verified), Some(_)) => {
+        // Update phone number and/or country code
+        match (&self.request.phone_number, &self.request.country_code) {
+            (Some(phone_number), Some(country_code)) => {
                 sqlx::query!(
                     r#"
                     UPDATE user_phone_numbers
-                    SET updated_at = NOW(), phone_number = $1, verified = $2,
-                        verified_at = CASE WHEN $2 = true THEN NOW() ELSE verified_at END
+                    SET updated_at = NOW(), phone_number = $1, country_code = $2
                     WHERE id = $3 AND user_id = $4
                     "#,
                     phone_number,
-                    verified,
+                    country_code,
                     self.phone_id,
                     self.user_id
                 )
                 .execute(&app_state.db_pool)
                 .await?;
             }
-            (Some(phone_number), Some(verified), None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE user_phone_numbers
-                    SET updated_at = NOW(), phone_number = $1, verified = $2,
-                        verified_at = CASE WHEN $2 = true THEN NOW() ELSE verified_at END
-                    WHERE id = $3 AND user_id = $4
-                    "#,
-                    phone_number,
-                    verified,
-                    self.phone_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (Some(phone_number), None, Some(_)) => {
+            (Some(phone_number), None) => {
                 sqlx::query!(
                     r#"
                     UPDATE user_phone_numbers
@@ -399,82 +380,47 @@ impl Command for UpdateUserPhoneCommand {
                 .execute(&app_state.db_pool)
                 .await?;
             }
-            (None, Some(verified), Some(_)) => {
+            (None, Some(country_code)) => {
                 sqlx::query!(
                     r#"
                     UPDATE user_phone_numbers
-                    SET updated_at = NOW(), verified = $1,
-                        verified_at = CASE WHEN $1 = true THEN NOW() ELSE verified_at END
+                    SET updated_at = NOW(), country_code = $1
                     WHERE id = $2 AND user_id = $3
                     "#,
-                    verified,
+                    country_code,
                     self.phone_id,
                     self.user_id
                 )
                 .execute(&app_state.db_pool)
                 .await?;
             }
-            (Some(phone_number), None, None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE user_phone_numbers
-                    SET updated_at = NOW(), phone_number = $1
-                    WHERE id = $2 AND user_id = $3
-                    "#,
-                    phone_number,
-                    self.phone_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, Some(verified), None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE user_phone_numbers
-                    SET updated_at = NOW(), verified = $1,
-                        verified_at = CASE WHEN $1 = true THEN NOW() ELSE verified_at END
-                    WHERE id = $2 AND user_id = $3
-                    "#,
-                    verified,
-                    self.phone_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, None, Some(_)) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE user_phone_numbers
-                    SET updated_at = NOW()
-                    WHERE id = $1 AND user_id = $2
-                    "#,
-                    self.phone_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
-            }
-            (None, None, None) => {
-                sqlx::query!(
-                    r#"
-                    UPDATE user_phone_numbers
-                    SET updated_at = NOW()
-                    WHERE id = $1 AND user_id = $2
-                    "#,
-                    self.phone_id,
-                    self.user_id
-                )
-                .execute(&app_state.db_pool)
-                .await?;
+            (None, None) => {
+                // No phone number or country code update
             }
         }
 
+        // Update verified status
+        if let Some(verified) = self.request.verified {
+            sqlx::query!(
+                r#"
+                UPDATE user_phone_numbers
+                SET updated_at = NOW(), verified = $1,
+                    verified_at = CASE WHEN $1 = true THEN NOW() ELSE verified_at END
+                WHERE id = $2 AND user_id = $3
+                "#,
+                verified,
+                self.phone_id,
+                self.user_id
+            )
+            .execute(&app_state.db_pool)
+            .await?;
+        }
+
+        // Fetch and return the updated record
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, user_id,
-                   phone_number, verified, verified_at
+                   phone_number, country_code, verified, verified_at
             FROM user_phone_numbers
             WHERE id = $1 AND user_id = $2
             "#,
@@ -490,7 +436,7 @@ impl Command for UpdateUserPhoneCommand {
             updated_at: row.updated_at,
             user_id: row.user_id.unwrap_or(self.user_id),
             phone_number: row.phone_number,
-            country_code: String::new(),
+            country_code: row.country_code,
             verified: row.verified,
             verified_at: row.verified_at.unwrap_or_else(|| chrono::Utc::now()),
         })

@@ -11,55 +11,6 @@ pub enum StreamEvent {
     UserInputRequest(models::ConversationContent),
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
-pub enum TaskStatus {
-    Pending,
-    InProgress,
-    Completed,
-    Failed,
-    Blocked,
-}
-
-impl<'de> Deserialize<'de> for TaskStatus {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-
-        Ok(match s.as_str() {
-            "InProgress" => TaskStatus::InProgress,
-            "Completed" => TaskStatus::Completed,
-            "Failed" => TaskStatus::Failed,
-            "Blocked" => TaskStatus::Blocked,
-            _ => TaskStatus::Pending,
-        })
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Task {
-    pub id: String,
-    pub description: String,
-    pub status: TaskStatus,
-    #[serde(rename = "dependency")]
-    pub dependencies: Option<Vec<String>>,
-    pub context: Value,
-    pub result: Option<Value>,
-    pub error: Option<String>,
-    pub created_at: chrono::DateTime<Utc>,
-    pub updated_at: chrono::DateTime<Utc>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(rename = "task_plan")]
-pub struct TaskPlan {
-    #[serde(rename = "task")]
-    pub tasks: Option<Vec<Task>>,
-    pub reasoning: String,
-    pub estimated_steps: usize,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolCall {
     pub tool_name: String,

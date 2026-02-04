@@ -1216,6 +1216,20 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
+        // Create empty AI settings row for this deployment
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_ai_settings (id, deployment_id, created_at, updated_at)
+            VALUES ($1, $2, $3, $4)
+            "#,
+            app_state.sf.next_id()? as i64,
+            deployment_row.id,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
         tx.commit().await?;
 
         let deployment = Deployment {

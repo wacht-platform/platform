@@ -58,6 +58,7 @@ pub struct AddPhoneRequest {
 #[derive(Serialize, Deserialize)]
 pub struct UpdatePhoneRequest {
     pub phone_number: Option<String>,
+    pub country_code: Option<String>,
     pub verified: Option<bool>,
     pub is_primary: Option<bool>,
 }

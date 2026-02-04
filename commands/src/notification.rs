@@ -7,7 +7,7 @@ use tracing::warn;
 use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
-use models::notification::{Notification, NotificationSeverity};
+use models::notification::{Notification, NotificationRow, NotificationSeverity};
 
 // NATS notification message
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,7 +93,7 @@ impl Command for CreateNotificationCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         // Create new notification
-        let notification = query_as::<_, Notification>(
+        let row: NotificationRow = query_as(
             r#"
             INSERT INTO notifications (
                 deployment_id,
@@ -123,11 +123,19 @@ impl Command for CreateNotificationCommand {
         .fetch_one(&app_state.db_pool)
         .await?;
 
+        // Convert row to strongly typed Notification
+        let notification = Notification::try_from(row)
+            .map_err(|e| AppError::Internal(format!("Failed to convert notification: {}", e)))?;
+
         // Publish to NATS for real-time delivery
         let subject = format!(
             "notifications.{}.{}",
             notification.deployment_id, notification.user_id
         );
+
+        // Serialize ctas back to JSON for NATS message
+        let ctas_json = notification.ctas.as_ref().and_then(|ctas| serde_json::to_value(ctas).ok());
+
         let message = NotificationMessage {
             id: notification.id,
             user_id: notification.user_id,
@@ -137,7 +145,7 @@ impl Command for CreateNotificationCommand {
             title: notification.title.clone(),
             body: notification.body.clone(),
             severity: notification.severity.to_string(),
-            ctas: notification.ctas.clone(),
+            ctas: ctas_json,
             created_at: notification.created_at,
         };
 

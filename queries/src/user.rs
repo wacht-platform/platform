@@ -147,7 +147,7 @@ impl Query for DeploymentActiveUserListQuery {
                 u.id, u.created_at, u.updated_at,
                 u.first_name, u.last_name, u.username, u.profile_picture_url,
                 e.email_address as primary_email_address,
-                p.phone_number as primary_phone_number
+                p.country_code || p.phone_number as primary_phone_number
             FROM users u
             LEFT JOIN user_email_addresses e ON u.primary_email_address_id = e.id
             LEFT JOIN user_phone_numbers p ON u.primary_phone_number_id = p.id
@@ -430,7 +430,8 @@ impl Query for GetUserDetailsQuery {
         let segments = sqlx::query_as!(
             models::Segment,
             r#"
-            SELECT s.*
+            SELECT s.id, s.created_at, s.updated_at, s.deleted_at, s.deployment_id, s.name,
+                   s.type as "segment_type: _"
             FROM segments s
             JOIN user_segments us ON s.id = us.segment_id
             WHERE us.user_id = $1

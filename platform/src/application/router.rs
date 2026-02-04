@@ -2,11 +2,14 @@ use axum::{
     Router,
     extract::DefaultBodyLimit,
     routing::{delete, get, patch, post, put},
+    http::Request,
 };
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
+    classify::ServerErrorsFailureClass,
 };
+use std::time::Duration;
 
 use crate::api;
 use crate::middleware::backend_deployment_middleware;
@@ -294,7 +297,8 @@ fn settings_routes() -> Router<AppState> {
         // SMTP Configuration
         .route(
             "/settings/email/smtp",
-            post(api::settings::update_smtp_config).delete(api::settings::remove_smtp_config),
+            post(api::settings::update_smtp_config)
+                .delete(api::settings::remove_smtp_config),
         )
         .route(
             "/settings/email/smtp/verify",
@@ -308,6 +312,11 @@ fn settings_routes() -> Router<AppState> {
         .route(
             "/settings/email-templates/{template_name}",
             patch(api::settings::update_deployment_email_template),
+        )
+        // Image Upload
+        .route(
+            "/settings/upload/{image_type}",
+            post(api::upload::upload_image),
         )
 }
 
@@ -330,7 +339,7 @@ fn segments_routes() -> Router<AppState> {
 // Analytics Routes
 fn analytics_routes() -> Router<AppState> {
     Router::new()
-        .route("/analytics/stats", get(api::analytics::get_analytics_stats))
+        .route("/analytics/summary", get(api::analytics::get_analytics_stats))
         .route(
             "/analytics/recent-signups",
             get(api::analytics::get_recent_signups),
@@ -341,18 +350,12 @@ fn analytics_routes() -> Router<AppState> {
         )
 }
 
-// Utility Routes
-fn utility_routes() -> Router<AppState> {
-    Router::new().route("/upload/{image_type}", post(api::upload::upload_image))
-}
-
 fn base_deployment_routes() -> Router<AppState> {
     user_management_routes()
         .merge(b2b_routes())
         .merge(settings_routes())
         .merge(segments_routes())
         .merge(analytics_routes())
-        .merge(utility_routes())
 }
 
 fn billing_routes() -> Router<AppState> {
@@ -362,10 +365,7 @@ fn billing_routes() -> Router<AppState> {
             get(api::billing::get_billing_account).patch(api::billing::update_billing_account),
         )
         .route("/billing/checkout", post(api::billing::create_checkout))
-        .route(
-            "/billing/pulse/buy",
-            post(api::billing::create_pulse_checkout),
-        )
+        .route("/billing/pulse/buy", post(api::billing::create_pulse_checkout))
         .route("/billing/portal", get(api::billing::get_portal_url))
         .route("/billing/usage", get(api::billing::get_current_usage))
         .route("/billing/invoices", get(api::billing::list_invoices))
@@ -638,7 +638,24 @@ pub async fn create_console_router(state: AppState) -> Router {
         .merge(public_webhook_routes())
         .merge(protected_routes)
         .with_state(state)
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request<_>| {
+                    tracing::info_span!(
+                        "http_request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        version = ?request.version(),
+                    )
+                })
+                .on_failure(|error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
+                    tracing::error!(
+                        status = %error,
+                        latency_ms = _latency.as_millis(),
+                        "response failed"
+                    );
+                }),
+        )
         .layer(cors)
 }
 
@@ -660,7 +677,24 @@ pub async fn create_backend_router(state: AppState) -> Router {
         .merge(health_routes())
         .merge(backend_routes)
         .with_state(state)
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request<_>| {
+                    tracing::info_span!(
+                        "http_request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        version = ?request.version(),
+                    )
+                })
+                .on_failure(|error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
+                    tracing::error!(
+                        status = %error,
+                        latency_ms = _latency.as_millis(),
+                        "response failed"
+                    );
+                }),
+        )
         .layer(cors)
 }
 
@@ -673,6 +707,23 @@ pub async fn create_frontend_router(state: AppState) -> Router {
     Router::new()
         .merge(health_routes())
         .with_state(state)
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request<_>| {
+                    tracing::info_span!(
+                        "http_request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        version = ?request.version(),
+                    )
+                })
+                .on_failure(|error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
+                    tracing::error!(
+                        status = %error,
+                        latency_ms = _latency.as_millis(),
+                        "response failed"
+                    );
+                }),
+        )
         .layer(cors)
 }

@@ -112,30 +112,3 @@ pub enum ActionType {
     MessageUser,
 }
 
-impl PlannedTask {
-    pub fn to_task(&self) -> super::agent::Task {
-        let deps = &self.dependencies.dependencies;
-        super::agent::Task {
-            id: self.id.clone(),
-            description: self.objective.clone(),
-            status: super::agent::TaskStatus::Pending,
-            dependencies: if deps.is_empty() {
-                None
-            } else {
-                Some(deps.clone())
-            },
-            context: serde_json::json!({
-                "type": "planned_execution",
-                "objective": self.objective,
-                "requirements": self.requirements.requirements,
-                "expected_output": self.expected_output,
-                "priority": self.priority,
-                "failure_strategy": self.failure_strategy,
-            }),
-            result: None,
-            error: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        }
-    }
-}

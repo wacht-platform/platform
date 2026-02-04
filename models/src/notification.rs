@@ -2,9 +2,17 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::FromRow;
+use std::collections::HashMap;
 
-// Main notification model matching the database schema
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+// Call to action for notifications
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallToAction {
+    pub label: String,
+    pub payload: String,
+}
+
+// Main notification model
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notification {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -23,25 +31,98 @@ pub struct Notification {
     pub title: String,
     pub body: String,
 
-    // Action
-    pub ctas: Option<JsonValue>,
+    // Action (strongly typed)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ctas: Option<Vec<CallToAction>>,
 
     // Severity
     pub severity: NotificationSeverity,
 
     // Status
+    #[serde(rename = "is_read")]
     pub is_read: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "read_at")]
     pub read_at: Option<DateTime<Utc>>,
+    #[serde(rename = "is_archived")]
     pub is_archived: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "archived_at")]
     pub archived_at: Option<DateTime<Utc>>,
 
-    // Metadata
-    pub metadata: Option<JsonValue>,
+    // Metadata (flexible key-value storage)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, JsonValue>>,
 
     // Timestamps
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<DateTime<Utc>>,
+}
+
+// Database row representation (with JSONB fields)
+#[derive(Debug, Clone, FromRow)]
+pub struct NotificationRow {
+    pub id: i64,
+    pub deployment_id: i64,
+    pub user_id: i64,
+    pub organization_id: Option<i64>,
+    pub workspace_id: Option<i64>,
+    pub title: String,
+    pub body: String,
+    pub ctas: Option<JsonValue>,
+    pub severity: String,
+    pub is_read: bool,
+    pub read_at: Option<DateTime<Utc>>,
+    pub is_archived: bool,
+    pub archived_at: Option<DateTime<Utc>>,
+    pub metadata: Option<JsonValue>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+impl TryFrom<NotificationRow> for Notification {
+    type Error = String;
+
+    fn try_from(row: NotificationRow) -> Result<Self, Self::Error> {
+        let ctas = if let Some(json_val) = row.ctas {
+            let ctas: Vec<CallToAction> = serde_json::from_value(json_val)
+                .map_err(|e| format!("Failed to deserialize ctas: {}", e))?;
+            Some(ctas)
+        } else {
+            None
+        };
+
+        let metadata = if let Some(json_val) = row.metadata {
+            let metadata: HashMap<String, JsonValue> = serde_json::from_value(json_val)
+                .map_err(|e| format!("Failed to deserialize metadata: {}", e))?;
+            Some(metadata)
+        } else {
+            None
+        };
+
+        Ok(Notification {
+            id: row.id,
+            deployment_id: row.deployment_id,
+            user_id: row.user_id,
+            organization_id: row.organization_id,
+            workspace_id: row.workspace_id,
+            title: row.title,
+            body: row.body,
+            ctas,
+            severity: NotificationSeverity::from(&row.severity),
+            is_read: row.is_read,
+            read_at: row.read_at,
+            is_archived: row.is_archived,
+            archived_at: row.archived_at,
+            metadata,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            expires_at: row.expires_at,
+        })
+    }
 }
 
 // Severity enum for notification types

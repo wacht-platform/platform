@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE user_phone_numbers\n                    SET updated_at = NOW(), phone_number = $1, country_code = $2\n                    WHERE id = $3 AND user_id = $4\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "10123e384b8d35ecbc38f9965493b504263d71876cfa1b028a9ce76730538a16"
+}

@@ -125,9 +125,10 @@ impl Query for GetAiAgentByIdQuery {
             self.agent_id,
             self.deployment_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_optional(&app_state.db_pool)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(|e| AppError::Database(e))?
+        .ok_or_else(|| AppError::NotFound("Agent not found".to_string()))?;
 
         Ok(AiAgentWithDetails {
             id: agent.id,

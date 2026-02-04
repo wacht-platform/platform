@@ -202,6 +202,8 @@ pub async fn create_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
+    println!("🔥 DEBUG: create_webhook_endpoint called with app_name={}, url={}", request.app_name, request.url);
+
     use commands::webhook_endpoint::EventSubscriptionData;
 
     // Convert API subscriptions to command subscriptions
@@ -214,6 +216,8 @@ pub async fn create_webhook_endpoint(
         })
         .collect();
 
+    println!("🔥 DEBUG: subscriptions converted, count={}", subscriptions.len());
+
     let command = CreateWebhookEndpointCommand {
         deployment_id,
         app_name: request.app_name,
@@ -225,7 +229,9 @@ pub async fn create_webhook_endpoint(
         timeout_seconds: request.timeout_seconds,
     };
 
+    println!("🔥 DEBUG: About to execute command");
     let endpoint = command.execute(&app_state).await?;
+    println!("🔥 DEBUG: Command executed successfully, endpoint_id={}", endpoint.id);
 
     Ok(endpoint.into())
 }

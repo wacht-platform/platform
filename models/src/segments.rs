@@ -13,7 +13,8 @@ pub struct Segment {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
     pub name: String,
-    pub r#type: String, // 'organization', 'workspace', or 'user'
+    #[serde(rename = "type")]
+    pub segment_type: String, // 'organization', 'workspace', or 'user'
 }
 
 #[derive(Serialize, Deserialize, FromRow)]
