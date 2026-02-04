@@ -89,24 +89,12 @@ impl ExecutionContext {
         {
             let cache = self.cached_integration_status.read().await;
             if let Some(status) = cache.as_ref() {
-                tracing::debug!(
-                    context_id = self.context_id,
-                    "Returning cached integration status: teams={}, clickup={}",
-                    status.teams_enabled,
-                    status.clickup_enabled
-                );
                 return Ok(status.clone());
             }
         }
 
         let context = self.get_context().await?;
         let mut status = IntegrationStatus::default();
-
-        tracing::info!(
-            context_id = self.context_id,
-            context_group = ?context.context_group,
-            "Checking integration status"
-        );
 
         if let Some(context_group) = &context.context_group {
             let active_integrations = queries::GetActiveIntegrationsForContextQuery::new(
@@ -117,14 +105,6 @@ impl ExecutionContext {
             .execute(&self.app_state)
             .await?;
 
-            tracing::info!(
-                context_id = self.context_id,
-                context_group = %context_group,
-                active_integrations_count = active_integrations.len(),
-                integration_types = ?active_integrations.iter().map(|i| format!("{:?}", i.integration_type)).collect::<Vec<_>>(),
-                "Found active integrations"
-            );
-
             status.teams_enabled = active_integrations
                 .iter()
                 .any(|i| matches!(i.integration_type, models::IntegrationType::Teams));
@@ -132,13 +112,6 @@ impl ExecutionContext {
             status.clickup_enabled = active_integrations
                 .iter()
                 .any(|i| matches!(i.integration_type, models::IntegrationType::ClickUp));
-
-            tracing::info!(
-                context_id = self.context_id,
-                teams_enabled = status.teams_enabled,
-                clickup_enabled = status.clickup_enabled,
-                "Integration status determined"
-            );
 
             if status.teams_enabled {
                 tracing::info!(
