@@ -30,10 +30,26 @@ impl AgentExecutor {
                     parameters = %tool_call.parameters,
                     "Parsed tool call"
                 );
+
+                // DEBUG: Log all available tools
+                tracing::info!(
+                    context_id = self.ctx.context_id,
+                    requested_tool = %tool_call.tool_name,
+                    available_tool_count = self.ctx.agent.tools.len(),
+                    clickup_tools_available = self.ctx.agent.tools.iter().filter(|t| t.name.starts_with("clickup_")).count(),
+                    "Looking for tool in agent's tool list"
+                );
+
                 let tool = self.ctx.agent.tools
                     .iter()
                     .find(|t| t.name == tool_call.tool_name)
                     .ok_or_else(|| {
+                        tracing::error!(
+                            context_id = self.ctx.context_id,
+                            requested_tool = %tool_call.tool_name,
+                            available_tools = ?self.ctx.agent.tools.iter().map(|t| &t.name).collect::<Vec<_>>(),
+                            "Tool not found in agent's tool list"
+                        );
                         warn!(tool_name = %tool_call.tool_name, "Tool not found");
                         AppError::BadRequest(format!("Tool '{}' not found", tool_call.tool_name))
                     })?;

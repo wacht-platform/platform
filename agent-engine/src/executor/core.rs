@@ -94,8 +94,22 @@ impl AgentExecutorBuilder {
 
         let context = execution_context.get_context().await?;
 
+        tracing::info!(
+            context_id = execution_context.context_id,
+            agent_id = execution_context.agent.id,
+            agent_name = %execution_context.agent.name,
+            "Building agent executor"
+        );
+
         // Get integration status from cached context
         let integration_status = execution_context.integration_status().await?;
+
+        tracing::info!(
+            context_id = execution_context.context_id,
+            clickup_enabled = integration_status.clickup_enabled,
+            teams_enabled = integration_status.teams_enabled,
+            "Integration status checked"
+        );
 
         // Link teams activity directory if Teams is enabled
         if integration_status.teams_enabled {
@@ -152,8 +166,19 @@ impl AgentExecutorBuilder {
         if integration_status.clickup_enabled {
             let clickup_tools = super::tool_definitions::clickup_tools();
 
+            tracing::info!(
+                context_id = execution_context.context_id,
+                clickup_tools_count = clickup_tools.len(),
+                "ClickUp is enabled, adding ClickUp tools"
+            );
+
             for (name, desc, service_type, schema) in clickup_tools {
                 if !current_tools.iter().any(|t| t.name == name) {
+                    tracing::debug!(
+                        context_id = execution_context.context_id,
+                        tool_name = %name,
+                        "Adding ClickUp tool to agent"
+                    );
                     current_tools.push(AiTool {
                         id: -1,
                         name: name.to_string(),
@@ -171,6 +196,17 @@ impl AgentExecutorBuilder {
                     });
                 }
             }
+
+            tracing::info!(
+                context_id = execution_context.context_id,
+                total_clickup_tools_added = current_tools.iter().filter(|t| t.name.starts_with("clickup_")).count(),
+                "Finished adding ClickUp tools"
+            );
+        } else {
+            tracing::warn!(
+                context_id = execution_context.context_id,
+                "ClickUp is NOT enabled - no ClickUp tools will be available"
+            );
         }
 
         if !current_tools
@@ -197,7 +233,25 @@ impl AgentExecutorBuilder {
         }
 
         let mut agent_with_tools = self.ctx.agent.clone();
-        agent_with_tools.tools = current_tools;
+        agent_with_tools.tools = current_tools.clone();
+
+        tracing::info!(
+            context_id = execution_context.context_id,
+            original_agent_tool_count = self.ctx.agent.tools.len(),
+            updated_agent_tool_count = agent_with_tools.tools.len(),
+            clickup_tool_count = agent_with_tools.tools.iter().filter(|t| t.name.starts_with("clickup_")).count(),
+            "Agent tool lists prepared"
+        );
+
+        // FIX: Create a new execution context with the updated agent
+        // This ensures the executor has access to all tools including ClickUp
+        let execution_context = execution_context.with_agent(agent_with_tools.clone());
+
+        tracing::info!(
+            context_id = execution_context.context_id,
+            final_agent_tool_count = execution_context.agent.tools.len(),
+            "Updated execution_context with new agent"
+        );
 
         let mut executor = AgentExecutor {
             ctx: execution_context,
