@@ -16,4 +16,4 @@ clickhouse = { version = "0.14.2", features = ["chrono", "native-tls"] }
 sonyflake = "0.3"
 reqwest = { version = "0.12", features = ["json"] }
 url = "2.5"
-wacht = { path = "../../wacht-rs" }
+wacht = { version = "0.0.1-alpha.11" }
