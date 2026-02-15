@@ -211,8 +211,6 @@ pub async fn delete_connection_handler(
         .map_err(Into::into)
 }
 
-// --- SCIM Token Handlers ---
-
 #[derive(Serialize)]
 pub struct ScimTokenInfoResponse {
     pub exists: bool,

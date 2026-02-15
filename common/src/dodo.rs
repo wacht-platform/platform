@@ -46,8 +46,7 @@ impl DodoClient {
             .unwrap_or_default()
             .to_string();
 
-        let base_url = env::var("DODO_API_URL")
-            .unwrap_or_else(|_| "https://live.dodopayments.com".to_string());
+        let base_url = "https://live.dodopayments.com".to_string();
 
         let mut headers = HeaderMap::new();
         headers.insert(

@@ -36,7 +36,8 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new_from_env() -> Result<Self, Box<dyn Error>> {
-        let database_url = env("DATABASE_URL")?;
+        let database_url =
+            env("DATABASE_PRIMARY_PRIVATE").unwrap_or(env("DATABASE_PRIMARY_PUBLIC")?);
         let pool = PgPoolOptions::new()
             .min_connections(5)
             .acquire_timeout(Duration::from_secs(30))
@@ -47,7 +48,7 @@ impl AppState {
 
         let s3_client = S3Client::new(
             &aws_config::defaults(BehaviorVersion::latest())
-                .endpoint_url(env("R2_ENDPOINT_URL")?)
+                .endpoint_url(env("R2_ENDPOINT")?)
                 .credentials_provider(aws_sdk_s3::config::Credentials::new(
                     env("R2_ACCESS_KEY_ID")?,
                     env("R2_SECRET_ACCESS_KEY")?,
@@ -91,7 +92,7 @@ impl AppState {
         let nats_client = async_nats::connect_with_options(env("NATS_URL")?, nats_options).await?;
         let nats_jetstream = jetstream::new(nats_client.clone());
 
-        let encryption_service = EncryptionService::new(&env("SMTP_ENCRYPTION_KEY")?)?;
+        let encryption_service = EncryptionService::new(&env("ENCRYPTION_KEY")?)?;
 
         let agent_storage_client = if let Ok(gateway_url) = env("AGENT_STORAGE_GATEWAY_URL") {
             let access_key = env("AGENT_STORAGE_ACCESS_KEY").unwrap();

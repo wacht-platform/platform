@@ -116,7 +116,6 @@ fn verify_signature(headers: &HeaderMap, body: &str) -> Result<(), String> {
     };
     use sha2::Sha256;
 
-    // Get signature from header
     let signature_header = headers
         .get("x-webhook-signature")
         .and_then(|v| v.to_str().ok())
@@ -141,7 +140,6 @@ fn verify_signature(headers: &HeaderMap, body: &str) -> Result<(), String> {
 
     let verifying_key = VerifyingKey::<Sha256>::new(public_key);
 
-    // Verify signature
     verifying_key
         .verify(body.as_bytes(), &signature)
         .map_err(|e| format!("Signature verification failed: {}", e))?;

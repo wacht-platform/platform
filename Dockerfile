@@ -27,7 +27,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+RUN curl -Ls https://cli.doppler.com/install.sh | sh
 
 COPY --from=builder /app/target/release/backend-api /app/backend
 COPY --from=builder /app/target/release/console-api /app/console
@@ -36,3 +38,7 @@ COPY --from=builder /app/target/release/gateway /app/gateway
 COPY --from=builder /app/target/release/worker /app/worker
 
 EXPOSE 3001
+
+# Keep command selection external (backend/console/realtime/gateway/worker),
+# but always run through Doppler for secret injection.
+ENTRYPOINT ["doppler", "run", "--"]
