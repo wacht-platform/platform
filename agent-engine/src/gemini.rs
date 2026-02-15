@@ -149,22 +149,19 @@ impl GeminiClient {
         redis_client: redis::Client,
         nats_client: async_nats::Client,
     ) -> Result<Self, AppError> {
-        if let Some(encrypted_key) = deployment_ai_settings.and_then(|s| s.gemini_api_key.as_ref()) {
+        if let Some(encrypted_key) = deployment_ai_settings.and_then(|s| s.gemini_api_key.as_ref())
+        {
             let decrypted_key = encryption_service.decrypt(encrypted_key)?;
-            return Ok(
-                Self::new_byok(decrypted_key, model.to_string())
-                    .with_billing(deployment_id, redis_client)
-                    .with_nats(nats_client)
-                    .with_context(context_id, context_group)
-            );
-        }
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap();
-        Ok(
-            Self::new(api_key, model.to_string())
+            return Ok(Self::new_byok(decrypted_key, model.to_string())
                 .with_billing(deployment_id, redis_client)
                 .with_nats(nats_client)
-                .with_context(context_id, context_group)
-        )
+                .with_context(context_id, context_group));
+        }
+        let api_key = std::env::var("GEMINI_API_KEY").unwrap();
+        Ok(Self::new(api_key, model.to_string())
+            .with_billing(deployment_id, redis_client)
+            .with_nats(nats_client)
+            .with_context(context_id, context_group))
     }
 
     pub async fn generate_structured_content<T>(
@@ -275,11 +272,11 @@ impl GeminiClient {
             let output_tokens = usage.candidates_token_count as i64;
 
             let (input_price, cached_price, output_price) = get_model_pricing(&self.model);
-            
+
             let non_cached_cost = (non_cached_input_tokens * input_price) / 1_000_000;
             let cached_cost = (cached_tokens * cached_price) / 1_000_000;
             let input_cost_cents = non_cached_cost + cached_cost;
-            
+
             let output_cost_cents = (output_tokens * output_price) / 1_000_000;
 
             let webhook_payload = serde_json::json!({
@@ -304,7 +301,11 @@ impl GeminiClient {
             if let Some(nats_client) = &self.nats_client {
                 let task_message = dto::json::NatsTaskMessage {
                     task_type: "webhook.event".to_string(),
-                    task_id: format!("model-usage-{}-{}", deployment_id, Utc::now().timestamp_micros()),
+                    task_id: format!(
+                        "model-usage-{}-{}",
+                        deployment_id,
+                        Utc::now().timestamp_micros()
+                    ),
                     payload: serde_json::json!({
                         "deployment_id": deployment_id,
                         "event_type": "agent.model.usage",

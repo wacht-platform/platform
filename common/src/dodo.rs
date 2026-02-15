@@ -66,8 +66,6 @@ impl DodoClient {
         })
     }
 
-    // ==================== Checkout ====================
-
     pub async fn create_checkout_session(
         &self,
         params: CreateCheckoutParams,
@@ -77,8 +75,6 @@ impl DodoClient {
         let response = self.client.post(&url).json(&params).send().await?;
         self.handle_response(response).await
     }
-
-    // ==================== Subscriptions ====================
 
     pub async fn get_subscription(&self, subscription_id: &str) -> DodoResult<Subscription> {
         let url = format!("{}/subscriptions/{}", self.base_url, subscription_id);
@@ -150,8 +146,6 @@ impl DodoClient {
         self.handle_response(response).await
     }
 
-    // ==================== Customers ====================
-
     pub async fn create_customer(&self, params: CreateCustomerParams) -> DodoResult<Customer> {
         let url = format!("{}/customers", self.base_url);
         let response = self.client.post(&url).json(&params).send().await?;
@@ -182,8 +176,6 @@ impl DodoClient {
         let response = self.client.post(&url).send().await?;
         self.handle_response(response).await
     }
-
-    // ==================== Usage/Events ====================
 
     pub async fn ingest_usage_events(
         &self,
@@ -217,8 +209,6 @@ impl DodoClient {
         self.handle_response(response).await
     }
 
-    // ==================== Payments ====================
-
     pub async fn get_payment(&self, payment_id: &str) -> DodoResult<Payment> {
         let url = format!("{}/payments/{}", self.base_url, payment_id);
         let response = self.client.get(&url).send().await?;
@@ -244,8 +234,6 @@ impl DodoClient {
         let response = self.client.get(&url).send().await?;
         self.handle_response(response).await
     }
-
-    // ==================== Webhooks ====================
 
     pub fn verify_webhook(
         &self,
@@ -334,8 +322,6 @@ impl DodoClient {
         }
     }
 }
-
-// ==================== Request/Response Types ====================
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateCheckoutParams {

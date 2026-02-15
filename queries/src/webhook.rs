@@ -55,9 +55,12 @@ impl Query for GetWebhookAppsQuery {
                 WebhookApp,
                 r#"
                 SELECT deployment_id as "deployment_id!",
+                       app_slug as "app_slug!",
                        name as "name!",
                        description,
                        signing_secret as "signing_secret!",
+                       failure_notification_emails,
+                       event_catalog_slug,
                        is_active as "is_active!",
                        created_at as "created_at!",
                        updated_at as "updated_at!"
@@ -77,9 +80,12 @@ impl Query for GetWebhookAppsQuery {
                 WebhookApp,
                 r#"
                 SELECT deployment_id as "deployment_id!",
+                       app_slug as "app_slug!",
                        name as "name!",
                        description,
                        signing_secret as "signing_secret!",
+                       failure_notification_emails,
+                       event_catalog_slug,
                        is_active as "is_active!",
                        created_at as "created_at!",
                        updated_at as "updated_at!"
@@ -103,7 +109,7 @@ impl Query for GetWebhookAppsQuery {
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookEndpointsQuery {
     deployment_id: i64,
-    app_name: Option<String>,
+    app_slug: Option<String>,
     include_inactive: bool,
 }
 
@@ -111,13 +117,13 @@ impl GetWebhookEndpointsQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self {
             deployment_id,
-            app_name: None,
+            app_slug: None,
             include_inactive: false,
         }
     }
 
-    pub fn for_app(mut self, app_name: String) -> Self {
-        self.app_name = Some(app_name);
+    pub fn for_app(mut self, app_slug: String) -> Self {
+        self.app_slug = Some(app_slug);
         self
     }
 
@@ -131,41 +137,42 @@ impl Query for GetWebhookEndpointsQuery {
     type Output = Vec<ModelWebhookEndpoint>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let endpoints = match (&self.app_name, self.include_inactive) {
-            (Some(app_name), true) => {
+        let endpoints = match (&self.app_slug, self.include_inactive) {
+            (Some(app_slug), true) => {
                 query_as!(
                     ModelWebhookEndpoint,
                     r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_name as "app_name!",
-                           e.url as "url!", e.description, e.headers, e.signing_secret,
+                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
+                           e.url as "url!", e.description, e.headers,
                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
                            e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
+                           e.rate_limit_config,
                            e.created_at as "created_at!", e.updated_at as "updated_at!"
                     FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1 AND e.app_name = $2
+                    WHERE e.deployment_id = $1 AND e.app_slug = $2
                     ORDER BY e.created_at DESC
                     "#,
                     self.deployment_id,
-                    app_name
+                    app_slug
                 )
                 .fetch_all(&app_state.db_pool)
                 .await?
             }
-            (Some(app_name), false) => {
+            (Some(app_slug), false) => {
                 query_as!(
                     ModelWebhookEndpoint,
                     r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_name as "app_name!",
-                           e.url as "url!", e.description, e.headers, e.signing_secret,
-                           e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
+                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
+                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
                            e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
+                           e.rate_limit_config,
                            e.created_at as "created_at!", e.updated_at as "updated_at!"
                     FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1 AND e.app_name = $2 AND e.is_active = true
+                    WHERE e.deployment_id = $1 AND e.app_slug = $2 AND e.is_active = true
                     ORDER BY e.created_at DESC
                     "#,
                     self.deployment_id,
-                    app_name
+                    app_slug
                 )
                 .fetch_all(&app_state.db_pool)
                 .await?
@@ -174,10 +181,10 @@ impl Query for GetWebhookEndpointsQuery {
                 query_as!(
                     ModelWebhookEndpoint,
                     r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_name as "app_name!",
-                           e.url as "url!", e.description, e.headers, e.signing_secret,
-                           e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
+                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
+                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
                            e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
+                           e.rate_limit_config,
                            e.created_at as "created_at!", e.updated_at as "updated_at!"
                     FROM webhook_endpoints e
                     WHERE e.deployment_id = $1
@@ -192,10 +199,10 @@ impl Query for GetWebhookEndpointsQuery {
                 query_as!(
                     ModelWebhookEndpoint,
                     r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_name as "app_name!",
-                           e.url as "url!", e.description, e.headers, e.signing_secret,
-                           e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
+                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
+                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
                            e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
+                           e.rate_limit_config,
                            e.created_at as "created_at!", e.updated_at as "updated_at!"
                     FROM webhook_endpoints e
                     WHERE e.deployment_id = $1 AND e.is_active = true
@@ -215,7 +222,7 @@ impl Query for GetWebhookEndpointsQuery {
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookEndpointsWithSubscriptionsQuery {
     deployment_id: i64,
-    app_name: Option<String>,
+    app_slug: Option<String>,
     include_inactive: bool,
     limit: Option<i32>,
     offset: Option<i32>,
@@ -225,15 +232,15 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self {
             deployment_id,
-            app_name: None,
+            app_slug: None,
             include_inactive: false,
             limit: None,
             offset: None,
         }
     }
 
-    pub fn for_app(mut self, app_name: String) -> Self {
-        self.app_name = Some(app_name);
+    pub fn for_app(mut self, app_slug: String) -> Self {
+        self.app_slug = Some(app_slug);
         self
     }
 
@@ -256,44 +263,44 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
         let limit = self.limit.unwrap_or(100) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
-        let endpoints = match (&self.app_name, self.include_inactive) {
-            (Some(app_name), true) => {
+        let endpoints = match (&self.app_slug, self.include_inactive) {
+            (Some(app_slug), true) => {
                 query_as!(
                     ModelWebhookEndpoint,
                     r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_name as "app_name!",
-                           e.url as "url!", e.description, e.headers, e.signing_secret,
-                           e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
+                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
+                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
                            e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
+                           e.rate_limit_config,
                            e.created_at as "created_at!", e.updated_at as "updated_at!"
                     FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1 AND e.app_name = $2
+                    WHERE e.deployment_id = $1 AND e.app_slug = $2
                     ORDER BY e.created_at DESC
                     LIMIT $3 OFFSET $4
                     "#,
                     self.deployment_id,
-                    app_name,
+                    app_slug,
                     limit,
                     offset
                 )
                 .fetch_all(&app_state.db_pool)
                 .await?
             }
-            (Some(app_name), false) => {
+            (Some(app_slug), false) => {
                 query_as!(
                     ModelWebhookEndpoint,
                     r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_name as "app_name!",
-                           e.url as "url!", e.description, e.headers, e.signing_secret,
-                           e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
+                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
+                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
                            e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
+                           e.rate_limit_config,
                            e.created_at as "created_at!", e.updated_at as "updated_at!"
                     FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1 AND e.app_name = $2 AND e.is_active = true
+                    WHERE e.deployment_id = $1 AND e.app_slug = $2 AND e.is_active = true
                     ORDER BY e.created_at DESC
                     "#,
                     self.deployment_id,
-                    app_name
+                    app_slug
                 )
                 .fetch_all(&app_state.db_pool)
                 .await?
@@ -302,10 +309,10 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
                 query_as!(
                     ModelWebhookEndpoint,
                     r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_name as "app_name!",
-                           e.url as "url!", e.description, e.headers, e.signing_secret,
-                           e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
+                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
+                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
                            e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
+                           e.rate_limit_config,
                            e.created_at as "created_at!", e.updated_at as "updated_at!"
                     FROM webhook_endpoints e
                     WHERE e.deployment_id = $1
@@ -320,10 +327,10 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
                 query_as!(
                     ModelWebhookEndpoint,
                     r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_name as "app_name!",
-                           e.url as "url!", e.description, e.headers, e.signing_secret,
-                           e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
+                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
+                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
                            e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
+                           e.rate_limit_config,
                            e.created_at as "created_at!", e.updated_at as "updated_at!"
                     FROM webhook_endpoints e
                     WHERE e.deployment_id = $1 AND e.is_active = true
@@ -342,7 +349,7 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
             let subscriptions = query_as!(
                 WebhookEndpointSubscription,
                 r#"
-                SELECT endpoint_id as "endpoint_id!", deployment_id as "deployment_id!", app_name as "app_name!",
+                SELECT endpoint_id as "endpoint_id!", deployment_id as "deployment_id!", app_slug as "app_slug!",
                        event_name as "event_name!", filter_rules, created_at as "created_at!"
                 FROM webhook_endpoint_subscriptions
                 WHERE endpoint_id = $1 AND deployment_id = $2
@@ -365,18 +372,18 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
             endpoints_with_subs.push(WebhookEndpoint {
                 id: endpoint.id,
                 deployment_id: endpoint.deployment_id,
-                app_name: endpoint.app_name,
+                app_slug: endpoint.app_slug,
                 url: endpoint.url,
                 description: endpoint.description,
                 headers: endpoint.headers,
                 is_active: endpoint.is_active,
-                signing_secret: endpoint.signing_secret,
                 max_retries: endpoint.max_retries,
                 timeout_seconds: endpoint.timeout_seconds,
                 failure_count: endpoint.failure_count,
                 last_failure_at: endpoint.last_failure_at,
                 auto_disabled: endpoint.auto_disabled,
                 auto_disabled_at: endpoint.auto_disabled_at,
+                rate_limit_config: endpoint.rate_limit_config,
                 created_at: endpoint.created_at,
                 updated_at: endpoint.updated_at,
                 subscriptions: subscription_dtos,
@@ -391,14 +398,14 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookAppByNameQuery {
     deployment_id: i64,
-    app_name: String,
+    app_slug: String,
 }
 
 impl GetWebhookAppByNameQuery {
-    pub fn new(deployment_id: i64, app_name: String) -> Self {
+    pub fn new(deployment_id: i64, app_slug: String) -> Self {
         Self {
             deployment_id,
-            app_name,
+            app_slug,
         }
     }
 }
@@ -411,17 +418,20 @@ impl Query for GetWebhookAppByNameQuery {
             WebhookApp,
             r#"
             SELECT deployment_id as "deployment_id!",
+                   app_slug as "app_slug!",
                    name as "name!",
                    description,
                    signing_secret as "signing_secret!",
+                   failure_notification_emails,
+                   event_catalog_slug,
                    is_active as "is_active!",
                    created_at as "created_at!",
                    updated_at as "updated_at!"
             FROM webhook_apps
-            WHERE deployment_id = $1 AND name = $2
+            WHERE deployment_id = $1 AND app_slug = $2
             "#,
             self.deployment_id,
-            self.app_name
+            self.app_slug
         )
         .fetch_optional(&app_state.db_pool)
         .await?;
@@ -434,43 +444,62 @@ impl Query for GetWebhookAppByNameQuery {
 #[derive(Debug)]
 pub struct GetWebhookEventsQuery {
     deployment_id: i64,
-    app_name: String,
+    app_slug: String,
 }
 
 impl GetWebhookEventsQuery {
-    pub fn new(deployment_id: i64, app_name: String) -> Self {
+    pub fn new(deployment_id: i64, app_slug: String) -> Self {
         Self {
             deployment_id,
-            app_name,
+            app_slug,
         }
     }
 }
 
 impl Query for GetWebhookEventsQuery {
-    type Output = Vec<models::webhook::WebhookAppEvent>;
+    type Output = Vec<models::webhook::WebhookEventDefinition>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let events = query_as!(
-            models::webhook::WebhookAppEvent,
+        // First, check if the app has an event catalog assigned
+        let app = query!(
             r#"
-            SELECT
-                deployment_id as "deployment_id!",
-                app_name as "app_name!",
-                event_name as "event_name!",
-                description,
-                schema,
-                created_at as "created_at!"
-            FROM webhook_app_events
-            WHERE deployment_id = $1 AND app_name = $2
-            ORDER BY event_name
+            SELECT event_catalog_slug, created_at as "created_at!"
+            FROM webhook_apps
+            WHERE deployment_id = $1 AND app_slug = $2
             "#,
             self.deployment_id,
-            self.app_name
+            self.app_slug
         )
-        .fetch_all(&app_state.db_pool)
-        .await?;
+        .fetch_optional(&app_state.db_pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
 
-        Ok(events)
+        if let Some(catalog_slug) = app.event_catalog_slug {
+            // Fetch events from catalog
+            let catalog = query!(
+                r#"
+                SELECT events as "events!", created_at as "created_at!"
+                FROM webhook_event_catalogs
+                WHERE deployment_id = $1 AND slug = $2
+                "#,
+                self.deployment_id,
+                catalog_slug
+            )
+            .fetch_optional(&app_state.db_pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
+
+            // catalog.events is a JSONB array of WebhookEventDefinition
+            let events: Vec<models::webhook::WebhookEventDefinition> =
+                serde_json::from_value(catalog.events).map_err(|e| {
+                    AppError::Internal(format!("Invalid catalog events format: {}", e))
+                })?;
+
+            return Ok(events);
+        }
+
+        // If no catalog is assigned, return empty list (exclusive use of catalogs)
+        Ok(Vec::new())
     }
 }
 
@@ -478,14 +507,14 @@ impl Query for GetWebhookEventsQuery {
 #[derive(Debug)]
 pub struct GetWebhookStatsQuery {
     deployment_id: i64,
-    app_name: String,
+    app_slug: String,
 }
 
 impl GetWebhookStatsQuery {
-    pub fn new(deployment_id: i64, app_name: String) -> Self {
+    pub fn new(deployment_id: i64, app_slug: String) -> Self {
         Self {
             deployment_id,
-            app_name,
+            app_slug,
         }
     }
 }
@@ -498,9 +527,9 @@ impl Query for GetWebhookStatsQuery {
 
         // Get active endpoints count from PostgreSQL
         let active_endpoints = query!(
-            "SELECT COUNT(*) as count FROM webhook_endpoints WHERE deployment_id = $1 AND app_name = $2 AND is_active = true",
+            "SELECT COUNT(*) as count FROM webhook_endpoints WHERE deployment_id = $1 AND app_slug = $2 AND is_active = true",
             self.deployment_id,
-            &self.app_name
+            &self.app_slug
         )
         .fetch_one(&app_state.db_pool)
         .await?
@@ -512,7 +541,7 @@ impl Query for GetWebhookStatsQuery {
             .clickhouse_service
             .get_webhook_delivery_stats(
                 self.deployment_id,
-                Some(self.app_name.clone()),
+                Some(self.app_slug.clone()),
                 None,
                 chrono::Utc::now() - chrono::Duration::days(30),
                 chrono::Utc::now(),
@@ -533,7 +562,7 @@ impl Query for GetWebhookStatsQuery {
             .clickhouse_service
             .get_webhook_delivery_stats(
                 self.deployment_id,
-                Some(self.app_name.clone()),
+                Some(self.app_slug.clone()),
                 None,
                 chrono::Utc::now() - chrono::Duration::hours(24),
                 chrono::Utc::now(),
@@ -566,19 +595,19 @@ impl GetPendingWebhookDeliveryQuery {
 }
 
 impl Query for GetPendingWebhookDeliveryQuery {
-    type Output = dto::clickhouse::webhook::WebhookDelivery;
+    type Output = dto::clickhouse::webhook::WebhookLog;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let row = sqlx::query_as::<_, PendingDeliveryRow>(
             r#"
-            SELECT 
+            SELECT
                 d.id as delivery_id,
                 d.deployment_id,
-                d.app_name,
+                d.app_slug,
                 d.endpoint_id,
                 e.url as endpoint_url,
                 d.event_name,
-                d.payload_s3_key,
+                d.payload,
                 d.attempts as attempt_number,
                 d.max_attempts,
                 d.created_at as timestamp
@@ -593,25 +622,27 @@ impl Query for GetPendingWebhookDeliveryQuery {
         .await?
         .ok_or_else(|| AppError::NotFound("Pending delivery not found".to_string()))?;
 
-        // Convert to WebhookDelivery DTO
-        Ok(dto::clickhouse::webhook::WebhookDelivery {
+        // Convert to WebhookLog DTO
+        let payload_json = row
+            .payload
+            .map(|p| serde_json::to_string(&p).unwrap_or_default());
+        Ok(dto::clickhouse::webhook::WebhookLog {
             deployment_id: row.deployment_id,
             delivery_id: row.delivery_id,
-            app_name: row.app_name,
+            app_slug: row.app_slug,
             endpoint_id: row.endpoint_id,
-            endpoint_url: row.endpoint_url,
             event_name: row.event_name,
             status: "pending".to_string(),
             http_status_code: None,
             response_time_ms: None,
             attempt_number: row.attempt_number,
             max_attempts: row.max_attempts,
-            error_message: None,
-            filtered_reason: None,
-            payload_s3_key: row.payload_s3_key,
+            payload: payload_json.clone(),
+            payload_size_bytes: payload_json.as_ref().map(|p| p.len() as i32).unwrap_or(0),
             response_body: None,
             response_headers: None,
             timestamp: row.timestamp,
+            request_headers: None,
         })
     }
 }

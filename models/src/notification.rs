@@ -172,5 +172,3 @@ impl NotificationSeverity {
         }
     }
 }
-
-

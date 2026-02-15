@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT parent_context_id FROM agent_execution_contexts\n             WHERE id = $1 AND deployment_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "parent_context_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "1609d4e417c1e4fb661d42e58e05a7443c17b26473679385d68bf4a61a7b902a"
+}

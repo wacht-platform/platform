@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM webhook_apps\n            WHERE deployment_id = $1 AND app_slug = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c77246d0a01385c4b268ef0132b93109871e92c0b8430dd4efd88cdb2c9fe13"
+}

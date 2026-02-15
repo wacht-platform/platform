@@ -1,4 +1,3 @@
-use chrono::Utc;
 use models::ConversationRecord;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -9,6 +8,11 @@ pub enum StreamEvent {
     PlatformFunction(String, serde_json::Value),
     ConversationMessage(ConversationRecord),
     UserInputRequest(models::ConversationContent),
+    ChildAgentCompleted {
+        child_context_id: i64,
+        status: String,
+        summary: Option<Value>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

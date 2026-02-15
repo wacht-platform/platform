@@ -24,4 +24,6 @@ pub enum DeploymentNameParams {
     WaitlistInviteTemplate,
     #[serde(rename = "workspace-invite-template")]
     WorkspaceInviteTemplate,
+    #[serde(rename = "webhook-failure-notification-template")]
+    WebhookFailureNotificationTemplate,
 }

@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT e.id, e.url, e.max_retries, a.signing_secret, e.deployment_id\n            FROM webhook_endpoints e\n            JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_slug = a.app_slug)\n            WHERE e.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "max_retries",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "signing_secret",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "6be2462260fe3e12d32f36c1d9fa334d5f7d24111e9f9e57ff9a5ff4d42c0317"
+}

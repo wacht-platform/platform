@@ -160,7 +160,7 @@ impl Command for UpdateBillingAccountCommand {
         query.push_str(&format!(" WHERE id = ${}", param_count));
 
         let mut q = sqlx::query(&query);
-        
+
         // Bind all parameters in the same order they were added to the query
         if let Some(legal_name) = self.legal_name {
             q = q.bind(legal_name);
@@ -192,10 +192,10 @@ impl Command for UpdateBillingAccountCommand {
         if let Some(country) = self.country {
             q = q.bind(country);
         }
-        
+
         // Finally bind the id for the WHERE clause
         q = q.bind(self.id);
-        
+
         q.execute(&state.db_pool).await?;
 
         Ok(())

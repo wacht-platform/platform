@@ -1,7 +1,25 @@
-use super::Query;
+use super::{Query, rate_limit_scheme::GetRateLimitSchemeQuery};
 use common::error::AppError;
 use common::state::AppState;
-use models::api_key::{ApiKey, ApiAuthApp, ApiKeyWithIdentifers};
+use models::api_key::{ApiAuthApp, ApiKey, ApiKeyWithIdentifers, RateLimit};
+use serde_json::Value;
+
+async fn resolve_rate_limits(
+    app_state: &AppState,
+    deployment_id: i64,
+    scheme_slug: &Option<String>,
+) -> Result<Vec<RateLimit>, AppError> {
+    let slug = match scheme_slug {
+        Some(slug) => slug,
+        None => return Ok(vec![]),
+    };
+
+    let scheme = GetRateLimitSchemeQuery::new(deployment_id, slug.clone())
+        .execute(app_state)
+        .await?;
+
+    Ok(scheme.map(|s| s.rules).unwrap_or_default())
+}
 
 pub struct GetApiAuthAppsQuery {
     pub deployment_id: i64,
@@ -26,61 +44,41 @@ impl Query for GetApiAuthAppsQuery {
     type Output = Vec<ApiAuthApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let apps = if self.include_inactive {
-            let recs = sqlx::query!(
-                r#"SELECT id, deployment_id, name, description, is_active,
-                   rate_limits as "rate_limits: serde_json::Value",
-                   created_at, updated_at, deleted_at
-                   FROM api_auth_apps WHERE deployment_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC"#,
-                self.deployment_id
-            )
-            .fetch_all(&app_state.db_pool)
-            .await?;
+        let recs = sqlx::query!(
+            r#"SELECT id, deployment_id, app_slug, name, key_prefix, description, is_active,
+               rate_limit_scheme_slug,
+               created_at, updated_at, deleted_at
+               FROM api_auth_apps
+               WHERE deployment_id = $1
+                 AND deleted_at IS NULL
+                 AND ($2 OR is_active = true)
+               ORDER BY created_at DESC"#,
+            self.deployment_id,
+            self.include_inactive
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
 
-            recs.into_iter()
-                .map(|rec| ApiAuthApp {
-                    id: rec.id,
-                    deployment_id: rec.deployment_id,
-                    name: rec.name,
-                    description: rec.description,
-                    is_active: rec.is_active.unwrap_or(true),
-                    rate_limits: rec
-                        .rate_limits
-                        .and_then(|v| serde_json::from_value(v).ok())
-                        .unwrap_or_default(),
-                    created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
-                    updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
-                    deleted_at: rec.deleted_at,
-                })
-                .collect()
-        } else {
-            let recs = sqlx::query!(
-                r#"SELECT id, deployment_id, name, description, is_active,
-                   rate_limits as "rate_limits: serde_json::Value",
-                   created_at, updated_at, deleted_at
-                   FROM api_auth_apps WHERE deployment_id = $1 AND is_active = true AND deleted_at IS NULL ORDER BY created_at DESC"#,
-                self.deployment_id
-            )
-            .fetch_all(&app_state.db_pool)
-            .await?;
-
-            recs.into_iter()
-                .map(|rec| ApiAuthApp {
-                    id: rec.id,
-                    deployment_id: rec.deployment_id,
-                    name: rec.name,
-                    description: rec.description,
-                    is_active: rec.is_active.unwrap_or(true),
-                    rate_limits: rec
-                        .rate_limits
-                        .and_then(|v| serde_json::from_value(v).ok())
-                        .unwrap_or_default(),
-                    created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
-                    updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
-                    deleted_at: rec.deleted_at,
-                })
-                .collect()
-        };
+        let mut apps = Vec::with_capacity(recs.len());
+        for rec in recs {
+            let rate_limits =
+                resolve_rate_limits(app_state, rec.deployment_id, &rec.rate_limit_scheme_slug)
+                    .await?;
+            apps.push(ApiAuthApp {
+                id: rec.id,
+                deployment_id: rec.deployment_id,
+                app_slug: rec.app_slug,
+                name: rec.name,
+                description: rec.description,
+                is_active: rec.is_active.unwrap_or(true),
+                key_prefix: rec.key_prefix,
+                rate_limits,
+                rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
+                created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
+                updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
+                deleted_at: rec.deleted_at,
+            });
+        }
 
         Ok(apps)
     }
@@ -96,8 +94,8 @@ impl Query for GetApiAuthAppByIdQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
-            r#"SELECT id, deployment_id, name, description, is_active,
-               rate_limits as "rate_limits: serde_json::Value",
+            r#"SELECT id, deployment_id, app_slug, name, key_prefix, description, is_active,
+               rate_limit_scheme_slug,
                created_at, updated_at, deleted_at
                FROM api_auth_apps WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL"#,
             self.app_id,
@@ -106,20 +104,80 @@ impl Query for GetApiAuthAppByIdQuery {
         .fetch_optional(&app_state.db_pool)
         .await?;
 
-        Ok(rec.map(|rec| ApiAuthApp {
-            id: rec.id,
-            deployment_id: rec.deployment_id,
-            name: rec.name,
-            description: rec.description,
-            is_active: rec.is_active.unwrap_or(true),
-            rate_limits: rec
-                .rate_limits
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default(),
-            created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
-            updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
-            deleted_at: rec.deleted_at,
-        }))
+        if let Some(rec) = rec {
+            let rate_limits =
+                resolve_rate_limits(app_state, rec.deployment_id, &rec.rate_limit_scheme_slug)
+                    .await?;
+            Ok(Some(ApiAuthApp {
+                id: rec.id,
+                deployment_id: rec.deployment_id,
+                app_slug: rec.app_slug,
+                name: rec.name,
+                description: rec.description,
+                is_active: rec.is_active.unwrap_or(true),
+                key_prefix: rec.key_prefix,
+                rate_limits,
+                rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
+                created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
+                updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
+                deleted_at: rec.deleted_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+pub struct GetApiAuthAppBySlugQuery {
+    pub deployment_id: i64,
+    pub app_slug: String,
+}
+
+impl GetApiAuthAppBySlugQuery {
+    pub fn new(deployment_id: i64, app_slug: String) -> Self {
+        Self {
+            deployment_id,
+            app_slug,
+        }
+    }
+}
+
+impl Query for GetApiAuthAppBySlugQuery {
+    type Output = Option<ApiAuthApp>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let rec = sqlx::query!(
+            r#"SELECT id, deployment_id, app_slug, name, key_prefix, description, is_active,
+               rate_limit_scheme_slug,
+               created_at, updated_at, deleted_at
+               FROM api_auth_apps WHERE deployment_id = $1 AND app_slug = $2 AND deleted_at IS NULL"#,
+            self.deployment_id,
+            self.app_slug
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
+        if let Some(rec) = rec {
+            let rate_limits =
+                resolve_rate_limits(app_state, rec.deployment_id, &rec.rate_limit_scheme_slug)
+                    .await?;
+            Ok(Some(ApiAuthApp {
+                id: rec.id,
+                deployment_id: rec.deployment_id,
+                app_slug: rec.app_slug,
+                name: rec.name,
+                description: rec.description,
+                is_active: rec.is_active.unwrap_or(true),
+                key_prefix: rec.key_prefix,
+                rate_limits,
+                rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
+                created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
+                updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
+                deleted_at: rec.deleted_at,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -142,8 +200,8 @@ impl Query for GetApiAuthAppByNameQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
-            r#"SELECT id, deployment_id, name, description, is_active,
-               rate_limits as "rate_limits: serde_json::Value",
+            r#"SELECT id, deployment_id, app_slug, name, key_prefix, description, is_active,
+               rate_limit_scheme_slug,
                created_at, updated_at, deleted_at
                FROM api_auth_apps WHERE deployment_id = $1 AND name = $2 AND deleted_at IS NULL"#,
             self.deployment_id,
@@ -152,20 +210,27 @@ impl Query for GetApiAuthAppByNameQuery {
         .fetch_optional(&app_state.db_pool)
         .await?;
 
-        Ok(rec.map(|rec| ApiAuthApp {
-            id: rec.id,
-            deployment_id: rec.deployment_id,
-            name: rec.name,
-            description: rec.description,
-            is_active: rec.is_active.unwrap_or(true),
-            rate_limits: rec
-                .rate_limits
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default(),
-            created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
-            updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
-            deleted_at: rec.deleted_at,
-        }))
+        if let Some(rec) = rec {
+            let rate_limits =
+                resolve_rate_limits(app_state, rec.deployment_id, &rec.rate_limit_scheme_slug)
+                    .await?;
+            Ok(Some(ApiAuthApp {
+                id: rec.id,
+                deployment_id: rec.deployment_id,
+                app_slug: rec.app_slug,
+                name: rec.name,
+                description: rec.description,
+                is_active: rec.is_active.unwrap_or(true),
+                key_prefix: rec.key_prefix,
+                rate_limits,
+                rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
+                created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
+                updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
+                deleted_at: rec.deleted_at,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -196,9 +261,14 @@ impl Query for GetApiKeysByAppQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let keys = if self.include_inactive {
             let recs = sqlx::query!(
-                r#"SELECT id, app_id, deployment_id, name, key_prefix, key_suffix, key_hash,
+                r#"SELECT id, app_id, deployment_id, app_slug, name, key_prefix, key_suffix, key_hash,
                    permissions as "permissions: serde_json::Value",
                    metadata as "metadata: serde_json::Value",
+                   rate_limits as "rate_limits: serde_json::Value",
+                   rate_limit_scheme_slug,
+                   organization_id, workspace_id, organization_membership_id, workspace_membership_id,
+                   org_role_permissions as "org_role_permissions: serde_json::Value",
+                   workspace_role_permissions as "workspace_role_permissions: serde_json::Value",
                    expires_at, last_used_at, is_active, created_at, updated_at,
                    revoked_at, revoked_reason
                    FROM api_keys WHERE app_id = $1 AND deployment_id = $2 ORDER BY created_at DESC"#,
@@ -213,15 +283,42 @@ impl Query for GetApiKeysByAppQuery {
                     id: rec.id,
                     app_id: rec.app_id,
                     deployment_id: rec.deployment_id,
+                    app_slug: rec.app_slug,
                     name: rec.name,
                     key_prefix: rec.key_prefix,
                     key_suffix: rec.key_suffix,
                     key_hash: rec.key_hash,
                     permissions: serde_json::from_value(
-                        rec.permissions.clone().unwrap_or(serde_json::json!([])),
+                        rec.permissions
+                            .clone()
+                            .unwrap_or_else(|| serde_json::json!([])),
                     )
                     .unwrap_or_default(),
-                    metadata: rec.metadata.unwrap_or(serde_json::json!({})),
+                    metadata: rec
+                        .metadata
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({})),
+                    rate_limits: if rec.rate_limits.is_null() {
+                        vec![]
+                    } else {
+                        serde_json::from_value(rec.rate_limits.clone()).unwrap_or_default()
+                    },
+                    rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
+                    organization_id: rec.organization_id,
+                    workspace_id: rec.workspace_id,
+                    organization_membership_id: rec.organization_membership_id,
+                    workspace_membership_id: rec.workspace_membership_id,
+                    org_role_permissions: if rec.org_role_permissions.is_null() {
+                        vec![]
+                    } else {
+                        serde_json::from_value(rec.org_role_permissions.clone()).unwrap_or_default()
+                    },
+                    workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
+                        vec![]
+                    } else {
+                        serde_json::from_value(rec.workspace_role_permissions.clone())
+                            .unwrap_or_default()
+                    },
                     expires_at: rec.expires_at,
                     last_used_at: rec.last_used_at,
                     is_active: rec.is_active.unwrap_or(true),
@@ -233,9 +330,14 @@ impl Query for GetApiKeysByAppQuery {
                 .collect()
         } else {
             let recs = sqlx::query!(
-                r#"SELECT id, app_id, deployment_id, name, key_prefix, key_suffix, key_hash,
+                r#"SELECT id, app_id, deployment_id, app_slug, name, key_prefix, key_suffix, key_hash,
                    permissions as "permissions: serde_json::Value",
                    metadata as "metadata: serde_json::Value",
+                   rate_limits as "rate_limits: serde_json::Value",
+                   rate_limit_scheme_slug,
+                   organization_id, workspace_id, organization_membership_id, workspace_membership_id,
+                   org_role_permissions as "org_role_permissions: serde_json::Value",
+                   workspace_role_permissions as "workspace_role_permissions: serde_json::Value",
                    expires_at, last_used_at, is_active, created_at, updated_at,
                    revoked_at, revoked_reason
                    FROM api_keys WHERE app_id = $1 AND deployment_id = $2 AND is_active = true ORDER BY created_at DESC"#,
@@ -250,15 +352,42 @@ impl Query for GetApiKeysByAppQuery {
                     id: rec.id,
                     app_id: rec.app_id,
                     deployment_id: rec.deployment_id,
+                    app_slug: rec.app_slug,
                     name: rec.name,
                     key_prefix: rec.key_prefix,
                     key_suffix: rec.key_suffix,
                     key_hash: rec.key_hash,
                     permissions: serde_json::from_value(
-                        rec.permissions.clone().unwrap_or(serde_json::json!([])),
+                        rec.permissions
+                            .clone()
+                            .unwrap_or_else(|| serde_json::json!([])),
                     )
                     .unwrap_or_default(),
-                    metadata: rec.metadata.unwrap_or(serde_json::json!({})),
+                    metadata: rec
+                        .metadata
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({})),
+                    rate_limits: if rec.rate_limits.is_null() {
+                        vec![]
+                    } else {
+                        serde_json::from_value(rec.rate_limits.clone()).unwrap_or_default()
+                    },
+                    rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
+                    organization_id: rec.organization_id,
+                    workspace_id: rec.workspace_id,
+                    organization_membership_id: rec.organization_membership_id,
+                    workspace_membership_id: rec.workspace_membership_id,
+                    org_role_permissions: if rec.org_role_permissions.is_null() {
+                        vec![]
+                    } else {
+                        serde_json::from_value(rec.org_role_permissions.clone()).unwrap_or_default()
+                    },
+                    workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
+                        vec![]
+                    } else {
+                        serde_json::from_value(rec.workspace_role_permissions.clone())
+                            .unwrap_or_default()
+                    },
                     expires_at: rec.expires_at,
                     last_used_at: rec.last_used_at,
                     is_active: rec.is_active.unwrap_or(true),
@@ -289,16 +418,20 @@ impl Query for GetApiKeyByHashQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
-            r#"SELECT k.id, k.app_id, a.name as app_name,
+            r#"SELECT k.id, k.app_id, k.app_slug,
                    k.deployment_id, k.name, k.key_prefix,
                    k.key_suffix, k.key_hash,
                    k.permissions as "permissions: serde_json::Value",
                    k.metadata as "metadata: serde_json::Value",
+                   k.rate_limits as "rate_limits: serde_json::Value",
+                   k.rate_limit_scheme_slug,
+                   k.organization_id, k.workspace_id, k.organization_membership_id, k.workspace_membership_id,
+                   k.org_role_permissions as "org_role_permissions: serde_json::Value",
+                   k.workspace_role_permissions as "workspace_role_permissions: serde_json::Value",
                    k.expires_at, k.last_used_at, k.is_active,
                    k.created_at, k.updated_at,
                    k.revoked_at, k.revoked_reason
                 FROM api_keys k
-                LEFT JOIN api_auth_apps a ON k.app_id = a.id
                 WHERE k.key_hash = $1 AND k.is_active = true
                "#,
             self.key_hash
@@ -310,15 +443,41 @@ impl Query for GetApiKeyByHashQuery {
             id: rec.id,
             app_id: rec.app_id,
             deployment_id: rec.deployment_id,
+            app_slug: rec.app_slug,
             name: rec.name,
             key_prefix: rec.key_prefix,
             key_suffix: rec.key_suffix,
             key_hash: rec.key_hash,
             permissions: serde_json::from_value(
-                rec.permissions.clone().unwrap_or(serde_json::json!([])),
+                rec.permissions
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!([])),
             )
             .unwrap_or_default(),
-            metadata: rec.metadata.unwrap_or(serde_json::json!({})),
+            metadata: rec
+                .metadata
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({})),
+            rate_limits: if rec.rate_limits.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.rate_limits.clone()).unwrap_or_default()
+            },
+            rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
+            organization_id: rec.organization_id,
+            workspace_id: rec.workspace_id,
+            organization_membership_id: rec.organization_membership_id,
+            workspace_membership_id: rec.workspace_membership_id,
+            org_role_permissions: if rec.org_role_permissions.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.org_role_permissions.clone()).unwrap_or_default()
+            },
+            workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.workspace_role_permissions.clone()).unwrap_or_default()
+            },
             expires_at: rec.expires_at,
             last_used_at: rec.last_used_at,
             is_active: rec.is_active.unwrap_or(true),
@@ -345,12 +504,17 @@ impl Query for GetApiKeyIdentifiersByHashQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
-            r#"SELECT k.id as id, a.name as app_name,
+            r#"SELECT k.id as id, k.app_slug as app_slug,
             k.permissions as "permissions: serde_json::Value",
+            k.org_role_permissions as "org_role_permissions: serde_json::Value",
+            k.workspace_role_permissions as "workspace_role_permissions: serde_json::Value",
+            k.organization_id,
+            k.workspace_id,
+            k.organization_membership_id,
+            k.workspace_membership_id,
             k.is_active as is_active,
             k.expires_at as expires_at
             FROM api_keys k
-            LEFT JOIN api_auth_apps a ON k.app_id = a.id
             WHERE k.key_hash = $1 AND k.is_active = true"#,
             self.key_hash
         )
@@ -358,12 +522,416 @@ impl Query for GetApiKeyIdentifiersByHashQuery {
         .await?;
 
         Ok(rec.map(|rec| ApiKeyWithIdentifers {
-            app_name: rec.app_name,
             id: rec.id,
-            permissions: serde_json::from_value(rec.permissions.unwrap_or(serde_json::json!([])))
-                .unwrap_or_default(),
+            app_slug: rec.app_slug,
+            permissions: serde_json::from_value(
+                rec.permissions
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!([])),
+            )
+            .unwrap_or_default(),
+            org_role_permissions: if rec.org_role_permissions.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.org_role_permissions.clone()).unwrap_or_default()
+            },
+            workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.workspace_role_permissions.clone()).unwrap_or_default()
+            },
+            organization_id: rec.organization_id,
+            workspace_id: rec.workspace_id,
+            organization_membership_id: rec.organization_membership_id,
+            workspace_membership_id: rec.workspace_membership_id,
             expires_at: rec.expires_at,
             is_active: rec.is_active.unwrap_or(true),
         }))
+    }
+}
+
+pub struct SyncApiKeyRateLimitsForAppQuery {
+    pub deployment_id: i64,
+    pub app_id: i64,
+    pub last_id: i64,
+    pub batch_size: i64,
+    pub rate_limits: Value,
+    pub rate_limit_scheme_slug: Option<String>,
+}
+
+impl SyncApiKeyRateLimitsForAppQuery {
+    pub fn new(
+        deployment_id: i64,
+        app_id: i64,
+        last_id: i64,
+        batch_size: i64,
+        rate_limits: Value,
+        rate_limit_scheme_slug: Option<String>,
+    ) -> Self {
+        Self {
+            deployment_id,
+            app_id,
+            last_id,
+            batch_size,
+            rate_limits,
+            rate_limit_scheme_slug,
+        }
+    }
+}
+
+impl Query for SyncApiKeyRateLimitsForAppQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let updated = sqlx::query!(
+            r#"
+            WITH target AS (
+                SELECT id
+                FROM api_keys
+                WHERE deployment_id = $1
+                  AND app_id = $2
+                  AND id > $3
+                ORDER BY id
+                LIMIT $4
+            )
+            UPDATE api_keys k
+            SET rate_limits = $5,
+                rate_limit_scheme_slug = $6,
+                updated_at = NOW()
+            FROM target t
+            WHERE k.id = t.id
+            RETURNING k.id
+            "#,
+            self.deployment_id,
+            self.app_id,
+            self.last_id,
+            self.batch_size,
+            self.rate_limits,
+            self.rate_limit_scheme_slug,
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
+        Ok(updated.into_iter().map(|r| r.id).collect())
+    }
+}
+
+pub struct SyncApiKeyRateLimitsForSchemeQuery {
+    pub deployment_id: i64,
+    pub scheme_slug: String,
+    pub last_id: i64,
+    pub batch_size: i64,
+    pub rate_limits: Value,
+}
+
+impl SyncApiKeyRateLimitsForSchemeQuery {
+    pub fn new(
+        deployment_id: i64,
+        scheme_slug: String,
+        last_id: i64,
+        batch_size: i64,
+        rate_limits: Value,
+    ) -> Self {
+        Self {
+            deployment_id,
+            scheme_slug,
+            last_id,
+            batch_size,
+            rate_limits,
+        }
+    }
+}
+
+impl Query for SyncApiKeyRateLimitsForSchemeQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let updated = sqlx::query!(
+            r#"
+            WITH target AS (
+                SELECT id
+                FROM api_keys
+                WHERE deployment_id = $1
+                  AND rate_limit_scheme_slug = $2
+                  AND id > $3
+                ORDER BY id
+                LIMIT $4
+            )
+            UPDATE api_keys k
+            SET rate_limits = $5,
+                updated_at = NOW()
+            FROM target t
+            WHERE k.id = t.id
+            RETURNING k.id
+            "#,
+            self.deployment_id,
+            self.scheme_slug,
+            self.last_id,
+            self.batch_size,
+            self.rate_limits,
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
+        Ok(updated.into_iter().map(|r| r.id).collect())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OrganizationMembershipPermissions {
+    pub organization_id: i64,
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkspaceMembershipPermissions {
+    pub organization_id: i64,
+    pub workspace_id: i64,
+    pub permissions: Vec<String>,
+}
+
+pub struct GetOrganizationMembershipPermissionsQuery {
+    pub membership_id: i64,
+}
+
+impl GetOrganizationMembershipPermissionsQuery {
+    pub fn new(membership_id: i64) -> Self {
+        Self { membership_id }
+    }
+}
+
+impl Query for GetOrganizationMembershipPermissionsQuery {
+    type Output = Option<OrganizationMembershipPermissions>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let rec = sqlx::query!(
+            r#"
+            SELECT
+                om.organization_id,
+                COALESCE(
+                    jsonb_agg(DISTINCT perm) FILTER (WHERE perm IS NOT NULL),
+                    '[]'::jsonb
+                ) as "permissions: serde_json::Value"
+            FROM organization_memberships om
+            LEFT JOIN organization_membership_roles omr ON omr.organization_membership_id = om.id
+            LEFT JOIN organization_roles orole ON omr.organization_role_id = orole.id
+            LEFT JOIN LATERAL unnest(COALESCE(orole.permissions, ARRAY[]::text[])) perm ON true
+            WHERE om.id = $1 AND om.deleted_at IS NULL
+            GROUP BY om.organization_id
+            "#,
+            self.membership_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
+        Ok(rec.map(|r| OrganizationMembershipPermissions {
+            organization_id: r.organization_id,
+            permissions: serde_json::from_value(
+                r.permissions.unwrap_or_else(|| serde_json::json!([])),
+            )
+            .unwrap_or_default(),
+        }))
+    }
+}
+
+pub struct GetWorkspaceMembershipPermissionsQuery {
+    pub membership_id: i64,
+}
+
+impl GetWorkspaceMembershipPermissionsQuery {
+    pub fn new(membership_id: i64) -> Self {
+        Self { membership_id }
+    }
+}
+
+impl Query for GetWorkspaceMembershipPermissionsQuery {
+    type Output = Option<WorkspaceMembershipPermissions>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let rec = sqlx::query!(
+            r#"
+            SELECT
+                wm.organization_id,
+                wm.workspace_id,
+                COALESCE(
+                    jsonb_agg(DISTINCT perm) FILTER (WHERE perm IS NOT NULL),
+                    '[]'::jsonb
+                ) as "permissions: serde_json::Value"
+            FROM workspace_memberships wm
+            LEFT JOIN workspace_membership_roles wmr ON wmr.workspace_membership_id = wm.id
+            LEFT JOIN workspace_roles wrole ON wmr.workspace_role_id = wrole.id
+            LEFT JOIN LATERAL unnest(COALESCE(wrole.permissions, ARRAY[]::text[])) perm ON true
+            WHERE wm.id = $1 AND wm.deleted_at IS NULL
+            GROUP BY wm.organization_id, wm.workspace_id
+            "#,
+            self.membership_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
+        Ok(rec.map(|r| WorkspaceMembershipPermissions {
+            organization_id: r.organization_id,
+            workspace_id: r.workspace_id,
+            permissions: serde_json::from_value(
+                r.permissions.unwrap_or_else(|| serde_json::json!([])),
+            )
+            .unwrap_or_default(),
+        }))
+    }
+}
+
+pub struct GetOrganizationMembershipIdsByRoleQuery {
+    pub role_id: i64,
+}
+
+impl GetOrganizationMembershipIdsByRoleQuery {
+    pub fn new(role_id: i64) -> Self {
+        Self { role_id }
+    }
+}
+
+impl Query for GetOrganizationMembershipIdsByRoleQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let recs = sqlx::query!(
+            r#"
+            SELECT organization_membership_id as id
+            FROM organization_membership_roles
+            WHERE organization_role_id = $1
+            "#,
+            self.role_id
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
+        Ok(recs.into_iter().map(|r| r.id).collect())
+    }
+}
+
+pub struct GetWorkspaceMembershipIdsByRoleQuery {
+    pub role_id: i64,
+}
+
+impl GetWorkspaceMembershipIdsByRoleQuery {
+    pub fn new(role_id: i64) -> Self {
+        Self { role_id }
+    }
+}
+
+impl Query for GetWorkspaceMembershipIdsByRoleQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let recs = sqlx::query!(
+            r#"
+            SELECT workspace_membership_id as id
+            FROM workspace_membership_roles
+            WHERE workspace_role_id = $1
+            "#,
+            self.role_id
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
+        Ok(recs.into_iter().map(|r| r.id).collect())
+    }
+}
+
+pub struct SyncApiKeyOrgRolePermissionsForMembershipsQuery {
+    pub membership_ids: Vec<i64>,
+}
+
+impl SyncApiKeyOrgRolePermissionsForMembershipsQuery {
+    pub fn new(membership_ids: Vec<i64>) -> Self {
+        Self { membership_ids }
+    }
+}
+
+impl Query for SyncApiKeyOrgRolePermissionsForMembershipsQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let updated = sqlx::query!(
+            r#"
+            WITH perms AS (
+                SELECT
+                    om.id as membership_id,
+                    om.organization_id as organization_id,
+                    COALESCE(
+                        jsonb_agg(DISTINCT perm) FILTER (WHERE perm IS NOT NULL),
+                        '[]'::jsonb
+                    ) as permissions
+                FROM organization_memberships om
+                LEFT JOIN organization_membership_roles omr ON omr.organization_membership_id = om.id
+                LEFT JOIN organization_roles orole ON omr.organization_role_id = orole.id
+                LEFT JOIN LATERAL unnest(COALESCE(orole.permissions, ARRAY[]::text[])) perm ON true
+                WHERE om.id = ANY($1)
+                GROUP BY om.id, om.organization_id
+            )
+            UPDATE api_keys k
+            SET org_role_permissions = perms.permissions,
+                organization_id = perms.organization_id,
+                updated_at = NOW()
+            FROM perms
+            WHERE k.organization_membership_id = perms.membership_id
+            RETURNING k.id
+            "#,
+            &self.membership_ids
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
+        Ok(updated.into_iter().map(|r| r.id).collect())
+    }
+}
+
+pub struct SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
+    pub membership_ids: Vec<i64>,
+}
+
+impl SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
+    pub fn new(membership_ids: Vec<i64>) -> Self {
+        Self { membership_ids }
+    }
+}
+
+impl Query for SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let updated = sqlx::query!(
+            r#"
+            WITH perms AS (
+                SELECT
+                    wm.id as membership_id,
+                    wm.organization_id as organization_id,
+                    wm.workspace_id as workspace_id,
+                    COALESCE(
+                        jsonb_agg(DISTINCT perm) FILTER (WHERE perm IS NOT NULL),
+                        '[]'::jsonb
+                    ) as permissions
+                FROM workspace_memberships wm
+                LEFT JOIN workspace_membership_roles wmr ON wmr.workspace_membership_id = wm.id
+                LEFT JOIN workspace_roles wrole ON wmr.workspace_role_id = wrole.id
+                LEFT JOIN LATERAL unnest(COALESCE(wrole.permissions, ARRAY[]::text[])) perm ON true
+                WHERE wm.id = ANY($1)
+                GROUP BY wm.id, wm.organization_id, wm.workspace_id
+            )
+            UPDATE api_keys k
+            SET workspace_role_permissions = perms.permissions,
+                organization_id = perms.organization_id,
+                workspace_id = perms.workspace_id,
+                updated_at = NOW()
+            FROM perms
+            WHERE k.workspace_membership_id = perms.membership_id
+            RETURNING k.id
+            "#,
+            &self.membership_ids
+        )
+        .fetch_all(&app_state.db_pool)
+        .await?;
+
+        Ok(updated.into_iter().map(|r| r.id).collect())
     }
 }

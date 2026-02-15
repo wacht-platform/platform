@@ -88,6 +88,10 @@ use dto::{
             UpdateWorkspaceRoleRequest,
         },
         deployment_settings::DeploymentB2bSettingsUpdates,
+        nats::{
+            ApiKeyOrgMembershipSyncPayload, ApiKeyOrgRoleSyncPayload,
+            ApiKeyWorkspaceMembershipSyncPayload, ApiKeyWorkspaceRoleSyncPayload, NatsTaskMessage,
+        },
     },
     query::OrganizationListQueryParams,
 };
@@ -938,9 +942,29 @@ pub async fn update_organization_member(
         public_metadata: request.public_metadata,
     }
     .execute(&app_state)
-    .await
-    .map(Into::into)
-    .map_err(Into::into)
+    .await?;
+
+    let task_message = NatsTaskMessage {
+        task_type: "api_key.sync_org_membership_permissions".to_string(),
+        task_id: format!("api-key-org-membership-{}", params.membership_id),
+        payload: serde_json::to_value(ApiKeyOrgMembershipSyncPayload {
+            membership_id: params.membership_id,
+        })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+    };
+
+    app_state
+        .nats_client
+        .publish(
+            "worker.tasks.api_key.sync_org_membership_permissions",
+            serde_json::to_vec(&task_message)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                .into(),
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(().into())
 }
 
 pub async fn remove_organization_member(
@@ -983,7 +1007,7 @@ pub async fn update_organization_role(
     Path(params): Path<OrganizationRoleParams>,
     Json(request): Json<UpdateOrganizationRoleRequest>,
 ) -> ApiResult<OrganizationRole> {
-    UpdateOrganizationRoleCommand::new(
+    let role = UpdateOrganizationRoleCommand::new(
         deployment_id,
         params.organization_id,
         params.role_id,
@@ -991,9 +1015,29 @@ pub async fn update_organization_role(
         request.permissions,
     )
     .execute(&app_state)
-    .await
-    .map(Into::into)
-    .map_err(Into::into)
+    .await?;
+
+    let task_message = NatsTaskMessage {
+        task_type: "api_key.sync_org_role_permissions".to_string(),
+        task_id: format!("api-key-org-role-{}", params.role_id),
+        payload: serde_json::to_value(ApiKeyOrgRoleSyncPayload {
+            role_id: params.role_id,
+        })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+    };
+
+    app_state
+        .nats_client
+        .publish(
+            "worker.tasks.api_key.sync_org_role_permissions",
+            serde_json::to_vec(&task_message)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                .into(),
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(role.into())
 }
 
 pub async fn delete_organization_role(
@@ -1033,7 +1077,7 @@ pub async fn update_workspace_role(
     Path(params): Path<WorkspaceRoleParams>,
     Json(request): Json<UpdateWorkspaceRoleRequest>,
 ) -> ApiResult<WorkspaceRole> {
-    UpdateWorkspaceRoleCommand::new(
+    let role = UpdateWorkspaceRoleCommand::new(
         deployment_id,
         params.workspace_id,
         params.role_id,
@@ -1041,9 +1085,29 @@ pub async fn update_workspace_role(
         request.permissions,
     )
     .execute(&app_state)
-    .await
-    .map(Into::into)
-    .map_err(Into::into)
+    .await?;
+
+    let task_message = NatsTaskMessage {
+        task_type: "api_key.sync_workspace_role_permissions".to_string(),
+        task_id: format!("api-key-workspace-role-{}", params.role_id),
+        payload: serde_json::to_value(ApiKeyWorkspaceRoleSyncPayload {
+            role_id: params.role_id,
+        })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+    };
+
+    app_state
+        .nats_client
+        .publish(
+            "worker.tasks.api_key.sync_workspace_role_permissions",
+            serde_json::to_vec(&task_message)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                .into(),
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(role.into())
 }
 
 pub async fn delete_workspace_role(
@@ -1092,6 +1156,27 @@ pub async fn update_workspace_member(
     }
     .execute(&app_state)
     .await?;
+
+    let task_message = NatsTaskMessage {
+        task_type: "api_key.sync_workspace_membership_permissions".to_string(),
+        task_id: format!("api-key-workspace-membership-{}", params.membership_id),
+        payload: serde_json::to_value(ApiKeyWorkspaceMembershipSyncPayload {
+            membership_id: params.membership_id,
+        })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+    };
+
+    app_state
+        .nats_client
+        .publish(
+            "worker.tasks.api_key.sync_workspace_membership_permissions",
+            serde_json::to_vec(&task_message)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                .into(),
+        )
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
     Ok(().into())
 }
 

@@ -10,6 +10,8 @@ pub struct CreateAiAgentCommand {
     pub name: String,
     pub description: Option<String>,
     pub configuration: serde_json::Value,
+    pub sub_agents: Option<Vec<i64>>,
+    pub spawn_config: Option<models::SpawnConfig>,
 }
 
 impl CreateAiAgentCommand {
@@ -24,7 +26,19 @@ impl CreateAiAgentCommand {
             name,
             description,
             configuration,
+            sub_agents: None,
+            spawn_config: None,
         }
+    }
+
+    pub fn with_sub_agents(mut self, sub_agents: Vec<i64>) -> Self {
+        self.sub_agents = Some(sub_agents);
+        self
+    }
+
+    pub fn with_spawn_config(mut self, spawn_config: models::SpawnConfig) -> Self {
+        self.spawn_config = Some(spawn_config);
+        self
     }
 }
 
@@ -35,11 +49,16 @@ impl Command for CreateAiAgentCommand {
         let agent_id = app_state.sf.next_id()? as i64;
         let now = Utc::now();
 
+        let sub_agents_json = self
+            .sub_agents
+            .map(|ids| serde_json::to_value(ids).unwrap());
+        let spawn_config_json = self.spawn_config.map(|c| serde_json::to_value(c).unwrap());
+
         let agent = sqlx::query!(
             r#"
-            INSERT INTO ai_agents (id, created_at, updated_at, name, description, deployment_id, configuration)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration
+            INSERT INTO ai_agents (id, created_at, updated_at, name, description, deployment_id, configuration, sub_agents, spawn_config)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration, sub_agents, spawn_config
             "#,
             agent_id,
             now,
@@ -48,10 +67,19 @@ impl Command for CreateAiAgentCommand {
             self.description,
             self.deployment_id,
             self.configuration,
+            sub_agents_json,
+            spawn_config_json,
         )
         .fetch_one(&app_state.db_pool)
         .await
         .map_err(|e| AppError::Database(e))?;
+
+        let sub_agents = agent
+            .sub_agents
+            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
+        let spawn_config = agent
+            .spawn_config
+            .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
 
         Ok(AiAgent {
             id: agent.id,
@@ -61,6 +89,8 @@ impl Command for CreateAiAgentCommand {
             description: agent.description,
             deployment_id: agent.deployment_id,
             configuration: agent.configuration,
+            sub_agents,
+            spawn_config,
         })
     }
 }
@@ -71,6 +101,8 @@ pub struct UpdateAiAgentCommand {
     pub name: Option<String>,
     pub description: Option<String>,
     pub configuration: Option<serde_json::Value>,
+    pub sub_agents: Option<Vec<i64>>,
+    pub spawn_config: Option<models::SpawnConfig>,
 }
 
 impl UpdateAiAgentCommand {
@@ -81,6 +113,8 @@ impl UpdateAiAgentCommand {
             name: None,
             description: None,
             configuration: None,
+            sub_agents: None,
+            spawn_config: None,
         }
     }
 
@@ -96,6 +130,16 @@ impl UpdateAiAgentCommand {
 
     pub fn with_configuration(mut self, configuration: serde_json::Value) -> Self {
         self.configuration = Some(configuration);
+        self
+    }
+
+    pub fn with_sub_agents(mut self, sub_agents: Vec<i64>) -> Self {
+        self.sub_agents = Some(sub_agents);
+        self
+    }
+
+    pub fn with_spawn_config(mut self, spawn_config: models::SpawnConfig) -> Self {
+        self.spawn_config = Some(spawn_config);
         self
     }
 }
@@ -122,13 +166,21 @@ impl Command for UpdateAiAgentCommand {
             query_parts.push(format!("configuration = ${}", param_count));
             param_count += 1;
         }
+        if self.sub_agents.is_some() {
+            query_parts.push(format!("sub_agents = ${}", param_count));
+            param_count += 1;
+        }
+        if self.spawn_config.is_some() {
+            query_parts.push(format!("spawn_config = ${}", param_count));
+            param_count += 1;
+        }
 
         let query = format!(
             r#"
             UPDATE ai_agents
             SET {}
             WHERE id = ${} AND deployment_id = ${}
-            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration
+            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration, sub_agents, spawn_config
             "#,
             query_parts.join(", "),
             param_count,
@@ -147,6 +199,14 @@ impl Command for UpdateAiAgentCommand {
         if let Some(configuration) = self.configuration {
             query_builder = query_builder.bind(configuration);
         }
+        if let Some(sub_agents) = self.sub_agents {
+            let sub_agents_json = serde_json::to_value(sub_agents).unwrap();
+            query_builder = query_builder.bind(sub_agents_json);
+        }
+        if let Some(spawn_config) = self.spawn_config {
+            let spawn_config_json = serde_json::to_value(spawn_config).unwrap();
+            query_builder = query_builder.bind(spawn_config_json);
+        }
 
         query_builder = query_builder.bind(self.agent_id).bind(self.deployment_id);
 
@@ -154,6 +214,12 @@ impl Command for UpdateAiAgentCommand {
             .fetch_one(&app_state.db_pool)
             .await
             .map_err(|e| AppError::Database(e))?;
+
+        let sub_agents: Option<serde_json::Value> = agent.get("sub_agents");
+        let sub_agents = sub_agents.and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
+        let spawn_config: Option<serde_json::Value> = agent.get("spawn_config");
+        let spawn_config =
+            spawn_config.and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
 
         Ok(AiAgent {
             id: agent.get("id"),
@@ -163,6 +229,8 @@ impl Command for UpdateAiAgentCommand {
             description: agent.get("description"),
             deployment_id: agent.get("deployment_id"),
             configuration: agent.get("configuration"),
+            sub_agents,
+            spawn_config,
         })
     }
 }

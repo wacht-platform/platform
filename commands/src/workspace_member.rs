@@ -26,9 +26,8 @@ impl Command for AddWorkspaceMemberCommand {
         .fetch_optional(&mut *tx)
         .await?;
 
-        let workspace = workspace.ok_or_else(|| {
-            AppError::NotFound("Workspace not found".to_string())
-        })?;
+        let workspace =
+            workspace.ok_or_else(|| AppError::NotFound("Workspace not found".to_string()))?;
 
         // Check if user has an organization membership
         let org_membership = sqlx::query!(
@@ -59,7 +58,8 @@ impl Command for AddWorkspaceMemberCommand {
                 .and_then(|r| Some(r.default_org_member_role_id))
                 .ok_or_else(|| {
                     AppError::BadRequest(
-                        "No default organization member role configured for this deployment".to_string(),
+                        "No default organization member role configured for this deployment"
+                            .to_string(),
                     )
                 })?;
 
@@ -82,9 +82,7 @@ impl Command for AddWorkspaceMemberCommand {
             )
             .execute(&mut *tx)
             .await
-            .map_err(|e| {
-                e
-            })?;
+            .map_err(|e| e)?;
 
             // Add the default role to the organization membership
             sqlx::query!(
@@ -142,9 +140,7 @@ impl Command for AddWorkspaceMemberCommand {
         )
         .execute(&mut *tx)
         .await
-        .map_err(|e| {
-            e
-        })?;
+        .map_err(|e| e)?;
 
         for (_, role_id) in self.role_ids.iter().enumerate() {
             sqlx::query!(
@@ -164,10 +160,7 @@ impl Command for AddWorkspaceMemberCommand {
             })?;
         }
 
-
-        tx.commit().await.map_err(|e| {
-            e
-        })?;
+        tx.commit().await.map_err(|e| e)?;
 
         // Fetch the created member details (outside transaction)
         let member = sqlx::query!(

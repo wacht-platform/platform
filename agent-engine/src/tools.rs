@@ -17,6 +17,7 @@ use models::{
     ApiToolConfiguration, InternalToolConfiguration, PlatformEventToolConfiguration,
     PlatformFunctionToolConfiguration, UseExternalServiceToolConfiguration,
 };
+use queries::GetAiAgentByIdWithFeatures;
 use queries::Query;
 use rand;
 use serde_json::Value;
@@ -631,6 +632,287 @@ impl ToolExecutor {
                     "consolidated_count": consolidated_count
                 }))
             }
+            InternalToolType::UpdateStatus => {
+                let status = execution_params
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .ok_or(AppError::BadRequest("status is required".to_string()))?;
+
+                let metadata = execution_params.get("metadata").cloned();
+
+                commands::PostStatusUpdateCommand {
+                    context_id: self.context_id(),
+                    deployment_id: self.agent().deployment_id,
+                    status_update: status.to_string(),
+                    metadata,
+                }
+                .execute(self.app_state())
+                .await?;
+
+                Ok(serde_json::json!({
+                    "success": true,
+                    "tool": tool.name,
+                    "message": "Status update posted successfully"
+                }))
+            }
+            InternalToolType::GetChildStatus => {
+                let include_completed = execution_params
+                    .get("include_completed")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let children = queries::GetChildContextsQuery {
+                    parent_context_id: self.context_id(),
+                    deployment_id: self.agent().deployment_id,
+                    include_completed,
+                }
+                .execute(self.app_state())
+                .await?;
+
+                // Get latest status update for each child
+                let mut children_with_status = Vec::new();
+                for child in children {
+                    let latest_update = queries::GetStatusUpdatesQuery::new(child.id)
+                        .with_limit(1)
+                        .execute(self.app_state())
+                        .await
+                        .ok()
+                        .and_then(|mut updates| updates.pop());
+
+                    children_with_status.push(serde_json::json!({
+                        "context_id": child.id,
+                        "title": child.title,
+                        "status": child.status.to_string(),
+                        "latest_status_update": latest_update.as_ref().map(|u| u.status_update.as_str()),
+                        "latest_status_at": latest_update.as_ref().map(|u| u.created_at.to_rfc3339()),
+                        "completion_summary": child.completion_summary,
+                    }));
+                }
+
+                Ok(serde_json::json!({
+                    "success": true,
+                    "tool": tool.name,
+                    "children": children_with_status,
+                    "count": children_with_status.len()
+                }))
+            }
+            InternalToolType::SpawnContext => {
+                let message = execution_params
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .ok_or(AppError::BadRequest("message is required".to_string()))?;
+
+                let target_agent_name = execution_params
+                    .get("target_agent_name")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                // Get current agent's spawn configuration
+                let current_agent = GetAiAgentByIdWithFeatures::new(self.agent().id)
+                    .execute(self.app_state())
+                    .await?;
+
+                let spawn_config = current_agent.spawn_config.clone().unwrap_or_default();
+
+                // Validate permissions
+                if target_agent_name.is_some() {
+                    let allow_exec = spawn_config.allow_exec.unwrap_or(true);
+                    if !allow_exec {
+                        return Ok(serde_json::json!({
+                            "success": false,
+                            "tool": tool.name,
+                            "error": "Spawning other agents is not allowed for this agent"
+                        }));
+                    }
+                } else {
+                    let allow_fork = spawn_config.allow_fork.unwrap_or(true);
+                    if !allow_fork {
+                        return Ok(serde_json::json!({
+                            "success": false,
+                            "tool": tool.name,
+                            "error": "Forking is not allowed for this agent"
+                        }));
+                    }
+                }
+
+                // Check max_parallel_children limit
+                let max_parallel = spawn_config.max_parallel_children.unwrap_or(10);
+                let active_children = queries::GetChildContextsQuery {
+                    parent_context_id: self.context_id(),
+                    deployment_id: self.agent().deployment_id,
+                    include_completed: false,
+                }
+                .execute(self.app_state())
+                .await?
+                .len() as u32;
+
+                if active_children >= max_parallel {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "tool": tool.name,
+                        "error": format!("Maximum parallel children limit reached: {}", max_parallel)
+                    }));
+                }
+
+                // Create child context
+                let child_title = execution_params
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&format!("Child of {}", self.context_id()))
+                    .to_string();
+
+                let child_context = commands::CreateChildContextCommand::new(
+                    self.agent().deployment_id,
+                    self.context_id(),
+                    child_title,
+                )
+                .execute(self.app_state())
+                .await?;
+
+                // Create conversation with the message
+                let conversation_id = self.app_state().sf.next_id()? as i64;
+                let content = models::ConversationContent::UserMessage {
+                    message: message.to_string(),
+                    sender_name: Some(format!("Parent Agent #{}", self.context_id())),
+                    files: None,
+                };
+
+                commands::CreateConversationCommand::new(
+                    conversation_id,
+                    child_context.id,
+                    content,
+                    models::ConversationMessageType::UserMessage,
+                )
+                .execute(self.app_state())
+                .await?;
+
+                // Publish NATS message with agent_name (worker will resolve it)
+                // For fork, pass agent_id of parent; for exec, pass agent_name
+                let (agent_id, agent_name_for_msg) = if let Some(name) = &target_agent_name {
+                    (None, Some(name.clone()))
+                } else {
+                    (Some(self.agent().id), None)
+                };
+
+                let exec_cmd = commands::PublishAgentExecutionCommand::new_message(
+                    self.agent().deployment_id,
+                    child_context.id,
+                    agent_id,
+                    agent_name_for_msg,
+                    conversation_id,
+                );
+
+                if let Err(e) = exec_cmd.execute(self.app_state()).await {
+                    tracing::error!(
+                        child_context_id = child_context.id,
+                        error = %e,
+                        "Failed to publish spawn execution"
+                    );
+                }
+
+                tracing::info!(
+                    parent_context_id = self.context_id(),
+                    child_context_id = child_context.id,
+                    "Spawned new child context"
+                );
+
+                Ok(serde_json::json!({
+                    "success": true,
+                    "tool": tool.name,
+                    "child_context_id": child_context.id,
+                    "agent_name": target_agent_name.unwrap_or_else(|| "(fork)".to_string()),
+                    "message": "Child context spawned and execution triggered"
+                }))
+            }
+            InternalToolType::SpawnControl => {
+                let child_context_id = execution_params
+                    .get("child_context_id")
+                    .and_then(|v| {
+                        v.as_i64()
+                            .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+                    })
+                    .ok_or(AppError::BadRequest(
+                        "child_context_id is required".to_string(),
+                    ))?;
+
+                let action_str = execution_params
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .ok_or(AppError::BadRequest("action is required".to_string()))?;
+
+                let action = match action_str {
+                    "stop" => commands::SpawnControlAction::Stop,
+                    "restart" => commands::SpawnControlAction::Restart,
+                    "update_params" => {
+                        let params = execution_params
+                            .get("params")
+                            .cloned()
+                            .unwrap_or(serde_json::json!({}));
+                        commands::SpawnControlAction::UpdateParams(params)
+                    }
+                    _ => {
+                        return Ok(serde_json::json!({
+                            "success": false,
+                            "tool": tool.name,
+                            "error": format!("Invalid action: {}", action_str)
+                        }));
+                    }
+                };
+
+                commands::PublishSpawnControlCommand::new(
+                    child_context_id,
+                    self.agent().deployment_id,
+                    action,
+                )
+                .with_sender(self.context_id())
+                .execute(self.app_state())
+                .await?;
+
+                Ok(serde_json::json!({
+                    "success": true,
+                    "tool": tool.name,
+                    "message": "Control message sent to child context"
+                }))
+            }
+            InternalToolType::GetCompletionSummary => {
+                let child_context_id = execution_params.get("child_context_id").and_then(|v| {
+                    v.as_i64()
+                        .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+                });
+
+                if let Some(child_id) = child_context_id {
+                    // Get specific child's completion summary
+                    let summary = queries::GetChildCompletionSummaryQuery::new(
+                        child_id,
+                        self.agent().deployment_id,
+                    )
+                    .execute(self.app_state())
+                    .await?;
+
+                    Ok(serde_json::json!({
+                        "success": true,
+                        "tool": tool.name,
+                        "child_context_id": child_id,
+                        "completion_summary": summary,
+                        "message": if summary.is_some() { "Child has completed" } else { "Child has not yet completed" }
+                    }))
+                } else {
+                    // Get all children's completion summaries
+                    let summaries = queries::GetChildrenCompletionSummariesQuery::new(
+                        self.context_id(),
+                        self.agent().deployment_id,
+                    )
+                    .execute(self.app_state())
+                    .await?;
+
+                    Ok(serde_json::json!({
+                        "success": true,
+                        "tool": tool.name,
+                        "children": summaries,
+                        "count": summaries.len()
+                    }))
+                }
+            }
         }
     }
 
@@ -762,6 +1044,18 @@ impl ToolExecutor {
                 self.execute_clickup_add_attachment(tool, execution_params, filesystem)
                     .await
             }
+            UseExternalServiceToolType::WhatsAppSendMessage => {
+                self.execute_whatsapp_command(tool, "send_message", execution_params, context_title)
+                    .await
+            }
+            UseExternalServiceToolType::WhatsAppGetMessage => {
+                self.execute_whatsapp_command(tool, "get_message", execution_params, context_title)
+                    .await
+            }
+            UseExternalServiceToolType::WhatsAppMarkRead => {
+                self.execute_whatsapp_command(tool, "mark_read", execution_params, context_title)
+                    .await
+            }
         }
     }
 
@@ -792,7 +1086,7 @@ impl ToolExecutor {
                     .and_then(|v| v.as_str())
                     .map(|s| s.trim())
                     .ok_or_else(|| AppError::BadRequest("space_id is required".to_string()))?;
-                client.get_space_lists(space_id).await?
+                client.get_space_lists(&space_id.trim()).await?
             }
             "get_task" => {
                 let task_id = execution_params
@@ -819,12 +1113,14 @@ impl ToolExecutor {
                 client.search_tasks(team_id, execution_params).await?
             }
             "create_task" => {
-                let list_id = execution_params
-                    .get("list_id")
+                let space_id = execution_params
+                    .get("space_id")
                     .and_then(|v| v.as_str())
                     .map(|s| s.trim())
-                    .ok_or_else(|| AppError::BadRequest("list_id is required".to_string()))?;
-                client.create_task(list_id, execution_params).await?
+                    .ok_or_else(|| AppError::BadRequest("space_id is required".to_string()))?;
+                client
+                    .create_task(&space_id.trim(), execution_params)
+                    .await?
             }
             "create_list" => {
                 let space_id = execution_params
@@ -966,6 +1262,69 @@ impl ToolExecutor {
         }
 
         Ok(result)
+    }
+
+    async fn execute_whatsapp_command(
+        &self,
+        _tool: &AiTool,
+        action: &str,
+        execution_params: &Value,
+        _context_title: &str,
+    ) -> Result<Value, AppError> {
+        // WhatsApp functionality - for now return a placeholder
+        // TODO: Implement actual WhatsApp Business API integration
+        match action {
+            "send_message" => {
+                let to = execution_params
+                    .get("to")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        AppError::BadRequest("to (phone number) is required".to_string())
+                    })?;
+                let _message = execution_params
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("message is required".to_string()))?;
+
+                let message_id = self.ctx.app_state.sf.next_id().unwrap_or(0);
+                Ok(serde_json::json!({
+                    "success": true,
+                    "message": "WhatsApp message sent (placeholder)",
+                    "to": to,
+                    "message_id": format!("wa_{}", message_id),
+                }))
+            }
+            "get_message" => {
+                let message_id = execution_params
+                    .get("message_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("message_id is required".to_string()))?;
+
+                Ok(serde_json::json!({
+                    "message_id": message_id,
+                    "from": "1234567890",
+                    "to": "0987654321",
+                    "text": "Sample message",
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                }))
+            }
+            "mark_read" => {
+                let message_id = execution_params
+                    .get("message_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::BadRequest("message_id is required".to_string()))?;
+
+                Ok(serde_json::json!({
+                    "success": true,
+                    "message_id": message_id,
+                    "status": "read",
+                }))
+            }
+            _ => Err(AppError::BadRequest(format!(
+                "Unknown WhatsApp action: {}",
+                action
+            ))),
+        }
     }
 
     async fn execute_teams_command(

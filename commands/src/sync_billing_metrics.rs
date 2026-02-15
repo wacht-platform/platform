@@ -53,7 +53,7 @@ impl Command for SyncBillingMetricsCommand {
 fn create_redis_update_script(prefix: &str, metrics: &[(String, i64)]) -> String {
     let mut script = format!("local prefix = '{}'\n", prefix);
     script.push_str("local last_synced_key = prefix .. ':last_synced'\n");
-    
+
     for (metric_name, quantity) in metrics {
         let redis_key = match metric_name.as_str() {
             "ai_token_input_cost_cents" => "ai_token_input_cost",
@@ -61,9 +61,12 @@ fn create_redis_update_script(prefix: &str, metrics: &[(String, i64)]) -> String
             "sms_cost" => "sms_cost_cents",
             _ => metric_name.as_str(),
         };
-        script.push_str(&format!("redis.call('ZADD', last_synced_key, {}, '{}')\n", quantity, redis_key));
+        script.push_str(&format!(
+            "redis.call('ZADD', last_synced_key, {}, '{}')\n",
+            quantity, redis_key
+        ));
     }
-    
+
     script.push_str("redis.call('EXPIRE', last_synced_key, 5184000)\n");
     script.push_str("return 'OK'");
     script

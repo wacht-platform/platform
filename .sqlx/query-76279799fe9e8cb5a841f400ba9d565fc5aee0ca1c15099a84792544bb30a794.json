@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, context_id, status_update, metadata, created_at FROM agent_status_updates WHERE context_id = $1 ORDER BY created_at ASC LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "context_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "status_update",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "76279799fe9e8cb5a841f400ba9d565fc5aee0ca1c15099a84792544bb30a794"
+}

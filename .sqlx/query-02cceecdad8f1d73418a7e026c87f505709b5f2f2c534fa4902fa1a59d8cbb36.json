@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO api_auth_apps (id, deployment_id, app_slug, name, description, is_active, created_at, updated_at)\n            VALUES ($1, $2, $3, $4, $5, true, $6, $7)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "02cceecdad8f1d73418a7e026c87f505709b5f2f2c534fa4902fa1a59d8cbb36"
+}

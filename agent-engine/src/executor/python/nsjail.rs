@@ -21,7 +21,7 @@ impl NsJailExecutor {
         execution_root: &std::path::Path,
     ) -> Result<(), AppError> {
         let exec_root_str = execution_root.to_string_lossy();
-        
+
         // Resolve symlinks to actual paths - bind mounts don't follow symlinks!
         // workspace and uploads are symlinks to persistent storage, we need the real paths.
         let resolve_path = |subdir: &str| -> String {
@@ -30,13 +30,13 @@ impl NsJailExecutor {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| path.to_string_lossy().to_string())
         };
-        
+
         let workspace_path = resolve_path("workspace");
         let uploads_path = resolve_path("uploads");
         let scratch_path = resolve_path("scratch");
         let knowledge_path = resolve_path("knowledge");
         let teams_activity_path = resolve_path("teams-activity");
-        
+
         let config = format!(
             r#"
 name: "agent-python-sandbox"
@@ -255,7 +255,7 @@ impl PythonExecutor for NsJailExecutor {
         cmd.arg(&self.python_path);
 
         let script_relative = script_path.to_string_lossy();
-        
+
         let script_inside_jail = if script_relative.starts_with("/workspace/")
             || script_relative.starts_with("/scratch/")
             || script_relative.starts_with("/knowledge/")

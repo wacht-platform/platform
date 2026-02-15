@@ -9,12 +9,10 @@ use dto::json::agent_executor::{
     ObjectiveDefinition, StepDecision,
 };
 use dto::json::agent_responses::{ActionsList, TaskExecution, TaskType};
-use dto::json::{
-    StepDecisionContext, StreamEvent,
-};
+use dto::json::{StepDecisionContext, StreamEvent};
 use models::{
-    AgentExecutionState, ConversationContent, ConversationMessageType, ExecutionContextStatus,
-    ActionExecutionStatus, ActionResult, ActionResultStatus,
+    ActionExecutionStatus, ActionResult, ActionResultStatus, AgentExecutionState,
+    ConversationContent, ConversationMessageType, ExecutionContextStatus,
 };
 use queries::Query;
 use serde_json::{json, Value};
@@ -127,8 +125,7 @@ impl AgentExecutor {
         // Log incoming message if from Teams integration
         if let Some(user) = &sender_name {
             // Fetch context to check source and get metadata
-            if let Ok(ctx) = self.ctx.get_context().await
-            {
+            if let Ok(ctx) = self.ctx.get_context().await {
                 if ctx.source.as_deref() == Some("teams") {
                     if let Some(group) = &ctx.context_group {
                         if !group.is_empty() {
@@ -370,11 +367,14 @@ impl AgentExecutor {
                             pending_input_request: None,
                         };
 
-                        UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
-                            .with_execution_state(execution_state)
-                            .with_status(ExecutionContextStatus::WaitingForInput)
-                            .execute(&self.ctx.app_state)
-                            .await?;
+                        UpdateExecutionContextQuery::new(
+                            self.ctx.context_id,
+                            self.ctx.agent.deployment_id,
+                        )
+                        .with_execution_state(execution_state)
+                        .with_status(ExecutionContextStatus::WaitingForInput)
+                        .execute(&self.ctx.app_state)
+                        .await?;
                     }
 
                     let execution = TaskExecution {
@@ -389,7 +389,11 @@ impl AgentExecutor {
                     self.store_conversation(
                         ConversationContent::ActionExecutionResult {
                             task_execution: execution,
-                            execution_status: if any_pending { ActionExecutionStatus::Pending } else { ActionExecutionStatus::Completed },
+                            execution_status: if any_pending {
+                                ActionExecutionStatus::Pending
+                            } else {
+                                ActionExecutionStatus::Completed
+                            },
                             blocking_reason: None,
                         },
                         ConversationMessageType::ActionExecutionResult,
@@ -494,11 +498,17 @@ impl AgentExecutor {
                 .iter()
                 .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
                 .collect(),
-            available_tools: self.ctx.agent.tools
+            available_tools: self
+                .ctx
+                .agent
+                .tools
                 .iter()
                 .map(|t| serde_json::to_value(t).unwrap())
                 .collect(),
-            available_knowledge_bases: self.ctx.agent.knowledge_bases
+            available_knowledge_bases: self
+                .ctx
+                .agent
+                .knowledge_bases
                 .iter()
                 .map(|kb| serde_json::to_value(kb).unwrap())
                 .collect(),
@@ -564,7 +574,8 @@ impl AgentExecutor {
             })?;
 
         let (mut decision, signature) = self
-            .create_strong_llm().await?
+            .create_strong_llm()
+            .await?
             .generate_structured_content::<StepDecision>(request_body)
             .await?;
 
@@ -600,7 +611,8 @@ impl AgentExecutor {
         .map_err(|e| AppError::Internal(format!("Failed to render summary template: {e}")))?;
 
         let (summary, _) = self
-            .create_weak_llm().await?
+            .create_weak_llm()
+            .await?
             .generate_structured_content::<Value>(request_body)
             .await?;
 
@@ -711,7 +723,8 @@ impl AgentExecutor {
         })?;
 
         let (response, _) = self
-            .create_weak_llm().await?
+            .create_weak_llm()
+            .await?
             .generate_structured_content::<serde_json::Value>(request_body)
             .await?;
         Ok(response)
@@ -823,7 +836,8 @@ impl AgentExecutor {
                 AppError::Internal(format!("Failed to render deep reasoning template: {e}"))
             })?;
 
-        self.create_reasoning_llm().await?
+        self.create_reasoning_llm()
+            .await?
             .generate_structured_content::<DeepReasoningResult>(request_body)
             .await
     }

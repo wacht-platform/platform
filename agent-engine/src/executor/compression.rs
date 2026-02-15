@@ -163,7 +163,8 @@ impl AgentExecutor {
         })?;
 
         let (summary_response, _) = self
-            .create_weak_llm().await?
+            .create_weak_llm()
+            .await?
             .generate_structured_content::<serde_json::Value>(request_body)
             .await
             .map_err(|e| AppError::Internal(format!("Summary generation failed: {e}")))?;

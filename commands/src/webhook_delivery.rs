@@ -20,7 +20,8 @@ impl Command for GetActiveDeliveryCommand {
             SELECT d.id as "id!",
                    d.endpoint_id as "endpoint_id",
                    d.event_name as "event_name!",
-                   d.payload_s3_key as "payload_s3_key!",
+                   d.payload as "payload!",
+                   d.filter_rules,
                    d.webhook_id as "webhook_id!",
                    d.webhook_timestamp as "webhook_timestamp!",
                    d.signature as "signature",
@@ -32,11 +33,12 @@ impl Command for GetActiveDeliveryCommand {
                    e.headers,
                    e.timeout_seconds,
                    e.max_retries,
-                   e.app_name as "app_name!",
+                   e.app_slug as "app_slug!",
+                   e.rate_limit_config,
                    a.signing_secret as "signing_secret!"
             FROM active_webhook_deliveries d
             JOIN webhook_endpoints e ON d.endpoint_id = e.id
-            JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_name = a.name)
+            JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_slug = a.app_slug)
             WHERE d.id = $1
             "#,
             self.delivery_id
@@ -48,7 +50,8 @@ impl Command for GetActiveDeliveryCommand {
             id: d.id,
             endpoint_id: d.endpoint_id.unwrap_or(0),
             event_name: d.event_name,
-            payload_s3_key: d.payload_s3_key,
+            payload: Some(d.payload),
+            filter_rules: d.filter_rules,
             webhook_id: d.webhook_id,
             webhook_timestamp: d.webhook_timestamp,
             signature: d.signature,
@@ -60,8 +63,9 @@ impl Command for GetActiveDeliveryCommand {
             headers: d.headers,
             timeout_seconds: d.timeout_seconds.unwrap_or(30),
             max_retries: d.max_retries.unwrap_or(5),
-            app_name: d.app_name,
+            app_slug: d.app_slug,
             signing_secret: d.signing_secret,
+            rate_limit_config: d.rate_limit_config,
         }))
     }
 }
@@ -71,7 +75,8 @@ pub struct ActiveDeliveryInfo {
     pub id: i64,
     pub endpoint_id: i64,
     pub event_name: String,
-    pub payload_s3_key: String,
+    pub payload: Option<Value>,
+    pub filter_rules: Option<Value>,
     pub webhook_id: String,
     pub webhook_timestamp: i64,
     pub signature: Option<String>,
@@ -83,8 +88,9 @@ pub struct ActiveDeliveryInfo {
     pub headers: Option<Value>,
     pub timeout_seconds: i32,
     pub max_retries: i32,
-    pub app_name: String,
+    pub app_slug: String,
     pub signing_secret: String,
+    pub rate_limit_config: Option<Value>,
 }
 
 #[derive(Debug)]
@@ -143,15 +149,10 @@ pub struct GetFailedDeliveryDetailsCommand {
 impl Command for GetFailedDeliveryDetailsCommand {
     type Output = Option<String>;
 
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let delivery = query!(
-            "SELECT payload_s3_key FROM active_webhook_deliveries WHERE id = $1",
-            self.delivery_id
-        )
-        .fetch_optional(&app_state.db_pool)
-        .await?;
-
-        Ok(delivery.map(|d| d.payload_s3_key))
+    async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
+        // This command is no longer needed since payloads are stored directly in the database
+        // Keeping the function for API compatibility but returning None
+        Ok(None)
     }
 }
 
@@ -285,7 +286,7 @@ pub fn calculate_next_retry(attempts: i32) -> DateTime<Utc> {
         2 => Duration::minutes(1),
         3 => Duration::minutes(5),
         4 => Duration::minutes(15),
-        _ => Duration::hours(1),
+        _ => Duration::hours(6),
     };
 
     Utc::now() + delay

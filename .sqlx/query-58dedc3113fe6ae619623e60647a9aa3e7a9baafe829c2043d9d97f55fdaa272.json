@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO active_webhook_deliveries\n                (id, endpoint_id, deployment_id, app_slug, event_name, payload, filter_rules, payload_size_bytes, webhook_id, webhook_timestamp, signature, max_attempts)\n                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n                RETURNING id\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Jsonb",
+        "Jsonb",
+        "Int4",
+        "Text",
+        "Int8",
+        "Varchar",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "58dedc3113fe6ae619623e60647a9aa3e7a9baafe829c2043d9d97f55fdaa272"
+}

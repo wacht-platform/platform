@@ -6,11 +6,10 @@ use common::state::AppState;
 
 use commands::{
     Command, CreateDeploymentJwtTemplateCommand, DeleteDeploymentJwtTemplateCommand,
-    RemoveDeploymentSmtpConfigCommand,
-    UpdateDeploymentAuthSettingsCommand, UpdateDeploymentDisplaySettingsCommand,
-    UpdateDeploymentEmailTemplateCommand, UpdateDeploymentJwtTemplateCommand,
-    UpdateDeploymentRestrictionsCommand, UpdateDeploymentSmtpConfigCommand,
-    VerifySmtpConnectionCommand,
+    RemoveDeploymentSmtpConfigCommand, UpdateDeploymentAuthSettingsCommand,
+    UpdateDeploymentDisplaySettingsCommand, UpdateDeploymentEmailTemplateCommand,
+    UpdateDeploymentJwtTemplateCommand, UpdateDeploymentRestrictionsCommand,
+    UpdateDeploymentSmtpConfigCommand, VerifySmtpConnectionCommand,
 };
 use dto::{
     json::{

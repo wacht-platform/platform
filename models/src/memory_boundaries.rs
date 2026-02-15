@@ -8,7 +8,7 @@ use sqlx::FromRow;
 pub struct MemoryBoundaries {
     pub context_id: i64,
     pub max_conversations: i32,
-    pub max_memories_per_category: Value, // JSONB
+    pub max_memories_per_category: Value,
     pub compression_threshold_days: i32,
     pub eviction_threshold_score: f64,
     pub created_at: DateTime<Utc>,

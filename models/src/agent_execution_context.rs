@@ -3,6 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
+/// Status update in an agent's execution timeline
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AgentStatusUpdate {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub context_id: i64,
+    pub status_update: String,
+    pub metadata: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AgentExecutionContext {
     #[serde(with = "crate::utils::serde::i64_as_string")]
@@ -21,6 +33,10 @@ pub struct AgentExecutionContext {
     pub source: Option<String>,
     pub external_context_id: Option<String>,
     pub external_resource_metadata: Option<serde_json::Value>,
+    /// Parent context if this agent was spawned by another
+    pub parent_context_id: Option<i64>,
+    /// Completion summary stored when child agent finishes
+    pub completion_summary: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]

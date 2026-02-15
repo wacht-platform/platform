@@ -117,7 +117,11 @@ impl Command for UploadFilesToS3Command {
                 .map_err(|e| AppError::BadRequest(format!("Invalid base64 file data: {}", e)))?;
 
             // Generate unique filename with original name preserved
-            let safe_filename = file.filename.replace('/', "_").replace('\\', "_").replace("..", "_");
+            let safe_filename = file
+                .filename
+                .replace('/', "_")
+                .replace('\\', "_")
+                .replace("..", "_");
             let filename = format!("{}_{}", app_state.sf.next_id()?, safe_filename);
 
             // S3 key: {deployment}/persistent/{context}/uploads/{filename}

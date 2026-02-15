@@ -126,7 +126,7 @@ impl AgentExecutor {
                 }
                 ConversationMessageType::UserMessage => {
                     let is_latest_message = i == self.conversations.len() - 1;
-                    
+
                     if let ConversationContent::UserMessage {
                         message,
                         files,
@@ -142,11 +142,13 @@ impl AgentExecutor {
                             // For older messages or non-image files, just reference them as file paths
                             for file in file_list {
                                 let is_image = file.mime_type.starts_with("image/");
-                                
+
                                 if is_latest_message && is_image {
                                     use base64::{engine::general_purpose::STANDARD, Engine};
 
-                                    if let Ok(bytes) = self.filesystem.read_file_bytes(&file.url).await {
+                                    if let Ok(bytes) =
+                                        self.filesystem.read_file_bytes(&file.url).await
+                                    {
                                         let base64_data = STANDARD.encode(&bytes);
                                         parts.push(json!({
                                             "inline_data": {

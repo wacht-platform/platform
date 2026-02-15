@@ -2,6 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use common::clickhouse::UserEvent;
 use common::state::AppState;
+use common::tinybird;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -19,7 +20,7 @@ pub struct AnalyticsEventTask {
 
 pub async fn store_analytics_event_impl(
     task: AnalyticsEventTask,
-    app_state: &AppState,
+    _app_state: &AppState,
 ) -> Result<String> {
     info!(
         "[ANALYTICS WORKER] Processing {} event for deployment {} (user: {:?})",
@@ -37,10 +38,7 @@ pub async fn store_analytics_event_impl(
         ip_address: task.ip_address,
     };
 
-    app_state
-        .clickhouse_service
-        .insert_user_event(&user_event)
-        .await?;
+    tinybird::insert_user_event(&user_event).await?;
 
     info!(
         "[ANALYTICS WORKER] Successfully stored {} event for deployment {}",

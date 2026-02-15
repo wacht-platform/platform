@@ -8,8 +8,8 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 
 use crate::tasks::{
-    agent, analytics, billing, document, email, embedding, teams_activity, token, webhook,
-    webhook_event, webhook_replay_batch,
+    agent, analytics, api_key_role_permissions_sync, billing, document, email, embedding,
+    rate_limit_scheme_sync, teams_activity, token, webhook, webhook_event, webhook_replay_batch,
 };
 use dto::json::NatsTaskMessage;
 
@@ -365,7 +365,14 @@ impl NatsConsumer {
                 Box::pin(async move {
                     webhook_replay_batch::handle_webhook_replay_batch(&app_state, payload)
                         .await
-                        .map_err(|e| TaskError::Permanent(e.to_string()))
+                        .map_err(|e| {
+                            let msg = e.to_string();
+                            if msg.contains("Failed to deserialize webhook replay payload") {
+                                TaskError::Permanent(msg)
+                            } else {
+                                TaskError::RetryWithDelay(Duration::from_secs(30))
+                            }
+                        })
                 })
             }),
         );
@@ -512,6 +519,102 @@ impl NatsConsumer {
             }),
         );
 
+        task_handlers.insert(
+            "api_key.sync_rate_limits_for_app".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: dto::json::nats::ApiKeyRateLimitSyncPayload =
+                        serde_json::from_value(payload).map_err(|e| {
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize api key rate limit sync task: {}",
+                                e
+                            ))
+                        })?;
+                    rate_limit_scheme_sync::sync_rate_limits_for_app(task, &app_state).await
+                })
+            }),
+        );
+
+        task_handlers.insert(
+            "rate_limit_scheme.sync_keys".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: dto::json::nats::RateLimitSchemeSyncPayload =
+                        serde_json::from_value(payload).map_err(|e| {
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize rate limit scheme sync task: {}",
+                                e
+                            ))
+                        })?;
+                    rate_limit_scheme_sync::sync_rate_limits_for_scheme(task, &app_state).await
+                })
+            }),
+        );
+
+        task_handlers.insert(
+            "api_key.sync_org_membership_permissions".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: dto::json::nats::ApiKeyOrgMembershipSyncPayload =
+                        serde_json::from_value(payload).map_err(|e| {
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize org membership sync task: {}",
+                                e
+                            ))
+                        })?;
+                    api_key_role_permissions_sync::sync_org_membership(task, &app_state).await
+                })
+            }),
+        );
+
+        task_handlers.insert(
+            "api_key.sync_workspace_membership_permissions".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: dto::json::nats::ApiKeyWorkspaceMembershipSyncPayload =
+                        serde_json::from_value(payload).map_err(|e| {
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize workspace membership sync task: {}",
+                                e
+                            ))
+                        })?;
+                    api_key_role_permissions_sync::sync_workspace_membership(task, &app_state).await
+                })
+            }),
+        );
+
+        task_handlers.insert(
+            "api_key.sync_org_role_permissions".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: dto::json::nats::ApiKeyOrgRoleSyncPayload =
+                        serde_json::from_value(payload).map_err(|e| {
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize org role sync task: {}",
+                                e
+                            ))
+                        })?;
+                    api_key_role_permissions_sync::sync_org_role(task, &app_state).await
+                })
+            }),
+        );
+
+        task_handlers.insert(
+            "api_key.sync_workspace_role_permissions".to_string(),
+            Box::new(|payload, app_state| {
+                Box::pin(async move {
+                    let task: dto::json::nats::ApiKeyWorkspaceRoleSyncPayload =
+                        serde_json::from_value(payload).map_err(|e| {
+                            TaskError::Permanent(format!(
+                                "Failed to deserialize workspace role sync task: {}",
+                                e
+                            ))
+                        })?;
+                    api_key_role_permissions_sync::sync_workspace_role(task, &app_state).await
+                })
+            }),
+        );
+
         Ok(Self {
             jetstream: app_state.nats_jetstream.clone(),
             task_handlers,
@@ -560,7 +663,7 @@ impl NatsConsumer {
     async fn handle_message(&self, message: async_nats::jetstream::Message) -> Result<()> {
         // Debug log: show raw payload for troubleshooting
         let raw_payload = String::from_utf8_lossy(&message.payload);
-        
+
         let task_message: NatsTaskMessage = match serde_json::from_slice(&message.payload) {
             Ok(msg) => msg,
             Err(e) => {
@@ -593,7 +696,17 @@ impl NatsConsumer {
         }
 
         if let Some(handler) = self.task_handlers.get(&task_message.task_type) {
-            match handler(task_message.payload, self.app_state.clone()).await {
+            let mut payload = task_message.payload;
+            if task_message.task_type == "webhook.replay_batch" {
+                if let Some(obj) = payload.as_object_mut() {
+                    obj.insert(
+                        "__task_id".to_string(),
+                        serde_json::Value::String(task_message.task_id.clone()),
+                    );
+                }
+            }
+
+            match handler(payload, self.app_state.clone()).await {
                 Ok(_) => {
                     info!("Task {} completed successfully", task_message.task_id);
                     if !should_ack_early {

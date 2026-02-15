@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT k.id as id, k.app_slug as app_slug,\n            k.permissions as \"permissions: serde_json::Value\",\n            k.org_role_permissions as \"org_role_permissions: serde_json::Value\",\n            k.workspace_role_permissions as \"workspace_role_permissions: serde_json::Value\",\n            k.organization_id,\n            k.workspace_id,\n            k.organization_membership_id,\n            k.workspace_membership_id,\n            k.is_active as is_active,\n            k.expires_at as expires_at\n            FROM api_keys k\n            WHERE k.key_hash = $1 AND k.is_active = true",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "app_slug",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "permissions: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "org_role_permissions: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "workspace_role_permissions: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "workspace_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "organization_membership_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "workspace_membership_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "daf68fc56293c21ac786f875f6dbaecf04864b952d17d2f1aadfceb825dfba40"
+}

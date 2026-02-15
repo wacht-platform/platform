@@ -6,7 +6,12 @@
 use models::{InternalToolType, SchemaField, UseExternalServiceToolType};
 
 /// Internal filesystem and execution tools
-pub fn internal_tools() -> Vec<(&'static str, &'static str, InternalToolType, Vec<SchemaField>)> {
+pub fn internal_tools() -> Vec<(
+    &'static str,
+    &'static str,
+    InternalToolType,
+    Vec<SchemaField>,
+)> {
     vec![
         (
             "read_file",
@@ -165,11 +170,67 @@ pub fn internal_tools() -> Vec<(&'static str, &'static str, InternalToolType, Ve
                 },
             ],
         ),
+        (
+            "update_status",
+            "Post a brief status update that your parent agent can see. Use this to communicate progress on your work. Keep updates concise - one line.",
+            InternalToolType::UpdateStatus,
+            vec![
+                SchemaField {
+                    name: "status".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Brief status update (e.g., 'Processing row 500 of 1000...', 'Waiting for user input', 'Generated 3 charts')".to_string()),
+                    required: true,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "metadata".to_string(),
+                    field_type: "OBJECT".to_string(),
+                    description: Some("Optional structured data (e.g., progress percentage, step numbers)".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+            ],
+        ),
+        (
+            "get_child_status",
+            "Check the status of any child agents you have spawned. Returns current status, latest update, and completion summary if done.",
+            InternalToolType::GetChildStatus,
+            vec![SchemaField {
+                name: "include_completed".to_string(),
+                field_type: "BOOLEAN".to_string(),
+                description: Some("Include children that have already completed or failed".to_string()),
+                required: false,
+                ..Default::default()
+            }],
+        ),
+        (
+            "spawn_context",
+            "Spawn a child agent to handle a sub-task. Can spawn a copy of yourself (fork) or a different agent you have access to (exec).",
+            InternalToolType::SpawnContext,
+            spawn_context_schema(),
+        ),
+        (
+            "spawn_control",
+            "Send control commands to a spawned child agent: stop, restart, or update parameters.",
+            InternalToolType::SpawnControl,
+            spawn_control_schema(),
+        ),
+        (
+            "get_completion_summary",
+            "Get completion summaries from your child agents. Results are available after children finish executing.",
+            InternalToolType::GetCompletionSummary,
+            get_completion_summary_schema(),
+        ),
     ]
 }
 
 /// Microsoft Teams integration tools
-pub fn teams_tools() -> Vec<(&'static str, &'static str, UseExternalServiceToolType, Vec<SchemaField>)> {
+pub fn teams_tools() -> Vec<(
+    &'static str,
+    &'static str,
+    UseExternalServiceToolType,
+    Vec<SchemaField>,
+)> {
     vec![
         (
             "teams_list_users",
@@ -484,7 +545,12 @@ pub fn teams_tools() -> Vec<(&'static str, &'static str, UseExternalServiceToolT
 }
 
 /// ClickUp integration tools
-pub fn clickup_tools() -> Vec<(&'static str, &'static str, UseExternalServiceToolType, Vec<SchemaField>)> {
+pub fn clickup_tools() -> Vec<(
+    &'static str,
+    &'static str,
+    UseExternalServiceToolType,
+    Vec<SchemaField>,
+)> {
     vec![
         (
             "clickup_get_current_user",
@@ -872,8 +938,8 @@ pub fn spawn_context_execution_schema() -> Vec<SchemaField> {
         SchemaField {
             name: "target_context_id".to_string(),
             field_type: "STRING".to_string(),
-            description: Some("ID of the target context to spawn execution in. This context must exist and be accessible.".to_string()),
-            required: true,
+            description: Some("ID of the target context to spawn execution in. If not provided, creates a new child context.".to_string()),
+            required: false,
             ..Default::default()
         },
         SchemaField {
@@ -894,6 +960,87 @@ pub fn spawn_context_execution_schema() -> Vec<SchemaField> {
             name: "execute".to_string(),
             field_type: "BOOLEAN".to_string(),
             description: Some("Whether to trigger immediate execution in the target context. Default: true. If false, just adds the message without executing.".to_string()),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "task_type".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Type of task: 'delegate' (default), 'notify', or 'handoff'.".to_string()),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "history_context".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("How much history to pass to the new context: 'none', 'last_5', 'last_10', 'all', or 'relevant_to_task'".to_string()),
+            required: false,
+            ..Default::default()
+        },
+    ]
+}
+
+/// Schema for spawn_context tool
+pub fn spawn_context_schema() -> Vec<SchemaField> {
+    vec![
+        SchemaField {
+            name: "message".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("The message/instruction to send to the spawned child agent.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "target_agent_name".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Optional: Name of the agent to spawn (e.g., 'Teams Agent', 'ClickUp Agent'). If not provided, spawns a copy of yourself (fork). Available agents are those configured in your Swarm settings.".to_string()),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "title".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Optional: Custom title for the child context.".to_string()),
+            required: false,
+            ..Default::default()
+        },
+    ]
+}
+
+/// Schema for spawn_control tool
+pub fn spawn_control_schema() -> Vec<SchemaField> {
+    vec![
+        SchemaField {
+            name: "child_context_id".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("ID of the child context to send control command to.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "action".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Control action: 'stop', 'restart', or 'update_params'.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "params".to_string(),
+            field_type: "OBJECT".to_string(),
+            description: Some("For 'update_params' action: the new parameters to set.".to_string()),
+            required: false,
+            ..Default::default()
+        },
+    ]
+}
+
+/// Schema for get_completion_summary tool
+pub fn get_completion_summary_schema() -> Vec<SchemaField> {
+    vec![
+        SchemaField {
+            name: "child_context_id".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Optional: Specific child context ID to get summary for. If not provided, returns summaries for all completed children.".to_string()),
             required: false,
             ..Default::default()
         },

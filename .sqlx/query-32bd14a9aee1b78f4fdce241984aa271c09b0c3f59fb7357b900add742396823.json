@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO webhook_apps (deployment_id, app_slug, name, description, signing_secret, failure_notification_emails, event_catalog_slug, is_active)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, true)\n            RETURNING deployment_id as \"deployment_id!\",\n                      app_slug as \"app_slug!\",\n                      name as \"name!\",\n                      description,\n                      signing_secret as \"signing_secret!\",\n                      failure_notification_emails,\n                      event_catalog_slug,\n                      is_active as \"is_active!\",\n                      created_at as \"created_at!\",\n                      updated_at as \"updated_at!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deployment_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "app_slug!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "signing_secret!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "failure_notification_emails",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "event_catalog_slug",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Jsonb",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "32bd14a9aee1b78f4fdce241984aa271c09b0c3f59fb7357b900add742396823"
+}

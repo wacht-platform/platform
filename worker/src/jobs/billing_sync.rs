@@ -1,14 +1,12 @@
 use anyhow::Result;
 use chrono::Datelike;
+use commands::SyncBillingMetricsCommand;
 use commands::{
     Command,
-    billing::{
-        CompleteBillingSyncRunCommand, CreateBillingSyncRunCommand,
-    },
+    billing::{CompleteBillingSyncRunCommand, CreateBillingSyncRunCommand},
     pulse::DeductPulseCreditsCommand,
 };
 use common::{DodoClient, state::AppState};
-use commands::SyncBillingMetricsCommand;
 use models::pulse_transaction::PulseTransactionType;
 use queries::{
     Query,
@@ -42,11 +40,11 @@ fn get_metric_config(metric: &str) -> MetricConfig {
         },
         "emails" => MetricConfig {
             event_name: "emails.total",
-            use_last_aggregation: true, 
+            use_last_aggregation: true,
         },
         "webhooks" => MetricConfig {
             event_name: "webhooks.total",
-            use_last_aggregation: true, 
+            use_last_aggregation: true,
         },
         "ai_token_input_cost_cents" => MetricConfig {
             event_name: "ai.token.input.cost",
@@ -85,7 +83,14 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
         .execute(app_state)
         .await?;
 
-    let dirty_key = format!("billing:{}:dirty_deployments", format!("{}-{:02}", chrono::Utc::now().year(), chrono::Utc::now().month()));
+    let dirty_key = format!(
+        "billing:{}:dirty_deployments",
+        format!(
+            "{}-{:02}",
+            chrono::Utc::now().year(),
+            chrono::Utc::now().month()
+        )
+    );
     let dirty: Vec<(i64, f64)> = redis
         .zrangebyscore_withscores(&dirty_key, 1.0, f64::MAX)
         .await?;
@@ -192,7 +197,7 @@ async fn sync_deployment(
 
     let now = chrono::Utc::now();
     let current_month = format!("{}-{:02}", now.year(), now.month());
-    
+
     let should_read_prev_month = now.day() <= 2;
     let prev_month = if should_read_prev_month {
         let prev = now - chrono::Duration::days(30);
@@ -266,7 +271,8 @@ async fn sync_deployment(
     };
     let aggregate = |current_idx: usize, prev_idx: usize| -> i64 {
         let current_val = results[current_idx].parse::<i64>().unwrap_or(0);
-        let prev_val = prev_results.as_ref()
+        let prev_val = prev_results
+            .as_ref()
             .and_then(|r| r.get(prev_idx))
             .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(0);
@@ -280,8 +286,16 @@ async fn sync_deployment(
         ("projects", aggregate(6, 6), aggregate(7, 7)),
         ("emails", aggregate(8, 8), aggregate(9, 9)),
         ("webhooks", aggregate(10, 10), aggregate(11, 11)),
-        ("ai_token_input_cost_cents", aggregate(12, 12), aggregate(13, 13)),
-        ("ai_token_output_cost_cents", aggregate(14, 14), aggregate(15, 15)),
+        (
+            "ai_token_input_cost_cents",
+            aggregate(12, 12),
+            aggregate(13, 13),
+        ),
+        (
+            "ai_token_output_cost_cents",
+            aggregate(14, 14),
+            aggregate(15, 15),
+        ),
         ("sms_cost", aggregate(16, 16), aggregate(17, 17)),
     ];
     let mut total_units_synced = 0i64;
@@ -291,7 +305,10 @@ async fn sync_deployment(
         if *delta <= 0 {
             continue;
         }
-        if matches!(*metric_name, "ai_token_input_cost_cents" | "ai_token_output_cost_cents" | "sms_cost_cents") {
+        if matches!(
+            *metric_name,
+            "ai_token_input_cost_cents" | "ai_token_output_cost_cents" | "sms_cost_cents"
+        ) {
             let transaction_type = if metric_name.starts_with("ai") {
                 PulseTransactionType::UsageAi
             } else {
@@ -307,16 +324,10 @@ async fn sync_deployment(
             .execute(app_state)
             .await
             {
-                Ok(Ok(_)) => {
+                Ok(_) => {
                     info!(
                         "[BILLING SYNC] Deducted {} Pulse cents for {} from deployment {}",
                         delta, metric_name, deployment_id
-                    );
-                }
-                Ok(Err(e)) => {
-                    warn!(
-                        "[BILLING SYNC] Insufficient Pulse credits for deployment {}: {} - allowing negative balance",
-                        deployment_id, e
                     );
                 }
                 Err(e) => {
@@ -355,7 +366,14 @@ async fn sync_deployment(
 
     if let Some(dodo) = dodo_client {
         if !metrics_for_dodo.is_empty() {
-            sync_to_dodo_with_data(dodo, app_state, *deployment_id, &metrics_for_dodo, &subscription_info).await;
+            sync_to_dodo_with_data(
+                dodo,
+                app_state,
+                *deployment_id,
+                &metrics_for_dodo,
+                &subscription_info,
+            )
+            .await;
         }
     }
 

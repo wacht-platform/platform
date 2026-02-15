@@ -1,12 +1,13 @@
 use chrono::{DateTime, Utc};
 use models::webhook::WebhookEventDefinition;
-use models::webhook::WebhookEventTrigger;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// =====================================================
-// WEBHOOK APP REQUESTS
-// =====================================================
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RateLimitConfigDto {
+    pub duration_ms: i64,  // Window duration in milliseconds
+    pub max_requests: i32, // Max requests in that window
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ListWebhookAppsQuery {
@@ -19,7 +20,39 @@ pub struct ListWebhookAppsQuery {
 pub struct CreateWebhookAppRequest {
     pub name: String,
     pub description: Option<String>,
+    pub failure_notification_emails: Option<Vec<String>>,
+    pub event_catalog_slug: Option<String>, // Added for shared event catalogs
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateEventCatalogRequest {
+    pub slug: String,
+    pub name: String,
+    pub description: Option<String>,
     pub events: Vec<WebhookEventDefinition>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateEventCatalogRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AppendEventsToCatalogRequest {
+    pub events: Vec<WebhookEventDefinition>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ArchiveEventInCatalogRequest {
+    pub event_name: String,
+    pub is_archived: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListEventCatalogsQuery {
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,6 +60,8 @@ pub struct UpdateWebhookAppRequest {
     pub name: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
+    pub failure_notification_emails: Option<Vec<String>>,
+    pub event_catalog_slug: Option<String>, // Added for shared event catalogs
 }
 
 // Get available events response
@@ -34,10 +69,6 @@ pub struct UpdateWebhookAppRequest {
 pub struct GetAvailableEventsResponse {
     pub events: Vec<wacht::api::webhooks::WebhookAppEvent>,
 }
-
-// =====================================================
-// WEBHOOK ENDPOINT REQUESTS
-// =====================================================
 
 #[derive(Debug, Deserialize)]
 pub struct ListWebhookEndpointsQuery {
@@ -52,18 +83,18 @@ pub struct WebhookEndpoint {
     pub id: i64,
     #[serde(with = "models::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     pub url: String,
     pub description: Option<String>,
     pub headers: Option<Value>,
     pub is_active: bool,
-    pub signing_secret: Option<String>,
     pub max_retries: i32,
     pub timeout_seconds: i32,
     pub failure_count: i32,
     pub last_failure_at: Option<chrono::DateTime<chrono::Utc>>,
     pub auto_disabled: bool,
     pub auto_disabled_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub rate_limit_config: Option<Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub subscriptions: Vec<WebhookEndpointSubscription>,
@@ -101,13 +132,14 @@ impl From<EventSubscription> for wacht::api::webhooks::EventSubscription {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateWebhookEndpointRequest {
-    pub app_name: String,
+    pub app_slug: String,
     pub url: String,
     pub description: Option<String>,
     pub subscriptions: Vec<EventSubscription>,
     pub headers: Option<Value>,
     pub max_retries: Option<i32>,
     pub timeout_seconds: Option<i32>,
+    pub rate_limit_config: Option<RateLimitConfigDto>,
 }
 
 // Console API version - doesn't require app_name since it's derived from deployment_id
@@ -119,6 +151,7 @@ pub struct CreateWebhookEndpointConsoleRequest {
     pub headers: Option<Value>,
     pub max_retries: Option<i32>,
     pub timeout_seconds: Option<i32>,
+    pub rate_limit_config: Option<RateLimitConfigDto>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -130,15 +163,12 @@ pub struct UpdateWebhookEndpointRequest {
     pub timeout_seconds: Option<i32>,
     pub is_active: Option<bool>,
     pub subscriptions: Option<Vec<EventSubscription>>,
+    pub rate_limit_config: Option<RateLimitConfigDto>,
 }
-
-// =====================================================
-// WEBHOOK TRIGGER REQUESTS
-// =====================================================
 
 #[derive(Debug, Deserialize)]
 pub struct TriggerWebhookEventRequest {
-    pub app_name: String,
+    pub app_slug: String,
     pub event_name: String,
     pub payload: Value,
     pub filter_context: Option<Value>,
@@ -152,44 +182,63 @@ pub struct TriggerWebhookEventResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct BatchTriggerWebhookEventsRequest {
-    pub app_name: String,
-    pub events: Vec<WebhookEventTrigger>,
-}
-
-// =====================================================
-// WEBHOOK DELIVERY REQUESTS
-// =====================================================
-
-#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum ReplayWebhookDeliveryRequest {
     ByIds {
         delivery_ids: Vec<String>,
-        #[serde(default = "default_include_successful")]
-        include_successful: bool,
+        idempotency_key: Option<String>,
     },
     ByDateRange {
         start_date: DateTime<Utc>,
         end_date: Option<DateTime<Utc>>,
-        #[serde(default = "default_include_successful")]
-        include_successful: bool,
+        idempotency_key: Option<String>,
+        status: Option<String>,
+        event_name: Option<String>,
+        endpoint_id: Option<String>,
     },
-}
-
-fn default_include_successful() -> bool {
-    false // Default to excluding successful deliveries
 }
 
 #[derive(Debug, Serialize)]
 pub struct ReplayWebhookDeliveryResponse {
     pub status: String,
     pub message: String,
+    pub task_id: Option<String>,
 }
 
-// =====================================================
-// WEBHOOK ENDPOINT MANAGEMENT REQUESTS
-// =====================================================
+#[derive(Debug, Serialize)]
+pub struct ReplayTaskCancelResponse {
+    pub status: String,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReplayTaskListQuery {
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReplayTaskStatusResponse {
+    pub task_id: String,
+    pub app_slug: String,
+    pub status: String,
+    pub created_at: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub total_count: i64,
+    pub processed: i64,
+    pub replayed_count: i64,
+    pub failed_count: i64,
+    pub last_delivery_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReplayTaskListResponse {
+    pub data: Vec<ReplayTaskStatusResponse>,
+    pub limit: i32,
+    pub offset: i32,
+    pub has_more: bool,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ReactivateEndpointRequest {
@@ -223,10 +272,6 @@ pub struct TestWebhookEndpointResponse {
     pub error: Option<String>,
 }
 
-// =====================================================
-// WEBHOOK ANALYTICS REQUESTS
-// =====================================================
-
 #[derive(Debug, Deserialize)]
 pub struct WebhookAnalyticsQuery {
     pub app_id: Option<i64>,
@@ -248,10 +293,6 @@ pub struct WebhookTimeseriesQuery {
 fn default_interval() -> models::webhook_analytics::TimeseriesInterval {
     models::webhook_analytics::TimeseriesInterval::Day
 }
-
-// =====================================================
-// WEBHOOK CONSOLE REQUESTS
-// =====================================================
 
 #[derive(Debug, Deserialize)]
 pub struct ConsoleAnalyticsQuery {
@@ -283,22 +324,15 @@ pub struct DeliveryListQuery {
 pub struct WebhookDeliveryItem {
     pub delivery_id: i64,
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     pub endpoint_id: i64,
-    pub endpoint_url: String,
     pub event_name: String,
     pub status: String,
     pub http_status_code: Option<i32>,
     pub response_time_ms: Option<i32>,
     pub attempt_number: i32,
-    pub error_message: Option<String>,
-    pub filtered_reason: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
-
-// =====================================================
-// BACKEND API DELIVERY REQUESTS
-// =====================================================
 
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookDeliveriesQuery {
@@ -328,18 +362,15 @@ pub struct GetAppWebhookDeliveriesQuery {
 pub struct WebhookDeliveryResponse {
     pub deployment_id: String,
     pub delivery_id: String,
-    pub app_name: String,
+    pub app_slug: String,
     pub endpoint_id: String,
-    pub endpoint_url: String,
     pub event_name: String,
     pub status: String,
     pub http_status_code: Option<i32>,
     pub response_time_ms: Option<i32>,
     pub attempt_number: i32,
     pub max_attempts: i32,
-    pub error_message: Option<String>,
-    pub filtered_reason: Option<String>,
-    pub payload_s3_key: String,
+    pub payload: Option<String>,
     pub response_body: Option<String>,
     pub response_headers: Option<String>,
     pub timestamp: DateTime<Utc>,
@@ -360,21 +391,18 @@ pub struct WebhookDeliveryDetails {
     pub delivery_id: i64,
     #[serde(with = "models::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     #[serde(with = "models::utils::serde::i64_as_string")]
     pub endpoint_id: i64,
-    pub endpoint_url: String,
     pub event_name: String,
     pub status: String,
     pub http_status_code: Option<i32>,
     pub response_time_ms: Option<i32>,
     pub attempt_number: i32,
     pub max_attempts: i32,
-    pub error_message: Option<String>,
-    pub filtered_reason: Option<String>,
-    pub payload_s3_key: String,
+    pub payload: Option<String>,
     pub response_body: Option<String>,
     pub response_headers: Option<Value>,
     pub timestamp: DateTime<Utc>,
-    pub payload: Option<Value>,
+    pub payload_json: Option<Value>,
 }

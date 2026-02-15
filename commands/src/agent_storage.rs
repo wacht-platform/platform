@@ -1,7 +1,7 @@
 use aws_sdk_s3::primitives::ByteStream;
 use common::error::AppError;
 use common::state::AppState;
-use tracing::{info, error, debug};
+use tracing::{debug, error, info};
 
 use crate::Command;
 
@@ -31,8 +31,12 @@ impl Command for WriteToAgentStorageCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         info!("[AgentStorage] Starting file upload to agent storage");
-        debug!("[AgentStorage] Upload details - key: {}, content_type: {:?}, body_size: {} bytes",
-            self.key, self.content_type, self.body.len());
+        debug!(
+            "[AgentStorage] Upload details - key: {}, content_type: {:?}, body_size: {} bytes",
+            self.key,
+            self.content_type,
+            self.body.len()
+        );
 
         let client = app_state
             .agent_storage_client
@@ -59,14 +63,20 @@ impl Command for WriteToAgentStorageCommand {
 
         match request.send().await {
             Ok(response) => {
-                info!("[AgentStorage] Upload successful! ETag: {:?}", response.e_tag());
+                info!(
+                    "[AgentStorage] Upload successful! ETag: {:?}",
+                    response.e_tag()
+                );
                 debug!("[AgentStorage] Response: {:?}", response);
                 Ok(self.key)
             }
             Err(e) => {
                 error!("[AgentStorage] S3 upload failed!");
                 error!("[AgentStorage] Error details: {:?}", e);
-                error!("[AgentStorage] Error type: {}", std::any::type_name_of_val(&e));
+                error!(
+                    "[AgentStorage] Error type: {}",
+                    std::any::type_name_of_val(&e)
+                );
                 error!("[AgentStorage] Error message: {}", e);
 
                 // Try to get more error details
@@ -78,9 +88,14 @@ impl Command for WriteToAgentStorageCommand {
                     error!("[AgentStorage]  3. Network connectivity issue");
                     error!("[AgentStorage]  4. TLS/SSL certificate issues");
                 } else if err_msg.contains("credentials") {
-                    error!("[AgentStorage] CREDENTIALS ERROR - Check AGENT_STORAGE_ACCESS_KEY and AGENT_STORAGE_SECRET_KEY");
+                    error!(
+                        "[AgentStorage] CREDENTIALS ERROR - Check AGENT_STORAGE_ACCESS_KEY and AGENT_STORAGE_SECRET_KEY"
+                    );
                 } else if err_msg.contains("NoSuchBucket") {
-                    error!("[AgentStorage] BUCKET NOT FOUND - Bucket '{}' does not exist", bucket);
+                    error!(
+                        "[AgentStorage] BUCKET NOT FOUND - Bucket '{}' does not exist",
+                        bucket
+                    );
                 }
 
                 Err(AppError::S3(e.to_string()))

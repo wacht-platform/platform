@@ -743,6 +743,18 @@ impl Query for GetDeploymentEmailTemplateQuery {
 
                 row.workspace_invite_template
             }
+            DeploymentNameParams::WebhookFailureNotificationTemplate => {
+                let row = query!(
+                    r#"
+                    SELECT webhook_failure_notification_template FROM deployment_email_templates WHERE deployment_id = $1
+                    "#,
+                    self.deployment_id,
+                )
+                .fetch_one(&app_state.db_pool)
+                .await?;
+
+                row.webhook_failure_notification_template
+            }
         };
 
         Ok(serde_json::from_value(template)?)
@@ -768,9 +780,29 @@ impl Query for GetEmailTemplateByNameQuery {
     type Output = EmailTemplate;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let column_name = match self.template_name.as_str() {
+            "organization_invite_template" => "organization_invite_template",
+            "verification_code_template" => "verification_code_template",
+            "reset_password_code_template" => "reset_password_code_template",
+            "primary_email_change_template" => "primary_email_change_template",
+            "password_change_template" => "password_change_template",
+            "password_remove_template" => "password_remove_template",
+            "sign_in_from_new_device_template" => "sign_in_from_new_device_template",
+            "magic_link_template" => "magic_link_template",
+            "waitlist_signup_template" => "waitlist_signup_template",
+            "waitlist_invite_template" => "waitlist_invite_template",
+            "workspace_invite_template" => "workspace_invite_template",
+            "webhook_failure_notification_template" => "webhook_failure_notification_template",
+            _ => {
+                return Err(AppError::BadRequest(
+                    "Invalid email template name".to_string(),
+                ));
+            }
+        };
+
         let query_str = format!(
             "SELECT {} FROM deployment_email_templates WHERE deployment_id = $1",
-            self.template_name
+            column_name
         );
 
         let row = sqlx::query(&query_str)
@@ -778,7 +810,7 @@ impl Query for GetEmailTemplateByNameQuery {
             .fetch_one(&app_state.db_pool)
             .await?;
 
-        let template_json: serde_json::Value = row.get(self.template_name.as_str());
+        let template_json: serde_json::Value = row.get(column_name);
         let template: EmailTemplate = serde_json::from_value(template_json)
             .map_err(|e| AppError::BadRequest(format!("Failed to parse email template: {}", e)))?;
 

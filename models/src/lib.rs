@@ -7,11 +7,11 @@ mod deployment_invitation;
 mod deployment_jwt_template;
 mod deployment_keypair;
 
+mod deployment_ai_settings;
 mod deployment_restrictions;
 mod deployment_sms_template;
-mod deployment_ai_settings;
-mod deployment_storage_usage;
 mod deployment_social_connection;
+mod deployment_storage_usage;
 mod deployment_ui_settings;
 mod deployment_waitlist_user;
 pub mod enterprise_connection;
@@ -43,20 +43,19 @@ pub mod workspace_role;
 pub mod agent_execution_context;
 pub mod agent_integration;
 pub mod agent_memory;
+pub mod agent_session;
 pub mod ai_agent;
 pub mod ai_knowledge_base;
 pub mod ai_tool;
 pub mod conversation;
+pub mod dtos;
 pub mod error;
 pub mod hybrid_search;
 pub mod integration_linking;
 pub mod memory;
 pub mod memory_boundaries;
-pub mod agent_session;
 pub mod utils;
 pub mod webhook_analytics;
-pub mod dtos;
-
 
 // Webhook models
 pub mod webhook;
@@ -64,6 +63,9 @@ pub mod webhook;
 // API Key models
 pub mod api_key;
 pub mod api_key_permissions;
+
+// Rate limit counter models
+pub mod rate_limit_counter;
 
 // Notification models
 pub mod notification;
@@ -75,6 +77,7 @@ pub mod plan_features;
 pub mod pulse_transaction;
 
 pub use deployment::*;
+pub use deployment_ai_settings::*;
 pub use deployment_auth_settings::*;
 pub use deployment_b2b_settings::*;
 pub use deployment_custom_roles::*;
@@ -84,9 +87,8 @@ pub use deployment_jwt_template::*;
 pub use deployment_keypair::*;
 pub use deployment_restrictions::*;
 pub use deployment_sms_template::*;
-pub use deployment_ai_settings::*;
-pub use deployment_storage_usage::*;
 pub use deployment_social_connection::*;
+pub use deployment_storage_usage::*;
 pub use deployment_ui_settings::*;
 pub use deployment_waitlist_user::*;
 pub use organization::*;
@@ -114,6 +116,7 @@ pub use workspace_role::*;
 pub use agent_execution_context::*;
 pub use agent_integration::*;
 pub use agent_memory::*;
+pub use agent_session::*;
 pub use ai_agent::*;
 pub use ai_knowledge_base::*;
 pub use ai_tool::*;
@@ -122,7 +125,7 @@ pub use conversation::*;
 pub use integration_linking::*;
 pub use memory::*;
 pub use memory_boundaries::*;
-pub use agent_session::*;
 pub use notification::*;
-pub use webhook::*;
 pub use pulse_transaction::*;
+pub use rate_limit_counter::*;
+pub use webhook::*;

@@ -34,10 +34,6 @@ pub enum ConversationMessageType {
     PlatformFunctionResult,
 }
 
-// ============================================================================
-// Task Execution Types (used in ActionExecutionResult)
-// ============================================================================
-
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskType {
@@ -105,10 +101,6 @@ impl Default for ActionExecutionStatus {
         Self::Pending
     }
 }
-
-// ============================================================================
-// Conversation Content
-// ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

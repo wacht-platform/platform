@@ -100,6 +100,11 @@ pub enum InternalToolType {
     ExecuteCommand,
     SaveMemory,
     ExecutePython,
+    UpdateStatus,
+    GetChildStatus,
+    SpawnContext,
+    SpawnControl,
+    GetCompletionSummary,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -147,6 +152,86 @@ pub enum UseExternalServiceToolType {
     ClickUpSearchTasks,
     #[serde(rename = "clickup_task_add_attachment")]
     ClickUpTaskAddAttachment,
+    WhatsAppSendMessage,
+    WhatsAppGetMessage,
+    WhatsAppMarkRead,
+}
+
+impl UseExternalServiceToolType {
+    /// Get the integration type this tool belongs to
+    pub fn integration_type(&self) -> Option<&'static str> {
+        match self {
+            UseExternalServiceToolType::TeamsListUsers
+            | UseExternalServiceToolType::TeamsSearchUsers
+            | UseExternalServiceToolType::TeamsSendDm
+            | UseExternalServiceToolType::TeamsSendContextMessage
+            | UseExternalServiceToolType::TeamsListMessages
+            | UseExternalServiceToolType::TeamsGetMeetingRecording
+            | UseExternalServiceToolType::TeamsTranscribeMeeting
+            | UseExternalServiceToolType::TeamsSaveAttachment
+            | UseExternalServiceToolType::TeamsDescribeImage
+            | UseExternalServiceToolType::TeamsTranscribeAudio
+            | UseExternalServiceToolType::TeamsListContexts => Some("teams"),
+
+            UseExternalServiceToolType::ClickUpCreateTask
+            | UseExternalServiceToolType::ClickUpCreateList
+            | UseExternalServiceToolType::ClickUpUpdateTask
+            | UseExternalServiceToolType::ClickUpAddComment
+            | UseExternalServiceToolType::ClickUpGetTask
+            | UseExternalServiceToolType::ClickUpGetSpaceLists
+            | UseExternalServiceToolType::ClickUpGetSpaces
+            | UseExternalServiceToolType::ClickUpGetTeams
+            | UseExternalServiceToolType::ClickUpGetCurrentUser
+            | UseExternalServiceToolType::ClickUpGetTasks
+            | UseExternalServiceToolType::ClickUpSearchTasks
+            | UseExternalServiceToolType::ClickUpTaskAddAttachment => Some("clickup"),
+
+            UseExternalServiceToolType::WhatsAppSendMessage
+            | UseExternalServiceToolType::WhatsAppGetMessage
+            | UseExternalServiceToolType::WhatsAppMarkRead => Some("whatsapp"),
+
+            UseExternalServiceToolType::TriggerContext => None,
+        }
+    }
+
+    /// Get all tool types for a given integration
+    pub fn for_integration_type(integration_type: &str) -> Vec<Self> {
+        match integration_type.to_lowercase().as_str() {
+            "teams" => vec![
+                UseExternalServiceToolType::TeamsListUsers,
+                UseExternalServiceToolType::TeamsSearchUsers,
+                UseExternalServiceToolType::TeamsSendDm,
+                UseExternalServiceToolType::TeamsSendContextMessage,
+                UseExternalServiceToolType::TeamsListMessages,
+                UseExternalServiceToolType::TeamsGetMeetingRecording,
+                UseExternalServiceToolType::TeamsTranscribeMeeting,
+                UseExternalServiceToolType::TeamsSaveAttachment,
+                UseExternalServiceToolType::TeamsDescribeImage,
+                UseExternalServiceToolType::TeamsTranscribeAudio,
+                UseExternalServiceToolType::TeamsListContexts,
+            ],
+            "clickup" => vec![
+                UseExternalServiceToolType::ClickUpCreateTask,
+                UseExternalServiceToolType::ClickUpCreateList,
+                UseExternalServiceToolType::ClickUpUpdateTask,
+                UseExternalServiceToolType::ClickUpAddComment,
+                UseExternalServiceToolType::ClickUpGetTask,
+                UseExternalServiceToolType::ClickUpGetSpaceLists,
+                UseExternalServiceToolType::ClickUpGetSpaces,
+                UseExternalServiceToolType::ClickUpGetTeams,
+                UseExternalServiceToolType::ClickUpGetCurrentUser,
+                UseExternalServiceToolType::ClickUpGetTasks,
+                UseExternalServiceToolType::ClickUpSearchTasks,
+                UseExternalServiceToolType::ClickUpTaskAddAttachment,
+            ],
+            "whatsapp" => vec![
+                UseExternalServiceToolType::WhatsAppSendMessage,
+                UseExternalServiceToolType::WhatsAppGetMessage,
+                UseExternalServiceToolType::WhatsAppMarkRead,
+            ],
+            _ => vec![],
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]

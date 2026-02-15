@@ -13,7 +13,7 @@ use super::Query;
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookAnalyticsQuery {
     pub deployment_id: i64,
-    pub app_name: Option<String>,
+    pub app_slug: Option<String>,
     pub endpoint_id: Option<i64>,
     pub start_date: Option<DateTime<Utc>>,
     pub end_date: Option<DateTime<Utc>>,
@@ -23,15 +23,15 @@ impl GetWebhookAnalyticsQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self {
             deployment_id,
-            app_name: None,
+            app_slug: None,
             endpoint_id: None,
             start_date: None,
             end_date: None,
         }
     }
 
-    pub fn with_app_name(mut self, app_name: String) -> Self {
-        self.app_name = Some(app_name);
+    pub fn with_app_slug(mut self, app_slug: String) -> Self {
+        self.app_slug = Some(app_slug);
         self
     }
 
@@ -61,7 +61,7 @@ impl Query for GetWebhookAnalyticsQuery {
             .clickhouse_service
             .get_webhook_delivery_stats(
                 self.deployment_id,
-                self.app_name.clone(),
+                self.app_slug.clone(),
                 self.endpoint_id,
                 start_date,
                 end_date,
@@ -73,7 +73,7 @@ impl Query for GetWebhookAnalyticsQuery {
             .clickhouse_service
             .get_webhook_event_distribution(
                 self.deployment_id,
-                self.app_name.clone(),
+                self.app_slug.clone(),
                 start_date,
                 end_date,
                 10,
@@ -109,13 +109,13 @@ impl Query for GetWebhookAnalyticsQuery {
                 avg_response_time_ms: perf.avg_response_time_ms,
                 success_rate: perf.success_rate,
             }]
-        } else if let Some(ref app_name) = self.app_name {
+        } else if let Some(ref app_slug) = self.app_slug {
             // Get all endpoints for the app
             let perf_data = app_state
                 .clickhouse_service
                 .get_app_endpoints_performance(
                     self.deployment_id,
-                    app_name.clone(),
+                    app_slug.clone(),
                     start_date,
                     end_date,
                 )
@@ -141,7 +141,7 @@ impl Query for GetWebhookAnalyticsQuery {
             .clickhouse_service
             .get_webhook_failure_reasons(
                 self.deployment_id,
-                self.app_name.clone(),
+                self.app_slug.clone(),
                 self.endpoint_id,
                 start_date,
                 end_date,
@@ -183,7 +183,7 @@ impl Query for GetWebhookAnalyticsQuery {
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookTimeseriesQuery {
     pub deployment_id: i64,
-    pub app_name: Option<String>,
+    pub app_slug: Option<String>,
     pub endpoint_id: Option<i64>,
     pub interval: TimeseriesInterval,
     pub start_date: Option<DateTime<Utc>>,
@@ -194,7 +194,7 @@ impl GetWebhookTimeseriesQuery {
     pub fn new(deployment_id: i64, interval: TimeseriesInterval) -> Self {
         Self {
             deployment_id,
-            app_name: None,
+            app_slug: None,
             endpoint_id: None,
             interval,
             start_date: None,
@@ -202,8 +202,8 @@ impl GetWebhookTimeseriesQuery {
         }
     }
 
-    pub fn with_app_name(mut self, app_name: String) -> Self {
-        self.app_name = Some(app_name);
+    pub fn with_app_slug(mut self, app_slug: String) -> Self {
+        self.app_slug = Some(app_slug);
         self
     }
 
@@ -232,7 +232,7 @@ impl Query for GetWebhookTimeseriesQuery {
             .clickhouse_service
             .get_webhook_timeseries(
                 self.deployment_id,
-                self.app_name.clone(),
+                self.app_slug.clone(),
                 self.endpoint_id,
                 &self.interval,
                 start_date,

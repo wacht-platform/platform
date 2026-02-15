@@ -1,39 +1,54 @@
 use chrono::{DateTime, Utc};
 use clickhouse::Row;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
-// Core event and delivery structs for ClickHouse storage
-#[derive(Debug, Clone, Serialize, Deserialize, Row)]
-pub struct WebhookEvent {
-    pub deployment_id: i64,
-    pub app_name: String,
-    pub event_name: String,
-    pub event_id: String,
-    pub payload_size_bytes: i32,
-    pub filter_context: Option<String>,
-    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
-    pub timestamp: DateTime<Utc>,
+/// Custom serializer for DateTime<Utc> that formats as ISO 8601 for Tinybird
+fn serialize_timestamp<S>(timestamp: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    // Format as: 2024-01-01T12:00:00.000000Z
+    let formatted = timestamp.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
+    serializer.serialize_str(&formatted)
 }
 
+// Consolidated webhook log for both events and deliveries
 #[derive(Debug, Clone, Serialize, Deserialize, Row)]
-pub struct WebhookDelivery {
+pub struct WebhookLog {
     pub deployment_id: i64,
     pub delivery_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     pub endpoint_id: i64,
-    pub endpoint_url: String,
     pub event_name: String,
     pub status: String,
     pub http_status_code: Option<i32>,
     pub response_time_ms: Option<i32>,
     pub attempt_number: i32,
     pub max_attempts: i32,
-    pub error_message: Option<String>,
-    pub filtered_reason: Option<String>,
-    pub payload_s3_key: String,
+    pub payload: Option<String>,
+    pub payload_size_bytes: i32,
     pub response_body: Option<String>,
     pub response_headers: Option<String>,
-    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub request_headers: Option<String>,
+    #[serde(serialize_with = "serialize_timestamp")]
+    pub timestamp: DateTime<Utc>,
+}
+
+// Light version for long-term storage (without heavy columns)
+#[derive(Debug, Clone, Serialize, Deserialize, Row)]
+pub struct WebhookLogLight {
+    pub deployment_id: i64,
+    pub delivery_id: i64,
+    pub app_slug: String,
+    pub endpoint_id: i64,
+    pub event_name: String,
+    pub status: String,
+    pub http_status_code: Option<i32>,
+    pub response_time_ms: Option<i32>,
+    pub attempt_number: i32,
+    pub max_attempts: i32,
+    pub payload_size_bytes: i32,
+    #[serde(serialize_with = "serialize_timestamp")]
     pub timestamp: DateTime<Utc>,
 }
 
@@ -41,7 +56,7 @@ pub struct WebhookDelivery {
 #[derive(Debug, Clone, Serialize, Deserialize, Row)]
 pub struct WebhookMetrics {
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub time_bucket: DateTime<Utc>,
     pub total_events: i64,
@@ -228,17 +243,33 @@ pub struct WebhookTimeseriesResponse {
 pub struct WebhookDeliveryListRow {
     pub delivery_id: i64,
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     pub endpoint_id: i64,
-    pub endpoint_url: String,
     pub event_name: String,
     pub status: String,
     pub http_status_code: Option<i32>,
     pub response_time_ms: Option<i32>,
     pub attempt_number: i32,
     pub max_attempts: i32,
-    pub error_message: Option<String>,
     pub filtered_reason: Option<String>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub timestamp: DateTime<Utc>,
+}
+
+// Lightweight version for webhook_logs_light table (no endpoint_url)
+#[derive(Debug, Clone, Serialize, Deserialize, Row)]
+pub struct WebhookDeliveryListLightRow {
+    pub delivery_id: i64,
+    pub deployment_id: i64,
+    pub app_slug: String,
+    pub endpoint_id: i64,
+    pub event_name: String,
+    pub status: String,
+    pub http_status_code: Option<i32>,
+    pub response_time_ms: Option<i32>,
+    pub attempt_number: i32,
+    pub max_attempts: i32,
+    pub payload_size_bytes: i32,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
 }
@@ -248,20 +279,31 @@ pub struct WebhookDeliveryListRow {
 pub struct WebhookDeliveryDetailRow {
     pub delivery_id: i64,
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     pub endpoint_id: i64,
-    pub endpoint_url: String,
     pub event_name: String,
     pub status: String,
     pub http_status_code: Option<i32>,
     pub response_time_ms: Option<i32>,
     pub attempt_number: i32,
     pub max_attempts: i32,
-    pub error_message: Option<String>,
     pub filtered_reason: Option<String>,
-    pub payload_s3_key: String,
+    pub payload: Option<String>,
     pub response_body: Option<String>,
     pub response_headers: Option<String>,
+    pub request_headers: Option<String>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Row)]
+pub struct WebhookReplaySourceRow {
+    pub app_slug: String,
+    pub endpoint_id: i64,
+    pub event_name: String,
+    pub status: String,
+    pub max_attempts: i32,
+    pub payload: Option<String>,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub timestamp: DateTime<Utc>,
 }
@@ -273,18 +315,15 @@ pub struct WebhookDeliveryListResponse {
     pub delivery_id: i64,
     #[serde(with = "models::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     #[serde(with = "models::utils::serde::i64_as_string")]
     pub endpoint_id: i64,
-    pub endpoint_url: String,
     pub event_name: String,
     pub status: String,
     pub http_status_code: Option<i32>,
     pub response_time_ms: Option<i32>,
     pub attempt_number: i32,
     pub max_attempts: i32,
-    pub error_message: Option<String>,
-    pub filtered_reason: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -293,17 +332,14 @@ impl From<WebhookDeliveryListRow> for WebhookDeliveryListResponse {
         Self {
             delivery_id: row.delivery_id,
             deployment_id: row.deployment_id,
-            app_name: row.app_name,
+            app_slug: row.app_slug,
             endpoint_id: row.endpoint_id,
-            endpoint_url: row.endpoint_url,
             event_name: row.event_name,
             status: row.status,
             http_status_code: row.http_status_code,
             response_time_ms: row.response_time_ms,
             attempt_number: row.attempt_number,
             max_attempts: row.max_attempts,
-            error_message: row.error_message,
-            filtered_reason: row.filtered_reason,
             timestamp: row.timestamp,
         }
     }
@@ -314,17 +350,32 @@ impl From<WebhookDeliveryDetailRow> for WebhookDeliveryListResponse {
         Self {
             delivery_id: row.delivery_id,
             deployment_id: row.deployment_id,
-            app_name: row.app_name,
+            app_slug: row.app_slug,
             endpoint_id: row.endpoint_id,
-            endpoint_url: row.endpoint_url,
             event_name: row.event_name,
             status: row.status,
             http_status_code: row.http_status_code,
             response_time_ms: row.response_time_ms,
             attempt_number: row.attempt_number,
             max_attempts: row.max_attempts,
-            error_message: row.error_message,
-            filtered_reason: row.filtered_reason,
+            timestamp: row.timestamp,
+        }
+    }
+}
+
+impl From<WebhookDeliveryListLightRow> for WebhookDeliveryListResponse {
+    fn from(row: WebhookDeliveryListLightRow) -> Self {
+        Self {
+            delivery_id: row.delivery_id,
+            deployment_id: row.deployment_id,
+            app_slug: row.app_slug,
+            endpoint_id: row.endpoint_id,
+            event_name: row.event_name,
+            status: row.status,
+            http_status_code: row.http_status_code,
+            response_time_ms: row.response_time_ms,
+            attempt_number: row.attempt_number,
+            max_attempts: row.max_attempts,
             timestamp: row.timestamp,
         }
     }

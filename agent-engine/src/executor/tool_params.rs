@@ -30,7 +30,10 @@ impl AgentExecutor {
                     parameters = %tool_call.parameters,
                     "Parsed tool call"
                 );
-                let tool = self.ctx.agent.tools
+                let tool = self
+                    .ctx
+                    .agent
+                    .tools
                     .iter()
                     .find(|t| t.name == tool_call.tool_name)
                     .ok_or_else(|| {
@@ -179,7 +182,9 @@ impl AgentExecutor {
     }
 
     fn find_tool(&self, tool_name: &str) -> Result<&AiTool, AppError> {
-        self.ctx.agent.tools
+        self.ctx
+            .agent
+            .tools
             .iter()
             .find(|t| t.name == tool_name)
             .ok_or_else(|| AppError::BadRequest(format!("Tool '{tool_name}' not found")))
@@ -203,7 +208,7 @@ impl AgentExecutor {
             };
         }
 
-Ok(self.get_default_tool_parameters(tool))
+        Ok(self.get_default_tool_parameters(tool))
     }
 
     fn tool_needs_llm_params(&self, tool: &AiTool) -> bool {
@@ -430,7 +435,8 @@ Ok(self.get_default_tool_parameters(tool))
                 })?;
 
         let (response, _) = self
-            .create_weak_llm().await?
+            .create_weak_llm()
+            .await?
             .generate_structured_content::<ParameterGenerationResponse>(request_body)
             .await?;
 

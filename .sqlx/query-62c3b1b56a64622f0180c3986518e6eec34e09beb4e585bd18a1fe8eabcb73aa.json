@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT e.id as \"id!\", e.deployment_id as \"deployment_id!\", e.app_slug as \"app_slug!\",\n                           e.url as \"url!\", e.description, e.headers,                            e.max_retries as \"max_retries!\", e.timeout_seconds as \"timeout_seconds!\", e.is_active as \"is_active!\",\n                           e.failure_count as \"failure_count!\", e.last_failure_at, e.auto_disabled as \"auto_disabled!\", e.auto_disabled_at,\n                           e.rate_limit_config,\n                           e.created_at as \"created_at!\", e.updated_at as \"updated_at!\"\n                    FROM webhook_endpoints e\n                    WHERE e.deployment_id = $1 AND e.is_active = true\n                    ORDER BY e.created_at DESC\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_slug!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "url!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "headers",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_retries!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "timeout_seconds!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "is_active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "failure_count!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "last_failure_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "auto_disabled!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "auto_disabled_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "rate_limit_config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 14,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "62c3b1b56a64622f0180c3986518e6eec34e09beb4e585bd18a1fe8eabcb73aa"
+}

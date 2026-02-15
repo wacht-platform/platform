@@ -101,9 +101,11 @@ impl AgentFilesystem {
 
         // Workspace is persistent per context - symlink to persistent storage
         let persistent_workspace = self.persistent_workspace_path();
-        fs::create_dir_all(&persistent_workspace).await.map_err(|e| {
-            AppError::Internal(format!("Failed to create persistent workspace: {}", e))
-        })?;
+        fs::create_dir_all(&persistent_workspace)
+            .await
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to create persistent workspace: {}", e))
+            })?;
 
         let workspace_link = root.join("workspace");
         if !workspace_link.exists() {

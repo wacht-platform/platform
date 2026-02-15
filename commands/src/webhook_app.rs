@@ -4,7 +4,7 @@ use sqlx::{query, query_as};
 use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
-use models::{WebhookApp, WebhookAppEvent, webhook::WebhookEventDefinition};
+use models::WebhookApp;
 
 fn generate_signing_secret() -> String {
     use rand::Rng;
@@ -19,8 +19,10 @@ fn generate_signing_secret() -> String {
 pub struct CreateWebhookAppCommand {
     pub deployment_id: i64,
     pub name: String,
+    pub app_slug: Option<String>,
     pub description: Option<String>,
-    pub events: Vec<WebhookEventDefinition>,
+    pub failure_notification_emails: Option<Vec<String>>,
+    pub event_catalog_slug: Option<String>, // Added for shared event catalogs
 }
 
 impl CreateWebhookAppCommand {
@@ -28,9 +30,16 @@ impl CreateWebhookAppCommand {
         Self {
             deployment_id,
             name,
+            app_slug: None,
             description: None,
-            events: Vec::new(),
+            failure_notification_emails: None,
+            event_catalog_slug: None,
         }
+    }
+
+    pub fn with_app_slug(mut self, app_slug: String) -> Self {
+        self.app_slug = Some(app_slug);
+        self
     }
 
     pub fn with_description(mut self, description: String) -> Self {
@@ -38,8 +47,13 @@ impl CreateWebhookAppCommand {
         self
     }
 
-    pub fn with_events(mut self, events: Vec<WebhookEventDefinition>) -> Self {
-        self.events = events;
+    pub fn with_failure_notification_emails(mut self, emails: Vec<String>) -> Self {
+        self.failure_notification_emails = Some(emails);
+        self
+    }
+
+    pub fn with_event_catalog_slug(mut self, slug: String) -> Self {
+        self.event_catalog_slug = Some(slug);
         self
     }
 }
@@ -52,42 +66,40 @@ impl Command for CreateWebhookAppCommand {
 
         let signing_secret = generate_signing_secret();
 
+        // Generate app_slug: always use "slug_" prefix
+        let app_slug = if let Some(slug) = self.app_slug {
+            slug
+        } else {
+            format!("slug_{}", app_state.sf.next_id().unwrap_or(0))
+        };
+
         let app = query_as!(
             WebhookApp,
             r#"
-            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, is_active)
-            VALUES ($1, $2, $3, $4, true)
+            INSERT INTO webhook_apps (deployment_id, app_slug, name, description, signing_secret, failure_notification_emails, event_catalog_slug, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, true)
             RETURNING deployment_id as "deployment_id!",
+                      app_slug as "app_slug!",
                       name as "name!",
                       description,
                       signing_secret as "signing_secret!",
+                      failure_notification_emails,
+                      event_catalog_slug,
                       is_active as "is_active!",
                       created_at as "created_at!",
                       updated_at as "updated_at!"
             "#,
             self.deployment_id,
+            app_slug,
             self.name,
             self.description,
-            signing_secret
+            signing_secret,
+            serde_json::to_value(self.failure_notification_emails.unwrap_or_default())
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            self.event_catalog_slug
         )
         .fetch_one(&mut *tx)
         .await?;
-
-        for event in self.events {
-            query!(
-                r#"
-                INSERT INTO webhook_app_events (deployment_id, app_name, event_name, description, schema)
-                VALUES ($1, $2, $3, $4, $5)
-                "#,
-                self.deployment_id,
-                app.name.clone(),
-                event.name,
-                event.description,
-                event.schema
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
 
         tx.commit().await?;
         Ok(app)
@@ -97,42 +109,55 @@ impl Command for CreateWebhookAppCommand {
 #[derive(Debug, Deserialize)]
 pub struct UpdateWebhookAppCommand {
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     pub new_name: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
+    pub failure_notification_emails: Option<Vec<String>>,
+    pub event_catalog_slug: Option<String>,
 }
 
 impl Command for UpdateWebhookAppCommand {
     type Output = WebhookApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let app = query_as!(
+        let app: Option<WebhookApp> = query_as!(
             WebhookApp,
             r#"
             UPDATE webhook_apps
             SET name = COALESCE($3, name),
                 description = COALESCE($4, description),
                 is_active = COALESCE($5, is_active),
+                failure_notification_emails = COALESCE($6, failure_notification_emails),
+                event_catalog_slug = COALESCE($7, event_catalog_slug),
                 updated_at = NOW()
-            WHERE deployment_id = $1 AND name = $2
+            WHERE deployment_id = $1 AND app_slug = $2
             RETURNING deployment_id as "deployment_id!",
+                      app_slug as "app_slug!",
                       name as "name!",
                       description,
                       signing_secret as "signing_secret!",
+                      failure_notification_emails,
+                      event_catalog_slug,
                       is_active as "is_active!",
                       created_at as "created_at!",
                       updated_at as "updated_at!"
             "#,
             self.deployment_id,
-            self.app_name,
+            self.app_slug,
             self.new_name,
             self.description,
-            self.is_active
+            self.is_active,
+            self.failure_notification_emails
+                .map(|emails| serde_json::to_value(emails))
+                .transpose()
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            self.event_catalog_slug
         )
         .fetch_optional(&app_state.db_pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
+        .await?;
+
+        let app = app.ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
 
         Ok(app)
     }
@@ -141,7 +166,7 @@ impl Command for UpdateWebhookAppCommand {
 #[derive(Debug, Deserialize)]
 pub struct DeleteWebhookAppCommand {
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
 }
 
 impl Command for DeleteWebhookAppCommand {
@@ -151,10 +176,10 @@ impl Command for DeleteWebhookAppCommand {
         let result = query!(
             r#"
             DELETE FROM webhook_apps
-            WHERE deployment_id = $1 AND name = $2
+            WHERE deployment_id = $1 AND app_slug = $2
             "#,
             self.deployment_id,
-            self.app_name
+            self.app_slug
         )
         .execute(&app_state.db_pool)
         .await?;
@@ -168,63 +193,9 @@ impl Command for DeleteWebhookAppCommand {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct AddWebhookEventCommand {
-    pub deployment_id: i64,
-    pub app_name: String,
-    pub event: WebhookEventDefinition,
-}
-
-impl Command for AddWebhookEventCommand {
-    type Output = WebhookAppEvent;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Verify app exists and belongs to deployment
-        let app_exists = query!(
-            r#"
-            SELECT 1 as exists
-            FROM webhook_apps
-            WHERE deployment_id = $1 AND name = $2
-            "#,
-            self.deployment_id,
-            self.app_name
-        )
-        .fetch_optional(&app_state.db_pool)
-        .await?
-        .is_some();
-
-        if !app_exists {
-            return Err(AppError::NotFound("Webhook app not found".to_string()));
-        }
-
-        let event = query_as!(
-            WebhookAppEvent,
-            r#"
-            INSERT INTO webhook_app_events (deployment_id, app_name, event_name, description, schema)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING deployment_id as "deployment_id!",
-                      app_name as "app_name!",
-                      event_name as "event_name!",
-                      description,
-                      schema,
-                      created_at as "created_at!"
-            "#,
-            self.deployment_id,
-            self.app_name,
-            self.event.name,
-            self.event.description,
-            self.event.schema
-        )
-        .fetch_one(&app_state.db_pool)
-        .await?;
-
-        Ok(event)
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub struct RotateWebhookSecretCommand {
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
 }
 
 impl Command for RotateWebhookSecretCommand {
@@ -233,28 +204,32 @@ impl Command for RotateWebhookSecretCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let new_secret = generate_signing_secret();
 
-        let app = query_as!(
+        let app: Option<WebhookApp> = query_as!(
             WebhookApp,
             r#"
             UPDATE webhook_apps
             SET signing_secret = $3, updated_at = NOW()
-            WHERE deployment_id = $1 AND name = $2
-            RETURNING 
+            WHERE deployment_id = $1 AND app_slug = $2
+            RETURNING
                 deployment_id as "deployment_id!",
+                app_slug as "app_slug!",
                 name as "name!",
                 description,
                 signing_secret as "signing_secret!",
+                failure_notification_emails,
+                event_catalog_slug,
                 is_active as "is_active!",
                 created_at as "created_at!",
                 updated_at as "updated_at!"
             "#,
             self.deployment_id,
-            self.app_name,
+            self.app_slug,
             new_secret
         )
         .fetch_optional(&app_state.db_pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
+        .await?;
+
+        let app = app.ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
 
         Ok(app)
     }

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT webhook_failure_notification_template FROM deployment_email_templates WHERE deployment_id = $1\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "webhook_failure_notification_template",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "45c08f507830371abbb1193addb413b78f82fd21b3cb26c15acdce0da87bdaad"
+}

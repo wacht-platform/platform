@@ -1,15 +1,15 @@
 use axum::{
     Router,
     extract::DefaultBodyLimit,
-    routing::{delete, get, patch, post, put},
     http::Request,
-};
-use tower_http::{
-    cors::{Any, CorsLayer},
-    trace::TraceLayer,
-    classify::ServerErrorsFailureClass,
+    routing::{delete, get, patch, post, put},
 };
 use std::time::Duration;
+use tower_http::{
+    classify::ServerErrorsFailureClass,
+    cors::{Any, CorsLayer},
+    trace::TraceLayer,
+};
 
 use crate::api;
 use crate::middleware::backend_deployment_middleware;
@@ -297,8 +297,7 @@ fn settings_routes() -> Router<AppState> {
         // SMTP Configuration
         .route(
             "/settings/email/smtp",
-            post(api::settings::update_smtp_config)
-                .delete(api::settings::remove_smtp_config),
+            post(api::settings::update_smtp_config).delete(api::settings::remove_smtp_config),
         )
         .route(
             "/settings/email/smtp/verify",
@@ -338,16 +337,7 @@ fn segments_routes() -> Router<AppState> {
 
 // Analytics Routes
 fn analytics_routes() -> Router<AppState> {
-    Router::new()
-        .route("/analytics/summary", get(api::analytics::get_analytics_stats))
-        .route(
-            "/analytics/recent-signups",
-            get(api::analytics::get_recent_signups),
-        )
-        .route(
-            "/analytics/recent-signins",
-            get(api::analytics::get_recent_signins),
-        )
+    Router::new().route("/analytics", get(api::analytics::get_analytics_stats))
 }
 
 fn base_deployment_routes() -> Router<AppState> {
@@ -365,7 +355,10 @@ fn billing_routes() -> Router<AppState> {
             get(api::billing::get_billing_account).patch(api::billing::update_billing_account),
         )
         .route("/billing/checkout", post(api::billing::create_checkout))
-        .route("/billing/pulse/buy", post(api::billing::create_pulse_checkout))
+        .route(
+            "/billing/pulse/buy",
+            post(api::billing::create_pulse_checkout),
+        )
         .route("/billing/portal", get(api::billing::get_portal_url))
         .route("/billing/usage", get(api::billing::get_current_usage))
         .route("/billing/invoices", get(api::billing::list_invoices))
@@ -379,86 +372,34 @@ fn billing_routes() -> Router<AppState> {
 fn console_specific_routes() -> Router<AppState> {
     Router::new()
         .route(
+            "/webhooks/event-catalogs",
+            get(api::webhook::list_event_catalogs).post(api::webhook::create_event_catalog),
+        )
+        .route(
+            "/webhooks/event-catalogs/{slug}",
+            get(api::webhook::get_event_catalog).put(api::webhook::update_event_catalog),
+        )
+        .route(
+            "/webhooks/event-catalogs/{slug}/append-events",
+            post(api::webhook::append_events_to_catalog),
+        )
+        .route(
+            "/webhooks/event-catalogs/{slug}/archive-event",
+            post(api::webhook::archive_event_in_catalog),
+        )
+        .route(
+            "/api-auth/rate-limit-schemes",
+            get(api::api_key::list_rate_limit_schemes).post(api::api_key::create_rate_limit_scheme),
+        )
+        .route(
+            "/api-auth/rate-limit-schemes/{slug}",
+            get(api::api_key::get_rate_limit_scheme)
+                .patch(api::api_key::update_rate_limit_scheme)
+                .delete(api::api_key::delete_rate_limit_scheme),
+        )
+        .route(
             "/verify-dns",
             post(api::project::verify_deployment_dns_records),
-        )
-        .route(
-            "/webhooks/status",
-            get(api::webhook_console::get_webhook_status),
-        )
-        .route(
-            "/webhooks/rotate-secret",
-            post(api::webhook_console::rotate_webhook_secret),
-        )
-        .route(
-            "/webhooks/events",
-            get(api::webhook_console::get_available_events),
-        )
-        .route(
-            "/webhooks/endpoints",
-            get(api::webhook_console::list_webhook_endpoints),
-        )
-        .route(
-            "/webhooks/endpoints",
-            post(api::webhook_console::create_webhook_endpoint),
-        )
-        .route(
-            "/webhooks/endpoints/{endpoint_id}",
-            patch(api::webhook_console::update_webhook_endpoint),
-        )
-        .route(
-            "/webhooks/endpoints/{endpoint_id}",
-            delete(api::webhook_console::delete_webhook_endpoint),
-        )
-        .route(
-            "/webhooks/analytics",
-            get(api::webhook_console::get_webhook_analytics),
-        )
-        .route(
-            "/webhooks/analytics/timeseries",
-            get(api::webhook_console::get_webhook_timeseries),
-        )
-        .route(
-            "/webhooks/deliveries",
-            get(api::webhook_console::get_webhook_deliveries),
-        )
-        .route(
-            "/webhooks/deliveries/{delivery_id}",
-            get(api::webhook_console::get_webhook_delivery_details),
-        )
-        .route(
-            "/webhooks/deliveries/replay",
-            post(api::webhook_console::replay_webhook_deliveries),
-        )
-        .route(
-            "/webhooks/endpoints/{endpoint_id}/reactivate",
-            post(api::webhook_console::reactivate_webhook_endpoint),
-        )
-        .route(
-            "/webhooks/endpoints/{endpoint_id}/test",
-            post(api::webhook_console::test_webhook_endpoint),
-        )
-        .route(
-            "/api-keys/status",
-            get(api::api_key_console::get_api_key_status),
-        )
-        .route(
-            "/api-keys/deactivate",
-            post(api::api_key_console::deactivate_api_keys),
-        )
-        .route(
-            "/api-keys/stats",
-            get(api::api_key_console::get_api_key_stats),
-        )
-        .route("/api-keys", get(api::api_key_console::list_api_keys))
-        .route("/api-keys", post(api::api_key_console::create_api_key))
-        .route(
-            "/api-keys/{key_id}",
-            delete(api::api_key_console::revoke_api_key),
-        )
-        .route(
-            "/api-keys/{key_id}/rotate",
-            post(api::api_key_console::rotate_api_key),
         )
         .route(
             "/organizations/{org_id}/domains",
@@ -496,99 +437,152 @@ fn backend_specific_routes() -> Router<AppState> {
         .route("/webhooks/apps", get(api::webhook::list_webhook_apps))
         .route("/webhooks/apps", post(api::webhook::create_webhook_app))
         .route(
-            "/webhooks/apps/{app_name}",
+            "/webhooks/event-catalogs",
+            get(api::webhook::list_event_catalogs).post(api::webhook::create_event_catalog),
+        )
+        .route(
+            "/webhooks/event-catalogs/{slug}",
+            get(api::webhook::get_event_catalog).put(api::webhook::update_event_catalog),
+        )
+        .route(
+            "/webhooks/event-catalogs/{slug}/append-events",
+            post(api::webhook::append_events_to_catalog),
+        )
+        .route(
+            "/webhooks/event-catalogs/{slug}/archive-event",
+            post(api::webhook::archive_event_in_catalog),
+        )
+        .route(
+            "/webhooks/apps/{app_slug}",
             patch(api::webhook::update_webhook_app)
                 .get(api::webhook::get_webhook_app)
                 .delete(api::webhook::delete_webhook_app),
         )
         .route(
-            "/webhooks/apps/{app_name}/rotate-secret",
+            "/webhooks/apps/{app_slug}/rotate-secret",
             post(api::webhook::rotate_webhook_secret),
         )
         .route(
-            "/webhooks/apps/{app_name}/events",
+            "/webhooks/apps/{app_slug}/events",
             get(api::webhook::get_webhook_events),
         )
         .route(
-            "/webhooks/apps/{app_name}/endpoints",
+            "/webhooks/apps/{app_slug}/catalog",
+            get(api::webhook::get_webhook_catalog),
+        )
+        .route(
+            "/webhooks/apps/{app_slug}/endpoints",
             get(api::webhook::list_webhook_endpoints),
         )
         .route(
-            "/webhooks/apps/{app_name}/stats",
+            "/webhooks/apps/{app_slug}/endpoints",
+            post(api::webhook::create_webhook_endpoint_for_app),
+        )
+        .route(
+            "/webhooks/apps/{app_slug}/endpoints/{endpoint_id}",
+            patch(api::webhook::update_webhook_endpoint_for_app),
+        )
+        .route(
+            "/webhooks/apps/{app_slug}/endpoints/{endpoint_id}",
+            delete(api::webhook::delete_webhook_endpoint_for_app),
+        )
+        .route(
+            "/webhooks/apps/{app_slug}/stats",
             get(api::webhook::get_webhook_stats),
         )
         .route(
-            "/webhooks/apps/{app_name}/deliveries",
+            "/webhooks/apps/{app_slug}/deliveries",
             get(api::webhook::get_app_webhook_deliveries),
         )
         .route(
-            "/webhooks/endpoints",
-            post(api::webhook::create_webhook_endpoint),
-        )
-        .route(
-            "/webhooks/endpoints/{endpoint_id}",
-            patch(api::webhook::update_webhook_endpoint),
-        )
-        .route(
-            "/webhooks/endpoints/{endpoint_id}",
-            delete(api::webhook::delete_webhook_endpoint),
-        )
-        .route(
-            "/webhooks/apps/{app_name}/endpoints/{endpoint_id}/test",
+            "/webhooks/apps/{app_slug}/endpoints/{endpoint_id}/test",
             post(api::webhook::test_webhook_endpoint),
         )
         .route(
-            "/webhooks/apps/{app_name}/trigger",
+            "/webhooks/apps/{app_slug}/trigger",
             post(api::webhook::trigger_webhook_event),
         )
         .route(
-            "/webhooks/apps/{app_name}/trigger/batch",
-            post(api::webhook::batch_trigger_webhook_events),
+            "/webhooks/apps/{app_slug}/deliveries/{delivery_id}",
+            get(api::webhook::get_webhook_delivery_details_for_app),
         )
         .route(
-            "/webhooks/deliveries/{delivery_id}",
-            get(api::webhook::get_webhook_delivery_details),
+            "/webhooks/apps/{app_slug}/deliveries/replay",
+            get(api::webhook::list_webhook_replay_tasks)
+                .post(api::webhook::replay_webhook_delivery),
         )
         .route(
-            "/webhooks/apps/{app_name}/deliveries/replay",
-            post(api::webhook::replay_webhook_delivery),
+            "/webhooks/apps/{app_slug}/deliveries/replay/{task_id}",
+            get(api::webhook::get_webhook_replay_task_status),
+        )
+        .route(
+            "/webhooks/apps/{app_slug}/deliveries/replay/{task_id}/cancel",
+            post(api::webhook::cancel_webhook_replay_task),
         )
         .route(
             "/webhooks/endpoints/{endpoint_id}/reactivate",
             post(api::webhook::reactivate_webhook_endpoint),
         )
         .route(
-            "/webhooks/apps/{app_name}/analytics",
+            "/webhooks/apps/{app_slug}/analytics",
             get(api::webhook::get_webhook_analytics),
         )
         .route(
-            "/webhooks/apps/{app_name}/timeseries",
+            "/webhooks/apps/{app_slug}/timeseries",
             get(api::webhook::get_webhook_timeseries),
         )
         .route("/api-auth/apps", get(api::api_key::list_api_auth_apps))
         .route("/api-auth/apps", post(api::api_key::create_api_auth_app))
         .route(
-            "/api-auth/apps/{app_name}",
+            "/api-auth/apps/{app_slug}",
             get(api::api_key::get_api_auth_app),
         )
         .route(
-            "/api-auth/apps/{app_name}",
+            "/api-auth/apps/{app_slug}",
             patch(api::api_key::update_api_auth_app),
         )
         .route(
-            "/api-auth/apps/{app_name}",
+            "/api-auth/apps/{app_slug}",
             delete(api::api_key::delete_api_auth_app),
         )
         .route(
-            "/api-auth/apps/{app_name}/keys",
+            "/api-auth/rate-limit-schemes",
+            get(api::api_key::list_rate_limit_schemes).post(api::api_key::create_rate_limit_scheme),
+        )
+        .route(
+            "/api-auth/rate-limit-schemes/{slug}",
+            get(api::api_key::get_rate_limit_scheme)
+                .patch(api::api_key::update_rate_limit_scheme)
+                .delete(api::api_key::delete_rate_limit_scheme),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/keys",
             get(api::api_key::list_api_keys),
         )
         .route(
-            "/api-auth/apps/{app_name}/keys",
+            "/api-auth/apps/{app_slug}/keys",
             post(api::api_key::create_api_key),
         )
-        .route("/api-auth/keys/revoke", post(api::api_key::revoke_api_key))
-        .route("/api-auth/keys/rotate", post(api::api_key::rotate_api_key))
+        .route(
+            "/api-auth/apps/{app_slug}/keys/{key_id}/revoke",
+            post(api::api_key::revoke_api_key_for_app),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/keys/{key_id}/rotate",
+            post(api::api_key::rotate_api_key_for_app),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/audit/logs",
+            get(api::api_key::get_api_audit_logs),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/audit/analytics",
+            get(api::api_key::get_api_audit_analytics),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/audit/timeseries",
+            get(api::api_key::get_api_audit_timeseries),
+        )
         .route(
             "/notifications",
             post(api::notifications::create_notification),
@@ -648,13 +642,15 @@ pub async fn create_console_router(state: AppState) -> Router {
                         version = ?request.version(),
                     )
                 })
-                .on_failure(|error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
-                    tracing::error!(
-                        status = %error,
-                        latency_ms = _latency.as_millis(),
-                        "response failed"
-                    );
-                }),
+                .on_failure(
+                    |error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
+                        tracing::error!(
+                            status = %error,
+                            latency_ms = _latency.as_millis(),
+                            "response failed"
+                        );
+                    },
+                ),
         )
         .layer(cors)
 }
@@ -687,13 +683,15 @@ pub async fn create_backend_router(state: AppState) -> Router {
                         version = ?request.version(),
                     )
                 })
-                .on_failure(|error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
-                    tracing::error!(
-                        status = %error,
-                        latency_ms = _latency.as_millis(),
-                        "response failed"
-                    );
-                }),
+                .on_failure(
+                    |error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
+                        tracing::error!(
+                            status = %error,
+                            latency_ms = _latency.as_millis(),
+                            "response failed"
+                        );
+                    },
+                ),
         )
         .layer(cors)
 }
@@ -717,13 +715,15 @@ pub async fn create_frontend_router(state: AppState) -> Router {
                         version = ?request.version(),
                     )
                 })
-                .on_failure(|error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
-                    tracing::error!(
-                        status = %error,
-                        latency_ms = _latency.as_millis(),
-                        "response failed"
-                    );
-                }),
+                .on_failure(
+                    |error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
+                        tracing::error!(
+                            status = %error,
+                            latency_ms = _latency.as_millis(),
+                            "response failed"
+                        );
+                    },
+                ),
         )
         .layer(cors)
 }

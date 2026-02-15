@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO agent_execution_contexts\n            (id, created_at, updated_at, deployment_id, title, system_instructions, context_group, last_activity_at, status, parent_context_id)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "568b4cbb92c2c95f4c4cdecc6ef0143dd107e072b380a2cd4e19fd87907be94d"
+}

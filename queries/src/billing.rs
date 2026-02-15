@@ -1,11 +1,11 @@
 use crate::Query;
-use sqlx::Row;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
 use common::state::AppState;
 use models::billing::{BillingAccount, BillingAccountWithSubscription, Subscription};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 
 pub struct GetBillingAccountQuery {
     owner_id: String,
@@ -116,7 +116,6 @@ impl Query for GetSubscriptionByProviderIdQuery {
             .bind(sub.billing_account_id)
             .fetch_one(&state.db_pool)
             .await?;
-
 
             Ok(Some(BillingAccountWithSubscription {
                 billing_account,
@@ -404,7 +403,7 @@ impl Query for GetOwnerIdByDeploymentIdQuery {
             FROM deployments d
             JOIN projects p ON d.project_id = p.id
             WHERE d.id = $1
-            "#
+            "#,
         )
         .bind(self.deployment_id)
         .fetch_optional(&state.db_pool)
@@ -471,7 +470,7 @@ impl Query for ListBillingInvoicesQuery {
             FROM billing_invoices
             WHERE billing_account_id = $1
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .bind(self.billing_account_id)
         .fetch_all(&state.db_pool)

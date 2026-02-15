@@ -6,28 +6,25 @@ use sqlx::query;
 use common::error::AppError;
 use common::state::AppState;
 use common::utils::webhook::generate_webhook_signature;
-use dto::clickhouse::webhook::{WebhookDelivery, WebhookEvent};
+use dto::clickhouse::webhook::WebhookLog;
 use dto::json::nats::NatsTaskMessage;
-use models::webhook::WebhookEventTrigger;
 
-use super::webhook_storage::{RetrieveWebhookPayloadCommand, StoreWebhookPayloadCommand};
-use super::webhook_subscription::evaluate_filter;
 use super::{Command, GetSubscribedEndpointsCommand};
 
 #[derive(Debug, Deserialize)]
 pub struct TriggerWebhookEventCommand {
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     pub event_name: String,
     pub payload: Value,
     pub filter_context: Option<Value>,
 }
 
 impl TriggerWebhookEventCommand {
-    pub fn new(deployment_id: i64, app_name: String, event_name: String, payload: Value) -> Self {
+    pub fn new(deployment_id: i64, app_slug: String, event_name: String, payload: Value) -> Self {
         Self {
             deployment_id,
-            app_name,
+            app_slug,
             event_name,
             payload,
             filter_context: None,
@@ -53,12 +50,12 @@ impl Command for TriggerWebhookEventCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let app_info = query!(
             r#"
-            SELECT name
+            SELECT app_slug, name
             FROM webhook_apps
-            WHERE deployment_id = $1 AND name = $2 AND is_active = true
+            WHERE deployment_id = $1 AND app_slug = $2 AND is_active = true
             "#,
             self.deployment_id,
-            self.app_name
+            self.app_slug
         )
         .fetch_optional(&app_state.db_pool)
         .await?;
@@ -68,87 +65,21 @@ impl Command for TriggerWebhookEventCommand {
             None => return Err(AppError::NotFound("Webhook app not found".to_string())),
         };
 
-        let event_id = app_state.sf.next_id().unwrap();
         let payload_size = self.payload.to_string().len() as i32;
+        let app_slug = app_info.app_slug.clone();
 
-        let event = WebhookEvent {
-            deployment_id: self.deployment_id,
-            app_name: app_info.name.clone(),
-            event_name: self.event_name.clone(),
-            event_id: event_id.to_string(),
-            payload_size_bytes: payload_size,
-            filter_context: self.filter_context.as_ref().map(|v| v.to_string()),
-            timestamp: Utc::now(),
-        };
-
-        if let Err(e) = app_state
-            .clickhouse_service
-            .insert_webhook_event(&event)
-            .await
-        {
-            tracing::warn!("Failed to log webhook event to ClickHouse: {}", e);
-        }
-
-        // Store payload in S3 once for all deliveries
-        let payload_s3_key = StoreWebhookPayloadCommand::new(self.payload.clone())
-            .execute(app_state)
-            .await?;
-
-        // Get all subscribed endpoints using the cached command
         let endpoints = GetSubscribedEndpointsCommand::new(
             self.deployment_id,
-            self.app_name.clone(),
+            app_slug.clone(),
             self.event_name.clone(),
         )
         .execute(app_state)
         .await?;
 
         let mut delivery_ids = Vec::new();
-        let mut filtered_count = 0;
+        let filtered_count = 0;
 
         for endpoint in endpoints {
-            // Apply filter rules - evaluate against the event payload
-            if let Some(ref filter_rules) = endpoint.filter_rules {
-                if !evaluate_filter(filter_rules, &self.payload) {
-                    filtered_count += 1;
-
-                    // Log filtered delivery to ClickHouse
-                    let delivery = WebhookDelivery {
-                        deployment_id: self.deployment_id,
-                        delivery_id: app_state.sf.next_id().unwrap() as i64,
-                        app_name: app_info.name.clone(),
-                        endpoint_id: endpoint.id,
-                        endpoint_url: endpoint.url.clone(),
-                        event_name: self.event_name.clone(),
-                        status: "filtered".to_string(),
-                        http_status_code: None,
-                        response_time_ms: None,
-                        attempt_number: 0,
-                        max_attempts: endpoint.max_retries,
-                        error_message: None,
-                        filtered_reason: Some("Filter rules not matched".to_string()),
-                        payload_s3_key: payload_s3_key.clone(),
-                        response_body: None,
-                        response_headers: None,
-                        timestamp: Utc::now(),
-                    };
-
-                    if let Err(e) = app_state
-                        .clickhouse_service
-                        .insert_webhook_delivery(&delivery)
-                        .await
-                    {
-                        tracing::warn!("Failed to log filtered delivery to ClickHouse: {}", e);
-                    }
-
-                    tracing::debug!(
-                        "Filtered out webhook delivery for endpoint {} due to filter rules",
-                        endpoint.id
-                    );
-                    continue;
-                }
-            }
-
             // Generate Snowflake ID for delivery (used as webhook_id)
             let delivery_id = app_state.sf.next_id()? as i64;
             let webhook_id = format!("msg_{}", delivery_id);
@@ -162,20 +93,21 @@ impl Command for TriggerWebhookEventCommand {
                 &self.payload,
             );
 
-            // Queue for delivery
+            // Queue for delivery with payload stored directly in database
             let delivery = query!(
                 r#"
                 INSERT INTO active_webhook_deliveries
-                (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, webhook_id, webhook_timestamp, signature, max_attempts)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                (id, endpoint_id, deployment_id, app_slug, event_name, payload, filter_rules, payload_size_bytes, webhook_id, webhook_timestamp, signature, max_attempts)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING id
                 "#,
                 delivery_id,
                 endpoint.id,
                 self.deployment_id,
-                app_info.name.clone(),
+                app_slug.clone(),
                 self.event_name,
-                payload_s3_key,
+                self.payload.clone(),
+                endpoint.filter_rules.clone(),
                 self.payload.to_string().len() as i32,
                 webhook_id,
                 webhook_timestamp,
@@ -187,33 +119,33 @@ impl Command for TriggerWebhookEventCommand {
 
             delivery_ids.push(delivery.id);
 
-            // Log pending delivery to ClickHouse
-            let ch_delivery = WebhookDelivery {
+            // Log pending delivery to Tinybird
+            let payload_json = serde_json::to_string(&self.payload).unwrap_or_default();
+            let ch_log = WebhookLog {
                 deployment_id: self.deployment_id,
                 delivery_id: delivery.id,
-                app_name: app_info.name.clone(),
+                app_slug: app_slug.clone(),
                 endpoint_id: endpoint.id,
-                endpoint_url: endpoint.url.clone(),
                 event_name: self.event_name.clone(),
                 status: "pending".to_string(),
                 http_status_code: None,
                 response_time_ms: None,
                 attempt_number: 0,
                 max_attempts: endpoint.max_retries,
-                error_message: None,
-                filtered_reason: None,
-                payload_s3_key: payload_s3_key.clone(),
+                payload: Some(payload_json),
+                payload_size_bytes: payload_size,
                 response_body: None,
                 response_headers: None,
+                request_headers: None,
                 timestamp: Utc::now(),
             };
 
             if let Err(e) = app_state
                 .clickhouse_service
-                .insert_webhook_delivery(&ch_delivery)
+                .insert_webhook_log(&ch_log)
                 .await
             {
-                tracing::warn!("Failed to log pending delivery to ClickHouse: {}", e);
+                tracing::warn!("Failed to log pending delivery to Tinybird: {}", e);
             }
 
             // Publish to NATS for async delivery via worker
@@ -245,37 +177,6 @@ impl Command for TriggerWebhookEventCommand {
             delivery_ids,
             filtered_count,
         })
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BatchTriggerWebhookEventsCommand {
-    pub deployment_id: i64,
-    pub app_name: String,
-    pub events: Vec<WebhookEventTrigger>,
-}
-
-impl Command for BatchTriggerWebhookEventsCommand {
-    type Output = Vec<TriggerWebhookEventResult>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut results = Vec::new();
-
-        for event in self.events {
-            let result = TriggerWebhookEventCommand::new(
-                self.deployment_id,
-                self.app_name.clone(),
-                event.event_name,
-                event.payload,
-            )
-            .with_filter_context(event.filter_context.unwrap_or(Value::Null))
-            .execute(app_state)
-            .await?;
-
-            results.push(result);
-        }
-
-        Ok(results)
     }
 }
 
@@ -315,134 +216,59 @@ impl Command for ReplayWebhookDeliveryCommand {
             ));
         }
 
-        // Get delivery details from ClickHouse (only completed deliveries)
-        let (
-            endpoint_id,
-            event_name,
-            payload_s3_key,
-            payload_size_bytes,
-            webhook_id,
-            webhook_timestamp,
-            signature,
-            max_attempts,
-            app_name,
-            _endpoint_url,
-        ): (
-            i64,
-            String,
-            String,
-            i32,
-            String,
-            i64,
-            Option<String>,
-            i32,
-            String,
-            String,
-        ) = {
-            let delivery_details = app_state
-                .clickhouse_service
-                .get_webhook_delivery_details(self.deployment_id, self.delivery_id)
-                .await
-                .map_err(|e| {
-                    tracing::error!("Failed to get delivery details from ClickHouse: {}", e);
-                    AppError::NotFound("Delivery not found or not yet completed.".to_string())
-                })?;
-
-            tracing::debug!(
-                "Got delivery details from ClickHouse: {:?}",
-                delivery_details
-            );
-
-            // Extract the necessary fields from the delivery struct
-            let endpoint_id = delivery_details.endpoint_id;
-            let event_name = delivery_details.event_name.clone();
-            let original_s3_key = &delivery_details.payload_s3_key;
-
-            // Retrieve the original payload from S3
-            let payload = RetrieveWebhookPayloadCommand::new(original_s3_key.to_string())
-                .execute(app_state)
-                .await
-                .map_err(|e| {
-                    AppError::BadRequest(format!("Failed to retrieve original payload: {}", e))
-                })?;
-
-            // Store the payload in S3 for the new delivery
-            let payload_s3_key = StoreWebhookPayloadCommand::new(payload.clone())
-                .execute(app_state)
-                .await
-                .map_err(|e| {
-                    tracing::error!("Failed to store webhook payload for retry: {}", e);
-                    e
-                })?;
-
-            // Get endpoint details to generate new signature
-            tracing::info!("Looking up endpoint with id: {} for retry", endpoint_id);
-            let endpoint = query!(
-                r#"
-                SELECT e.id, e.url, e.max_retries, e.app_name, a.signing_secret, e.deployment_id
-                FROM webhook_endpoints e
-                JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_name = a.name)
-                WHERE e.id = $1
-                "#,
-                endpoint_id
-            )
-            .fetch_optional(&app_state.db_pool)
+        // Replay source is read from ClickHouse history, not active queue.
+        let replay_source = app_state
+            .clickhouse_service
+            .get_webhook_replay_source(self.deployment_id, self.delivery_id)
             .await?;
 
-            if endpoint.is_none() {
-                tracing::warn!(
-                    "Endpoint {} no longer exists - it may have been deleted",
-                    endpoint_id
-                );
-                return Err(AppError::NotFound(
-                    "Cannot retry delivery: The webhook endpoint has been deleted. Please create a new endpoint and trigger the event again.".to_string()
-                ));
-            }
+        let payload_raw = replay_source.payload.ok_or_else(|| {
+            AppError::BadRequest("Cannot replay delivery without payload".to_string())
+        })?;
+        let payload: Value = serde_json::from_str(&payload_raw)
+            .map_err(|e| AppError::BadRequest(format!("Invalid replay payload JSON: {}", e)))?;
 
-            let endpoint = endpoint.unwrap();
+        let endpoint_id = replay_source.endpoint_id;
+        let event_name = replay_source.event_name;
+        let app_slug = replay_source.app_slug;
 
-            // Verify deployment_id matches
-            if endpoint.deployment_id != self.deployment_id {
-                tracing::error!(
-                    "Deployment mismatch: endpoint belongs to deployment {}, but retry requested for deployment {}",
-                    endpoint.deployment_id,
-                    self.deployment_id
-                );
-                return Err(AppError::BadRequest(format!(
-                    "Endpoint belongs to different deployment"
-                )));
-            }
+        // Get endpoint details to generate new signature
+        tracing::info!("Looking up endpoint with id: {} for replay", endpoint_id);
+        let endpoint = query!(
+            r#"
+            SELECT e.id, e.url, e.max_retries, a.signing_secret, e.deployment_id
+            FROM webhook_endpoints e
+            JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_slug = a.app_slug)
+            WHERE e.id = $1
+            "#,
+            endpoint_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
 
-            // Generate webhook_id and timestamp for Standard Webhooks
-            let webhook_id = format!("msg_{}", app_state.sf.next_id()?);
-            let webhook_timestamp = Utc::now().timestamp();
-
-            // Generate new signature with webhook_id and timestamp
-            let signature = Some(generate_webhook_signature(
-                &endpoint.signing_secret,
-                &webhook_id,
-                webhook_timestamp,
-                &payload,
+        if endpoint.is_none() {
+            tracing::warn!(
+                "Endpoint {} no longer exists - it may have been deleted",
+                endpoint_id
+            );
+            return Err(AppError::NotFound(
+                "Cannot replay delivery: The webhook endpoint has been deleted. Please create a new endpoint and trigger the event again.".to_string()
             ));
-            let payload_size_bytes =
-                serde_json::to_string(&payload).unwrap_or_default().len() as i32;
-            let max_attempts = endpoint.max_retries.unwrap_or(5);
-            let app_name = endpoint.app_name;
-            let endpoint_url = endpoint.url;
+        }
 
-            (
-                endpoint_id,
-                event_name,
-                payload_s3_key,
-                payload_size_bytes,
-                webhook_id,
-                webhook_timestamp,
-                signature,
-                max_attempts,
-                app_name,
-                endpoint_url,
-            )
-        };
+        let endpoint = endpoint.unwrap();
+
+        // Verify deployment_id matches
+        if endpoint.deployment_id != self.deployment_id {
+            tracing::error!(
+                "Deployment mismatch: endpoint belongs to deployment {}, but replay requested for deployment {}",
+                endpoint.deployment_id,
+                self.deployment_id
+            );
+            return Err(AppError::BadRequest(format!(
+                "Endpoint belongs to different deployment"
+            )));
+        }
 
         // Verify endpoint is active before replaying
         let endpoint_active = query!(
@@ -464,23 +290,66 @@ impl Command for ReplayWebhookDeliveryCommand {
             ));
         }
 
+        // Snapshot current filter rules so worker can evaluate consistently.
+        let current_subscription = query!(
+            r#"
+            SELECT filter_rules
+            FROM webhook_endpoint_subscriptions
+            WHERE endpoint_id = $1 AND deployment_id = $2 AND app_slug = $3 AND event_name = $4
+            "#,
+            endpoint_id,
+            self.deployment_id,
+            app_slug.clone(),
+            event_name.clone()
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "Cannot replay delivery: endpoint is no longer subscribed to this event."
+                    .to_string(),
+            )
+        })?;
+
         // Generate Snowflake ID for new delivery
         let new_delivery_id = app_state.sf.next_id()? as i64;
+        let webhook_id = format!("msg_{}", new_delivery_id);
+        let webhook_timestamp = Utc::now().timestamp();
 
-        // Create new delivery with reset attempts
+        // Generate new signature with webhook_id and timestamp
+        let signature = Some(generate_webhook_signature(
+            &endpoint.signing_secret,
+            &webhook_id,
+            webhook_timestamp,
+            &payload,
+        ));
+        let payload_size_bytes = serde_json::to_string(&payload).unwrap_or_default().len() as i32;
+        let max_attempts = replay_source.max_attempts.max(1);
+
+        tracing::info!(
+            original_delivery_id = self.delivery_id,
+            new_delivery_id,
+            deployment_id = self.deployment_id,
+            endpoint_id,
+            event_name = %event_name,
+            "Replay queued with snapshot of current subscription filter rules",
+        );
+
+        // Create new delivery with payload stored directly in database
         let new_delivery = query!(
             r#"
             INSERT INTO active_webhook_deliveries
-            (id, endpoint_id, deployment_id, app_name, event_name, payload_s3_key, payload_size_bytes, webhook_id, webhook_timestamp, signature, max_attempts, attempts)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0)
+            (id, endpoint_id, deployment_id, app_slug, event_name, payload, filter_rules, payload_size_bytes, webhook_id, webhook_timestamp, signature, max_attempts, attempts)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0)
             RETURNING id
             "#,
             new_delivery_id,
             endpoint_id,
             self.deployment_id,
-            app_name.clone(),
+            app_slug.clone(),
             event_name.clone(),
-            payload_s3_key,
+            payload,
+            current_subscription.filter_rules,
             payload_size_bytes,
             webhook_id,
             webhook_timestamp,

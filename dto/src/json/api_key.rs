@@ -1,12 +1,8 @@
 use chrono::{DateTime, Utc};
-use models::api_key::{ApiKey, ApiAuthApp, RateLimit};
+use models::api_key::{ApiAuthApp, ApiKey, RateLimit};
 use models::api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-// =====================================================
-// API KEY STATUS & STATS
-// =====================================================
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiKeyStatus {
@@ -29,10 +25,6 @@ pub struct ApiKeyActivationResponse {
     pub message: String,
 }
 
-// =====================================================
-// API KEY APP REQUESTS
-// =====================================================
-
 #[derive(Debug, Deserialize)]
 pub struct ListApiAuthAppsQuery {
     pub include_inactive: Option<bool>,
@@ -45,27 +37,92 @@ pub struct ListApiAuthAppsResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CreateApiAuthAppRequest {
+pub struct CreateRateLimitSchemeRequest {
+    pub slug: String,
     pub name: String,
     pub description: Option<String>,
-    pub rate_limits: Option<Vec<RateLimit>>,
+    pub rules: Vec<RateLimit>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateRateLimitSchemeRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub rules: Option<Vec<RateLimit>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListRateLimitSchemesResponse<T> {
+    pub schemes: Vec<T>,
+    pub total: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateApiAuthAppRequest {
+    pub app_slug: String,
+    pub name: String,
+    pub key_prefix: String,
+    pub description: Option<String>,
+    pub rate_limit_scheme_slug: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateApiAuthAppRequest {
     pub name: Option<String>,
+    pub key_prefix: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
-    pub rate_limits: Option<Vec<RateLimit>>,
+    pub rate_limit_scheme_slug: Option<String>,
 }
-
-// =====================================================
-// API KEY REQUESTS
-// =====================================================
 
 #[derive(Debug, Deserialize)]
 pub struct ListApiKeysQuery {
     pub include_inactive: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListApiAuditLogsQuery {
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+    pub outcome: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string_or_number_to_option_i64"
+    )]
+    pub key_id: Option<i64>,
+    pub start_date: Option<DateTime<Utc>>,
+    pub end_date: Option<DateTime<Utc>>,
+    pub cursor: Option<String>,
+    pub cursor_ts: Option<DateTime<Utc>>,
+    pub cursor_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetApiAuditAnalyticsQuery {
+    pub start_date: Option<DateTime<Utc>>,
+    pub end_date: Option<DateTime<Utc>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string_or_number_to_option_i64"
+    )]
+    pub key_id: Option<i64>,
+    pub include_top_keys: Option<bool>,
+    pub include_top_paths: Option<bool>,
+    pub include_blocked_reasons: Option<bool>,
+    pub include_rate_limits: Option<bool>,
+    pub top_limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetApiAuditTimeseriesQuery {
+    pub start_date: Option<DateTime<Utc>>,
+    pub end_date: Option<DateTime<Utc>>,
+    pub interval: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string_or_number_to_option_i64"
+    )]
+    pub key_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -73,46 +130,128 @@ pub struct ListApiKeysResponse {
     pub keys: Vec<ApiKey>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ApiKeyScopePreset {
-    Default,   // Basic read-only access
-    ReadOnly,  // Full read-only access
-    ReadWrite, // Read and write, no delete
-    Admin,     // Full admin access
-    Custom,    // Custom permissions list
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiAuditLog {
+    pub request_id: String,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    pub app_slug: String,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub key_id: i64,
+    pub key_name: String,
+    pub outcome: String,
+    pub blocked_by_rule: Option<String>,
+    pub client_ip: String,
+    pub path: String,
+    pub user_agent: Option<String>,
+    pub rate_limits: Option<Value>,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiAuditLogsResponse {
+    pub data: Vec<ApiAuditLog>,
+    pub limit: u32,
+    pub has_more: bool,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiAuditAnalyticsResponse {
+    pub total_requests: u64,
+    pub allowed_requests: u64,
+    pub blocked_requests: u64,
+    pub success_rate: f64,
+    pub keys_used_24h: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_keys: Option<Vec<ApiAuditTopKey>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_paths: Option<Vec<ApiAuditTopPath>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_reasons: Option<Vec<ApiAuditBlockedReason>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_limit_stats: Option<ApiAuditRateLimitBreakdown>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiAuditTopKey {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub key_id: i64,
+    pub key_name: String,
+    pub total_requests: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiAuditTopPath {
+    pub path: String,
+    pub total_requests: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiAuditBlockedReason {
+    pub blocked_by_rule: String,
+    pub count: i64,
+    pub percentage: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiAuditRateLimitBreakdown {
+    pub total_hits: i64,
+    pub percentage_of_blocked: f64,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub top_rules: Vec<ApiAuditRateLimitRule>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiAuditRateLimitRule {
+    pub rule: String,
+    pub hit_count: i64,
+    pub percentage: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiAuditTimeseriesPoint {
+    pub timestamp: DateTime<Utc>,
+    pub total_requests: i64,
+    pub allowed_requests: i64,
+    pub blocked_requests: i64,
+    pub success_rate: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiAuditTimeseriesResponse {
+    pub data: Vec<ApiAuditTimeseriesPoint>,
+    pub interval: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateApiKeyRequest {
     pub name: String,
-    pub key_prefix: Option<String>, // Optional for console API (auto-determined), required for backend API
-    pub scope_preset: Option<ApiKeyScopePreset>, // Use a preset or custom
-    pub permissions: Option<Vec<String>>, // Used when scope_preset is Custom or None
+    pub permissions: Option<Vec<String>>, // If omitted, default scopes are applied
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string_or_number_to_option_i64"
+    )]
+    pub organization_membership_id: Option<i64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_string_or_number_to_option_i64"
+    )]
+    pub workspace_membership_id: Option<i64>,
     pub metadata: Option<Value>,
     pub expires_at: Option<DateTime<Utc>>,
 }
 
 impl CreateApiKeyRequest {
-    /// Get the actual permissions based on preset or custom permissions
+    /// Get the actual permissions based on provided permissions or defaults
     pub fn get_permissions(&self) -> Vec<String> {
-        match &self.scope_preset {
-            Some(ApiKeyScopePreset::Default) | None => {
-                ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes())
+        if let Some(perms) = &self.permissions {
+            if !perms.is_empty() {
+                return perms.clone();
             }
-            Some(ApiKeyScopePreset::ReadOnly) => {
-                ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::readonly_scopes())
-            }
-            Some(ApiKeyScopePreset::ReadWrite) => {
-                ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::readwrite_scopes())
-            }
-            Some(ApiKeyScopePreset::Admin) => {
-                vec![ApiKeyScope::AdminAccess.as_str().to_string()]
-            }
-            Some(ApiKeyScopePreset::Custom) => self.permissions.clone().unwrap_or_else(|| {
-                ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes())
-            }),
         }
+
+        ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes())
     }
 }
 
@@ -175,10 +314,6 @@ where
         .transpose()
 }
 
-// =====================================================
-// API KEY SCOPE INFORMATION
-// =====================================================
-
 #[derive(Debug, Serialize)]
 pub struct ApiKeyScopeInfo {
     pub scope: String,
@@ -187,74 +322,8 @@ pub struct ApiKeyScopeInfo {
 }
 
 #[derive(Debug, Serialize)]
-pub struct AvailableScopesResponse {
-    pub scopes: Vec<ApiKeyScopeInfo>,
-    pub presets: Vec<ScopePresetInfo>,
-}
-
-#[derive(Debug, Serialize)]
 pub struct ScopePresetInfo {
     pub name: String,
     pub description: String,
     pub scopes: Vec<String>,
-}
-
-impl AvailableScopesResponse {
-    pub fn new() -> Self {
-        let scopes = vec![
-            // User Management
-            ApiKeyScopeInfo {
-                scope: "users:read".to_string(),
-                description: "Read user information".to_string(),
-                category: "User Management".to_string(),
-            },
-            ApiKeyScopeInfo {
-                scope: "users:write".to_string(),
-                description: "Create and update users".to_string(),
-                category: "User Management".to_string(),
-            },
-            ApiKeyScopeInfo {
-                scope: "users:delete".to_string(),
-                description: "Delete users".to_string(),
-                category: "User Management".to_string(),
-            },
-            // Organizations
-            ApiKeyScopeInfo {
-                scope: "organizations:read".to_string(),
-                description: "Read organization information".to_string(),
-                category: "Organizations".to_string(),
-            },
-            ApiKeyScopeInfo {
-                scope: "organizations:write".to_string(),
-                description: "Create and update organizations".to_string(),
-                category: "Organizations".to_string(),
-            },
-            // Add more as needed...
-        ];
-
-        let presets = vec![
-            ScopePresetInfo {
-                name: "default".to_string(),
-                description: "Basic read-only access to essential resources".to_string(),
-                scopes: ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes()),
-            },
-            ScopePresetInfo {
-                name: "read_only".to_string(),
-                description: "Full read-only access to all resources".to_string(),
-                scopes: ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::readonly_scopes()),
-            },
-            ScopePresetInfo {
-                name: "read_write".to_string(),
-                description: "Read and write access (no delete permissions)".to_string(),
-                scopes: ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::readwrite_scopes()),
-            },
-            ScopePresetInfo {
-                name: "admin".to_string(),
-                description: "Full administrative access to all resources".to_string(),
-                scopes: vec![ApiKeyScope::AdminAccess.as_str().to_string()],
-            },
-        ];
-
-        Self { scopes, presets }
-    }
 }

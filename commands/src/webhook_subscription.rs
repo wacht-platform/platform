@@ -21,15 +21,15 @@ pub struct EndpointWithRules {
 #[derive(Debug, Deserialize)]
 pub struct GetSubscribedEndpointsCommand {
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     pub event_name: String,
 }
 
 impl GetSubscribedEndpointsCommand {
-    pub fn new(deployment_id: i64, app_name: String, event_name: String) -> Self {
+    pub fn new(deployment_id: i64, app_slug: String, event_name: String) -> Self {
         Self {
             deployment_id,
-            app_name,
+            app_slug,
             event_name,
         }
     }
@@ -42,7 +42,7 @@ impl Command for GetSubscribedEndpointsCommand {
         // Create cache key
         let cache_key = format!(
             "webhook:subs:{}:{}:{}",
-            self.deployment_id, self.app_name, self.event_name
+            self.deployment_id, self.app_slug, self.event_name
         );
 
         // Try to get from Redis cache first
@@ -61,7 +61,7 @@ impl Command for GetSubscribedEndpointsCommand {
         // Cache miss - query from database
         let endpoints = query!(
             r#"
-            SELECT 
+            SELECT
                 e.id as "id!",
                 e.url as "url!",
                 e.headers,
@@ -71,14 +71,14 @@ impl Command for GetSubscribedEndpointsCommand {
                 a.signing_secret as "signing_secret!"
             FROM webhook_endpoints e
             JOIN webhook_endpoint_subscriptions s ON e.id = s.endpoint_id
-            JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_name = a.name)
-            WHERE a.name = $1 
+            JOIN webhook_apps a ON (e.deployment_id = a.deployment_id AND e.app_slug = a.app_slug)
+            WHERE a.app_slug = $1
               AND s.event_name = $2
               AND e.is_active = true
               AND a.is_active = true
               AND a.deployment_id = $3
             "#,
-            self.app_name,
+            self.app_slug,
             self.event_name,
             self.deployment_id
         )
@@ -119,7 +119,7 @@ impl Command for GetSubscribedEndpointsCommand {
 #[derive(Debug, Deserialize)]
 pub struct InvalidateEndpointCacheCommand {
     pub deployment_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     pub event_names: Vec<String>,
 }
 
@@ -135,7 +135,7 @@ impl Command for InvalidateEndpointCacheCommand {
             for event_name in self.event_names {
                 let cache_key = format!(
                     "webhook:subs:{}:{}:{}",
-                    self.deployment_id, self.app_name, event_name
+                    self.deployment_id, self.app_slug, event_name
                 );
                 let _: Result<(), _> = redis_conn.del(&cache_key).await;
             }

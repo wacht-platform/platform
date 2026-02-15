@@ -56,16 +56,25 @@ pub async fn create_ai_agent(
 ) -> ApiResult<AiAgent> {
     let configuration = request.configuration.unwrap_or(serde_json::json!({}));
 
-    CreateAiAgentCommand::new(
+    let mut command = CreateAiAgentCommand::new(
         deployment_id,
         request.name,
         request.description,
         configuration,
-    )
-    .execute(&app_state)
-    .await
-    .map(Into::into)
-    .map_err(Into::into)
+    );
+
+    if let Some(sub_agents) = request.sub_agents {
+        command = command.with_sub_agents(sub_agents);
+    }
+    if let Some(spawn_config) = request.spawn_config {
+        command = command.with_spawn_config(spawn_config);
+    }
+
+    command
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
 }
 
 pub async fn get_ai_agent_by_id(
@@ -144,6 +153,8 @@ pub async fn get_ai_agent_details(
         integrations: integrations_with_urls,
         tools: vec![],           // TODO: fetch tools if needed
         knowledge_bases: vec![], // TODO: fetch knowledge bases if needed
+        sub_agents: agent.sub_agents,
+        spawn_config: agent.spawn_config,
     }
     .into())
 }
@@ -164,6 +175,12 @@ pub async fn update_ai_agent(
     }
     if let Some(configuration) = request.configuration {
         command = command.with_configuration(configuration);
+    }
+    if let Some(sub_agents) = request.sub_agents {
+        command = command.with_sub_agents(sub_agents);
+    }
+    if let Some(spawn_config) = request.spawn_config {
+        command = command.with_spawn_config(spawn_config);
     }
 
     command
@@ -273,4 +290,8 @@ pub struct AgentDetailsResponse {
     pub integrations: Vec<IntegrationWithUrl>,
     pub tools: Vec<serde_json::Value>,
     pub knowledge_bases: Vec<serde_json::Value>,
+    /// Agents this agent can spawn as sub-agents
+    pub sub_agents: Option<Vec<i64>>,
+    /// Spawn configuration
+    pub spawn_config: Option<models::SpawnConfig>,
 }

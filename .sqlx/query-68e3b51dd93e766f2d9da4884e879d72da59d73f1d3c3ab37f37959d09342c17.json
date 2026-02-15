@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT workspace_membership_id as id\n            FROM workspace_membership_roles\n            WHERE workspace_role_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "68e3b51dd93e766f2d9da4884e879d72da59d73f1d3c3ab37f37959d09342c17"
+}

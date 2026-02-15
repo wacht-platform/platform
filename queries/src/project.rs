@@ -120,21 +120,19 @@ impl Query for GetProjectsWithDeploymentQuery {
 
         // Add ownership filtering
         if !self.owner_ids.is_empty() {
-            let owner_conditions: Vec<String> = self
-                .owner_ids
-                .iter()
-                .map(|id| format!("'{}'", id.replace("'", "''")))
-                .collect();
-
-            query_str.push_str(&format!(
-                " WHERE p.owner_id IN ({})",
-                owner_conditions.join(", ")
-            ));
+            query_str.push_str(" WHERE p.owner_id = ANY($1)");
         }
 
         query_str.push_str(" ORDER BY p.id DESC");
 
-        let rows = query(&query_str).fetch_all(&app_state.db_pool).await?;
+        let rows = if self.owner_ids.is_empty() {
+            query(&query_str).fetch_all(&app_state.db_pool).await?
+        } else {
+            query(&query_str)
+                .bind(&self.owner_ids)
+                .fetch_all(&app_state.db_pool)
+                .await?
+        };
 
         let mut projects_map: BTreeMap<i64, ProjectWithDeployments> = BTreeMap::new();
 

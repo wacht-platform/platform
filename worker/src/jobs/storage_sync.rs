@@ -1,15 +1,15 @@
 use anyhow::Result;
 use commands::{Command, MarkStorageAsCleanCommand};
 use common::{DodoClient, state::AppState};
-use queries::{GetDirtyStorageDeploymentsQuery, GetDeploymentProviderSubscriptionQuery, Query as QueryTrait};
+use queries::{
+    GetDeploymentProviderSubscriptionQuery, GetDirtyStorageDeploymentsQuery, Query as QueryTrait,
+};
 use tracing::{error, info, warn};
 
 pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
     info!("[STORAGE SYNC] Starting storage sync to Dodo");
 
-    let dirty_deployments = GetDirtyStorageDeploymentsQuery
-        .execute(app_state)
-        .await?;
+    let dirty_deployments = GetDirtyStorageDeploymentsQuery.execute(app_state).await?;
 
     if dirty_deployments.is_empty() {
         info!("[STORAGE SYNC] No dirty deployments to sync");
@@ -24,10 +24,7 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
     let dodo_client = match DodoClient::new() {
         Ok(client) => client,
         Err(e) => {
-            warn!(
-                "[STORAGE SYNC] Dodo not configured: {}. Skipping sync.",
-                e
-            );
+            warn!("[STORAGE SYNC] Dodo not configured: {}. Skipping sync.", e);
             return Ok("Dodo not configured".to_string());
         }
     };
@@ -35,7 +32,6 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
     let mut synced_count = 0;
 
     for (deployment_id, total_bytes) in dirty_deployments {
-
         let subscription_info = match GetDeploymentProviderSubscriptionQuery::new(deployment_id)
             .execute(app_state)
             .await
@@ -70,20 +66,14 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
         let storage_kb = (total_bytes as f64 / 1000.0).ceil() as i64;
 
         let event_id = format!(
-            "storage_{}_{}_{}", 
+            "storage_{}_{}_{}",
             deployment_id,
             chrono::Utc::now().timestamp(),
             app_state.sf.next_id().unwrap_or(0)
         );
 
         match dodo_client
-            .ingest_usage_events(
-                &customer_id,
-                "storage.used",
-                storage_kb,
-                &event_id,
-                true,
-            )
+            .ingest_usage_events(&customer_id, "storage.used", storage_kb, &event_id, true)
             .await
         {
             Ok(_) => {
@@ -92,11 +82,9 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
                     deployment_id, storage_kb, total_bytes
                 );
 
-                MarkStorageAsCleanCommand {
-                    deployment_id,
-                }
-                .execute(app_state)
-                .await?;
+                MarkStorageAsCleanCommand { deployment_id }
+                    .execute(app_state)
+                    .await?;
 
                 synced_count += 1;
             }

@@ -68,13 +68,38 @@ pub async fn backend_deployment_middleware(
             .await;
     });
 
-    req.extensions_mut().insert(DeploymentContext {
-        deployment_id: key_data.app_name.parse().unwrap(),
-    });
+    let deployment_id = key_data
+        .app_slug
+        .strip_prefix("slug_")
+        .and_then(|v| v.parse::<i64>().ok())
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                "Invalid API key: app slug does not contain deployment id".to_string(),
+            )
+        })?;
+
+    req.extensions_mut()
+        .insert(DeploymentContext { deployment_id });
+    let mut effective_permissions: std::collections::HashSet<String> =
+        key_data.permissions.iter().cloned().collect();
+    for perm in key_data
+        .org_role_permissions
+        .iter()
+        .chain(key_data.workspace_role_permissions.iter())
+    {
+        effective_permissions.insert(perm.clone());
+    }
+    let mut effective_permissions: Vec<String> = effective_permissions.into_iter().collect();
+    effective_permissions.sort();
     req.extensions_mut().insert(ApiKeyContext {
         key_id: key_data.id,
-        app_name: key_data.app_name,
-        permissions: key_data.permissions,
+        app_slug: key_data.app_slug,
+        permissions: effective_permissions,
+        organization_id: key_data.organization_id,
+        workspace_id: key_data.workspace_id,
+        organization_membership_id: key_data.organization_membership_id,
+        workspace_membership_id: key_data.workspace_membership_id,
     });
 
     Ok(next.run(req).await)

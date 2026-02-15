@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT deployment_id as \"deployment_id!\",\n                   app_slug as \"app_slug!\",\n                   name as \"name!\",\n                   description,\n                   signing_secret as \"signing_secret!\",\n                   failure_notification_emails,\n                   event_catalog_slug,\n                   is_active as \"is_active!\",\n                   created_at as \"created_at!\",\n                   updated_at as \"updated_at!\"\n            FROM webhook_apps\n            WHERE deployment_id = $1 AND app_slug = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deployment_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "app_slug!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "signing_secret!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "failure_notification_emails",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "event_catalog_slug",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8fe8eb4a3d0bcf907cf5a8e00bb2ea6c8a992c202c033fc8ba26e98df3a6c16a"
+}

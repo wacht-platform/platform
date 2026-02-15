@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT filter_rules\n            FROM webhook_endpoint_subscriptions\n            WHERE endpoint_id = $1 AND deployment_id = $2 AND app_slug = $3 AND event_name = $4\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "filter_rules",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "86af095e75b4963c0c84172710614040b1ab292debc9a8ec3474bec3349a83ff"
+}

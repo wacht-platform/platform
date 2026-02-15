@@ -1,22 +1,26 @@
 use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
-use models::api_key::{ApiAuthApp, RateLimit};
+use models::api_key::ApiAuthApp;
 
 pub struct CreateApiAuthAppCommand {
     pub deployment_id: i64,
+    pub app_slug: String,
     pub name: String,
+    pub key_prefix: String,
     pub description: Option<String>,
-    pub rate_limits: Vec<RateLimit>,
+    pub rate_limit_scheme_slug: Option<String>,
 }
 
 impl CreateApiAuthAppCommand {
-    pub fn new(deployment_id: i64, name: String) -> Self {
+    pub fn new(deployment_id: i64, app_slug: String, name: String, key_prefix: String) -> Self {
         Self {
             deployment_id,
+            app_slug,
             name,
+            key_prefix,
             description: None,
-            rate_limits: vec![],
+            rate_limit_scheme_slug: None,
         }
     }
 
@@ -25,17 +29,9 @@ impl CreateApiAuthAppCommand {
         self
     }
 
-    pub fn with_rate_limits(self, rate_limits: Vec<RateLimit>) -> Result<Self, AppError> {
-        for limit in &rate_limits {
-            limit
-                .validate()
-                .map_err(|e| AppError::BadRequest(format!("Invalid rate limit: {}", e)))?;
-        }
-
-        Ok(Self {
-            rate_limits,
-            ..self
-        })
+    pub fn with_rate_limit_scheme_slug(mut self, slug: Option<String>) -> Self {
+        self.rate_limit_scheme_slug = slug;
+        self
     }
 }
 
@@ -45,22 +41,21 @@ impl Command for CreateApiAuthAppCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let app_id = app_state.sf.next_id()? as i64;
 
-        let rate_limits_json = serde_json::to_value(&self.rate_limits)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize rate limits: {}", e)))?;
-
         let rec = sqlx::query!(
             r#"
-            INSERT INTO api_auth_apps (id, deployment_id, name, description, rate_limits)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, deployment_id, name, description, is_active,
-                      rate_limits as "rate_limits: serde_json::Value",
+            INSERT INTO api_auth_apps (id, deployment_id, app_slug, name, key_prefix, description, rate_limit_scheme_slug)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id, deployment_id, app_slug, name, key_prefix, description, is_active,
+                      rate_limit_scheme_slug,
                       created_at, updated_at, deleted_at
             "#,
             app_id,
             self.deployment_id,
+            self.app_slug,
             self.name,
+            self.key_prefix,
             self.description,
-            rate_limits_json
+            self.rate_limit_scheme_slug
         )
         .fetch_one(&app_state.db_pool)
         .await?;
@@ -68,13 +63,13 @@ impl Command for CreateApiAuthAppCommand {
         Ok(ApiAuthApp {
             id: rec.id,
             deployment_id: rec.deployment_id,
+            app_slug: rec.app_slug,
             name: rec.name,
             description: rec.description,
             is_active: rec.is_active.unwrap_or(true),
-            rate_limits: rec
-                .rate_limits
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default(),
+            key_prefix: rec.key_prefix,
+            rate_limits: vec![],
+            rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,
@@ -86,50 +81,38 @@ pub struct UpdateApiAuthAppCommand {
     pub app_id: i64,
     pub deployment_id: i64,
     pub name: Option<String>,
+    pub key_prefix: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
-    pub rate_limits: Option<Vec<RateLimit>>,
+    pub rate_limit_scheme_slug: Option<String>,
 }
 
 impl Command for UpdateApiAuthAppCommand {
     type Output = ApiAuthApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        if let Some(ref rate_limits) = self.rate_limits {
-            for limit in rate_limits {
-                limit
-                    .validate()
-                    .map_err(|e| AppError::BadRequest(format!("Invalid rate limit: {}", e)))?;
-            }
-        }
-
-        let rate_limits_json = self
-            .rate_limits
-            .as_ref()
-            .map(|rl| serde_json::to_value(rl))
-            .transpose()
-            .map_err(|e| AppError::Internal(format!("Failed to serialize rate limits: {}", e)))?;
-
         let rec = sqlx::query!(
             r#"
             UPDATE api_auth_apps
             SET
                 name = COALESCE($3, name),
-                description = COALESCE($4, description),
-                is_active = COALESCE($5, is_active),
-                rate_limits = COALESCE($6, rate_limits),
+                key_prefix = COALESCE($4, key_prefix),
+                description = COALESCE($5, description),
+                is_active = COALESCE($6, is_active),
+                rate_limit_scheme_slug = COALESCE($7, rate_limit_scheme_slug),
                 updated_at = NOW()
             WHERE id = $1 AND deployment_id = $2
-            RETURNING id, deployment_id, name, description, is_active,
-                      rate_limits as "rate_limits: serde_json::Value",
+            RETURNING id, deployment_id, app_slug, name, key_prefix, description, is_active,
+                      rate_limit_scheme_slug,
                       created_at, updated_at, deleted_at
             "#,
             self.app_id,
             self.deployment_id,
             self.name,
+            self.key_prefix,
             self.description,
             self.is_active,
-            rate_limits_json
+            self.rate_limit_scheme_slug
         )
         .fetch_one(&app_state.db_pool)
         .await?;
@@ -137,13 +120,13 @@ impl Command for UpdateApiAuthAppCommand {
         Ok(ApiAuthApp {
             id: rec.id,
             deployment_id: rec.deployment_id,
+            app_slug: rec.app_slug,
             name: rec.name,
             description: rec.description,
             is_active: rec.is_active.unwrap_or(true),
-            rate_limits: rec
-                .rate_limits
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default(),
+            key_prefix: rec.key_prefix,
+            rate_limits: vec![],
+            rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
             created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
             updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
             deleted_at: rec.deleted_at,

@@ -19,12 +19,10 @@ use models::billing::BillingAccountWithSubscription;
 use queries::{
     Query as QueryTrait,
     billing::{
-        GetBillingAccountQuery, GetBillingAccountUsageQuery, GetDodoProductQuery, 
-        UsageSnapshot,
+        GetBillingAccountQuery, GetBillingAccountUsageQuery, GetDodoProductQuery, UsageSnapshot,
     },
 };
 use wacht::middleware::RequireAuth;
-
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCheckoutRequest {
@@ -109,7 +107,10 @@ pub async fn create_checkout(
 
     let dodo = DodoClient::new().map_err(|e| {
         error!("Failed to create Dodo client: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Payment gateway initialization failed")
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Payment gateway initialization failed",
+        )
     })?;
 
     let provider_customer_id = if let Some(ref account) = existing {
@@ -152,7 +153,10 @@ pub async fn create_checkout(
                 .await
                 .map_err(|e| {
                     error!("Failed to create Dodo customer: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create customer")
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to create customer",
+                    )
                 })?;
 
             SetProviderCustomerIdCommand {
@@ -191,7 +195,10 @@ pub async fn create_checkout(
             .await
             .map_err(|e| {
                 error!("Failed to create Dodo customer: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create customer")
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to create customer",
+                )
             })?;
 
         SetProviderCustomerIdCommand {
@@ -233,7 +240,10 @@ pub async fn create_checkout(
 
     let checkout = dodo.create_checkout_session(params).await.map_err(|e| {
         error!("Failed to create checkout session: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Checkout initialization failed")
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Checkout initialization failed",
+        )
     })?;
 
     Ok(CheckoutResponse {
@@ -273,9 +283,7 @@ pub async fn update_billing_account(
         country: req.country,
     };
 
-    command
-        .execute(&state)
-        .await?;
+    command.execute(&state).await?;
 
     Ok(().into())
 }
@@ -307,7 +315,10 @@ pub async fn get_portal_url(
         .await
         .map_err(|e| {
             error!("Failed to create portal session: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create portal session")
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create portal session",
+            )
         })?;
 
     Ok(PortalResponse {
@@ -315,8 +326,6 @@ pub async fn get_portal_url(
     }
     .into())
 }
-
-
 
 pub async fn list_invoices(
     State(state): State<AppState>,
@@ -340,7 +349,6 @@ pub async fn list_invoices(
     Ok(serde_json::json!({ "items": invoices }).into())
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct ChangePlanRequest {
     pub plan_name: String,
@@ -363,7 +371,9 @@ pub async fn change_plan(
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
 
-    let subscription = account.subscription.ok_or_else(|| (StatusCode::NOT_FOUND, "Subscription not found"))?;
+    let subscription = account
+        .subscription
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Subscription not found"))?;
 
     let product = GetDodoProductQuery::new(&req.plan_name)
         .execute(&state)
@@ -391,7 +401,6 @@ pub async fn change_plan(
     Ok(().into())
 }
 
-
 #[derive(Debug, Serialize)]
 pub struct UsageResponse {
     pub snapshots: Vec<UsageSnapshot>,
@@ -413,12 +422,7 @@ pub async fn get_current_usage(
     let account_with_sub = GetBillingAccountQuery::new(owner_id)
         .execute(&state)
         .await?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "Billing account not found",
-            )
-        })?;
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
 
     let subscription = account_with_sub.subscription.ok_or_else(|| {
         (
@@ -428,14 +432,12 @@ pub async fn get_current_usage(
     })?;
 
     // 3. Get Billing Period (Start Date)
-    let billing_period_timestamp = subscription
-        .previous_billing_date
-        .ok_or_else(|| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Subscription missing previous_billing_date",
-            )
-        })?;
+    let billing_period_timestamp = subscription.previous_billing_date.ok_or_else(|| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Subscription missing previous_billing_date",
+        )
+    })?;
 
     // 4. Fetch Usage for the Billing Account
     let snapshots = GetBillingAccountUsageQuery::new(
@@ -483,14 +485,20 @@ pub async fn create_pulse_checkout(
         .await?
         .ok_or_else(|| {
             error!("Product 'pulse_credits' not found");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Pulse product configuration missing")
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Pulse product configuration missing",
+            )
         })?;
 
     let total_charge = ((req.pulse_amount + 50) as f64 / 0.96).ceil() as i64;
 
     let dodo = DodoClient::new().map_err(|e| {
         error!("Failed to create Dodo client: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Payment gateway initialization failed")
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Payment gateway initialization failed",
+        )
     })?;
 
     let params = CreateCheckoutParams {
@@ -514,7 +522,10 @@ pub async fn create_pulse_checkout(
 
     let checkout = dodo.create_checkout_session(params).await.map_err(|e| {
         error!("Failed to create pulse checkout session: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create checkout session")
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to create checkout session",
+        )
     })?;
 
     Ok(CheckoutResponse {
@@ -538,9 +549,10 @@ pub async fn list_pulse_transactions(
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
 
-    let transactions = queries::billing::ListPulseTransactionsQuery::new(account.billing_account.id)
-        .execute(&state)
-        .await?;
+    let transactions =
+        queries::billing::ListPulseTransactionsQuery::new(account.billing_account.id)
+            .execute(&state)
+            .await?;
 
     Ok(PaginatedResponse::from(transactions).into())
 }

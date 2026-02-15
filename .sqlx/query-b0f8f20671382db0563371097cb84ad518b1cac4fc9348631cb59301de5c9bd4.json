@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                wm.organization_id,\n                wm.workspace_id,\n                COALESCE(\n                    jsonb_agg(DISTINCT perm) FILTER (WHERE perm IS NOT NULL),\n                    '[]'::jsonb\n                ) as \"permissions: serde_json::Value\"\n            FROM workspace_memberships wm\n            LEFT JOIN workspace_membership_roles wmr ON wmr.workspace_membership_id = wm.id\n            LEFT JOIN workspace_roles wrole ON wmr.workspace_role_id = wrole.id\n            LEFT JOIN LATERAL unnest(COALESCE(wrole.permissions, ARRAY[]::text[])) perm ON true\n            WHERE wm.id = $1 AND wm.deleted_at IS NULL\n            GROUP BY wm.organization_id, wm.workspace_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "permissions: serde_json::Value",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "b0f8f20671382db0563371097cb84ad518b1cac4fc9348631cb59301de5c9bd4"
+}

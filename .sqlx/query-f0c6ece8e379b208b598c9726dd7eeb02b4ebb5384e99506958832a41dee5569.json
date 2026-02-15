@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH perms AS (\n                SELECT\n                    om.id as membership_id,\n                    om.organization_id as organization_id,\n                    COALESCE(\n                        jsonb_agg(DISTINCT perm) FILTER (WHERE perm IS NOT NULL),\n                        '[]'::jsonb\n                    ) as permissions\n                FROM organization_memberships om\n                LEFT JOIN organization_membership_roles omr ON omr.organization_membership_id = om.id\n                LEFT JOIN organization_roles orole ON omr.organization_role_id = orole.id\n                LEFT JOIN LATERAL unnest(COALESCE(orole.permissions, ARRAY[]::text[])) perm ON true\n                WHERE om.id = ANY($1)\n                GROUP BY om.id, om.organization_id\n            )\n            UPDATE api_keys k\n            SET org_role_permissions = perms.permissions,\n                organization_id = perms.organization_id,\n                updated_at = NOW()\n            FROM perms\n            WHERE k.organization_membership_id = perms.membership_id\n            RETURNING k.id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f0c6ece8e379b208b598c9726dd7eeb02b4ebb5384e99506958832a41dee5569"
+}

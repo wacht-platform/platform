@@ -210,3 +210,51 @@ pub enum SearchConclusion {
     NothingFound,
     NeedsMoreContext,
 }
+
+/// Status of a child agent spawned by the current agent
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChildAgentStatus {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub context_id: i64,
+    pub title: String,
+    pub status: String,
+    pub latest_status_update: Option<String>,
+    pub latest_status_at: Option<String>,
+    pub completion_summary: Option<Value>,
+}
+
+/// Response from get_child_status tool
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChildStatusResponse {
+    pub children: Vec<ChildAgentStatus>,
+    pub count: usize,
+}
+
+/// Status update entry from an agent's timeline
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AgentStatusUpdateDto {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub context_id: i64,
+    pub status_update: String,
+    pub metadata: Option<Value>,
+    pub created_at: String,
+}
+
+/// Response from spawning a child context
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpawnContextResponse {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub context_id: i64,
+    pub status: String,
+    pub message: String,
+}
+
+/// Event published when a child agent completes
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChildAgentCompletedEvent {
+    pub child_context_id: i64,
+    pub status: String,
+    pub summary: Option<Value>,
+}

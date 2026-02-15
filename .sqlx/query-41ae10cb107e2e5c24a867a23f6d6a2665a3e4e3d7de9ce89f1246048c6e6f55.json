@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, title, status, completion_summary, completed_at\n            FROM agent_execution_contexts\n            WHERE parent_context_id = $1 AND deployment_id = $2\n              AND completion_summary IS NOT NULL\n            ORDER BY completed_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "completion_summary",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "41ae10cb107e2e5c24a867a23f6d6a2665a3e4e3d7de9ce89f1246048c6e6f55"
+}

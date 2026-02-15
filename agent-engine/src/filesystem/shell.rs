@@ -88,23 +88,23 @@ impl ShellExecutor {
         // Validate ALL commands in pipes, not just the first one
         // Use quote-aware splitting to handle jq expressions like '.foo | .bar'
         let command_segments = split_command_segments(&command_line);
-        
+
         for segment in &command_segments {
             let trimmed = segment.trim();
             if trimmed.is_empty() {
                 continue;
             }
-            
+
             // Get the first word of each segment (the command name)
             let cmd_name = trimmed.split_whitespace().next();
-            
+
             if let Some(cmd) = cmd_name {
                 // Skip if it's a subcommand indicator like "then", "else", "do", etc.
                 let shell_keywords = ["then", "else", "fi", "do", "done", "esac", "in"];
                 if shell_keywords.contains(&cmd) {
                     continue;
                 }
-                
+
                 if !self.allowed_commands.contains(&cmd.to_string()) {
                     return Err(AppError::Forbidden(format!(
                         "Command '{}' is not allowed. Allowed commands: cat, grep, jq, head, tail, etc. For Python, use the execute_python tool instead.",

@@ -219,12 +219,16 @@ impl Query for GetClickUpTokenQuery {
         let metadata = row
             .ok_or_else(|| AppError::NotFound("No active ClickUp integration found".to_string()))?
             .0
-            .ok_or_else(|| AppError::NotFound("ClickUp connection metadata is missing".to_string()))?;
+            .ok_or_else(|| {
+                AppError::NotFound("ClickUp connection metadata is missing".to_string())
+            })?;
 
         let access_token = metadata
             .get("accessToken")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| AppError::NotFound("ClickUp access token not found in metadata".to_string()))?;
+            .ok_or_else(|| {
+                AppError::NotFound("ClickUp access token not found in metadata".to_string())
+            })?;
 
         Ok(access_token.to_string())
     }

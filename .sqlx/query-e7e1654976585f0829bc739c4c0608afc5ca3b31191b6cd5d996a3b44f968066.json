@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE agent_execution_contexts\n            SET completion_summary = $1,\n                updated_at = NOW(),\n                last_activity_at = NOW()\n            WHERE id = $2 AND deployment_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e7e1654976585f0829bc739c4c0608afc5ca3b31191b6cd5d996a3b44f968066"
+}

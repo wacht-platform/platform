@@ -8,6 +8,7 @@ mod consumer;
 mod jobs;
 mod scheduler;
 mod tasks;
+mod throttler;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,8 +21,8 @@ async fn main() -> Result<()> {
     let scheduler = scheduler::JobScheduler::new(app_state.clone());
     scheduler.start().await?;
 
-    // Start NATS consumer
-    let consumer = consumer::NatsConsumer::new(app_state).await?;
+    // Start NATS consumer (blocks forever, runs in main task)
+    let consumer = consumer::NatsConsumer::new(app_state.clone()).await?;
     consumer.start_consuming().await?;
 
     Ok(())

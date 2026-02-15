@@ -111,4 +111,3 @@ pub enum ActionType {
     ContextSearch,
     MessageUser,
 }
-

@@ -5,6 +5,7 @@ use axum::{
     response::Response,
 };
 use common::state::AppState;
+use wacht::gateway::GatewayDenyReason;
 
 use super::api_key_context::ApiKeyContext;
 use super::deployment_context::DeploymentContext;
@@ -27,18 +28,28 @@ pub async fn gateway_auth_middleware(
         }
     };
 
-    let identifier = req.uri().path().trim_start_matches('/').replace('/', ":");
+    let method = req.method().as_str().to_string();
+    let resource = req.uri().path().to_string();
 
-    match wacht::gateway::verify_request(api_key, &identifier).await {
+    match wacht::gateway::verify_request(api_key, &method, &resource).await {
         Ok(response) => {
             if !response.allowed {
-                return Err((
-                    StatusCode::TOO_MANY_REQUESTS,
-                    format!(
-                        "Rate limit exceeded. Retry after {} seconds",
-                        response.retry_after.unwrap_or(60)
-                    ),
-                ));
+                let (status, message) =
+                    if response.reason == Some(GatewayDenyReason::PermissionDenied) {
+                        (
+                            StatusCode::FORBIDDEN,
+                            "Permission denied for this resource".to_string(),
+                        )
+                    } else {
+                        (
+                            StatusCode::TOO_MANY_REQUESTS,
+                            format!(
+                                "Rate limit exceeded. Retry after {} seconds",
+                                response.retry_after.unwrap_or(60)
+                            ),
+                        )
+                    };
+                return Err((status, message));
             }
 
             req.extensions_mut().insert(DeploymentContext {
@@ -46,8 +57,12 @@ pub async fn gateway_auth_middleware(
             });
             req.extensions_mut().insert(ApiKeyContext {
                 key_id: response.key_id,
-                app_name: response.app_name,
+                app_slug: response.app_slug,
                 permissions: response.permissions,
+                organization_id: response.organization_id,
+                workspace_id: response.workspace_id,
+                organization_membership_id: response.organization_membership_id,
+                workspace_membership_id: response.workspace_membership_id,
             });
 
             Ok(next.run(req).await)

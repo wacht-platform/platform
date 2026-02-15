@@ -52,10 +52,7 @@ pub async fn handle_prelude_webhook(
 
     let event: PreludeWebhookEvent = serde_json::from_str(&body).map_err(|e| {
         error!("[PRELUDE WEBHOOK] Failed to parse payload: {}", e);
-        (
-            StatusCode::BAD_REQUEST,
-            format!("Invalid payload: {}", e),
-        )
+        (StatusCode::BAD_REQUEST, format!("Invalid payload: {}", e))
     })?;
 
     info!(
@@ -111,7 +108,7 @@ pub async fn handle_prelude_webhook(
 }
 
 fn verify_signature(headers: &HeaderMap, body: &str) -> Result<(), String> {
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
     use rsa::{
         pkcs8::DecodePublicKey,
         pss::{Signature, VerifyingKey},
@@ -136,8 +133,8 @@ fn verify_signature(headers: &HeaderMap, body: &str) -> Result<(), String> {
     let signature = Signature::try_from(signature_bytes.as_slice())
         .map_err(|e| format!("Invalid signature format: {}", e))?;
 
-    let public_key_pem =
-        std::env::var("PRELUDE_WEBHOOK_PUBLIC_KEY").map_err(|_| "PRELUDE_WEBHOOK_PUBLIC_KEY not configured")?;
+    let public_key_pem = std::env::var("PRELUDE_WEBHOOK_PUBLIC_KEY")
+        .map_err(|_| "PRELUDE_WEBHOOK_PUBLIC_KEY not configured")?;
 
     let public_key = rsa::RsaPublicKey::from_public_key_pem(&public_key_pem)
         .map_err(|e| format!("Failed to parse public key: {}", e))?;
@@ -171,11 +168,7 @@ async fn track_sms_cost(
 
     let mut pipe = redis::pipe();
     pipe.atomic()
-        .zincr(
-            &format!("{}:metrics", prefix),
-            "sms_cost_cents",
-            cost_cents,
-        )
+        .zincr(&format!("{}:metrics", prefix), "sms_cost_cents", cost_cents)
         .ignore()
         .expire(&format!("{}:metrics", prefix), 5184000)
         .ignore()

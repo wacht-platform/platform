@@ -5,20 +5,17 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
+use tracing::{error, info, instrument};
 
 use crate::middleware::RequireDeployment;
 use common::clickhouse::RecentSignup;
 use common::state::AppState;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AnalyticsQuery {
     pub from: DateTime<Utc>,
     pub to: DateTime<Utc>,
-}
-
-#[derive(Deserialize)]
-pub struct RecentSignupsQuery {
-    pub limit: Option<i32>,
 }
 
 #[derive(Serialize)]
@@ -32,18 +29,24 @@ pub struct AnalyticsStatsResponse {
     pub signups_change: Option<f64>,
     pub organizations_created_change: Option<f64>,
     pub workspaces_created_change: Option<f64>,
+    pub recent_signups: Vec<RecentSignup>,
+    pub recent_signins: Vec<RecentSignup>,
 }
 
-#[derive(Serialize)]
-pub struct RecentSignupsResponse {
-    pub signups: Vec<RecentSignup>,
-}
-
+#[instrument(skip(app_state))]
 pub async fn get_analytics_stats(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<AnalyticsQuery>,
 ) -> Result<Json<AnalyticsStatsResponse>, StatusCode> {
+    let start = Instant::now();
+    info!(
+        deployment_id = deployment_id,
+        from = %query.from,
+        to = %query.to,
+        "Getting analytics stats"
+    );
+
     let clickhouse = &app_state.clickhouse_service;
 
     let duration = query.to.signed_duration_since(query.from);
@@ -51,50 +54,26 @@ pub async fn get_analytics_stats(
     let previous_from = query.from - duration;
     let previous_to = query.to - duration;
 
-    let unique_signins = clickhouse
-        .get_unique_signins(deployment_id, query.from, query.to)
+    // Single query returns everything including recent signups/signins
+    let stats = clickhouse
+        .get_analytics_stats(
+            deployment_id,
+            query.from,
+            query.to,
+            previous_from,
+            previous_to,
+        )
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            error!(error = ?e, "Failed to get analytics stats");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
-    let signups = clickhouse
-        .get_signups(deployment_id, query.from, query.to)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Get recent signups/signins from the stats result
+    let recent_signups = stats.get_recent_signups();
+    let recent_signins = stats.get_recent_signins();
 
-    let organizations_created = clickhouse
-        .get_organizations_created(deployment_id, query.from, query.to)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let workspaces_created = clickhouse
-        .get_workspaces_created(deployment_id, query.from, query.to)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let total_signups = clickhouse
-        .get_total_signups(deployment_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let previous_signins = clickhouse
-        .get_unique_signins(deployment_id, previous_from, previous_to)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let previous_signups = clickhouse
-        .get_signups(deployment_id, previous_from, previous_to)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let previous_orgs = clickhouse
-        .get_organizations_created(deployment_id, previous_from, previous_to)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let previous_workspaces = clickhouse
-        .get_workspaces_created(deployment_id, previous_from, previous_to)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    info!("Total analytics stats time: {:?}", start.elapsed());
 
     let calculate_change = |current: i64, previous: i64| -> Option<f64> {
         if previous == 0 {
@@ -105,46 +84,25 @@ pub async fn get_analytics_stats(
     };
 
     Ok(Json(AnalyticsStatsResponse {
-        unique_signins,
-        signups,
-        organizations_created,
-        workspaces_created,
-        total_signups,
-        unique_signins_change: calculate_change(unique_signins, previous_signins),
-        signups_change: calculate_change(signups, previous_signups),
-        organizations_created_change: calculate_change(organizations_created, previous_orgs),
-        workspaces_created_change: calculate_change(workspaces_created, previous_workspaces),
+        unique_signins: stats.unique_signins as i64,
+        signups: stats.signups as i64,
+        organizations_created: stats.organizations_created as i64,
+        workspaces_created: stats.workspaces_created as i64,
+        total_signups: stats.total_signups as i64,
+        unique_signins_change: calculate_change(
+            stats.unique_signins as i64,
+            stats.previous_signins as i64,
+        ),
+        signups_change: calculate_change(stats.signups as i64, stats.previous_signups as i64),
+        organizations_created_change: calculate_change(
+            stats.organizations_created as i64,
+            stats.previous_orgs as i64,
+        ),
+        workspaces_created_change: calculate_change(
+            stats.workspaces_created as i64,
+            stats.previous_workspaces as i64,
+        ),
+        recent_signups,
+        recent_signins,
     }))
-}
-
-pub async fn get_recent_signups(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Query(query): Query<RecentSignupsQuery>,
-) -> Result<Json<RecentSignupsResponse>, StatusCode> {
-    let limit = query.limit.unwrap_or(10);
-
-    let signups = app_state
-        .clickhouse_service
-        .get_recent_signups(deployment_id, limit)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(RecentSignupsResponse { signups }))
-}
-
-pub async fn get_recent_signins(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Query(query): Query<RecentSignupsQuery>,
-) -> Result<Json<RecentSignupsResponse>, StatusCode> {
-    let limit = query.limit.unwrap_or(10);
-
-    let signins = app_state
-        .clickhouse_service
-        .get_recent_signins(deployment_id, limit)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(RecentSignupsResponse { signups: signins }))
 }

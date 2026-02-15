@@ -1,7 +1,7 @@
 use crate::{application::response::ApiResult, middleware::RequireDeployment};
-use axum::{extract::State, Json};
-use common::state::AppState;
+use axum::{Json, extract::State};
 use commands::{Command, GenerateSessionTicketCommand};
+use common::state::AppState;
 use dto::json::session_ticket::CreateSessionTicketRequest;
 
 #[derive(Debug, serde::Serialize)]
@@ -18,9 +18,11 @@ pub async fn create_session_ticket(
     let ticket_type = match request.ticket_type.as_str() {
         "impersonation" => commands::session_ticket::SessionTicketType::Impersonation,
         "agent_access" => commands::session_ticket::SessionTicketType::AgentAccess,
+        "webhook_app_access" => commands::session_ticket::SessionTicketType::WebhookAppAccess,
+        "api_auth_access" => commands::session_ticket::SessionTicketType::ApiAuthAccess,
         _ => {
             return Err(crate::application::AppError::BadRequest(
-                "Invalid ticket_type. Must be 'impersonation' or 'agent_access'".to_string(),
+                "Invalid ticket_type. Must be 'impersonation', 'agent_access', 'webhook_app_access', or 'api_auth_access'".to_string(),
             )
             .into());
         }
@@ -52,6 +54,39 @@ pub async fn create_session_ticket(
             } else {
                 return Err(crate::application::AppError::BadRequest(
                     "agent_ids is required for agent_access tickets".to_string(),
+                )
+                .into());
+            }
+        }
+        commands::session_ticket::SessionTicketType::WebhookAppAccess => {
+            if let Some(webhook_app_slug) = request.webhook_app_slug {
+                if webhook_app_slug.is_empty() {
+                    return Err(crate::application::AppError::BadRequest(
+                        "webhook_app_slug cannot be empty for webhook_app_access tickets"
+                            .to_string(),
+                    )
+                    .into());
+                }
+                command = command.with_webhook_app_slug(webhook_app_slug);
+            } else {
+                return Err(crate::application::AppError::BadRequest(
+                    "webhook_app_slug is required for webhook_app_access tickets".to_string(),
+                )
+                .into());
+            }
+        }
+        commands::session_ticket::SessionTicketType::ApiAuthAccess => {
+            if let Some(api_auth_app_slug) = request.api_auth_app_slug {
+                if api_auth_app_slug.is_empty() {
+                    return Err(crate::application::AppError::BadRequest(
+                        "api_auth_app_slug cannot be empty for api_auth_access tickets".to_string(),
+                    )
+                    .into());
+                }
+                command = command.with_api_auth_app_slug(api_auth_app_slug);
+            } else {
+                return Err(crate::application::AppError::BadRequest(
+                    "api_auth_app_slug is required for api_auth_access tickets".to_string(),
                 )
                 .into());
             }

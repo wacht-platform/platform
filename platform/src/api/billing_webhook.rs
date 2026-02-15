@@ -7,9 +7,9 @@ use commands::{
     billing::{UpdateBillingAccountStatusCommand, UpsertInvoiceCommand, UpsertSubscriptionCommand},
     pulse::AddPulseCreditsCommand,
 };
-use models::pulse_transaction::PulseTransactionType;
 use common::dodo::DodoClient;
 use common::state::AppState;
+use models::pulse_transaction::PulseTransactionType;
 use queries::{Query, billing::GetBillingAccountByProviderCustomerIdQuery};
 use tracing::{error, info, warn};
 
@@ -477,7 +477,10 @@ async fn handle_payment_succeeded(
             amount_paid_cents: amount,
             currency: currency.to_string(),
             status: "paid".to_string(),
-            invoice_pdf_url: Some(format!("https://live.dodopayments.com/invoices/payments/{}", payment_id)),
+            invoice_pdf_url: Some(format!(
+                "https://live.dodopayments.com/invoices/payments/{}",
+                payment_id
+            )),
             hosted_invoice_url: None,
             invoice_number: None,
             due_date: None,
@@ -513,7 +516,10 @@ async fn handle_payment_succeeded(
                         StatusCode::INTERNAL_SERVER_ERROR
                     })?;
                 } else {
-                    warn!("Pulse purchase amount {} too low to add credits for owner {}", amount, owner_id);
+                    warn!(
+                        "Pulse purchase amount {} too low to add credits for owner {}",
+                        amount, owner_id
+                    );
                 }
             }
         }

@@ -21,7 +21,8 @@ impl ClickUpClient {
     }
 
     pub async fn get_current_user(&self) -> Result<Value, AppError> {
-        let resp = self.client
+        let resp = self
+            .client
             .get("https://api.clickup.com/api/v2/user")
             .header("Authorization", self.auth_header())
             .send()
@@ -32,7 +33,8 @@ impl ClickUpClient {
     }
 
     pub async fn get_teams(&self) -> Result<Value, AppError> {
-        let resp = self.client
+        let resp = self
+            .client
             .get("https://api.clickup.com/api/v2/team")
             .header("Authorization", self.auth_header())
             .send()
@@ -44,17 +46,18 @@ impl ClickUpClient {
 
     pub async fn get_spaces(&self, team_id: &str, params: &Value) -> Result<Value, AppError> {
         let mut url = format!("https://api.clickup.com/api/v2/team/{}/space", team_id);
-        
+
         let mut query_params = vec![];
         if let Some(archived) = params.get("archived").and_then(|v| v.as_bool()) {
             query_params.push(format!("archived={}", archived));
         }
-        
+
         if !query_params.is_empty() {
             url = format!("{}?{}", url, query_params.join("&"));
         }
 
-        let resp = self.client
+        let resp = self
+            .client
             .get(&url)
             .header("Authorization", self.auth_header())
             .send()
@@ -65,8 +68,12 @@ impl ClickUpClient {
     }
 
     pub async fn get_space_lists(&self, space_id: &str) -> Result<Value, AppError> {
-        let resp = self.client
-            .get(format!("https://api.clickup.com/api/v2/space/{}/list", space_id))
+        let resp = self
+            .client
+            .get(format!(
+                "https://api.clickup.com/api/v2/space/{}/list",
+                space_id
+            ))
             .header("Authorization", self.auth_header())
             .send()
             .await
@@ -76,7 +83,8 @@ impl ClickUpClient {
     }
 
     pub async fn get_task(&self, task_id: &str) -> Result<Value, AppError> {
-        let resp = self.client
+        let resp = self
+            .client
             .get(format!("https://api.clickup.com/api/v2/task/{}", task_id))
             .header("Authorization", self.auth_header())
             .send()
@@ -88,7 +96,7 @@ impl ClickUpClient {
 
     pub async fn get_tasks(&self, list_id: &str, params: &Value) -> Result<Value, AppError> {
         let mut url = format!("https://api.clickup.com/api/v2/list/{}/task", list_id);
-        
+
         let mut query_params = vec![];
         if let Some(archived) = params.get("archived").and_then(|v| v.as_bool()) {
             query_params.push(format!("archived={}", archived));
@@ -105,12 +113,13 @@ impl ClickUpClient {
         if let Some(subtasks) = params.get("subtasks").and_then(|v| v.as_bool()) {
             query_params.push(format!("subtasks={}", subtasks));
         }
-        
+
         if !query_params.is_empty() {
             url = format!("{}?{}", url, query_params.join("&"));
         }
 
-        let resp = self.client
+        let resp = self
+            .client
             .get(&url)
             .header("Authorization", self.auth_header())
             .send()
@@ -122,7 +131,7 @@ impl ClickUpClient {
 
     pub async fn search_tasks(&self, team_id: &str, params: &Value) -> Result<Value, AppError> {
         let mut url = format!("https://api.clickup.com/api/v2/team/{}/task", team_id);
-        
+
         let mut query_params = vec![];
         if let Some(search) = params.get("search").and_then(|v| v.as_str()) {
             query_params.push(format!("search={}", urlencoding::encode(search)));
@@ -147,12 +156,13 @@ impl ClickUpClient {
                 }
             }
         }
-        
+
         if !query_params.is_empty() {
             url = format!("{}?{}", url, query_params.join("&"));
         }
 
-        let resp = self.client
+        let resp = self
+            .client
             .get(&url)
             .header("Authorization", self.auth_header())
             .send()
@@ -165,8 +175,12 @@ impl ClickUpClient {
     // ========== Write Operations ==========
 
     pub async fn create_task(&self, list_id: &str, params: &Value) -> Result<Value, AppError> {
-        let resp = self.client
-            .post(format!("https://api.clickup.com/api/v2/list/{}/task", list_id))
+        let resp = self
+            .client
+            .post(format!(
+                "https://api.clickup.com/api/v2/list/{}/task",
+                list_id
+            ))
             .header("Authorization", self.auth_header())
             .header("Content-Type", "application/json")
             .json(params)
@@ -178,7 +192,8 @@ impl ClickUpClient {
     }
 
     pub async fn update_task(&self, task_id: &str, params: &Value) -> Result<Value, AppError> {
-        let resp = self.client
+        let resp = self
+            .client
             .put(format!("https://api.clickup.com/api/v2/task/{}", task_id))
             .header("Authorization", self.auth_header())
             .header("Content-Type", "application/json")
@@ -191,8 +206,12 @@ impl ClickUpClient {
     }
 
     pub async fn add_comment(&self, task_id: &str, params: &Value) -> Result<Value, AppError> {
-        let resp = self.client
-            .post(format!("https://api.clickup.com/api/v2/task/{}/comment", task_id))
+        let resp = self
+            .client
+            .post(format!(
+                "https://api.clickup.com/api/v2/task/{}/comment",
+                task_id
+            ))
             .header("Authorization", self.auth_header())
             .header("Content-Type", "application/json")
             .json(params)
@@ -204,8 +223,12 @@ impl ClickUpClient {
     }
 
     pub async fn create_list(&self, space_id: &str, params: &Value) -> Result<Value, AppError> {
-        let resp = self.client
-            .post(format!("https://api.clickup.com/api/v2/space/{}/list", space_id))
+        let resp = self
+            .client
+            .post(format!(
+                "https://api.clickup.com/api/v2/space/{}/list",
+                space_id
+            ))
             .header("Authorization", self.auth_header())
             .header("Content-Type", "application/json")
             .json(params)
@@ -230,8 +253,12 @@ impl ClickUpClient {
 
         let form = multipart::Form::new().part("attachment", part);
 
-        let resp = self.client
-            .post(format!("https://api.clickup.com/api/v2/task/{}/attachment", task_id))
+        let resp = self
+            .client
+            .post(format!(
+                "https://api.clickup.com/api/v2/task/{}/attachment",
+                task_id
+            ))
             .header("Authorization", self.auth_header())
             .multipart(form)
             .send()
@@ -245,11 +272,16 @@ impl ClickUpClient {
 
     async fn handle_response(&self, resp: reqwest::Response) -> Result<Value, AppError> {
         let status = resp.status();
-        let body = resp.text().await
+        let body = resp
+            .text()
+            .await
             .map_err(|e| AppError::External(format!("Failed to read response: {}", e)))?;
 
         if !status.is_success() {
-            return Err(AppError::External(format!("ClickUp API error ({}): {}", status, body)));
+            return Err(AppError::External(format!(
+                "ClickUp API error ({}): {}",
+                status, body
+            )));
         }
 
         serde_json::from_str(&body)

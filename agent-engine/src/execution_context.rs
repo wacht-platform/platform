@@ -159,7 +159,10 @@ impl ExecutionContext {
     }
 
     /// Get execution context for a different context_id (useful for cross-context operations)
-    pub async fn get_context_by_id(&self, context_id: i64) -> Result<AgentExecutionContext, AppError> {
+    pub async fn get_context_by_id(
+        &self,
+        context_id: i64,
+    ) -> Result<AgentExecutionContext, AppError> {
         GetExecutionContextQuery::new(context_id, self.agent.deployment_id)
             .execute(&self.app_state)
             .await
@@ -172,12 +175,10 @@ impl ExecutionContext {
             AppError::BadRequest("No context group found for ClickUp command".to_string())
         })?;
 
-        let access_token = queries::GetClickUpTokenQuery::new(
-            self.agent.deployment_id,
-            context_group,
-        )
-        .execute(&self.app_state)
-        .await?;
+        let access_token =
+            queries::GetClickUpTokenQuery::new(self.agent.deployment_id, context_group)
+                .execute(&self.app_state)
+                .await?;
 
         Ok(crate::clickup::ClickUpClient::new(access_token))
     }

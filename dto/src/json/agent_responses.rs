@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // Re-export task execution types from models for backwards compatibility
-pub use models::{TaskExecution, ActionsList, ExecutionAction, TaskType, ActionResult, ActionResultStatus, ActionExecutionStatus};
+pub use models::{
+    ActionExecutionStatus, ActionResult, ActionResultStatus, ActionsList, ExecutionAction,
+    TaskExecution, TaskType,
+};
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct IdeationResponse {

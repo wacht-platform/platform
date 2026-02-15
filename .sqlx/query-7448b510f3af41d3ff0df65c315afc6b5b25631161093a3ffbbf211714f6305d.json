@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE webhook_endpoints e\n            SET is_active = true, updated_at = NOW()\n            WHERE e.id = $1 AND e.deployment_id = $2\n            RETURNING e.id as \"id!\",\n                      e.deployment_id as \"deployment_id!\",\n                      e.app_slug as \"app_slug!\",\n                      e.url as \"url!\",\n                      e.description,\n                      e.headers,\n                      e.is_active as \"is_active!\",\n                      e.max_retries as \"max_retries!\",\n                      e.timeout_seconds as \"timeout_seconds!\",\n                      e.failure_count as \"failure_count!\",\n                      e.last_failure_at,\n                      e.auto_disabled as \"auto_disabled!\",\n                      e.auto_disabled_at,\n                      e.rate_limit_config as \"rate_limit_config: serde_json::Value\",\n                      e.created_at as \"created_at!\",\n                      e.updated_at as \"updated_at!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_slug!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "url!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "headers",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_retries!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "timeout_seconds!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "failure_count!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "last_failure_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "auto_disabled!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "auto_disabled_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "rate_limit_config: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 14,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "7448b510f3af41d3ff0df65c315afc6b5b25631161093a3ffbbf211714f6305d"
+}

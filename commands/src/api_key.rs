@@ -2,30 +2,54 @@ use crate::Command;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
 use common::state::AppState;
-use models::api_key::{ApiKey, ApiKeyWithSecret};
+use models::api_key::{ApiKey, ApiKeyWithSecret, RateLimit};
 use models::api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper};
 use sha2::{Digest, Sha256};
 
 pub struct CreateApiKeyCommand {
-    pub app_id: i64,
+    pub app_id: i64, // TODO: remove when switching to app_slug only
+    pub app_slug: String,
     pub deployment_id: i64,
     pub name: String,
     pub key_prefix: String, // 'sk_live_', 'sk_test_', etc.
     pub permissions: Vec<String>,
     pub metadata: Option<serde_json::Value>,
     pub expires_at: Option<DateTime<Utc>>,
+    pub rate_limits: Vec<RateLimit>,
+    pub rate_limit_scheme_slug: Option<String>,
+    pub organization_id: Option<i64>,
+    pub workspace_id: Option<i64>,
+    pub organization_membership_id: Option<i64>,
+    pub workspace_membership_id: Option<i64>,
+    pub org_role_permissions: Vec<String>,
+    pub workspace_role_permissions: Vec<String>,
 }
 
 impl CreateApiKeyCommand {
-    pub fn new(app_id: i64, deployment_id: i64, name: String, key_prefix: String) -> Self {
+    pub fn new(
+        app_id: i64,
+        app_slug: String,
+        deployment_id: i64,
+        name: String,
+        key_prefix: String,
+    ) -> Self {
         Self {
             app_id,
+            app_slug,
             deployment_id,
             name,
             key_prefix,
             permissions: vec![],
             metadata: None,
             expires_at: None,
+            rate_limits: vec![],
+            rate_limit_scheme_slug: None,
+            organization_id: None,
+            workspace_id: None,
+            organization_membership_id: None,
+            workspace_membership_id: None,
+            org_role_permissions: vec![],
+            workspace_role_permissions: vec![],
         }
     }
 
@@ -36,6 +60,34 @@ impl CreateApiKeyCommand {
 
     pub fn with_expiration(mut self, expires_at: DateTime<Utc>) -> Self {
         self.expires_at = Some(expires_at);
+        self
+    }
+
+    pub fn with_rate_limits(mut self, rate_limits: Vec<RateLimit>) -> Self {
+        self.rate_limits = rate_limits;
+        self
+    }
+
+    pub fn with_rate_limit_scheme_slug(mut self, slug: Option<String>) -> Self {
+        self.rate_limit_scheme_slug = slug;
+        self
+    }
+
+    pub fn with_membership_context(
+        mut self,
+        organization_id: Option<i64>,
+        workspace_id: Option<i64>,
+        organization_membership_id: Option<i64>,
+        workspace_membership_id: Option<i64>,
+        org_role_permissions: Vec<String>,
+        workspace_role_permissions: Vec<String>,
+    ) -> Self {
+        self.organization_id = organization_id;
+        self.workspace_id = workspace_id;
+        self.organization_membership_id = organization_membership_id;
+        self.workspace_membership_id = workspace_membership_id;
+        self.org_role_permissions = org_role_permissions;
+        self.workspace_role_permissions = workspace_role_permissions;
         self
     }
 
@@ -97,26 +149,42 @@ impl Command for CreateApiKeyCommand {
         let rec = sqlx::query!(
             r#"
             INSERT INTO api_keys (
-                id, app_id, deployment_id, name, key_prefix, key_hash, key_suffix,
-                permissions, metadata, expires_at
+                id, app_id, deployment_id, app_slug, name, key_prefix, key_hash, key_suffix,
+                permissions, metadata, rate_limits, rate_limit_scheme_slug, expires_at,
+                organization_id, workspace_id, organization_membership_id, workspace_membership_id,
+                org_role_permissions, workspace_role_permissions
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING id, app_id, deployment_id, name, key_prefix, key_suffix, key_hash, 
-                      permissions as "permissions: serde_json::Value", 
-                      metadata as "metadata: serde_json::Value", 
-                      expires_at, last_used_at, is_active, created_at, updated_at, 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+            RETURNING id, app_id, deployment_id, app_slug, name, key_prefix, key_suffix, key_hash,
+                      permissions as "permissions: serde_json::Value",
+                      metadata as "metadata: serde_json::Value",
+                      rate_limits as "rate_limits: serde_json::Value",
+                      rate_limit_scheme_slug,
+                      organization_id, workspace_id, organization_membership_id, workspace_membership_id,
+                      org_role_permissions as "org_role_permissions: serde_json::Value",
+                      workspace_role_permissions as "workspace_role_permissions: serde_json::Value",
+                      expires_at, last_used_at, is_active, created_at, updated_at,
                       revoked_at, revoked_reason
             "#,
             key_id,
             self.app_id,
             self.deployment_id,
+            self.app_slug,
             self.name,
             self.key_prefix,
             key_hash,
             key_suffix,
             serde_json::to_value(&permissions)?,
             self.metadata.unwrap_or(serde_json::json!({})),
-            self.expires_at
+            serde_json::to_value(&self.rate_limits)?,
+            self.rate_limit_scheme_slug,
+            self.expires_at,
+            self.organization_id,
+            self.workspace_id,
+            self.organization_membership_id,
+            self.workspace_membership_id,
+            serde_json::to_value(&self.org_role_permissions)?,
+            serde_json::to_value(&self.workspace_role_permissions)?,
         )
         .fetch_one(&app_state.db_pool)
         .await?;
@@ -125,15 +193,41 @@ impl Command for CreateApiKeyCommand {
             id: rec.id,
             app_id: rec.app_id,
             deployment_id: rec.deployment_id,
+            app_slug: rec.app_slug,
             name: rec.name,
             key_prefix: rec.key_prefix,
             key_suffix: rec.key_suffix,
             key_hash: rec.key_hash,
             permissions: serde_json::from_value(
-                rec.permissions.clone().unwrap_or(serde_json::json!([])),
+                rec.permissions
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!([])),
             )
             .unwrap_or_default(),
-            metadata: rec.metadata.unwrap_or(serde_json::json!({})),
+            metadata: rec
+                .metadata
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({})),
+            rate_limits: if rec.rate_limits.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.rate_limits.clone()).unwrap_or_default()
+            },
+            rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
+            organization_id: rec.organization_id,
+            workspace_id: rec.workspace_id,
+            organization_membership_id: rec.organization_membership_id,
+            workspace_membership_id: rec.workspace_membership_id,
+            org_role_permissions: if rec.org_role_permissions.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.org_role_permissions.clone()).unwrap_or_default()
+            },
+            workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.workspace_role_permissions.clone()).unwrap_or_default()
+            },
             expires_at: rec.expires_at,
             last_used_at: rec.last_used_at,
             is_active: rec.is_active.unwrap_or(true),
@@ -199,9 +293,14 @@ impl Command for RotateApiKeyCommand {
         // Get the existing key
         let rec = sqlx::query!(
             r#"
-            SELECT id, app_id, deployment_id, name, key_prefix, key_suffix, 
-                   permissions as "permissions: serde_json::Value", 
-                   metadata as "metadata: serde_json::Value", 
+            SELECT id, app_id, deployment_id, app_slug, name, key_prefix, key_suffix,
+                   permissions as "permissions: serde_json::Value",
+                   metadata as "metadata: serde_json::Value",
+                   rate_limits as "rate_limits: serde_json::Value",
+                   rate_limit_scheme_slug,
+                   organization_id, workspace_id, organization_membership_id, workspace_membership_id,
+                   org_role_permissions as "org_role_permissions: serde_json::Value",
+                   workspace_role_permissions as "workspace_role_permissions: serde_json::Value",
                    expires_at
             FROM api_keys
             WHERE id = $1 AND deployment_id = $2 AND is_active = true
@@ -217,15 +316,41 @@ impl Command for RotateApiKeyCommand {
             id: rec.id,
             app_id: rec.app_id,
             deployment_id: rec.deployment_id,
+            app_slug: rec.app_slug,
             name: rec.name,
             key_prefix: rec.key_prefix,
             key_suffix: rec.key_suffix,
             key_hash: String::new(), // Not needed for rotation
             permissions: serde_json::from_value(
-                rec.permissions.clone().unwrap_or(serde_json::json!([])),
+                rec.permissions
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!([])),
             )
             .unwrap_or_default(),
-            metadata: rec.metadata.unwrap_or(serde_json::json!({})),
+            metadata: rec
+                .metadata
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({})),
+            rate_limits: if rec.rate_limits.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.rate_limits.clone()).unwrap_or_default()
+            },
+            rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
+            organization_id: rec.organization_id,
+            workspace_id: rec.workspace_id,
+            organization_membership_id: rec.organization_membership_id,
+            workspace_membership_id: rec.workspace_membership_id,
+            org_role_permissions: if rec.org_role_permissions.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.org_role_permissions.clone()).unwrap_or_default()
+            },
+            workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
+                vec![]
+            } else {
+                serde_json::from_value(rec.workspace_role_permissions.clone()).unwrap_or_default()
+            },
             expires_at: rec.expires_at,
             last_used_at: None,
             is_active: true,
@@ -239,7 +364,7 @@ impl Command for RotateApiKeyCommand {
         sqlx::query!(
             r#"
             UPDATE api_keys
-            SET 
+            SET
                 is_active = false,
                 revoked_at = NOW(),
                 revoked_reason = 'Rotated',
@@ -254,12 +379,21 @@ impl Command for RotateApiKeyCommand {
         // Create a new key with the same settings
         let create_command = CreateApiKeyCommand {
             app_id: existing_key.app_id,
+            app_slug: existing_key.app_slug,
             deployment_id: existing_key.deployment_id,
             name: existing_key.name,
             key_prefix: existing_key.key_prefix,
             permissions: existing_key.permissions,
             metadata: Some(existing_key.metadata),
             expires_at: existing_key.expires_at,
+            rate_limits: existing_key.rate_limits,
+            rate_limit_scheme_slug: existing_key.rate_limit_scheme_slug,
+            organization_id: existing_key.organization_id,
+            workspace_id: existing_key.workspace_id,
+            organization_membership_id: existing_key.organization_membership_id,
+            workspace_membership_id: existing_key.workspace_membership_id,
+            org_role_permissions: existing_key.org_role_permissions,
+            workspace_role_permissions: existing_key.workspace_role_permissions,
         };
 
         create_command.execute(app_state).await

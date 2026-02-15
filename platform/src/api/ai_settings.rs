@@ -1,17 +1,11 @@
-use crate::{
-    application::response::ApiResult,
-    middleware::RequireDeployment,
-};
+use crate::{application::response::ApiResult, middleware::RequireDeployment};
 use common::state::AppState;
 
 use commands::{Command, UpdateDeploymentAiSettingsCommand};
 use models::{DeploymentAiSettingsResponse, UpdateDeploymentAiSettingsRequest};
 use queries::{GetDeploymentAiSettingsQuery, Query};
 
-use axum::{
-    Json,
-    extract::State,
-};
+use axum::{Json, extract::State};
 
 /// GET /settings/ai-settings - Fetch AI settings (keys masked)
 pub async fn get_ai_settings(

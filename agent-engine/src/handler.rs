@@ -50,13 +50,33 @@ impl AgentHandler {
 
         self.spawn_message_publisher(receiver, context_key.clone(), execution_context.clone());
 
+        let app_state = self.app_state.clone();
+        let child_context_id = request.context_id;
+
         let context = execution_context.get_context().await?;
 
-        let mut executor = AgentExecutor::new(
-            execution_context,
-            sender,
-        )
-        .await?;
+        let execution_context_for_notification = execution_context.clone();
+
+        // Subscribe to spawn control channel if this is a child agent
+        if context.parent_context_id.is_some() {
+            warn!(
+                "Subscribing to spawn control for child context {} (parent: {:?})",
+                child_context_id, context.parent_context_id
+            );
+            tokio::spawn(async move {
+                let subject = format!("agent_spawn_control.context:{}", child_context_id);
+                if let Ok(mut _sub) = app_state.nats_client.subscribe(subject).await {
+                    while let Some(_msg) = _sub.next().await {}
+                } else {
+                    error!(
+                        "Failed to subscribe to spawn control for context {}",
+                        child_context_id
+                    );
+                }
+            });
+        }
+
+        let mut executor = AgentExecutor::new(execution_context, sender).await?;
 
         let execution_result = match (
             request.conversation_id,
@@ -92,6 +112,49 @@ impl AgentHandler {
 
         executor.post_execution_processing();
 
+        // Notify parent if this is a child agent that just completed
+        if let Ok(context) = execution_context_for_notification.get_context().await {
+            if let Some(parent_id) = context.parent_context_id {
+                let current_status = match context.status {
+                    models::ExecutionContextStatus::Completed => "completed",
+                    models::ExecutionContextStatus::Failed => "failed",
+                    _ => return Ok(()),
+                };
+
+                if current_status == "completed" || current_status == "failed" {
+                    let completion_event = dto::json::StreamEvent::ChildAgentCompleted {
+                        child_context_id: context.id,
+                        status: current_status.to_string(),
+                        summary: context.completion_summary,
+                    };
+                    let _subject =
+                        format!("agent_execution_stream.context:{}", parent_id.to_string());
+                    let mut headers = async_nats::HeaderMap::new();
+                    headers.insert("message_type", "child_agent_completed");
+                    headers.insert("child_context_id", context.id.to_string());
+                    headers.insert("parent_context_id", parent_id.to_string());
+
+                    if let Err(e) = publish_stream_event(
+                        execution_context_for_notification.clone(),
+                        &parent_id.to_string(),
+                        completion_event,
+                    )
+                    .await
+                    {
+                        warn!(
+                            "Failed to publish child completion to parent {}: {}",
+                            parent_id, e
+                        );
+                    } else {
+                        warn!(
+                            "Notified parent {} that child {} completed (status: {})",
+                            parent_id, context.id, current_status
+                        );
+                    }
+                }
+            }
+        }
+
         if let Err(e) = kv.delete(&context_key).await {
             warn!("Failed to delete execution key: {}", e);
         }
@@ -125,12 +188,7 @@ impl AgentHandler {
     ) {
         tokio::spawn(async move {
             while let Some(message) = receiver.recv().await {
-                let _ = publish_stream_event(
-                    ctx.clone(),
-                    &context_key,
-                    message,
-                )
-                .await;
+                let _ = publish_stream_event(ctx.clone(), &context_key, message).await;
             }
         });
     }
@@ -267,6 +325,21 @@ async fn publish_stream_event(
             })?;
             ("user_input_request", payload)
         }
+        StreamEvent::ChildAgentCompleted {
+            child_context_id,
+            status,
+            summary,
+        } => {
+            let payload = serde_json::to_vec(&serde_json::json!({
+                "child_context_id": child_context_id,
+                "status": status,
+                "summary": summary,
+            }))
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to serialize child agent completed: {e}"))
+            })?;
+            ("child_agent_completed", payload)
+        }
     };
 
     let mut headers = async_nats::HeaderMap::new();
@@ -281,7 +354,7 @@ async fn publish_stream_event(
         subject,
         context_key
     );
-    
+
     jetstream
         .publish_with_headers(subject.clone(), headers, payload.clone().into())
         .await
@@ -297,6 +370,7 @@ async fn publish_stream_event(
         "platform_event" => "execution_context.platform_event",
         "platform_function" => "execution_context.platform_function",
         "user_input_request" => "execution_context.user_input_request",
+        "child_agent_completed" => "execution_context.child_agent_completed",
         _ => "execution_context.message",
     };
 

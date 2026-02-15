@@ -775,7 +775,8 @@ impl ContextOrchestrator {
                 .map_err(|e| AppError::Internal(format!("Failed to render template: {e}")))?;
 
         let (derivation, _) = self
-            .create_gemini_client().await?
+            .create_gemini_client()
+            .await?
             .generate_structured_content::<ContextSearchDerivation>(request_body)
             .await?;
 
@@ -905,8 +906,13 @@ impl ContextOrchestrator {
         max_results: usize,
         filters: &ContextFilters,
     ) -> Result<Vec<ContextSearchResult>, AppError> {
-        let kb_ids =
-            kb_ids.unwrap_or_else(|| self.agent().knowledge_bases.iter().map(|kb| kb.id).collect());
+        let kb_ids = kb_ids.unwrap_or_else(|| {
+            self.agent()
+                .knowledge_bases
+                .iter()
+                .map(|kb| kb.id)
+                .collect()
+        });
 
         tracing::debug!(
             "Executing KB search - Query: '{}', KB IDs: {:?}, Mode: {:?}",
@@ -1113,7 +1119,11 @@ impl ContextOrchestrator {
                 .collect()
         } else {
             // If no specific KBs provided, use all available KBs
-            self.agent().knowledge_bases.iter().map(|kb| kb.id).collect()
+            self.agent()
+                .knowledge_bases
+                .iter()
+                .map(|kb| kb.id)
+                .collect()
         };
 
         if kb_ids.is_empty() {

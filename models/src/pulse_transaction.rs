@@ -14,7 +14,7 @@ pub struct PulseTransaction {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "text", rename_all = "snake_case")]
+#[sqlx(type_name = "VARCHAR", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum PulseTransactionType {
     Purchase,

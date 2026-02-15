@@ -24,9 +24,6 @@ pub struct NotificationMessage {
     pub created_at: DateTime<Utc>,
 }
 
-// =====================================================
-// CREATE NOTIFICATION COMMAND
-// =====================================================
 #[derive(Debug, Clone)]
 pub struct CreateNotificationCommand {
     pub deployment_id: i64,
@@ -134,7 +131,10 @@ impl Command for CreateNotificationCommand {
         );
 
         // Serialize ctas back to JSON for NATS message
-        let ctas_json = notification.ctas.as_ref().and_then(|ctas| serde_json::to_value(ctas).ok());
+        let ctas_json = notification
+            .ctas
+            .as_ref()
+            .and_then(|ctas| serde_json::to_value(ctas).ok());
 
         let message = NotificationMessage {
             id: notification.id,
@@ -160,9 +160,6 @@ impl Command for CreateNotificationCommand {
     }
 }
 
-// =====================================================
-// MARK NOTIFICATION AS READ COMMAND
-// =====================================================
 #[derive(Debug)]
 pub struct MarkNotificationReadCommand {
     pub notification_id: i64,
@@ -192,9 +189,6 @@ impl Command for MarkNotificationReadCommand {
     }
 }
 
-// =====================================================
-// MARK ALL NOTIFICATIONS AS READ COMMAND
-// =====================================================
 #[derive(Debug)]
 pub struct MarkAllNotificationsReadCommand {
     pub user_id: i64,
@@ -227,9 +221,6 @@ impl Command for MarkAllNotificationsReadCommand {
     }
 }
 
-// =====================================================
-// ARCHIVE NOTIFICATION COMMAND
-// =====================================================
 #[derive(Debug)]
 pub struct ArchiveNotificationCommand {
     pub notification_id: i64,
@@ -259,9 +250,6 @@ impl Command for ArchiveNotificationCommand {
     }
 }
 
-// =====================================================
-// DELETE NOTIFICATION COMMAND (Soft delete via archive)
-// =====================================================
 #[derive(Debug)]
 pub struct DeleteNotificationCommand {
     pub notification_id: i64,
@@ -282,9 +270,6 @@ impl Command for DeleteNotificationCommand {
     }
 }
 
-// =====================================================
-// CLEANUP EXPIRED NOTIFICATIONS COMMAND
-// =====================================================
 #[derive(Debug)]
 pub struct CleanupExpiredNotificationsCommand;
 

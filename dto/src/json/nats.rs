@@ -8,22 +8,58 @@ pub struct NatsTaskMessage {
     pub payload: serde_json::Value,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ApiKeyRateLimitSyncPayload {
+    pub deployment_id: i64,
+    pub app_id: i64,
+    pub rate_limit_scheme_slug: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct RateLimitSchemeSyncPayload {
+    pub deployment_id: i64,
+    pub scheme_slug: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ApiKeyOrgMembershipSyncPayload {
+    pub membership_id: i64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ApiKeyWorkspaceMembershipSyncPayload {
+    pub membership_id: i64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ApiKeyOrgRoleSyncPayload {
+    pub role_id: i64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ApiKeyWorkspaceRoleSyncPayload {
+    pub role_id: i64,
+}
+
 // Webhook replay batch task payloads
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum WebhookReplayBatchPayload {
     #[serde(rename = "by_ids")]
     ByIds {
-        deployment_id: i64,
+        deployment_id: String,
+        app_slug: String,
         delivery_ids: Vec<String>,
-        include_successful: bool,
     },
     #[serde(rename = "by_date_range")]
     ByDateRange {
-        deployment_id: i64,
+        deployment_id: String,
+        app_slug: String,
         start_date: DateTime<Utc>,
         end_date: Option<DateTime<Utc>>,
-        include_successful: bool,
+        status: Option<String>,
+        event_name: Option<String>,
+        endpoint_id: Option<i64>,
     },
 }
 

@@ -1,9 +1,11 @@
 pub mod agent;
 pub mod analytics;
+pub mod api_key_role_permissions_sync;
 pub mod billing;
 pub mod document;
 pub mod email;
 pub mod embedding;
+pub mod rate_limit_scheme_sync;
 pub mod teams_activity;
 pub mod token;
 pub mod webhook;

@@ -6,8 +6,12 @@ use axum::{
 #[derive(Debug, Clone)]
 pub struct ApiKeyContext {
     pub key_id: i64,
-    pub app_name: String,
+    pub app_slug: String,
     pub permissions: Vec<String>,
+    pub organization_id: Option<i64>,
+    pub workspace_id: Option<i64>,
+    pub organization_membership_id: Option<i64>,
+    pub workspace_membership_id: Option<i64>,
 }
 
 #[derive(Debug, Clone)]

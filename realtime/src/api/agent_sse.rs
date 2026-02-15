@@ -146,7 +146,7 @@ pub async fn agent_sse_stream_handler(
     let nats_client = app_state.nats_jetstream.clone();
     let ctx_id = context_id.clone();
     let app_state_clone = app_state.clone();
-    
+
     tokio::spawn(async move {
         if let Err(e) = subscribe_and_stream(nats_client, ctx_id, tx, app_state_clone).await {
             error!("SSE stream error: {}", e);
@@ -173,7 +173,7 @@ async fn subscribe_and_stream(
     app_state: AppState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("SSE: Creating/getting stream for context {}", context_id);
-    
+
     let stream = js
         .get_or_create_stream(jetstream::stream::Config {
             name: "agent_execution_stream".to_string(),
@@ -184,9 +184,12 @@ async fn subscribe_and_stream(
 
     let consumer_id = app_state.sf.next_id().unwrap_or(0);
     let consumer_name = format!("sse_consumer_{}", consumer_id);
-    
-    info!("SSE: Creating consumer {} for context {}", consumer_name, context_id);
-    
+
+    info!(
+        "SSE: Creating consumer {} for context {}",
+        consumer_name, context_id
+    );
+
     let consumer: PullConsumer = stream
         .create_consumer(jetstream::consumer::pull::Config {
             name: Some(consumer_name.clone()),
@@ -198,7 +201,10 @@ async fn subscribe_and_stream(
         })
         .await?;
 
-    info!("SSE: Consumer {} created, sending connected event", consumer_name);
+    info!(
+        "SSE: Consumer {} created, sending connected event",
+        consumer_name
+    );
 
     let connected_event = format!(
         "event: connected\ndata: {}\n\n",
@@ -209,12 +215,15 @@ async fn subscribe_and_stream(
         return Ok(());
     }
 
-    info!("SSE: Starting message consumption for context {}", context_id);
-    
+    info!(
+        "SSE: Starting message consumption for context {}",
+        context_id
+    );
+
     let mut messages = consumer.messages().await?;
-    
+
     info!("SSE: Message stream established for context {}", context_id);
-    
+
     while let Some(msg_result) = messages.next().await {
         match msg_result {
             Ok(message) => {
@@ -231,14 +240,18 @@ async fn subscribe_and_stream(
                 // Parse payload based on message_type header
                 let (event_type, payload) = match message_type {
                     "conversation_message" => {
-                        match serde_json::from_slice::<models::ConversationRecord>(&message.payload) {
+                        match serde_json::from_slice::<models::ConversationRecord>(&message.payload)
+                        {
                             Ok(conv) => {
                                 // Filter conversation messages to only include displayable types
                                 if !is_displayable_message_type(&conv.content) {
                                     continue;
                                 }
                                 let stream_event = StreamEvent::ConversationMessage(conv);
-                                ("conversation_message", serde_json::to_string(&stream_event).unwrap_or_default())
+                                (
+                                    "conversation_message",
+                                    serde_json::to_string(&stream_event).unwrap_or_default(),
+                                )
                             }
                             Err(e) => {
                                 warn!("Failed to parse conversation message: {}", e);
@@ -247,10 +260,16 @@ async fn subscribe_and_stream(
                         }
                     }
                     "platform_event" => {
-                        match serde_json::from_slice::<dto::json::PlatformEventPayload>(&message.payload) {
+                        match serde_json::from_slice::<dto::json::PlatformEventPayload>(
+                            &message.payload,
+                        ) {
                             Ok(event) => {
-                                let stream_event = StreamEvent::PlatformEvent(event.event_label, event.event_data);
-                                ("platform_event", serde_json::to_string(&stream_event).unwrap_or_default())
+                                let stream_event =
+                                    StreamEvent::PlatformEvent(event.event_label, event.event_data);
+                                (
+                                    "platform_event",
+                                    serde_json::to_string(&stream_event).unwrap_or_default(),
+                                )
                             }
                             Err(e) => {
                                 warn!("Failed to parse platform event: {}", e);
@@ -259,10 +278,18 @@ async fn subscribe_and_stream(
                         }
                     }
                     "platform_function" => {
-                        match serde_json::from_slice::<dto::json::PlatformFunctionPayload>(&message.payload) {
+                        match serde_json::from_slice::<dto::json::PlatformFunctionPayload>(
+                            &message.payload,
+                        ) {
                             Ok(func) => {
-                                let stream_event = StreamEvent::PlatformFunction(func.function_name, func.function_data);
-                                ("platform_function", serde_json::to_string(&stream_event).unwrap_or_default())
+                                let stream_event = StreamEvent::PlatformFunction(
+                                    func.function_name,
+                                    func.function_data,
+                                );
+                                (
+                                    "platform_function",
+                                    serde_json::to_string(&stream_event).unwrap_or_default(),
+                                )
                             }
                             Err(e) => {
                                 warn!("Failed to parse platform function: {}", e);
@@ -271,10 +298,15 @@ async fn subscribe_and_stream(
                         }
                     }
                     "user_input_request" => {
-                        match serde_json::from_slice::<models::ConversationContent>(&message.payload) {
+                        match serde_json::from_slice::<models::ConversationContent>(
+                            &message.payload,
+                        ) {
                             Ok(content) => {
                                 let stream_event = StreamEvent::UserInputRequest(content);
-                                ("user_input_request", serde_json::to_string(&stream_event).unwrap_or_default())
+                                (
+                                    "user_input_request",
+                                    serde_json::to_string(&stream_event).unwrap_or_default(),
+                                )
                             }
                             Err(e) => {
                                 warn!("Failed to parse user input request: {}", e);
@@ -288,11 +320,7 @@ async fn subscribe_and_stream(
                     }
                 };
 
-                let sse_data = format!(
-                    "event: {}\ndata: {}\n\n",
-                    event_type,
-                    payload
-                );
+                let sse_data = format!("event: {}\ndata: {}\n\n", event_type, payload);
 
                 if tx.send(Ok(sse_data)).await.is_err() {
                     warn!("SSE: Client disconnected, closing stream");
@@ -322,5 +350,3 @@ fn is_displayable_message_type(content: &ConversationContent) -> bool {
             | ConversationContent::UserInputRequest { .. }
     )
 }
-
-

@@ -5,12 +5,10 @@ use crate::tools::ToolExecutor;
 use common::error::AppError;
 use dto::json::agent_executor::{ConversationInsights, ObjectiveDefinition, TaskExecutionResult};
 use dto::json::StreamEvent;
+use models::{AgentExecutionState, ConversationRecord, ExecutionContextStatus, MemoryRecord};
 use models::{
-    AgentExecutionState, ConversationRecord, ExecutionContextStatus,
-    MemoryRecord,
-};
-use models::{
-    AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration, UseExternalServiceToolConfiguration, UseExternalServiceToolType,
+    AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration,
+    UseExternalServiceToolConfiguration, UseExternalServiceToolType,
 };
 use std::collections::HashMap;
 
@@ -37,7 +35,6 @@ pub struct AgentExecutor {
     pub(super) shell: ShellExecutor,
 }
 
-
 pub struct AgentExecutorBuilder {
     ctx: std::sync::Arc<crate::execution_context::ExecutionContext>,
     channel: tokio::sync::mpsc::Sender<StreamEvent>,
@@ -48,17 +45,14 @@ impl AgentExecutorBuilder {
         ctx: std::sync::Arc<crate::execution_context::ExecutionContext>,
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
     ) -> Self {
-        Self {
-            ctx,
-            channel,
-        }
+        Self { ctx, channel }
     }
 
     pub async fn build(self) -> Result<AgentExecutor, AppError> {
         let execution_context = self.ctx.clone();
 
-        let tool_executor = ToolExecutor::new(execution_context.clone())
-            .with_channel(self.channel.clone());
+        let tool_executor =
+            ToolExecutor::new(execution_context.clone()).with_channel(self.channel.clone());
         let context_orchestrator = ContextOrchestrator::new(execution_context.clone());
 
         let execution_id = self.ctx.app_state.sf.next_id()?.to_string();
@@ -235,9 +229,7 @@ impl AgentExecutor {
         ctx: std::sync::Arc<crate::execution_context::ExecutionContext>,
         channel: tokio::sync::mpsc::Sender<StreamEvent>,
     ) -> Result<Self, AppError> {
-        AgentExecutorBuilder::new(ctx, channel)
-            .build()
-            .await
+        AgentExecutorBuilder::new(ctx, channel).build().await
     }
 
     pub(super) fn restore_from_state(

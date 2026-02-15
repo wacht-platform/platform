@@ -12,8 +12,8 @@ pgvector = { version = "0.4.1", features = ["sqlx", "serde", "halfvec"] }
 half = "2.4"
 thiserror = "1.0"
 redis = { version = "0.29.5", features = ["tokio-comp"] }
-clickhouse = { version = "0.13.3", features = ["chrono"] }
+clickhouse = { version = "0.14.2", features = ["chrono", "native-tls"] }
 sonyflake = "0.3"
 reqwest = { version = "0.12", features = ["json"] }
 url = "2.5"
-wacht = "0.0.1-alpha.10"
+wacht = { path = "../../wacht-rs" }

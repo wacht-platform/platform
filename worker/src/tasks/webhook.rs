@@ -1,16 +1,17 @@
 use anyhow::Result;
 use chrono::Utc;
 use commands::{
-    Command,
+    Command, SendEmailCommand,
     webhook_delivery::{
         ClearEndpointFailuresCommand, DeactivateEndpointCommand, DeleteActiveDeliveryCommand,
         GetActiveDeliveryCommand, IncrementEndpointFailuresCommand, UpdateDeliveryAttemptsCommand,
         calculate_next_retry,
     },
-    webhook_storage::RetrieveWebhookPayloadCommand,
+    webhook_subscription::evaluate_filter,
 };
 use common::state::AppState;
-use dto::clickhouse::webhook::WebhookDelivery;
+use dto::clickhouse::webhook::WebhookLog;
+use queries::{GetWebhookAppByNameQuery, Query};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{error, info, warn};
@@ -33,14 +34,6 @@ pub struct WebhookRetryTask {
     pub deployment_id: i64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct WebhookEventTask {
-    pub deployment_id: i64,
-    pub event_type: String,
-    pub event_payload: serde_json::Value,
-    pub triggered_at: chrono::DateTime<Utc>,
-}
-
 #[derive(Debug)]
 pub enum DeliveryResult {
     Success,
@@ -52,6 +45,7 @@ pub enum DeliveryResult {
 const STATUS_REQUEST_TIMEOUT: u16 = 408;
 const STATUS_TOO_MANY_REQUESTS: u16 = 429;
 const STATUS_INTERNAL_SERVER_ERROR: u16 = 500;
+const WEBHOOK_FAILURE_EMAIL_COOLDOWN_SECONDS: u64 = 3600;
 
 pub async fn process_webhook_delivery(
     delivery_id: i64,
@@ -67,12 +61,103 @@ pub async fn process_webhook_delivery(
         }
     };
 
-    let payload = RetrieveWebhookPayloadCommand::new(delivery.payload_s3_key.clone())
-        .execute(app_state)
-        .await?;
+    let payload = match delivery.payload {
+        Some(payload_value) => payload_value,
+        None => {
+            warn!("Webhook delivery {} has no payload", delivery_id);
+            return Ok(DeliveryResult::NotFound);
+        }
+    };
 
-    // Send payload as-is per Standard Webhooks specification
-    // The payload should already contain type, timestamp, and data fields
+    if let Some(filter_rules) = &delivery.filter_rules {
+        let filter_match = evaluate_filter(filter_rules, &payload);
+        info!(
+            delivery_id,
+            deployment_id,
+            endpoint_id = delivery.endpoint_id,
+            event_name = %delivery.event_name,
+            filter_match,
+            "Worker evaluated snapshot filter rules for delivery",
+        );
+
+        if !filter_match {
+            let payload_json = serde_json::to_string(&payload).unwrap_or_default();
+            let ch_delivery = WebhookLog {
+                deployment_id,
+                delivery_id,
+                app_slug: delivery.app_slug.clone(),
+                endpoint_id: delivery.endpoint_id,
+                event_name: delivery.event_name.clone(),
+                status: "filtered".to_string(),
+                http_status_code: None,
+                response_time_ms: None,
+                attempt_number: delivery.attempts,
+                max_attempts: delivery.max_attempts,
+                payload: Some(payload_json.clone()),
+                payload_size_bytes: payload_json.len() as i32,
+                response_body: None,
+                response_headers: None,
+                request_headers: None,
+                timestamp: Utc::now(),
+            };
+
+            if let Err(e) = app_state
+                .clickhouse_service
+                .insert_webhook_log(&ch_delivery)
+                .await
+            {
+                warn!("Failed to log filtered delivery to Tinybird: {}", e);
+            }
+
+            DeleteActiveDeliveryCommand { delivery_id }
+                .execute(app_state)
+                .await?;
+            return Ok(DeliveryResult::Success);
+        }
+    }
+
+    info!(
+        delivery_id,
+        deployment_id,
+        endpoint_id = delivery.endpoint_id,
+        app_slug = %delivery.app_slug,
+        event_name = %delivery.event_name,
+        "Processing queued webhook delivery",
+    );
+
+    if let Some(rate_limit_config) = &delivery.rate_limit_config {
+        let config: models::webhook::RateLimitConfig =
+            serde_json::from_value(rate_limit_config.clone())
+                .map_err(|e| anyhow::anyhow!("Invalid rate limit config: {}", e))?;
+
+        let throttler = crate::throttler::WebhookThrottler::new(app_state.redis_client.clone());
+
+        match throttler
+            .check_and_record(
+                delivery.endpoint_id,
+                config.duration_ms,
+                config.max_requests,
+            )
+            .await?
+        {
+            None => {
+                info!(
+                    "Webhook delivery {} allowed (limit: {} per {}ms)",
+                    delivery_id, config.max_requests, config.duration_ms
+                );
+            }
+            Some(delay_ms) => {
+                info!(
+                    "Webhook delivery {} rate limited, requeuing with {}ms delay (limit: {} per {}ms)",
+                    delivery_id, delay_ms, config.max_requests, config.duration_ms
+                );
+                return Ok(DeliveryResult::RetryAfter(
+                    std::time::Duration::from_millis(delay_ms as u64),
+                ));
+            }
+        }
+    }
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(
             delivery.timeout_seconds as u64,
@@ -80,25 +165,36 @@ pub async fn process_webhook_delivery(
         .user_agent("Wacht-Webhook/1.0")
         .build()?;
 
+    let payload_json = serde_json::to_string(&payload).unwrap_or_default();
+
     let mut request = client.post(&delivery.url).json(&payload);
 
-    // Use Standard Webhooks headers
-    request = request
-        .header("webhook-id", delivery.webhook_id.clone())
-        .header("webhook-timestamp", delivery.webhook_timestamp.to_string())
-        .header(
-            "webhook-signature",
-            delivery.signature.as_ref().unwrap_or(&String::new()),
-        );
+    let mut final_headers = std::collections::HashMap::new();
+    final_headers.insert("webhook-id".to_string(), delivery.webhook_id.clone());
+    final_headers.insert(
+        "webhook-timestamp".to_string(),
+        delivery.webhook_timestamp.to_string(),
+    );
+    if let Some(sig) = &delivery.signature {
+        final_headers.insert("webhook-signature".to_string(), sig.clone());
+    } else {
+        final_headers.insert("webhook-signature".to_string(), String::new());
+    }
 
     if let Some(headers) = &delivery.headers {
         if let Some(headers_obj) = headers.as_object() {
             for (key, value) in headers_obj {
                 if let Some(value_str) = value.as_str() {
-                    request = request.header(key, value_str);
+                    final_headers.insert(key.clone(), value_str.to_string());
                 }
             }
         }
+    }
+
+    let request_headers_json = serde_json::to_string(&final_headers).ok();
+
+    for (k, v) in &final_headers {
+        request = request.header(k, v);
     }
 
     let start = Instant::now();
@@ -117,31 +213,28 @@ pub async fn process_webhook_delivery(
                     delivery.url
                 );
 
-                let ch_delivery = WebhookDelivery {
+                let ch_delivery = WebhookLog {
                     deployment_id,
                     delivery_id,
-                    app_name: delivery.app_name.clone(),
+                    app_slug: delivery.app_slug.clone(),
                     endpoint_id: delivery.endpoint_id,
-                    endpoint_url: delivery.url.clone(),
                     event_name: delivery.event_name.clone(),
                     status: "endpoint_disabled".to_string(),
                     http_status_code: Some(410),
                     response_time_ms: Some(duration.as_millis() as i32),
                     attempt_number: delivery.attempts + 1,
                     max_attempts: delivery.max_attempts,
-                    error_message: Some(
-                        "Endpoint returned 410 Gone - permanently disabled".to_string(),
-                    ),
-                    filtered_reason: None,
-                    payload_s3_key: delivery.payload_s3_key.clone(),
+                    payload: Some(payload_json.clone()),
+                    payload_size_bytes: payload_json.len() as i32,
                     response_body: response_body.clone(),
                     response_headers: None,
+                    request_headers: request_headers_json.clone(),
                     timestamp: Utc::now(),
                 };
 
                 if let Err(e) = app_state
                     .clickhouse_service
-                    .insert_webhook_delivery(&ch_delivery)
+                    .insert_webhook_log(&ch_delivery)
                     .await
                 {
                     warn!("Failed to log 410 Gone delivery to ClickHouse: {}", e);
@@ -162,33 +255,47 @@ pub async fn process_webhook_delivery(
                     delivery.url, delivery.endpoint_id
                 );
 
+                if let Err(e) = send_webhook_failure_notification(
+                    deployment_id,
+                    &delivery.app_slug,
+                    delivery.endpoint_id,
+                    &delivery.url,
+                    app_state,
+                )
+                .await
+                {
+                    warn!(
+                        "Failed to send webhook endpoint failure notification for endpoint {}: {}",
+                        delivery.endpoint_id, e
+                    );
+                }
+
                 return Ok(DeliveryResult::Failed);
             }
 
             if status.is_success() {
-                let ch_delivery = WebhookDelivery {
+                let ch_delivery = WebhookLog {
                     deployment_id,
                     delivery_id,
-                    app_name: delivery.app_name.clone(),
+                    app_slug: delivery.app_slug.clone(),
                     endpoint_id: delivery.endpoint_id,
-                    endpoint_url: delivery.url.clone(),
                     event_name: delivery.event_name.clone(),
                     status: "success".to_string(),
                     http_status_code: Some(status_code as i32),
                     response_time_ms: Some(duration.as_millis() as i32),
                     attempt_number: delivery.attempts + 1,
                     max_attempts: delivery.max_attempts,
-                    error_message: None,
-                    filtered_reason: None,
-                    payload_s3_key: delivery.payload_s3_key.clone(),
+                    payload: Some(payload_json.clone()),
+                    payload_size_bytes: payload_json.len() as i32,
                     response_body: response_body.clone(),
                     response_headers: None,
+                    request_headers: request_headers_json.clone(),
                     timestamp: Utc::now(),
                 };
 
                 if let Err(e) = app_state
                     .clickhouse_service
-                    .insert_webhook_delivery(&ch_delivery)
+                    .insert_webhook_log(&ch_delivery)
                     .await
                 {
                     warn!("Failed to log successful delivery to ClickHouse: {}", e);
@@ -208,13 +315,11 @@ pub async fn process_webhook_delivery(
                 let will_retry = (delivery.attempts + 1) < delivery.max_attempts
                     && (status_code >= 500 || status_code == 408 || status_code == 429);
 
-                let ch_delivery = WebhookDelivery {
+                let ch_delivery = WebhookLog {
                     deployment_id,
                     delivery_id,
-
-                    app_name: delivery.app_name.clone(),
+                    app_slug: delivery.app_slug.clone(),
                     endpoint_id: delivery.endpoint_id,
-                    endpoint_url: delivery.url.clone(),
                     event_name: delivery.event_name.clone(),
                     status: if will_retry {
                         "failed".to_string()
@@ -225,17 +330,17 @@ pub async fn process_webhook_delivery(
                     response_time_ms: Some(duration.as_millis() as i32),
                     attempt_number: delivery.attempts + 1,
                     max_attempts: delivery.max_attempts,
-                    error_message: None,
-                    filtered_reason: None,
-                    payload_s3_key: delivery.payload_s3_key.clone(),
+                    payload: Some(payload_json.clone()),
+                    payload_size_bytes: payload_json.len() as i32,
                     response_body: response_body.clone(),
                     response_headers: None,
+                    request_headers: request_headers_json.clone(),
                     timestamp: Utc::now(),
                 };
 
                 if let Err(e) = app_state
                     .clickhouse_service
-                    .insert_webhook_delivery(&ch_delivery)
+                    .insert_webhook_log(&ch_delivery)
                     .await
                 {
                     warn!("Failed to log failed delivery to ClickHouse: {}", e);
@@ -244,7 +349,7 @@ pub async fn process_webhook_delivery(
                 let result = handle_delivery_failure(
                     delivery_id,
                     deployment_id,
-                    delivery.app_name.clone(),
+                    delivery.app_slug.clone(),
                     delivery.endpoint_id,
                     delivery.url.clone(),
                     delivery.attempts + 1,
@@ -257,15 +362,13 @@ pub async fn process_webhook_delivery(
                 Ok(result)
             }
         }
-        Err(e) => {
+        Err(_e) => {
             let will_retry = (delivery.attempts + 1) < delivery.max_attempts;
-            let ch_delivery = WebhookDelivery {
+            let ch_delivery = WebhookLog {
                 deployment_id,
                 delivery_id,
-
-                app_name: delivery.app_name.clone(),
+                app_slug: delivery.app_slug.clone(),
                 endpoint_id: delivery.endpoint_id,
-                endpoint_url: delivery.url.clone(),
                 event_name: delivery.event_name.clone(),
                 status: if will_retry {
                     "failed".to_string()
@@ -276,17 +379,17 @@ pub async fn process_webhook_delivery(
                 response_time_ms: None,
                 attempt_number: delivery.attempts + 1,
                 max_attempts: delivery.max_attempts,
-                error_message: Some(e.to_string()),
-                filtered_reason: None,
-                payload_s3_key: delivery.payload_s3_key.clone(),
+                payload: Some(payload_json.clone()),
+                payload_size_bytes: payload_json.len() as i32,
                 response_body: None,
                 response_headers: None,
+                request_headers: request_headers_json.clone(),
                 timestamp: Utc::now(),
             };
 
             if let Err(e) = app_state
                 .clickhouse_service
-                .insert_webhook_delivery(&ch_delivery)
+                .insert_webhook_log(&ch_delivery)
                 .await
             {
                 warn!("Failed to log error delivery to ClickHouse: {}", e);
@@ -295,7 +398,7 @@ pub async fn process_webhook_delivery(
             let result = handle_delivery_failure(
                 delivery_id,
                 deployment_id,
-                delivery.app_name,
+                delivery.app_slug,
                 delivery.endpoint_id,
                 delivery.url,
                 delivery.attempts + 1,
@@ -313,7 +416,7 @@ pub async fn process_webhook_delivery(
 async fn handle_delivery_failure(
     delivery_id: i64,
     deployment_id: i64,
-    app_name: String,
+    app_slug: String,
     endpoint_id: i64,
     endpoint_url: String,
     new_attempts: i32,
@@ -378,33 +481,28 @@ async fn handle_delivery_failure(
                     .execute(app_state)
                     .await?;
 
-                let ch_delivery = WebhookDelivery {
+                let ch_delivery = WebhookLog {
                     deployment_id,
                     delivery_id: app_state.sf.next_id().unwrap() as i64,
-
-                    app_name: app_name.clone(),
+                    app_slug: app_slug.clone(),
                     endpoint_id,
-                    endpoint_url: endpoint_url.clone(),
                     event_name: "endpoint.deactivated".to_string(),
                     status: "deactivated".to_string(),
                     http_status_code: None,
                     response_time_ms: None,
                     attempt_number: 0,
                     max_attempts: 0,
-                    error_message: Some(format!(
-                        "Auto-deactivated after {} max-attempt failures",
-                        DEACTIVATION_THRESHOLD
-                    )),
-                    filtered_reason: None,
-                    payload_s3_key: "endpoint-deactivation".to_string(),
+                    payload: None,
+                    payload_size_bytes: 0,
                     response_body: None,
                     response_headers: None,
+                    request_headers: None,
                     timestamp: Utc::now(),
                 };
 
                 if let Err(e) = app_state
                     .clickhouse_service
-                    .insert_webhook_delivery(&ch_delivery)
+                    .insert_webhook_log(&ch_delivery)
                     .await
                 {
                     warn!("Failed to log endpoint deactivation to ClickHouse: {}", e);
@@ -412,13 +510,142 @@ async fn handle_delivery_failure(
 
                 info!(
                     "Endpoint {} for app {} has been auto-deactivated. Customer should be notified.",
-                    endpoint_id, app_name
+                    endpoint_id, app_slug
                 );
+
+                if let Err(e) = send_webhook_failure_notification(
+                    deployment_id,
+                    &app_slug,
+                    endpoint_id,
+                    &endpoint_url,
+                    app_state,
+                )
+                .await
+                {
+                    warn!(
+                        "Failed to send webhook endpoint failure notification for endpoint {}: {}",
+                        endpoint_id, e
+                    );
+                }
             }
         }
     }
 
     Ok(DeliveryResult::Failed)
+}
+
+async fn get_failure_notification_emails(
+    deployment_id: i64,
+    app_slug: &str,
+    app_state: &AppState,
+) -> Result<Vec<String>> {
+    let app = GetWebhookAppByNameQuery::new(deployment_id, app_slug.to_string())
+        .execute(app_state)
+        .await?;
+
+    let Some(app) = app else {
+        return Ok(Vec::new());
+    };
+
+    let emails = app
+        .failure_notification_emails
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| item.as_str())
+                .map(str::trim)
+                .filter(|email| !email.is_empty())
+                .map(ToOwned::to_owned)
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
+
+    Ok(emails)
+}
+
+async fn send_webhook_failure_notification(
+    deployment_id: i64,
+    app_slug: &str,
+    endpoint_id: i64,
+    endpoint_url: &str,
+    app_state: &AppState,
+) -> Result<()> {
+    let recipient_emails =
+        get_failure_notification_emails(deployment_id, app_slug, app_state).await?;
+
+    if recipient_emails.is_empty() {
+        return Ok(());
+    }
+
+    let mut redis_conn = app_state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
+
+    for recipient_email in recipient_emails {
+        let dedupe_key = format!(
+            "webhook:failure-notification:{}:{}:{}:{}",
+            deployment_id,
+            app_slug,
+            endpoint_id,
+            recipient_email.to_lowercase()
+        );
+
+        let lock_set: Option<String> = redis::cmd("SET")
+            .arg(&dedupe_key)
+            .arg("1")
+            .arg("NX")
+            .arg("EX")
+            .arg(WEBHOOK_FAILURE_EMAIL_COOLDOWN_SECONDS)
+            .query_async(&mut redis_conn)
+            .await?;
+
+        if lock_set.is_none() {
+            info!(
+                deployment_id,
+                app_slug,
+                endpoint_id,
+                recipient = %recipient_email,
+                "Skipping duplicate webhook failure notification within cooldown",
+            );
+            continue;
+        }
+
+        let variables = serde_json::json!({
+            "endpoint": {
+                "url": endpoint_url,
+            },
+        });
+
+        if let Err(e) = SendEmailCommand::new(
+            deployment_id,
+            "webhook_failure_notification_template".to_string(),
+            recipient_email.clone(),
+            variables,
+        )
+        .execute(app_state)
+        .await
+        {
+            error!(
+                deployment_id,
+                app_slug,
+                endpoint_id,
+                recipient = %recipient_email,
+                "Failed to send webhook failure notification email: {}",
+                e
+            );
+        } else {
+            info!(
+                deployment_id,
+                app_slug,
+                endpoint_id,
+                recipient = %recipient_email,
+                "Webhook failure notification email sent",
+            );
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn process_webhook_batch(

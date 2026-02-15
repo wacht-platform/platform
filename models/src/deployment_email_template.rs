@@ -25,6 +25,7 @@ pub struct DeploymentEmailTemplate {
     pub waitlist_signup_template: EmailTemplate,
     pub waitlist_invite_template: EmailTemplate,
     pub workspace_invite_template: EmailTemplate,
+    pub webhook_failure_notification_template: EmailTemplate,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -166,6 +167,16 @@ impl Default for DeploymentEmailTemplate {
 <p style="margin:0 0 16px 0;font-size:14px;line-height:24px;color:#6b7280;">This invitation expires in {{invitation.expires_in_days}} days.</p>
 <p style="margin:0;font-size:14px;line-height:24px;color:#6b7280;">Or copy: <a href="{{action_url}}" style="color:#000000;text-decoration:none;word-break:break-all;">{{action_url}}</a></p>
 <p style="margin-top:32px;font-size:12px;color:#9ca3af;">If you weren't expecting this invitation, you can safely ignore this email.</p>"#.to_string(),
+            },
+            webhook_failure_notification_template: EmailTemplate {
+                template_name: "Webhook Failure Notification".to_string(),
+                template_from: "notification".to_string(),
+                template_reply_to: "".to_string(),
+                template_subject: "Webhook endpoint disabled".to_string(),
+                template_data: r#"<div style="margin-bottom:48px;text-align:center;">{{image app.logo app.name}}</div>
+<h1 style="margin:0 0 16px 0;font-size:24px;font-weight:400;letter-spacing:-0.5px;color:#111827;">Webhook endpoint disabled</h1>
+<p style="margin:0 0 24px 0;font-size:16px;line-height:26px;color:#374151;">This endpoint was automatically disabled after repeated delivery failures.</p>
+<p style="margin:0;font-size:16px;line-height:26px;color:#374151;">Endpoint: <span style="font-weight:400">{{endpoint.url}}</span></p>"#.to_string(),
             },
             created_at: Utc::now(),
             updated_at: Utc::now(),
