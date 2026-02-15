@@ -28,8 +28,10 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     curl \
+    gnupg \
+    wget \
     && rm -rf /var/lib/apt/lists/*
-RUN curl -Ls https://cli.doppler.com/install.sh | sh
+RUN (curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh || wget -t 3 -qO- https://cli.doppler.com/install.sh) | sh
 
 COPY --from=builder /app/target/release/backend-api /app/backend
 COPY --from=builder /app/target/release/console-api /app/console
