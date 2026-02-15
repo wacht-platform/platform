@@ -89,7 +89,7 @@ impl AppState {
         // 50 minute timeout for long video transcription operations
         let nats_options =
             async_nats::ConnectOptions::new().request_timeout(Some(Duration::from_secs(3000)));
-        let nats_client = async_nats::connect_with_options(env("NATS_URL")?, nats_options).await?;
+        let nats_client = async_nats::connect_with_options(env("NATS_HOST")?, nats_options).await?;
         let nats_jetstream = jetstream::new(nats_client.clone());
 
         let encryption_service = EncryptionService::new(&env("ENCRYPTION_KEY")?)?;
