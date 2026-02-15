@@ -36,8 +36,11 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new_from_env() -> Result<Self, Box<dyn Error>> {
-        let database_url =
-            env("DATABASE_PRIMARY_PRIVATE").unwrap_or(env("DATABASE_PRIMARY_PUBLIC")?);
+        let database_url = if !env("USE_PUBLIC_NETWORK").is_ok() {
+            env("DATABASE_PRIMARY_PRIVATE")?
+        } else {
+            env("DATABASE_PRIMARY_PUBLIC")?
+        };
         let pool = PgPoolOptions::new()
             .min_connections(5)
             .acquire_timeout(Duration::from_secs(30))
@@ -86,7 +89,6 @@ impl AppState {
         let clickhouse_service =
             ClickHouseService::new(env("CLICKHOUSE_HOST")?, env("CLICKHOUSE_PASSWORD")?)?;
 
-        // 50 minute timeout for long video transcription operations
         let nats_options =
             async_nats::ConnectOptions::new().request_timeout(Some(Duration::from_secs(3000)));
         let nats_client = async_nats::connect_with_options(env("NATS_HOST")?, nats_options).await?;
