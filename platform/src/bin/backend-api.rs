@@ -1,11 +1,10 @@
 use common::state::AppState;
-use dotenvy::dotenv;
 use platform::application;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenv().ok();
+    dotenvy::dotenv_override().ok();
 
     let _ = rustls::crypto::ring::default_provider().install_default();
 

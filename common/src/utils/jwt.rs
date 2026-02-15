@@ -40,11 +40,11 @@ pub fn sign_token<T: Serialize>(claims: T, algorithm: &str, key: &str) -> Result
 
 #[derive(Debug, Deserialize)]
 pub struct AgentContextClaims {
-    pub sub: Option<String>,   // Subject (user_id)
-    pub scope: Option<String>, // Scope should contain "agent_context"
-    pub aud: Option<String>,   // Audience - intended context group/resource
-    pub exp: Option<i64>,      // Expiration time
-    pub iat: Option<i64>,      // Issued at
+    pub sub: Option<String>,
+    pub scope: Option<String>,
+    pub aud: Option<String>,
+    pub exp: Option<i64>,
+    pub iat: Option<i64>,
 }
 
 pub fn verify_token<T: for<'de> Deserialize<'de>>(
