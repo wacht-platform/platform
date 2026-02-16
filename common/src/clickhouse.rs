@@ -394,44 +394,38 @@ impl ClickHouseService {
         previous_from: DateTime<Utc>,
         previous_to: DateTime<Utc>,
     ) -> Result<AnalyticsStatsResult, AppError> {
-        // Format timestamps as strings to avoid URI encoding issues with DateTime
-        let from_str = from.format("%Y-%m-%d %H:%M:%S").to_string();
-        let to_str = to.format("%Y-%m-%d %H:%M:%S").to_string();
-        let prev_from_str = previous_from.format("%Y-%m-%d %H:%M:%S").to_string();
-        let prev_to_str = previous_to.format("%Y-%m-%d %H:%M:%S").to_string();
+        let from_ts = from.timestamp();
+        let to_ts = to.timestamp();
+        let prev_from_ts = previous_from.timestamp();
+        let prev_to_ts = previous_to.timestamp();
 
         info!(
             deployment_id,
-            %from_str,
-            %to_str,
-            %prev_from_str,
-            %prev_to_str,
+            from_ts,
+            to_ts,
+            prev_from_ts,
+            prev_to_ts,
             "Executing get_analytics_stats combined query"
         );
         let start = Instant::now();
 
         let query = r#"
             SELECT
-                -- Current period metrics
-                count(DISTINCT CASE WHEN event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= ? AND timestamp <= ? THEN user_id END) as unique_signins,
-                count(CASE WHEN event_type = 'signup' AND timestamp >= ? AND timestamp <= ? THEN 1 END) as signups,
-                count(CASE WHEN event_type = 'organization_created' AND timestamp >= ? AND timestamp <= ? THEN 1 END) as organizations_created,
-                count(CASE WHEN event_type = 'workspace_created' AND timestamp >= ? AND timestamp <= ? THEN 1 END) as workspaces_created,
-                -- Previous period metrics
-                count(DISTINCT CASE WHEN event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= ? AND timestamp <= ? THEN user_id END) as previous_signins,
-                count(CASE WHEN event_type = 'signup' AND timestamp >= ? AND timestamp <= ? THEN 1 END) as previous_signups,
-                count(CASE WHEN event_type = 'organization_created' AND timestamp >= ? AND timestamp <= ? THEN 1 END) as previous_orgs,
-                count(CASE WHEN event_type = 'workspace_created' AND timestamp >= ? AND timestamp <= ? THEN 1 END) as previous_workspaces,
-                -- Total all-time signups
+                count(DISTINCT CASE WHEN event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN user_id END) as unique_signins,
+                count(CASE WHEN event_type = 'signup' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as signups,
+                count(CASE WHEN event_type = 'organization_created' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as organizations_created,
+                count(CASE WHEN event_type = 'workspace_created' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as workspaces_created,
+                count(DISTINCT CASE WHEN event_type = 'signin' AND user_id IS NOT NULL AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN user_id END) as previous_signins,
+                count(CASE WHEN event_type = 'signup' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as previous_signups,
+                count(CASE WHEN event_type = 'organization_created' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as previous_orgs,
+                count(CASE WHEN event_type = 'workspace_created' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as previous_workspaces,
                 count(DISTINCT CASE WHEN event_type = 'signup' AND user_id IS NOT NULL THEN user_id END) as total_signups,
-                -- Recent signups (top 10 overall) - nested subquery to handle ORDER BY + LIMIT
                 (SELECT groupArray(user_name), groupArray(user_identifier), groupArray(auth_method), groupArray(timestamp)
                  FROM (SELECT user_name, user_identifier, auth_method, timestamp
                        FROM user_events
                        WHERE deployment_id = ? AND event_type = 'signup'
                        ORDER BY timestamp DESC
                        LIMIT 10)) as recent_signups,
-                -- Recent signins (top 10 overall) - nested subquery to handle ORDER BY + LIMIT
                 (SELECT groupArray(user_name), groupArray(user_identifier), groupArray(auth_method), groupArray(timestamp)
                  FROM (SELECT user_name, user_identifier, auth_method, timestamp
                        FROM user_events
@@ -440,35 +434,33 @@ impl ClickHouseService {
                        LIMIT 10)) as recent_signins
             FROM user_events
             WHERE deployment_id = ?
-                AND ((timestamp >= ? AND timestamp <= ?) OR (timestamp >= ? AND timestamp <= ?))
+                AND ((timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000)) OR (timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000)))
         "#;
 
         let result = self
             .client
             .query(query)
-            .bind(&from_str) // unique_signins current from
-            .bind(&to_str) // unique_signins current to
-            .bind(&from_str) // signups current from
-            .bind(&to_str) // signups current to
-            .bind(&from_str) // organizations_created current from
-            .bind(&to_str) // organizations_created current to
-            .bind(&from_str) // workspaces_created current from
-            .bind(&to_str) // workspaces_created current to
-            .bind(&prev_from_str) // previous_signins from
-            .bind(&prev_to_str) // previous_signins to
-            .bind(&prev_from_str) // previous_signups from
-            .bind(&prev_to_str) // previous_signups to
-            .bind(&prev_from_str) // previous_orgs from
-            .bind(&prev_to_str) // previous_orgs to
-            .bind(&prev_from_str) // previous_workspaces from
-            .bind(&prev_to_str) // previous_workspaces to
-            .bind(deployment_id) // recent_signups subquery
-            .bind(deployment_id) // recent_signins subquery
-            .bind(deployment_id) // WHERE deployment_id
-            .bind(&from_str) // WHERE current from
-            .bind(&to_str) // WHERE current to
-            .bind(&prev_from_str) // WHERE previous from
-            .bind(&prev_to_str) // WHERE previous to
+            .bind(from_ts)
+            .bind(to_ts)
+            .bind(from_ts)
+            .bind(to_ts)
+            .bind(from_ts)
+            .bind(to_ts)
+            .bind(prev_from_ts)
+            .bind(prev_to_ts)
+            .bind(prev_from_ts)
+            .bind(prev_to_ts)
+            .bind(prev_from_ts)
+            .bind(prev_to_ts)
+            .bind(prev_from_ts)
+            .bind(prev_to_ts)
+            .bind(deployment_id)
+            .bind(deployment_id)
+            .bind(deployment_id)
+            .bind(from_ts)
+            .bind(to_ts)
+            .bind(prev_from_ts)
+            .bind(prev_to_ts)
             .fetch_one::<AnalyticsStatsResult>()
             .await
             .map_err(|e| {
@@ -476,8 +468,8 @@ impl ClickHouseService {
                     error = ?e,
                     error_msg = %e,
                     deployment_id,
-                    from = %from_str,
-                    to = %to_str,
+                    from_ts,
+                    to_ts,
                     "ClickHouse query failed for get_analytics_stats"
                 );
                 e
