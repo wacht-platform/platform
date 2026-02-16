@@ -397,6 +397,8 @@ impl ClickHouseService {
             deployment_id,
             %from_str,
             %to_str,
+            %prev_from_str,
+            %prev_to_str,
             "Executing get_analytics_stats combined query"
         );
         let start = Instant::now();
@@ -434,36 +436,54 @@ impl ClickHouseService {
                 AND ((timestamp >= ? AND timestamp <= ?) OR (timestamp >= ? AND timestamp <= ?))
         "#;
 
+        info!(
+            deployment_id,
+            "ClickHouse query bindings - deployment_id: {}, from: {}, to: {}, prev_from: {}, prev_to: {}",
+            deployment_id,
+            from_str,
+            to_str,
+            prev_from_str,
+            prev_to_str
+        );
+
         let result = self
             .client
             .query(query)
-            .bind(&from_str)      // unique_signins current
-            .bind(&to_str)        // unique_signins current
-            .bind(&from_str)      // signups current
-            .bind(&to_str)        // signups current
-            .bind(&from_str)      // organizations_created current
-            .bind(&to_str)        // organizations_created current
-            .bind(&from_str)      // workspaces_created current
-            .bind(&to_str)        // workspaces_created current
+            .bind(&from_str) // unique_signins current
+            .bind(&to_str) // unique_signins current
+            .bind(&from_str) // signups current
+            .bind(&to_str) // signups current
+            .bind(&from_str) // organizations_created current
+            .bind(&to_str) // organizations_created current
+            .bind(&from_str) // workspaces_created current
+            .bind(&to_str) // workspaces_created current
             .bind(&prev_from_str) // previous_signins
-            .bind(&prev_to_str)   // previous_signins
+            .bind(&prev_to_str) // previous_signins
             .bind(&prev_from_str) // previous_signups
-            .bind(&prev_to_str)   // previous_signups
+            .bind(&prev_to_str) // previous_signups
             .bind(&prev_from_str) // previous_orgs
-            .bind(&prev_to_str)   // previous_orgs
+            .bind(&prev_to_str) // previous_orgs
             .bind(&prev_from_str) // previous_workspaces
-            .bind(&prev_to_str)   // previous_workspaces
-            .bind(deployment_id)  // recent_signups subquery
-            .bind(deployment_id)  // recent_signins subquery
-            .bind(deployment_id)  // WHERE deployment_id
-            .bind(&from_str)      // WHERE current from
-            .bind(&to_str)        // WHERE current to
+            .bind(&prev_to_str) // previous_workspaces
+            .bind(deployment_id) // recent_signups subquery
+            .bind(deployment_id) // recent_signins subquery
+            .bind(deployment_id) // WHERE deployment_id
+            .bind(&from_str) // WHERE current from
+            .bind(&to_str) // WHERE current to
             .bind(&prev_from_str) // WHERE previous from
-            .bind(&prev_to_str)   // WHERE previous to
+            .bind(&prev_to_str) // WHERE previous to
             .fetch_one::<AnalyticsStatsResult>()
             .await
             .map_err(|e| {
-                error!(error = ?e, deployment_id, "ClickHouse query failed for get_analytics_stats");
+                error!(
+                    error = ?e,
+                    error_msg = %e,
+                    error_type = std::any::type_name_of_val(&e),
+                    deployment_id,
+                    from = %from_str,
+                    to = %to_str,
+                    "ClickHouse query failed for get_analytics_stats"
+                );
                 e
             })?;
 
