@@ -388,12 +388,18 @@ impl ClickHouseService {
         previous_from: DateTime<Utc>,
         previous_to: DateTime<Utc>,
     ) -> Result<AnalyticsStatsResult, AppError> {
+        // Format timestamps as strings to avoid URI encoding issues with DateTime
+        let from_str = from.format("%Y-%m-%d %H:%M:%S").to_string();
+        let to_str = to.format("%Y-%m-%d %H:%M:%S").to_string();
+        let prev_from_str = previous_from.format("%Y-%m-%d %H:%M:%S").to_string();
+        let prev_to_str = previous_to.format("%Y-%m-%d %H:%M:%S").to_string();
+
         info!(
             deployment_id,
-            %from,
-            %to,
-            %previous_from,
-            %previous_to,
+            %from_str,
+            %to_str,
+            %prev_from_str,
+            %prev_to_str,
             "Executing get_analytics_stats combined query"
         );
         let start = Instant::now();
@@ -434,29 +440,29 @@ impl ClickHouseService {
         let result = self
             .client
             .query(query)
-            .bind(from) // unique_signins current from
-            .bind(to) // unique_signins current to
-            .bind(from) // signups current from
-            .bind(to) // signups current to
-            .bind(from) // organizations_created current from
-            .bind(to) // organizations_created current to
-            .bind(from) // workspaces_created current from
-            .bind(to) // workspaces_created current to
-            .bind(previous_from) // previous_signins from
-            .bind(previous_to) // previous_signins to
-            .bind(previous_from) // previous_signups from
-            .bind(previous_to) // previous_signups to
-            .bind(previous_from) // previous_orgs from
-            .bind(previous_to) // previous_orgs to
-            .bind(previous_from) // previous_workspaces from
-            .bind(previous_to) // previous_workspaces to
+            .bind(&from_str) // unique_signins current from
+            .bind(&to_str) // unique_signins current to
+            .bind(&from_str) // signups current from
+            .bind(&to_str) // signups current to
+            .bind(&from_str) // organizations_created current from
+            .bind(&to_str) // organizations_created current to
+            .bind(&from_str) // workspaces_created current from
+            .bind(&to_str) // workspaces_created current to
+            .bind(&prev_from_str) // previous_signins from
+            .bind(&prev_to_str) // previous_signins to
+            .bind(&prev_from_str) // previous_signups from
+            .bind(&prev_to_str) // previous_signups to
+            .bind(&prev_from_str) // previous_orgs from
+            .bind(&prev_to_str) // previous_orgs to
+            .bind(&prev_from_str) // previous_workspaces from
+            .bind(&prev_to_str) // previous_workspaces to
             .bind(deployment_id) // recent_signups subquery
             .bind(deployment_id) // recent_signins subquery
             .bind(deployment_id) // WHERE deployment_id
-            .bind(from) // WHERE current from
-            .bind(to) // WHERE current to
-            .bind(previous_from) // WHERE previous from
-            .bind(previous_to) // WHERE previous to
+            .bind(&from_str) // WHERE current from
+            .bind(&to_str) // WHERE current to
+            .bind(&prev_from_str) // WHERE previous from
+            .bind(&prev_to_str) // WHERE previous to
             .fetch_one::<AnalyticsStatsResult>()
             .await
             .map_err(|e| {
@@ -464,8 +470,8 @@ impl ClickHouseService {
                     error = ?e,
                     error_msg = %e,
                     deployment_id,
-                    %from,
-                    %to,
+                    from = %from_str,
+                    to = %to_str,
                     "ClickHouse query failed for get_analytics_stats"
                 );
                 e
