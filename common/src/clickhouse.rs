@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use clickhouse::{Client, Row};
 use dto::clickhouse::webhook::*;
 use pgvector::HalfVector;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use std::time::Instant;
 use tracing::{debug, error, info};
 
@@ -34,6 +34,14 @@ fn bind_clickhouse_query(
     query
 }
 
+fn serialize_timestamp<S>(timestamp: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let formatted = timestamp.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
+    serializer.serialize_str(&formatted)
+}
+
 #[derive(Serialize, Deserialize, Row)]
 pub struct UserEvent {
     pub deployment_id: i64,
@@ -42,7 +50,7 @@ pub struct UserEvent {
     pub user_name: Option<String>,
     pub user_identifier: Option<String>,
     pub auth_method: Option<String>,
-    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    #[serde(serialize_with = "serialize_timestamp")]
     pub timestamp: DateTime<Utc>,
     pub ip_address: Option<String>,
 }
