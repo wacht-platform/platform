@@ -153,6 +153,12 @@ pub struct AnalyticsEvent {
 
 impl ClickHouseService {
     pub fn new(url: String, password: String) -> Result<Self, AppError> {
+        let url = if url.starts_with("https://") {
+            url
+        } else {
+            format!("https://{}", url)
+        };
+
         let client = Client::default()
             .with_url(url)
             .with_user("wacht")
