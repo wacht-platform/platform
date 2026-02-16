@@ -388,17 +388,12 @@ impl ClickHouseService {
         previous_from: DateTime<Utc>,
         previous_to: DateTime<Utc>,
     ) -> Result<AnalyticsStatsResult, AppError> {
-        let from_str = from.format("%Y-%m-%d %H:%M:%S").to_string();
-        let to_str = to.format("%Y-%m-%d %H:%M:%S").to_string();
-        let prev_from_str = previous_from.format("%Y-%m-%d %H:%M:%S").to_string();
-        let prev_to_str = previous_to.format("%Y-%m-%d %H:%M:%S").to_string();
-
         info!(
             deployment_id,
-            %from_str,
-            %to_str,
-            %prev_from_str,
-            %prev_to_str,
+            %from,
+            %to,
+            %previous_from,
+            %previous_to,
             "Executing get_analytics_stats combined query"
         );
         let start = Instant::now();
@@ -436,52 +431,41 @@ impl ClickHouseService {
                 AND ((timestamp >= ? AND timestamp <= ?) OR (timestamp >= ? AND timestamp <= ?))
         "#;
 
-        info!(
-            deployment_id,
-            "ClickHouse query bindings - deployment_id: {}, from: {}, to: {}, prev_from: {}, prev_to: {}",
-            deployment_id,
-            from_str,
-            to_str,
-            prev_from_str,
-            prev_to_str
-        );
-
         let result = self
             .client
             .query(query)
-            .bind(&from_str) // unique_signins current
-            .bind(&to_str) // unique_signins current
-            .bind(&from_str) // signups current
-            .bind(&to_str) // signups current
-            .bind(&from_str) // organizations_created current
-            .bind(&to_str) // organizations_created current
-            .bind(&from_str) // workspaces_created current
-            .bind(&to_str) // workspaces_created current
-            .bind(&prev_from_str) // previous_signins
-            .bind(&prev_to_str) // previous_signins
-            .bind(&prev_from_str) // previous_signups
-            .bind(&prev_to_str) // previous_signups
-            .bind(&prev_from_str) // previous_orgs
-            .bind(&prev_to_str) // previous_orgs
-            .bind(&prev_from_str) // previous_workspaces
-            .bind(&prev_to_str) // previous_workspaces
+            .bind(from) // unique_signins current from
+            .bind(to) // unique_signins current to
+            .bind(from) // signups current from
+            .bind(to) // signups current to
+            .bind(from) // organizations_created current from
+            .bind(to) // organizations_created current to
+            .bind(from) // workspaces_created current from
+            .bind(to) // workspaces_created current to
+            .bind(previous_from) // previous_signins from
+            .bind(previous_to) // previous_signins to
+            .bind(previous_from) // previous_signups from
+            .bind(previous_to) // previous_signups to
+            .bind(previous_from) // previous_orgs from
+            .bind(previous_to) // previous_orgs to
+            .bind(previous_from) // previous_workspaces from
+            .bind(previous_to) // previous_workspaces to
             .bind(deployment_id) // recent_signups subquery
             .bind(deployment_id) // recent_signins subquery
             .bind(deployment_id) // WHERE deployment_id
-            .bind(&from_str) // WHERE current from
-            .bind(&to_str) // WHERE current to
-            .bind(&prev_from_str) // WHERE previous from
-            .bind(&prev_to_str) // WHERE previous to
+            .bind(from) // WHERE current from
+            .bind(to) // WHERE current to
+            .bind(previous_from) // WHERE previous from
+            .bind(previous_to) // WHERE previous to
             .fetch_one::<AnalyticsStatsResult>()
             .await
             .map_err(|e| {
                 error!(
                     error = ?e,
                     error_msg = %e,
-                    error_type = std::any::type_name_of_val(&e),
                     deployment_id,
-                    from = %from_str,
-                    to = %to_str,
+                    %from,
+                    %to,
                     "ClickHouse query failed for get_analytics_stats"
                 );
                 e

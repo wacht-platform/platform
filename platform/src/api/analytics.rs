@@ -39,14 +39,6 @@ pub async fn get_analytics_stats(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<AnalyticsQuery>,
 ) -> Result<Json<AnalyticsStatsResponse>, StatusCode> {
-    let start = Instant::now();
-    info!(
-        deployment_id = deployment_id,
-        from = %query.from,
-        to = %query.to,
-        "Getting analytics stats"
-    );
-
     let clickhouse = &app_state.clickhouse_service;
 
     let duration = query.to.signed_duration_since(query.from);
@@ -54,7 +46,6 @@ pub async fn get_analytics_stats(
     let previous_from = query.from - duration;
     let previous_to = query.to - duration;
 
-    // Single query returns everything including recent signups/signins
     let stats = clickhouse
         .get_analytics_stats(
             deployment_id,
@@ -69,11 +60,8 @@ pub async fn get_analytics_stats(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // Get recent signups/signins from the stats result
     let recent_signups = stats.get_recent_signups();
     let recent_signins = stats.get_recent_signins();
-
-    info!("Total analytics stats time: {:?}", start.elapsed());
 
     let calculate_change = |current: i64, previous: i64| -> Option<f64> {
         if previous == 0 {
