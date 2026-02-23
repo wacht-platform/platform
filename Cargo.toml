@@ -4,12 +4,10 @@ members = [
     "commands",
     "common",
     "dto",
-    "gateway",
     "models",
     "oauth-relay",
     "platform",
     "queries",
-    "realtime",
     "worker",
 ]
 resolver = "2"

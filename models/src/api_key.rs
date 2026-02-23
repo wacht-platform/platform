@@ -137,9 +137,9 @@ pub struct RateLimit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<RateLimitMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub endpoints: Option<Vec<String>>, // ["*"] = all endpoints, or specific paths
+    pub endpoints: Option<Vec<String>>,
     #[serde(default)]
-    pub priority: i32, // Lower = higher precedence, defaults to 0
+    pub priority: i32,
 }
 
 impl RateLimit {
@@ -240,14 +240,21 @@ impl RateLimit {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ApiAuthApp {
     #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub id: i64,
-    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    pub app_slug: String, // TODO: remove id field and use (deployment_id, app_slug) as PK
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string"
+    )]
+    pub user_id: Option<i64>,
+    pub app_slug: String,
     pub name: String,
     pub description: Option<String>,
     pub is_active: bool,
     pub key_prefix: String,
+    #[sqlx(json)]
+    pub permissions: Vec<String>,
+    #[sqlx(json)]
+    pub resources: Vec<String>,
     #[sqlx(json)]
     pub rate_limits: Vec<RateLimit>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -280,10 +287,8 @@ pub struct ApiKey {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
     #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub app_id: i64, // TODO: remove when switching to app_slug only
-    #[serde(with = "crate::utils::serde::i64_as_string")]
     pub deployment_id: i64,
-    pub app_slug: String, // TODO: remove app_id and use (deployment_id, app_slug) as FK
+    pub app_slug: String,
     pub name: String,
     pub key_prefix: String,
     pub key_suffix: String,
@@ -373,19 +378,6 @@ pub struct ApiKeyWithSecret {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct ApiKeyScope {
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub id: i64,
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub api_key_id: i64,
-    pub resource_type: String,
-    pub resource_id: Option<String>,
-    #[sqlx(json)]
-    pub actions: Vec<String>,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct RateLimitScheme {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -398,4 +390,244 @@ pub struct RateLimitScheme {
     pub rules: Vec<RateLimit>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text")]
+#[sqlx(rename_all = "snake_case")]
+pub enum PrincipalType {
+    #[sqlx(rename = "api_key")]
+    ApiKey,
+    #[sqlx(rename = "m2m_oauth")]
+    M2mOauth,
+    #[sqlx(rename = "user_oauth")]
+    UserOauth,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text")]
+#[sqlx(rename_all = "snake_case")]
+pub enum OAuthClientAuthMethod {
+    #[sqlx(rename = "client_secret_basic")]
+    ClientSecretBasic,
+    #[sqlx(rename = "client_secret_post")]
+    ClientSecretPost,
+    #[sqlx(rename = "client_secret_jwt")]
+    ClientSecretJwt,
+    #[sqlx(rename = "none")]
+    None,
+    #[sqlx(rename = "private_key_jwt")]
+    PrivateKeyJwt,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Jwk {
+    pub kty: String,
+    pub kid: Option<String>,
+    #[serde(rename = "use")]
+    pub use_: Option<String>,
+    pub key_ops: Option<Vec<String>>,
+    pub alg: Option<String>,
+    pub n: Option<String>,
+    pub e: Option<String>,
+    pub crv: Option<String>,
+    pub x: Option<String>,
+    pub y: Option<String>,
+    pub k: Option<String>,
+    pub x5u: Option<String>,
+    pub x5c: Option<Vec<String>>,
+    pub x5t: Option<String>,
+    #[serde(rename = "x5t#S256")]
+    pub x5t_s256: Option<String>,
+    pub public_key_pem: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JwksDocument {
+    pub keys: Vec<Jwk>,
+}
+
+impl JwksDocument {
+    pub fn public_key_pem(&self) -> Option<String> {
+        self.keys
+            .iter()
+            .find_map(|k| k.public_key_pem.as_ref())
+            .map(ToOwned::to_owned)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OAuthScopeDefinition {
+    pub scope: String,
+    pub display_name: String,
+    pub description: String,
+    #[serde(default)]
+    pub archived: bool,
+    #[serde(default)]
+    pub category: String,
+    #[serde(default)]
+    pub organization_permission: Option<String>,
+    #[serde(default)]
+    pub workspace_permission: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text")]
+#[sqlx(rename_all = "snake_case")]
+pub enum OAuthGrantStatus {
+    #[sqlx(rename = "active")]
+    Active,
+    #[sqlx(rename = "revoked")]
+    Revoked,
+    #[sqlx(rename = "expired")]
+    Expired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct OAuthApp {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    pub slug: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub logo_url: Option<String>,
+    pub fqdn: String,
+    pub supported_scopes: Vec<String>,
+    #[sqlx(json)]
+    pub scope_definitions: Vec<OAuthScopeDefinition>,
+    pub allow_dynamic_client_registration: bool,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct OAuthClient {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub oauth_app_id: i64,
+    pub client_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_secret_hash: Option<String>,
+    pub client_auth_method: String,
+    #[sqlx(json)]
+    pub grant_types: Vec<String>,
+    #[sqlx(json)]
+    pub redirect_uris: Vec<String>,
+    pub token_endpoint_auth_signing_alg: Option<String>,
+    pub jwks_uri: Option<String>,
+    #[sqlx(json)]
+    pub jwks: Option<JwksDocument>,
+    pub client_name: Option<String>,
+    pub client_uri: Option<String>,
+    pub logo_uri: Option<String>,
+    pub tos_uri: Option<String>,
+    pub policy_uri: Option<String>,
+    #[sqlx(json)]
+    pub contacts: Option<Vec<String>>,
+    pub software_id: Option<String>,
+    pub software_version: Option<String>,
+    pub pkce_required: bool,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct OAuthClientGrant {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    pub app_slug: String,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub oauth_client_id: i64,
+    pub resource: String,
+    #[sqlx(json)]
+    pub scopes: Vec<String>,
+    pub status: String,
+    pub granted_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string"
+    )]
+    pub granted_by_user_id: Option<i64>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct OAuthAuthorizationCode {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub oauth_client_id: i64,
+    pub app_slug: String,
+    #[serde(skip_serializing)]
+    pub code_hash: String,
+    pub redirect_uri: String,
+    pub pkce_code_challenge: Option<String>,
+    pub pkce_code_challenge_method: Option<String>,
+    #[sqlx(json)]
+    pub scopes: Vec<String>,
+    pub resource: Option<String>,
+    pub expires_at: DateTime<Utc>,
+    pub consumed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct OAuthAccessToken {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub oauth_client_id: i64,
+    pub app_slug: String,
+    #[serde(skip_serializing)]
+    pub token_hash: String,
+    pub principal_type: String,
+    #[sqlx(json)]
+    pub scopes: Vec<String>,
+    pub resource: Option<String>,
+    pub expires_at: DateTime<Utc>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct OAuthRefreshToken {
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub deployment_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string")]
+    pub oauth_client_id: i64,
+    pub app_slug: String,
+    #[serde(skip_serializing)]
+    pub token_hash: String,
+    #[sqlx(json)]
+    pub scopes: Vec<String>,
+    pub resource: Option<String>,
+    pub expires_at: DateTime<Utc>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string"
+    )]
+    pub replaced_by_token_id: Option<i64>,
+    pub created_at: DateTime<Utc>,
 }

@@ -1,0 +1,55 @@
+{
+"system_instruction": {
+"parts": [
+{
+"text": "{{system_prompt}}"
+}
+]
+},
+"contents": [
+{
+"role": "user",
+"parts": [
+{
+"text": "Research query: {{query}}\nExpected output: {{target_output}}\nCurrent step: {{step_idx}}/{{max_steps}}\nPrevious research log JSON: {{research_log_json}}"
+}
+]
+}
+],
+"generationConfig": {
+"responseMimeType": "application/json",
+"responseSchema": {
+"type": "OBJECT",
+"properties": {
+"next_step": {
+"type": "STRING",
+"enum": ["search_files", "read_file", "complete"]
+},
+"reasoning": {
+"type": "STRING"
+},
+"search_query": {
+"type": "STRING",
+"nullable": true
+},
+"path": {
+"type": "STRING",
+"nullable": true
+},
+"start_line": {
+"type": "INTEGER",
+"nullable": true
+},
+"end_line": {
+"type": "INTEGER",
+"nullable": true
+},
+"output": {
+"type": "STRING",
+"nullable": true
+}
+},
+"required": ["next_step", "reasoning"]
+}
+}
+}

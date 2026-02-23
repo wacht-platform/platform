@@ -41,3 +41,4 @@ urlencoding = "2.1"
 hickory-resolver = "0.24"
 validator = { version = "0.19", features = ["derive"] }
 scraper = "0.22"
+nanoid = "0.4"

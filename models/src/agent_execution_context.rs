@@ -126,6 +126,14 @@ pub struct AgentExecutionState {
     pub task_results: HashMap<String, serde_json::Value>,
     pub current_objective: Option<serde_json::Value>,
     pub conversation_insights: Option<serde_json::Value>,
+    #[serde(default)]
+    pub supervisor_mode_active: bool,
+    #[serde(default)]
+    pub supervisor_task_board: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub deep_think_mode_active: bool,
+    #[serde(default)]
+    pub deep_think_used: usize,
     pub pending_input_request: Option<UserInputRequestState>,
 }
 

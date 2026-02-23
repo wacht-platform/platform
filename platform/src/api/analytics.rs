@@ -5,8 +5,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
-use tracing::{error, info, instrument};
+use tracing::{error, instrument};
 
 use crate::middleware::RequireDeployment;
 use common::clickhouse::RecentSignup;

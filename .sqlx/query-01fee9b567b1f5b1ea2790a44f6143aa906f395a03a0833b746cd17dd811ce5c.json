@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                g.id,\n                g.deployment_id,\n                g.app_slug as api_auth_app_slug,\n                g.oauth_client_id,\n                g.resource,\n                g.scopes as \"scopes: serde_json::Value\",\n                g.status,\n                g.granted_at,\n                g.expires_at,\n                g.revoked_at,\n                g.granted_by_user_id,\n                g.created_at,\n                g.updated_at\n            FROM oauth_client_grants g\n            WHERE g.deployment_id = $1\n              AND g.oauth_client_id = $2\n            ORDER BY g.created_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "api_auth_app_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "oauth_client_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "resource",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "scopes: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "granted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "revoked_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "granted_by_user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "01fee9b567b1f5b1ea2790a44f6143aa906f395a03a0833b746cd17dd811ce5c"
+}

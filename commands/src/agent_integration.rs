@@ -4,6 +4,7 @@ use common::error::AppError;
 use common::state::AppState;
 use models::{AgentIntegration, IntegrationType};
 use sqlx::Row;
+use std::str::FromStr;
 
 pub struct CreateAgentIntegrationCommand {
     pub deployment_id: i64,
@@ -148,14 +149,8 @@ impl Command for UpdateAgentIntegrationCommand {
             .map_err(AppError::Database)?;
 
         let integration_type_str: String = row.get("integration_type");
-        let integration_type = match integration_type_str.as_str() {
-            "teams" => IntegrationType::Teams,
-            "slack" => IntegrationType::Slack,
-            "whatsapp" => IntegrationType::WhatsApp,
-            "discord" => IntegrationType::Discord,
-            "clickup" => IntegrationType::ClickUp,
-            _ => return Err(AppError::BadRequest("Unknown integration type".to_string())),
-        };
+        let integration_type =
+            IntegrationType::from_str(&integration_type_str).map_err(AppError::BadRequest)?;
 
         Ok(AgentIntegration {
             id: row.get("id"),

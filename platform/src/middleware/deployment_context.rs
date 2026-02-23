@@ -70,7 +70,7 @@ pub async fn backend_deployment_middleware(
 
     let deployment_id = key_data
         .app_slug
-        .strip_prefix("slug_")
+        .strip_prefix("aa_")
         .and_then(|v| v.parse::<i64>().ok())
         .ok_or_else(|| {
             (

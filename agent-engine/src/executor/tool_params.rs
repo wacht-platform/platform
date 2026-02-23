@@ -1,7 +1,6 @@
 use super::core::AgentExecutor;
 use crate::template::{render_template_with_prompt, AgentTemplates};
 
-use commands::Command;
 use common::error::AppError;
 use dto::json::agent_responses::{ExecutionAction, ParameterGenerationResponse, TaskType};
 use dto::json::ToolCall;
@@ -41,6 +40,15 @@ impl AgentExecutor {
                         AppError::BadRequest(format!("Tool '{}' not found", tool_call.tool_name))
                     })?;
 
+                if self.is_supervisor_mode()
+                    && !Self::supervisor_allowed_tool(tool_call.tool_name.as_str())
+                {
+                    return Err(AppError::BadRequest(format!(
+                        "Tool '{}' is not available in supervisor mode",
+                        tool_call.tool_name
+                    )));
+                }
+
                 let title = self.ctx.context_title().await?;
                 self.tool_executor
                     .execute_tool_immediately(
@@ -53,38 +61,6 @@ impl AgentExecutor {
                     .await
             }
         };
-
-        if let Some(ref actionable_id) = action.clear_actionable_id {
-            if let Ok(current_context) = self.ctx.get_context().await {
-                if let Some(mut metadata) = current_context.external_resource_metadata {
-                    if let Some(actionables) = metadata.get_mut("actionables") {
-                        if let Some(arr) = actionables.as_array_mut() {
-                            let original_len = arr.len();
-                            arr.retain(|a| {
-                                a.get("id").and_then(|id| id.as_str())
-                                    != Some(actionable_id.as_str())
-                            });
-
-                            if arr.len() < original_len {
-                                let _ = commands::UpdateExecutionContextQuery::new(
-                                    current_context.id,
-                                    current_context.deployment_id,
-                                )
-                                .with_external_resource_metadata(metadata)
-                                .execute(&self.ctx.app_state)
-                                .await;
-
-                                tracing::info!(
-                                    context_id = current_context.id,
-                                    actionable_id = %actionable_id,
-                                    "Cleared actionable from context after tool execution"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
         result
     }
@@ -160,7 +136,7 @@ impl AgentExecutor {
         Ok(json!(result))
     }
 
-    async fn parse_tool_call(
+    pub(super) async fn parse_tool_call(
         &self,
         details: &Value,
         action_purpose: &str,
@@ -444,9 +420,8 @@ impl AgentExecutor {
     }
 
     /// Get available filesystem paths for parameter generation context.
-    /// Lists standard paths first, then Teams activity path if Teams integration is enabled.
     async fn get_available_paths(&self) -> Value {
-        let mut paths = vec![
+        let paths = vec![
             json!({
                 "path": "/knowledge/",
                 "description": "Knowledge bases with indexed documents"
@@ -464,16 +439,6 @@ impl AgentExecutor {
                 "description": "Persistent workspace files"
             }),
         ];
-
-        // Teams activity path - only if Teams integration is enabled
-        if let Ok(status) = self.ctx.integration_status().await {
-            if status.teams_enabled {
-                paths.push(json!({
-                    "path": "/teams-activity/",
-                    "description": "Teams conversation activity logs - contains daily log files named like 'YYYY-MM-DD.log' or 'Teams DM {Name}_YYYY-MM-DD.log'"
-                }));
-            }
-        }
 
         json!(paths)
     }

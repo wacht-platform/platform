@@ -1,4 +1,7 @@
-use crate::{application::response::ApiResult, middleware::RequireDeployment};
+use crate::{
+    application::response::ApiResult,
+    middleware::{ExtractPlatformSource, PlatformSource, RequireDeployment},
+};
 use axum::{Json, extract::State};
 use commands::{Command, GenerateSessionTicketCommand};
 use common::state::AppState;
@@ -13,6 +16,7 @@ pub struct CreateSessionTicketResponse {
 pub async fn create_session_ticket(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
+    ExtractPlatformSource(platform_source): ExtractPlatformSource,
     Json(request): Json<CreateSessionTicketRequest>,
 ) -> ApiResult<CreateSessionTicketResponse> {
     let ticket_type = match request.ticket_type.as_str() {
@@ -26,6 +30,14 @@ pub async fn create_session_ticket(
             )
             .into());
         }
+    };
+
+    let deployment_id = if platform_source == PlatformSource::Backend {
+        deployment_id
+    } else {
+        std::env::var("CONSOLE_DEPLOYMENT_ID")
+            .map(|id| id.parse().unwrap())
+            .unwrap()
     };
 
     let mut command = GenerateSessionTicketCommand::new(deployment_id, ticket_type.clone());

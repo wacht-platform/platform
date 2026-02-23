@@ -344,6 +344,59 @@ impl super::Query for GetStatusUpdatesQuery {
     }
 }
 
+/// Latest status update per context (batched lookup).
+#[derive(Clone, Debug)]
+pub struct LatestStatusUpdate {
+    pub context_id: i64,
+    pub status_update: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub struct GetLatestStatusUpdatesForContextsQuery {
+    pub context_ids: Vec<i64>,
+}
+
+impl GetLatestStatusUpdatesForContextsQuery {
+    pub fn new(context_ids: Vec<i64>) -> Self {
+        Self { context_ids }
+    }
+}
+
+impl super::Query for GetLatestStatusUpdatesForContextsQuery {
+    type Output = Vec<LatestStatusUpdate>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        if self.context_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT DISTINCT ON (context_id) context_id, status_update, created_at
+            FROM agent_status_updates
+            WHERE context_id = ANY($1::bigint[])
+            ORDER BY context_id, created_at DESC
+            "#,
+        )
+        .bind(&self.context_ids)
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        use sqlx::Row;
+        let mut result = Vec::with_capacity(rows.len());
+        for row in rows {
+            result.push(LatestStatusUpdate {
+                context_id: row.get("context_id"),
+                status_update: row.get("status_update"),
+                created_at: row.get("created_at"),
+            });
+        }
+
+        Ok(result)
+    }
+}
+
 /// Get the parent context of a child agent
 pub struct GetParentContextQuery {
     pub context_id: i64,
@@ -423,6 +476,7 @@ impl super::Query for GetParentContextQuery {
 pub struct GetChildCompletionSummaryQuery {
     pub child_context_id: i64,
     pub deployment_id: i64,
+    pub parent_context_id: Option<i64>,
 }
 
 impl GetChildCompletionSummaryQuery {
@@ -430,7 +484,13 @@ impl GetChildCompletionSummaryQuery {
         Self {
             child_context_id,
             deployment_id,
+            parent_context_id: None,
         }
+    }
+
+    pub fn with_parent_context(mut self, parent_context_id: i64) -> Self {
+        self.parent_context_id = Some(parent_context_id);
+        self
     }
 }
 
@@ -438,20 +498,38 @@ impl super::Query for GetChildCompletionSummaryQuery {
     type Output = Option<serde_json::Value>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let summary = sqlx::query!(
-            r#"
-            SELECT completion_summary
-            FROM agent_execution_contexts
-            WHERE id = $1 AND deployment_id = $2
-            "#,
-            self.child_context_id,
-            self.deployment_id
-        )
-        .fetch_optional(&app_state.db_pool)
-        .await
-        .map_err(|e| AppError::Database(e))?;
+        let completion_summary = if let Some(parent_context_id) = self.parent_context_id {
+            let row = sqlx::query!(
+                r#"
+                SELECT completion_summary
+                FROM agent_execution_contexts
+                WHERE id = $1 AND deployment_id = $2 AND parent_context_id = $3
+                "#,
+                self.child_context_id,
+                self.deployment_id,
+                parent_context_id
+            )
+            .fetch_optional(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
+            row.and_then(|r| r.completion_summary)
+        } else {
+            let row = sqlx::query!(
+                r#"
+                SELECT completion_summary
+                FROM agent_execution_contexts
+                WHERE id = $1 AND deployment_id = $2
+                "#,
+                self.child_context_id,
+                self.deployment_id
+            )
+            .fetch_optional(&app_state.db_pool)
+            .await
+            .map_err(|e| AppError::Database(e))?;
+            row.and_then(|r| r.completion_summary)
+        };
 
-        Ok(summary.and_then(|s| s.completion_summary))
+        Ok(completion_summary)
     }
 }
 

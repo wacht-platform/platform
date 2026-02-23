@@ -42,18 +42,20 @@ pub enum TaskType {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ExecutionAction {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default = "default_task_type")]
     pub action_type: TaskType,
     pub details: Value,
     pub purpose: String,
     #[serde(default = "default_context_messages")]
     pub context_messages: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub clear_actionable_id: Option<String>,
 }
 
 fn default_context_messages() -> u32 {
     1
+}
+
+fn default_task_type() -> TaskType {
+    TaskType::ToolCall
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

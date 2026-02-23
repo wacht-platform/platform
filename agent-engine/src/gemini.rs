@@ -1,15 +1,17 @@
 use chrono::{Datelike, Utc};
 use common::error::AppError;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 const GEMINI_API_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
+const REQUEST_TIMEOUT_SECS: u64 = 120;
 
-fn get_model_pricing(model: &str) -> (i64, i64, i64) {
+fn get_model_pricing(model: &str) -> (i64, i64, i64, i64) {
     match model {
-        "gemini-2.5-flash-lite" => (10, 2, 40),
-        "gemini-2.5-flash" => (10, 2, 40),
-        "gemini-3-flash-preview" => (50, 12, 300),
-        "gemini-3-pro-preview" => (200, 50, 1200),
+        "gemini-2.5-flash-lite" => (10, 2, 40, 0),
+        "gemini-2.5-flash" => (10, 2, 40, 0),
+        "gemini-3-flash-preview" => (50, 12, 300, 14),
+        "gemini-3-pro-preview" => (200, 50, 1200, 0),
         _ => panic!("Unknown model for pricing: {}", model),
     }
 }
@@ -42,6 +44,8 @@ pub struct Candidate {
     #[serde(rename = "finishReason")]
     pub finish_reason: Option<String>,
     pub index: u32,
+    #[serde(rename = "groundingMetadata", default)]
+    pub grounding_metadata: Option<GroundingMetadata>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -55,6 +59,12 @@ pub struct CandidatePart {
     pub text: String,
     #[serde(rename = "thoughtSignature")]
     pub thought_signature: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GroundingMetadata {
+    #[serde(rename = "webSearchQueries", default)]
+    pub web_search_queries: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -173,18 +183,17 @@ impl GeminiClient {
     {
         let url = format!("{}/{}:generateContent", GEMINI_API_BASE_URL, self.model);
 
-        let mut last_error = None;
-        for attempt in 1..=3 {
-            if attempt > 1 {
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            }
+        let mut attempt = 0u32;
+        const MAX_RETRIES: u32 = 3;
 
+        let last_error = loop {
             let response = self
                 .client
                 .post(&url)
                 .header("x-goog-api-key", &self.api_key)
                 .header("Content-Type", "application/json")
                 .body(request_body.clone())
+                .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
                 .send()
                 .await;
 
@@ -208,52 +217,118 @@ impl GeminiClient {
                                     }
 
                                     if accumulated_text.is_empty() {
-                                        last_error =
-                                            Some("No response content from Gemini API".to_string());
-                                        continue;
+                                        let error = "No response content from Gemini API".to_string();
+
+                                        attempt += 1;
+                                        if attempt < MAX_RETRIES {
+                                            let delay = Self::calculate_backoff_delay(attempt);
+                                            tracing::warn!(
+                                                attempt = attempt,
+                                                delay_ms = delay.as_millis(),
+                                                "Gemini API returned empty response, retrying"
+                                            );
+                                            tokio::time::sleep(delay).await;
+                                            continue;
+                                        }
+                                        break error;
                                     }
 
                                     match serde_json::from_str::<T>(&accumulated_text) {
                                         Ok(parsed_response) => {
                                             if let Some(usage) = &gemini_response.usage_metadata {
-                                                self.track_token_usage(usage).await;
+                                                self.track_token_usage(usage, &gemini_response)
+                                                    .await;
                                             }
                                             return Ok((parsed_response, thought_signature));
                                         }
                                         Err(e) => {
-                                            last_error =
-                                                Some(format!("Failed to parse response: {e}"));
+                                            break format!("Failed to parse response: {e}");
                                         }
                                     }
                                 }
                                 Err(e) => {
+                                    let error = format!("Invalid API response format: {e}");
                                     tracing::error!(
-                                    "Gemini API parse error: {}. Raw response (first 500 chars): {}",
-                                    e,
-                                    &raw_response.chars().take(500).collect::<String>()
-                                );
-                                    last_error = Some(format!("Invalid API response format: {e}"));
+                                        "Gemini API parse error: {}. Raw response (first 500 chars): {}",
+                                        e,
+                                        &raw_response.chars().take(500).collect::<String>()
+                                    );
+
+                                    attempt += 1;
+                                    if attempt < MAX_RETRIES {
+                                        let delay = Self::calculate_backoff_delay(attempt);
+                                        tracing::warn!(
+                                            attempt = attempt,
+                                            delay_ms = delay.as_millis(),
+                                            "Gemini API parse error, retrying"
+                                        );
+                                        tokio::time::sleep(delay).await;
+                                        continue;
+                                    }
+                                    break error;
                                 }
                             }
                         }
                         Err(e) => {
-                            last_error = Some(format!("Failed to read response body: {e}"));
+                            let error = format!("Failed to read response body: {e}");
+
+                            attempt += 1;
+                            if attempt < MAX_RETRIES {
+                                let delay = Self::calculate_backoff_delay(attempt);
+                                tracing::warn!(
+                                    attempt = attempt,
+                                    delay_ms = delay.as_millis(),
+                                    "Failed to read Gemini response body, retrying"
+                                );
+                                tokio::time::sleep(delay).await;
+                                continue;
+                            }
+                            break error;
                         }
                     }
                 }
                 Err(e) => {
-                    last_error = Some(format!("Request failed: {e}"));
+                    let error = format!("Request failed: {e}");
+
+                    attempt += 1;
+                    if attempt < MAX_RETRIES {
+                        let delay = Self::calculate_backoff_delay(attempt);
+                        tracing::warn!(
+                            attempt = attempt,
+                            delay_ms = delay.as_millis(),
+                            "Gemini API request failed, retrying with exponential backoff"
+                        );
+                        tokio::time::sleep(delay).await;
+                        continue;
+                    }
+                    break error;
                 }
             }
-        }
+        };
 
         Err(AppError::Internal(format!(
-            "Failed after 3 attempts: {}",
-            last_error.unwrap_or_else(|| "Unknown error".to_string())
+            "Failed after {} attempts: {}",
+            attempt, last_error
         )))
     }
 
-    async fn track_token_usage(&self, usage: &UsageMetadata) {
+    fn calculate_backoff_delay(attempt: u32) -> Duration {
+        const INITIAL_DELAY_MS: u64 = 200;
+        const MAX_DELAY_MS: u64 = 5000;
+        const MULTIPLIER: f64 = 2.0;
+
+        let base_delay =
+            INITIAL_DELAY_MS as f64 * MULTIPLIER.powi(attempt.saturating_sub(1) as i32);
+        let capped_delay = base_delay.min(MAX_DELAY_MS as f64);
+
+        let jitter_range = capped_delay * 0.25;
+        let jitter = (rand::random::<f64>() - 0.5) * 2.0 * jitter_range;
+        let final_delay = (capped_delay + jitter).max(0.0) as u64;
+
+        Duration::from_millis(final_delay)
+    }
+
+    async fn track_token_usage(&self, usage: &UsageMetadata, response: &GeminiResponse) {
         let Some(deployment_id) = self.deployment_id else {
             return;
         };
@@ -271,13 +346,31 @@ impl GeminiClient {
             let non_cached_input_tokens = total_prompt_tokens.saturating_sub(cached_tokens);
             let output_tokens = usage.candidates_token_count as i64;
 
-            let (input_price, cached_price, output_price) = get_model_pricing(&self.model);
+            let (input_price, cached_price, output_price, search_query_price) =
+                get_model_pricing(&self.model);
+            let mut search_query_count = 0i64;
+            let mut unique_search_queries = std::collections::HashSet::new();
+            for candidate in &response.candidates {
+                if let Some(grounding) = &candidate.grounding_metadata {
+                    if let Some(queries) = &grounding.web_search_queries {
+                        for query in queries {
+                            let trimmed = query.trim();
+                            if !trimmed.is_empty() {
+                                search_query_count += 1;
+                                unique_search_queries.insert(trimmed.to_lowercase());
+                            }
+                        }
+                    }
+                }
+            }
+            let search_query_unique_count = unique_search_queries.len() as i64;
 
             let non_cached_cost = (non_cached_input_tokens * input_price) / 1_000_000;
             let cached_cost = (cached_tokens * cached_price) / 1_000_000;
             let input_cost_cents = non_cached_cost + cached_cost;
 
             let output_cost_cents = (output_tokens * output_price) / 1_000_000;
+            let search_query_cost_cents = (search_query_count * search_query_price) / 1_000;
 
             let webhook_payload = serde_json::json!({
                 "model": self.model,
@@ -289,7 +382,10 @@ impl GeminiClient {
                 "output_tokens": output_tokens,
                 "input_cost_cents": input_cost_cents,
                 "output_cost_cents": output_cost_cents,
-                "total_cost_cents": input_cost_cents + output_cost_cents,
+                "search_query_count": search_query_count,
+                "search_query_unique_count": search_query_unique_count,
+                "search_query_cost_cents": search_query_cost_cents,
+                "total_cost_cents": input_cost_cents + output_cost_cents + search_query_cost_cents,
                 "timestamp": now.to_rfc3339(),
                 "prompt_token_count": usage.prompt_token_count,
                 "candidates_token_count": usage.candidates_token_count,
@@ -337,12 +433,24 @@ impl GeminiClient {
                         output_cost_cents,
                     )
                     .ignore()
+                    .zincr(
+                        &format!("{}:metrics", prefix),
+                        "ai_search_queries",
+                        search_query_count,
+                    )
+                    .ignore()
+                    .zincr(
+                        &format!("{}:metrics", prefix),
+                        "ai_search_query_cost_cents",
+                        search_query_cost_cents,
+                    )
+                    .ignore()
                     .expire(&format!("{}:metrics", prefix), 5184000)
                     .ignore()
                     .zincr(
                         &format!("billing:{}:dirty_deployments", period),
                         deployment_id,
-                        input_cost_cents + output_cost_cents,
+                        input_cost_cents + output_cost_cents + search_query_cost_cents,
                     )
                     .ignore()
                     .expire(&format!("billing:{}:dirty_deployments", period), 5184000)

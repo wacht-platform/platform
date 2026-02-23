@@ -4,7 +4,7 @@ use axum::{
 };
 use std::sync::LazyLock;
 
-use super::deployment_context::DeploymentContext;
+use super::{deployment_context::DeploymentContext, platform_source::PlatformSource};
 
 /// Extractor that requires deployment context to be present.
 ///
@@ -77,5 +77,28 @@ where
             .as_ref()
             .map(|id| ConsoleDeployment(*id))
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.clone()))
+    }
+}
+
+/// Extracts whether the request came through the console API or backend API.
+#[derive(Debug, Clone, Copy)]
+pub struct ExtractPlatformSource(pub PlatformSource);
+
+impl<S> FromRequestParts<S> for ExtractPlatformSource
+where
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<PlatformSource>()
+            .copied()
+            .map(ExtractPlatformSource)
+            .ok_or((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Platform source not found",
+            ))
     }
 }

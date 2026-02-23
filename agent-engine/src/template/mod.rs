@@ -21,7 +21,6 @@ pub struct AgentTemplates;
 impl AgentTemplates {
     // Core decision templates
     pub const STEP_DECISION: &'static str = "step_decision_prompt";
-    pub const DEEP_REASONING: &'static str = "deep_reasoning_prompt";
     pub const VALIDATION: &'static str = "validation_prompt";
     pub const SUMMARY: &'static str = "summary_prompt";
     pub const USER_INPUT_REQUEST: &'static str = "user_input_request_prompt";
@@ -30,6 +29,8 @@ impl AgentTemplates {
     // Tool & context templates
     pub const PARAMETER_GENERATION: &'static str = "parameter_generation_prompt";
     pub const CONTEXT_SEARCH_DERIVATION: &'static str = "context_search_derivation_prompt";
+    pub const CONTEXT_RESEARCH_REPL: &'static str = "context_research_repl_prompt";
+    pub const CONTEXT_WEB_RESEARCH_REPL: &'static str = "context_web_research_repl_prompt";
 
     // Memory templates
     pub const MEMORY_CONSOLIDATION: &'static str = "memory_consolidation_prompt";
@@ -50,7 +51,6 @@ pub fn render_template_with_prompt(
 
     let system_prompt = match template_name {
         AgentTemplates::STEP_DECISION => prompt_loader::get_prompt("step_decision_system"),
-        AgentTemplates::DEEP_REASONING => prompt_loader::get_prompt("deep_reasoning_system"),
         AgentTemplates::VALIDATION => prompt_loader::get_prompt("validation_system"),
         AgentTemplates::SUMMARY => prompt_loader::get_prompt("summary_system"),
         AgentTemplates::USER_INPUT_REQUEST => {
@@ -62,6 +62,12 @@ pub fn render_template_with_prompt(
         }
         AgentTemplates::CONTEXT_SEARCH_DERIVATION => {
             prompt_loader::get_prompt("context_search_derivation_system")
+        }
+        AgentTemplates::CONTEXT_RESEARCH_REPL => {
+            prompt_loader::get_prompt("context_research_repl_system")
+        }
+        AgentTemplates::CONTEXT_WEB_RESEARCH_REPL => {
+            prompt_loader::get_prompt("context_web_research_repl_system")
         }
         AgentTemplates::MEMORY_CONSOLIDATION => {
             prompt_loader::get_prompt("memory_consolidation_system")

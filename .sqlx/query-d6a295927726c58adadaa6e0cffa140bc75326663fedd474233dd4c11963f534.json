@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT a.id, a.name\n            FROM ai_agents a\n            JOIN ai_agent_knowledge_bases aakb ON aakb.agent_id = a.id\n            WHERE a.deployment_id = $1\n            AND aakb.knowledge_base_id = $2\n            AND aakb.deployment_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d6a295927726c58adadaa6e0cffa140bc75326663fedd474233dd4c11963f534"
+}

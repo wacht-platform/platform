@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use models::{AgentIntegration, IntegrationType};
+use std::str::FromStr;
 
 pub struct GetAgentIntegrationsQuery {
     deployment_id: i64,
@@ -30,13 +31,9 @@ impl GetAgentIntegrationsQuery {
 }
 
 fn parse_integration_type(s: &str) -> IntegrationType {
-    match s {
-        "teams" => IntegrationType::Teams,
-        "slack" => IntegrationType::Slack,
-        "whatsapp" => IntegrationType::WhatsApp,
-        "discord" => IntegrationType::Discord,
-        "clickup" => IntegrationType::ClickUp,
-        _ => IntegrationType::Teams,
+    match IntegrationType::from_str(s) {
+        Ok(kind) => kind,
+        Err(_) => IntegrationType::Teams,
     }
 }
 

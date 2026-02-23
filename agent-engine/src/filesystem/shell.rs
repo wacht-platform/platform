@@ -1,13 +1,12 @@
+use crate::filesystem::sandbox::SandboxRunner;
 use common::error::AppError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::time::Duration;
-use tokio::process::Command;
-use tokio::time::timeout;
 
 #[derive(Clone)]
 pub struct ShellExecutor {
     working_dir: PathBuf,
+    sandbox: SandboxRunner,
     timeout_secs: u64,
     allowed_commands: Vec<String>,
 }
@@ -22,6 +21,7 @@ pub struct ShellOutput {
 impl ShellExecutor {
     pub fn new(working_dir: PathBuf) -> Self {
         Self {
+            sandbox: SandboxRunner::new(working_dir.clone()),
             working_dir,
             timeout_secs: 30,
             allowed_commands: vec![
@@ -57,6 +57,8 @@ impl ShellExecutor {
                 "printf",
                 "pdftotext",
                 "file",
+                "python",
+                "python3",
             ]
             .iter()
             .map(|s| s.to_string())
@@ -107,14 +109,13 @@ impl ShellExecutor {
 
                 if !self.allowed_commands.contains(&cmd.to_string()) {
                     return Err(AppError::Forbidden(format!(
-                        "Command '{}' is not allowed. Allowed commands: cat, grep, jq, head, tail, etc. For Python, use the execute_python tool instead.",
+                        "Command '{}' is not allowed. Allowed commands: cat, grep, jq, head, tail, python3, etc.",
                         cmd
                     )));
                 }
             }
         }
 
-        let working_dir_str = self.working_dir.to_string_lossy().to_string();
         for part in command_line.split_whitespace() {
             if part.starts_with('/') {
                 // Allow "//" which is a common operator in jq (null coalescing) and other tools
@@ -122,40 +123,32 @@ impl ShellExecutor {
                     continue;
                 }
 
-                if !part.starts_with(&working_dir_str) {
+                if !is_allowed_absolute_path(part) {
                     return Err(AppError::Forbidden(format!(
-                        "Absolute path '{}' is outside allowed directories. Use /teams-activity/, /knowledge/, /uploads/, /scratch/, or /workspace/",
+                        "Absolute path '{}' is outside allowed directories. Use /knowledge/, /uploads/, /scratch/, /workspace/, or /app/",
                         part
                     )));
                 }
             }
         }
 
-        let result = timeout(
-            Duration::from_secs(self.timeout_secs),
-            Command::new("bash")
-                .arg("-c")
-                .arg(&command_line)
-                .current_dir(&self.working_dir)
-                .output(),
-        )
-        .await
-        .map_err(|_| AppError::Timeout)?;
+        let output = self
+            .sandbox
+            .execute_shell(&command_line, self.timeout_secs)
+            .await?;
 
-        match result {
-            Ok(output) => Ok(ShellOutput {
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                exit_code: output.status.code().unwrap_or(-1),
-            }),
-            Err(e) => Err(AppError::Internal(format!(
-                "Failed to execute process: {}",
-                e
-            ))),
-        }
+        Ok(ShellOutput {
+            stdout: output.stdout,
+            stderr: output.stderr,
+            exit_code: output.exit_code,
+        })
     }
 
     fn normalize_path_aliases(&self, command_line: &str) -> String {
+        if self.sandbox.uses_virtual_alias_paths() {
+            return command_line.to_string();
+        }
+
         let working_dir_str = self.working_dir.to_string_lossy().to_string();
         let base = working_dir_str.trim_end_matches('/');
 
@@ -164,8 +157,6 @@ impl ShellExecutor {
             .iter()
             .map(|word| {
                 let aliases: Vec<(&str, String)> = vec![
-                    ("/teams-activity/", format!("{}/teams-activity/", base)),
-                    ("/teams-activity", format!("{}/teams-activity", base)),
                     ("/knowledge/", format!("{}/knowledge/", base)),
                     ("/knowledge", format!("{}/knowledge", base)),
                     ("/uploads/", format!("{}/uploads/", base)),
@@ -209,7 +200,6 @@ impl ShellExecutor {
         ];
 
         // Validate each pipeline command
-        let working_dir_str = self.working_dir.to_string_lossy().to_string();
         for cmd in &pipeline {
             let cmd_name = cmd.split_whitespace().next().unwrap_or("");
             if !pipeline_allowed.contains(&cmd_name) {
@@ -225,14 +215,14 @@ impl ShellExecutor {
             }
             // Block absolute paths outside working directory in pipeline
             for part in cmd.split_whitespace() {
-                if part.starts_with('/') && !part.starts_with(&working_dir_str) {
+                if part.starts_with('/') && !is_allowed_absolute_path(part) {
                     // Allow "//" which is a common operator in jq (null coalescing)
                     if part == "//" {
                         continue;
                     }
 
                     return Err(AppError::Forbidden(format!(
-                        "Absolute path '{}' is outside allowed directories in pipeline. Use /teams-activity/, /knowledge/, /uploads/, /scratch/, or /workspace/",
+                        "Absolute path '{}' is outside allowed directories in pipeline. Use /knowledge/, /uploads/, /scratch/, /workspace/, or /app/",
                         part
                     )));
                 }
@@ -243,32 +233,29 @@ impl ShellExecutor {
         let pipeline_str = pipeline.join(" | ");
         let full_command = format!("echo {} | {}", shell_escape(input), pipeline_str);
 
-        let result = timeout(
-            Duration::from_secs(10), // Shorter timeout for pipelines
-            Command::new("bash")
-                .arg("-c")
-                .arg(&full_command)
-                .current_dir(&self.working_dir)
-                .output(),
-        )
-        .await
-        .map_err(|_| AppError::Timeout)?;
-
-        match result {
-            Ok(output) => {
-                if output.status.success() {
-                    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-                } else {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    Err(AppError::Internal(format!("Pipeline failed: {}", stderr)))
-                }
-            }
-            Err(e) => Err(AppError::Internal(format!(
-                "Failed to execute pipeline: {}",
-                e
-            ))),
+        let output = self.sandbox.execute_shell(&full_command, 10).await?;
+        if output.exit_code == 0 {
+            Ok(output.stdout)
+        } else {
+            Err(AppError::Internal(format!(
+                "Pipeline failed: {}",
+                output.stderr
+            )))
         }
     }
+}
+
+fn is_allowed_absolute_path(path: &str) -> bool {
+    [
+        "/knowledge",
+        "/uploads",
+        "/scratch",
+        "/workspace",
+        "/app",
+        "/tmp",
+    ]
+    .iter()
+    .any(|prefix| path == *prefix || path.starts_with(&format!("{}/", prefix)))
 }
 
 fn shell_escape(s: &str) -> String {

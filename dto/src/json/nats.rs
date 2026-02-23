@@ -9,19 +9,6 @@ pub struct NatsTaskMessage {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct ApiKeyRateLimitSyncPayload {
-    pub deployment_id: i64,
-    pub app_id: i64,
-    pub rate_limit_scheme_slug: Option<String>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct RateLimitSchemeSyncPayload {
-    pub deployment_id: i64,
-    pub scheme_slug: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
 pub struct ApiKeyOrgMembershipSyncPayload {
     pub membership_id: i64,
 }

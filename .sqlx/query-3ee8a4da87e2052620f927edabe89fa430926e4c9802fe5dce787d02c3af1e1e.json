@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT completion_summary\n                FROM agent_execution_contexts\n                WHERE id = $1 AND deployment_id = $2\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "completion_summary",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "3ee8a4da87e2052620f927edabe89fa430926e4c9802fe5dce787d02c3af1e1e"
+}

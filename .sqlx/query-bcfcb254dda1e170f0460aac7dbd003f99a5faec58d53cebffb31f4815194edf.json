@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                deployment_id,\n                slug,\n                name,\n                description,\n                logo_url,\n                fqdn,\n                supported_scopes as \"supported_scopes: serde_json::Value\",\n                scope_definitions as \"scope_definitions: serde_json::Value\",\n                allow_dynamic_client_registration,\n                is_active,\n                created_at,\n                updated_at\n            FROM oauth_apps\n            WHERE deployment_id = $1\n              AND slug = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "logo_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "fqdn",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "supported_scopes: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "scope_definitions: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "allow_dynamic_client_registration",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bcfcb254dda1e170f0460aac7dbd003f99a5faec58d53cebffb31f4815194edf"
+}

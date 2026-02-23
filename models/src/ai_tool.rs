@@ -98,8 +98,11 @@ pub enum InternalToolType {
     ListDirectory,
     SearchFiles,
     ExecuteCommand,
+    Sleep,
+    SwitchExecutionMode,
+    UpdateTaskBoard,
+    ExitSupervisorMode,
     SaveMemory,
-    ExecutePython,
     UpdateStatus,
     GetChildStatus,
     SpawnContext,
@@ -118,7 +121,6 @@ pub struct InternalToolConfiguration {
 pub enum UseExternalServiceToolType {
     TeamsListUsers,
     TeamsSearchUsers,
-    TeamsSendDm,
     TeamsSendContextMessage,
     TeamsListMessages,
     TeamsGetMeetingRecording,
@@ -127,7 +129,7 @@ pub enum UseExternalServiceToolType {
     TeamsDescribeImage,
     TeamsTranscribeAudio,
     TeamsListContexts,
-    TriggerContext,
+    SpawnContextExecution,
     #[serde(rename = "clickup_create_task")]
     ClickUpCreateTask,
     #[serde(rename = "clickup_create_list")]
@@ -152,6 +154,7 @@ pub enum UseExternalServiceToolType {
     ClickUpSearchTasks,
     #[serde(rename = "clickup_task_add_attachment")]
     ClickUpTaskAddAttachment,
+    McpCallTool,
     WhatsAppSendMessage,
     WhatsAppGetMessage,
     WhatsAppMarkRead,
@@ -163,8 +166,6 @@ impl UseExternalServiceToolType {
         match self {
             UseExternalServiceToolType::TeamsListUsers
             | UseExternalServiceToolType::TeamsSearchUsers
-            | UseExternalServiceToolType::TeamsSendDm
-            | UseExternalServiceToolType::TeamsSendContextMessage
             | UseExternalServiceToolType::TeamsListMessages
             | UseExternalServiceToolType::TeamsGetMeetingRecording
             | UseExternalServiceToolType::TeamsTranscribeMeeting
@@ -190,7 +191,10 @@ impl UseExternalServiceToolType {
             | UseExternalServiceToolType::WhatsAppGetMessage
             | UseExternalServiceToolType::WhatsAppMarkRead => Some("whatsapp"),
 
-            UseExternalServiceToolType::TriggerContext => None,
+            UseExternalServiceToolType::McpCallTool => Some("mcp"),
+
+            UseExternalServiceToolType::SpawnContextExecution
+            | UseExternalServiceToolType::TeamsSendContextMessage => None,
         }
     }
 
@@ -200,8 +204,6 @@ impl UseExternalServiceToolType {
             "teams" => vec![
                 UseExternalServiceToolType::TeamsListUsers,
                 UseExternalServiceToolType::TeamsSearchUsers,
-                UseExternalServiceToolType::TeamsSendDm,
-                UseExternalServiceToolType::TeamsSendContextMessage,
                 UseExternalServiceToolType::TeamsListMessages,
                 UseExternalServiceToolType::TeamsGetMeetingRecording,
                 UseExternalServiceToolType::TeamsTranscribeMeeting,
@@ -229,6 +231,7 @@ impl UseExternalServiceToolType {
                 UseExternalServiceToolType::WhatsAppGetMessage,
                 UseExternalServiceToolType::WhatsAppMarkRead,
             ],
+            "mcp" => vec![UseExternalServiceToolType::McpCallTool],
             _ => vec![],
         }
     }

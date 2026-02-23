@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                supported_scopes as \"supported_scopes: serde_json::Value\",\n                scope_definitions as \"scope_definitions: serde_json::Value\"\n            FROM oauth_apps\n            WHERE deployment_id = $1\n              AND slug = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "supported_scopes: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "scope_definitions: serde_json::Value",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "e4083873a15f5a7a59d27664bcb34114dba3ae82daa8600a6fb7db48969a0123"
+}

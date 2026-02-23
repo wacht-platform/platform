@@ -5,6 +5,7 @@ use common::state::AppState;
 use models::{
     AgentExecutionContext, AgentExecutionState, AgentStatusUpdate, ExecutionContextStatus,
 };
+use std::collections::VecDeque;
 
 pub struct CreateExecutionContextCommand {
     pub deployment_id: i64,
@@ -191,8 +192,8 @@ impl super::Command for UpdateExecutionContextQuery {
         }
 
         if let Some(ref status) = self.status {
-            sqlx::query!(
-                "UPDATE agent_execution_contexts SET updated_at = $1, last_activity_at = $1, status = $2 WHERE id = $3 AND deployment_id = $4",
+            let status_update = sqlx::query!(
+                "UPDATE agent_execution_contexts SET updated_at = $1, last_activity_at = $1, status = $2 WHERE id = $3 AND deployment_id = $4 AND status IS DISTINCT FROM $2",
                 now,
                 status.to_string(),
                 self.context_id,
@@ -202,8 +203,10 @@ impl super::Command for UpdateExecutionContextQuery {
             .await
             .map_err(|e| AppError::Database(e))?;
 
+            let status_changed = status_update.rows_affected() > 0;
+
             // If status is being set to Failed, it's likely a cancellation - log it in conversation
-            if matches!(status, ExecutionContextStatus::Failed) {
+            if status_changed && matches!(status, ExecutionContextStatus::Failed) {
                 use crate::CreateConversationCommand;
                 use models::{ConversationContent, ConversationMessageType};
 
@@ -235,6 +238,17 @@ impl super::Command for UpdateExecutionContextQuery {
                     }
                 }
             }
+
+            if status_changed
+                && matches!(
+                    status,
+                    ExecutionContextStatus::Failed | ExecutionContextStatus::Interrupted
+                )
+            {
+                CancelDescendantExecutionsCommand::new(self.context_id, self.deployment_id)
+                    .execute(app_state)
+                    .await?;
+            }
         }
 
         if let Some(ref metadata) = self.external_resource_metadata {
@@ -251,6 +265,87 @@ impl super::Command for UpdateExecutionContextQuery {
         }
 
         Ok(())
+    }
+}
+
+/// Cancel all descendant contexts for an aborted parent context.
+/// This is event-driven: marks descendants as cancelled and publishes spawn-control stop events.
+pub struct CancelDescendantExecutionsCommand {
+    pub parent_context_id: i64,
+    pub deployment_id: i64,
+}
+
+impl CancelDescendantExecutionsCommand {
+    pub fn new(parent_context_id: i64, deployment_id: i64) -> Self {
+        Self {
+            parent_context_id,
+            deployment_id,
+        }
+    }
+}
+
+impl Command for CancelDescendantExecutionsCommand {
+    type Output = usize;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let mut cancelled_count = 0usize;
+        let mut queue = VecDeque::from([self.parent_context_id]);
+        let cancelled_summary = serde_json::json!({
+            "status": "Cancelled",
+            "result": null,
+            "error_message": format!("Cancelled because ancestor context {} was aborted.", self.parent_context_id),
+            "metrics": null
+        });
+
+        while let Some(current_parent_id) = queue.pop_front() {
+            let child_ids = sqlx::query_scalar!(
+                r#"
+                SELECT id
+                FROM agent_execution_contexts
+                WHERE parent_context_id = $1 AND deployment_id = $2
+                "#,
+                current_parent_id,
+                self.deployment_id
+            )
+            .fetch_all(&app_state.db_pool)
+            .await
+            .map_err(AppError::Database)?;
+
+            for child_id in child_ids {
+                queue.push_back(child_id);
+
+                sqlx::query!(
+                    r#"
+                    UPDATE agent_execution_contexts
+                    SET status = 'failed',
+                        completion_summary = COALESCE(completion_summary, $1),
+                        completed_at = COALESCE(completed_at, NOW()),
+                        updated_at = NOW(),
+                        last_activity_at = NOW()
+                    WHERE id = $2
+                      AND deployment_id = $3
+                      AND status NOT IN ('completed', 'failed')
+                    "#,
+                    cancelled_summary.clone(),
+                    child_id,
+                    self.deployment_id
+                )
+                .execute(&app_state.db_pool)
+                .await
+                .map_err(AppError::Database)?;
+
+                let _ = PublishSpawnControlCommand::new(
+                    child_id,
+                    self.deployment_id,
+                    SpawnControlAction::Stop,
+                )
+                .execute(app_state)
+                .await;
+                cancelled_count += 1;
+            }
+        }
+
+        Ok(cancelled_count)
     }
 }
 
@@ -397,47 +492,6 @@ impl Command for PostStatusUpdateCommand {
             metadata: row.metadata,
             created_at: row.created_at.unwrap_or_else(|| chrono::Utc::now()),
         })
-    }
-}
-
-/// Store completion summary when a child agent finishes
-pub struct StoreCompletionSummaryCommand {
-    pub context_id: i64,
-    pub deployment_id: i64,
-    pub completion_summary: serde_json::Value,
-}
-
-impl StoreCompletionSummaryCommand {
-    pub fn new(context_id: i64, deployment_id: i64, completion_summary: serde_json::Value) -> Self {
-        Self {
-            context_id,
-            deployment_id,
-            completion_summary,
-        }
-    }
-}
-
-impl Command for StoreCompletionSummaryCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        sqlx::query!(
-            r#"
-            UPDATE agent_execution_contexts
-            SET completion_summary = $1,
-                updated_at = NOW(),
-                last_activity_at = NOW()
-            WHERE id = $2 AND deployment_id = $3
-            "#,
-            self.completion_summary,
-            self.context_id,
-            self.deployment_id
-        )
-        .execute(&app_state.db_pool)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-        Ok(())
     }
 }
 

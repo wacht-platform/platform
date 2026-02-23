@@ -1,6 +1,6 @@
+use super::flexible_i64::FlexibleI64;
 use chrono::{DateTime, Utc};
-use models::api_key::{ApiAuthApp, ApiKey, RateLimit};
-use models::api_key_permissions::{ApiKeyScope, ApiKeyScopeHelper};
+use models::api_key::{ApiAuthApp, ApiKey, JwksDocument, OAuthScopeDefinition, RateLimit};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -59,11 +59,14 @@ pub struct ListRateLimitSchemesResponse<T> {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateApiAuthAppRequest {
+    pub user_id: Option<FlexibleI64>,
     pub app_slug: String,
     pub name: String,
     pub key_prefix: String,
     pub description: Option<String>,
     pub rate_limit_scheme_slug: Option<String>,
+    pub permissions: Option<Vec<String>>,
+    pub resources: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,6 +76,8 @@ pub struct UpdateApiAuthAppRequest {
     pub description: Option<String>,
     pub is_active: Option<bool>,
     pub rate_limit_scheme_slug: Option<String>,
+    pub permissions: Option<Vec<String>>,
+    pub resources: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,11 +90,7 @@ pub struct ListApiAuditLogsQuery {
     pub limit: Option<u32>,
     pub offset: Option<u32>,
     pub outcome: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_string_or_number_to_option_i64"
-    )]
-    pub key_id: Option<i64>,
+    pub key_id: Option<FlexibleI64>,
     pub start_date: Option<DateTime<Utc>>,
     pub end_date: Option<DateTime<Utc>>,
     pub cursor: Option<String>,
@@ -101,11 +102,7 @@ pub struct ListApiAuditLogsQuery {
 pub struct GetApiAuditAnalyticsQuery {
     pub start_date: Option<DateTime<Utc>>,
     pub end_date: Option<DateTime<Utc>>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_string_or_number_to_option_i64"
-    )]
-    pub key_id: Option<i64>,
+    pub key_id: Option<FlexibleI64>,
     pub include_top_keys: Option<bool>,
     pub include_top_paths: Option<bool>,
     pub include_blocked_reasons: Option<bool>,
@@ -118,11 +115,7 @@ pub struct GetApiAuditTimeseriesQuery {
     pub start_date: Option<DateTime<Utc>>,
     pub end_date: Option<DateTime<Utc>>,
     pub interval: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_string_or_number_to_option_i64"
-    )]
-    pub key_id: Option<i64>,
+    pub key_id: Option<FlexibleI64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -227,103 +220,177 @@ pub struct ApiAuditTimeseriesResponse {
 #[derive(Debug, Deserialize)]
 pub struct CreateApiKeyRequest {
     pub name: String,
-    pub permissions: Option<Vec<String>>, // If omitted, default scopes are applied
-    #[serde(
-        default,
-        deserialize_with = "deserialize_string_or_number_to_option_i64"
-    )]
-    pub organization_membership_id: Option<i64>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_string_or_number_to_option_i64"
-    )]
-    pub workspace_membership_id: Option<i64>,
+    pub permissions: Option<Vec<String>>,
+    pub organization_membership_id: Option<FlexibleI64>,
+    pub workspace_membership_id: Option<FlexibleI64>,
     pub metadata: Option<Value>,
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-impl CreateApiKeyRequest {
-    /// Get the actual permissions based on provided permissions or defaults
-    pub fn get_permissions(&self) -> Vec<String> {
-        if let Some(perms) = &self.permissions {
-            if !perms.is_empty() {
-                return perms.clone();
-            }
-        }
-
-        ApiKeyScopeHelper::scopes_to_strings(&ApiKeyScope::default_scopes())
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct RevokeApiKeyRequest {
-    #[serde(
-        default,
-        deserialize_with = "deserialize_string_or_number_to_option_i64"
-    )]
-    pub key_id: Option<i64>, // Optional for backend API (passed in body)
+    pub key_id: Option<FlexibleI64>, // Optional for backend API (passed in body)
     pub reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RotateApiKeyRequest {
-    #[serde(deserialize_with = "deserialize_string_or_number_to_i64")]
-    pub key_id: i64,
-}
-
-// Helper functions for deserializing string or number to i64
-fn deserialize_string_or_number_to_i64<'de, D>(deserializer: D) -> Result<i64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de;
-
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum StringOrNumber {
-        String(String),
-        Number(i64),
-    }
-
-    match StringOrNumber::deserialize(deserializer)? {
-        StringOrNumber::String(s) => s.parse::<i64>().map_err(de::Error::custom),
-        StringOrNumber::Number(n) => Ok(n),
-    }
-}
-
-fn deserialize_string_or_number_to_option_i64<'de, D>(
-    deserializer: D,
-) -> Result<Option<i64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de;
-
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum StringOrNumber {
-        String(String),
-        Number(i64),
-    }
-
-    Option::<StringOrNumber>::deserialize(deserializer)?
-        .map(|value| match value {
-            StringOrNumber::String(s) => s.parse::<i64>().map_err(de::Error::custom),
-            StringOrNumber::Number(n) => Ok(n),
-        })
-        .transpose()
+    pub key_id: FlexibleI64,
 }
 
 #[derive(Debug, Serialize)]
-pub struct ApiKeyScopeInfo {
-    pub scope: String,
-    pub description: String,
-    pub category: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ScopePresetInfo {
+pub struct OAuthAppResponse {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub id: i64,
+    pub slug: String,
     pub name: String,
-    pub description: String,
+    pub description: Option<String>,
+    pub logo_url: Option<String>,
+    pub fqdn: String,
+    pub supported_scopes: Vec<String>,
+    pub scope_definitions: Vec<OAuthScopeDefinition>,
+    pub allow_dynamic_client_registration: bool,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListOAuthAppsResponse {
+    pub apps: Vec<OAuthAppResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateOAuthClientRequest {
+    pub client_auth_method: String,
+    pub grant_types: Vec<String>,
+    #[serde(default)]
+    pub redirect_uris: Vec<String>,
+    pub client_name: Option<String>,
+    pub client_uri: Option<String>,
+    pub logo_uri: Option<String>,
+    pub tos_uri: Option<String>,
+    pub policy_uri: Option<String>,
+    pub contacts: Option<Vec<String>>,
+    pub software_id: Option<String>,
+    pub software_version: Option<String>,
+    pub token_endpoint_auth_signing_alg: Option<String>,
+    pub jwks_uri: Option<String>,
+    pub jwks: Option<JwksDocument>,
+    pub public_key_pem: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOAuthClientRequest {
+    pub client_auth_method: Option<String>,
+    pub grant_types: Option<Vec<String>>,
+    pub redirect_uris: Option<Vec<String>>,
+    pub client_name: Option<String>,
+    pub client_uri: Option<String>,
+    pub logo_uri: Option<String>,
+    pub tos_uri: Option<String>,
+    pub policy_uri: Option<String>,
+    pub contacts: Option<Vec<String>>,
+    pub software_id: Option<String>,
+    pub software_version: Option<String>,
+    pub token_endpoint_auth_signing_alg: Option<String>,
+    pub jwks_uri: Option<String>,
+    pub jwks: Option<JwksDocument>,
+    pub public_key_pem: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOAuthAppRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub supported_scopes: Option<Vec<String>>,
+    pub scope_definitions: Option<Vec<OAuthScopeDefinition>>,
+    pub allow_dynamic_client_registration: Option<bool>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOAuthScopeRequest {
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetOAuthScopeMappingRequest {
+    pub category: String,
+    pub organization_permission: Option<String>,
+    pub workspace_permission: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OAuthClientResponse {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub oauth_app_id: i64,
+    pub client_id: String,
+    pub client_auth_method: String,
+    pub grant_types: Vec<String>,
+    pub redirect_uris: Vec<String>,
+    pub client_name: Option<String>,
+    pub client_uri: Option<String>,
+    pub logo_uri: Option<String>,
+    pub tos_uri: Option<String>,
+    pub policy_uri: Option<String>,
+    pub contacts: Vec<String>,
+    pub software_id: Option<String>,
+    pub software_version: Option<String>,
+    pub token_endpoint_auth_signing_alg: Option<String>,
+    pub jwks_uri: Option<String>,
+    pub jwks: Option<JwksDocument>,
+    pub public_key_pem: Option<String>,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListOAuthClientsResponse {
+    pub clients: Vec<OAuthClientResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RotateOAuthClientSecretResponse {
+    pub client_secret: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateOAuthGrantRequest {
+    pub resource: String,
     pub scopes: Vec<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OAuthGrantResponse {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub id: i64,
+    pub api_auth_app_slug: String,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    pub oauth_client_id: i64,
+    pub resource: String,
+    pub scopes: Vec<String>,
+    pub status: String,
+    pub granted_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "models::utils::serde::serialize_option_i64_as_string"
+    )]
+    pub granted_by_user_id: Option<i64>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListOAuthGrantsResponse {
+    pub grants: Vec<OAuthGrantResponse>,
 }

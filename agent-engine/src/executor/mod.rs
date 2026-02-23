@@ -10,7 +10,6 @@ mod conversation;
 mod core;
 mod decision;
 mod memory;
-pub mod python;
 mod tool_definitions;
 mod tool_params;
 

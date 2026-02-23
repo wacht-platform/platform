@@ -1,208 +1,240 @@
 use commands::{Command, TriggerWebhookEventCommand};
 use common::state::AppState;
+use dto::json::{AgentExecutionRequest, AgentExecutionType, AgentStreamMessageType};
+use redis::Script;
+use tokio::time::{Duration, sleep};
 
-async fn create_virtual_system_agent(
+const MAX_DEPLOYMENT_CONCURRENT_EXECUTIONS: i64 = 2000;
+const EXECUTION_SLOT_TTL_SECONDS: i64 = 600;
+const IDEMPOTENCY_TTL_SECONDS: i64 = 600;
+const CONTEXT_LOCK_TTL_SECONDS: i64 = 3600;
+
+#[derive(Debug, Clone)]
+enum AgentResolutionStrategy {
+    AgentId(i64),
+    AgentName(String),
+}
+
+impl AgentResolutionStrategy {
+    fn display_label(&self) -> String {
+        match self {
+            Self::AgentId(agent_id) => agent_id.to_string(),
+            Self::AgentName(agent_name) => agent_name.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum AgentExecutionKind {
+    NewMessage {
+        conversation_id: i64,
+    },
+    UserInputResponse {
+        conversation_id: i64,
+    },
+    PlatformFunctionResult {
+        execution_id: String,
+        result: serde_json::Value,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct AgentExecutionEnvelope {
     deployment_id: i64,
-    name: &str,
-    description: &str,
-    virtual_id: i64,
-    app_state: &AppState,
-) -> Result<models::AiAgentWithFeatures, anyhow::Error> {
-    use queries::{GetAiToolsQuery, Query};
+    context_id: i64,
+    agent_resolution: AgentResolutionStrategy,
+    execution_kind: AgentExecutionKind,
+}
 
-    // Get all tools for the deployment - filter by integration type in memory
-    let all_tools = GetAiToolsQuery::new(deployment_id)
-        .execute(app_state)
-        .await?;
+impl TryFrom<AgentExecutionRequest> for AgentExecutionEnvelope {
+    type Error = anyhow::Error;
 
-    // Determine integration type from agent name
-    let integration_filter = match name {
-        "Teams Agent" => "teams",
-        "ClickUp Agent" => "clickup",
-        "WhatsApp Agent" => "whatsapp",
-        _ => "",
-    };
+    fn try_from(request: AgentExecutionRequest) -> Result<Self, Self::Error> {
+        let deployment_id = parse_string_id("deployment_id", &request.deployment_id)?;
+        let context_id = parse_string_id("context_id", &request.context_id)?;
 
-    // Filter tools by checking their configuration
-    let tools: Vec<models::AiTool> = all_tools
-        .into_iter()
-        .filter(|t| {
-            if let models::AiToolConfiguration::UseExternalService(config) = &t.configuration {
-                config
-                    .service_type
-                    .integration_type()
-                    .map(|it| it.eq_ignore_ascii_case(integration_filter))
-                    .unwrap_or(false)
-            } else {
-                false
+        let agent_resolution = match (request.agent_id, request.agent_name) {
+            (Some(agent_id), _) => {
+                AgentResolutionStrategy::AgentId(parse_string_id("agent_id", &agent_id)?)
             }
-        })
-        .map(|t| models::AiTool {
-            id: t.id,
-            created_at: t.created_at,
-            updated_at: t.updated_at,
-            name: t.name,
-            description: t.description,
-            tool_type: t.tool_type,
-            deployment_id: t.deployment_id,
-            configuration: t.configuration,
-        })
-        .collect();
+            (None, Some(agent_name)) => AgentResolutionStrategy::AgentName(agent_name),
+            (None, None) => {
+                return Err(anyhow::anyhow!(
+                    "Either agent_id or agent_name must be provided"
+                ));
+            }
+        };
 
-    Ok(models::AiAgentWithFeatures {
-        id: virtual_id,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-        name: name.to_string(),
-        description: Some(description.to_string()),
-        deployment_id,
-        configuration: serde_json::json!({
-            "tool_ids": tools.iter().map(|t| t.id).collect::<Vec<_>>(),
-            "knowledge_base_ids": [],
-            "integration_ids": [],
-            "quick_questions": [],
-        }),
-        tools,
-        knowledge_bases: vec![],
-        integrations: vec![],
-        sub_agents: None,
-        spawn_config: Some(models::SpawnConfig {
-            max_parallel_children: Some(1),
-            default_timeout_secs: Some(120),
-            allow_fork: Some(false),
-            allow_exec: Some(false),
-        }),
-    })
+        let execution_kind = match request.execution_type {
+            AgentExecutionType::NewMessage { conversation_id } => AgentExecutionKind::NewMessage {
+                conversation_id: parse_string_id("conversation_id", &conversation_id)?,
+            },
+            AgentExecutionType::UserInputResponse { conversation_id } => {
+                AgentExecutionKind::UserInputResponse {
+                    conversation_id: parse_string_id("conversation_id", &conversation_id)?,
+                }
+            }
+            AgentExecutionType::PlatformFunctionResult {
+                execution_id,
+                result,
+            } => AgentExecutionKind::PlatformFunctionResult {
+                execution_id,
+                result,
+            },
+        };
+
+        Ok(Self {
+            deployment_id,
+            context_id,
+            agent_resolution,
+            execution_kind,
+        })
+    }
+}
+
+fn parse_string_id(field_name: &str, raw_value: &str) -> Result<i64, anyhow::Error> {
+    raw_value
+        .parse::<i64>()
+        .map_err(|error| anyhow::anyhow!("Invalid {} '{}': {}", field_name, raw_value, error))
+}
+
+fn console_deployment_id() -> i64 {
+    std::env::var("CONSOLE_DEPLOYMENT_ID")
+        .unwrap_or_else(|_| "0".to_string())
+        .parse()
+        .unwrap_or(0)
+}
+
+async fn trigger_execution_webhook(
+    app_state: &AppState,
+    deployment_id: i64,
+    event_name: &str,
+    payload: serde_json::Value,
+    error_context: &str,
+) {
+    let trigger_command = TriggerWebhookEventCommand::new(
+        console_deployment_id(),
+        deployment_id.to_string(),
+        event_name.to_string(),
+        payload,
+    );
+
+    if let Err(error) = trigger_command.execute(app_state).await {
+        tracing::error!("Failed to trigger {} webhook: {}", error_context, error);
+    }
+}
+
+async fn publish_conversation_webhook(
+    app_state: &AppState,
+    deployment_id: i64,
+    context_id: i64,
+    conversation_id: i64,
+    message_type: &str,
+    error_context: &str,
+) {
+    use queries::Query;
+
+    if let Ok(conversation) = queries::GetConversationByIdQuery::new(conversation_id)
+        .execute(app_state)
+        .await
+    {
+        let payload = serde_json::json!({
+            "context_id": context_id,
+            "message_type": message_type,
+            "data": conversation.content,
+            "timestamp": conversation.timestamp,
+        });
+
+        trigger_execution_webhook(
+            app_state,
+            deployment_id,
+            "execution_context.message",
+            payload,
+            error_context,
+        )
+        .await;
+    }
 }
 
 pub async fn process_agent_execution(
     app_state: &AppState,
-    request: dto::json::AgentExecutionRequest,
+    request: AgentExecutionRequest,
 ) -> Result<String, anyhow::Error> {
     use agent_engine::{AgentHandler, ExecutionRequest};
-    use dto::json::AgentExecutionType;
-    use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures, Query};
+    use queries::{
+        GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures, GetExecutionContextQuery, Query,
+    };
 
-    let agent_identifier = request
-        .agent_id
-        .as_ref()
-        .map(|id| id.to_string())
-        .or(request.agent_name.clone())
-        .unwrap_or_else(|| "unknown".to_string());
+    let execution_envelope = AgentExecutionEnvelope::try_from(request)?;
+    if !register_execution_idempotency(app_state, &execution_envelope).await? {
+        return Ok(format!(
+            "Duplicate execution ignored for context {}",
+            execution_envelope.context_id
+        ));
+    }
 
-    // Parse string IDs to i64
-    let deployment_id: i64 = request
-        .deployment_id
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid deployment_id '{}': {}", request.deployment_id, e))?;
-    let context_id: i64 = request
-        .context_id
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid context_id '{}': {}", request.context_id, e))?;
+    let concurrency_guard =
+        acquire_deployment_execution_slot(app_state, execution_envelope.deployment_id).await?;
+    let context_guard =
+        acquire_context_execution_lock(app_state, execution_envelope.context_id).await?;
+
+    let agent_identifier = execution_envelope.agent_resolution.display_label();
 
     tracing::info!(
         "Processing agent '{}' execution for context {} (type: {:?})",
         agent_identifier,
-        context_id,
-        request.execution_type
+        execution_envelope.context_id,
+        execution_envelope.execution_kind
     );
 
-    let agent = if let Some(ref agent_id_str) = request.agent_id {
-        let agent_id: i64 = agent_id_str
-            .parse()
-            .map_err(|e| anyhow::anyhow!("Invalid agent_id '{}': {}", agent_id_str, e))?;
-        GetAiAgentByIdWithFeatures::new(agent_id)
+    let agent = match &execution_envelope.agent_resolution {
+        AgentResolutionStrategy::AgentId(agent_id) => GetAiAgentByIdWithFeatures::new(*agent_id)
             .execute(app_state)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to get agent by ID {}: {}", agent_id, e))?
-    } else if let Some(ref agent_name) = request.agent_name {
-        // Try to get agent from DB first
-        match GetAiAgentByNameWithFeatures::new(deployment_id, agent_name.clone())
-            .execute(app_state)
-            .await
-        {
-            Ok(agent) => agent,
-            Err(_) => {
-                // Check if it's a system agent (virtual)
-                match agent_name.to_lowercase().as_str() {
-                    "teams agent" => {
-                        create_virtual_system_agent(
-                            deployment_id,
-                            "Teams Agent",
-                            "Handles Microsoft Teams operations",
-                            -1000,
-                            app_state,
-                        )
-                        .await?
-                    }
-                    "clickup agent" => {
-                        create_virtual_system_agent(
-                            deployment_id,
-                            "ClickUp Agent",
-                            "Manages ClickUp tasks and projects",
-                            -2000,
-                            app_state,
-                        )
-                        .await?
-                    }
-                    "whatsapp agent" => {
-                        create_virtual_system_agent(
-                            deployment_id,
-                            "WhatsApp Agent",
-                            "Processes WhatsApp messages",
-                            -3000,
-                            app_state,
-                        )
-                        .await?
-                    }
-                    _ => {
-                        return Err(anyhow::anyhow!("Agent '{}' not found", agent_name));
-                    }
-                }
-            }
+            .map_err(|e| anyhow::anyhow!("Failed to get agent by ID {}: {}", agent_id, e))?,
+        AgentResolutionStrategy::AgentName(agent_name) => {
+            GetAiAgentByNameWithFeatures::new(execution_envelope.deployment_id, agent_name.clone())
+                .execute(app_state)
+                .await
+                .map_err(|_| anyhow::anyhow!("Agent '{}' not found", agent_name))?
         }
-    } else {
-        return Err(anyhow::anyhow!(
-            "Either agent_id or agent_name must be provided"
-        ));
     };
 
-    let execution_request = match request.execution_type {
-        AgentExecutionType::NewMessage {
-            ref conversation_id,
-        } => {
-            let conv_id: i64 = conversation_id.parse().map_err(|e| {
-                anyhow::anyhow!("Invalid conversation_id '{}': {}", conversation_id, e)
-            })?;
+    let deployment_id = execution_envelope.deployment_id;
+    let context_id = execution_envelope.context_id;
+    let execution_kind = execution_envelope.execution_kind;
+    let context = GetExecutionContextQuery::new(context_id, deployment_id)
+        .execute(app_state)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load execution context {}: {}", context_id, e))?;
+    if matches!(
+        context.status,
+        models::ExecutionContextStatus::Failed
+            | models::ExecutionContextStatus::Interrupted
+            | models::ExecutionContextStatus::Completed
+    ) {
+        drop(context_guard);
+        drop(concurrency_guard);
+        return Ok(format!(
+            "Skipped execution for context {} because status is {}",
+            context_id, context.status
+        ));
+    }
+
+    let execution_request = match execution_kind {
+        AgentExecutionKind::NewMessage { conversation_id } => {
+            let conv_id = conversation_id;
             tracing::info!("New message execution with conversation_id: {}", conv_id);
 
-            if let Ok(conversation) = queries::GetConversationByIdQuery::new(conv_id)
-                .execute(app_state)
-                .await
-            {
-                let webhook_payload = serde_json::json!({
-                    "context_id": context_id,
-                    "message_type": "conversation_message",
-                    "data": conversation.content,
-                    "timestamp": conversation.timestamp,
-                });
-
-                let console_id = std::env::var("CONSOLE_DEPLOYMENT_ID")
-                    .unwrap_or_else(|_| "0".to_string())
-                    .parse()
-                    .unwrap_or(0);
-
-                let trigger_command = TriggerWebhookEventCommand::new(
-                    console_id,
-                    deployment_id.to_string(),
-                    "execution_context.message".to_string(),
-                    webhook_payload,
-                );
-
-                if let Err(e) = trigger_command.execute(app_state).await {
-                    tracing::error!("Failed to trigger user message webhook: {}", e);
-                }
-            }
+            publish_conversation_webhook(
+                app_state,
+                deployment_id,
+                context_id,
+                conv_id,
+                AgentStreamMessageType::ConversationMessage.as_header_value(),
+                "user message",
+            )
+            .await;
 
             ExecutionRequest {
                 agent,
@@ -211,41 +243,19 @@ pub async fn process_agent_execution(
                 platform_function_result: None,
             }
         }
-        AgentExecutionType::UserInputResponse {
-            ref conversation_id,
-        } => {
-            let conv_id: i64 = conversation_id.parse().map_err(|e| {
-                anyhow::anyhow!("Invalid conversation_id '{}': {}", conversation_id, e)
-            })?;
+        AgentExecutionKind::UserInputResponse { conversation_id } => {
+            let conv_id = conversation_id;
             tracing::info!("User input response with conversation_id: {}", conv_id);
 
-            if let Ok(conversation) = queries::GetConversationByIdQuery::new(conv_id)
-                .execute(app_state)
-                .await
-            {
-                let webhook_payload = serde_json::json!({
-                    "context_id": context_id,
-                    "message_type": "user_input_response",
-                    "data": conversation.content,
-                    "timestamp": conversation.timestamp,
-                });
-
-                let console_id = std::env::var("CONSOLE_DEPLOYMENT_ID")
-                    .unwrap_or_else(|_| "0".to_string())
-                    .parse()
-                    .unwrap_or(0);
-
-                let trigger_command = TriggerWebhookEventCommand::new(
-                    console_id,
-                    deployment_id.to_string(),
-                    "execution_context.message".to_string(),
-                    webhook_payload,
-                );
-
-                if let Err(e) = trigger_command.execute(app_state).await {
-                    tracing::error!("Failed to trigger user response webhook: {}", e);
-                }
-            }
+            publish_conversation_webhook(
+                app_state,
+                deployment_id,
+                context_id,
+                conv_id,
+                "user_input_response",
+                "user response",
+            )
+            .await;
 
             ExecutionRequest {
                 agent,
@@ -254,7 +264,7 @@ pub async fn process_agent_execution(
                 platform_function_result: None,
             }
         }
-        AgentExecutionType::PlatformFunctionResult {
+        AgentExecutionKind::PlatformFunctionResult {
             execution_id,
             result,
         } => {
@@ -265,27 +275,20 @@ pub async fn process_agent_execution(
 
             let webhook_payload = serde_json::json!({
                 "context_id": context_id,
-                "message_type": "platform_function_result",
+                "message_type": AgentStreamMessageType::PlatformFunction.as_header_value(),
                 "execution_id": execution_id,
                 "data": result,
                 "timestamp": chrono::Utc::now(),
             });
 
-            let console_id = std::env::var("CONSOLE_DEPLOYMENT_ID")
-                .unwrap_or_else(|_| "0".to_string())
-                .parse()
-                .unwrap_or(0);
-
-            let trigger_command = TriggerWebhookEventCommand::new(
-                console_id,
-                deployment_id.to_string(),
-                "execution_context.platform_function_result".to_string(),
+            trigger_execution_webhook(
+                app_state,
+                deployment_id,
+                "execution_context.platform_function_result",
                 webhook_payload,
-            );
-
-            if let Err(e) = trigger_command.execute(app_state).await {
-                tracing::error!("Failed to trigger platform function result webhook: {}", e);
-            }
+                "platform function result",
+            )
+            .await;
 
             ExecutionRequest {
                 agent,
@@ -296,13 +299,196 @@ pub async fn process_agent_execution(
         }
     };
 
-    AgentHandler::new(app_state.clone())
+    let result = AgentHandler::new(app_state.clone())
         .execute_agent_streaming(execution_request)
-        .await
-        .map_err(|e| anyhow::anyhow!("Agent execution failed: {}", e))?;
+        .await;
+
+    drop(context_guard);
+    drop(concurrency_guard);
+    result.map_err(|e| anyhow::anyhow!("Agent execution failed: {}", e))?;
 
     Ok(format!(
         "Agent '{}' execution completed for context {}",
         agent_identifier, context_id
     ))
+}
+
+struct DeploymentExecutionGuard {
+    app_state: AppState,
+    key: String,
+}
+
+impl Drop for DeploymentExecutionGuard {
+    fn drop(&mut self) {
+        let app_state = self.app_state.clone();
+        let key = self.key.clone();
+        tokio::spawn(async move {
+            if let Ok(mut conn) = app_state
+                .redis_client
+                .get_multiplexed_async_connection()
+                .await
+            {
+                let _: Result<i64, _> = redis::cmd("DECR").arg(&key).query_async(&mut conn).await;
+            }
+        });
+    }
+}
+
+struct ContextExecutionLockGuard {
+    app_state: AppState,
+    key: String,
+    token: String,
+}
+
+impl Drop for ContextExecutionLockGuard {
+    fn drop(&mut self) {
+        let app_state = self.app_state.clone();
+        let key = self.key.clone();
+        let token = self.token.clone();
+        tokio::spawn(async move {
+            if let Ok(mut conn) = app_state
+                .redis_client
+                .get_multiplexed_async_connection()
+                .await
+            {
+                let unlock_script = Script::new(
+                    r#"
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+"#,
+                );
+                let _: Result<i64, _> = unlock_script
+                    .key(&key)
+                    .arg(&token)
+                    .invoke_async(&mut conn)
+                    .await;
+            }
+        });
+    }
+}
+
+async fn acquire_deployment_execution_slot(
+    app_state: &AppState,
+    deployment_id: i64,
+) -> Result<DeploymentExecutionGuard, anyhow::Error> {
+    let key = format!("agent:deployment_active_executions:{}", deployment_id);
+    let script = Script::new(
+        r#"
+local key = KEYS[1]
+local max_active = tonumber(ARGV[1])
+local ttl_sec = tonumber(ARGV[2])
+local current = tonumber(redis.call('GET', key) or '0')
+if current >= max_active then
+  return 0
+end
+current = redis.call('INCR', key)
+redis.call('EXPIRE', key, ttl_sec)
+return current
+"#,
+    );
+
+    loop {
+        let mut conn = app_state
+            .redis_client
+            .get_multiplexed_async_connection()
+            .await?;
+        let acquired_count: i64 = script
+            .key(&key)
+            .arg(MAX_DEPLOYMENT_CONCURRENT_EXECUTIONS)
+            .arg(EXECUTION_SLOT_TTL_SECONDS)
+            .invoke_async(&mut conn)
+            .await?;
+        if acquired_count > 0 {
+            return Ok(DeploymentExecutionGuard {
+                app_state: app_state.clone(),
+                key,
+            });
+        }
+        sleep(Duration::from_millis(250)).await;
+    }
+}
+
+async fn acquire_context_execution_lock(
+    app_state: &AppState,
+    context_id: i64,
+) -> Result<ContextExecutionLockGuard, anyhow::Error> {
+    let key = format!("agent:context_execution_lock:{}", context_id);
+    let token = format!(
+        "{}:{}",
+        context_id,
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    );
+
+    let script = Script::new(
+        r#"
+if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2]) then
+  return 1
+end
+return 0
+"#,
+    );
+
+    loop {
+        let mut conn = app_state
+            .redis_client
+            .get_multiplexed_async_connection()
+            .await?;
+        let acquired: i64 = script
+            .key(&key)
+            .arg(&token)
+            .arg(CONTEXT_LOCK_TTL_SECONDS)
+            .invoke_async(&mut conn)
+            .await?;
+        if acquired == 1 {
+            return Ok(ContextExecutionLockGuard {
+                app_state: app_state.clone(),
+                key,
+                token,
+            });
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+}
+
+async fn register_execution_idempotency(
+    app_state: &AppState,
+    envelope: &AgentExecutionEnvelope,
+) -> Result<bool, anyhow::Error> {
+    let identity = match &envelope.execution_kind {
+        AgentExecutionKind::NewMessage { conversation_id } => format!("new:{}", conversation_id),
+        AgentExecutionKind::UserInputResponse { conversation_id } => {
+            format!("input:{}", conversation_id)
+        }
+        AgentExecutionKind::PlatformFunctionResult { execution_id, .. } => {
+            format!("platform:{}", execution_id)
+        }
+    };
+
+    let key = format!(
+        "agent:exec_idempotency:{}:{}:{}",
+        envelope.deployment_id, envelope.context_id, identity
+    );
+
+    let script = Script::new(
+        r#"
+if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2]) then
+  return 1
+end
+return 0
+"#,
+    );
+
+    let mut conn = app_state
+        .redis_client
+        .get_multiplexed_async_connection()
+        .await?;
+    let inserted: i64 = script
+        .key(key)
+        .arg("1")
+        .arg(IDEMPOTENCY_TTL_SECONDS)
+        .invoke_async(&mut conn)
+        .await?;
+    Ok(inserted == 1)
 }

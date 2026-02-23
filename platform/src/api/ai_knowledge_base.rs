@@ -12,8 +12,9 @@ use crate::application::{
 use common::state::AppState;
 
 use commands::{
-    Command, CreateAiKnowledgeBaseCommand, DeleteAiKnowledgeBaseCommand,
-    DeleteKnowledgeBaseDocumentCommand, UpdateAiKnowledgeBaseCommand,
+    AttachKnowledgeBaseToAgentCommand, Command, CreateAiKnowledgeBaseCommand,
+    DeleteAiKnowledgeBaseCommand, DeleteKnowledgeBaseDocumentCommand,
+    DetachKnowledgeBaseFromAgentCommand, UpdateAiKnowledgeBaseCommand,
     UploadKnowledgeBaseDocumentCommand,
 };
 use dto::{
@@ -25,8 +26,9 @@ use dto::{
 };
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetails};
 use queries::{
-    GetAiKnowledgeBaseByIdQuery, GetAiKnowledgeBasesQuery as GetKnowledgeBasesQueryCore,
-    GetKnowledgeBaseDocumentsQuery, Query as QueryTrait,
+    GetAgentKnowledgeBasesQuery, GetAiKnowledgeBaseByIdQuery,
+    GetAiKnowledgeBasesQuery as GetKnowledgeBasesQueryCore, GetKnowledgeBaseDocumentsQuery,
+    Query as QueryTrait,
 };
 
 // Unified parameter extraction for knowledge base routes
@@ -40,6 +42,17 @@ pub struct KnowledgeBaseParams {
 pub struct DocumentParams {
     pub kb_id: i64,
     pub document_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct AgentParams {
+    pub agent_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct AgentKnowledgeBaseParams {
+    pub agent_id: i64,
+    pub kb_id: i64,
 }
 
 pub async fn get_ai_knowledge_bases(
@@ -102,6 +115,43 @@ pub async fn get_ai_knowledge_base_by_id(
         .await
         .map(Into::into)
         .map_err(|e| AppError::from(e).into())
+}
+
+pub async fn get_agent_knowledge_bases(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentParams>,
+) -> ApiResult<PaginatedResponse<AiKnowledgeBaseWithDetails>> {
+    GetAgentKnowledgeBasesQuery::new(deployment_id, params.agent_id)
+        .execute(&app_state)
+        .await
+        .map(PaginatedResponse::from)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+pub async fn attach_knowledge_base_to_agent(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentKnowledgeBaseParams>,
+) -> ApiResult<()> {
+    AttachKnowledgeBaseToAgentCommand::new(deployment_id, params.agent_id, params.kb_id)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+pub async fn detach_knowledge_base_from_agent(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentKnowledgeBaseParams>,
+) -> ApiResult<()> {
+    DetachKnowledgeBaseFromAgentCommand::new(deployment_id, params.agent_id, params.kb_id)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
 }
 
 pub async fn update_ai_knowledge_base(

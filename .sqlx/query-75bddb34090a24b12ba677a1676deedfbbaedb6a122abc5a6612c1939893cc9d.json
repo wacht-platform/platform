@@ -1,0 +1,166 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO oauth_clients (\n                id,\n                deployment_id,\n                oauth_app_id,\n                client_id,\n                client_secret_hash,\n                client_auth_method,\n                grant_types,\n                redirect_uris,\n                token_endpoint_auth_signing_alg,\n                jwks_uri,\n                jwks,\n                client_name,\n                client_uri,\n                logo_uri,\n                tos_uri,\n                policy_uri,\n                contacts,\n                software_id,\n                software_version,\n                pkce_required,\n                is_active\n            )\n            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,true,true)\n            RETURNING\n                id,\n                deployment_id,\n                oauth_app_id,\n                client_id,\n                client_auth_method,\n                grant_types as \"grant_types: serde_json::Value\",\n                redirect_uris as \"redirect_uris: serde_json::Value\",\n                token_endpoint_auth_signing_alg,\n                jwks_uri,\n                jwks as \"jwks: sqlx::types::Json<models::api_key::JwksDocument>\",\n                client_name,\n                client_uri,\n                logo_uri,\n                tos_uri,\n                policy_uri,\n                contacts as \"contacts: serde_json::Value\",\n                software_id,\n                software_version,\n                pkce_required,\n                is_active,\n                created_at,\n                updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "oauth_app_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "client_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "client_auth_method",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "grant_types: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "redirect_uris: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "token_endpoint_auth_signing_alg",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "jwks_uri",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "jwks: sqlx::types::Json<models::api_key::JwksDocument>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "client_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "client_uri",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "logo_uri",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "tos_uri",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "policy_uri",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "contacts: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 16,
+        "name": "software_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "software_version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "pkce_required",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 19,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 20,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 21,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "75bddb34090a24b12ba677a1676deedfbbaedb6a122abc5a6612c1939893cc9d"
+}

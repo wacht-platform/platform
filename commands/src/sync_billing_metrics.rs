@@ -58,6 +58,7 @@ fn create_redis_update_script(prefix: &str, metrics: &[(String, i64)]) -> String
         let redis_key = match metric_name.as_str() {
             "ai_token_input_cost_cents" => "ai_token_input_cost",
             "ai_token_output_cost_cents" => "ai_token_output_cost",
+            "ai_search_query_cost_cents" => "ai_search_query_cost",
             "sms_cost" => "sms_cost_cents",
             _ => metric_name.as_str(),
         };

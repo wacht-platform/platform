@@ -3,16 +3,19 @@ use std::sync::Arc;
 use common::error::AppError;
 use common::state::AppState;
 use models::{AgentExecutionContext, AiAgentWithFeatures, DeploymentAiSettings};
-use queries::{GetExecutionContextQuery, Query};
+use queries::{
+    GetActiveAgentMcpServerIdsForContextQuery, GetAgentMcpServersQuery, GetExecutionContextQuery,
+    Query,
+};
 use tokio::sync::RwLock;
 
 use crate::gemini::GeminiClient;
 
-/// Cached integration status for the context
 #[derive(Clone, Default)]
 pub struct IntegrationStatus {
     pub teams_enabled: bool,
     pub clickup_enabled: bool,
+    pub mcp_enabled: bool,
 }
 
 pub struct ExecutionContext {
@@ -84,7 +87,7 @@ impl ExecutionContext {
         }
     }
 
-    /// Get integration status (teams_enabled, clickup_enabled) - computed once and cached
+    /// Get integration status (teams_enabled, clickup_enabled, mcp_enabled) - computed once and cached
     pub async fn integration_status(&self) -> Result<IntegrationStatus, AppError> {
         {
             let cache = self.cached_integration_status.read().await;
@@ -95,6 +98,11 @@ impl ExecutionContext {
 
         let context = self.get_context().await?;
         let mut status = IntegrationStatus::default();
+
+        let attached_mcp_servers =
+            GetAgentMcpServersQuery::new(self.agent.deployment_id, self.agent.id)
+                .execute(&self.app_state)
+                .await?;
 
         if let Some(context_group) = &context.context_group {
             let active_integrations = queries::GetActiveIntegrationsForContextQuery::new(
@@ -113,6 +121,27 @@ impl ExecutionContext {
                 .iter()
                 .any(|i| matches!(i.integration_type, models::IntegrationType::ClickUp));
 
+            let active_mcp_server_ids = GetActiveAgentMcpServerIdsForContextQuery::new(
+                self.agent.deployment_id,
+                self.agent.id,
+                context_group.clone(),
+            )
+            .execute(&self.app_state)
+            .await?;
+
+            status.mcp_enabled = attached_mcp_servers.iter().any(|server| {
+                let requires_connection = server
+                    .config
+                    .auth
+                    .as_ref()
+                    .map(|auth| auth.requires_user_connection())
+                    .unwrap_or(false);
+                !requires_connection
+                    || active_mcp_server_ids
+                        .iter()
+                        .any(|active_id| *active_id == server.id)
+            });
+
             if status.teams_enabled {
                 tracing::info!(
                     "Context group {} has active Teams integration.",
@@ -122,6 +151,12 @@ impl ExecutionContext {
             if status.clickup_enabled {
                 tracing::info!(
                     "Context group {} has active ClickUp integration.",
+                    context_group
+                );
+            }
+            if status.mcp_enabled {
+                tracing::info!(
+                    "Context group {} has active MCP integration.",
                     context_group
                 );
             }
@@ -158,7 +193,6 @@ impl ExecutionContext {
         )
     }
 
-    /// Get execution context for a different context_id (useful for cross-context operations)
     pub async fn get_context_by_id(
         &self,
         context_id: i64,
@@ -168,7 +202,6 @@ impl ExecutionContext {
             .await
     }
 
-    /// Get ClickUp client for the current context's group
     pub async fn get_clickup_client(&self) -> Result<crate::clickup::ClickUpClient, AppError> {
         let context = self.get_context().await?;
         let context_group = context.context_group.ok_or_else(|| {

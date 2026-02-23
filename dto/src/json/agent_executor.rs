@@ -14,27 +14,47 @@ pub struct StepDecision {
     pub acknowledgment: Option<AcknowledgmentData>,
     pub context_gathering_directive: Option<ContextGatheringDirective>,
     pub memory_loading_directive: Option<MemoryLoadingDirective>,
-    pub deep_reasoning_directive: Option<DeepReasoningDirective>,
     pub completion_message: Option<String>,
     #[serde(skip_deserializing, default)]
     pub thought_signature: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct DeepReasoningDirective {
-    pub problem_statement: String,
-    pub context_summary: String,
-    pub expected_output_type: ReasoningOutputType,
+pub struct ContextGatheringDirective {
+    pub mode: ContextGatheringMode,
+    pub query: String,
+    pub target_output: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_knowledge: Option<LocalKnowledgeDirective>,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum ContextGatheringMode {
+    SearchWeb,
+    SearchLocalKnowledge,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ContextGatheringDirective {
-    pub pattern: SearchPattern,
-    pub objective: String,
+pub struct LocalKnowledgeDirective {
+    pub search_type: LocalKnowledgeSearchType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub focus_areas: Option<Vec<String>>,
+    pub knowledge_base_ids: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub expected_depth: Option<SearchDepth>,
+    pub max_results: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_associated_chunks: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_associated_chunks_per_document: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_query_rewrites: Option<u32>,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalKnowledgeSearchType {
+    Semantic,
+    Keyword,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, Debug)]
@@ -54,16 +74,6 @@ pub enum SearchDepth {
     Shallow,
     Moderate,
     Deep,
-}
-
-#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum ReasoningOutputType {
-    Analysis,  // Deep analysis of a problem
-    Decision,  // Make a complex decision with tradeoffs
-    Plan,      // Create a detailed plan
-    Synthesis, // Synthesize multiple sources of information
-    Debugging, // Debug complex issues
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -191,6 +201,28 @@ pub struct ContextHints {
     pub search_conclusion: SearchConclusion,
     pub search_terms_used: Vec<String>,
     pub knowledge_bases_searched: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_method: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_output: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extracted_output: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk_matches: Option<Vec<ContextChunkMatch>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContextChunkMatch {
+    pub path: String,
+    pub document_title: String,
+    pub document_id: String,
+    pub knowledge_base_id: String,
+    pub chunk_index: i32,
+    pub relevance_score: f32,
+    pub excerpt: String,
+    pub source: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

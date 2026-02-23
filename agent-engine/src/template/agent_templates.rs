@@ -8,12 +8,6 @@ pub fn register_all_templates(hb: &mut Handlebars) {
     .expect("Failed to register step_decision_prompt template");
 
     hb.register_template_string(
-        "deep_reasoning_prompt",
-        include_str!("templates/deep_reasoning_prompt.hbs"),
-    )
-    .expect("Failed to register deep_reasoning_prompt template");
-
-    hb.register_template_string(
         "validation_prompt",
         include_str!("templates/validation_prompt.hbs"),
     )
@@ -48,6 +42,18 @@ pub fn register_all_templates(hb: &mut Handlebars) {
         include_str!("templates/context_search_derivation_prompt.hbs"),
     )
     .expect("Failed to register context_search_derivation_prompt template");
+
+    hb.register_template_string(
+        "context_research_repl_prompt",
+        include_str!("templates/context_research_repl_prompt.hbs"),
+    )
+    .expect("Failed to register context_research_repl_prompt template");
+
+    hb.register_template_string(
+        "context_web_research_repl_prompt",
+        include_str!("templates/context_web_research_repl_prompt.hbs"),
+    )
+    .expect("Failed to register context_web_research_repl_prompt template");
 
     hb.register_template_string(
         "memory_consolidation_prompt",

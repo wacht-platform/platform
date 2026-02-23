@@ -5,7 +5,7 @@ pub mod executor;
 pub mod filesystem;
 pub mod gemini;
 pub mod handler;
-pub mod teams_logger;
+pub mod swarm;
 pub mod template;
 pub mod tools;
 

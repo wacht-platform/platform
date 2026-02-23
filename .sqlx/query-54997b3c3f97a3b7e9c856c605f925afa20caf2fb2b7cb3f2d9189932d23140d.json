@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT client_auth_method\n            FROM oauth_clients\n            WHERE oauth_app_id = $1\n              AND client_id = $2\n              AND is_active = TRUE\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "client_auth_method",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "54997b3c3f97a3b7e9c856c605f925afa20caf2fb2b7cb3f2d9189932d23140d"
+}

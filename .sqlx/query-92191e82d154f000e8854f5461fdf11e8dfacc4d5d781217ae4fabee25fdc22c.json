@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM ai_agent_knowledge_bases aakb\n            USING ai_agents a\n            WHERE aakb.agent_id = a.id\n              AND aakb.deployment_id = $3\n              AND a.id = $1\n              AND aakb.knowledge_base_id = $2\n              AND a.deployment_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "92191e82d154f000e8854f5461fdf11e8dfacc4d5d781217ae4fabee25fdc22c"
+}

@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_agents\n            SET\n                updated_at = $1,\n                name = COALESCE($2, name),\n                description = COALESCE($3, description),\n                configuration = COALESCE($4, configuration),\n                sub_agents = COALESCE($5, sub_agents),\n                spawn_config = COALESCE($6, spawn_config)\n            WHERE id = $7 AND deployment_id = $8\n            RETURNING id, created_at, updated_at, name, description, deployment_id, configuration, sub_agents, spawn_config\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "configuration",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "sub_agents",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "spawn_config",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "e2abf89e6d258ca59ea88468ee0995c04c6eb79ff56b08ff8c3d96073c84e0c3"
+}

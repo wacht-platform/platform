@@ -14,19 +14,42 @@ pub struct StepDecisionContext {
     pub task_results: HashMap<String, Value>,
     pub available_tools: Vec<Value>,
     pub available_knowledge_bases: Vec<Value>,
+    #[serde(default)]
+    pub available_sub_agents: Vec<SubAgentPromptInfo>,
+    #[serde(default)]
+    pub supervisor_mode_active: bool,
+    #[serde(default)]
+    pub supervisor_task_board: Vec<Value>,
+    #[serde(default)]
+    pub is_child_context: bool,
     pub iteration_info: IterationInfo,
     #[serde(default)]
     pub teams_enabled: bool,
     #[serde(default)]
     pub clickup_enabled: bool,
+    #[serde(default)]
+    pub mcp_enabled: bool,
+    #[serde(default)]
+    pub deep_think_mode_active: bool,
+    #[serde(default)]
+    pub deep_think_used: usize,
+    #[serde(default)]
+    pub deep_think_remaining: usize,
+    #[serde(default = "default_deep_think_max_uses")]
+    pub deep_think_max_uses: usize,
     pub context_id: i64,
     pub context_title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub teams_context: Option<TeamsContextInfo>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub actionables: Vec<Actionable>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubAgentPromptInfo {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// Teams-specific context information for agent awareness
@@ -42,19 +65,13 @@ pub struct TeamsContextInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Actionable {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub actionable_type: String,
-    pub description: String,
-    /// Stored as string to preserve precision for large IDs
-    pub target_context_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IterationInfo {
     pub current_iteration: usize,
     pub max_iterations: usize,
+}
+
+fn default_deep_think_max_uses() -> usize {
+    3
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

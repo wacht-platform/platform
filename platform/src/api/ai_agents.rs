@@ -5,18 +5,27 @@ use serde::Deserialize;
 use crate::application::response::{ApiResult, PaginatedResponse};
 use common::state::AppState;
 
-use commands::{Command, CreateAiAgentCommand, DeleteAiAgentCommand, UpdateAiAgentCommand};
+use commands::{
+    AttachSubAgentToAgentCommand, Command, CreateAiAgentCommand, DeleteAiAgentCommand,
+    DetachSubAgentFromAgentCommand, UpdateAiAgentCommand,
+};
 use dto::{
     json::deployment::{CreateAgentRequest, UpdateAgentRequest},
     query::deployment::GetAgentsQuery,
 };
 use models::{AiAgent, AiAgentWithDetails};
-use queries::{GetAiAgentByIdQuery, GetAiAgentsQuery, Query as QueryTrait};
+use queries::{GetAiAgentByIdQuery, GetAiAgentsByIdsQuery, GetAiAgentsQuery, Query as QueryTrait};
 
 // Unified parameter extraction for AI agent routes
 #[derive(Deserialize)]
 pub struct AgentParams {
     pub agent_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct AgentSubAgentParams {
+    pub agent_id: i64,
+    pub sub_agent_id: i64,
 }
 
 pub async fn get_ai_agents(
@@ -66,6 +75,12 @@ pub async fn create_ai_agent(
     if let Some(sub_agents) = request.sub_agents {
         command = command.with_sub_agents(sub_agents);
     }
+    if let Some(tool_ids) = request.tool_ids {
+        command = command.with_tool_ids(tool_ids);
+    }
+    if let Some(knowledge_base_ids) = request.knowledge_base_ids {
+        command = command.with_knowledge_base_ids(knowledge_base_ids);
+    }
     if let Some(spawn_config) = request.spawn_config {
         command = command.with_spawn_config(spawn_config);
     }
@@ -112,16 +127,20 @@ pub async fn get_ai_agent_details(
 
     let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
         .into_iter()
+        .filter(|integration| {
+            matches!(
+                integration.integration_type,
+                models::IntegrationType::Teams | models::IntegrationType::ClickUp
+            )
+        })
         .map(|integration| {
             let webhook_url = match integration.integration_type {
-                models::IntegrationType::Teams | models::IntegrationType::WhatsApp => {
-                    Some(format!(
-                        "{}/service/{}/{}/message",
-                        base_url,
-                        integration.integration_type.to_string().to_lowercase(),
-                        params.agent_id
-                    ))
-                }
+                models::IntegrationType::Teams => Some(format!(
+                    "{}/service/{}/{}/message",
+                    base_url,
+                    integration.integration_type.to_string().to_lowercase(),
+                    params.agent_id
+                )),
                 _ => None,
             };
             IntegrationWithUrl {
@@ -174,6 +193,12 @@ pub async fn update_ai_agent(
     if let Some(configuration) = request.configuration {
         command = command.with_configuration(configuration);
     }
+    if let Some(tool_ids) = request.tool_ids {
+        command = command.with_tool_ids(tool_ids);
+    }
+    if let Some(knowledge_base_ids) = request.knowledge_base_ids {
+        command = command.with_knowledge_base_ids(knowledge_base_ids);
+    }
     if let Some(sub_agents) = request.sub_agents {
         command = command.with_sub_agents(sub_agents);
     }
@@ -200,6 +225,50 @@ pub async fn delete_ai_agent(
         .map_err(Into::into)
 }
 
+/// Get sub-agents attached to an agent
+pub async fn get_agent_sub_agents(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentParams>,
+) -> ApiResult<PaginatedResponse<AiAgentWithDetails>> {
+    let parent_agent = GetAiAgentByIdQuery::new(deployment_id, params.agent_id)
+        .execute(&app_state)
+        .await?;
+
+    let sub_agent_ids = parent_agent.sub_agents.unwrap_or_default();
+    let sub_agents = GetAiAgentsByIdsQuery::new(deployment_id, sub_agent_ids)
+        .execute(&app_state)
+        .await?;
+
+    Ok(PaginatedResponse::from(sub_agents).into())
+}
+
+/// Attach a sub-agent to an agent
+pub async fn attach_sub_agent_to_agent(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentSubAgentParams>,
+) -> ApiResult<()> {
+    AttachSubAgentToAgentCommand::new(deployment_id, params.agent_id, params.sub_agent_id)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+/// Detach a sub-agent from an agent
+pub async fn detach_sub_agent_from_agent(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentSubAgentParams>,
+) -> ApiResult<()> {
+    DetachSubAgentFromAgentCommand::new(deployment_id, params.agent_id, params.sub_agent_id)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
 /// Get integrations attached to an agent
 pub async fn get_agent_integrations(
     State(app_state): State<AppState>,
@@ -216,16 +285,20 @@ pub async fn get_agent_integrations(
 
     let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
         .into_iter()
+        .filter(|integration| {
+            matches!(
+                integration.integration_type,
+                models::IntegrationType::Teams | models::IntegrationType::ClickUp
+            )
+        })
         .map(|integration| {
             let webhook_url = match integration.integration_type {
-                models::IntegrationType::Teams | models::IntegrationType::WhatsApp => {
-                    Some(format!(
-                        "{}/service/{}/{}/message",
-                        base_url,
-                        integration.integration_type.to_string().to_lowercase(),
-                        params.agent_id
-                    ))
-                }
+                models::IntegrationType::Teams => Some(format!(
+                    "{}/service/{}/{}/message",
+                    base_url,
+                    integration.integration_type.to_string().to_lowercase(),
+                    params.agent_id
+                )),
                 _ => None,
             };
             IntegrationWithUrl {

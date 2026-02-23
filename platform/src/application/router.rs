@@ -14,6 +14,9 @@ use tower_http::{
 use crate::api;
 use crate::middleware::backend_deployment_middleware;
 use crate::middleware::deployment_access::deployment_access_middleware;
+use crate::middleware::platform_source::{
+    mark_backend_platform_source, mark_console_platform_source,
+};
 use common::state::AppState;
 
 fn health_routes() -> Router<AppState> {
@@ -68,6 +71,15 @@ fn ai_routes() -> Router<AppState> {
             "/ai/agents/{agent_id}/details",
             get(api::ai_agents::get_ai_agent_details),
         )
+        .route(
+            "/ai/agents/{agent_id}/sub-agents",
+            get(api::ai_agents::get_agent_sub_agents),
+        )
+        .route(
+            "/ai/agents/{agent_id}/sub-agents/{sub_agent_id}",
+            post(api::ai_agents::attach_sub_agent_to_agent)
+                .delete(api::ai_agents::detach_sub_agent_from_agent),
+        )
         // AI Tools
         .route(
             "/ai/tools",
@@ -78,6 +90,14 @@ fn ai_routes() -> Router<AppState> {
             get(api::ai_tools::get_ai_tool_by_id)
                 .patch(api::ai_tools::update_ai_tool)
                 .delete(api::ai_tools::delete_ai_tool),
+        )
+        .route(
+            "/ai/agents/{agent_id}/tools",
+            get(api::ai_tools::get_agent_tools),
+        )
+        .route(
+            "/ai/agents/{agent_id}/tools/{tool_id}",
+            post(api::ai_tools::attach_tool_to_agent).delete(api::ai_tools::detach_tool_from_agent),
         )
         // AI Knowledge Bases
         .route(
@@ -101,6 +121,15 @@ fn ai_routes() -> Router<AppState> {
             "/ai/knowledge-bases/{kb_id}/documents/{document_id}",
             delete(api::ai_knowledge_base::delete_knowledge_base_document),
         )
+        .route(
+            "/ai/agents/{agent_id}/knowledge-bases",
+            get(api::ai_knowledge_base::get_agent_knowledge_bases),
+        )
+        .route(
+            "/ai/agents/{agent_id}/knowledge-bases/{kb_id}",
+            post(api::ai_knowledge_base::attach_knowledge_base_to_agent)
+                .delete(api::ai_knowledge_base::detach_knowledge_base_from_agent),
+        )
         // Agent Integrations
         .route(
             "/ai/agents/{agent_id}/integrations",
@@ -112,6 +141,30 @@ fn ai_routes() -> Router<AppState> {
             get(api::agent_integrations::get_agent_integration_by_id)
                 .patch(api::agent_integrations::update_agent_integration)
                 .delete(api::agent_integrations::delete_agent_integration),
+        )
+        // MCP Servers
+        .route(
+            "/ai/mcp-servers",
+            get(api::mcp_servers::get_mcp_servers).post(api::mcp_servers::create_mcp_server),
+        )
+        .route(
+            "/ai/mcp-servers/discover",
+            post(api::mcp_servers::discover_mcp_server_auth),
+        )
+        .route(
+            "/ai/mcp-servers/{mcp_server_id}",
+            get(api::mcp_servers::get_mcp_server_by_id)
+                .patch(api::mcp_servers::update_mcp_server)
+                .delete(api::mcp_servers::delete_mcp_server),
+        )
+        .route(
+            "/ai/agents/{agent_id}/mcp-servers",
+            get(api::mcp_servers::get_agent_mcp_servers),
+        )
+        .route(
+            "/ai/agents/{agent_id}/mcp-servers/{mcp_server_id}",
+            post(api::mcp_servers::attach_mcp_server_to_agent)
+                .delete(api::mcp_servers::detach_mcp_server_from_agent),
         )
         // AI Settings
         .route(
@@ -346,6 +399,109 @@ fn base_deployment_routes() -> Router<AppState> {
         .merge(settings_routes())
         .merge(segments_routes())
         .merge(analytics_routes())
+        .merge(api_auth_routes())
+}
+
+fn api_auth_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api-auth/apps", get(api::api_key::list_api_auth_apps))
+        .route("/api-auth/apps", post(api::api_key::create_api_auth_app))
+        .route(
+            "/api-auth/apps/{app_slug}",
+            get(api::api_key::get_api_auth_app),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}",
+            patch(api::api_key::update_api_auth_app),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}",
+            delete(api::api_key::delete_api_auth_app),
+        )
+        .route(
+            "/api-auth/rate-limit-schemes",
+            get(api::api_key::list_rate_limit_schemes).post(api::api_key::create_rate_limit_scheme),
+        )
+        .route(
+            "/api-auth/rate-limit-schemes/{slug}",
+            get(api::api_key::get_rate_limit_scheme)
+                .patch(api::api_key::update_rate_limit_scheme)
+                .delete(api::api_key::delete_rate_limit_scheme),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/keys",
+            get(api::api_key::list_api_keys),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/keys",
+            post(api::api_key::create_api_key),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/keys/{key_id}/revoke",
+            post(api::api_key::revoke_api_key_for_app),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/keys/{key_id}/rotate",
+            post(api::api_key::rotate_api_key_for_app),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/audit/logs",
+            get(api::api_key::get_api_audit_logs),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/audit/analytics",
+            get(api::api_key::get_api_audit_analytics),
+        )
+        .route(
+            "/api-auth/apps/{app_slug}/audit/timeseries",
+            get(api::api_key::get_api_audit_timeseries),
+        )
+        .route("/oauth/apps", get(api::oauth::list_oauth_apps))
+        .route("/oauth/apps", post(api::oauth::create_oauth_app))
+        .route(
+            "/oauth/apps/{oauth_app_slug}",
+            patch(api::oauth::update_oauth_app),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/scopes/{scope}",
+            patch(api::oauth::update_oauth_scope),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/scopes/{scope}/archive",
+            post(api::oauth::archive_oauth_scope),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/scopes/{scope}/unarchive",
+            post(api::oauth::unarchive_oauth_scope),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/scopes/{scope}/mapping",
+            post(api::oauth::set_oauth_scope_mapping),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/clients",
+            get(api::oauth::list_oauth_clients),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/clients",
+            post(api::oauth::create_oauth_client),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/clients/{oauth_client_id}",
+            patch(api::oauth::update_oauth_client).delete(api::oauth::deactivate_oauth_client),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/clients/{oauth_client_id}/rotate-secret",
+            post(api::oauth::rotate_oauth_client_secret),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/clients/{oauth_client_id}/grants",
+            get(api::oauth::list_oauth_grants),
+        )
+        .route(
+            "/oauth/apps/{oauth_app_slug}/clients/{oauth_client_id}/grants/{grant_id}/revoke",
+            post(api::oauth::revoke_oauth_grant),
+        )
 }
 
 fn billing_routes() -> Router<AppState> {
@@ -386,16 +542,6 @@ fn console_specific_routes() -> Router<AppState> {
         .route(
             "/webhooks/event-catalogs/{slug}/archive-event",
             post(api::webhook::archive_event_in_catalog),
-        )
-        .route(
-            "/api-auth/rate-limit-schemes",
-            get(api::api_key::list_rate_limit_schemes).post(api::api_key::create_rate_limit_scheme),
-        )
-        .route(
-            "/api-auth/rate-limit-schemes/{slug}",
-            get(api::api_key::get_rate_limit_scheme)
-                .patch(api::api_key::update_rate_limit_scheme)
-                .delete(api::api_key::delete_rate_limit_scheme),
         )
         .route(
             "/verify-dns",
@@ -531,58 +677,6 @@ fn backend_specific_routes() -> Router<AppState> {
             "/webhooks/apps/{app_slug}/timeseries",
             get(api::webhook::get_webhook_timeseries),
         )
-        .route("/api-auth/apps", get(api::api_key::list_api_auth_apps))
-        .route("/api-auth/apps", post(api::api_key::create_api_auth_app))
-        .route(
-            "/api-auth/apps/{app_slug}",
-            get(api::api_key::get_api_auth_app),
-        )
-        .route(
-            "/api-auth/apps/{app_slug}",
-            patch(api::api_key::update_api_auth_app),
-        )
-        .route(
-            "/api-auth/apps/{app_slug}",
-            delete(api::api_key::delete_api_auth_app),
-        )
-        .route(
-            "/api-auth/rate-limit-schemes",
-            get(api::api_key::list_rate_limit_schemes).post(api::api_key::create_rate_limit_scheme),
-        )
-        .route(
-            "/api-auth/rate-limit-schemes/{slug}",
-            get(api::api_key::get_rate_limit_scheme)
-                .patch(api::api_key::update_rate_limit_scheme)
-                .delete(api::api_key::delete_rate_limit_scheme),
-        )
-        .route(
-            "/api-auth/apps/{app_slug}/keys",
-            get(api::api_key::list_api_keys),
-        )
-        .route(
-            "/api-auth/apps/{app_slug}/keys",
-            post(api::api_key::create_api_key),
-        )
-        .route(
-            "/api-auth/apps/{app_slug}/keys/{key_id}/revoke",
-            post(api::api_key::revoke_api_key_for_app),
-        )
-        .route(
-            "/api-auth/apps/{app_slug}/keys/{key_id}/rotate",
-            post(api::api_key::rotate_api_key_for_app),
-        )
-        .route(
-            "/api-auth/apps/{app_slug}/audit/logs",
-            get(api::api_key::get_api_audit_logs),
-        )
-        .route(
-            "/api-auth/apps/{app_slug}/audit/analytics",
-            get(api::api_key::get_api_audit_analytics),
-        )
-        .route(
-            "/api-auth/apps/{app_slug}/audit/timeseries",
-            get(api::api_key::get_api_audit_timeseries),
-        )
         .route(
             "/notifications",
             post(api::notifications::create_notification),
@@ -632,6 +726,7 @@ pub async fn create_console_router(state: AppState) -> Router {
         .merge(public_webhook_routes())
         .merge(protected_routes)
         .with_state(state)
+        .layer(axum::middleware::from_fn(mark_console_platform_source))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<_>| {
@@ -673,6 +768,7 @@ pub async fn create_backend_router(state: AppState) -> Router {
         .merge(health_routes())
         .merge(backend_routes)
         .with_state(state)
+        .layer(axum::middleware::from_fn(mark_backend_platform_source))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<_>| {
@@ -704,6 +800,70 @@ pub async fn create_frontend_router(state: AppState) -> Router {
 
     Router::new()
         .merge(health_routes())
+        .with_state(state)
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request<_>| {
+                    tracing::info_span!(
+                        "http_request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        version = ?request.version(),
+                    )
+                })
+                .on_failure(
+                    |error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
+                        tracing::error!(
+                            status = %error,
+                            latency_ms = _latency.as_millis(),
+                            "response failed"
+                        );
+                    },
+                ),
+        )
+        .layer(cors)
+}
+
+pub async fn create_oauth_router(state: AppState) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    Router::new()
+        .route("/health", get(api::health::check))
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(api::oauth_runtime::oauth_server_metadata),
+        )
+        .route(
+            "/.well-known/jwks.json",
+            get(api::oauth_runtime::oauth_server_jwks),
+        )
+        .route(
+            "/oauth/authorize",
+            get(api::oauth_runtime::oauth_authorize_get),
+        )
+        .route(
+            "/oauth/consent/submit",
+            post(api::oauth_runtime::oauth_consent_submit),
+        )
+        .route("/oauth/token", post(api::oauth_runtime::oauth_token))
+        .route("/oauth/revoke", post(api::oauth_runtime::oauth_revoke))
+        .route(
+            "/oauth/introspect",
+            post(api::oauth_runtime::oauth_introspect),
+        )
+        .route(
+            "/oauth/register",
+            post(api::oauth_runtime::oauth_register_client),
+        )
+        .route(
+            "/oauth/register/{client_id}",
+            get(api::oauth_runtime::oauth_get_registered_client)
+                .put(api::oauth_runtime::oauth_update_registered_client)
+                .delete(api::oauth_runtime::oauth_delete_registered_client),
+        )
         .with_state(state)
         .layer(
             TraceLayer::new_for_http()

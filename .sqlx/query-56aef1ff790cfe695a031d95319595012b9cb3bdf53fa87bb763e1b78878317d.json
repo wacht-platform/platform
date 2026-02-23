@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH target AS (\n                SELECT id\n                FROM api_keys\n                WHERE deployment_id = $1\n                  AND rate_limit_scheme_slug = $2\n                  AND id > $3\n                ORDER BY id\n                LIMIT $4\n            )\n            UPDATE api_keys k\n            SET updated_at = NOW()\n            FROM target t\n            WHERE k.id = t.id\n            RETURNING k.id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "56aef1ff790cfe695a031d95319595012b9cb3bdf53fa87bb763e1b78878317d"
+}

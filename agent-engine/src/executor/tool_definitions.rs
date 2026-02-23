@@ -111,13 +111,116 @@ pub fn internal_tools() -> Vec<(
         ),
         (
             "execute_command",
-            "Execute a shell command. Allowed commands: cat, head, tail, grep, rg, find, ls, tree, wc, du, df, touch, mkdir, echo, cp, mv, rm, chmod, sed, awk, sort, uniq, jq, cut, tr, diff, date, whoami, pwd, printf.",
+            "Execute a shell command. Allowed commands: cat, head, tail, grep, rg, find, ls, tree, wc, du, df, touch, mkdir, echo, cp, mv, rm, chmod, sed, awk, sort, uniq, jq, cut, tr, diff, date, whoami, pwd, printf, python, python3.",
             InternalToolType::ExecuteCommand,
             vec![SchemaField {
                 name: "command".to_string(),
                 field_type: "STRING".to_string(),
                 description: Some("Shell command to run".to_string()),
                 required: true,
+                ..Default::default()
+            }],
+        ),
+        (
+            "sleep",
+            "Pause execution briefly. Use when waiting for external updates or when no immediate action is required.",
+            InternalToolType::Sleep,
+            vec![
+                SchemaField {
+                    name: "duration_ms".to_string(),
+                    field_type: "INTEGER".to_string(),
+                    description: Some("Sleep duration in milliseconds (max 10000).".to_string()),
+                    required: true,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "reason".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Optional brief reason for the wait.".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+            ],
+        ),
+        (
+            "switch_execution_mode",
+            "Switch execution mode from normal mode only. Supported modes: 'supervisor' (orchestration-only) and 'long_think_and_reason' (high-quality reasoning for next decision only).",
+            InternalToolType::SwitchExecutionMode,
+            vec![
+                SchemaField {
+                    name: "mode".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Target mode: 'supervisor' or 'long_think_and_reason'.".to_string()),
+                    required: true,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "reason".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Optional reason for mode switch.".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+            ],
+        ),
+        (
+            "update_task_board",
+            "Supervisor-only: add or update in-memory task board entries for delegated work tracking.",
+            InternalToolType::UpdateTaskBoard,
+            vec![
+                SchemaField {
+                    name: "task_id".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Stable task identifier in the supervisor board.".to_string()),
+                    required: true,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "title".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Task title.".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "status".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Task status (queued|in_progress|blocked|completed|failed).".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "owner_agent".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Assigned sub-agent name.".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "context_id".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Related child/execution context ID.".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "notes".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("Optional notes/update.".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+            ],
+        ),
+        (
+            "exit_supervisor_mode",
+            "Supervisor-only: exit supervisor role and restore normal tool access when delegation is complete.",
+            InternalToolType::ExitSupervisorMode,
+            vec![SchemaField {
+                name: "reason".to_string(),
+                field_type: "STRING".to_string(),
+                description: Some("Optional reason for exiting supervisor mode.".to_string()),
+                required: false,
                 ..Default::default()
             }],
         ),
@@ -144,27 +247,6 @@ pub fn internal_tools() -> Vec<(
                     name: "importance".to_string(),
                     field_type: "NUMBER".to_string(),
                     description: Some("Importance 0.0-1.0 (default: 0.5)".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
-            ],
-        ),
-        (
-            "execute_python",
-            "Execute a Python script from a file securely (sandboxed on Linux). Script must be in workspace.",
-            InternalToolType::ExecutePython,
-            vec![
-                SchemaField {
-                    name: "script_path".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("Relative path to script (e.g. workspace/analysis.py)".to_string()),
-                    required: true,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "args".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("Space-separated arguments".to_string()),
                     required: false,
                     ..Default::default()
                 },
@@ -202,12 +284,6 @@ pub fn internal_tools() -> Vec<(
                 required: false,
                 ..Default::default()
             }],
-        ),
-        (
-            "spawn_context",
-            "Spawn a child agent to handle a sub-task. Can spawn a copy of yourself (fork) or a different agent you have access to (exec).",
-            InternalToolType::SpawnContext,
-            spawn_context_schema(),
         ),
         (
             "spawn_control",
@@ -257,90 +333,6 @@ pub fn teams_tools() -> Vec<(
             }],
         ),
         (
-            "teams_send_dm",
-            "Send a direct message to a user in Microsoft Teams. ALWAYS include sender_info to explain who is asking and from where. Use notify_on_reply to get notified when user responds.",
-            UseExternalServiceToolType::TeamsSendDm,
-            vec![
-                SchemaField {
-                    name: "user_id".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("The user's ID (aadObjectId) to send the message to. Get this from teams_list_users or teams_search_users.".to_string()),
-                    required: true,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "message".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("The message content to send. MUST include context about who is asking if relaying on behalf of someone.".to_string()),
-                    required: true,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "sender_info".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("REQUIRED: Who is sending this and from where. Example: 'Saurav Singh from #General channel' or 'John Smith from group DM'. This is prepended to your message for clarity.".to_string()),
-                    required: true,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "notify_on_reply".to_string(),
-                    field_type: "BOOLEAN".to_string(),
-                    description: Some("If true, you will be notified in your current context when the user replies. Default: false.".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "description".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("Context for why you're sending this DM - helps when processing the reply. Required if notify_on_reply is true.".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "context_notes".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("Transient memory passed to the DM context. Include: WHO is asking (name), WHAT they need, and any context. The agent handling this DM sees these notes and can act accordingly. Example: 'John Smith asked for the project deadline - let him know when you get a response'.".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
-            ],
-        ),
-        (
-            "teams_send_context_message",
-            "Send a message to any Teams channel or chat by context ID. Use teams_list_contexts() to discover available contexts. The message will be visible to everyone in that conversation. Use notify_on_reply if you want to be notified when someone responds.",
-            UseExternalServiceToolType::TeamsSendContextMessage,
-            vec![
-                SchemaField {
-                    name: "context_id".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("The target context ID. Use teams_list_contexts() to get available context IDs.".to_string()),
-                    required: true,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "message".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("The message to send to the channel/chat.".to_string()),
-                    required: true,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "sender_info".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("Context about who/where this message is coming from. Example: 'From John in #Support channel'.".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "notify_on_reply".to_string(),
-                    field_type: "BOOLEAN".to_string(),
-                    description: Some("If true, you will be notified in your current context when someone replies in that channel. Default: false.".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
-            ],
-        ),
-        (
             "teams_list_messages",
             "Get recent messages from a Teams conversation. Works for Team channels, group DMs, and 1:1 chats. Useful for finding meeting notifications, previous discussions, or context. Use context_id to read from another channel/chat. NOTE: Pinned/Inline images appear as <img> tags in the body HTML, not always as attachments - look for 'src' attributes.",
             UseExternalServiceToolType::TeamsListMessages,
@@ -348,7 +340,7 @@ pub fn teams_tools() -> Vec<(
                 SchemaField {
                     name: "context_id".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Optional: Target context ID to read messages from. Use teams_list_contexts() to discover available contexts. Defaults to current context.".to_string()),
+                    description: Some("Optional: Target context ID to read messages from. Use teams_list_conversations() to discover available contexts. Defaults to current context.".to_string()),
                     required: false,
                     ..Default::default()
                 },
@@ -383,7 +375,7 @@ pub fn teams_tools() -> Vec<(
                 SchemaField {
                     name: "context_id".to_string(),
                     field_type: "STRING".to_string(),
-                    description: Some("Optional: Target context ID. Use teams_list_contexts() to discover available contexts. Defaults to current context.".to_string()),
+                    description: Some("Optional: Target context ID. Use teams_list_conversations() to discover available contexts. Defaults to current context.".to_string()),
                     required: false,
                     ..Default::default()
                 },
@@ -521,8 +513,8 @@ pub fn teams_tools() -> Vec<(
             }],
         ),
         (
-            "teams_list_contexts",
-            "List all Teams channels, group chats, and DMs that you have access to. Returns context IDs and titles so you can interact with other conversations using trigger_context or understand your available scope.",
+            "teams_list_conversations",
+            "List all Teams channels, group chats, and DMs that you have access to. Returns context IDs and titles so you can interact with other conversations using spawn_context_execution or understand your available scope.",
             UseExternalServiceToolType::TeamsListContexts,
             vec![
                 SchemaField {
@@ -932,27 +924,65 @@ pub fn clickup_tools() -> Vec<(
     ]
 }
 
+pub fn mcp_name_slug(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut prev_underscore = false;
+    for ch in value.chars() {
+        let lower = ch.to_ascii_lowercase();
+        let is_valid = lower.is_ascii_alphanumeric();
+        if is_valid {
+            out.push(lower);
+            prev_underscore = false;
+        } else if !prev_underscore {
+            out.push('_');
+            prev_underscore = true;
+        }
+    }
+
+    out.trim_matches('_').to_string()
+}
+
+pub fn mcp_dynamic_tool_name(server_name: &str, mcp_tool_name: &str) -> String {
+    let server_slug = mcp_name_slug(server_name);
+    let tool_slug = mcp_name_slug(mcp_tool_name);
+    format!("mcp__{}__{}", server_slug, tool_slug)
+}
+
 /// Schema for spawn_context_execution tool
 pub fn spawn_context_execution_schema() -> Vec<SchemaField> {
     vec![
         SchemaField {
+            name: "mode".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Execution mode: 'spawn' (default) creates/uses a target context; 'fork' hands off to another agent in the current context.".to_string()),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
             name: "target_context_id".to_string(),
             field_type: "STRING".to_string(),
-            description: Some("ID of the target context to spawn execution in. If not provided, creates a new child context.".to_string()),
+            description: Some("Optional target context ID where execution should run. If omitted, a temporary child context is created.".to_string()),
             required: false,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "agent_name".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Agent to execute: 'self' or one of your configured sub-agent names.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "instructions".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Instruction payload to send to the target context execution.".to_string()),
+            required: true,
             ..Default::default()
         },
         SchemaField {
             name: "message".to_string(),
             field_type: "STRING".to_string(),
-            description: Some("The message/instruction to send to the spawned execution. This becomes the user input for that context.".to_string()),
-            required: true,
-            ..Default::default()
-        },
-        SchemaField {
-            name: "actionable_id".to_string(),
-            field_type: "STRING".to_string(),
-            description: Some("Optional: If this spawn is fulfilling an actionable item, provide the actionable ID here to clear it from your context after successful relay.".to_string()),
+            description: Some("Deprecated alias for instructions. Use `instructions`.".to_string()),
             required: false,
             ..Default::default()
         },
@@ -960,47 +990,6 @@ pub fn spawn_context_execution_schema() -> Vec<SchemaField> {
             name: "execute".to_string(),
             field_type: "BOOLEAN".to_string(),
             description: Some("Whether to trigger immediate execution in the target context. Default: true. If false, just adds the message without executing.".to_string()),
-            required: false,
-            ..Default::default()
-        },
-        SchemaField {
-            name: "task_type".to_string(),
-            field_type: "STRING".to_string(),
-            description: Some("Type of task: 'delegate' (default), 'notify', or 'handoff'.".to_string()),
-            required: false,
-            ..Default::default()
-        },
-        SchemaField {
-            name: "history_context".to_string(),
-            field_type: "STRING".to_string(),
-            description: Some("How much history to pass to the new context: 'none', 'last_5', 'last_10', 'all', or 'relevant_to_task'".to_string()),
-            required: false,
-            ..Default::default()
-        },
-    ]
-}
-
-/// Schema for spawn_context tool
-pub fn spawn_context_schema() -> Vec<SchemaField> {
-    vec![
-        SchemaField {
-            name: "message".to_string(),
-            field_type: "STRING".to_string(),
-            description: Some("The message/instruction to send to the spawned child agent.".to_string()),
-            required: true,
-            ..Default::default()
-        },
-        SchemaField {
-            name: "target_agent_name".to_string(),
-            field_type: "STRING".to_string(),
-            description: Some("Optional: Name of the agent to spawn (e.g., 'Teams Agent', 'ClickUp Agent'). If not provided, spawns a copy of yourself (fork). Available agents are those configured in your Swarm settings.".to_string()),
-            required: false,
-            ..Default::default()
-        },
-        SchemaField {
-            name: "title".to_string(),
-            field_type: "STRING".to_string(),
-            description: Some("Optional: Custom title for the child context.".to_string()),
             required: false,
             ..Default::default()
         },

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM ai_agent_tools aat\n            USING ai_agents a\n            WHERE aat.agent_id = a.id\n              AND aat.deployment_id = $3\n              AND a.id = $1\n              AND aat.tool_id = $2\n              AND a.deployment_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f7fddef72b77f87621f2167022fabd8216c458cedfd70aff92d2a7db5febc550"
+}

@@ -9,6 +9,7 @@ use queries::{
     GetAgentMemoriesQuery, GetLLMConversationHistoryQuery, GetMRUMemoriesQuery,
     GetSessionMemoriesQuery, Query, SearchMemoriesWithDecayQuery,
 };
+use serde_json::Value;
 
 impl AgentExecutor {
     pub async fn get_immediate_context(&self) -> Result<ImmediateContext, AppError> {
@@ -243,6 +244,43 @@ impl AgentExecutor {
         .execute(&self.ctx.app_state)
         .await?;
 
-        Ok(records)
+        let context = self.ctx.get_context().await?;
+        let metadata = context.external_resource_metadata.as_ref();
+        let inherit_parent_context_id =
+            metadata.and_then(|meta| parse_i64_metadata(meta, "inherit_parent_context_id"));
+        let inherit_parent_until = metadata
+            .and_then(|meta| parse_i64_metadata(meta, "inherit_parent_until_conversation_id"));
+
+        let (Some(parent_context_id), Some(parent_until_id)) =
+            (inherit_parent_context_id, inherit_parent_until)
+        else {
+            return Ok(records);
+        };
+
+        if parent_context_id <= 0 || parent_until_id <= 0 {
+            return Ok(records);
+        }
+
+        let parent_records = GetLLMConversationHistoryQuery::new(parent_context_id)
+            .execute(&self.ctx.app_state)
+            .await?;
+
+        let mut merged: Vec<models::ConversationRecord> = parent_records
+            .into_iter()
+            .filter(|conv| conv.id <= parent_until_id)
+            .collect();
+        merged.extend(records);
+        merged.sort_by_key(|conv| conv.id);
+        merged.dedup_by_key(|conv| conv.id);
+
+        Ok(merged)
     }
+}
+
+fn parse_i64_metadata(metadata: &Value, key: &str) -> Option<i64> {
+    let value = metadata.get(key)?;
+    if let Some(number) = value.as_i64() {
+        return Some(number);
+    }
+    value.as_str()?.trim().parse::<i64>().ok()
 }

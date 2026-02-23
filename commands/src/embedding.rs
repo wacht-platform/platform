@@ -184,7 +184,7 @@ impl Command for GenerateEmbeddingsCommand {
             let batch_request = BatchEmbedContentsRequest { requests };
 
             let url = format!(
-                "https://generativelanguage.googleapis.com/v1beta/{}:batchEmbedContents",
+                "https://generativelanguage.googleapis.com/v1/{}:batchEmbedContents",
                 model
             );
 
@@ -256,11 +256,11 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
 
         let rows = sqlx::query(
             r#"
-            SELECT 
-                kbc.document_id, 
-                kbc.knowledge_base_id, 
-                kbc.content, 
-                kbc.chunk_index, 
+            SELECT
+                kbc.document_id,
+                kbc.knowledge_base_id,
+                kbc.content,
+                kbc.chunk_index,
                 (kbc.embedding::vector(3072) <-> $1)::float8 as score,
                 d.title as document_title,
                 d.description as document_description
@@ -268,7 +268,7 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
             LEFT JOIN ai_knowledge_base_documents d ON kbc.document_id = d.id
             WHERE kbc.knowledge_base_id = ANY($2)
               AND (kbc.embedding::vector(3072) <-> $1) <= $4
-            ORDER BY score ASC 
+            ORDER BY score ASC
             LIMIT $3
             "#,
         )

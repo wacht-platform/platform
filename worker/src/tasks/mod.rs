@@ -5,8 +5,6 @@ pub mod billing;
 pub mod document;
 pub mod email;
 pub mod embedding;
-pub mod rate_limit_scheme_sync;
-pub mod teams_activity;
 pub mod token;
 pub mod webhook;
 pub mod webhook_event;

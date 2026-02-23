@@ -32,3 +32,4 @@ urlencoding = "2.1"
 base64 = "0.22.1"
 redis = { version = "0.29.5", features = ["tokio-comp"] }
 flate2 = "1.0"
+rmcp = { version = "0.8.5", features = ["client", "transport-streamable-http-client-reqwest"] }

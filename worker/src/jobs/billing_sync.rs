@@ -54,6 +54,14 @@ fn get_metric_config(metric: &str) -> MetricConfig {
             event_name: "ai.token.output.cost",
             use_last_aggregation: false,
         },
+        "ai_search_queries" => MetricConfig {
+            event_name: "ai.search.queries",
+            use_last_aggregation: true,
+        },
+        "ai_search_query_cost_cents" => MetricConfig {
+            event_name: "ai.search.query.cost",
+            use_last_aggregation: false,
+        },
         "sms_cost" => MetricConfig {
             event_name: "sms.cost",
             use_last_aggregation: false,
@@ -221,6 +229,8 @@ async fn sync_deployment(
         local webhooks_current = tonumber(redis.call('ZSCORE', metrics_key, 'webhooks') or 0)
         local ai_input_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_token_input_cost_cents') or 0)
         local ai_output_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_token_output_cost_cents') or 0)
+        local ai_search_queries_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_search_queries') or 0)
+        local ai_search_query_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'ai_search_query_cost_cents') or 0)
         local sms_cost_current = tonumber(redis.call('ZSCORE', metrics_key, 'sms_cost_cents') or 0)
         local api_checks_current = tonumber(redis.call('ZSCORE', metrics_key, 'api_checks') or 0)
 
@@ -233,6 +243,8 @@ async fn sync_deployment(
         local webhooks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'webhooks') or 0)
         local ai_input_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_input_cost') or 0)
         local ai_output_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_output_cost') or 0)
+        local ai_search_queries_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_search_queries') or 0)
+        local ai_search_query_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_search_query_cost') or 0)
         local sms_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'sms_cost_cents') or 0)
         local api_checks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'api_checks') or 0)
 
@@ -244,6 +256,8 @@ async fn sync_deployment(
         local webhooks_delta = webhooks_current - webhooks_last
         local ai_input_cost_delta = ai_input_cost_current - ai_input_cost_last
         local ai_output_cost_delta = ai_output_cost_current - ai_output_cost_last
+        local ai_search_queries_delta = ai_search_queries_current - ai_search_queries_last
+        local ai_search_query_cost_delta = ai_search_query_cost_current - ai_search_query_cost_last
         local sms_cost_delta = sms_cost_current - sms_cost_last
         local api_checks_delta = api_checks_current - api_checks_last
 
@@ -256,6 +270,8 @@ async fn sync_deployment(
             tostring(webhooks_current), tostring(webhooks_delta),
             tostring(ai_input_cost_current), tostring(ai_input_cost_delta),
             tostring(ai_output_cost_current), tostring(ai_output_cost_delta),
+            tostring(ai_search_queries_current), tostring(ai_search_queries_delta),
+            tostring(ai_search_query_cost_current), tostring(ai_search_query_cost_delta),
             tostring(sms_cost_current), tostring(sms_cost_delta),
             tostring(api_checks_current), tostring(api_checks_delta)
         }
@@ -296,7 +312,13 @@ async fn sync_deployment(
             aggregate(14, 14),
             aggregate(15, 15),
         ),
-        ("sms_cost", aggregate(16, 16), aggregate(17, 17)),
+        ("ai_search_queries", aggregate(16, 16), aggregate(17, 17)),
+        (
+            "ai_search_query_cost_cents",
+            aggregate(18, 18),
+            aggregate(19, 19),
+        ),
+        ("sms_cost", aggregate(20, 20), aggregate(21, 21)),
     ];
     let mut total_units_synced = 0i64;
     let mut metrics_to_sync = Vec::new();
@@ -307,7 +329,10 @@ async fn sync_deployment(
         }
         if matches!(
             *metric_name,
-            "ai_token_input_cost_cents" | "ai_token_output_cost_cents" | "sms_cost_cents"
+            "ai_token_input_cost_cents"
+                | "ai_token_output_cost_cents"
+                | "ai_search_query_cost_cents"
+                | "sms_cost_cents"
         ) {
             let transaction_type = if metric_name.starts_with("ai") {
                 PulseTransactionType::UsageAi

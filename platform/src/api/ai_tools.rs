@@ -5,17 +5,31 @@ use serde::Deserialize;
 use crate::application::response::{ApiResult, PaginatedResponse};
 use common::state::AppState;
 
-use commands::{Command, CreateAiToolCommand, DeleteAiToolCommand, UpdateAiToolCommand};
+use commands::{
+    AttachToolToAgentCommand, Command, CreateAiToolCommand, DeleteAiToolCommand,
+    DetachToolFromAgentCommand, UpdateAiToolCommand,
+};
 use dto::{
     json::deployment::{CreateToolRequest, UpdateToolRequest},
     query::deployment::GetToolsQuery,
 };
 use models::{AiTool, AiToolType, AiToolWithDetails};
-use queries::{GetAiToolByIdQuery, GetAiToolsQuery, Query as QueryTrait};
+use queries::{GetAgentToolsQuery, GetAiToolByIdQuery, GetAiToolsQuery, Query as QueryTrait};
 
 // Unified parameter extraction for AI tool routes
 #[derive(Deserialize)]
 pub struct ToolParams {
+    pub tool_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct AgentParams {
+    pub agent_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct AgentToolParams {
+    pub agent_id: i64,
     pub tool_id: i64,
 }
 
@@ -75,6 +89,43 @@ pub async fn get_ai_tool_by_id(
     Path(params): Path<ToolParams>,
 ) -> ApiResult<AiToolWithDetails> {
     GetAiToolByIdQuery::new(deployment_id, params.tool_id)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+pub async fn get_agent_tools(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentParams>,
+) -> ApiResult<PaginatedResponse<AiTool>> {
+    GetAgentToolsQuery::new(deployment_id, params.agent_id)
+        .execute(&app_state)
+        .await
+        .map(PaginatedResponse::from)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+pub async fn attach_tool_to_agent(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentToolParams>,
+) -> ApiResult<()> {
+    AttachToolToAgentCommand::new(deployment_id, params.agent_id, params.tool_id)
+        .execute(&app_state)
+        .await
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+pub async fn detach_tool_from_agent(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<AgentToolParams>,
+) -> ApiResult<()> {
+    DetachToolFromAgentCommand::new(deployment_id, params.agent_id, params.tool_id)
         .execute(&app_state)
         .await
         .map(Into::into)

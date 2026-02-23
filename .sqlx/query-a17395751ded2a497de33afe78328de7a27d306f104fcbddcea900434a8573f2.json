@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    a.id, a.created_at, a.updated_at, a.name, a.description,\n                    a.configuration, a.deployment_id, a.sub_agents, a.spawn_config,\n                    COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as \"tools_count!\",\n                    COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as \"knowledge_bases_count!\"\n                FROM ai_agents a\n                WHERE a.deployment_id = $1\n                ORDER BY a.created_at DESC\n                LIMIT $2 OFFSET $3\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "configuration",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "sub_agents",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "spawn_config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "tools_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "knowledge_bases_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "a17395751ded2a497de33afe78328de7a27d306f104fcbddcea900434a8573f2"
+}

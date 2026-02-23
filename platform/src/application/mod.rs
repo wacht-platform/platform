@@ -16,3 +16,7 @@ pub async fn backend_router(app_state: AppState) -> axum::Router {
 pub async fn frontend_router(app_state: AppState) -> axum::Router {
     router::create_frontend_router(app_state).await
 }
+
+pub async fn oauth_router(app_state: AppState) -> axum::Router {
+    router::create_oauth_router(app_state).await
+}

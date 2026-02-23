@@ -318,11 +318,13 @@ impl Command for DeleteAiToolCommand {
             r#"
             SELECT a.id, a.name
             FROM ai_agents a
+            JOIN ai_agent_tools aat ON aat.agent_id = a.id
             WHERE a.deployment_id = $1
-            AND a.configuration->'tool_ids' ? $2::text
+            AND aat.tool_id = $2
+            AND aat.deployment_id = $1
             "#,
             self.deployment_id,
-            self.tool_id.to_string()
+            self.tool_id
         )
         .fetch_all(&app_state.db_pool)
         .await

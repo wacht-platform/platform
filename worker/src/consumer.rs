@@ -9,7 +9,7 @@ use tracing::{error, info, warn};
 
 use crate::tasks::{
     agent, analytics, api_key_role_permissions_sync, billing, document, email, embedding,
-    rate_limit_scheme_sync, teams_activity, token, webhook, webhook_event, webhook_replay_batch,
+    token, webhook, webhook_event, webhook_replay_batch,
 };
 use dto::json::NatsTaskMessage;
 
@@ -499,54 +499,6 @@ impl NatsConsumer {
                     billing::process_billing_event(task, &app_state)
                         .await
                         .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "teams.activity_log".to_string(),
-            Box::new(|payload, _app_state| {
-                Box::pin(async move {
-                    let task: teams_activity::TeamsActivityLogTask =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize teams activity log task: {}",
-                                e
-                            ))
-                        })?;
-                    teams_activity::write_teams_activity_log(task).await
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "api_key.sync_rate_limits_for_app".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: dto::json::nats::ApiKeyRateLimitSyncPayload =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize api key rate limit sync task: {}",
-                                e
-                            ))
-                        })?;
-                    rate_limit_scheme_sync::sync_rate_limits_for_app(task, &app_state).await
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "rate_limit_scheme.sync_keys".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: dto::json::nats::RateLimitSchemeSyncPayload =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize rate limit scheme sync task: {}",
-                                e
-                            ))
-                        })?;
-                    rate_limit_scheme_sync::sync_rate_limits_for_scheme(task, &app_state).await
                 })
             }),
         );

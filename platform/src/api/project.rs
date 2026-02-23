@@ -41,7 +41,6 @@ pub async fn create_project(
     mut multipart: Multipart,
 ) -> ApiResult<ProjectWithDeployments> {
     let mut name = String::new();
-    let mut logo_buffer: Vec<u8> = Vec::new();
     let mut methods: Vec<String> = Vec::new();
 
     while let Some(field) = multipart
@@ -50,7 +49,6 @@ pub async fn create_project(
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
     {
         let field_name = field.name().unwrap_or_default().to_string();
-        let content_type = field.content_type().unwrap_or_default().to_string();
         let value = field.bytes().await.unwrap().to_vec();
 
         let val_str = String::from_utf8_lossy(&value);
@@ -59,8 +57,6 @@ pub async fn create_project(
             name = String::from_utf8_lossy(&value).into();
         } else if field_name == "methods" {
             methods.push(val_str.into());
-        } else if field_name == "logo" && content_type == "image/png" {
-            logo_buffer = value;
         }
     }
 
@@ -74,7 +70,7 @@ pub async fn create_project(
         .map(|id| format!("org_{id}"))
         .unwrap_or(format!("user_{}", auth.user_id));
 
-    CreateProjectWithStagingDeploymentCommand::new(name, logo_buffer, methods)
+    CreateProjectWithStagingDeploymentCommand::new(name, methods)
         .with_owner(owner_id)
         .execute(&app_state)
         .await

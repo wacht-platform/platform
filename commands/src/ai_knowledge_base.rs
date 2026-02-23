@@ -223,11 +223,13 @@ impl Command for DeleteAiKnowledgeBaseCommand {
             r#"
             SELECT a.id, a.name
             FROM ai_agents a
+            JOIN ai_agent_knowledge_bases aakb ON aakb.agent_id = a.id
             WHERE a.deployment_id = $1
-            AND a.configuration->'knowledge_base_ids' ? $2::text
+            AND aakb.knowledge_base_id = $2
+            AND aakb.deployment_id = $1
             "#,
             self.deployment_id,
-            self.knowledge_base_id.to_string()
+            self.knowledge_base_id
         )
         .fetch_all(&app_state.db_pool)
         .await

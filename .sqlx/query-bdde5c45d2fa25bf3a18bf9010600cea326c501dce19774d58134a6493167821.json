@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT oa.supported_scopes as \"supported_scopes: serde_json::Value\"\n            FROM oauth_clients c\n            INNER JOIN oauth_apps oa\n              ON oa.id = c.oauth_app_id\n             AND oa.deployment_id = c.deployment_id\n            WHERE c.deployment_id = $1\n              AND c.id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "supported_scopes: serde_json::Value",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bdde5c45d2fa25bf3a18bf9010600cea326c501dce19774d58134a6493167821"
+}

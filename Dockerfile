@@ -11,9 +11,7 @@ COPY commands/ ./commands/
 COPY queries/ ./queries/
 COPY common/ ./common/
 COPY platform/ ./platform/
-COPY realtime/ ./realtime/
 COPY worker/ ./worker/
-COPY gateway/ ./gateway/
 COPY agent-engine/ ./agent-engine/
 COPY oauth-relay/ ./oauth-relay/
 
@@ -35,8 +33,9 @@ RUN (curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/insta
 
 COPY --from=builder /app/target/release/backend-api /app/backend
 COPY --from=builder /app/target/release/console-api /app/console
-COPY --from=builder /app/target/release/realtime /app/realtime
-COPY --from=builder /app/target/release/gateway /app/gateway
+COPY --from=builder /app/target/release/oauth-api /app/oauth-api
+COPY --from=builder /app/target/release/realtime-api /app/realtime
+COPY --from=builder /app/target/release/gateway-api /app/gateway
 COPY --from=builder /app/target/release/worker /app/worker
 
 EXPOSE 3001

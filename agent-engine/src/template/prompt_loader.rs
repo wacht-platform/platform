@@ -11,10 +11,6 @@ static PROMPTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
         include_str!("prompts/step_decision_system.md"),
     );
     m.insert(
-        "deep_reasoning_system",
-        include_str!("prompts/deep_reasoning_system.md"),
-    );
-    m.insert(
         "validation_system",
         include_str!("prompts/validation_prompt.md"),
     );
@@ -36,6 +32,14 @@ static PROMPTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(||
     m.insert(
         "context_search_derivation_system",
         include_str!("prompts/context_search_derivation_prompt.md"),
+    );
+    m.insert(
+        "context_research_repl_system",
+        include_str!("prompts/context_research_repl_system.md"),
+    );
+    m.insert(
+        "context_web_research_repl_system",
+        include_str!("prompts/context_web_research_repl_system.md"),
     );
 
     // Memory prompts

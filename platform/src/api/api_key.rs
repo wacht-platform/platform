@@ -13,7 +13,6 @@ use commands::{
 };
 use common::state::AppState;
 use dto::json::api_key::*;
-use dto::json::nats::{ApiKeyRateLimitSyncPayload, NatsTaskMessage};
 use models::api_key::{ApiAuthApp, ApiKeyWithSecret};
 
 use queries::{
@@ -67,8 +66,17 @@ pub async fn create_api_auth_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateApiAuthAppRequest>,
 ) -> ApiResult<ApiAuthApp> {
+    if request.user_id.is_some() && (request.permissions.is_some() || request.resources.is_some()) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "permissions/resources cannot be set when user_id is attached",
+        )
+            .into());
+    }
+
     let mut command = CreateApiAuthAppCommand::new(
         deployment_id,
+        request.user_id.map(|v| v.get()),
         request.app_slug,
         request.name,
         request.key_prefix,
@@ -79,6 +87,8 @@ pub async fn create_api_auth_app(
     }
 
     command = command.with_rate_limit_scheme_slug(request.rate_limit_scheme_slug.clone());
+    command = command.with_permissions(request.permissions.unwrap_or_default());
+    command = command.with_resources(request.resources.unwrap_or_default());
 
     let created = command.execute(&app_state).await?;
     let app = GetApiAuthAppBySlugQuery::new(deployment_id, created.app_slug.clone())
@@ -181,42 +191,26 @@ pub async fn update_api_auth_app(
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
 
     let command = UpdateApiAuthAppCommand {
-        app_id: app.id,
+        app_slug: app.app_slug.clone(),
         deployment_id,
         name: request.name,
         key_prefix: request.key_prefix,
         description: request.description,
         is_active: request.is_active,
         rate_limit_scheme_slug: request.rate_limit_scheme_slug.clone(),
+        permissions: request.permissions.clone(),
+        resources: request.resources.clone(),
     };
 
-    let updated = command.execute(&app_state).await?;
-
-    if request.rate_limit_scheme_slug.is_some()
-        && request.rate_limit_scheme_slug != app.rate_limit_scheme_slug
-    {
-        let task_message = NatsTaskMessage {
-            task_type: "api_key.sync_rate_limits_for_app".to_string(),
-            task_id: format!("api-key-sync-{}", updated.id),
-            payload: serde_json::to_value(ApiKeyRateLimitSyncPayload {
-                deployment_id,
-                app_id: updated.id,
-                rate_limit_scheme_slug: request.rate_limit_scheme_slug.clone(),
-            })
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
-        };
-
-        app_state
-            .nats_client
-            .publish(
-                "worker.tasks.api_key.sync_rate_limits_for_app",
-                serde_json::to_vec(&task_message)
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-                    .into(),
-            )
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if app.user_id.is_some() && (request.permissions.is_some() || request.resources.is_some()) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "permissions/resources can only be updated when app is not attached to a user",
+        )
+            .into());
     }
+
+    let updated = command.execute(&app_state).await?;
 
     let app = GetApiAuthAppBySlugQuery::new(deployment_id, updated.app_slug.clone())
         .execute(&app_state)
@@ -238,7 +232,7 @@ pub async fn delete_api_auth_app(
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
 
     let command = DeleteApiAuthAppCommand {
-        app_id: app.id,
+        app_slug: app.app_slug.clone(),
         deployment_id,
     };
     command.execute(&app_state).await?;
@@ -260,7 +254,7 @@ pub async fn list_api_keys(
 
     let include_inactive = params.include_inactive.unwrap_or(false);
 
-    let keys = GetApiKeysByAppQuery::new(app.id, deployment_id)
+    let keys = GetApiKeysByAppQuery::new(app.app_slug.clone(), deployment_id)
         .with_inactive(include_inactive)
         .execute(&app_state)
         .await?;
@@ -281,7 +275,6 @@ pub async fn create_api_key(
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
 
     let mut command = CreateApiKeyCommand::new(
-        app.id,
         app.app_slug.clone(),
         deployment_id,
         request.name,
@@ -292,12 +285,15 @@ pub async fn create_api_key(
         command = command.with_permissions(permissions);
     }
 
+    let org_membership_id = request.organization_membership_id.map(|v| v.get());
+    let workspace_membership_id = request.workspace_membership_id.map(|v| v.get());
+
     let mut organization_id: Option<i64> = None;
     let mut workspace_id: Option<i64> = None;
     let mut org_role_permissions: Vec<String> = vec![];
     let mut workspace_role_permissions: Vec<String> = vec![];
 
-    if let Some(org_membership_id) = request.organization_membership_id {
+    if let Some(org_membership_id) = org_membership_id {
         let org_perm = GetOrganizationMembershipPermissionsQuery::new(org_membership_id)
             .execute(&app_state)
             .await?
@@ -306,7 +302,7 @@ pub async fn create_api_key(
         org_role_permissions = org_perm.permissions;
     }
 
-    if let Some(workspace_membership_id) = request.workspace_membership_id {
+    if let Some(workspace_membership_id) = workspace_membership_id {
         let workspace_perm = GetWorkspaceMembershipPermissionsQuery::new(workspace_membership_id)
             .execute(&app_state)
             .await?
@@ -331,24 +327,13 @@ pub async fn create_api_key(
 
     command.metadata = request.metadata;
 
-    let rate_limits = if let Some(scheme_slug) = app.rate_limit_scheme_slug.clone() {
-        GetRateLimitSchemeQuery::new(deployment_id, scheme_slug.clone())
-            .execute(&app_state)
-            .await?
-            .map(|scheme| scheme.rules)
-            .unwrap_or_default()
-    } else {
-        vec![]
-    };
-
     command = command
-        .with_rate_limits(rate_limits)
         .with_rate_limit_scheme_slug(app.rate_limit_scheme_slug.clone())
         .with_membership_context(
             organization_id,
             workspace_id,
-            request.organization_membership_id,
-            request.workspace_membership_id,
+            org_membership_id,
+            workspace_membership_id,
             org_role_permissions,
             workspace_role_permissions,
         );
@@ -365,6 +350,7 @@ pub async fn revoke_api_key(
 ) -> ApiResult<()> {
     let key_id = request
         .key_id
+        .map(|v| v.get())
         .ok_or_else(|| (StatusCode::BAD_REQUEST, "key_id is required"))?;
 
     let command = RevokeApiKeyCommand {
@@ -388,7 +374,7 @@ pub async fn revoke_api_key_for_app(
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
 
-    let keys = GetApiKeysByAppQuery::new(app.id, deployment_id)
+    let keys = GetApiKeysByAppQuery::new(app.app_slug.clone(), deployment_id)
         .with_inactive(true)
         .execute(&app_state)
         .await?;
@@ -412,7 +398,7 @@ pub async fn rotate_api_key(
     Json(request): Json<RotateApiKeyRequest>,
 ) -> ApiResult<ApiKeyWithSecret> {
     let command = RotateApiKeyCommand {
-        key_id: request.key_id,
+        key_id: request.key_id.get(),
         deployment_id,
     };
     let new_key = command.execute(&app_state).await?;
@@ -430,7 +416,7 @@ pub async fn rotate_api_key_for_app(
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
 
-    let keys = GetApiKeysByAppQuery::new(app.id, deployment_id)
+    let keys = GetApiKeysByAppQuery::new(app.app_slug.clone(), deployment_id)
         .with_inactive(true)
         .execute(&app_state)
         .await?;
@@ -489,7 +475,7 @@ pub async fn get_api_audit_logs(
         cursor_ts,
         cursor_id,
         outcome: params.outcome,
-        key_id: params.key_id,
+        key_id: params.key_id.map(|v| v.get()),
         start_date: params.start_date,
         end_date: params.end_date,
     }
@@ -515,7 +501,7 @@ pub async fn get_api_audit_analytics(
         app_slug,
         start_date: params.start_date,
         end_date: params.end_date,
-        key_id: params.key_id,
+        key_id: params.key_id.map(|v| v.get()),
         include_top_keys: params.include_top_keys.unwrap_or(false),
         include_top_paths: params.include_top_paths.unwrap_or(false),
         include_blocked_reasons: params.include_blocked_reasons.unwrap_or(false),
@@ -551,7 +537,7 @@ pub async fn get_api_audit_timeseries(
         start_date: params.start_date,
         end_date: params.end_date,
         interval: normalized_interval,
-        key_id: params.key_id,
+        key_id: params.key_id.map(|v| v.get()),
     }
     .execute(&app_state)
     .await?;

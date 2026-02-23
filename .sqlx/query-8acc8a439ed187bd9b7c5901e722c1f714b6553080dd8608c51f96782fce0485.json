@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                a.id,\n                a.created_at,\n                a.updated_at,\n                a.name,\n                a.description,\n                a.deployment_id,\n                a.configuration,\n                a.sub_agents,\n                a.spawn_config,\n                tools.list as \"tools!: serde_json::Value\",\n                knowledge_bases.list as \"knowledge_bases!: serde_json::Value\",\n                integrations.list as \"integrations!: serde_json::Value\"\n            FROM\n                ai_agents a\n            LEFT JOIN LATERAL (\n                SELECT COALESCE(jsonb_agg(\n                    jsonb_build_object(\n                        'id', t.id::text,\n                        'created_at', t.created_at,\n                        'updated_at', t.updated_at,\n                        'name', t.name,\n                        'description', t.description,\n                        'tool_type', t.tool_type,\n                        'deployment_id', t.deployment_id::text,\n                        'configuration', t.configuration\n                    )\n                ), '[]'::jsonb) as list\n                FROM ai_tools t\n                JOIN ai_agent_tools at ON at.tool_id = t.id\n                WHERE t.deployment_id = a.deployment_id\n                    AND at.agent_id = a.id\n                    AND at.deployment_id = a.deployment_id\n            ) tools ON true\n            LEFT JOIN LATERAL (\n                SELECT COALESCE(jsonb_agg(\n                    jsonb_build_object(\n                        'id', k.id::text,\n                        'created_at', k.created_at,\n                        'updated_at', k.updated_at,\n                        'name', k.name,\n                        'description', k.description,\n                        'deployment_id', k.deployment_id::text,\n                        'configuration', k.configuration\n                    )\n                ), '[]'::jsonb) as list\n                FROM ai_knowledge_bases k\n                JOIN ai_agent_knowledge_bases ak ON ak.knowledge_base_id = k.id\n                WHERE k.deployment_id = a.deployment_id\n                    AND ak.agent_id = a.id\n                    AND ak.deployment_id = a.deployment_id\n            ) knowledge_bases ON true\n            LEFT JOIN LATERAL (\n                SELECT COALESCE(jsonb_agg(\n                    jsonb_build_object(\n                        'id', i.id::text,\n                        'created_at', i.created_at,\n                        'updated_at', i.updated_at,\n                        'name', i.name,\n                        'deployment_id', i.deployment_id::text,\n                        'agent_id', i.agent_id::text,\n                        'integration_type', i.integration_type,\n                        'config', i.config\n                    )\n                ), '[]'::jsonb) as list\n                FROM agent_integrations i\n                WHERE i.deployment_id = a.deployment_id\n                    AND i.agent_id = a.id\n            ) integrations ON true\n            WHERE\n                a.name = $1 AND a.deployment_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "configuration",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "sub_agents",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "spawn_config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "tools!: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "knowledge_bases!: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "integrations!: serde_json::Value",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "8acc8a439ed187bd9b7c5901e722c1f714b6553080dd8608c51f96782fce0485"
+}

@@ -139,6 +139,65 @@ impl Query for GetAiKnowledgeBaseByIdQuery {
     }
 }
 
+pub struct GetAgentKnowledgeBasesQuery {
+    pub deployment_id: i64,
+    pub agent_id: i64,
+}
+
+impl GetAgentKnowledgeBasesQuery {
+    pub fn new(deployment_id: i64, agent_id: i64) -> Self {
+        Self {
+            deployment_id,
+            agent_id,
+        }
+    }
+}
+
+impl Query for GetAgentKnowledgeBasesQuery {
+    type Output = Vec<AiKnowledgeBaseWithDetails>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let knowledge_bases = sqlx::query(
+            r#"
+            SELECT
+                kb.id, kb.created_at, kb.updated_at, kb.name, kb.description,
+                kb.configuration, kb.deployment_id,
+                COALESCE(d.documents_count, 0) as documents_count,
+                COALESCE(d.total_size, 0) as total_size
+            FROM ai_knowledge_bases kb
+            JOIN ai_agent_knowledge_bases aakb ON aakb.knowledge_base_id = kb.id
+            LEFT JOIN (
+                SELECT knowledge_base_id, COUNT(*) as documents_count, COALESCE(SUM(file_size), 0)::bigint as total_size
+                FROM ai_knowledge_base_documents
+                GROUP BY knowledge_base_id
+            ) d ON kb.id = d.knowledge_base_id
+            WHERE kb.deployment_id = $1 AND aakb.agent_id = $2 AND aakb.deployment_id = $1
+            ORDER BY kb.created_at DESC
+            "#,
+        )
+        .bind(self.deployment_id)
+        .bind(self.agent_id)
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(knowledge_bases
+            .into_iter()
+            .map(|row| AiKnowledgeBaseWithDetails {
+                id: row.get("id"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+                name: row.get("name"),
+                description: row.get("description"),
+                configuration: row.get("configuration"),
+                deployment_id: row.get("deployment_id"),
+                documents_count: row.get::<Option<i64>, _>("documents_count").unwrap_or(0),
+                total_size: row.get("total_size"),
+            })
+            .collect())
+    }
+}
+
 pub struct GetKnowledgeBaseDocumentsQuery {
     pub knowledge_base_id: i64,
     pub limit: usize,

@@ -1,0 +1,102 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE api_auth_apps\n            SET\n                name = COALESCE($3, name),\n                key_prefix = COALESCE($4, key_prefix),\n                description = COALESCE($5, description),\n                is_active = COALESCE($6, is_active),\n                rate_limit_scheme_slug = COALESCE($7, rate_limit_scheme_slug),\n                permissions = COALESCE($8, permissions),\n                resources = COALESCE($9, resources),\n                updated_at = NOW()\n            WHERE app_slug = $1 AND deployment_id = $2\n            RETURNING deployment_id, user_id, app_slug, name, key_prefix, description, is_active,\n                      rate_limit_scheme_slug, permissions as \"permissions: serde_json::Value\", resources as \"resources: serde_json::Value\",\n                      created_at, updated_at, deleted_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_slug",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "key_prefix",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "rate_limit_scheme_slug",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "permissions: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "resources: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Bool",
+        "Varchar",
+        "Jsonb",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "b0c815270cee75a6b903508762933411ccb4365e3a8c0f7740d1e57d1ecbd810"
+}

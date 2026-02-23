@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ai_agent_tools WHERE deployment_id = $1 AND agent_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "880c1bf2981cb18df19f3e3551819e089a2dcd3d113da29aa6137e6f0c5beb16"
+}

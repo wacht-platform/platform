@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE api_keys\n            SET\n                is_active = false,\n                revoked_at = NOW(),\n                revoked_reason = $3,\n                updated_at = NOW()\n            WHERE id = $1 AND deployment_id = $2 AND is_active = true\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bc10bed60b36fe7c28f3eee967b68cab2c98cb37cad489a67852e5dc91491865"
+}

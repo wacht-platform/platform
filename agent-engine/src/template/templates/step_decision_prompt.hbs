@@ -29,8 +29,13 @@
 "properties": {
 "next_step": {
 "type": "STRING",
-"enum": ["acknowledge", "gathercontext", "loadmemory", "executeaction", "requestuserinput", "longthinkandreason",
-"complete"],
+"enum": [
+{{#if is_child_context}}
+"gathercontext", "loadmemory", "executeaction", "longthinkandreason", "complete"
+{{else}}
+"acknowledge", "gathercontext", "loadmemory", "executeaction", "requestuserinput", "longthinkandreason", "complete"
+{{/if}}
+],
 "description": "The next step to execute in the flow"
 },
 "reasoning": {
@@ -42,6 +47,7 @@ conversation history"
 "type": "NUMBER",
 "description": "Confidence level in this decision (0.0 to 1.0)"
 },
+{{#unless is_child_context}}
 "acknowledgment": {
 "type": "OBJECT",
 "description": "Acknowledgment details (required when next_step is acknowledge)",
@@ -91,17 +97,13 @@ presence checks, or if your message ends with a question. Only true for explicit
 },
 "required": ["message", "further_action_required", "objective"]
 },
+{{/unless}}
 "actions": {
 "type": "ARRAY",
 "description": "List of actions to execute in parallel (max 10). Required when next_step is executeaction.",
 "items": {
 "type": "OBJECT",
 "properties": {
-"type": {
-"type": "STRING",
-"enum": ["tool_call"],
-"description": "The type of action to execute"
-},
 "details": {
 "type": "OBJECT",
 "description": "Action details containing tool information",
@@ -114,21 +116,15 @@ presence checks, or if your message ends with a question. Only true for explicit
 },
 "purpose": {
 "type": "STRING",
-"description": "Clear purpose of this action. Be specific about the intent (e.g. 'asking a question'). You MUST verbally
-account for all important configuration parameters of the selected tool here to guide the parameter generator."
+"description": "Clear purpose of this action. Include concrete parameter values (IDs, names, dates) when known so parameter generation is deterministic."
 },
 "context_messages": {
 "type": "INTEGER",
 "description": "Number of recent conversation messages to include for parameter generation (default: 1). Use purpose
 field as primary context."
-},
-"clear_actionable_id": {
-"type": "STRING",
-"description": "If this tool call fulfills a pending actionable, provide the actionable ID here. It will be
-automatically cleared after the tool executes. Get the ID from the actionables list (e.g., 'notify_1736...')."
 }
 },
-"required": ["type", "details", "purpose"]
+"required": ["details", "purpose"]
 }
 },
 "memory_loading_directive": {
@@ -159,58 +155,67 @@ automatically cleared after the tool executes. Get the ID from the actionables l
 },
 "context_gathering_directive": {
 "type": "OBJECT",
-"description": "MANDATORY when next_step is gathercontext. Structured directive for intelligent context gathering.",
+"description": "MANDATORY when next_step is gathercontext. Mode-based context retrieval directive.",
 "properties": {
-"pattern": {
+"mode": {
 "type": "STRING",
-"enum": ["troubleshooting", "implementation", "analysis", "historical", "exploration", "verification"],
-"description": "The search pattern based on user's request type"
+"enum": ["search_web", "search_local_knowledge"],
+"description": "Context gathering mode. Use search_local_knowledge for local KB retrieval."
 },
-"objective": {
+"query": {
 "type": "STRING",
-"description": "Specific goal for this context gathering (e.g., 'Find authentication errors in logs', 'Gather user
-management documentation')"
+"description": "Search query to run in the selected mode."
 },
-"focus_areas": {
+"target_output": {
+"type": "STRING",
+"description": "Exact output expected from gathercontext (what the agent should receive back)."
+},
+"local_knowledge": {
+"type": "OBJECT",
+"description": "Required when mode is search_local_knowledge.",
+"properties": {
+"search_type": {
+"type": "STRING",
+"enum": ["semantic", "keyword"],
+"description": "Retrieval strategy for local KB search."
+},
+"knowledge_base_ids": {
 "type": "ARRAY",
 "items": {"type": "STRING"},
-"description": "Key areas to prioritize (e.g., ['error logs', 'recent changes', 'configuration'])",
+"description": "Optional KB IDs to scope search. If omitted, all available KBs are searched.",
 "nullable": true
 },
-"expected_depth": {
-"type": "STRING",
-"enum": ["shallow", "moderate", "deep"],
-"description": "How thorough the search should be based on request complexity",
+"max_results": {
+"type": "INTEGER",
+"description": "Max retrieved matches before post-processing (default 12).",
+"nullable": true
+},
+"include_associated_chunks": {
+"type": "BOOLEAN",
+"description": "Whether to load additional related chunks for top documents.",
+"nullable": true
+},
+"max_associated_chunks_per_document": {
+"type": "INTEGER",
+"description": "Additional chunks to load per top document when include_associated_chunks=true.",
+"nullable": true
+},
+"max_query_rewrites": {
+"type": "INTEGER",
+"description": "How many retrieval rewrite passes to run (default 3).",
 "nullable": true
 }
 },
-"required": ["pattern", "objective"]
+"required": ["search_type"],
+"nullable": true
+}
+},
+"required": ["mode", "query", "target_output"]
 },
 "completion_message": {
 "type": "STRING",
 "description": "REQUIRED when next_step is 'complete'. A user-facing summary of what was accomplished, findings, or
 final response.",
-"nullable": true
-},
-"deep_reasoning_directive": {
-"type": "OBJECT",
-"description": "REQUIRED when next_step is 'longthinkandreason'. Provides context for deep reasoning.",
-"properties": {
-"problem_statement": {
-"type": "STRING",
-"description": "Clear statement of the complex problem to reason about"
-},
-"context_summary": {
-"type": "STRING",
-"description": "Summary of all relevant context gathered so far"
-},
-"expected_output_type": {
-"type": "STRING",
-"enum": ["analysis", "decision", "plan", "synthesis", "debugging"],
-"description": "Type of reasoning output expected"
-}
-},
-"required": ["problem_statement", "context_summary", "expected_output_type"],
 "nullable": true
 }
 },

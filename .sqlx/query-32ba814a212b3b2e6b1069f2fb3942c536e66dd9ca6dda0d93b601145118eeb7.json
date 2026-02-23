@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE api_keys\n            SET rate_limit_scheme_slug = $1,\n                updated_at = NOW()\n            WHERE deployment_id = $2\n              AND app_slug = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "32ba814a212b3b2e6b1069f2fb3942c536e66dd9ca6dda0d93b601145118eeb7"
+}

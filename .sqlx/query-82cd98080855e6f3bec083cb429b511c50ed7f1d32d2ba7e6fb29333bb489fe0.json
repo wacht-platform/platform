@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, event_catalog_slug, is_active, created_at, updated_at, app_slug)\n            VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Timestamptz",
+        "Timestamptz",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "82cd98080855e6f3bec083cb429b511c50ed7f1d32d2ba7e6fb29333bb489fe0"
+}

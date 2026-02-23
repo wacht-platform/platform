@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ai_agent_knowledge_bases (deployment_id, agent_id, knowledge_base_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7ff3357e175ad7320bab2b6e039aca0d5c1a9fd157d76b227ee21e0cc624f711"
+}

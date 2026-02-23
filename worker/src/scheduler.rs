@@ -55,6 +55,26 @@ impl JobScheduler {
             }
         });
 
+        let oauth_grant_last_used_state = self.app_state.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                match jobs::oauth_grant_last_used_sync::sync_oauth_grant_last_used(
+                    &oauth_grant_last_used_state,
+                )
+                .await
+                {
+                    Ok(result) => {
+                        info!("OAuth grant last_used sync completed: {}", result);
+                    }
+                    Err(e) => {
+                        error!("OAuth grant last_used sync failed: {}", e);
+                    }
+                }
+            }
+        });
+
         info!("Job scheduler started successfully");
         Ok(())
     }

@@ -1,9 +1,11 @@
-use crate::{teams_logger::TeamsActivityLogger, AgentExecutor, ResumeContext};
+use crate::{AgentExecutor, ResumeContext};
+use commands::Command;
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::StreamEvent;
 use futures::StreamExt;
 use models::AiAgentWithFeatures;
+use models::ExecutionContextStatus;
 use queries::Query;
 use tracing::{error, warn};
 
@@ -33,14 +35,12 @@ impl AgentHandler {
         let kv = self.get_key_value_store().await?;
         let watch = self.create_watcher(&kv, &context_key).await?;
 
-        // Fetch AI settings early
         let deployment_ai_settings = queries::GetDeploymentAiSettingsQuery::new(deployment_id)
             .execute(&self.app_state)
             .await
             .ok()
             .flatten();
 
-        // Create shared execution context
         let execution_context = crate::execution_context::ExecutionContext::new(
             self.app_state.clone(),
             request.agent.clone(),
@@ -56,27 +56,14 @@ impl AgentHandler {
         let context = execution_context.get_context().await?;
 
         let execution_context_for_notification = execution_context.clone();
-
-        // Subscribe to spawn control channel if this is a child agent
-        if context.parent_context_id.is_some() {
-            warn!(
-                "Subscribing to spawn control for child context {} (parent: {:?})",
-                child_context_id, context.parent_context_id
-            );
-            tokio::spawn(async move {
-                let subject = format!("agent_spawn_control.context:{}", child_context_id);
-                if let Ok(mut _sub) = app_state.nats_client.subscribe(subject).await {
-                    while let Some(_msg) = _sub.next().await {}
-                } else {
-                    error!(
-                        "Failed to subscribe to spawn control for context {}",
-                        child_context_id
-                    );
-                }
-            });
-        }
+        let spawn_control_sub = if context.parent_context_id.is_some() {
+            subscribe_spawn_control(&app_state, child_context_id).await
+        } else {
+            None
+        };
 
         let mut executor = AgentExecutor::new(execution_context, sender).await?;
+        let mut spawn_control_sub = spawn_control_sub;
 
         let execution_result = match (
             request.conversation_id,
@@ -91,6 +78,10 @@ impl AgentHandler {
                     &mut executor,
                     watch,
                     ResumeContext::PlatformFunction(exec_id, result),
+                    context.parent_context_id,
+                    context.id,
+                    deployment_id,
+                    &mut spawn_control_sub,
                 )
                 .await
             }
@@ -102,6 +93,10 @@ impl AgentHandler {
                     &mut executor,
                     conv_id,
                     watch,
+                    context.parent_context_id,
+                    context.id,
+                    deployment_id,
+                    &mut spawn_control_sub,
                 )
                 .await
             }
@@ -110,9 +105,29 @@ impl AgentHandler {
             )),
         };
 
+        if let Err(error) = &execution_result {
+            let _ = commands::UpdateExecutionContextQuery::new(context.id, deployment_id)
+                .with_status(models::ExecutionContextStatus::Failed)
+                .execute(&self.app_state)
+                .await;
+
+            let _ = commands::StoreCompletionSummaryEnhancedCommand::new(
+                context.id,
+                deployment_id,
+                commands::CompletionSummary {
+                    status: commands::CompletionStatus::Failed,
+                    result: None,
+                    error_message: Some(format!("Execution failed: {}", error)),
+                    metrics: None,
+                },
+            )
+            .execute(&self.app_state)
+            .await;
+        }
+
         executor.post_execution_processing();
 
-        // Notify parent if this is a child agent that just completed
+        execution_context_for_notification.invalidate_cache();
         if let Ok(context) = execution_context_for_notification.get_context().await {
             if let Some(parent_id) = context.parent_context_id {
                 let current_status = match context.status {
@@ -127,12 +142,6 @@ impl AgentHandler {
                         status: current_status.to_string(),
                         summary: context.completion_summary,
                     };
-                    let _subject =
-                        format!("agent_execution_stream.context:{}", parent_id.to_string());
-                    let mut headers = async_nats::HeaderMap::new();
-                    headers.insert("message_type", "child_agent_completed");
-                    headers.insert("child_context_id", context.id.to_string());
-                    headers.insert("parent_context_id", parent_id.to_string());
 
                     if let Err(e) = publish_stream_event(
                         execution_context_for_notification.clone(),
@@ -201,18 +210,47 @@ impl AgentHandler {
         agent_executor: &mut AgentExecutor,
         conversation_id: i64,
         mut watch: async_nats::jetstream::kv::Watch,
+        parent_context_id: Option<i64>,
+        context_id: i64,
+        deployment_id: i64,
+        spawn_control_sub: &mut Option<async_nats::Subscriber>,
     ) -> Result<(), AppError> {
         kv.put(context_key, execution_id.to_string().into())
             .await
             .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {e}")))?;
 
-        tokio::select! {
-            result = agent_executor.execute_with_conversation_id(conversation_id) => {
-                result
+        match parent_context_id {
+            Some(parent_id) => {
+                tokio::select! {
+                    result = agent_executor.execute_with_conversation_id(conversation_id) => {
+                        result
+                    }
+                    _ = watch_for_cancellation(&mut watch, execution_id) => {
+                        warn!("Execution cancelled for context {}", context_key);
+                        Ok(())
+                    }
+                    _ = wait_for_spawn_stop(spawn_control_sub), if spawn_control_sub.is_some() => {
+                        warn!("Spawn control stop received from parent context {}", parent_id);
+                        mark_context_failed_due_to_parent_abort(
+                            &self.app_state,
+                            context_id,
+                            deployment_id,
+                            parent_id,
+                        ).await?;
+                        Ok(())
+                    }
+                }
             }
-            _ = watch_for_cancellation(&mut watch, execution_id) => {
-                warn!("Execution cancelled for context {}", context_key);
-                Ok(())
+            None => {
+                tokio::select! {
+                    result = agent_executor.execute_with_conversation_id(conversation_id) => {
+                        result
+                    }
+                    _ = watch_for_cancellation(&mut watch, execution_id) => {
+                        warn!("Execution cancelled for context {}", context_key);
+                        Ok(())
+                    }
+                }
             }
         }
     }
@@ -225,18 +263,47 @@ impl AgentHandler {
         agent_executor: &mut AgentExecutor,
         mut watch: async_nats::jetstream::kv::Watch,
         resume_context: ResumeContext,
+        parent_context_id: Option<i64>,
+        context_id: i64,
+        deployment_id: i64,
+        spawn_control_sub: &mut Option<async_nats::Subscriber>,
     ) -> Result<(), AppError> {
         kv.put(context_key, execution_id.to_string().into())
             .await
             .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {e}")))?;
 
-        tokio::select! {
-            result = agent_executor.resume_execution(resume_context) => {
-                result
+        match parent_context_id {
+            Some(parent_id) => {
+                tokio::select! {
+                    result = agent_executor.resume_execution(resume_context) => {
+                        result
+                    }
+                    _ = watch_for_cancellation(&mut watch, execution_id) => {
+                        warn!("Execution cancelled for context {}", context_key);
+                        Ok(())
+                    }
+                    _ = wait_for_spawn_stop(spawn_control_sub), if spawn_control_sub.is_some() => {
+                        warn!("Parent context {} aborted; cancelling child context {}", parent_id, context_key);
+                        mark_context_failed_due_to_parent_abort(
+                            &self.app_state,
+                            context_id,
+                            deployment_id,
+                            parent_id,
+                        ).await?;
+                        Ok(())
+                    }
+                }
             }
-            _ = watch_for_cancellation(&mut watch, execution_id) => {
-                warn!("Execution cancelled for context {}", context_key);
-                Ok(())
+            None => {
+                tokio::select! {
+                    result = agent_executor.resume_execution(resume_context) => {
+                        result
+                    }
+                    _ = watch_for_cancellation(&mut watch, execution_id) => {
+                        warn!("Execution cancelled for context {}", context_key);
+                        Ok(())
+                    }
+                }
             }
         }
     }
@@ -249,108 +316,20 @@ async fn publish_stream_event(
 ) -> Result<(), AppError> {
     let app_state = &ctx.app_state;
     let deployment_id = ctx.agent.deployment_id;
-    let agent_id = ctx.agent.id;
     let jetstream = &app_state.nats_jetstream;
     let subject = format!("agent_execution_stream.context:{context_key}");
 
-    let (message_type, payload) = match &event {
-        StreamEvent::ConversationMessage(conversation_content) => {
-            // Log outgoing agent response if from Teams context
-            if let models::ConversationContent::AgentResponse { response, .. } =
-                &conversation_content.content
-            {
-                if let Ok(ctx_data) = ctx.get_context().await {
-                    if ctx_data.source.as_deref() == Some("teams") {
-                        if let Some(group) = &ctx_data.context_group {
-                            if !group.is_empty() {
-                                let mut location = String::new();
-                                if let Some(meta) = &ctx_data.external_resource_metadata {
-                                    if let Some(channel_name) =
-                                        meta.get("channelName").and_then(|v| v.as_str())
-                                    {
-                                        location = format!(" [Channel: {}]", channel_name);
-                                    }
-                                }
-
-                                let title = if ctx_data.title.is_empty() {
-                                    format!("Context {}", ctx_data.id)
-                                } else {
-                                    ctx_data.title.clone()
-                                };
-                                let logger = TeamsActivityLogger::new(
-                                    &deployment_id.to_string(),
-                                    &agent_id.to_string(),
-                                    group,
-                                    &title,
-                                );
-                                let _ = logger
-                                    .append_entry(
-                                        "RESPONSE",
-                                        &format!("To User{}: {}", location, response),
-                                    )
-                                    .await;
-                            }
-                        }
-                    }
-                }
-            }
-
-            let payload = serde_json::to_vec(&conversation_content)
-                .map_err(|e| AppError::Internal(format!("Failed to serialize message: {e}")))?;
-            ("conversation_message", payload)
-        }
-        StreamEvent::PlatformEvent(event_label, event_data) => {
-            let event_payload = dto::json::PlatformEventPayload {
-                event_label: event_label.clone(),
-                event_data: event_data.clone(),
-            };
-            let payload = serde_json::to_vec(&event_payload).map_err(|e| {
-                AppError::Internal(format!("Failed to serialize platform event: {e}"))
-            })?;
-            ("platform_event", payload)
-        }
-        StreamEvent::PlatformFunction(function_name, function_data) => {
-            let function_payload = dto::json::PlatformFunctionPayload {
-                function_name: function_name.clone(),
-                function_data: function_data.clone(),
-            };
-            let payload = serde_json::to_vec(&function_payload).map_err(|e| {
-                AppError::Internal(format!("Failed to serialize platform function: {e}"))
-            })?;
-            ("platform_function", payload)
-        }
-        StreamEvent::UserInputRequest(user_input_content) => {
-            let payload = serde_json::to_vec(&user_input_content).map_err(|e| {
-                AppError::Internal(format!("Failed to serialize user input request: {e}"))
-            })?;
-            ("user_input_request", payload)
-        }
-        StreamEvent::ChildAgentCompleted {
-            child_context_id,
-            status,
-            summary,
-        } => {
-            let payload = serde_json::to_vec(&serde_json::json!({
-                "child_context_id": child_context_id,
-                "status": status,
-                "summary": summary,
-            }))
-            .map_err(|e| {
-                AppError::Internal(format!("Failed to serialize child agent completed: {e}"))
-            })?;
-            ("child_agent_completed", payload)
-        }
-    };
+    let (message_type, payload) = dto::json::encode_stream_event(&event)
+        .map_err(|e| AppError::Internal(format!("Failed to encode stream event: {e}")))?;
 
     let mut headers = async_nats::HeaderMap::new();
-    headers.insert("message_type", message_type);
+    headers.insert("message_type", message_type.as_header_value());
     headers.insert("context_id", context_key);
     headers.insert("deployment_id", deployment_id.to_string().as_str());
 
-    // 1. Publish to Realtime Stream
     tracing::info!(
         "Publishing {} to subject {} for context {}",
-        message_type,
+        message_type.as_header_value(),
         subject,
         context_key
     );
@@ -360,23 +339,17 @@ async fn publish_stream_event(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {e}")))?;
 
-    tracing::info!("Successfully published {} to {}", message_type, subject);
+    tracing::info!(
+        "Successfully published {} to {}",
+        message_type.as_header_value(),
+        subject
+    );
 
-    // 2. Trigger Webhook Directly (Streamlined)
     use commands::{Command, TriggerWebhookEventCommand};
-
-    let webhook_event = match message_type {
-        "conversation_message" => "execution_context.message",
-        "platform_event" => "execution_context.platform_event",
-        "platform_function" => "execution_context.platform_function",
-        "user_input_request" => "execution_context.user_input_request",
-        "child_agent_completed" => "execution_context.child_agent_completed",
-        _ => "execution_context.message",
-    };
 
     let webhook_payload = serde_json::json!({
         "context_id": context_key,
-        "message_type": message_type,
+        "message_type": message_type.as_header_value(),
         "data": serde_json::from_slice::<serde_json::Value>(&payload).unwrap_or(serde_json::Value::Null),
         "timestamp": chrono::Utc::now(),
     });
@@ -389,20 +362,14 @@ async fn publish_stream_event(
     let trigger_command = TriggerWebhookEventCommand::new(
         console_id,
         deployment_id.to_string(),
-        webhook_event.to_string(),
+        message_type.webhook_event_name().to_string(),
         webhook_payload,
     );
-
-    // Run webhook trigger in background or await?
-    // Since publish_stream_event is spawned in a loop, awaiting is fine/good.
-    // However, if webhook is slow, it might block stream?
-    // publish_stream_event is inside a tokio::spawn loop in spawn_message_publisher
-    // Yes, awaiting is correct.
 
     if let Err(e) = trigger_command.execute(app_state).await {
         tracing::warn!(
             deployment_id = deployment_id,
-            webhook_event = %webhook_event,
+            webhook_event = %message_type.webhook_event_name(),
             context_key = %context_key,
             "Failed to trigger webhook for agent stream event: {}. This is expected if no webhook is configured.",
             e
@@ -426,6 +393,72 @@ async fn watch_for_cancellation(
             if stored_id != current_execution_id.to_string() {
                 return;
             }
+        }
+    }
+}
+
+async fn mark_context_failed_due_to_parent_abort(
+    app_state: &AppState,
+    context_id: i64,
+    deployment_id: i64,
+    parent_context_id: i64,
+) -> Result<(), AppError> {
+    commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
+        .with_status(ExecutionContextStatus::Failed)
+        .execute(app_state)
+        .await?;
+
+    commands::StoreCompletionSummaryEnhancedCommand::new(
+        context_id,
+        deployment_id,
+        commands::CompletionSummary {
+            status: commands::CompletionStatus::Cancelled,
+            result: None,
+            error_message: Some(format!(
+                "Execution cancelled because parent context {} was aborted.",
+                parent_context_id
+            )),
+            metrics: None,
+        },
+    )
+    .execute(app_state)
+    .await?;
+
+    Ok(())
+}
+
+async fn subscribe_spawn_control(
+    app_state: &AppState,
+    context_id: i64,
+) -> Option<async_nats::Subscriber> {
+    let subject = format!("agent_spawn_control.context:{}", context_id);
+    match app_state.nats_client.subscribe(subject).await {
+        Ok(subscriber) => Some(subscriber),
+        Err(error) => {
+            warn!(
+                "Failed to subscribe to spawn control for context {}: {}",
+                context_id, error
+            );
+            None
+        }
+    }
+}
+
+async fn wait_for_spawn_stop(subscriber: &mut Option<async_nats::Subscriber>) {
+    let Some(subscriber) = subscriber.as_mut() else {
+        return;
+    };
+
+    while let Some(message) = subscriber.next().await {
+        let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&message.payload) else {
+            continue;
+        };
+        let action = payload
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if action.eq_ignore_ascii_case("stop") {
+            return;
         }
     }
 }

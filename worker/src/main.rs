@@ -17,11 +17,9 @@ async fn main() -> Result<()> {
 
     let app_state = AppState::new_from_env().await.unwrap();
 
-    // Start job scheduler
     let scheduler = scheduler::JobScheduler::new(app_state.clone());
     scheduler.start().await?;
 
-    // Start NATS consumer (blocks forever, runs in main task)
     let consumer = consumer::NatsConsumer::new(app_state.clone()).await?;
     consumer.start_consuming().await?;
 

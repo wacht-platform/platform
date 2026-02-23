@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)::bigint\n        FROM ai_knowledge_bases\n        WHERE deployment_id = $1\n            AND id = ANY($2::bigint[])\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "41481dbd4468952eb7438192343915315e0ef2060af58db5190581dcfe1ed650"
+}

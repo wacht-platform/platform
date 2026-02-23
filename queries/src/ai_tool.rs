@@ -49,10 +49,10 @@ impl Query for GetAiToolsQuery {
                 COALESCE(a.agents_count, 0) as agents_count
             FROM ai_tools t
             LEFT JOIN (
-                SELECT tool_id, COUNT(*) as agents_count
+                SELECT deployment_id, tool_id, COUNT(*) as agents_count
                 FROM ai_agent_tools
-                GROUP BY tool_id
-            ) a ON t.id = a.tool_id
+                GROUP BY deployment_id, tool_id
+            ) a ON t.id = a.tool_id AND t.deployment_id = a.deployment_id
             WHERE t.deployment_id = $1
         "#
         .to_string();
@@ -141,10 +141,10 @@ impl Query for GetAiToolByIdQuery {
                 COALESCE(a.agents_count, 0) as agents_count
             FROM ai_tools t
             LEFT JOIN (
-                SELECT tool_id, COUNT(*) as agents_count
+                SELECT deployment_id, tool_id, COUNT(*) as agents_count
                 FROM ai_agent_tools
-                GROUP BY tool_id
-            ) a ON t.id = a.tool_id
+                GROUP BY deployment_id, tool_id
+            ) a ON t.id = a.tool_id AND t.deployment_id = a.deployment_id
             WHERE t.id = $1 AND t.deployment_id = $2
             "#,
             self.tool_id,
@@ -168,6 +168,63 @@ impl Query for GetAiToolByIdQuery {
             deployment_id: tool.deployment_id,
             configuration,
         })
+    }
+}
+
+pub struct GetAgentToolsQuery {
+    pub deployment_id: i64,
+    pub agent_id: i64,
+}
+
+impl GetAgentToolsQuery {
+    pub fn new(deployment_id: i64, agent_id: i64) -> Self {
+        Self {
+            deployment_id,
+            agent_id,
+        }
+    }
+}
+
+impl Query for GetAgentToolsQuery {
+    type Output = Vec<AiTool>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let tools = sqlx::query!(
+            r#"
+            SELECT
+                t.id, t.created_at, t.updated_at, t.name, t.description,
+                t.tool_type, t.deployment_id, t.configuration
+            FROM ai_tools t
+            JOIN ai_agent_tools aat ON aat.tool_id = t.id
+            WHERE t.deployment_id = $1 AND aat.agent_id = $2 AND aat.deployment_id = $1
+            ORDER BY t.created_at DESC
+            "#,
+            self.deployment_id,
+            self.agent_id
+        )
+        .fetch_all(&app_state.db_pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(tools
+            .into_iter()
+            .map(|tool| {
+                let tool_type = AiToolType::from(tool.tool_type);
+                let configuration: AiToolConfiguration =
+                    serde_json::from_value(tool.configuration).unwrap_or_default();
+
+                AiTool {
+                    id: tool.id,
+                    created_at: tool.created_at,
+                    updated_at: tool.updated_at,
+                    name: tool.name,
+                    description: tool.description,
+                    tool_type,
+                    deployment_id: tool.deployment_id,
+                    configuration,
+                }
+            })
+            .collect())
     }
 }
 

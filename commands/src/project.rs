@@ -1,6 +1,6 @@
 use common::error::AppError;
 use common::state::AppState;
-use common::{utils::name::generate_random_name, validators::ProjectValidator};
+use common::validators::ProjectValidator;
 use models::{
     AuthFactorsEnabled, CustomSmtpConfig, DarkModeSettings, Deployment, DeploymentAuthSettings,
     DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate, DeploymentMode,
@@ -8,16 +8,16 @@ use models::{
     DeploymentUISettings, DeploymentWorkspaceRole, EmailProvider, EmailSettings,
     EmailVerificationRecords, FirstFactor, IndividualAuthSettings, LightModeSettings,
     OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments, SecondFactorPolicy,
-    SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus,
-    webhook::WebhookEventDefinition,
+    SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus
 };
 
 use base64::{Engine, engine::general_purpose::STANDARD, prelude::BASE64_STANDARD};
-use redis::AsyncCommands;
 use std::env;
 use std::str::FromStr;
 
-use super::{Command, UploadToCdnCommand};
+use super::Command;
+
+const DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG: &str = "default";
 
 fn generate_signing_secret() -> String {
     use rand::Rng;
@@ -26,426 +26,34 @@ fn generate_signing_secret() -> String {
     format!("whsec_{}", STANDARD.encode(bytes))
 }
 
-fn get_default_webhook_events() -> Vec<WebhookEventDefinition> {
-    vec![
-        WebhookEventDefinition {
-            name: "user.created".to_string(),
-            description: "New user signed up".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.updated".to_string(),
-            description: "User profile updated".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.deleted".to_string(),
-            description: "User account deleted".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.email.verified".to_string(),
-            description: "User email address verified".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.password.updated".to_string(),
-            description: "User password changed".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.mfa.enabled".to_string(),
-            description: "User enabled two-factor authentication".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.mfa.disabled".to_string(),
-            description: "User disabled two-factor authentication".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "session.created".to_string(),
-            description: "User signed in".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "session.deleted".to_string(),
-            description: "User signed out".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "session.expired".to_string(),
-            description: "User session expired".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "organization.created".to_string(),
-            description: "New organization created".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "organization.updated".to_string(),
-            description: "Organization settings updated".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "organization.deleted".to_string(),
-            description: "Organization deleted".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "organization.member.added".to_string(),
-            description: "Member added to organization".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "organization.member.removed".to_string(),
-            description: "Member removed from organization".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "organization.member.role.updated".to_string(),
-            description: "Organization member role changed".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "workspace.created".to_string(),
-            description: "New workspace created".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "workspace.updated".to_string(),
-            description: "Workspace settings updated".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "workspace.deleted".to_string(),
-            description: "Workspace deleted".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "workspace.member.added".to_string(),
-            description: "Member added to workspace".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "workspace.member.removed".to_string(),
-            description: "Member removed from workspace".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "workspace.member.role.updated".to_string(),
-            description: "Workspace member role changed".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "organization.invitation.created".to_string(),
-            description: "Organization invitation sent".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "organization.invitation.accepted".to_string(),
-            description: "Organization invitation accepted".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "organization.invitation.revoked".to_string(),
-            description: "Organization invitation revoked".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "workspace.invitation.created".to_string(),
-            description: "Workspace invitation sent".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "workspace.invitation.accepted".to_string(),
-            description: "Workspace invitation accepted".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "workspace.invitation.revoked".to_string(),
-            description: "Workspace invitation revoked".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.phone.added".to_string(),
-            description: "Phone number added to user account".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.phone.verified".to_string(),
-            description: "User phone number verified".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.phone.removed".to_string(),
-            description: "Phone number removed from user account".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.email.added".to_string(),
-            description: "Email address added to user account".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "user.email.removed".to_string(),
-            description: "Email address removed from user account".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "api_key.created".to_string(),
-            description: "API key created".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "api_key.deleted".to_string(),
-            description: "API key deleted".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "api_key.rotated".to_string(),
-            description: "API key rotated".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "agent.created".to_string(),
-            description: "AI agent created".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "agent.updated".to_string(),
-            description: "AI agent configuration updated".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "agent.deleted".to_string(),
-            description: "AI agent deleted".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "agent.execution.started".to_string(),
-            description: "AI agent execution started".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "agent.execution.completed".to_string(),
-            description: "AI agent execution completed successfully".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "agent.execution.failed".to_string(),
-            description: "AI agent execution failed".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "agent.model.usage".to_string(),
-            description: "AI model usage recorded (token consumption)".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "waitlist.entry.created".to_string(),
-            description: "New waitlist entry added".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "waitlist.entry.approved".to_string(),
-            description: "Waitlist entry approved".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "execution_context.message".to_string(),
-            description: "Message sent in execution context".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "execution_context.platform_event".to_string(),
-            description: "Platform event occurred in execution context".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "execution_context.platform_function".to_string(),
-            description: "Platform function called in execution context".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "execution_context.user_input_request".to_string(),
-            description: "User input requested in execution context".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-        WebhookEventDefinition {
-            name: "execution_context.platform_function_result".to_string(),
-            description: "Platform function result received in execution context".to_string(),
-            group: None,
-            schema: None,
-            example_payload: None,
-            is_archived: false,
-        },
-    ]
+fn generate_nanoid() -> String {
+    const EDGE_ALPHABET: [char; 36] = [
+        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
+        's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    ];
+    const MIDDLE_ALPHABET: [char; 37] = [
+        'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
+        's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+        '-',
+    ];
+    const LABEL_LEN: usize = 16;
+    const MIDDLE_LEN: usize = LABEL_LEN - 2;
+    let first = nanoid::nanoid!(1, &EDGE_ALPHABET);
+    let middle = nanoid::nanoid!(MIDDLE_LEN, &MIDDLE_ALPHABET);
+    let last = nanoid::nanoid!(1, &EDGE_ALPHABET);
+    format!("{}{}{}", first, middle, last)
 }
 
 pub struct CreateProjectWithStagingDeploymentCommand {
     name: String,
-    logo: Vec<u8>,
-    has_logo: bool,
     auth_methods: Vec<String>,
     owner_id: Option<String>,
 }
 
 impl CreateProjectWithStagingDeploymentCommand {
-    pub fn new(name: String, logo: Vec<u8>, auth_methods: Vec<String>) -> Self {
-        let has_logo = !logo.is_empty();
+    pub fn new(name: String, auth_methods: Vec<String>) -> Self {
         Self {
             name,
-            logo,
-            has_logo,
             auth_methods,
             owner_id: None,
         }
@@ -615,22 +223,6 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         let project_id = app_state.sf.next_id()? as i64;
 
-        let logo_task = {
-            let logo = self.logo.clone();
-            let has_logo = self.has_logo;
-            let project_id = project_id;
-            let app_state = app_state.clone();
-            async move {
-                if has_logo {
-                    UploadToCdnCommand::new(format!("projects/{}/logo.png", project_id), logo)
-                        .execute(&app_state)
-                        .await
-                } else {
-                    Ok("".to_string())
-                }
-            }
-        };
-
         let key_pair_task = tokio::task::spawn_blocking(|| {
             // Generate ECDSA keypair for JWT signing (ES256)
             let ecdsa_pair =
@@ -649,27 +241,8 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             ))
         });
 
-        let random_name_task = {
-            let app_state = app_state.clone();
-            async move {
-                let random_name = generate_random_name();
-                let count: i64 = app_state
-                    .redis_client
-                    .get_multiplexed_tokio_connection()
-                    .await?
-                    .incr(format!("project_count:{}", random_name), 1)
-                    .await?;
-                Ok::<_, AppError>((random_name, count))
-            }
-        };
-
-        let (image_url_res, key_pair_res, random_name_res) =
-            tokio::join!(logo_task, key_pair_task, random_name_task);
-
-        let image_url = image_url_res?;
         let (public_key, private_key, saml_public_key, saml_private_key) =
-            key_pair_res.map_err(|e| AppError::Internal(e.to_string()))??;
-        let (random_name, count) = random_name_res?;
+            key_pair_task.await.map_err(|e| AppError::Internal(e.to_string()))??;
 
         let mut tx = app_state.db_pool.begin().await?;
 
@@ -709,7 +282,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             "#,
             project_id,
             self.name,
-            image_url,
+            "",
             owner_id,
             billing_account_id,
             chrono::Utc::now(),
@@ -718,7 +291,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         .fetch_one(&mut *tx)
         .await?;
 
-        let hostname = format!("{}-{}", random_name, count);
+        let hostname = generate_nanoid();
 
         let backend_host = format!("{}.frontend-api.services", hostname);
         let frontend_host = format!("{}.trywacht.xyz", hostname);
@@ -1281,7 +854,6 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         }
 
         let app_name = deployment_row.id.to_string();
-        let app_slug = format!("slug_{}", app_name);
         let console_id = env::var("CONSOLE_DEPLOYMENT_ID")
             .unwrap()
             .parse::<i64>()
@@ -1289,12 +861,11 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         sqlx::query!(
             r#"
-            INSERT INTO api_auth_apps (id, deployment_id, app_slug, name, description, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, true, $6, $7)
+            INSERT INTO api_auth_apps (deployment_id, app_slug, name, description, is_active, created_at, updated_at, key_prefix)
+            VALUES ($1, $2, $3, $4, true, $5, $6, 'sk_')
             "#,
-            app_state.sf.next_id()? as i64,
             console_id,
-            app_slug,
+            format!("aa_{}", deployment_row.id),
             app_name,
             format!("API keys for deployment {}", deployment_row.id),
             chrono::Utc::now(),
@@ -1306,23 +877,21 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         let signing_secret = generate_signing_secret();
         sqlx::query!(
             r#"
-            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, true, $5, $6)
+            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, event_catalog_slug, is_active, created_at, updated_at, app_slug)
+            VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
             "#,
             console_id,
             app_name,
             format!("Webhooks for deployment {}", deployment_row.id),
             signing_secret,
+            DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG,
             chrono::Utc::now(),
             chrono::Utc::now(),
+            format!("wh_{}", deployment_row.id)
         )
         .execute(&mut *tx)
         .await?;
 
-        // LEGACY: Events are now managed via the shared event catalog system
-        // No longer populating webhook_app_events table
-
-        // Create empty AI settings row for this deployment
         sqlx::query!(
             r#"
             INSERT INTO deployment_ai_settings (id, deployment_id, created_at, updated_at)
@@ -1807,13 +1376,8 @@ impl Command for CreateStagingDeploymentCommand {
             ));
         }
 
-        // Generate unique staging subdomain
-        let staging_number = staging_count.count.unwrap_or(0) + 1;
-        let backend_host = if staging_number == 1 {
-            "staging.wacht.services".to_string()
-        } else {
-            format!("staging-{}.wacht.services", staging_number)
-        };
+        // Generate unique staging hostname
+        let backend_host = format!("{}.frontend-api.services", generate_nanoid());
         let frontend_host = backend_host.clone();
 
         let mut publishable_key = String::from("pk_test_");
@@ -2253,7 +1817,6 @@ impl Command for CreateStagingDeploymentCommand {
         }
 
         let app_name = deployment_row.id.to_string();
-        let app_slug = format!("slug_{}", app_name);
         let console_id = env::var("CONSOLE_DEPLOYMENT_ID")
             .unwrap()
             .parse::<i64>()
@@ -2261,12 +1824,11 @@ impl Command for CreateStagingDeploymentCommand {
 
         sqlx::query!(
             r#"
-            INSERT INTO api_auth_apps (id, deployment_id, app_slug, name, description, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, true, $6, $7)
+            INSERT INTO api_auth_apps (deployment_id, app_slug, name, description, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, true, $5, $6)
             "#,
-            app_state.sf.next_id()? as i64,
             console_id,
-            app_slug,
+            format!("aa_{}", deployment_row.id),
             app_name,
             format!("API keys for deployment {}", deployment_row.id),
             chrono::Utc::now(),
@@ -2278,21 +1840,20 @@ impl Command for CreateStagingDeploymentCommand {
         let signing_secret = generate_signing_secret();
         sqlx::query!(
             r#"
-            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, true, $5, $6)
+            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, event_catalog_slug, is_active, created_at, updated_at, app_slug)
+            VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
             "#,
             console_id,
             app_name,
             format!("Webhooks for deployment {}", deployment_row.id),
             signing_secret,
+            DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG,
             chrono::Utc::now(),
             chrono::Utc::now(),
+            format!("wh_{}", deployment_row.id)
         )
         .execute(&mut *tx)
         .await?;
-
-        // LEGACY: Events are now managed via the shared event catalog system
-        // No longer populating webhook_app_events table
 
         tx.commit().await?;
 
@@ -3014,7 +2575,6 @@ impl Command for CreateProductionDeploymentCommand {
         .await?;
 
         let app_name = deployment_row.id.to_string();
-        let app_slug = format!("slug_{}", app_name);
         let console_id = env::var("CONSOLE_DEPLOYMENT_ID")
             .unwrap()
             .parse::<i64>()
@@ -3022,12 +2582,11 @@ impl Command for CreateProductionDeploymentCommand {
 
         sqlx::query!(
             r#"
-            INSERT INTO api_auth_apps (id, deployment_id, app_slug, name, description, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, true, $6, $7)
+            INSERT INTO api_auth_apps (deployment_id, app_slug, name, description, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, true, $5, $6)
             "#,
-            app_state.sf.next_id()? as i64,
             console_id,
-            app_slug,
+            format!("aa_{}", deployment_row.id),
             app_name,
             format!("API keys for deployment {}", deployment_row.id),
             chrono::Utc::now(),
@@ -3039,21 +2598,20 @@ impl Command for CreateProductionDeploymentCommand {
         let signing_secret = generate_signing_secret();
         sqlx::query!(
             r#"
-            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, true, $5, $6)
+            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, event_catalog_slug, is_active, created_at, updated_at, app_slug)
+            VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
             "#,
             console_id,
             app_name,
             format!("Webhooks for deployment {}", deployment_row.id),
             signing_secret,
+            DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG,
             chrono::Utc::now(),
             chrono::Utc::now(),
+            format!("wh_{}", deployment_row.id)
         )
         .execute(&mut *tx)
         .await?;
-
-        // LEGACY: Events are now managed via the shared event catalog system
-        // No longer populating webhook_app_events table
 
         tx.commit().await?;
 

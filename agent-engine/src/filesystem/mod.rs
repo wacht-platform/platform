@@ -5,26 +5,25 @@ use std::sync::{Arc, RwLock};
 use tokio::fs;
 use tokio::process::Command;
 
+pub mod sandbox;
 pub mod shell;
 
 #[derive(Clone)]
 pub struct AgentFilesystem {
     base_path: PathBuf,
     deployment_id: String,
-    agent_id: String,
     context_id: String,
     execution_id: String,
     read_files: Arc<RwLock<HashSet<String>>>,
 }
 
 impl AgentFilesystem {
-    pub fn new(deployment_id: &str, agent_id: &str, context_id: &str, execution_id: &str) -> Self {
-        let base = "/mnt/wacht-agents".to_string();
+    pub fn new(deployment_id: &str, context_id: &str, execution_id: &str) -> Self {
+        let base = detect_base_path();
 
         Self {
-            base_path: PathBuf::from(base),
+            base_path: base,
             deployment_id: deployment_id.to_string(),
-            agent_id: agent_id.to_string(),
             context_id: context_id.to_string(),
             execution_id: execution_id.to_string(),
             read_files: Arc::new(RwLock::new(HashSet::new())),
@@ -59,15 +58,6 @@ impl AgentFilesystem {
             .join(&self.deployment_id)
             .join("knowledge-bases")
             .join(kb_id)
-    }
-
-    pub fn teams_activity_path(&self, context_group: &str) -> PathBuf {
-        // Path: /mnt/wacht-agents/{deployment_id}/teams-activity/{context_group}/{agent_id}/
-        self.base_path
-            .join(&self.deployment_id)
-            .join("teams-activity")
-            .join(context_group)
-            .join(&self.agent_id)
     }
 
     pub async fn initialize(&self) -> Result<(), AppError> {
@@ -139,34 +129,6 @@ impl AgentFilesystem {
         fs::symlink(&source, &target)
             .await
             .map_err(|e| AppError::Internal(format!("Failed to link KB: {}", e)))?;
-
-        Ok(())
-    }
-
-    pub async fn link_teams_activity(&self, context_group: &str) -> Result<(), AppError> {
-        let source = self.teams_activity_path(context_group);
-        let target = self.execution_root().join("teams-activity");
-
-        // Ensure source directory exists
-        if !source.exists() {
-            fs::create_dir_all(&source).await.map_err(|e| {
-                AppError::Internal(format!("Failed to create teams-activity directory: {}", e))
-            })?;
-        }
-
-        // Remove existing symlink if present
-        if target.exists() {
-            let metadata = fs::symlink_metadata(&target).await.ok();
-            if let Some(m) = metadata {
-                if m.is_symlink() {
-                    fs::remove_file(&target).await.ok();
-                }
-            }
-        }
-
-        fs::symlink(&source, &target)
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to link teams-activity: {}", e)))?;
 
         Ok(())
     }
@@ -392,6 +354,17 @@ impl AgentFilesystem {
     pub fn resolve_path_public(&self, path: &str) -> Result<PathBuf, AppError> {
         self.resolve_path(path)
     }
+}
+
+fn detect_base_path() -> PathBuf {
+    let mounted = PathBuf::from("/mnt/wacht-agents");
+    if std::fs::create_dir_all(&mounted).is_ok() {
+        return mounted;
+    }
+
+    let fallback = PathBuf::from("/tmp/wacht-agents");
+    let _ = std::fs::create_dir_all(&fallback);
+    fallback
 }
 
 #[derive(Debug, Clone)]

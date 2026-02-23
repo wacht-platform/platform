@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE oauth_clients\n            SET\n                registration_access_token_hash = $3,\n                updated_at = NOW()\n            WHERE oauth_app_id = $1\n              AND client_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "961f65cdf883654d4b3915021e013bcd55bb2f63b8e98788e23a58c033671cda"
+}

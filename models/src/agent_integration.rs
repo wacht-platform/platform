@@ -1,26 +1,42 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "text", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum IntegrationType {
     Teams,
-    Slack,
-    WhatsApp,
-    Discord,
     ClickUp,
+    Mcp,
+}
+
+impl IntegrationType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            IntegrationType::Teams => "teams",
+            IntegrationType::ClickUp => "clickup",
+            IntegrationType::Mcp => "mcp",
+        }
+    }
+}
+
+impl FromStr for IntegrationType {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
+            "teams" => Ok(IntegrationType::Teams),
+            "clickup" => Ok(IntegrationType::ClickUp),
+            "mcp" => Ok(IntegrationType::Mcp),
+            _ => Err(format!("Unknown integration type: {}", value)),
+        }
+    }
 }
 
 impl std::fmt::Display for IntegrationType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            IntegrationType::Teams => write!(f, "teams"),
-            IntegrationType::Slack => write!(f, "slack"),
-            IntegrationType::WhatsApp => write!(f, "whatsapp"),
-            IntegrationType::Discord => write!(f, "discord"),
-            IntegrationType::ClickUp => write!(f, "clickup"),
-        }
+        write!(f, "{}", self.as_str())
     }
 }
 

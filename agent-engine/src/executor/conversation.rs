@@ -271,6 +271,34 @@ impl AgentExecutor {
             } => {
                 format!("System Decision (Step: {}): {}", step, reasoning)
             }
+            ConversationContent::ActionExecutionResult {
+                task_execution,
+                execution_status,
+                blocking_reason,
+            } => {
+                let total = task_execution
+                    .actual_result
+                    .as_ref()
+                    .map(|results| results.len())
+                    .unwrap_or(0);
+                let failures = task_execution
+                    .actual_result
+                    .as_ref()
+                    .map(|results| results.iter().filter(|r| r.error.is_some()).count())
+                    .unwrap_or(0);
+
+                if let Some(reason) = blocking_reason {
+                    format!(
+                        "Action execution summary: status={:?}, actions={}, failures={}, blocking_reason={}",
+                        execution_status, total, failures, reason
+                    )
+                } else {
+                    format!(
+                        "Action execution summary: status={:?}, actions={}, failures={}. Tool outputs omitted from conversation history.",
+                        execution_status, total, failures
+                    )
+                }
+            }
             _ => serde_json::to_string(content).unwrap_or_default(),
         }
     }
@@ -343,6 +371,10 @@ impl AgentExecutor {
                 .conversation_insights
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
+            supervisor_mode_active: self.supervisor_mode_active,
+            supervisor_task_board: self.supervisor_task_board.clone(),
+            deep_think_mode_active: self.deep_think_mode_active,
+            deep_think_used: self.deep_think_used,
             pending_input_request: Some(user_input_state),
         };
 

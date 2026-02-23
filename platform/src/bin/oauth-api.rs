@@ -1,0 +1,26 @@
+use common::state::AppState;
+use platform::application;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv_override().ok();
+
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new("error"))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let app_state = AppState::new_from_env().await?;
+    let app = application::oauth_router(app_state).await;
+
+    let port = std::env::var("OAUTH_API_PORT").unwrap_or_else(|_| "3002".to_string());
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
+
+    tracing::info!("OAuth API listening on port {}", port);
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}

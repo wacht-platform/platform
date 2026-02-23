@@ -20,5 +20,4 @@ pub use postmark::*;
 pub use smtp::*;
 pub use text_processing::*;
 
-// Re-export error from models
 pub use models::error;
