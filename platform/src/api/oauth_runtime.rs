@@ -600,6 +600,13 @@ async fn oauth_token_impl(
     )
         .await
         .map_err(map_token_auth_error)?;
+    if !client.grant_types.iter().any(|g| g == &request.grant_type) {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            Some("grant_type is not allowed for this client"),
+        ));
+    }
 
     match request.grant_type.as_str() {
         "authorization_code" => {
