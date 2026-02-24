@@ -73,16 +73,16 @@ pub struct AnalyticsStatsResult {
     pub total_signups: u64,
     // Recent signups - Tuple from single subquery: (names, emails, methods, timestamps)
     pub recent_signups: (
-        Vec<Option<String>>,
-        Vec<Option<String>>,
-        Vec<Option<String>>,
+        Vec<String>,
+        Vec<String>,
+        Vec<String>,
         Vec<DateTime<Utc>>,
     ),
     // Recent signins - Tuple from single subquery: (names, emails, methods, timestamps)
     pub recent_signins: (
-        Vec<Option<String>>,
-        Vec<Option<String>>,
-        Vec<Option<String>>,
+        Vec<String>,
+        Vec<String>,
+        Vec<String>,
         Vec<DateTime<Utc>>,
     ),
 }
@@ -97,9 +97,9 @@ impl AnalyticsStatsResult {
             .zip(&self.recent_signups.2)
             .zip(&self.recent_signups.3)
             .map(|(((name, email), method), date)| RecentSignup {
-                name: name.clone(),
-                email: email.clone(),
-                method: method.clone(),
+                name: Some(name.clone()),
+                email: Some(email.clone()),
+                method: Some(method.clone()),
                 date: *date,
             })
             .collect()
@@ -114,9 +114,9 @@ impl AnalyticsStatsResult {
             .zip(&self.recent_signins.2)
             .zip(&self.recent_signins.3)
             .map(|(((name, email), method), date)| RecentSignup {
-                name: name.clone(),
-                email: email.clone(),
-                method: method.clone(),
+                name: Some(name.clone()),
+                email: Some(email.clone()),
+                method: Some(method.clone()),
                 date: *date,
             })
             .collect()
