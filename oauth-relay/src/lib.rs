@@ -6,7 +6,9 @@ use axum::{
     Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use hmac::{Hmac, Mac};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use tower_service::Service;
 use url::Url;
 use worker::*;
@@ -46,7 +48,6 @@ async fn health_check() -> &'static str {
 
 /// Handle OAuth callback and redirect to the target host
 async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
-    // Extract the redirect URI from the state parameter
     let state = match params.state.as_ref() {
         Some(s) if !s.is_empty() => s,
         _ => {
@@ -58,16 +59,18 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
         }
     };
 
-    // The state format is: base64_data.hmac_signature
-    // We only need the data part to extract the redirect URI
-    let state_data = match state.split('.').next() {
-        Some(data) => data,
-        None => {
-            return (StatusCode::BAD_REQUEST, "Invalid state format").into_response();
-        }
-    };
+    let parts_state: Vec<&str> = state.split('.').collect();
+    if parts_state.len() != 3 {
+        return (
+            StatusCode::BAD_REQUEST,
+            "Invalid state format for relay verification",
+        )
+            .into_response();
+    }
 
-    // Decode the base64 state data
+    let state_data = parts_state[0];
+    let relay_sig = parts_state[2];
+
     let decoded_bytes = match URL_SAFE_NO_PAD.decode(state_data) {
         Ok(bytes) => bytes,
         Err(_) => {
@@ -82,7 +85,10 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
         }
     };
 
-    // Parse the pipe-delimited state data
+    if !verify_relay_state_signature(&decoded_str, relay_sig) {
+        return (StatusCode::BAD_REQUEST, "Invalid relay state signature").into_response();
+    }
+
     let parts: Vec<&str> = decoded_str.split('|').collect();
 
     let frontend_host = if parts.is_empty() {
@@ -101,7 +107,6 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
 
     let redirect_uri = format!("https://{}/sso-callback", frontend_host);
 
-    // Validate that the redirect URI is a valid URL
     let target_url = match Url::parse(&redirect_uri) {
         Ok(url) => url,
         Err(_) => {
@@ -113,7 +118,6 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
         }
     };
 
-    // Security check: Ensure the target uses HTTPS (allow HTTP only for localhost)
     if target_url.scheme() != "https" {
         let is_localhost = target_url
             .host_str()
@@ -129,13 +133,8 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
         }
     }
 
-    // Build the redirect URL with OAuth parameters
     let mut redirect_url = target_url;
-
-    // Clear any existing query parameters from the host URL
     redirect_url.set_query(None);
-
-    // Add OAuth parameters to the redirect URL
     let mut query_pairs = vec![];
 
     if let Some(ref code) = params.code {
@@ -161,9 +160,37 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
         redirect_url.set_query(Some(&query_pairs.join("&")));
     }
 
-    // Log the redirect for debugging (in production, this goes to Cloudflare logs)
-    console_log!("OAuth relay: Redirecting to {}", redirect_url);
+    console_log!("OAuth relay: callback redirected");
 
-    // Perform the redirect
     Redirect::temporary(redirect_url.as_str()).into_response()
+}
+
+fn relay_state_secret() -> Option<Vec<u8>> {
+    let encryption_key = std::env::var("ENCRYPTION_KEY").ok()?;
+    let key = encryption_key.trim();
+    if key.is_empty() {
+        return None;
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(b"ors1:");
+    hasher.update(key.as_bytes());
+    Some(hasher.finalize().to_vec())
+}
+
+fn verify_relay_state_signature(payload: &str, provided_signature: &str) -> bool {
+    if provided_signature.trim().is_empty() {
+        return false;
+    }
+    let Some(secret) = relay_state_secret() else {
+        return false;
+    };
+    let Ok(provided_sig_bytes) = URL_SAFE_NO_PAD.decode(provided_signature) else {
+        return false;
+    };
+    type HmacSha256 = Hmac<Sha256>;
+    let Ok(mut mac) = HmacSha256::new_from_slice(&secret) else {
+        return false;
+    };
+    mac.update(payload.as_bytes());
+    mac.verify_slice(&provided_sig_bytes).is_ok()
 }
