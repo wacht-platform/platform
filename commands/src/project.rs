@@ -155,12 +155,7 @@ impl CreateProjectWithStagingDeploymentCommand {
         deployment_id: i64,
         frontend_host: String,
     ) -> DeploymentUISettings {
-        // Ensure frontend_host has https:// protocol
-        let frontend_url = if frontend_host.starts_with("https://") {
-            frontend_host
-        } else {
-            format!("https://{}", frontend_host)
-        };
+        let frontend_url = format!("https://{}", frontend_host);
 
         DeploymentUISettings {
             deployment_id,
@@ -295,8 +290,8 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         let hostname = generate_nanoid();
 
-        let backend_host = format!("{}.feapis.xyz", hostname);
-        let frontend_host = format!("{}.trywacht.xyz", hostname);
+        let backend_host = format!("{}.fapi.trywacht.xyz", hostname);
+        let frontend_host = format!("{}.accounts.trywacht.xyz", hostname);
         let mut publishable_key = String::from("pk_test_");
 
         let base64_backend_host = BASE64_STANDARD.encode(format!("https://{}", backend_host));
@@ -418,8 +413,10 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
-        let ui_settings =
-            self.create_ui_settings(deployment_row.id, format!("{}.trywacht.xyz", hostname));
+        let ui_settings = self.create_ui_settings(
+            deployment_row.id,
+            format!("{}.accounts.trywacht.xyz", hostname),
+        );
 
         let staging_ui_settings_query = format!(
             r#"
@@ -470,7 +467,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             .bind(ui_settings.use_initials_for_organization_profile_image)
             .bind(&ui_settings.default_user_profile_image_url)
             .bind(&ui_settings.default_organization_profile_image_url)
-            .bind(format!("https://{}.trywacht.xyz/waitlist", hostname))
+            .bind(format!("https://{}.accounts.trywacht.xyz/waitlist", hostname))
             .bind("")
             .bind(chrono::Utc::now())
             .bind(chrono::Utc::now())
@@ -1038,20 +1035,26 @@ impl CreateStagingDeploymentCommand {
         }
     }
 
-    fn create_ui_settings(&self, deployment_id: i64, app_name: String) -> DeploymentUISettings {
+    fn create_ui_settings(
+        &self,
+        deployment_id: i64,
+        frontend_host: String,
+        app_name: String,
+    ) -> DeploymentUISettings {
+        let frontend_url = format!("https://{}", frontend_host);
+
         DeploymentUISettings {
             deployment_id,
             app_name,
-            after_sign_out_all_page_url: "https://staging.wacht.services/sign-in".to_string(),
-            after_sign_out_one_page_url: "https://staging.wacht.services".to_string(),
-            sign_in_page_url: "https://staging.wacht.services/sign-in".to_string(),
-            sign_up_page_url: "https://staging.wacht.services/sign-up".to_string(),
+            after_sign_out_all_page_url: format!("{}/sign-in", frontend_url),
+            after_sign_out_one_page_url: frontend_url.to_string(),
+            sign_in_page_url: format!("{}/sign-in", frontend_url),
+            sign_up_page_url: format!("{}/sign-up", frontend_url),
             dark_mode_settings: DarkModeSettings::default(),
             light_mode_settings: LightModeSettings::default(),
-            organization_profile_url: "https://staging.wacht.services/organization".to_string(),
-            create_organization_url: "https://staging.wacht.services/create-organization"
-                .to_string(),
-            user_profile_url: "https://staging.wacht.services/me".to_string(),
+            organization_profile_url: format!("{}/organization", frontend_url),
+            create_organization_url: format!("{}/create-organization", frontend_url),
+            user_profile_url: format!("{}/me", frontend_url),
             use_initials_for_organization_profile_image: true,
             use_initials_for_user_profile_image: true,
             ..DeploymentUISettings::default()
@@ -1198,11 +1201,7 @@ impl CreateProductionDeploymentCommand {
         frontend_host: String,
         app_name: String,
     ) -> DeploymentUISettings {
-        let frontend_url = if frontend_host.starts_with("https://") {
-            frontend_host
-        } else {
-            format!("https://{}", frontend_host)
-        };
+        let frontend_url = format!("https://{}", frontend_host);
 
         DeploymentUISettings {
             deployment_id,
@@ -1378,8 +1377,9 @@ impl Command for CreateStagingDeploymentCommand {
             ));
         }
 
-        let backend_host = format!("{}.feapis.xyz", generate_nanoid());
-        let frontend_host = backend_host.clone();
+        let hostname = generate_nanoid();
+        let backend_host = format!("{}.fapi.trywacht.xyz", hostname);
+        let frontend_host = format!("{}.accounts.trywacht.xyz", hostname);
 
         let mut publishable_key = String::from("pk_test_");
         let base64_backend_host = BASE64_STANDARD.encode(format!("https://{}", backend_host));
@@ -1480,7 +1480,11 @@ impl Command for CreateStagingDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
-        let ui_settings = self.create_ui_settings(deployment_row.id, project.name.clone());
+        let ui_settings = self.create_ui_settings(
+            deployment_row.id,
+            deployment_row.frontend_host.clone(),
+            project.name.clone(),
+        );
 
         sqlx::query!(
             r#"
