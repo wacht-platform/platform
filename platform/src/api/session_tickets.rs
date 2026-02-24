@@ -16,7 +16,6 @@ pub struct CreateSessionTicketResponse {
 pub async fn create_session_ticket(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    ExtractPlatformSource(platform_source): ExtractPlatformSource,
     Json(request): Json<CreateSessionTicketRequest>,
 ) -> ApiResult<CreateSessionTicketResponse> {
     let ticket_type = match request.ticket_type.as_str() {
@@ -32,17 +31,12 @@ pub async fn create_session_ticket(
         }
     };
 
-    let deployment_id = if platform_source == PlatformSource::Backend {
-        deployment_id
-    } else {
-        std::env::var("CONSOLE_DEPLOYMENT_ID")
-            .map(|id| id.parse().unwrap())
-            .unwrap()
-    };
+    let console_deployment_id = std::env::var("CONSOLE_DEPLOYMENT_ID")
+        .map(|id| id.parse().unwrap())
+        .unwrap();
 
     let mut command = GenerateSessionTicketCommand::new(deployment_id, ticket_type.clone());
 
-    // Add type-specific fields
     match ticket_type {
         commands::session_ticket::SessionTicketType::Impersonation => {
             if let Some(user_id) = request.user_id {
@@ -71,6 +65,7 @@ pub async fn create_session_ticket(
             }
         }
         commands::session_ticket::SessionTicketType::WebhookAppAccess => {
+            command = GenerateSessionTicketCommand::new(console_deployment_id, ticket_type.clone());
             if let Some(webhook_app_slug) = request.webhook_app_slug {
                 if webhook_app_slug.is_empty() {
                     return Err(crate::application::AppError::BadRequest(
@@ -88,6 +83,7 @@ pub async fn create_session_ticket(
             }
         }
         commands::session_ticket::SessionTicketType::ApiAuthAccess => {
+            command = GenerateSessionTicketCommand::new(console_deployment_id, ticket_type.clone());
             if let Some(api_auth_app_slug) = request.api_auth_app_slug {
                 if api_auth_app_slug.is_empty() {
                     return Err(crate::application::AppError::BadRequest(

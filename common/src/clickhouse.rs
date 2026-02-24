@@ -446,6 +446,8 @@ impl ClickHouseService {
             .bind(to_ts)
             .bind(from_ts)
             .bind(to_ts)
+            .bind(from_ts)
+            .bind(to_ts)
             .bind(prev_from_ts)
             .bind(prev_to_ts)
             .bind(prev_from_ts)
