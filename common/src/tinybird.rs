@@ -5,7 +5,7 @@ use dto::clickhouse::webhook::{WebhookLog, WebhookLogLight};
 use reqwest::Client;
 use serde::Serialize;
 
-const TINYBIRD_EVENTS_URL: &str = "https://api.eu-central-1.aws.tinybird.co/v0/events";
+const TINYBIRD_EVENTS_URL: &str = "https://api.us-east.aws.tinybird.co/v0/events";
 
 pub async fn insert_event<T: Serialize>(data_source: &str, event: &T) -> Result<(), AppError> {
     let client = Client::new();
