@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO oauth_clients (\n                id,\n                deployment_id,\n                oauth_app_id,\n                client_id,\n                client_secret_hash,\n                client_auth_method,\n                grant_types,\n                redirect_uris,\n                token_endpoint_auth_signing_alg,\n                jwks_uri,\n                jwks,\n                client_name,\n                client_uri,\n                logo_uri,\n                tos_uri,\n                policy_uri,\n                contacts,\n                software_id,\n                software_version,\n                pkce_required,\n                is_active\n            )\n            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,true,true)\n            RETURNING\n                id,\n                deployment_id,\n                oauth_app_id,\n                client_id,\n                client_auth_method,\n                grant_types as \"grant_types: serde_json::Value\",\n                redirect_uris as \"redirect_uris: serde_json::Value\",\n                token_endpoint_auth_signing_alg,\n                jwks_uri,\n                jwks as \"jwks: sqlx::types::Json<models::api_key::JwksDocument>\",\n                client_name,\n                client_uri,\n                logo_uri,\n                tos_uri,\n                policy_uri,\n                contacts as \"contacts: serde_json::Value\",\n                software_id,\n                software_version,\n                pkce_required,\n                is_active,\n                created_at,\n                updated_at\n            ",
+  "query": "\n            INSERT INTO oauth_clients (\n                id,\n                deployment_id,\n                oauth_app_id,\n                client_id,\n                client_secret_hash,\n                client_secret_encrypted,\n                client_auth_method,\n                grant_types,\n                redirect_uris,\n                token_endpoint_auth_signing_alg,\n                jwks_uri,\n                jwks,\n                client_name,\n                client_uri,\n                logo_uri,\n                tos_uri,\n                policy_uri,\n                contacts,\n                software_id,\n                software_version,\n                pkce_required,\n                is_active\n            )\n            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,true,true)\n            RETURNING\n                id,\n                deployment_id,\n                oauth_app_id,\n                client_id,\n                client_auth_method,\n                grant_types as \"grant_types: serde_json::Value\",\n                redirect_uris as \"redirect_uris: serde_json::Value\",\n                token_endpoint_auth_signing_alg,\n                jwks_uri,\n                jwks as \"jwks: sqlx::types::Json<models::api_key::JwksDocument>\",\n                client_name,\n                client_uri,\n                logo_uri,\n                tos_uri,\n                policy_uri,\n                contacts as \"contacts: serde_json::Value\",\n                software_id,\n                software_version,\n                pkce_required,\n                is_active,\n                created_at,\n                updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -122,6 +122,7 @@
         "Text",
         "Text",
         "Text",
+        "Text",
         "Jsonb",
         "Jsonb",
         "Text",
@@ -162,5 +163,5 @@
       false
     ]
   },
-  "hash": "75bddb34090a24b12ba677a1676deedfbbaedb6a122abc5a6612c1939893cc9d"
+  "hash": "21004e9d2214c3488def2ba8becfc90a33d62b24687d3cf85bf853624f5fd927"
 }

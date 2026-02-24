@@ -232,15 +232,7 @@ async fn discover_auth_metadata(
     if let Some(auth_server) = authorization_servers.first() {
         let auth_server = auth_server.trim_end_matches('/');
         let oauth_metadata_url = format!("{}/.well-known/oauth-authorization-server", auth_server);
-        let mut oauth_response = client.get(&oauth_metadata_url).send().await.ok();
-        if oauth_response
-            .as_ref()
-            .map(|r| !r.status().is_success())
-            .unwrap_or(true)
-        {
-            let oidc_metadata_url = format!("{}/.well-known/openid-configuration", auth_server);
-            oauth_response = client.get(&oidc_metadata_url).send().await.ok();
-        }
+        let oauth_response = client.get(&oauth_metadata_url).send().await.ok();
 
         if let Some(response) = oauth_response {
             if response.status().is_success() {

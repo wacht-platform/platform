@@ -1,7 +1,4 @@
-use crate::{
-    application::response::ApiResult,
-    middleware::{ExtractPlatformSource, PlatformSource, RequireDeployment},
-};
+use crate::{application::response::ApiResult, middleware::RequireDeployment};
 use axum::{Json, extract::State};
 use commands::{Command, GenerateSessionTicketCommand};
 use common::state::AppState;

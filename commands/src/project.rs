@@ -8,7 +8,7 @@ use models::{
     DeploymentUISettings, DeploymentWorkspaceRole, EmailProvider, EmailSettings,
     EmailVerificationRecords, FirstFactor, IndividualAuthSettings, LightModeSettings,
     OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments, SecondFactorPolicy,
-    SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus
+    SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus,
 };
 
 use base64::{Engine, engine::general_purpose::STANDARD, prelude::BASE64_STANDARD};
@@ -242,7 +242,9 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         });
 
         let (public_key, private_key, saml_public_key, saml_private_key) =
-            key_pair_task.await.map_err(|e| AppError::Internal(e.to_string()))??;
+            key_pair_task
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))??;
 
         let mut tx = app_state.db_pool.begin().await?;
 
@@ -1376,7 +1378,6 @@ impl Command for CreateStagingDeploymentCommand {
             ));
         }
 
-        // Generate unique staging hostname
         let backend_host = format!("{}.feapis.xyz", generate_nanoid());
         let frontend_host = backend_host.clone();
 

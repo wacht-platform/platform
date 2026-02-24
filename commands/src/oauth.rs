@@ -573,9 +573,12 @@ impl CreateOAuthClientCommand {
         Ok(())
     }
 
-    fn generate_client_secret_and_hash(&self) -> (Option<String>, Option<String>) {
+    fn generate_client_secret_hash_and_encrypted(
+        &self,
+        app_state: &AppState,
+    ) -> Result<(Option<String>, Option<String>, Option<String>), AppError> {
         if self.client_auth_method == "none" || self.client_auth_method == "private_key_jwt" {
-            return (None, None);
+            return Ok((None, None, None));
         }
 
         use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -587,7 +590,8 @@ impl CreateOAuthClientCommand {
         let mut hasher = Sha256::new();
         hasher.update(secret.as_bytes());
         let hash = format!("{:x}", hasher.finalize());
-        (Some(secret), Some(hash))
+        let encrypted = app_state.encryption_service.encrypt(&secret)?;
+        Ok((Some(secret), Some(hash), Some(encrypted)))
     }
 }
 
@@ -647,7 +651,8 @@ impl Command for CreateOAuthClientCommand {
 
         let id = app_state.sf.next_id()? as i64;
         let client_id = Self::generate_client_id();
-        let (client_secret, client_secret_hash) = self.generate_client_secret_and_hash();
+        let (client_secret, client_secret_hash, client_secret_encrypted) =
+            self.generate_client_secret_hash_and_encrypted(app_state)?;
         let public_key_pem = self
             .public_key_pem
             .as_deref()
@@ -750,6 +755,7 @@ impl Command for CreateOAuthClientCommand {
                 oauth_app_id,
                 client_id,
                 client_secret_hash,
+                client_secret_encrypted,
                 client_auth_method,
                 grant_types,
                 redirect_uris,
@@ -767,7 +773,7 @@ impl Command for CreateOAuthClientCommand {
                 pkce_required,
                 is_active
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,true,true)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,true,true)
             RETURNING
                 id,
                 deployment_id,
@@ -797,6 +803,7 @@ impl Command for CreateOAuthClientCommand {
             self.oauth_app_id,
             client_id,
             client_secret_hash,
+            client_secret_encrypted,
             self.client_auth_method,
             serde_json::to_value(&self.grant_types)?,
             serde_json::to_value(&self.redirect_uris)?,
@@ -1441,7 +1448,9 @@ pub struct RotateOAuthClientSecret {
 }
 
 impl RotateOAuthClientSecret {
-    fn generate_client_secret_and_hash() -> (String, String) {
+    fn generate_client_secret_hash_and_encrypted(
+        app_state: &AppState,
+    ) -> Result<(String, String, String), AppError> {
         use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         use rand::RngCore;
         let mut random_bytes = vec![0u8; 32];
@@ -1451,7 +1460,8 @@ impl RotateOAuthClientSecret {
         let mut hasher = Sha256::new();
         hasher.update(secret.as_bytes());
         let hash = format!("{:x}", hasher.finalize());
-        (secret, hash)
+        let encrypted = app_state.encryption_service.encrypt(&secret)?;
+        Ok((secret, hash, encrypted))
     }
 }
 
@@ -1483,12 +1493,14 @@ impl Command for RotateOAuthClientSecret {
             ));
         }
 
-        let (client_secret, client_secret_hash) = Self::generate_client_secret_and_hash();
+        let (client_secret, client_secret_hash, client_secret_encrypted) =
+            Self::generate_client_secret_hash_and_encrypted(app_state)?;
         sqlx::query!(
             r#"
             UPDATE oauth_clients
             SET
                 client_secret_hash = $3,
+                client_secret_encrypted = $4,
                 updated_at = NOW()
             WHERE oauth_app_id = $1
               AND client_id = $2
@@ -1496,7 +1508,8 @@ impl Command for RotateOAuthClientSecret {
             "#,
             self.oauth_app_id,
             self.client_id,
-            client_secret_hash
+            client_secret_hash,
+            client_secret_encrypted
         )
         .execute(&app_state.db_pool)
         .await?;

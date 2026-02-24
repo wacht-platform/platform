@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct OAuthAuthorizeRequest {
-    pub response_type: String,
-    pub client_id: String,
-    pub redirect_uri: String,
+    pub response_type: Option<String>,
+    pub client_id: Option<String>,
+    pub redirect_uri: Option<String>,
     pub scope: Option<String>,
     pub state: Option<String>,
     pub resource: Option<String>,
@@ -39,6 +39,7 @@ pub struct OAuthTokenRequest {
     pub grant_type: String,
     pub code: Option<String>,
     pub redirect_uri: Option<String>,
+    pub scope: Option<String>,
     pub code_verifier: Option<String>,
     pub refresh_token: Option<String>,
     pub client_id: Option<String>,

@@ -837,10 +837,6 @@ pub async fn create_oauth_router(state: AppState) -> Router {
             get(api::oauth_runtime::oauth_server_metadata),
         )
         .route(
-            "/.well-known/jwks.json",
-            get(api::oauth_runtime::oauth_server_jwks),
-        )
-        .route(
             "/oauth/authorize",
             get(api::oauth_runtime::oauth_authorize_get),
         )

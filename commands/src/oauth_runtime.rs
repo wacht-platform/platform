@@ -463,6 +463,52 @@ impl Command for RevokeOAuthRefreshTokenFamily {
     }
 }
 
+pub struct RevokeOAuthTokensByGrant {
+    pub deployment_id: i64,
+    pub oauth_client_id: i64,
+    pub oauth_grant_id: i64,
+}
+
+impl Command for RevokeOAuthTokensByGrant {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query(
+            r#"
+            UPDATE oauth_access_tokens
+            SET revoked_at = NOW()
+            WHERE deployment_id = $1
+              AND oauth_client_id = $2
+              AND oauth_grant_id = $3
+              AND revoked_at IS NULL
+            "#,
+        )
+        .bind(self.deployment_id)
+        .bind(self.oauth_client_id)
+        .bind(self.oauth_grant_id)
+        .execute(&app_state.db_pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            UPDATE oauth_refresh_tokens
+            SET revoked_at = NOW()
+            WHERE deployment_id = $1
+              AND oauth_client_id = $2
+              AND oauth_grant_id = $3
+              AND revoked_at IS NULL
+            "#,
+        )
+        .bind(self.deployment_id)
+        .bind(self.oauth_client_id)
+        .bind(self.oauth_grant_id)
+        .execute(&app_state.db_pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
 fn generate_token(prefix: &str, bytes_len: usize) -> String {
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     let mut bytes = vec![0u8; bytes_len];
