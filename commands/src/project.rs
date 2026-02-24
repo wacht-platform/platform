@@ -293,7 +293,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         let hostname = generate_nanoid();
 
-        let backend_host = format!("{}.frontend-api.services", hostname);
+        let backend_host = format!("{}.feapis.xyz", hostname);
         let frontend_host = format!("{}.trywacht.xyz", hostname);
         let mut publishable_key = String::from("pk_test_");
 
@@ -1377,7 +1377,7 @@ impl Command for CreateStagingDeploymentCommand {
         }
 
         // Generate unique staging hostname
-        let backend_host = format!("{}.frontend-api.services", generate_nanoid());
+        let backend_host = format!("{}.feapis.xyz", generate_nanoid());
         let frontend_host = backend_host.clone();
 
         let mut publishable_key = String::from("pk_test_");

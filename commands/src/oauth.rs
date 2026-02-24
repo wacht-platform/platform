@@ -375,7 +375,7 @@ fn build_oauth_fqdn(mode: &str, fqdn: Option<&str>) -> Result<String, AppError> 
 
     let label = generate_oauth_domain_label();
     validate_dns_label(&label, "fqdn")?;
-    Ok(format!("{}.o.frontend-api.services", label))
+    Ok(format!("{}.o.feapis.xyz", label))
 }
 
 fn validate_dns_label(value: &str, field_name: &str) -> Result<(), AppError> {
