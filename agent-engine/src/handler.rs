@@ -227,6 +227,11 @@ impl AgentHandler {
                     }
                     _ = watch_for_cancellation(&mut watch, execution_id) => {
                         warn!("Execution cancelled for context {}", context_key);
+                        mark_context_cancelled(
+                            &self.app_state,
+                            context_id,
+                            deployment_id,
+                        ).await;
                         Ok(())
                     }
                     _ = wait_for_spawn_stop(spawn_control_sub), if spawn_control_sub.is_some() => {
@@ -248,6 +253,11 @@ impl AgentHandler {
                     }
                     _ = watch_for_cancellation(&mut watch, execution_id) => {
                         warn!("Execution cancelled for context {}", context_key);
+                        mark_context_cancelled(
+                            &self.app_state,
+                            context_id,
+                            deployment_id,
+                        ).await;
                         Ok(())
                     }
                 }
@@ -280,6 +290,11 @@ impl AgentHandler {
                     }
                     _ = watch_for_cancellation(&mut watch, execution_id) => {
                         warn!("Execution cancelled for context {}", context_key);
+                        mark_context_cancelled(
+                            &self.app_state,
+                            context_id,
+                            deployment_id,
+                        ).await;
                         Ok(())
                     }
                     _ = wait_for_spawn_stop(spawn_control_sub), if spawn_control_sub.is_some() => {
@@ -301,6 +316,11 @@ impl AgentHandler {
                     }
                     _ = watch_for_cancellation(&mut watch, execution_id) => {
                         warn!("Execution cancelled for context {}", context_key);
+                        mark_context_cancelled(
+                            &self.app_state,
+                            context_id,
+                            deployment_id,
+                        ).await;
                         Ok(())
                     }
                 }
@@ -425,6 +445,33 @@ async fn mark_context_failed_due_to_parent_abort(
     .await?;
 
     Ok(())
+}
+
+/// Marks a context as cancelled when the user cancels execution via KV watcher.
+/// Setting status to Failed triggers CancelDescendantExecutionsCommand internally,
+/// which BFS-walks all descendants and sends NATS stop signals.
+async fn mark_context_cancelled(
+    app_state: &AppState,
+    context_id: i64,
+    deployment_id: i64,
+) {
+    let _ = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
+        .with_status(ExecutionContextStatus::Failed)
+        .execute(app_state)
+        .await;
+
+    let _ = commands::StoreCompletionSummaryEnhancedCommand::new(
+        context_id,
+        deployment_id,
+        commands::CompletionSummary {
+            status: commands::CompletionStatus::Cancelled,
+            result: None,
+            error_message: Some("Execution cancelled by user.".to_string()),
+            metrics: None,
+        },
+    )
+    .execute(app_state)
+    .await;
 }
 
 async fn subscribe_spawn_control(

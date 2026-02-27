@@ -19,6 +19,13 @@ struct SleepParams {
     reason: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct NotifyParentParams {
+    message: String,
+    #[serde(default)]
+    trigger_execution: bool,
+}
+
 impl ToolExecutor {
     pub(super) async fn execute_sleep_tool(
         &self,
@@ -58,6 +65,113 @@ impl ToolExecutor {
             "success": true,
             "tool": tool.name,
             "message": "Status update posted successfully"
+        }))
+    }
+
+    pub(super) async fn execute_notify_parent_tool(
+        &self,
+        tool: &AiTool,
+        execution_params: &Value,
+    ) -> Result<Value, AppError> {
+        let params: NotifyParentParams = parse_params(execution_params, "notify_parent")?;
+
+        let context = self.ctx.get_context().await?;
+        let parent_context_id = context.parent_context_id.ok_or_else(|| {
+            AppError::BadRequest(
+                "notify_parent is only available in child contexts (spawned by a parent agent)"
+                    .to_string(),
+            )
+        })?;
+
+        let conversation_id = self
+            .app_state()
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
+            as i64;
+
+        let relayed_message = format!(
+            "[Message from child context #{}] {}",
+            self.context_id(),
+            params.message
+        );
+
+        let content = models::ConversationContent::UserMessage {
+            message: relayed_message,
+            sender_name: Some(format!("Child agent (context #{})", self.context_id())),
+            files: None,
+        };
+
+        commands::CreateConversationCommand::new(
+            conversation_id,
+            parent_context_id,
+            content,
+            models::ConversationMessageType::UserMessage,
+        )
+        .execute(self.app_state())
+        .await?;
+
+        if params.trigger_execution {
+            commands::PublishAgentExecutionCommand::new_message(
+                self.agent().deployment_id,
+                parent_context_id,
+                None,
+                Some(self.agent().name.clone()),
+                conversation_id,
+            )
+            .execute(self.app_state())
+            .await?;
+        }
+
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": tool.name,
+            "parent_context_id": parent_context_id,
+            "message_delivered": true,
+            "execution_triggered": params.trigger_execution
+        }))
+    }
+
+    pub(super) async fn execute_get_child_messages_tool(
+        &self,
+        tool: &AiTool,
+        _execution_params: &Value,
+    ) -> Result<Value, AppError> {
+        use queries::Query;
+
+        let all_conversations =
+            queries::GetLLMConversationHistoryQuery::new(self.context_id())
+                .execute(self.app_state())
+                .await
+                .unwrap_or_default();
+
+        let messages: Vec<Value> = all_conversations
+            .iter()
+            .filter(|conv| {
+                conv.message_type == models::ConversationMessageType::UserMessage
+                    && matches!(&conv.content, models::ConversationContent::UserMessage { sender_name: Some(name), .. } if name.starts_with("Child agent"))
+            })
+            .map(|conv| {
+                let (message, sender) = match &conv.content {
+                    models::ConversationContent::UserMessage { message, sender_name, .. } => {
+                        (message.clone(), sender_name.clone().unwrap_or_default())
+                    }
+                    _ => (String::new(), String::new()),
+                };
+                serde_json::json!({
+                    "sender": sender,
+                    "message": message,
+                    "received_at": conv.created_at.to_rfc3339(),
+                })
+            })
+            .collect();
+
+        let count = messages.len();
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": tool.name,
+            "messages": messages,
+            "count": count
         }))
     }
 
@@ -120,6 +234,14 @@ impl ToolExecutor {
                     request,
                 )
                 .await
+            }
+            InternalToolType::NotifyParent => {
+                self.execute_notify_parent_tool(tool, execution_params)
+                    .await
+            }
+            InternalToolType::GetChildMessages => {
+                self.execute_get_child_messages_tool(tool, execution_params)
+                    .await
             }
             _ => Err(AppError::Internal(
                 "Unsupported swarm tool type".to_string(),

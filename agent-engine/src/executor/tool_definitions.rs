@@ -297,6 +297,33 @@ pub fn internal_tools() -> Vec<(
             InternalToolType::GetCompletionSummary,
             get_completion_summary_schema(),
         ),
+        (
+            "notify_parent",
+            "Send a message to your parent agent. Only available when you are a child agent (spawned by a parent). Use this to report findings, ask for guidance, or relay important information mid-execution.",
+            InternalToolType::NotifyParent,
+            vec![
+                SchemaField {
+                    name: "message".to_string(),
+                    field_type: "STRING".to_string(),
+                    description: Some("The message to send to the parent agent".to_string()),
+                    required: true,
+                    ..Default::default()
+                },
+                SchemaField {
+                    name: "trigger_execution".to_string(),
+                    field_type: "BOOLEAN".to_string(),
+                    description: Some("If true, the parent agent will be triggered to process this message immediately. Default: false (message is queued for next parent iteration)".to_string()),
+                    required: false,
+                    ..Default::default()
+                },
+            ],
+        ),
+        (
+            "get_child_messages",
+            "Retrieve messages sent by your child agents via notify_parent. Call this during your supervisor polling loop to check if any children have sent you messages. Only returns messages received since your current execution started.",
+            InternalToolType::GetChildMessages,
+            vec![],
+        ),
     ]
 }
 

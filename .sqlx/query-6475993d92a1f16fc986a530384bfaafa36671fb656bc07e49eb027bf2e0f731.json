@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT k.id, k.app_slug,\n                   k.deployment_id, k.name, k.key_prefix,\n                   k.key_suffix, k.key_hash,\n                   k.permissions as \"permissions: serde_json::Value\",\n                   k.metadata as \"metadata: serde_json::Value\",\n                   k.rate_limit_scheme_slug,\n                   k.organization_id, k.workspace_id, k.organization_membership_id, k.workspace_membership_id,\n                   k.org_role_permissions as \"org_role_permissions: serde_json::Value\",\n                   k.workspace_role_permissions as \"workspace_role_permissions: serde_json::Value\",\n                   k.expires_at, k.last_used_at, k.is_active,\n                   k.created_at, k.updated_at,\n                   k.revoked_at, k.revoked_reason\n                FROM api_keys k\n                WHERE k.key_hash = $1 AND k.is_active = true\n               ",
+  "query": "SELECT id, deployment_id, app_slug, name, key_prefix, key_suffix, key_hash,\n                   permissions as \"permissions: serde_json::Value\",\n                   metadata as \"metadata: serde_json::Value\",\n                   rate_limit_scheme_slug,\n                   owner_user_id,\n                   organization_id, workspace_id, organization_membership_id, workspace_membership_id,\n                   org_role_permissions as \"org_role_permissions: serde_json::Value\",\n                   workspace_role_permissions as \"workspace_role_permissions: serde_json::Value\",\n                   expires_at, last_used_at, is_active, created_at, updated_at,\n                   revoked_at, revoked_reason\n                   FROM api_keys WHERE app_slug = $1 AND deployment_id = $2 ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -10,13 +10,13 @@
       },
       {
         "ordinal": 1,
-        "name": "app_slug",
-        "type_info": "Varchar"
+        "name": "deployment_id",
+        "type_info": "Int8"
       },
       {
         "ordinal": 2,
-        "name": "deployment_id",
-        "type_info": "Int8"
+        "name": "app_slug",
+        "type_info": "Varchar"
       },
       {
         "ordinal": 3,
@@ -55,73 +55,79 @@
       },
       {
         "ordinal": 10,
-        "name": "organization_id",
+        "name": "owner_user_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 11,
-        "name": "workspace_id",
+        "name": "organization_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 12,
-        "name": "organization_membership_id",
+        "name": "workspace_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 13,
-        "name": "workspace_membership_id",
+        "name": "organization_membership_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 14,
+        "name": "workspace_membership_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 15,
         "name": "org_role_permissions: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "workspace_role_permissions: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "expires_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "last_used_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "is_active",
         "type_info": "Bool"
       },
       {
-        "ordinal": 19,
+        "ordinal": 20,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 20,
+        "ordinal": 21,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "revoked_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 22,
+        "ordinal": 23,
         "name": "revoked_reason",
         "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Text",
+        "Int8"
       ]
     },
     "nullable": [
@@ -132,6 +138,7 @@
       false,
       false,
       false,
+      true,
       true,
       true,
       true,
@@ -150,5 +157,5 @@
       true
     ]
   },
-  "hash": "1c77f6a79a84edb00e92a76ff02fe0e2e3d1aae9e2fb9075dbe21610502ccdc9"
+  "hash": "6475993d92a1f16fc986a530384bfaafa36671fb656bc07e49eb027bf2e0f731"
 }

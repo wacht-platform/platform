@@ -10,6 +10,7 @@ use redis::Client as RedisClient;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::env::var as env;
 use std::error::Error;
+use wacht::{WachtClient, WachtConfig};
 
 use crate::{
     ClickHouseService, CloudflareService, DnsVerificationService, EncryptionService,
@@ -32,6 +33,7 @@ pub struct AppState {
     pub nats_client: NatsClient,
     pub nats_jetstream: NatsJetStream,
     pub encryption_service: EncryptionService,
+    pub wacht_client: Option<WachtClient>,
 }
 
 impl AppState {
@@ -120,6 +122,10 @@ impl AppState {
             None
         };
 
+        let wacht_client = WachtConfig::from_env()
+            .ok()
+            .and_then(|config| WachtClient::new(config).ok());
+
         Ok(Self {
             db_pool: pool,
             s3_client,
@@ -135,6 +141,7 @@ impl AppState {
             nats_client,
             nats_jetstream,
             encryption_service,
+            wacht_client,
         })
     }
 }

@@ -280,6 +280,7 @@ pub async fn create_api_key(
         request.name,
         app.key_prefix.clone(),
     );
+    command.owner_user_id = app.user_id;
 
     if let Some(permissions) = request.permissions {
         command = command.with_permissions(permissions);

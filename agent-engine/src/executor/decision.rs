@@ -723,6 +723,7 @@ impl AgentExecutor {
             supervisor_mode_active: self.supervisor_mode_active,
             supervisor_task_board: self.supervisor_task_board.clone(),
             is_child_context: exec_context.parent_context_id.is_some(),
+            parent_context_id: exec_context.parent_context_id,
             iteration_info: dto::json::IterationInfo {
                 current_iteration: self.current_iteration.max(1),
                 max_iterations: MAX_LOOP_ITERATIONS,

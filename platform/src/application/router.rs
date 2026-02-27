@@ -751,6 +751,11 @@ pub async fn create_console_router(state: AppState) -> Router {
 }
 
 pub async fn create_backend_router(state: AppState) -> Router {
+    assert!(
+        state.wacht_client.is_some(),
+        "Backend API requires Wacht gateway client. Ensure WACHT_API_KEY and WACHT_FRONTEND_HOST are set."
+    );
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, deployment_id, app_slug, name, key_prefix, key_suffix,\n                   permissions as \"permissions: serde_json::Value\",\n                   metadata as \"metadata: serde_json::Value\",\n                   rate_limit_scheme_slug,\n                   organization_id, workspace_id, organization_membership_id, workspace_membership_id,\n                   org_role_permissions as \"org_role_permissions: serde_json::Value\",\n                   workspace_role_permissions as \"workspace_role_permissions: serde_json::Value\",\n                   expires_at\n            FROM api_keys\n            WHERE id = $1 AND deployment_id = $2 AND is_active = true\n            ",
+  "query": "\n            SELECT id, deployment_id, app_slug, name, key_prefix, key_suffix,\n                   permissions as \"permissions: serde_json::Value\",\n                   metadata as \"metadata: serde_json::Value\",\n                   rate_limit_scheme_slug,\n                   owner_user_id,\n                   organization_id, workspace_id, organization_membership_id, workspace_membership_id,\n                   org_role_permissions as \"org_role_permissions: serde_json::Value\",\n                   workspace_role_permissions as \"workspace_role_permissions: serde_json::Value\",\n                   expires_at\n            FROM api_keys\n            WHERE id = $1 AND deployment_id = $2 AND is_active = true\n            ",
   "describe": {
     "columns": [
       {
@@ -50,36 +50,41 @@
       },
       {
         "ordinal": 9,
-        "name": "organization_id",
+        "name": "owner_user_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 10,
-        "name": "workspace_id",
+        "name": "organization_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 11,
-        "name": "organization_membership_id",
+        "name": "workspace_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 12,
-        "name": "workspace_membership_id",
+        "name": "organization_membership_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 13,
+        "name": "workspace_membership_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
         "name": "org_role_permissions: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "workspace_role_permissions: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "expires_at",
         "type_info": "Timestamptz"
       }
@@ -104,10 +109,11 @@
       true,
       true,
       true,
+      true,
       false,
       false,
       true
     ]
   },
-  "hash": "dc85687c7edfa2c8cbb25d0ddb91292c15885a5ca956ef499d06054bf165f310"
+  "hash": "eeb7df43abfb6432adf43482b44a5abf1cc75cab3d20f1d748f3c56defd24fa9"
 }

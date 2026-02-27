@@ -5,11 +5,8 @@ use axum::{
     http::StatusCode,
     response::Response,
 };
-use chrono::Utc;
-use commands::{Command, api_key::UpdateApiKeyLastUsedCommand};
 use common::state::AppState;
-use queries::{Query, api_key::GetApiKeyIdentifiersByHashQuery};
-use sha2::{Digest, Sha256};
+use wacht::gateway::{GatewayDenyReason, GatewayPrincipalType};
 
 /// Deployment context that gets injected into request extensions
 #[derive(Clone, Copy, Debug)]
@@ -35,71 +32,76 @@ pub async fn backend_deployment_middleware(
         }
     };
 
-    let mut hasher = Sha256::new();
-    hasher.update(api_key.as_bytes());
-    let key_hash = format!("{:x}", hasher.finalize());
+    let wacht_client = state
+        .wacht_client
+        .clone()
+        .expect("wacht_client must be configured for backend router");
 
-    let key_data = GetApiKeyIdentifiersByHashQuery::new(key_hash)
-        .execute(&state)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            )
-        })?
-        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Invalid API key".to_string()))?;
+    let method = req.method().as_str().to_string();
+    let resource = req.uri().path().to_string();
 
-    if !key_data.is_active {
-        return Err((StatusCode::UNAUTHORIZED, "API key is revoked".to_string()));
-    }
+    let mut authz_response = None;
+    let mut last_error = None;
 
-    if let Some(expires_at) = key_data.expires_at {
-        if expires_at < Utc::now() {
-            return Err((StatusCode::UNAUTHORIZED, "API key has expired".to_string()));
+    for principal_type in [
+        GatewayPrincipalType::ApiKey,
+        GatewayPrincipalType::OauthAccessToken,
+    ] {
+        match wacht_client
+            .gateway()
+            .verify_request_with_principal_type(principal_type, api_key, &method, &resource)
+            .await
+        {
+            Ok(response) => {
+                authz_response = Some(response);
+                break;
+            }
+            Err(e) => {
+                last_error = Some(e.to_string());
+            }
         }
     }
 
-    let key_id = key_data.id;
-    let state_clone = state.clone();
-    tokio::spawn(async move {
-        let _ = UpdateApiKeyLastUsedCommand { key_id }
-            .execute(&state_clone)
-            .await;
-    });
+    let response = authz_response.ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            format!(
+                "Authentication failed: {}",
+                last_error.unwrap_or_else(|| "invalid token".to_string())
+            ),
+        )
+    })?;
 
-    let deployment_id = key_data
-        .app_slug
-        .strip_prefix("aa_")
-        .and_then(|v| v.parse::<i64>().ok())
-        .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                "Invalid API key: app slug does not contain deployment id".to_string(),
-            )
-        })?;
-
-    req.extensions_mut()
-        .insert(DeploymentContext { deployment_id });
-    let mut effective_permissions: std::collections::HashSet<String> =
-        key_data.permissions.iter().cloned().collect();
-    for perm in key_data
-        .org_role_permissions
-        .iter()
-        .chain(key_data.workspace_role_permissions.iter())
-    {
-        effective_permissions.insert(perm.clone());
+    if !response.allowed {
+        return Err(
+            if response.reason == Some(GatewayDenyReason::PermissionDenied) {
+                (
+                    StatusCode::FORBIDDEN,
+                    "Permission denied for this resource".to_string(),
+                )
+            } else {
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    format!(
+                        "Rate limit exceeded. Retry after {} seconds",
+                        response.retry_after.unwrap_or(60)
+                    ),
+                )
+            },
+        );
     }
-    let mut effective_permissions: Vec<String> = effective_permissions.into_iter().collect();
-    effective_permissions.sort();
+
+    req.extensions_mut().insert(DeploymentContext {
+        deployment_id: response.deployment_id,
+    });
     req.extensions_mut().insert(ApiKeyContext {
-        key_id: key_data.id,
-        app_slug: key_data.app_slug,
-        permissions: effective_permissions,
-        organization_id: key_data.organization_id,
-        workspace_id: key_data.workspace_id,
-        organization_membership_id: key_data.organization_membership_id,
-        workspace_membership_id: key_data.workspace_membership_id,
+        key_id: response.key_id,
+        app_slug: response.app_slug,
+        permissions: response.permissions,
+        organization_id: response.organization_id,
+        workspace_id: response.workspace_id,
+        organization_membership_id: response.organization_membership_id,
+        workspace_membership_id: response.workspace_membership_id,
     });
 
     Ok(next.run(req).await)

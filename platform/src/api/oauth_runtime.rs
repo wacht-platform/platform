@@ -1630,17 +1630,18 @@ async fn enforce_assertion_replay_protection(
         .get_multiplexed_async_connection()
         .await
         .map_err(|_| AppError::Internal("Failed to connect redis".to_string()))?;
-    let inserted: bool = redis_conn
-        .set_nx(&redis_key, "1")
+    let inserted: Option<String> = redis::cmd("SET")
+        .arg(&redis_key)
+        .arg("1")
+        .arg("NX")
+        .arg("EX")
+        .arg(ttl)
+        .query_async(&mut redis_conn)
         .await
         .map_err(|_| AppError::Internal("Failed to store assertion jti".to_string()))?;
-    if !inserted {
+    if inserted.is_none() {
         return Err(AppError::Unauthorized);
     }
-    let _: bool = redis_conn
-        .expire(&redis_key, ttl)
-        .await
-        .map_err(|_| AppError::Internal("Failed to set assertion jti expiry".to_string()))?;
     Ok(())
 }
 
@@ -1853,8 +1854,21 @@ fn ensure_registration_access_token(
         .filter(|v| !v.is_empty())
         .ok_or(AppError::Unauthorized)?;
     let provided_hash = hash_value(token);
-    if provided_hash != expected_hash {
-        return Err(AppError::Unauthorized);
+    match expected_hash.len().cmp(&provided_hash.len()) {
+        Ordering::Equal => {
+            let mut diff: u8 = 0;
+            for (a, b) in expected_hash
+                .as_bytes()
+                .iter()
+                .zip(provided_hash.as_bytes().iter())
+            {
+                diff |= a ^ b;
+            }
+            if diff != 0 {
+                return Err(AppError::Unauthorized);
+            }
+        }
+        _ => return Err(AppError::Unauthorized),
     }
     Ok(())
 }

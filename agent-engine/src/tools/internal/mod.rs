@@ -52,7 +52,9 @@ impl ToolExecutor {
             | InternalToolType::GetCompletionSummary
             | InternalToolType::SwitchExecutionMode
             | InternalToolType::UpdateTaskBoard
-            | InternalToolType::ExitSupervisorMode => {
+            | InternalToolType::ExitSupervisorMode
+            | InternalToolType::NotifyParent
+            | InternalToolType::GetChildMessages => {
                 self.execute_swarm_tool(tool, config.tool_type.clone(), execution_params)
                     .await
             }

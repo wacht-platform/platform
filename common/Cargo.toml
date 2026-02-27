@@ -52,3 +52,4 @@ rust_decimal = "1.36"
 aes-gcm = "0.10"
 lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls", "smtp-transport", "builder"] }
 tokio = { version = "1", features = ["rt"] }
+wacht = { version = "0.1.0-beta.1" }

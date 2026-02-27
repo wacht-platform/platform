@@ -136,11 +136,7 @@ cargo test test_name
 
 ## License
 
-Licensed under PolyForm Shield License 1.0.0 - see [LICENSE.md](LICENSE.md) for details.
-
-Copyright © 2025 Intellinesia Labs (https://intellinesia.com/)
-
-**TL;DR**: You can use, modify, and distribute this for any purpose except building competing products. Read the full license for details.
+Licensed under GNU Affero General Public License v3.0 only (AGPL-3.0-only). See [LICENSE.md](LICENSE.md).
 
 ## 🔗 Related Projects
 

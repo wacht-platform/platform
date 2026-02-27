@@ -575,6 +575,7 @@ impl AgentExecutor {
             "spawn_context_execution"
                 | "get_child_status"
                 | "get_completion_summary"
+                | "get_child_messages"
                 | "spawn_control"
                 | "update_task_board"
                 | "exit_supervisor_mode"

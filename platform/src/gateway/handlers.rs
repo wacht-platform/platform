@@ -51,6 +51,7 @@ pub struct AuthzIdentity {
     pub deployment_id: String,
     pub app_slug: String,
     pub key_name: String,
+    pub owner_user_id: Option<String>,
     pub organization_id: Option<String>,
     pub workspace_id: Option<String>,
     pub organization_membership_id: Option<String>,
@@ -569,6 +570,7 @@ pub async fn check_authz(
                 deployment_id: key_data.deployment_id.to_string(),
                 app_slug: key_data.app_slug,
                 key_name: key_data.key_name,
+                owner_user_id: key_data.owner_user_id.map(|v| v.to_string()),
                 organization_id: key_data.organization_id.map(|v| v.to_string()),
                 workspace_id: key_data.workspace_id.map(|v| v.to_string()),
                 organization_membership_id: key_data
@@ -872,6 +874,7 @@ async fn check_authz_oauth_access_token(
                 deployment_id: token_data.deployment_id.to_string(),
                 app_slug: token_data.app_slug,
                 key_name: token_data.client_id,
+                owner_user_id: token_data.owner_user_id.map(|v| v.to_string()),
                 organization_id: None,
                 workspace_id: None,
                 organization_membership_id: None,

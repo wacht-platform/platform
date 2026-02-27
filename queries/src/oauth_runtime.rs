@@ -124,6 +124,7 @@ pub struct GatewayOAuthAccessTokenData {
     pub oauth_client_id: i64,
     pub client_id: String,
     pub app_slug: String,
+    pub owner_user_id: Option<i64>,
     pub scopes: Vec<String>,
     pub resource: Option<String>,
     pub expires_at: chrono::DateTime<chrono::Utc>,
@@ -512,6 +513,8 @@ impl Query for GetRuntimeRefreshTokenForExchangeQuery {
             WHERE deployment_id = $1
               AND oauth_client_id = $2
               AND token_hash = $3
+              AND revoked_at IS NULL
+              AND expires_at > NOW()
             "#,
         )
         .bind(self.deployment_id)
@@ -1156,6 +1159,7 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
                 tr.oauth_client_id,
                 tr.client_id,
                 tr.app_slug,
+                tr.user_id as "owner_user_id?",
                 tr.scopes as "scopes!: serde_json::Value",
                 tr.resource,
                 tr.expires_at,
@@ -1259,6 +1263,7 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
             oauth_client_id: r.oauth_client_id,
             client_id: r.client_id,
             app_slug: r.app_slug,
+            owner_user_id: r.owner_user_id,
             scopes: serde_json::from_value(r.scopes).unwrap_or_default(),
             resource: r.resource,
             expires_at: r.expires_at,

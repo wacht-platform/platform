@@ -22,6 +22,8 @@ pub struct StepDecisionContext {
     pub supervisor_task_board: Vec<Value>,
     #[serde(default)]
     pub is_child_context: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_context_id: Option<i64>,
     pub iteration_info: IterationInfo,
     #[serde(default)]
     pub teams_enabled: bool,

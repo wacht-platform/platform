@@ -10,6 +10,7 @@ pub struct ApiKeyGatewayData {
     pub deployment_id: i64,
     pub app_slug: String,
     pub key_name: String,
+    pub owner_user_id: Option<i64>,
     pub is_active: bool,
     pub expires_at: Option<DateTime<Utc>>,
     pub permissions: Vec<String>,
@@ -44,6 +45,7 @@ impl Query for GetApiKeyGatewayDataQuery {
                 k.deployment_id,
                 k.app_slug,
                 k.name as key_name,
+                k.owner_user_id,
                 k.is_active,
                 k.expires_at,
                 k.permissions as "permissions: serde_json::Value",
@@ -74,6 +76,7 @@ impl Query for GetApiKeyGatewayDataQuery {
             deployment_id: r.deployment_id,
             app_slug: r.app_slug,
             key_name: r.key_name,
+            owner_user_id: r.owner_user_id,
             is_active: r.is_active.unwrap_or(true),
             expires_at: r.expires_at,
             permissions: serde_json::from_value(

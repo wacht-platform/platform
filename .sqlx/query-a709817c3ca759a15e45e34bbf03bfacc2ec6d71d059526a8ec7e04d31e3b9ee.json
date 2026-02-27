@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, deployment_id, app_slug, name, key_prefix, key_suffix, key_hash,\n               permissions as \"permissions: serde_json::Value\",\n               metadata as \"metadata: serde_json::Value\",\n               rate_limit_scheme_slug,\n               organization_id, workspace_id, organization_membership_id, workspace_membership_id,\n               org_role_permissions as \"org_role_permissions: serde_json::Value\",\n               workspace_role_permissions as \"workspace_role_permissions: serde_json::Value\",\n               expires_at, last_used_at, is_active, created_at, updated_at,\n               revoked_at, revoked_reason\n               FROM api_keys WHERE app_slug = $1 AND deployment_id = $2 AND is_active = true ORDER BY created_at DESC",
+  "query": "\n            INSERT INTO api_keys (\n                id, deployment_id, app_slug, name, key_prefix, key_hash, key_suffix,\n                permissions, metadata, rate_limit_scheme_slug, expires_at,\n                owner_user_id,\n                organization_id, workspace_id, organization_membership_id, workspace_membership_id,\n                org_role_permissions, workspace_role_permissions\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)\n            RETURNING id, deployment_id, app_slug, name, key_prefix, key_suffix, key_hash,\n                      permissions as \"permissions: serde_json::Value\",\n                      metadata as \"metadata: serde_json::Value\",\n                      rate_limit_scheme_slug,\n                      owner_user_id,\n                      organization_id, workspace_id, organization_membership_id, workspace_membership_id,\n                      org_role_permissions as \"org_role_permissions: serde_json::Value\",\n                      workspace_role_permissions as \"workspace_role_permissions: serde_json::Value\",\n                      expires_at, last_used_at, is_active, created_at, updated_at,\n                      revoked_at, revoked_reason\n            ",
   "describe": {
     "columns": [
       {
@@ -55,74 +55,95 @@
       },
       {
         "ordinal": 10,
-        "name": "organization_id",
+        "name": "owner_user_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 11,
-        "name": "workspace_id",
+        "name": "organization_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 12,
-        "name": "organization_membership_id",
+        "name": "workspace_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 13,
-        "name": "workspace_membership_id",
+        "name": "organization_membership_id",
         "type_info": "Int8"
       },
       {
         "ordinal": 14,
+        "name": "workspace_membership_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 15,
         "name": "org_role_permissions: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "workspace_role_permissions: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "expires_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "last_used_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "is_active",
         "type_info": "Bool"
       },
       {
-        "ordinal": 19,
+        "ordinal": 20,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 20,
+        "ordinal": 21,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "revoked_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 22,
+        "ordinal": 23,
         "name": "revoked_reason",
         "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Int8"
+        "Int8",
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Jsonb",
+        "Jsonb",
+        "Varchar",
+        "Timestamptz",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Jsonb",
+        "Jsonb"
       ]
     },
     "nullable": [
@@ -133,6 +154,7 @@
       false,
       false,
       false,
+      true,
       true,
       true,
       true,
@@ -151,5 +173,5 @@
       true
     ]
   },
-  "hash": "55d1340d6da1553880f61b1b1d54b5c62f88099a0c28be53ca50bd17f4a0bf44"
+  "hash": "a709817c3ca759a15e45e34bbf03bfacc2ec6d71d059526a8ec7e04d31e3b9ee"
 }

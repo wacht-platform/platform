@@ -108,6 +108,8 @@ pub enum InternalToolType {
     SpawnContext,
     SpawnControl,
     GetCompletionSummary,
+    NotifyParent,
+    GetChildMessages,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
