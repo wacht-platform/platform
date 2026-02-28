@@ -41,7 +41,10 @@ pub async fn cleanup_rotating_token_and_session(
     ))
 }
 
-async fn cleanup_rotating_token(rotating_token_id: u64, app_state: &AppState) -> Result<(), String> {
+async fn cleanup_rotating_token(
+    rotating_token_id: u64,
+    app_state: &AppState,
+) -> Result<(), String> {
     let rotating_token_id =
         i64::try_from(rotating_token_id).map_err(|_| "rotating_token_id overflow".to_string())?;
 

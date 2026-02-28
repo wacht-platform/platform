@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::tinybird;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use clickhouse::{Client, Row};
 use dto::clickhouse::webhook::*;
 use pgvector::HalfVector;
@@ -72,22 +72,18 @@ pub struct AnalyticsStatsResult {
     pub previous_workspaces: u64,
     pub total_signups: u64,
     // Recent signups - Tuple from single subquery: (names, emails, methods, timestamps)
-    pub recent_signups: (
-        Vec<String>,
-        Vec<String>,
-        Vec<String>,
-        Vec<DateTime<Utc>>,
-    ),
+    pub recent_signups: (Vec<String>, Vec<String>, Vec<String>, Vec<String>),
     // Recent signins - Tuple from single subquery: (names, emails, methods, timestamps)
-    pub recent_signins: (
-        Vec<String>,
-        Vec<String>,
-        Vec<String>,
-        Vec<DateTime<Utc>>,
-    ),
+    pub recent_signins: (Vec<String>, Vec<String>, Vec<String>, Vec<String>),
 }
 
 impl AnalyticsStatsResult {
+    fn parse_clickhouse_timestamp(timestamp: &str) -> Option<DateTime<Utc>> {
+        NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d %H:%M:%S%.f")
+            .ok()
+            .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
+    }
+
     /// Convert to recent signups
     pub fn get_recent_signups(&self) -> Vec<RecentSignup> {
         self.recent_signups
@@ -96,11 +92,13 @@ impl AnalyticsStatsResult {
             .zip(&self.recent_signups.1)
             .zip(&self.recent_signups.2)
             .zip(&self.recent_signups.3)
-            .map(|(((name, email), method), date)| RecentSignup {
-                name: Some(name.clone()),
-                email: Some(email.clone()),
-                method: Some(method.clone()),
-                date: *date,
+            .filter_map(|(((name, email), method), date)| {
+                Self::parse_clickhouse_timestamp(date).map(|parsed_date| RecentSignup {
+                    name: Some(name.clone()),
+                    email: Some(email.clone()),
+                    method: Some(method.clone()),
+                    date: parsed_date,
+                })
             })
             .collect()
     }
@@ -113,11 +111,13 @@ impl AnalyticsStatsResult {
             .zip(&self.recent_signins.1)
             .zip(&self.recent_signins.2)
             .zip(&self.recent_signins.3)
-            .map(|(((name, email), method), date)| RecentSignup {
-                name: Some(name.clone()),
-                email: Some(email.clone()),
-                method: Some(method.clone()),
-                date: *date,
+            .filter_map(|(((name, email), method), date)| {
+                Self::parse_clickhouse_timestamp(date).map(|parsed_date| RecentSignup {
+                    name: Some(name.clone()),
+                    email: Some(email.clone()),
+                    method: Some(method.clone()),
+                    date: parsed_date,
+                })
             })
             .collect()
     }
@@ -420,13 +420,13 @@ impl ClickHouseService {
                 count(CASE WHEN event_type = 'organization_created' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as previous_orgs,
                 count(CASE WHEN event_type = 'workspace_created' AND timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000) THEN 1 END) as previous_workspaces,
                 count(DISTINCT CASE WHEN event_type = 'signup' AND user_id IS NOT NULL THEN user_id END) as total_signups,
-                (SELECT groupArray(user_name), groupArray(user_identifier), groupArray(auth_method), groupArray(timestamp)
+                (SELECT groupArray(user_name), groupArray(user_identifier), groupArray(auth_method), groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
                  FROM (SELECT user_name, user_identifier, auth_method, timestamp
                        FROM user_events
                        WHERE deployment_id = ? AND event_type = 'signup'
                        ORDER BY timestamp DESC
                        LIMIT 10)) as recent_signups,
-                (SELECT groupArray(user_name), groupArray(user_identifier), groupArray(auth_method), groupArray(timestamp)
+                (SELECT groupArray(user_name), groupArray(user_identifier), groupArray(auth_method), groupArray(formatDateTime(timestamp, '%Y-%m-%d %H:%i:%S.%f'))
                  FROM (SELECT user_name, user_identifier, auth_method, timestamp
                        FROM user_events
                        WHERE deployment_id = ? AND event_type = 'signin'

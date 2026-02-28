@@ -139,11 +139,10 @@ impl ToolExecutor {
     ) -> Result<Value, AppError> {
         use queries::Query;
 
-        let all_conversations =
-            queries::GetLLMConversationHistoryQuery::new(self.context_id())
-                .execute(self.app_state())
-                .await
-                .unwrap_or_default();
+        let all_conversations = queries::GetLLMConversationHistoryQuery::new(self.context_id())
+            .execute(self.app_state())
+            .await
+            .unwrap_or_default();
 
         let messages: Vec<Value> = all_conversations
             .iter()

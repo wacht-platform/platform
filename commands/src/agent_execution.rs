@@ -5,6 +5,8 @@ use models::{FileData, ImageData};
 
 use crate::{Command, WriteToAgentStorageCommand};
 
+const AGENT_EXECUTION_KV_BUCKET: &str = "agent_execution_kv";
+
 /// Command to upload images to S3 storage via the agent storage gateway
 /// Returns a vector of ImageData with relative URLs
 pub struct UploadImagesToS3Command {
@@ -156,6 +158,62 @@ impl Command for UploadFilesToS3Command {
 /// The worker will pick this up and execute the agent
 pub struct PublishAgentExecutionCommand {
     request: AgentExecutionRequest,
+}
+
+pub struct SignalAgentExecutionCancellationCommand {
+    context_id: i64,
+}
+
+impl SignalAgentExecutionCancellationCommand {
+    pub fn new(context_id: i64) -> Self {
+        Self { context_id }
+    }
+}
+
+impl Command for SignalAgentExecutionCancellationCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let kv = match app_state
+            .nats_jetstream
+            .get_key_value(AGENT_EXECUTION_KV_BUCKET)
+            .await
+        {
+            Ok(store) => store,
+            Err(_) => match app_state
+                .nats_jetstream
+                .create_key_value(async_nats::jetstream::kv::Config {
+                    bucket: AGENT_EXECUTION_KV_BUCKET.to_string(),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(store) => store,
+                Err(create_error) => app_state
+                    .nats_jetstream
+                    .get_key_value(AGENT_EXECUTION_KV_BUCKET)
+                    .await
+                    .map_err(|get_error| {
+                        AppError::Internal(format!(
+                            "Failed to initialize cancellation KV bucket: create error={}, get error={}",
+                            create_error, get_error
+                        ))
+                    })?,
+            },
+        };
+
+        let marker = format!("cancel:{}", app_state.sf.next_id()?);
+        kv.put(self.context_id.to_string(), marker.into())
+            .await
+            .map_err(|error| {
+                AppError::Internal(format!(
+                    "Failed to signal cancellation for context {}: {}",
+                    self.context_id, error
+                ))
+            })?;
+
+        Ok(())
+    }
 }
 
 impl PublishAgentExecutionCommand {

@@ -217,7 +217,8 @@ impl GeminiClient {
                                     }
 
                                     if accumulated_text.is_empty() {
-                                        let error = "No response content from Gemini API".to_string();
+                                        let error =
+                                            "No response content from Gemini API".to_string();
 
                                         attempt += 1;
                                         if attempt < MAX_RETRIES {

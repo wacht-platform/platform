@@ -450,11 +450,7 @@ async fn mark_context_failed_due_to_parent_abort(
 /// Marks a context as cancelled when the user cancels execution via KV watcher.
 /// Setting status to Failed triggers CancelDescendantExecutionsCommand internally,
 /// which BFS-walks all descendants and sends NATS stop signals.
-async fn mark_context_cancelled(
-    app_state: &AppState,
-    context_id: i64,
-    deployment_id: i64,
-) {
+async fn mark_context_cancelled(app_state: &AppState, context_id: i64, deployment_id: i64) {
     let _ = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
         .with_status(ExecutionContextStatus::Failed)
         .execute(app_state)

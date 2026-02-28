@@ -241,11 +241,11 @@ async fn sync_deployment(
         local projects_last = tonumber(redis.call('ZSCORE', last_synced_key, 'projects') or 0)
         local emails_last = tonumber(redis.call('ZSCORE', last_synced_key, 'emails') or 0)
         local webhooks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'webhooks') or 0)
-        local ai_input_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_input_cost') or 0)
-        local ai_output_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_output_cost') or 0)
+        local ai_input_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_input_cost_cents') or redis.call('ZSCORE', last_synced_key, 'ai_token_input_cost') or 0)
+        local ai_output_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_token_output_cost_cents') or redis.call('ZSCORE', last_synced_key, 'ai_token_output_cost') or 0)
         local ai_search_queries_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_search_queries') or 0)
-        local ai_search_query_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_search_query_cost') or 0)
-        local sms_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'sms_cost_cents') or 0)
+        local ai_search_query_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'ai_search_query_cost_cents') or redis.call('ZSCORE', last_synced_key, 'ai_search_query_cost') or 0)
+        local sms_cost_last = tonumber(redis.call('ZSCORE', last_synced_key, 'sms_cost') or redis.call('ZSCORE', last_synced_key, 'sms_cost_cents') or 0)
         local api_checks_last = tonumber(redis.call('ZSCORE', last_synced_key, 'api_checks') or 0)
 
         local mau_delta = mau_current - mau_last
@@ -332,7 +332,7 @@ async fn sync_deployment(
             "ai_token_input_cost_cents"
                 | "ai_token_output_cost_cents"
                 | "ai_search_query_cost_cents"
-                | "sms_cost_cents"
+                | "sms_cost"
         ) {
             let transaction_type = if metric_name.starts_with("ai") {
                 PulseTransactionType::UsageAi
@@ -354,6 +354,45 @@ async fn sync_deployment(
                         "[BILLING SYNC] Deducted {} Pulse cents for {} from deployment {}",
                         delta, metric_name, deployment_id
                     );
+
+                    let last_synced_key = format!("{}:last_synced", current_prefix);
+                    let (canonical_key, legacy_key): (&str, Option<&str>) = match *metric_name {
+                        "ai_token_input_cost_cents" => {
+                            ("ai_token_input_cost_cents", Some("ai_token_input_cost"))
+                        }
+                        "ai_token_output_cost_cents" => {
+                            ("ai_token_output_cost_cents", Some("ai_token_output_cost"))
+                        }
+                        "ai_search_query_cost_cents" => {
+                            ("ai_search_query_cost_cents", Some("ai_search_query_cost"))
+                        }
+                        "sms_cost" => ("sms_cost", Some("sms_cost_cents")),
+                        _ => ("", None),
+                    };
+
+                    if !canonical_key.is_empty() {
+                        let _: () = redis::cmd("ZADD")
+                            .arg(&last_synced_key)
+                            .arg(*current)
+                            .arg(canonical_key)
+                            .query_async(redis)
+                            .await?;
+
+                        if let Some(legacy_key) = legacy_key {
+                            let _: () = redis::cmd("ZADD")
+                                .arg(&last_synced_key)
+                                .arg(*current)
+                                .arg(legacy_key)
+                                .query_async(redis)
+                                .await?;
+                        }
+
+                        let _: () = redis::cmd("EXPIRE")
+                            .arg(&last_synced_key)
+                            .arg(5184000)
+                            .query_async(redis)
+                            .await?;
+                    }
                 }
                 Err(e) => {
                     error!(

@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use models::{
-    CountryRestrictions, CustomSigningKey, DarkModeSettings, DeploymentRestrictionsSignUpMode,
-    DeploymentPermissionCatalogEntry, FirstFactor, LightModeSettings, MultiSessionSupport,
+    CountryRestrictions, CustomSigningKey, DarkModeSettings, DeploymentPermissionCatalogEntry,
+    DeploymentRestrictionsSignUpMode, FirstFactor, LightModeSettings, MultiSessionSupport,
     OauthCredentials, SecondFactorPolicy, SocialConnectionProvider,
 };
 

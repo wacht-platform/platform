@@ -2,7 +2,9 @@ use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use axum::extract::{Json, Path, Query, State};
 
-use commands::agent_execution::{PublishAgentExecutionCommand, UploadFilesToS3Command};
+use commands::agent_execution::{
+    PublishAgentExecutionCommand, SignalAgentExecutionCancellationCommand, UploadFilesToS3Command,
+};
 use commands::{
     Command, CreateConversationCommand, CreateExecutionContextCommand,
     UpdateExecutionContextCommand,
@@ -206,9 +208,10 @@ pub async fn execute_agent_async(
 
     let context_id = params.context_id;
 
-    GetExecutionContextQuery::new(context_id, deployment_id)
+    let context = GetExecutionContextQuery::new(context_id, deployment_id)
         .execute(&app_state)
         .await?;
+    let has_running_execution = matches!(context.status, ExecutionContextStatus::Running);
 
     let ExecuteAgentRequestType {
         new_message,
@@ -295,6 +298,12 @@ pub async fn execute_agent_async(
             .execute(&app_state)
             .await?;
 
+            if has_running_execution {
+                SignalAgentExecutionCancellationCommand::new(context_id)
+                    .execute(&app_state)
+                    .await?;
+            }
+
             PublishAgentExecutionCommand::new_message(
                 deployment_id,
                 context_id,
@@ -338,6 +347,12 @@ pub async fn execute_agent_async(
             )
             .execute(&app_state)
             .await?;
+
+            if has_running_execution {
+                SignalAgentExecutionCancellationCommand::new(context_id)
+                    .execute(&app_state)
+                    .await?;
+            }
 
             PublishAgentExecutionCommand::user_input_response(
                 deployment_id,
@@ -390,6 +405,12 @@ pub async fn execute_agent_async(
         }
 
         (None, None, None, Some(_)) => {
+            if has_running_execution {
+                SignalAgentExecutionCancellationCommand::new(context_id)
+                    .execute(&app_state)
+                    .await?;
+            }
+
             UpdateExecutionContextCommand::new(context_id, deployment_id)
                 .with_status(ExecutionContextStatus::Failed)
                 .execute(&app_state)

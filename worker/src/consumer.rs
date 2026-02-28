@@ -8,8 +8,8 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 
 use crate::tasks::{
-    agent, analytics, api_key_role_permissions_sync, billing, document, email, embedding,
-    token, webhook, webhook_event, webhook_replay_batch,
+    agent, analytics, api_key_role_permissions_sync, billing, document, email, embedding, token,
+    webhook, webhook_event, webhook_replay_batch,
 };
 use dto::json::NatsTaskMessage;
 
