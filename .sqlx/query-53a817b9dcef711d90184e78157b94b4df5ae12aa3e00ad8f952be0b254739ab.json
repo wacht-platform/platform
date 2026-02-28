@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT deployment_id, user_id, app_slug, name, key_prefix, description, is_active,\n               rate_limit_scheme_slug, permissions as \"permissions: serde_json::Value\", resources as \"resources: serde_json::Value\",\n               created_at, updated_at, deleted_at\n               FROM api_auth_apps WHERE deployment_id = $1 AND app_slug = $2 AND deleted_at IS NULL",
+  "query": "SELECT deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, is_active,\n               rate_limit_scheme_slug, permissions as \"permissions: serde_json::Value\", resources as \"resources: serde_json::Value\",\n               created_at, updated_at, deleted_at\n               FROM api_auth_apps WHERE deployment_id = $1 AND app_slug = $2 AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -15,56 +15,66 @@
       },
       {
         "ordinal": 2,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "workspace_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
         "name": "app_slug",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 5,
         "name": "name",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "key_prefix",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "description",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "is_active",
         "type_info": "Bool"
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "rate_limit_scheme_slug",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "permissions: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 9,
+        "ordinal": 11,
         "name": "resources: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 14,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
@@ -77,6 +87,8 @@
     },
     "nullable": [
       false,
+      true,
+      true,
       true,
       false,
       false,
@@ -91,5 +103,5 @@
       true
     ]
   },
-  "hash": "a4c08d6658462517c107baa74aa6dbff2d454f445823be64240d631050e9d0e8"
+  "hash": "53a817b9dcef711d90184e78157b94b4df5ae12aa3e00ad8f952be0b254739ab"
 }

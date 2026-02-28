@@ -70,7 +70,7 @@ impl Command for CreateWebhookAppCommand {
         let app_slug = if let Some(slug) = self.app_slug {
             slug
         } else {
-            format!("slug_{}", app_state.sf.next_id().unwrap_or(0))
+            format!("slug_{}", app_state.sf.next_id()?)
         };
 
         let app = query_as!(

@@ -23,12 +23,15 @@ pub async fn backend_deployment_middleware(
         .headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer ").or(Some(v)));
+        .and_then(|v| v.strip_prefix("Bearer "));
 
     let api_key = match api_key {
         Some(key) => key,
         None => {
-            return Err((StatusCode::UNAUTHORIZED, "API key required".to_string()));
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "Authorization header must be Bearer token".to_string(),
+            ));
         }
     };
 

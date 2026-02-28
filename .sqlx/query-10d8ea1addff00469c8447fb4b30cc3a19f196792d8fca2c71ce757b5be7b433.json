@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id\n        FROM organization_memberships\n        WHERE user_id = $1\n          AND organization_id = $2\n          AND deleted_at IS NULL\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "10d8ea1addff00469c8447fb4b30cc3a19f196792d8fca2c71ce757b5be7b433"
+}

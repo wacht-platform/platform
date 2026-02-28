@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO api_auth_apps (deployment_id, user_id, app_slug, name, key_prefix, description, rate_limit_scheme_slug, permissions, resources)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            RETURNING deployment_id, user_id, app_slug, name, key_prefix, description, is_active,\n                      rate_limit_scheme_slug, permissions as \"permissions: serde_json::Value\", resources as \"resources: serde_json::Value\",\n                      created_at, updated_at, deleted_at\n            ",
+  "query": "\n            UPDATE api_auth_apps\n            SET\n                organization_id = $3,\n                workspace_id = $4,\n                name = COALESCE($5, name),\n                key_prefix = COALESCE($6, key_prefix),\n                description = COALESCE($7, description),\n                is_active = COALESCE($8, is_active),\n                rate_limit_scheme_slug = COALESCE($9, rate_limit_scheme_slug),\n                permissions = COALESCE($10, permissions),\n                resources = COALESCE($11, resources),\n                updated_at = NOW()\n            WHERE app_slug = $1 AND deployment_id = $2\n            RETURNING deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, is_active,\n                      rate_limit_scheme_slug, permissions as \"permissions: serde_json::Value\", resources as \"resources: serde_json::Value\",\n                      created_at, updated_at, deleted_at\n            ",
   "describe": {
     "columns": [
       {
@@ -15,68 +15,80 @@
       },
       {
         "ordinal": 2,
+        "name": "organization_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "workspace_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
         "name": "app_slug",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 5,
         "name": "name",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "key_prefix",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "description",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "is_active",
         "type_info": "Bool"
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "rate_limit_scheme_slug",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "permissions: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 9,
+        "ordinal": 11,
         "name": "resources: serde_json::Value",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 14,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Int8",
         "Int8",
-        "Varchar",
+        "Int8",
         "Varchar",
         "Varchar",
         "Text",
+        "Bool",
         "Varchar",
         "Jsonb",
         "Jsonb"
@@ -84,6 +96,8 @@
     },
     "nullable": [
       false,
+      true,
+      true,
       true,
       false,
       false,
@@ -98,5 +112,5 @@
       true
     ]
   },
-  "hash": "ebc02055bfe5fa2530ca6d5ec098c9bf6c1f50af82483f1e6728df97c6a41546"
+  "hash": "7a974019f97a29e38d863e33dbedf80a6342d10031ee13d25f99d9e0e4c00123"
 }

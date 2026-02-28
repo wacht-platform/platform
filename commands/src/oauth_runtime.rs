@@ -374,7 +374,8 @@ impl Command for SyncOAuthGrantLastUsedBatch {
             {
                 continue;
             }
-            let Some(used_at) = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(score as i64)
+            let Some(used_at) =
+                chrono::DateTime::<chrono::Utc>::from_timestamp_millis(score as i64)
             else {
                 continue;
             };

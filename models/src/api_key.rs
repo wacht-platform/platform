@@ -246,6 +246,16 @@ pub struct ApiAuthApp {
         serialize_with = "crate::utils::serde::serialize_option_i64_as_string"
     )]
     pub user_id: Option<i64>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string"
+    )]
+    pub organization_id: Option<i64>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::utils::serde::serialize_option_i64_as_string"
+    )]
+    pub workspace_id: Option<i64>,
     pub app_slug: String,
     pub name: String,
     pub description: Option<String>,

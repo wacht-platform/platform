@@ -22,8 +22,7 @@ use dto::json::api_key::{
     UpdateOAuthClientRequest, UpdateOAuthScopeRequest,
 };
 use queries::{
-    GetDeploymentWithSettingsQuery,
-    Query as QueryTrait,
+    GetDeploymentWithSettingsQuery, Query as QueryTrait,
     oauth::{
         GetOAuthAppBySlugQuery, GetOAuthClientByIdQuery, ListOAuthAppsByDeploymentQuery,
         ListOAuthClientsByOAuthAppQuery, ListOAuthGrantsByClientQuery,
@@ -408,7 +407,8 @@ pub(crate) async fn set_oauth_scope_mapping(
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
 
-    if category == "personal" && (organization_permission.is_some() || workspace_permission.is_some())
+    if category == "personal"
+        && (organization_permission.is_some() || workspace_permission.is_some())
     {
         return Err((
             StatusCode::BAD_REQUEST,

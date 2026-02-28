@@ -461,6 +461,16 @@ pub async fn create_webhook_endpoint(
     Json(request): Json<CreateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
     use commands::webhook_endpoint::EventSubscriptionData;
+    let rate_limit_config = request
+        .rate_limit_config
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid rate_limit_config: {}", e),
+            )
+        })?;
 
     // Convert API subscriptions to command subscriptions
     let subscriptions: Vec<EventSubscriptionData> = request
@@ -481,9 +491,7 @@ pub async fn create_webhook_endpoint(
         subscriptions,
         max_retries: request.max_retries,
         timeout_seconds: request.timeout_seconds,
-        rate_limit_config: request
-            .rate_limit_config
-            .map(|c| serde_json::to_value(c).unwrap()),
+        rate_limit_config,
     };
 
     let endpoint = command.execute(&app_state).await?;
@@ -512,6 +520,17 @@ pub async fn update_webhook_endpoint(
     Path(endpoint_id): Path<i64>,
     Json(request): Json<UpdateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
+    let rate_limit_config = request
+        .rate_limit_config
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid rate_limit_config: {}", e),
+            )
+        })?;
+
     let command = UpdateWebhookEndpointCommand {
         endpoint_id,
         deployment_id,
@@ -524,9 +543,7 @@ pub async fn update_webhook_endpoint(
         subscriptions: request
             .subscriptions
             .map(|subs| subs.into_iter().map(Into::into).collect()),
-        rate_limit_config: request
-            .rate_limit_config
-            .map(|c| serde_json::to_value(c).unwrap()),
+        rate_limit_config,
     };
 
     let endpoint = command.execute(&app_state).await?;
@@ -737,12 +754,24 @@ pub async fn replay_webhook_delivery(
     let effective_idempotency_key = if let Some(raw_key) = idempotency_key {
         let trimmed = raw_key.trim().to_string();
         if trimmed.is_empty() {
-            format!("auto_{}", app_state.sf.next_id().unwrap_or(0))
+            format!(
+                "auto_{}",
+                app_state
+                    .sf
+                    .next_id()
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            )
         } else {
             trimmed
         }
     } else {
-        format!("auto_{}", app_state.sf.next_id().unwrap_or(0))
+        format!(
+            "auto_{}",
+            app_state
+                .sf
+                .next_id()
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        )
     };
 
     let redis_key = replay_idempotency_key(&app_slug, &effective_idempotency_key);
@@ -1252,8 +1281,8 @@ pub async fn get_webhook_delivery_details(
             .await?
     };
 
-    // Parse payload from ClickHouse log (already stored as JSON string)
-    let payload_json = delivery
+    // Parse payload from storage JSON string to structured JSON response
+    let payload = delivery
         .payload
         .clone()
         .and_then(|p| serde_json::from_str(&p).ok());
@@ -1270,13 +1299,12 @@ pub async fn get_webhook_delivery_details(
         response_time_ms: delivery.response_time_ms,
         attempt_number: delivery.attempt_number,
         max_attempts: delivery.max_attempts,
-        payload: delivery.payload,
+        payload,
         response_body: delivery.response_body,
         response_headers: delivery
             .response_headers
             .and_then(|h| serde_json::from_str(&h).ok()),
         timestamp: delivery.timestamp,
-        payload_json,
     };
 
     Ok(delivery_details.into())
@@ -1318,29 +1346,33 @@ pub async fn reactivate_webhook_endpoint(
     .await?;
 
     // Log reactivation to Tinybird
-    let ch_log = WebhookLog {
-        deployment_id,
-        delivery_id: app_state.sf.next_id().unwrap() as i64,
-        app_slug: endpoint.app_slug.clone(),
-        endpoint_id: endpoint.id,
-        event_name: "endpoint.reactivated".to_string(),
-        status: "reactivated".to_string(),
-        http_status_code: None,
-        response_time_ms: None,
-        attempt_number: 0,
-        max_attempts: 1,
-        payload: None,
-        payload_size_bytes: 0,
-        response_body: None,
-        response_headers: None,
-        request_headers: None,
-        timestamp: chrono::Utc::now(),
-    };
+    if let Ok(log_id) = app_state.sf.next_id() {
+        let ch_log = WebhookLog {
+            deployment_id,
+            delivery_id: log_id as i64,
+            app_slug: endpoint.app_slug.clone(),
+            endpoint_id: endpoint.id,
+            event_name: "endpoint.reactivated".to_string(),
+            status: "reactivated".to_string(),
+            http_status_code: None,
+            response_time_ms: None,
+            attempt_number: 0,
+            max_attempts: 1,
+            payload: None,
+            payload_size_bytes: 0,
+            response_body: None,
+            response_headers: None,
+            request_headers: None,
+            timestamp: chrono::Utc::now(),
+        };
 
-    let _ = app_state
-        .clickhouse_service
-        .insert_webhook_log(&ch_log)
-        .await;
+        let _ = app_state
+            .clickhouse_service
+            .insert_webhook_log(&ch_log)
+            .await;
+    } else {
+        tracing::warn!("Failed to generate snowflake id for webhook reactivation log");
+    }
 
     Ok(ReactivateEndpointResponse {
         success: true,

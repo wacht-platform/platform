@@ -210,25 +210,77 @@ pub async fn execute_agent_async(
         .execute(&app_state)
         .await?;
 
-    // Note: We pass agent_name here, the worker will lookup the agent
+    let ExecuteAgentRequestType {
+        new_message,
+        user_input_response,
+        platform_function_result,
+        cancel,
+    } = request.execution_type;
+
+    let execution_variants = [
+        new_message.is_some(),
+        user_input_response.is_some(),
+        platform_function_result.is_some(),
+        cancel.is_some(),
+    ];
+
+    if execution_variants.iter().filter(|&&v| v).count() != 1 {
+        return Err(AppError::BadRequest(
+            "Exactly one execution_type variant must be provided".to_string(),
+        )
+        .into());
+    }
+
+    // Note: We pass agent_name through to the worker, which resolves the target agent.
     let agent_name = request.agent_name.clone();
 
-    match request.execution_type {
-        ExecuteAgentRequestType::NewMessage { message, files } => {
-            let model_files = match UploadFilesToS3Command::new(deployment_id, context_id, files)
-                .execute(&app_state)
-                .await
+    match (
+        new_message,
+        user_input_response,
+        platform_function_result,
+        cancel,
+    ) {
+        (Some(new_message), None, None, None) => {
+            if new_message.message.trim().is_empty()
+                && new_message
+                    .files
+                    .as_ref()
+                    .map_or(true, |files| files.is_empty())
             {
-                Ok(files) => files,
-                Err(e) => {
-                    error!("Failed to upload files: {}", e);
-                    None
-                }
-            };
+                return Err(AppError::BadRequest("Message or files required".to_string()).into());
+            }
+
+            let model_files =
+                match UploadFilesToS3Command::new(deployment_id, context_id, new_message.files)
+                    .execute(&app_state)
+                    .await
+                {
+                    Ok(files) => files,
+                    Err(e) => {
+                        error!("Failed to upload files: {}", e);
+                        None
+                    }
+                };
 
             let conversation_id = app_state.sf.next_id().map_err(|e| {
                 AppError::Internal(format!("Failed to generate conversation ID: {}", e))
             })? as i64;
+
+            let message = if new_message.message.trim().is_empty() {
+                let file_names = model_files
+                    .as_ref()
+                    .map(|files| {
+                        files
+                            .iter()
+                            .map(|f| f.filename.clone())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    })
+                    .unwrap_or_default();
+                format!("I've uploaded the following files: {}", file_names)
+            } else {
+                new_message.message
+            };
 
             CreateConversationCommand::new(
                 conversation_id,
@@ -247,7 +299,7 @@ pub async fn execute_agent_async(
                 deployment_id,
                 context_id,
                 None,
-                Some(agent_name.clone()),
+                agent_name.clone(),
                 conversation_id,
             )
             .execute(&app_state)
@@ -260,11 +312,16 @@ pub async fn execute_agent_async(
 
             Ok(ExecuteAgentResponse {
                 status: "queued".to_string(),
+                conversation_id: Some(conversation_id.to_string()),
             }
             .into())
         }
 
-        ExecuteAgentRequestType::UserInputResponse { message } => {
+        (None, Some(user_input_response), None, None) => {
+            if user_input_response.message.trim().is_empty() {
+                return Err(AppError::BadRequest("Message is required".to_string()).into());
+            }
+
             let conversation_id = app_state.sf.next_id().map_err(|e| {
                 AppError::Internal(format!("Failed to generate conversation ID: {}", e))
             })? as i64;
@@ -273,7 +330,7 @@ pub async fn execute_agent_async(
                 conversation_id,
                 context_id,
                 ConversationContent::UserMessage {
-                    message,
+                    message: user_input_response.message,
                     sender_name: None,
                     files: None,
                 },
@@ -286,7 +343,7 @@ pub async fn execute_agent_async(
                 deployment_id,
                 context_id,
                 None,
-                Some(agent_name.clone()),
+                agent_name.clone(),
                 conversation_id,
             )
             .execute(&app_state)
@@ -299,34 +356,54 @@ pub async fn execute_agent_async(
 
             Ok(ExecuteAgentResponse {
                 status: "queued".to_string(),
+                conversation_id: Some(conversation_id.to_string()),
             }
             .into())
         }
 
-        ExecuteAgentRequestType::PlatformFunctionResult {
-            execution_id,
-            result,
-        } => {
+        (None, None, Some(platform_function_result), None) => {
+            if platform_function_result.execution_id.trim().is_empty() {
+                return Err(AppError::BadRequest("Execution ID is required".to_string()).into());
+            }
+
             PublishAgentExecutionCommand::platform_function_result(
                 deployment_id,
                 context_id,
                 None,
-                Some(agent_name.clone()),
-                execution_id.clone(),
-                result,
+                agent_name.clone(),
+                platform_function_result.execution_id.clone(),
+                platform_function_result.result,
             )
             .execute(&app_state)
             .await?;
 
             info!(
                 "Published platform_function_result execution for context {} (execution_id: {})",
-                context_id, execution_id
+                context_id, platform_function_result.execution_id
             );
 
             Ok(ExecuteAgentResponse {
                 status: "queued".to_string(),
+                conversation_id: None,
             }
             .into())
         }
+
+        (None, None, None, Some(_)) => {
+            UpdateExecutionContextCommand::new(context_id, deployment_id)
+                .with_status(ExecutionContextStatus::Failed)
+                .execute(&app_state)
+                .await?;
+
+            Ok(ExecuteAgentResponse {
+                status: "cancelled".to_string(),
+                conversation_id: None,
+            }
+            .into())
+        }
+        _ => Err(AppError::BadRequest(
+            "Exactly one execution_type variant must be provided".to_string(),
+        )
+        .into()),
     }
 }

@@ -2,7 +2,7 @@ use crate::{application::response::ApiResult, middleware::RequireDeployment};
 use axum::{Json, extract::State};
 use commands::{Command, GenerateSessionTicketCommand};
 use common::state::AppState;
-use dto::json::session_ticket::CreateSessionTicketRequest;
+use dto::json::session_ticket::{AgentSessionIdentifierDto, CreateSessionTicketRequest};
 
 #[derive(Debug, serde::Serialize)]
 pub struct CreateSessionTicketResponse {
@@ -59,6 +59,18 @@ pub async fn create_session_ticket(
                     "agent_ids is required for agent_access tickets".to_string(),
                 )
                 .into());
+            }
+
+            if let Some(identifier) = request.agent_session_identifier {
+                let mode = match identifier {
+                    AgentSessionIdentifierDto::Static => {
+                        commands::session_ticket::AgentSessionIdentifier::Static
+                    }
+                    AgentSessionIdentifierDto::Signin => {
+                        commands::session_ticket::AgentSessionIdentifier::Signin
+                    }
+                };
+                command = command.with_agent_session_identifier(mode);
             }
         }
         commands::session_ticket::SessionTicketType::WebhookAppAccess => {

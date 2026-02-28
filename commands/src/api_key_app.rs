@@ -2,11 +2,153 @@ use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
 use models::api_key::ApiAuthApp;
-use sqlx::Row;
+
+async fn ensure_user_exists(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+) -> Result<(), AppError> {
+    let user = sqlx::query!(
+        r#"
+        SELECT id
+        FROM users
+        WHERE id = $1
+          AND deployment_id = $2
+          AND deleted_at IS NULL
+        LIMIT 1
+        "#,
+        user_id,
+        deployment_id
+    )
+    .fetch_optional(&app_state.db_pool)
+    .await?;
+
+    if user.is_none() {
+        return Err(AppError::Validation(
+            "user_id does not exist for this deployment".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+async fn ensure_organization_exists(
+    app_state: &AppState,
+    deployment_id: i64,
+    organization_id: i64,
+) -> Result<(), AppError> {
+    let organization = sqlx::query!(
+        r#"
+        SELECT id
+        FROM organizations
+        WHERE id = $1
+          AND deployment_id = $2
+          AND deleted_at IS NULL
+        LIMIT 1
+        "#,
+        organization_id,
+        deployment_id
+    )
+    .fetch_optional(&app_state.db_pool)
+    .await?;
+
+    if organization.is_none() {
+        return Err(AppError::Validation(
+            "organization_id does not exist for this deployment".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+async fn resolve_workspace_organization(
+    app_state: &AppState,
+    deployment_id: i64,
+    workspace_id: i64,
+) -> Result<i64, AppError> {
+    let workspace = sqlx::query!(
+        r#"
+        SELECT organization_id
+        FROM workspaces
+        WHERE id = $1
+          AND deployment_id = $2
+          AND deleted_at IS NULL
+        LIMIT 1
+        "#,
+        workspace_id,
+        deployment_id
+    )
+    .fetch_optional(&app_state.db_pool)
+    .await?;
+
+    workspace.map(|w| w.organization_id).ok_or_else(|| {
+        AppError::Validation("workspace_id does not exist for this deployment".to_string())
+    })
+}
+
+async fn ensure_user_in_organization(
+    app_state: &AppState,
+    user_id: i64,
+    organization_id: i64,
+) -> Result<(), AppError> {
+    let membership = sqlx::query!(
+        r#"
+        SELECT id
+        FROM organization_memberships
+        WHERE user_id = $1
+          AND organization_id = $2
+          AND deleted_at IS NULL
+        LIMIT 1
+        "#,
+        user_id,
+        organization_id
+    )
+    .fetch_optional(&app_state.db_pool)
+    .await?;
+
+    if membership.is_none() {
+        return Err(AppError::Validation(
+            "user_id is not a member of organization_id".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+async fn ensure_user_in_workspace(
+    app_state: &AppState,
+    user_id: i64,
+    workspace_id: i64,
+) -> Result<(), AppError> {
+    let membership = sqlx::query!(
+        r#"
+        SELECT id
+        FROM workspace_memberships
+        WHERE user_id = $1
+          AND workspace_id = $2
+          AND deleted_at IS NULL
+        LIMIT 1
+        "#,
+        user_id,
+        workspace_id
+    )
+    .fetch_optional(&app_state.db_pool)
+    .await?;
+
+    if membership.is_none() {
+        return Err(AppError::Validation(
+            "user_id is not a member of workspace_id".to_string(),
+        ));
+    }
+
+    Ok(())
+}
 
 pub struct CreateApiAuthAppCommand {
     pub deployment_id: i64,
     pub user_id: Option<i64>,
+    pub organization_id: Option<i64>,
+    pub workspace_id: Option<i64>,
     pub app_slug: String,
     pub name: String,
     pub key_prefix: String,
@@ -27,6 +169,8 @@ impl CreateApiAuthAppCommand {
         Self {
             deployment_id,
             user_id,
+            organization_id: None,
+            workspace_id: None,
             app_slug,
             name,
             key_prefix,
@@ -47,6 +191,12 @@ impl CreateApiAuthAppCommand {
         self
     }
 
+    pub fn with_scope(mut self, organization_id: Option<i64>, workspace_id: Option<i64>) -> Self {
+        self.organization_id = organization_id;
+        self.workspace_id = workspace_id;
+        self
+    }
+
     pub fn with_permissions(mut self, permissions: Vec<String>) -> Self {
         self.permissions = permissions;
         self
@@ -62,16 +212,51 @@ impl Command for CreateApiAuthAppCommand {
     type Output = ApiAuthApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let mut organization_id = self.organization_id;
+
+        if let Some(workspace_id) = self.workspace_id {
+            let workspace_org_id =
+                resolve_workspace_organization(app_state, self.deployment_id, workspace_id).await?;
+            if let Some(explicit_org_id) = organization_id {
+                if explicit_org_id != workspace_org_id {
+                    return Err(AppError::Validation(
+                        "workspace_id does not belong to organization_id".to_string(),
+                    ));
+                }
+            }
+            organization_id = Some(workspace_org_id);
+        }
+
+        if let Some(org_id) = organization_id {
+            ensure_organization_exists(app_state, self.deployment_id, org_id).await?;
+        }
+
+        if let Some(user_id) = self.user_id {
+            ensure_user_exists(app_state, self.deployment_id, user_id).await?;
+            if let Some(org_id) = organization_id {
+                ensure_user_in_organization(app_state, user_id, org_id).await?;
+            }
+            if let Some(workspace_id) = self.workspace_id {
+                ensure_user_in_workspace(app_state, user_id, workspace_id).await?;
+            }
+        } else if organization_id.is_some() || self.workspace_id.is_some() {
+            return Err(AppError::Validation(
+                "user_id is required when organization_id/workspace_id is provided".to_string(),
+            ));
+        }
+
         let rec = sqlx::query!(
             r#"
-            INSERT INTO api_auth_apps (deployment_id, user_id, app_slug, name, key_prefix, description, rate_limit_scheme_slug, permissions, resources)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            RETURNING deployment_id, user_id, app_slug, name, key_prefix, description, is_active,
+            INSERT INTO api_auth_apps (deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, rate_limit_scheme_slug, permissions, resources)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            RETURNING deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, is_active,
                       rate_limit_scheme_slug, permissions as "permissions: serde_json::Value", resources as "resources: serde_json::Value",
                       created_at, updated_at, deleted_at
             "#,
             self.deployment_id,
             self.user_id,
+            organization_id,
+            self.workspace_id,
             self.app_slug,
             self.name,
             self.key_prefix,
@@ -86,6 +271,8 @@ impl Command for CreateApiAuthAppCommand {
         Ok(ApiAuthApp {
             deployment_id: rec.deployment_id,
             user_id: rec.user_id,
+            organization_id: rec.organization_id,
+            workspace_id: rec.workspace_id,
             app_slug: rec.app_slug,
             name: rec.name,
             description: rec.description,
@@ -105,6 +292,8 @@ impl Command for CreateApiAuthAppCommand {
 pub struct UpdateApiAuthAppCommand {
     pub app_slug: String,
     pub deployment_id: i64,
+    pub organization_id: Option<i64>,
+    pub workspace_id: Option<i64>,
     pub name: Option<String>,
     pub key_prefix: Option<String>,
     pub description: Option<String>,
@@ -118,25 +307,75 @@ impl Command for UpdateApiAuthAppCommand {
     type Output = ApiAuthApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let current = sqlx::query!(
+            r#"
+            SELECT user_id, organization_id, workspace_id
+            FROM api_auth_apps
+            WHERE app_slug = $1 AND deployment_id = $2
+            "#,
+            self.app_slug,
+            self.deployment_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("API auth app not found".to_string()))?;
+
+        let mut next_organization_id = self.organization_id.or(current.organization_id);
+        let next_workspace_id = self.workspace_id.or(current.workspace_id);
+
+        if let Some(workspace_id) = next_workspace_id {
+            let workspace_org_id =
+                resolve_workspace_organization(app_state, self.deployment_id, workspace_id).await?;
+            if let Some(explicit_org_id) = next_organization_id {
+                if explicit_org_id != workspace_org_id {
+                    return Err(AppError::Validation(
+                        "workspace_id does not belong to organization_id".to_string(),
+                    ));
+                }
+            }
+            next_organization_id = Some(workspace_org_id);
+        }
+
+        if let Some(org_id) = next_organization_id {
+            ensure_organization_exists(app_state, self.deployment_id, org_id).await?;
+        }
+
+        if let Some(user_id) = current.user_id {
+            if let Some(org_id) = next_organization_id {
+                ensure_user_in_organization(app_state, user_id, org_id).await?;
+            }
+            if let Some(workspace_id) = next_workspace_id {
+                ensure_user_in_workspace(app_state, user_id, workspace_id).await?;
+            }
+        } else if next_organization_id.is_some() || next_workspace_id.is_some() {
+            return Err(AppError::Validation(
+                "organization_id/workspace_id cannot be set when app has no user_id".to_string(),
+            ));
+        }
+
         let rec = sqlx::query!(
             r#"
             UPDATE api_auth_apps
             SET
-                name = COALESCE($3, name),
-                key_prefix = COALESCE($4, key_prefix),
-                description = COALESCE($5, description),
-                is_active = COALESCE($6, is_active),
-                rate_limit_scheme_slug = COALESCE($7, rate_limit_scheme_slug),
-                permissions = COALESCE($8, permissions),
-                resources = COALESCE($9, resources),
+                organization_id = $3,
+                workspace_id = $4,
+                name = COALESCE($5, name),
+                key_prefix = COALESCE($6, key_prefix),
+                description = COALESCE($7, description),
+                is_active = COALESCE($8, is_active),
+                rate_limit_scheme_slug = COALESCE($9, rate_limit_scheme_slug),
+                permissions = COALESCE($10, permissions),
+                resources = COALESCE($11, resources),
                 updated_at = NOW()
             WHERE app_slug = $1 AND deployment_id = $2
-            RETURNING deployment_id, user_id, app_slug, name, key_prefix, description, is_active,
+            RETURNING deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, is_active,
                       rate_limit_scheme_slug, permissions as "permissions: serde_json::Value", resources as "resources: serde_json::Value",
                       created_at, updated_at, deleted_at
             "#,
             self.app_slug,
             self.deployment_id,
+            next_organization_id,
+            next_workspace_id,
             self.name,
             self.key_prefix,
             self.description,
@@ -166,6 +405,8 @@ impl Command for UpdateApiAuthAppCommand {
         Ok(ApiAuthApp {
             deployment_id: rec.deployment_id,
             user_id: rec.user_id,
+            organization_id: rec.organization_id,
+            workspace_id: rec.workspace_id,
             app_slug: rec.app_slug,
             name: rec.name,
             description: rec.description,
@@ -235,55 +476,45 @@ impl Command for EnsureUserApiAuthAppCommand {
             ));
         }
 
-        const MAX_CREATE_ATTEMPTS: usize = 5;
-        for attempt in 0..MAX_CREATE_ATTEMPTS {
-            let existing = sqlx::query(
-                r#"
-                SELECT app_slug
-                FROM api_auth_apps
-                WHERE deployment_id = $1
-                  AND user_id = $2
-                  AND deleted_at IS NULL
-                ORDER BY created_at DESC
-                LIMIT 1
-                "#,
-            )
-            .bind(self.deployment_id)
-            .bind(self.user_id)
-            .fetch_optional(&app_state.db_pool)
-            .await?;
+        let expected_slug = format!("oauth_{}", self.user_id);
 
-            if let Some(row) = existing {
-                let app_slug: String = row.get("app_slug");
-                return Ok(app_slug);
-            }
+        let existing = sqlx::query!(
+            r#"
+            SELECT app_slug as "app_slug!"
+            FROM api_auth_apps
+            WHERE deployment_id = $1
+              AND app_slug = $2
+              AND deleted_at IS NULL
+            LIMIT 1
+            "#,
+            self.deployment_id,
+            expected_slug
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
 
-            let app_slug = if attempt == 0 {
-                format!("oauth-user-{}", self.user_id)
-            } else {
-                format!("oauth-user-{}-{}", self.user_id, app_state.sf.next_id()?)
-            };
-
-            let create_result = CreateApiAuthAppCommand::new(
-                self.deployment_id,
-                Some(self.user_id),
-                app_slug,
-                format!("OAuth identity for user {}", self.user_id),
-                "sk_live".to_string(),
-            )
-            .execute(app_state)
-            .await;
-
-            match create_result {
-                Ok(created) => return Ok(created.app_slug),
-                Err(AppError::Database(sqlx::Error::Database(db_err)))
-                    if db_err.code().as_deref() == Some("23505") => {}
-                Err(err) => return Err(err),
-            }
+        if let Some(row) = existing {
+            return Ok(row.app_slug);
         }
 
-        Err(AppError::Internal(
-            "failed to provision api auth app for consenting user".to_string(),
-        ))
+        let create_result = CreateApiAuthAppCommand::new(
+            self.deployment_id,
+            Some(self.user_id),
+            expected_slug.clone(),
+            format!("OAuth identity for user {}", self.user_id),
+            "sk_live".to_string(),
+        )
+        .execute(app_state)
+        .await;
+
+        match create_result {
+            Ok(created) => Ok(created.app_slug),
+            Err(AppError::Database(sqlx::Error::Database(db_err)))
+                if db_err.code().as_deref() == Some("23505") =>
+            {
+                Ok(expected_slug)
+            }
+            Err(err) => Err(err),
+        }
     }
 }

@@ -467,7 +467,10 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             .bind(ui_settings.use_initials_for_organization_profile_image)
             .bind(&ui_settings.default_user_profile_image_url)
             .bind(&ui_settings.default_organization_profile_image_url)
-            .bind(format!("https://{}.accounts.trywacht.xyz/waitlist", hostname))
+            .bind(format!(
+                "https://{}.accounts.trywacht.xyz/waitlist",
+                hostname
+            ))
             .bind("")
             .bind(chrono::Utc::now())
             .bind(chrono::Utc::now())

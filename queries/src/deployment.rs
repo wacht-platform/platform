@@ -183,6 +183,8 @@ impl Query for GetDeploymentWithSettingsQuery {
                 deployment_b2b_settings.default_org_member_role_id as "b2b_settings_default_org_member_role_id?",
                 deployment_b2b_settings.workspace_permissions as "b2b_settings_workspace_permissions?",
                 deployment_b2b_settings.organization_permissions as "b2b_settings_organization_permissions?",
+                deployment_b2b_settings.workspace_permission_catalog as "b2b_settings_workspace_permission_catalog?",
+                deployment_b2b_settings.organization_permission_catalog as "b2b_settings_organization_permission_catalog?",
                 deployment_b2b_settings.ip_allowlist_per_workspace_enabled as "b2b_settings_ip_allowlist_per_workspace_enabled?",
                 deployment_b2b_settings.enforce_mfa_per_org_enabled as "b2b_settings_enforce_mfa_per_org_enabled?",
                 deployment_b2b_settings.enforce_mfa_per_workspace_enabled as "b2b_settings_enforce_mfa_per_workspace_enabled?",
@@ -409,6 +411,16 @@ impl Query for GetDeploymentWithSettingsQuery {
                     max_orgs_per_user: row.b2b_settings_max_orgs_per_user.unwrap(),
                     workspace_permissions: row.b2b_settings_workspace_permissions,
                     organization_permissions: row.b2b_settings_organization_permissions,
+                    workspace_permission_catalog: row
+                        .b2b_settings_workspace_permission_catalog
+                        .map(serde_json::from_value)
+                        .transpose()
+                        .unwrap(),
+                    organization_permission_catalog: row
+                        .b2b_settings_organization_permission_catalog
+                        .map(serde_json::from_value)
+                        .transpose()
+                        .unwrap(),
                     ip_allowlist_per_workspace_enabled: row
                         .b2b_settings_ip_allowlist_per_workspace_enabled
                         .unwrap(),

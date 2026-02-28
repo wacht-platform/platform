@@ -5,39 +5,35 @@ use axum::{
     response::IntoResponse,
     response::Redirect,
 };
-use core::cmp::Ordering;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::Utc;
+use commands::api_key_app::EnsureUserApiAuthAppCommand;
 use commands::{
     Command, ConsumeOAuthAuthorizationCode, CreateOAuthClientCommand,
-    CreateOAuthClientGrantCommand, DeactivateOAuthClient, IssueOAuthAuthorizationCode,
-    EnqueueOAuthGrantLastUsed, IssueOAuthTokenPair, RevokeOAuthAccessTokenByHash,
-    RevokeOAuthTokensByGrant,
-    RevokeOAuthRefreshTokenByHash,
-    RevokeOAuthRefreshTokenById, RevokeOAuthRefreshTokenFamily,
-    SetOAuthClientRegistrationAccessToken,
+    CreateOAuthClientGrantCommand, DeactivateOAuthClient, EnqueueOAuthGrantLastUsed,
+    IssueOAuthAuthorizationCode, IssueOAuthTokenPair, RevokeOAuthAccessTokenByHash,
+    RevokeOAuthRefreshTokenByHash, RevokeOAuthRefreshTokenById, RevokeOAuthRefreshTokenFamily,
+    RevokeOAuthTokensByGrant, SetOAuthClientRegistrationAccessToken,
     SetOAuthRefreshTokenReplacement, UpdateOAuthClientSettings,
 };
-use commands::api_key_app::EnsureUserApiAuthAppCommand;
 use common::{error::AppError, state::AppState, utils::jwt::verify_token};
+use core::cmp::Ordering;
 use dto::json::oauth_runtime::{
     OAuthAuthorizeInitiatedResponse, OAuthAuthorizeRequest, OAuthConsentSubmitRequest,
     OAuthDynamicClientRegistrationRequest, OAuthDynamicClientRegistrationResponse,
     OAuthDynamicClientUpdateRequest, OAuthErrorResponse, OAuthIntrospectRequest,
-    OAuthIntrospectResponse,
-    OAuthJwksResponse, OAuthRegisterPathParams, OAuthRevokeRequest, OAuthRevokeResponse,
-    OAuthServerMetadataResponse, OAuthTokenRequest, OAuthTokenResponse,
+    OAuthIntrospectResponse, OAuthJwksResponse, OAuthRegisterPathParams, OAuthRevokeRequest,
+    OAuthRevokeResponse, OAuthServerMetadataResponse, OAuthTokenRequest, OAuthTokenResponse,
 };
 use hmac::{Hmac, Mac};
 use models::api_key::OAuthScopeDefinition;
 use queries::Query as QueryTrait;
 use queries::{
-    GetRuntimeApiAuthUserIdByAppSlugQuery,
-    GetRuntimeAuthorizationCodeForExchangeQuery, GetRuntimeDeploymentHostsByIdQuery,
-    GetRuntimeIntrospectionDataQuery,
-    GetRuntimeOAuthClientByClientIdQuery,
-    GetRuntimeRefreshTokenForExchangeQuery, ResolveOAuthAppByFqdnQuery,
-    ResolveRuntimeOAuthGrantQuery, ValidateRuntimeResourceEntitlementQuery,
+    GetRuntimeApiAuthUserIdByAppSlugQuery, GetRuntimeAuthorizationCodeForExchangeQuery,
+    GetRuntimeDeploymentHostsByIdQuery, GetRuntimeIntrospectionDataQuery,
+    GetRuntimeOAuthClientByClientIdQuery, GetRuntimeRefreshTokenForExchangeQuery,
+    ResolveOAuthAppByFqdnQuery, ResolveRuntimeOAuthGrantQuery,
+    ValidateRuntimeResourceEntitlementQuery,
 };
 use rand::RngCore;
 use redis::AsyncCommands;
@@ -459,9 +455,18 @@ fn validate_consent_submit_secret(headers: &HeaderMap) -> Result<(), ApiErrorRes
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
         .filter(|v| !v.is_empty())
-        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Missing OAuth consent submit secret"))?;
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                "Missing OAuth consent submit secret",
+            )
+        })?;
     if provided != expected {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid OAuth consent submit secret").into());
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "Invalid OAuth consent submit secret",
+        )
+            .into());
     }
     Ok(())
 }
@@ -524,10 +529,9 @@ pub async fn oauth_consent_submit(
                 }
                 provided_resource.to_string()
             };
-            let app_slug =
-                EnsureUserApiAuthAppCommand::new(claims.deployment_id, request.user_id)
-                    .execute(&app_state)
-                    .await?;
+            let app_slug = EnsureUserApiAuthAppCommand::new(claims.deployment_id, request.user_id)
+                .execute(&app_state)
+                .await?;
 
             let oauth_grant_id = ensure_or_create_grant_coverage(
                 &app_state,
@@ -580,7 +584,9 @@ pub async fn oauth_token(
     headers: HeaderMap,
     Form(request): Form<OAuthTokenRequest>,
 ) -> axum::response::Response {
-    oauth_token_impl(app_state, headers, request).await.into_response()
+    oauth_token_impl(app_state, headers, request)
+        .await
+        .into_response()
 }
 
 async fn oauth_token_impl(
@@ -591,13 +597,7 @@ async fn oauth_token_impl(
     let oauth_app = resolve_oauth_app_from_host(&app_state, &headers)
         .await
         .map_err(map_token_app_error)?;
-    let client = authenticate_client(
-        &app_state,
-        &headers,
-        &request,
-        oauth_app.id,
-        "/oauth/token",
-    )
+    let client = authenticate_client(&app_state, &headers, &request, oauth_app.id, "/oauth/token")
         .await
         .map_err(map_token_auth_error)?;
     if !client.grant_types.iter().any(|g| g == &request.grant_type) {
@@ -615,7 +615,13 @@ async fn oauth_token_impl(
                 .as_deref()
                 .map(str::trim)
                 .filter(|v| !v.is_empty())
-                .ok_or_else(|| oauth_token_error(StatusCode::BAD_REQUEST, "invalid_request", Some("code is required")))?;
+                .ok_or_else(|| {
+                    oauth_token_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_request",
+                        Some("code is required"),
+                    )
+                })?;
             let redirect_uri = request
                 .redirect_uri
                 .as_deref()
@@ -646,7 +652,11 @@ async fn oauth_token_impl(
                 ));
             }
             if client.client_auth_method == "none" && code_row.pkce_code_challenge.is_none() {
-                return Err(oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None));
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    None,
+                ));
             }
             verify_pkce(
                 code_row.pkce_code_challenge.as_deref(),
@@ -667,7 +677,11 @@ async fn oauth_token_impl(
             .await
             .map_err(map_token_app_error)?;
             if grant_result != GrantValidationResult::Active {
-                return Err(oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None));
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    None,
+                ));
             }
             let consumed = ConsumeOAuthAuthorizationCode {
                 code_id: code_row.id,
@@ -685,7 +699,11 @@ async fn oauth_token_impl(
                     .execute(&app_state)
                     .await;
                 }
-                return Err(oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None));
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    None,
+                ));
             }
             let oauth_grant_id = code_row
                 .oauth_grant_id
@@ -702,7 +720,12 @@ async fn oauth_token_impl(
             .execute(&app_state)
             .await
             .map_err(map_token_app_error)?;
-            enqueue_grant_last_used(app_state.clone(), oauth_app.deployment_id, client.id, oauth_grant_id);
+            enqueue_grant_last_used(
+                app_state.clone(),
+                oauth_app.deployment_id,
+                client.id,
+                oauth_grant_id,
+            );
 
             Ok(Json(OAuthTokenResponse {
                 access_token: tokens.access_token,
@@ -736,7 +759,8 @@ async fn oauth_token_impl(
             .map_err(map_token_app_error)?
             .ok_or_else(|| oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None))?;
             let now = Utc::now();
-            let is_active_refresh = refresh_row.revoked_at.is_none() && refresh_row.expires_at > now;
+            let is_active_refresh =
+                refresh_row.revoked_at.is_none() && refresh_row.expires_at > now;
             if !is_active_refresh {
                 if refresh_row.replaced_by_token_id.is_some() {
                     let revoked_count = RevokeOAuthRefreshTokenFamily {
@@ -756,7 +780,11 @@ async fn oauth_token_impl(
                         "Refresh token replay detected; refresh token family revoked",
                     );
                 }
-                return Err(oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None));
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    None,
+                ));
             }
 
             let grant_result = validate_grant_and_entitlement(
@@ -772,7 +800,11 @@ async fn oauth_token_impl(
             .await
             .map_err(map_token_app_error)?;
             if grant_result != GrantValidationResult::Active {
-                return Err(oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None));
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    None,
+                ));
             }
             let requested_scopes = parse_scope_string(request.scope.as_deref());
             let effective_scopes = if requested_scopes.is_empty() {
@@ -800,17 +832,19 @@ async fn oauth_token_impl(
             .await
             .map_err(map_token_app_error)?;
             if !revoked {
-                return Err(oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None));
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    None,
+                ));
             }
 
             let tokens = IssueOAuthTokenPair {
                 deployment_id: oauth_app.deployment_id,
                 oauth_client_id: client.id,
-                oauth_grant_id: refresh_row
-                    .oauth_grant_id
-                    .ok_or_else(|| {
-                        oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None)
-                    })?,
+                oauth_grant_id: refresh_row.oauth_grant_id.ok_or_else(|| {
+                    oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None)
+                })?,
                 app_slug: refresh_row.app_slug,
                 scopes: effective_scopes.clone(),
                 resource: refresh_row.resource.clone(),
@@ -827,7 +861,12 @@ async fn oauth_token_impl(
             .await
             .map_err(map_token_app_error)?;
             if let Some(grant_id) = refresh_row.oauth_grant_id {
-                enqueue_grant_last_used(app_state.clone(), oauth_app.deployment_id, client.id, grant_id);
+                enqueue_grant_last_used(
+                    app_state.clone(),
+                    oauth_app.deployment_id,
+                    client.id,
+                    grant_id,
+                );
             }
 
             Ok(Json(OAuthTokenResponse {
@@ -889,35 +928,33 @@ type OAuthEndpointError = (StatusCode, HeaderMap, Json<OAuthErrorResponse>);
 
 fn map_token_app_error(err: AppError) -> OAuthEndpointError {
     match err {
-        AppError::Unauthorized => oauth_token_error(StatusCode::UNAUTHORIZED, "invalid_client", None),
-        AppError::BadRequest(message) | AppError::Validation(message) => oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            Some(&message),
-        ),
+        AppError::Unauthorized => {
+            oauth_token_error(StatusCode::UNAUTHORIZED, "invalid_client", None)
+        }
+        AppError::BadRequest(message) | AppError::Validation(message) => {
+            oauth_token_error(StatusCode::BAD_REQUEST, "invalid_request", Some(&message))
+        }
         _ => oauth_token_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", None),
     }
 }
 
 fn map_token_auth_error(err: AppError) -> OAuthEndpointError {
     match err {
-        AppError::Unauthorized => oauth_token_error(StatusCode::UNAUTHORIZED, "invalid_client", None),
-        AppError::BadRequest(message) | AppError::Validation(message) => oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            Some(&message),
-        ),
+        AppError::Unauthorized => {
+            oauth_token_error(StatusCode::UNAUTHORIZED, "invalid_client", None)
+        }
+        AppError::BadRequest(message) | AppError::Validation(message) => {
+            oauth_token_error(StatusCode::BAD_REQUEST, "invalid_request", Some(&message))
+        }
         _ => oauth_token_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error", None),
     }
 }
 
 fn map_token_pkce_error(err: AppError) -> OAuthEndpointError {
     match err {
-        AppError::BadRequest(message) | AppError::Validation(message) => oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            Some(&message),
-        ),
+        AppError::BadRequest(message) | AppError::Validation(message) => {
+            oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", Some(&message))
+        }
         _ => oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None),
     }
 }
@@ -1047,9 +1084,9 @@ async fn oauth_introspect_impl(
     let token_hash = hash_value(token_value);
     let token =
         GetRuntimeIntrospectionDataQuery::new(oauth_app.deployment_id, client.id, token_hash)
-        .execute(&app_state)
-        .await
-        .map_err(map_token_app_error)?;
+            .execute(&app_state)
+            .await
+            .map_err(map_token_app_error)?;
 
     let Some(token) = token else {
         return Ok(Json(OAuthIntrospectResponse {
@@ -1075,7 +1112,12 @@ async fn oauth_introspect_impl(
         }));
     }
     if let Some(grant_id) = token.oauth_grant_id {
-        enqueue_grant_last_used(app_state.clone(), oauth_app.deployment_id, client.id, grant_id);
+        enqueue_grant_last_used(
+            app_state.clone(),
+            oauth_app.deployment_id,
+            client.id,
+            grant_id,
+        );
     }
 
     Ok(Json(OAuthIntrospectResponse {
@@ -1335,7 +1377,8 @@ async fn authenticate_client(
     if !client.is_active {
         return Err(AppError::Unauthorized);
     }
-    let expected_assertion_audience = format!("{}{}", resolve_issuer_from_host(headers)?, endpoint_path);
+    let expected_assertion_audience =
+        format!("{}{}", resolve_issuer_from_host(headers)?, endpoint_path);
 
     match client.client_auth_method.as_str() {
         "none" => Ok(client),
@@ -1376,11 +1419,7 @@ async fn authenticate_client(
                 .decrypt(secret_encrypted)
                 .map_err(|_| AppError::Unauthorized)?;
             let claims = verify_token::<ClientAssertionClaims>(assertion, alg, &secret)?.claims;
-            validate_assertion_claims(
-                &claims,
-                &client.client_id,
-                &expected_assertion_audience,
-            )?;
+            validate_assertion_claims(&claims, &client.client_id, &expected_assertion_audience)?;
             enforce_assertion_replay_protection(app_state, &client.client_id, &claims).await?;
             Ok(client)
         }
@@ -1403,15 +1442,14 @@ async fn authenticate_client(
                 .token_endpoint_auth_signing_alg
                 .as_deref()
                 .unwrap_or("RS256");
-            if !matches!(alg, "RS256" | "RS384" | "RS512" | "ES256" | "ES384" | "ES512") {
+            if !matches!(
+                alg,
+                "RS256" | "RS384" | "RS512" | "ES256" | "ES384" | "ES512"
+            ) {
                 return Err(AppError::Unauthorized);
             }
             let claims = verify_token::<ClientAssertionClaims>(assertion, alg, &public_key)?.claims;
-            validate_assertion_claims(
-                &claims,
-                &client.client_id,
-                &expected_assertion_audience,
-            )?;
+            validate_assertion_claims(&claims, &client.client_id, &expected_assertion_audience)?;
             enforce_assertion_replay_protection(app_state, &client.client_id, &claims).await?;
             Ok(client)
         }
@@ -1456,7 +1494,8 @@ async fn validate_grant_and_entitlement(
         return Ok(GrantValidationResult::Active);
     };
 
-    let required_permissions = required_permissions_for_resource(scope_definitions, &scopes, &resource);
+    let required_permissions =
+        required_permissions_for_resource(scope_definitions, &scopes, &resource);
 
     let user_id = GetRuntimeApiAuthUserIdByAppSlugQuery::new(deployment_id, app_slug)
         .execute(app_state)
@@ -1529,7 +1568,11 @@ fn validate_secret_hash(stored_hash: Option<&str>, provided_secret: &str) -> Res
     match stored_hash.len().cmp(&provided_hash.len()) {
         Ordering::Equal => {
             let mut diff: u8 = 0;
-            for (a, b) in stored_hash.as_bytes().iter().zip(provided_hash.as_bytes().iter()) {
+            for (a, b) in stored_hash
+                .as_bytes()
+                .iter()
+                .zip(provided_hash.as_bytes().iter())
+            {
                 diff |= a ^ b;
             }
             if diff == 0 {

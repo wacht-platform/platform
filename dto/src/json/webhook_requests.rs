@@ -400,9 +400,8 @@ pub struct WebhookDeliveryDetails {
     pub response_time_ms: Option<i32>,
     pub attempt_number: i32,
     pub max_attempts: i32,
-    pub payload: Option<String>,
+    pub payload: Option<Value>,
     pub response_body: Option<String>,
     pub response_headers: Option<Value>,
     pub timestamp: DateTime<Utc>,
-    pub payload_json: Option<Value>,
 }

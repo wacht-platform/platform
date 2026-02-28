@@ -16,12 +16,20 @@ pub enum SessionTicketType {
     ApiAuthAccess,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSessionIdentifier {
+    Static,
+    Signin,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionTicketPayload {
     pub ticket_type: SessionTicketType,
     pub deployment_id: String,
     pub user_id: Option<String>,
     pub agent_ids: Option<Vec<String>>,
+    pub agent_session_identifier: Option<AgentSessionIdentifier>,
     pub webhook_app_slug: Option<String>,
     pub api_auth_app_slug: Option<String>,
     pub context_group: Option<String>,
@@ -33,6 +41,7 @@ pub struct GenerateSessionTicketCommand {
     pub ticket_type: SessionTicketType,
     pub user_id: Option<String>,
     pub agent_ids: Option<Vec<String>>,
+    pub agent_session_identifier: Option<AgentSessionIdentifier>,
     pub webhook_app_slug: Option<String>,
     pub api_auth_app_slug: Option<String>,
     pub context_group: Option<String>,
@@ -46,6 +55,7 @@ impl GenerateSessionTicketCommand {
             ticket_type,
             user_id: None,
             agent_ids: None,
+            agent_session_identifier: None,
             webhook_app_slug: None,
             api_auth_app_slug: None,
             context_group: None,
@@ -60,6 +70,11 @@ impl GenerateSessionTicketCommand {
 
     pub fn with_agent_ids(mut self, agent_ids: Vec<String>) -> Self {
         self.agent_ids = Some(agent_ids);
+        self
+    }
+
+    pub fn with_agent_session_identifier(mut self, identifier: AgentSessionIdentifier) -> Self {
+        self.agent_session_identifier = Some(identifier);
         self
     }
 
@@ -109,6 +124,17 @@ impl crate::Command for GenerateSessionTicketCommand {
                         "agent_ids is required for agent_access tickets".to_string(),
                     ));
                 }
+
+                if self.context_group.is_none()
+                    && matches!(
+                        self.agent_session_identifier,
+                        None | Some(AgentSessionIdentifier::Static)
+                    )
+                {
+                    return Err(AppError::BadRequest(
+                        "context_group is required for static agent_access tickets".to_string(),
+                    ));
+                }
             }
             SessionTicketType::WebhookAppAccess => {
                 if self.webhook_app_slug.is_none()
@@ -147,6 +173,7 @@ impl crate::Command for GenerateSessionTicketCommand {
             deployment_id: self.deployment_id.to_string(),
             user_id: self.user_id,
             agent_ids: self.agent_ids,
+            agent_session_identifier: self.agent_session_identifier,
             webhook_app_slug: self.webhook_app_slug,
             api_auth_app_slug: self.api_auth_app_slug,
             context_group: self.context_group,

@@ -19,7 +19,9 @@ use queries::{
     Query as QueryTrait,
     api_key::{
         GetApiAuthAppBySlugQuery, GetApiAuthAppsQuery, GetApiKeysByAppQuery,
-        GetOrganizationMembershipPermissionsQuery, GetWorkspaceMembershipPermissionsQuery,
+        GetOrganizationMembershipIdByUserAndOrganizationQuery,
+        GetOrganizationMembershipPermissionsQuery, GetWorkspaceMembershipIdByUserAndWorkspaceQuery,
+        GetWorkspaceMembershipPermissionsQuery,
     },
     api_key_audit::{
         GetApiAuditAnalyticsQuery as GetApiAuditAnalyticsDataQuery,
@@ -80,6 +82,10 @@ pub async fn create_api_auth_app(
         request.app_slug,
         request.name,
         request.key_prefix,
+    );
+    command = command.with_scope(
+        request.organization_id.map(|v| v.get()),
+        request.workspace_id.map(|v| v.get()),
     );
 
     if let Some(description) = request.description {
@@ -193,6 +199,8 @@ pub async fn update_api_auth_app(
     let command = UpdateApiAuthAppCommand {
         app_slug: app.app_slug.clone(),
         deployment_id,
+        organization_id: request.organization_id.map(|v| v.get()),
+        workspace_id: request.workspace_id.map(|v| v.get()),
         name: request.name,
         key_prefix: request.key_prefix,
         description: request.description,
@@ -286,8 +294,28 @@ pub async fn create_api_key(
         command = command.with_permissions(permissions);
     }
 
-    let org_membership_id = request.organization_membership_id.map(|v| v.get());
-    let workspace_membership_id = request.workspace_membership_id.map(|v| v.get());
+    let mut org_membership_id: Option<i64> = None;
+    let mut workspace_membership_id: Option<i64> = None;
+
+    if let (Some(user_id), Some(organization_id)) = (app.user_id, app.organization_id) {
+        org_membership_id =
+            GetOrganizationMembershipIdByUserAndOrganizationQuery::new(user_id, organization_id)
+                .execute(&app_state)
+                .await?;
+        if org_membership_id.is_none() {
+            return Err((StatusCode::BAD_REQUEST, "user is not a member of the org").into());
+        }
+    }
+
+    if let (Some(user_id), Some(workspace_id)) = (app.user_id, app.workspace_id) {
+        workspace_membership_id =
+            GetWorkspaceMembershipIdByUserAndWorkspaceQuery::new(user_id, workspace_id)
+                .execute(&app_state)
+                .await?;
+        if workspace_membership_id.is_none() {
+            return Err((StatusCode::BAD_REQUEST, "user is not a member of the org").into());
+        }
+    }
 
     let mut organization_id: Option<i64> = None;
     let mut workspace_id: Option<i64> = None;

@@ -60,6 +60,8 @@ pub struct ListRateLimitSchemesResponse<T> {
 #[derive(Debug, Deserialize)]
 pub struct CreateApiAuthAppRequest {
     pub user_id: Option<FlexibleI64>,
+    pub organization_id: Option<FlexibleI64>,
+    pub workspace_id: Option<FlexibleI64>,
     pub app_slug: String,
     pub name: String,
     pub key_prefix: String,
@@ -71,6 +73,8 @@ pub struct CreateApiAuthAppRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateApiAuthAppRequest {
+    pub organization_id: Option<FlexibleI64>,
+    pub workspace_id: Option<FlexibleI64>,
     pub name: Option<String>,
     pub key_prefix: Option<String>,
     pub description: Option<String>,
@@ -221,8 +225,6 @@ pub struct ApiAuditTimeseriesResponse {
 pub struct CreateApiKeyRequest {
     pub name: String,
     pub permissions: Option<Vec<String>>,
-    pub organization_membership_id: Option<FlexibleI64>,
-    pub workspace_membership_id: Option<FlexibleI64>,
     pub metadata: Option<Value>,
     pub expires_at: Option<DateTime<Utc>>,
 }

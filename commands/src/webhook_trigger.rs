@@ -9,7 +9,7 @@ use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
 use dto::json::nats::NatsTaskMessage;
 
-use super::{Command, GetSubscribedEndpointsCommand};
+use super::{Command, GetSubscribedEndpointsCommand, webhook_subscription::evaluate_filter};
 
 #[derive(Debug, Deserialize)]
 pub struct TriggerWebhookEventCommand {
@@ -77,9 +77,16 @@ impl Command for TriggerWebhookEventCommand {
         .await?;
 
         let mut delivery_ids = Vec::new();
-        let filtered_count = 0;
+        let mut filtered_count = 0usize;
 
         for endpoint in endpoints {
+            if let Some(filter_rules) = &endpoint.filter_rules {
+                if !evaluate_filter(filter_rules, &self.payload) {
+                    filtered_count += 1;
+                    continue;
+                }
+            }
+
             // Generate Snowflake ID for delivery (used as webhook_id)
             let delivery_id = app_state.sf.next_id()? as i64;
             let webhook_id = format!("msg_{}", delivery_id);
@@ -246,17 +253,15 @@ impl Command for ReplayWebhookDeliveryCommand {
         .fetch_optional(&app_state.db_pool)
         .await?;
 
-        if endpoint.is_none() {
+        let endpoint = endpoint.ok_or_else(|| {
             tracing::warn!(
                 "Endpoint {} no longer exists - it may have been deleted",
                 endpoint_id
             );
-            return Err(AppError::NotFound(
-                "Cannot replay delivery: The webhook endpoint has been deleted. Please create a new endpoint and trigger the event again.".to_string()
-            ));
-        }
-
-        let endpoint = endpoint.unwrap();
+            AppError::NotFound(
+                "Cannot replay delivery: The webhook endpoint has been deleted. Please create a new endpoint and trigger the event again.".to_string(),
+            )
+        })?;
 
         // Verify deployment_id matches
         if endpoint.deployment_id != self.deployment_id {

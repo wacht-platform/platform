@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM rotating_tokens\n            WHERE id = $1\n              AND next_token_id IS NOT NULL\n              AND valid_until < NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c53ead0d8353087f8dabaebcf09cf1106f327dcd331849e860b8f3b137751a6"
+}

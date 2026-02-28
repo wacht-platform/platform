@@ -13,7 +13,11 @@ use models::api_key::{OAuthScopeDefinition, RateLimit, RateLimitMode};
 use queries::{GetGatewayOAuthAccessTokenByHashQuery, Query as QueryTrait};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::{HashMap, HashSet}, net::SocketAddr, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    net::SocketAddr,
+    time::Instant,
+};
 
 use super::validation::{check_permissions, is_valid_api_key_format};
 
@@ -228,16 +232,12 @@ pub async fn check_authz(
         None => return error_response(StatusCode::BAD_REQUEST, request_id, "invalid_resource"),
     };
 
-    if matches!(payload.principal.principal_type, PrincipalType::OauthAccessToken) {
+    if matches!(
+        payload.principal.principal_type,
+        PrincipalType::OauthAccessToken
+    ) {
         return check_authz_oauth_access_token(
-            addr,
-            headers,
-            state,
-            payload,
-            request_id,
-            resource,
-            method,
-            start_time,
+            addr, headers, state, payload, request_id, resource, method, start_time,
         )
         .await;
     }
@@ -602,7 +602,11 @@ async fn check_authz_oauth_access_token(
     let app_state = &state.app_state;
     let token = payload.principal.value.trim();
     if token.is_empty() {
-        return error_response(StatusCode::UNAUTHORIZED, request_id, "access_token_required");
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            request_id,
+            "access_token_required",
+        );
     }
 
     let mut hasher = Sha256::new();
@@ -616,7 +620,11 @@ async fn check_authz_oauth_access_token(
         Ok(Some(data)) => data,
         Ok(None) => return error_response(StatusCode::UNAUTHORIZED, request_id, "invalid_token"),
         Err(_) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, request_id, "database_error");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                request_id,
+                "database_error",
+            );
         }
     };
 
@@ -870,7 +878,7 @@ async fn check_authz_oauth_access_token(
             reason,
             blocked_rule: blocked_by_rule,
             identity: Some(AuthzIdentity {
-                key_id: "oauth_access_token".to_string(),
+                key_id: token_data.oauth_client_id.to_string(),
                 deployment_id: token_data.deployment_id.to_string(),
                 app_slug: token_data.app_slug,
                 key_name: token_data.client_id,

@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 use super::{DeploymentOrganizationRole, DeploymentWorkspaceRole};
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct DeploymentPermissionCatalogEntry {
+    pub key: String,
+    #[serde(default)]
+    pub archived: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DeploymentB2bSettings {
     #[serde(with = "crate::utils::serde::i64_as_string")]
     pub id: i64,
@@ -32,6 +39,8 @@ pub struct DeploymentB2bSettings {
     pub default_org_member_role_id: i64,
     pub workspace_permissions: Option<Vec<String>>,
     pub organization_permissions: Option<Vec<String>>,
+    pub workspace_permission_catalog: Option<Vec<DeploymentPermissionCatalogEntry>>,
+    pub organization_permission_catalog: Option<Vec<DeploymentPermissionCatalogEntry>>,
     pub ip_allowlist_per_workspace_enabled: bool,
     pub enforce_mfa_per_org_enabled: bool,
     pub enforce_mfa_per_workspace_enabled: bool,
@@ -66,6 +75,8 @@ impl Default for DeploymentB2bSettings {
             max_orgs_per_user: 0,
             workspace_permissions: None,
             organization_permissions: None,
+            workspace_permission_catalog: None,
+            organization_permission_catalog: None,
             ip_allowlist_per_workspace_enabled: false,
             enforce_mfa_per_org_enabled: false,
             enforce_mfa_per_workspace_enabled: false,

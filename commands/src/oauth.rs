@@ -6,8 +6,6 @@ use models::api_key::{JwksDocument, OAuthScopeDefinition};
 use queries::oauth::{OAuthAppData, OAuthClientData};
 use sha2::{Digest, Sha256};
 
-const REQUIRED_OAUTH_SCOPES: [&str; 2] = ["read", "write"];
-
 pub struct CreateOAuthAppCommand {
     pub deployment_id: i64,
     pub slug: String,
@@ -167,10 +165,8 @@ impl Command for UpdateOAuthAppCommand {
             serde_json::from_value(current.supported_scopes).unwrap_or_default();
         let supported_scopes = self.supported_scopes.unwrap_or(current_supported_scopes);
         let normalized_supported_scopes = normalize_supported_scopes(supported_scopes);
-        let scope_definitions = normalize_scope_definitions(
-            &normalized_supported_scopes,
-            self.scope_definitions,
-        )?;
+        let scope_definitions =
+            normalize_scope_definitions(&normalized_supported_scopes, self.scope_definitions)?;
 
         let row = sqlx::query!(
             r#"
@@ -236,12 +232,6 @@ fn normalize_supported_scopes(scopes: Vec<String>) -> Vec<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-
-    for required in REQUIRED_OAUTH_SCOPES {
-        if !out.iter().any(|s| s == required) {
-            out.push(required.to_string());
-        }
-    }
 
     out.sort();
     out.dedup();
@@ -611,7 +601,10 @@ fn validate_optional_url(field_name: &str, value: Option<&str>) -> Result<(), Ap
     Ok(())
 }
 
-fn validate_redirect_uris(redirect_uris: &[String], grant_types: &[String]) -> Result<(), AppError> {
+fn validate_redirect_uris(
+    redirect_uris: &[String],
+    grant_types: &[String],
+) -> Result<(), AppError> {
     let requires_redirect = grant_types.iter().any(|g| g == "authorization_code");
     if requires_redirect && redirect_uris.is_empty() {
         return Err(AppError::Validation(
@@ -626,8 +619,9 @@ fn validate_redirect_uris(redirect_uris: &[String], grant_types: &[String]) -> R
                 "redirect_uris must not contain empty values".to_string(),
             ));
         }
-        let parsed = url::Url::parse(trimmed)
-            .map_err(|_| AppError::Validation("redirect_uris must contain valid URLs".to_string()))?;
+        let parsed = url::Url::parse(trimmed).map_err(|_| {
+            AppError::Validation("redirect_uris must contain valid URLs".to_string())
+        })?;
         if parsed.scheme() != "http" && parsed.scheme() != "https" {
             return Err(AppError::Validation(
                 "redirect_uris must use http or https".to_string(),
@@ -1147,14 +1141,12 @@ impl Command for UpdateOAuthClientSettings {
             .client_auth_method
             .clone()
             .unwrap_or_else(|| current.client_auth_method.clone());
-        let effective_grant_types = self
-            .grant_types
-            .clone()
-            .unwrap_or_else(|| serde_json::from_value(current.grant_types.clone()).unwrap_or_default());
-        let effective_redirect_uris = self
-            .redirect_uris
-            .clone()
-            .unwrap_or_else(|| serde_json::from_value(current.redirect_uris.clone()).unwrap_or_default());
+        let effective_grant_types = self.grant_types.clone().unwrap_or_else(|| {
+            serde_json::from_value(current.grant_types.clone()).unwrap_or_default()
+        });
+        let effective_redirect_uris = self.redirect_uris.clone().unwrap_or_else(|| {
+            serde_json::from_value(current.redirect_uris.clone()).unwrap_or_default()
+        });
         let allowed = [
             "client_secret_basic",
             "client_secret_post",

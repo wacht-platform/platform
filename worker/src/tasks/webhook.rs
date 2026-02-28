@@ -481,31 +481,35 @@ async fn handle_delivery_failure(
                     .execute(app_state)
                     .await?;
 
-                let ch_delivery = WebhookLog {
-                    deployment_id,
-                    delivery_id: app_state.sf.next_id().unwrap() as i64,
-                    app_slug: app_slug.clone(),
-                    endpoint_id,
-                    event_name: "endpoint.deactivated".to_string(),
-                    status: "deactivated".to_string(),
-                    http_status_code: None,
-                    response_time_ms: None,
-                    attempt_number: 0,
-                    max_attempts: 0,
-                    payload: None,
-                    payload_size_bytes: 0,
-                    response_body: None,
-                    response_headers: None,
-                    request_headers: None,
-                    timestamp: Utc::now(),
-                };
+                if let Ok(log_id) = app_state.sf.next_id() {
+                    let ch_delivery = WebhookLog {
+                        deployment_id,
+                        delivery_id: log_id as i64,
+                        app_slug: app_slug.clone(),
+                        endpoint_id,
+                        event_name: "endpoint.deactivated".to_string(),
+                        status: "deactivated".to_string(),
+                        http_status_code: None,
+                        response_time_ms: None,
+                        attempt_number: 0,
+                        max_attempts: 0,
+                        payload: None,
+                        payload_size_bytes: 0,
+                        response_body: None,
+                        response_headers: None,
+                        request_headers: None,
+                        timestamp: Utc::now(),
+                    };
 
-                if let Err(e) = app_state
-                    .clickhouse_service
-                    .insert_webhook_log(&ch_delivery)
-                    .await
-                {
-                    warn!("Failed to log endpoint deactivation to ClickHouse: {}", e);
+                    if let Err(e) = app_state
+                        .clickhouse_service
+                        .insert_webhook_log(&ch_delivery)
+                        .await
+                    {
+                        warn!("Failed to log endpoint deactivation to ClickHouse: {}", e);
+                    }
+                } else {
+                    warn!("Failed to generate snowflake id for endpoint deactivation log");
                 }
 
                 info!(

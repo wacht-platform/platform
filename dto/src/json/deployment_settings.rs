@@ -3,8 +3,8 @@ use serde_json::Value;
 
 use models::{
     CountryRestrictions, CustomSigningKey, DarkModeSettings, DeploymentRestrictionsSignUpMode,
-    FirstFactor, LightModeSettings, MultiSessionSupport, OauthCredentials, SecondFactorPolicy,
-    SocialConnectionProvider,
+    DeploymentPermissionCatalogEntry, FirstFactor, LightModeSettings, MultiSessionSupport,
+    OauthCredentials, SecondFactorPolicy, SocialConnectionProvider,
 };
 
 #[derive(Serialize, Deserialize, Default, Debug)]
@@ -217,6 +217,8 @@ pub struct DeploymentB2bSettingsUpdates {
     pub workspaces_per_org_count: Option<i32>,
     pub workspace_permissions: Option<Vec<String>>,
     pub organization_permissions: Option<Vec<String>>,
+    pub workspace_permission_catalog: Option<Vec<DeploymentPermissionCatalogEntry>>,
+    pub organization_permission_catalog: Option<Vec<DeploymentPermissionCatalogEntry>>,
     pub ip_allowlist_per_workspace_enabled: Option<bool>,
     pub enforce_mfa_per_org_enabled: Option<bool>,
     pub enforce_mfa_per_workspace_enabled: Option<bool>,

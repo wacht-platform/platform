@@ -44,7 +44,7 @@ impl Query for GetApiAuthAppsQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let recs = sqlx::query!(
-            r#"SELECT deployment_id, user_id, app_slug, name, key_prefix, description, is_active,
+            r#"SELECT deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, is_active,
                rate_limit_scheme_slug, permissions as "permissions: serde_json::Value", resources as "resources: serde_json::Value",
                created_at, updated_at, deleted_at
                FROM api_auth_apps
@@ -66,6 +66,8 @@ impl Query for GetApiAuthAppsQuery {
             apps.push(ApiAuthApp {
                 deployment_id: rec.deployment_id,
                 user_id: rec.user_id,
+                organization_id: rec.organization_id,
+                workspace_id: rec.workspace_id,
                 app_slug: rec.app_slug,
                 name: rec.name,
                 description: rec.description,
@@ -104,7 +106,7 @@ impl Query for GetApiAuthAppBySlugQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
-            r#"SELECT deployment_id, user_id, app_slug, name, key_prefix, description, is_active,
+            r#"SELECT deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, is_active,
                rate_limit_scheme_slug, permissions as "permissions: serde_json::Value", resources as "resources: serde_json::Value",
                created_at, updated_at, deleted_at
                FROM api_auth_apps WHERE deployment_id = $1 AND app_slug = $2 AND deleted_at IS NULL"#,
@@ -121,6 +123,8 @@ impl Query for GetApiAuthAppBySlugQuery {
             Ok(Some(ApiAuthApp {
                 deployment_id: rec.deployment_id,
                 user_id: rec.user_id,
+                organization_id: rec.organization_id,
+                workspace_id: rec.workspace_id,
                 app_slug: rec.app_slug,
                 name: rec.name,
                 description: rec.description,
@@ -159,7 +163,7 @@ impl Query for GetApiAuthAppByNameQuery {
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rec = sqlx::query!(
-            r#"SELECT deployment_id, user_id, app_slug, name, key_prefix, description, is_active,
+            r#"SELECT deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, is_active,
                rate_limit_scheme_slug, permissions as "permissions: serde_json::Value", resources as "resources: serde_json::Value",
                created_at, updated_at, deleted_at
                FROM api_auth_apps WHERE deployment_id = $1 AND name = $2 AND deleted_at IS NULL"#,
@@ -176,6 +180,8 @@ impl Query for GetApiAuthAppByNameQuery {
             Ok(Some(ApiAuthApp {
                 deployment_id: rec.deployment_id,
                 user_id: rec.user_id,
+                organization_id: rec.organization_id,
+                workspace_id: rec.workspace_id,
                 app_slug: rec.app_slug,
                 name: rec.name,
                 description: rec.description,
@@ -668,6 +674,80 @@ impl Query for GetWorkspaceMembershipPermissionsQuery {
             )
             .unwrap_or_default(),
         }))
+    }
+}
+
+pub struct GetOrganizationMembershipIdByUserAndOrganizationQuery {
+    pub user_id: i64,
+    pub organization_id: i64,
+}
+
+impl GetOrganizationMembershipIdByUserAndOrganizationQuery {
+    pub fn new(user_id: i64, organization_id: i64) -> Self {
+        Self {
+            user_id,
+            organization_id,
+        }
+    }
+}
+
+impl Query for GetOrganizationMembershipIdByUserAndOrganizationQuery {
+    type Output = Option<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let rec = sqlx::query!(
+            r#"
+            SELECT id
+            FROM organization_memberships
+            WHERE user_id = $1
+              AND organization_id = $2
+              AND deleted_at IS NULL
+            LIMIT 1
+            "#,
+            self.user_id,
+            self.organization_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
+        Ok(rec.map(|r| r.id))
+    }
+}
+
+pub struct GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
+    pub user_id: i64,
+    pub workspace_id: i64,
+}
+
+impl GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
+    pub fn new(user_id: i64, workspace_id: i64) -> Self {
+        Self {
+            user_id,
+            workspace_id,
+        }
+    }
+}
+
+impl Query for GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
+    type Output = Option<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let rec = sqlx::query!(
+            r#"
+            SELECT id
+            FROM workspace_memberships
+            WHERE user_id = $1
+              AND workspace_id = $2
+              AND deleted_at IS NULL
+            LIMIT 1
+            "#,
+            self.user_id,
+            self.workspace_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?;
+
+        Ok(rec.map(|r| r.id))
     }
 }
 

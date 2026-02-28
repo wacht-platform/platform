@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT organization_id\n        FROM workspaces\n        WHERE id = $1\n          AND deployment_id = $2\n          AND deleted_at IS NULL\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "organization_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d461a2523b66763b3b44349c36782e35c5966b3795490ad2234e5a30c74b2357"
+}
