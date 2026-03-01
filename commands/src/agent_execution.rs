@@ -7,6 +7,28 @@ use crate::{Command, WriteToAgentStorageCommand};
 
 const AGENT_EXECUTION_KV_BUCKET: &str = "agent_execution_kv";
 
+fn sanitize_upload_filename(name: &str) -> Result<String, AppError> {
+    let mut out = String::with_capacity(name.len());
+    let mut prev_underscore = false;
+
+    for ch in name.chars() {
+        let is_allowed = ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-';
+        if is_allowed {
+            out.push(ch);
+            prev_underscore = false;
+        } else if !prev_underscore {
+            out.push('_');
+            prev_underscore = true;
+        }
+    }
+
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        return Err(AppError::BadRequest("Invalid filename".to_string()));
+    }
+    Ok(trimmed.to_string())
+}
+
 /// Command to upload images to S3 storage via the agent storage gateway
 /// Returns a vector of ImageData with relative URLs
 pub struct UploadImagesToS3Command {
@@ -119,11 +141,7 @@ impl Command for UploadFilesToS3Command {
                 .map_err(|e| AppError::BadRequest(format!("Invalid base64 file data: {}", e)))?;
 
             // Generate unique filename with original name preserved
-            let safe_filename = file
-                .filename
-                .replace('/', "_")
-                .replace('\\', "_")
-                .replace("..", "_");
+            let safe_filename = sanitize_upload_filename(&file.filename)?;
             let filename = format!("{}_{}", app_state.sf.next_id()?, safe_filename);
 
             // S3 key: {deployment}/persistent/{context}/uploads/{filename}

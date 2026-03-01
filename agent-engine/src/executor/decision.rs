@@ -821,6 +821,8 @@ impl AgentExecutor {
             .await?;
         }
 
+        self.consume_one_time_task_outputs();
+
         Ok(decision)
     }
 
@@ -974,6 +976,10 @@ impl AgentExecutor {
     }
 
     fn sanitize_task_result_output(&self, tool_name: &str, result: &Value) -> Value {
+        if tool_name == "read_image" {
+            return result.clone();
+        }
+
         if tool_name != "spawn_context_execution" {
             return serde_json::json!({
                 "tool": tool_name,
@@ -986,6 +992,27 @@ impl AgentExecutor {
             "status": result.get("status").cloned().unwrap_or(serde_json::Value::Null),
             "result": result.get("result").cloned().unwrap_or(serde_json::Value::Null),
         })
+    }
+
+    fn consume_one_time_task_outputs(&mut self) {
+        for task_result in self.task_results.values_mut() {
+            let Some(output) = task_result.output.as_mut() else {
+                continue;
+            };
+            let Some(obj) = output.as_object_mut() else {
+                continue;
+            };
+            if obj.get("one_time").and_then(|v| v.as_bool()) != Some(true) {
+                continue;
+            }
+
+            obj.remove("base64");
+            obj.insert("one_time_consumed".to_string(), serde_json::json!(true));
+            obj.insert(
+                "note".to_string(),
+                serde_json::json!("One-time payload consumed. Call read_image again if needed."),
+            );
+        }
     }
 
     fn update_supervisor_board_from_tool_result(&mut self, tool_name: &str, result: &Value) {

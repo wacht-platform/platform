@@ -125,8 +125,6 @@ impl AgentExecutor {
                     }
                 }
                 ConversationMessageType::UserMessage => {
-                    let is_latest_message = i == self.conversations.len() - 1;
-
                     if let ConversationContent::UserMessage {
                         message,
                         files,
@@ -138,31 +136,16 @@ impl AgentExecutor {
                         })];
 
                         if let Some(file_list) = files {
-                            // Only inline images as base64 for the latest message
-                            // For older messages or non-image files, just reference them as file paths
                             for file in file_list {
-                                let is_image = file.mime_type.starts_with("image/");
-
-                                if is_latest_message && is_image {
-                                    use base64::{engine::general_purpose::STANDARD, Engine};
-
-                                    if let Ok(bytes) =
-                                        self.filesystem.read_file_bytes(&file.url).await
-                                    {
-                                        let base64_data = STANDARD.encode(&bytes);
-                                        parts.push(json!({
-                                            "inline_data": {
-                                                "mime_type": file.mime_type,
-                                                "data": base64_data
-                                            }
-                                        }));
-                                    }
+                                let attachment_note = if file.mime_type.starts_with("image/") {
+                                    format!(
+                                        "[Attached image: {} ({}). Call read_image(path=\"{}\") to analyze it.]",
+                                        file.filename, file.url, file.url
+                                    )
                                 } else {
-                                    // For history or non-image files, just note the attachment
-                                    parts.push(json!({
-                                        "text": format!("\n[Attached: {} ({})]", file.filename, file.url)
-                                    }));
-                                }
+                                    format!("\n[Attached: {} ({})]", file.filename, file.url)
+                                };
+                                parts.push(json!({ "text": attachment_note }));
                             }
                         }
 
@@ -172,7 +155,6 @@ impl AgentExecutor {
                             "timestamp": conv.created_at,
                             "type": conv.message_type,
                         });
-                        // Include sender name if available (for Teams DMs, etc.)
                         if let Some(ref name) = sender_name {
                             entry["sender"] = json!(name);
                         }
@@ -208,6 +190,48 @@ impl AgentExecutor {
                     i += 1;
                 }
             }
+        }
+
+        let mut one_time_images: Vec<(String, String, String)> = Vec::new();
+        for task_result in self.task_results.values() {
+            let Some(output) = task_result.output.as_ref() else {
+                continue;
+            };
+            let Some(obj) = output.as_object() else {
+                continue;
+            };
+            if obj.get("tool").and_then(|v| v.as_str()) != Some("read_image") {
+                continue;
+            }
+            if obj.get("one_time").and_then(|v| v.as_bool()) != Some(true) {
+                continue;
+            }
+            let Some(mime_type) = obj.get("mime_type").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(base64_data) = obj.get("base64").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let path = obj
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown image path")
+                .to_string();
+            one_time_images.push((path, mime_type.to_string(), base64_data.to_string()));
+        }
+
+        for (path, mime_type, base64_data) in one_time_images {
+            history.push(json!({
+                "role": "user",
+                "parts": [
+                    {
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": base64_data
+                        }
+                    },
+                ],
+            }));
         }
 
         history

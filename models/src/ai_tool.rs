@@ -94,6 +94,7 @@ pub struct SchemaField {
 #[serde(rename_all = "snake_case")]
 pub enum InternalToolType {
     ReadFile,
+    ReadImage,
     WriteFile,
     ListDirectory,
     SearchFiles,

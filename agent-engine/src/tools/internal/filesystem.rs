@@ -37,6 +37,11 @@ struct ExecuteCommandParams {
     command: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ReadImageParams {
+    path: String,
+}
+
 impl ToolExecutor {
     pub(super) async fn execute_filesystem_tool(
         &self,
@@ -51,6 +56,10 @@ impl ToolExecutor {
                 let params: ReadFileParams = parse_params(execution_params, "read_file")?;
                 self.execute_read_file(tool, filesystem, shell, params)
                     .await
+            }
+            InternalToolType::ReadImage => {
+                let params: ReadImageParams = parse_params(execution_params, "read_image")?;
+                self.execute_read_image(tool, filesystem, params).await
             }
             InternalToolType::WriteFile => {
                 let params: WriteFileParams = parse_params(execution_params, "write_file")?;
@@ -150,8 +159,6 @@ impl ToolExecutor {
                 }))
             }
             "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg" => {
-                let bytes = filesystem.read_file_bytes(&path).await?;
-
                 let mime_type = match extension.as_str() {
                     "jpg" | "jpeg" => "image/jpeg",
                     "png" => "image/png",
@@ -168,8 +175,8 @@ impl ToolExecutor {
                     "path": path,
                     "file_type": "image",
                     "mime_type": mime_type,
-                    "size_bytes": bytes.len(),
-                    "note": "This is an image file. To visually analyze its contents, ask the user to re-upload or re-attach this image in their next message. Reading an image file only provides metadata, not visual analysis capability."
+                    "base64_included": false,
+                    "hint": "Use read_image with the same path to fetch one-time base64 payload for vision analysis."
                 }))
             }
             _ => {
@@ -185,6 +192,46 @@ impl ToolExecutor {
                 }))
             }
         }
+    }
+
+    async fn execute_read_image(
+        &self,
+        tool: &AiTool,
+        filesystem: &AgentFilesystem,
+        params: ReadImageParams,
+    ) -> Result<Value, AppError> {
+        let path = params.path;
+        let extension = path.rsplit('.').next().unwrap_or_default().to_lowercase();
+        let mime_type = match extension.as_str() {
+            "jpg" | "jpeg" => "image/jpeg",
+            "png" => "image/png",
+            "webp" => "image/webp",
+            "gif" => "image/gif",
+            "bmp" => "image/bmp",
+            "svg" => "image/svg+xml",
+            _ => {
+                return Err(AppError::BadRequest(
+                    "read_image only supports png, jpg, jpeg, webp, gif, bmp, svg files"
+                        .to_string(),
+                ));
+            }
+        };
+
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let bytes = filesystem.read_file_bytes(&path).await?;
+        let base64_data = STANDARD.encode(&bytes);
+
+        Ok(serde_json::json!({
+            "success": true,
+            "tool": tool.name,
+            "path": path,
+            "file_type": "image",
+            "mime_type": mime_type,
+            "size_bytes": bytes.len(),
+            "one_time": true,
+            "base64": base64_data,
+            "note": "One-time base64 payload for image analysis."
+        }))
     }
 
     async fn execute_write_file(

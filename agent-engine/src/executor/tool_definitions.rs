@@ -42,6 +42,18 @@ pub fn internal_tools() -> Vec<(
             ],
         ),
         (
+            "read_image",
+            "Read an image file and return mime metadata plus base64 payload for one-time vision analysis.",
+            InternalToolType::ReadImage,
+            vec![SchemaField {
+                name: "path".to_string(),
+                field_type: "STRING".to_string(),
+                description: Some("Path to image file (e.g. /uploads/photo.png)".to_string()),
+                required: true,
+                ..Default::default()
+            }],
+        ),
+        (
             "write_file",
             "Write to file. For partial writes (with start_line/end_line), must read_file first.",
             InternalToolType::WriteFile,

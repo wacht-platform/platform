@@ -25,6 +25,7 @@ impl ToolExecutor {
 
         match config.tool_type {
             InternalToolType::ReadFile
+            | InternalToolType::ReadImage
             | InternalToolType::WriteFile
             | InternalToolType::ListDirectory
             | InternalToolType::SearchFiles

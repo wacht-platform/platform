@@ -55,6 +55,29 @@ pub struct AgentKnowledgeBaseParams {
     pub kb_id: i64,
 }
 
+fn sanitize_upload_filename(name: &str) -> Option<String> {
+    let mut out = String::with_capacity(name.len());
+    let mut prev_underscore = false;
+
+    for ch in name.chars() {
+        let is_allowed = ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-';
+        if is_allowed {
+            out.push(ch);
+            prev_underscore = false;
+        } else if !prev_underscore {
+            out.push('_');
+            prev_underscore = true;
+        }
+    }
+
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 pub async fn get_ai_knowledge_bases(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -249,6 +272,10 @@ pub async fn upload_knowledge_base_document(
     }
 
     let file_name = file_name.ok_or((StatusCode::BAD_REQUEST, "File is required".to_string()))?;
+    let file_name = sanitize_upload_filename(&file_name).ok_or((
+        StatusCode::BAD_REQUEST,
+        "Invalid filename".to_string(),
+    ))?;
     let file_type = file_type.unwrap_or("application/octet-stream".to_string());
 
     let title = title.unwrap_or_else(|| {
