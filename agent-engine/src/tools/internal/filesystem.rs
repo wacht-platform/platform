@@ -226,7 +226,6 @@ impl ToolExecutor {
         params: ReadImageParams,
     ) -> Result<Value, AppError> {
         let path = params.path;
-        use base64::{Engine, engine::general_purpose::STANDARD};
         let bytes = filesystem.read_file_bytes(&path).await?;
         let mime_type = match sniff_image_mime(&bytes) {
             Some(mime) => mime,
@@ -237,18 +236,13 @@ impl ToolExecutor {
                 ));
             }
         };
-        let base64_data = STANDARD.encode(&bytes);
-
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
             "path": path,
             "file_type": "image",
             "mime_type": mime_type,
-            "size_bytes": bytes.len(),
-            "one_time": true,
-            "base64": base64_data,
-            "note": "One-time base64 payload for image analysis."
+            "size_bytes": bytes.len()
         }))
     }
 

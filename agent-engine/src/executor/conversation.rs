@@ -176,6 +176,84 @@ impl AgentExecutor {
                     }
                     i += 1;
                 }
+                ConversationMessageType::ActionExecutionResult => {
+                    let is_recent = i + 10 >= self.conversations.len();
+                    let mut content_value =
+                        serde_json::to_value(&conv.content).unwrap_or_else(|_| json!({}));
+                    let mut inline_parts: Vec<Value> = Vec::new();
+
+                    if let Some(actual_results) = content_value
+                        .get_mut("task_execution")
+                        .and_then(|v| v.get_mut("actual_result"))
+                        .and_then(|v| v.as_array_mut())
+                    {
+                        for item in actual_results.iter_mut() {
+                            let Some(result_obj) = item.get_mut("result") else {
+                                continue;
+                            };
+
+                            if !is_recent {
+                                let approx_tokens = serde_json::to_string(result_obj)
+                                    .map(|s| s.len() / 4)
+                                    .unwrap_or(0);
+                                if approx_tokens > 2000 {
+                                    if let Some(map) = result_obj.as_object_mut() {
+                                        map.remove("data");
+                                        map.insert("data_omitted".to_string(), json!(true));
+                                    }
+                                }
+                                continue;
+                            }
+
+                            let tool_name = result_obj
+                                .get("tool_name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default();
+                            if tool_name != "read_image" {
+                                continue;
+                            }
+
+                            let path = result_obj
+                                .get("data")
+                                .and_then(|v| v.get("path"))
+                                .and_then(|v| v.as_str());
+                            let mime_type = result_obj
+                                .get("data")
+                                .and_then(|v| v.get("mime_type"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("application/octet-stream");
+
+                            if let Some(path) = path {
+                                if let Ok(bytes) = self.filesystem.read_file_bytes(path).await {
+                                    use base64::{engine::general_purpose::STANDARD, Engine};
+                                    let base64_data = STANDARD.encode(bytes);
+                                    inline_parts.push(json!({
+                                        "inline_data": {
+                                            "mime_type": mime_type,
+                                            "data": base64_data
+                                        }
+                                    }));
+                                }
+                            }
+                        }
+                    }
+
+                    let serialized = serde_json::to_string(&content_value).unwrap_or_default();
+                    let mut parts = vec![json!({ "text": serialized })];
+                    parts.extend(inline_parts);
+
+                    let mut entry = json!({
+                        "role": self.map_conversation_type_to_role(&conv.message_type),
+                        "parts": parts,
+                        "timestamp": conv.created_at,
+                        "type": conv.message_type,
+                    });
+                    if let Some(ref meta) = conv.metadata {
+                        entry["metadata"] = meta.clone();
+                    }
+                    history.push(entry);
+                    i += 1;
+                }
                 _ => {
                     let mut entry = json!({
                         "role": self.map_conversation_type_to_role(&conv.message_type),
