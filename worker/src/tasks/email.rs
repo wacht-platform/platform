@@ -138,7 +138,9 @@ pub async fn send_verification_email_impl(
         .await
         .map_err(|e| format!("Failed to send verification email: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!("verification_email_sent_{}", deployment_id))
 }
@@ -187,7 +189,9 @@ pub async fn send_password_reset_email_impl(
         .await
         .map_err(|e| format!("Failed to send password reset email: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!("password_reset_email_sent_{}", deployment_id))
 }
@@ -232,7 +236,9 @@ pub async fn send_magic_link_email_impl(
         .await
         .map_err(|e| format!("Failed to send magic link email: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!("magic_link_email_sent_{}", deployment_id))
 }
@@ -279,7 +285,9 @@ pub async fn send_signin_notification_email_impl(
         .await
         .map_err(|e| format!("Failed to send signin notification email: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!("signin_notification_email_sent_{}", deployment_id))
 }
@@ -326,7 +334,9 @@ pub async fn send_email_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to send email change notification: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!("email_change_notification_sent_{}", deployment_id))
 }
@@ -366,7 +376,9 @@ pub async fn send_password_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to send password change notification: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!(
         "password_change_notification_sent_{}",
@@ -409,7 +421,9 @@ pub async fn send_password_remove_notification_impl(
         .await
         .map_err(|e| format!("Failed to send password remove notification: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!(
         "password_remove_notification_sent_{}",
@@ -454,7 +468,9 @@ pub async fn send_waitlist_signup_email_impl(
         .await
         .map_err(|e| format!("Failed to send waitlist signup email: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!("waitlist_signup_email_sent_{}", deployment_id))
 }
@@ -511,7 +527,9 @@ pub async fn send_organization_membership_invite_impl(
         .await
         .map_err(|e| format!("Failed to send organization invite email: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!(
         "organization_membership_invite_sent_{}",
@@ -586,7 +604,9 @@ pub async fn send_deployment_invite_impl(
         .await
         .map_err(|e| format!("Failed to send workspace invite email: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!("deployment_invite_sent_{}", deployment_id))
 }
@@ -638,7 +658,9 @@ pub async fn send_waitlist_approval_impl(
         .await
         .map_err(|e| format!("Failed to send waitlist invite email: {}", e))?;
 
+    if should_count_email_usage(&deployment_settings) {
     track_email_billing(deployment_id as i64, &app_state.redis_client).await;
+}
 
     Ok(format!("waitlist_approval_sent_{}", deployment_id))
 }
