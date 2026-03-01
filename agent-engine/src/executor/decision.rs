@@ -702,11 +702,7 @@ impl AgentExecutor {
                 .conversation_insights
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
-            task_results: self
-                .task_results
-                .iter()
-                .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
-                .collect(),
+            task_results: self.build_task_results_for_decision_context(),
             available_tools: self
                 .available_tools_for_mode()
                 .iter()
@@ -992,6 +988,22 @@ impl AgentExecutor {
             "status": result.get("status").cloned().unwrap_or(serde_json::Value::Null),
             "result": result.get("result").cloned().unwrap_or(serde_json::Value::Null),
         })
+    }
+
+    fn build_task_results_for_decision_context(&self) -> std::collections::HashMap<String, Value> {
+        self.task_results
+            .iter()
+            .map(|(k, v)| {
+                let mut value = serde_json::to_value(v).unwrap_or_else(|_| serde_json::json!({}));
+                if let Some(output) = value.get_mut("output").and_then(|o| o.as_object_mut()) {
+                    if output.get("tool").and_then(|t| t.as_str()) == Some("read_image") {
+                        output.remove("base64");
+                        output.insert("base64_included".to_string(), serde_json::json!(false));
+                    }
+                }
+                (k.clone(), value)
+            })
+            .collect()
     }
 
     fn consume_one_time_task_outputs(&mut self) {

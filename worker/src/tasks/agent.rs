@@ -203,23 +203,6 @@ pub async fn process_agent_execution(
     let deployment_id = execution_envelope.deployment_id;
     let context_id = execution_envelope.context_id;
     let execution_kind = execution_envelope.execution_kind;
-    let context = GetExecutionContextQuery::new(context_id, deployment_id)
-        .execute(app_state)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to load execution context {}: {}", context_id, e))?;
-    if matches!(
-        context.status,
-        models::ExecutionContextStatus::Failed
-            | models::ExecutionContextStatus::Interrupted
-            | models::ExecutionContextStatus::Completed
-    ) {
-        drop(context_guard);
-        drop(concurrency_guard);
-        return Ok(format!(
-            "Skipped execution for context {} because status is {}",
-            context_id, context.status
-        ));
-    }
 
     let execution_request = match execution_kind {
         AgentExecutionKind::NewMessage { conversation_id } => {

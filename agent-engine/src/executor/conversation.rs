@@ -230,6 +230,9 @@ impl AgentExecutor {
                             "data": base64_data
                         }
                     },
+                    {
+                        "text": format!("image from {}", path)
+                    }
                 ],
             }));
         }
