@@ -18,6 +18,30 @@ use std::str::FromStr;
 use super::Command;
 
 const DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG: &str = "default";
+const SOCIAL_AUTH_METHODS: &[&str] = &[
+    "google",
+    "apple",
+    "facebook",
+    "github",
+    "microsoft",
+    "discord",
+    "linkedin",
+    "x",
+    "gitlab",
+    "google_oauth",
+    "apple_oauth",
+    "facebook_oauth",
+    "github_oauth",
+    "microsoft_oauth",
+    "discord_oauth",
+    "linkedin_oauth",
+    "x_oauth",
+    "gitlab_oauth",
+];
+
+fn is_social_auth_method(method: &str) -> bool {
+    SOCIAL_AUTH_METHODS.contains(&method)
+}
 
 fn generate_signing_secret() -> String {
     use rand::Rng;
@@ -1892,6 +1916,19 @@ impl Command for CreateProductionDeploymentCommand {
         validator.validate_domain_format(&self.custom_domain)?;
         validator.validate_auth_methods(&self.auth_methods)?;
 
+        let requested_social_methods: Vec<&str> = self
+            .auth_methods
+            .iter()
+            .map(String::as_str)
+            .filter(|m| is_social_auth_method(m))
+            .collect();
+
+        if !requested_social_methods.is_empty() {
+            return Err(AppError::Validation(
+                "Social authentication cannot be enabled during production deployment creation. Configure social providers later with custom credentials in deployment settings.".to_string(),
+            ));
+        }
+
         let key_pair_task = tokio::task::spawn_blocking(|| {
             // Generate ECDSA keypair for JWT signing (ES256)
             let ecdsa_pair =
@@ -2023,7 +2060,69 @@ impl Command for CreateProductionDeploymentCommand {
         .fetch_one(&mut *tx)
         .await?;
 
-        let _auth_settings = self.create_auth_settings(deployment_row.id);
+        let auth_settings = self.create_auth_settings(deployment_row.id);
+
+        sqlx::query!(
+            r#"
+            INSERT INTO deployment_auth_settings (
+                id,
+                deployment_id,
+                email_address,
+                phone_number,
+                username,
+                first_name,
+                last_name,
+                password,
+                magic_link,
+                passkey,
+                auth_factors_enabled,
+                verification_policy,
+                second_factor_policy,
+                first_factor,
+                multi_session_support,
+                session_token_lifetime,
+                session_validity_period,
+                session_inactive_timeout,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+            "#,
+            app_state.sf.next_id()? as i64,
+            deployment_row.id,
+            serde_json::to_value(&auth_settings.email_address)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.phone_number)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.username)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.first_name)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.last_name)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.password)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.magic_link)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.passkey)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.auth_factors_enabled)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            serde_json::to_value(&auth_settings.verification_policy)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            auth_settings.second_factor_policy.to_string(),
+            auth_settings.first_factor.to_string(),
+            serde_json::to_value(&auth_settings.multi_session_support)
+                .map_err(|e| AppError::Serialization(e.to_string()))?,
+            auth_settings.session_token_lifetime,
+            auth_settings.session_validity_period,
+            auth_settings.session_inactive_timeout,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+        )
+        .execute(&mut *tx)
+        .await?;
+
         let ui_settings = self.create_ui_settings(
             deployment_row.id,
             frontend_host.clone(),
@@ -2426,59 +2525,8 @@ impl Command for CreateProductionDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
-        let social_providers = [
-            "google",
-            "apple",
-            "facebook",
-            "github",
-            "microsoft",
-            "discord",
-            "linkedin",
-            "x",
-            "gitlab",
-        ];
-
-        let empty_credentials = serde_json::to_value(OauthCredentials::default())
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
-
-        for provider in social_providers.iter() {
-            let provider_with_oauth = format!("{}_oauth", provider);
-            if (self.auth_methods.contains(&provider.to_string())
-                || self.auth_methods.contains(&provider_with_oauth))
-                && SocialConnectionProvider::from_str(&provider_with_oauth).is_ok()
-            {
-                sqlx::query!(
-                    r#"
-                    INSERT INTO deployment_social_connections (
-                        id,
-                        deployment_id,
-                        provider,
-                        enabled,
-                        credentials,
-                        created_at,
-                        updated_at
-                    )
-                    VALUES (
-                        $1,
-                        $2,
-                        $3,
-                        true,
-                        $4,
-                        $5,
-                        $6
-                    )
-                    "#,
-                    app_state.sf.next_id()? as i64,
-                    deployment_row.id,
-                    provider_with_oauth,
-                    empty_credentials,
-                    chrono::Utc::now(),
-                    chrono::Utc::now(),
-                )
-                .execute(&mut *tx)
-                .await?;
-            }
-        }
+        // Production deployments do not auto-provision social connections.
+        // Social providers must be configured explicitly later with custom credentials.
 
         let postmark_domain = app_state
             .postmark_service

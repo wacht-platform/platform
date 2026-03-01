@@ -302,9 +302,7 @@ fn b2b_routes() -> Router<AppState> {
 // Settings Routes
 fn settings_routes() -> Router<AppState> {
     Router::new()
-        // Deployment info
         .route("/", get(api::settings::get_deployment_with_settings))
-        // JWT Templates (configuration)
         .route(
             "/jwt-templates",
             get(api::settings::get_deployment_jwt_templates),

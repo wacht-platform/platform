@@ -283,6 +283,40 @@ impl Command for UpsertDeploymentSocialConnectionCommand {
     type Output = DeploymentSocialConnection;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let deployment = sqlx::query!(
+            r#"
+            SELECT mode
+            FROM deployments
+            WHERE id = $1 AND deleted_at IS NULL
+            "#,
+            self.deployment_id
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
+
+        let is_production = deployment.mode.eq_ignore_ascii_case("production");
+        let is_enabling = self.connection.enabled.unwrap_or(false);
+
+        if is_production && is_enabling {
+            let credentials = self.connection.credentials.as_ref().ok_or_else(|| {
+                AppError::Validation(
+                    "Custom credentials are required to enable social login in production"
+                        .to_string(),
+                )
+            })?;
+
+            if credentials.client_id.trim().is_empty()
+                || credentials.client_secret.trim().is_empty()
+                || credentials.redirect_uri.trim().is_empty()
+            {
+                return Err(AppError::Validation(
+                    "Custom credentials are required to enable social login in production"
+                        .to_string(),
+                ));
+            }
+        }
+
         let result = sqlx::query!(
             r#"
             INSERT INTO deployment_social_connections (id, created_at, updated_at, deployment_id, provider, enabled, credentials)
