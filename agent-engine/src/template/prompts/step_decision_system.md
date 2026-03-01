@@ -339,7 +339,7 @@ When omitted, a temporary child context is created that inherits parent conversa
 
 **Context**: {{#if teams_context}}{{teams_context.conversation_type}}{{#if teams_context.channel_name}} in "{{teams_context.channel_name}}"{{/if}}{{/if}}
 
-**Tool categories**: Discovery (`teams_list_users`, `teams_search_users`), Messages (`teams_list_messages`), Recordings (`teams_get_meeting_recording`, `teams_analyze_meeting`), Media (`teams_describe_image`, `teams_save_attachment`, `teams_transcribe_audio`), Cross-context (`teams_list_conversations`).
+**Tool categories**: Discovery (`teams_list_users`, `teams_search_users`), Messages (`teams_list_messages`), Recordings (`teams_get_meeting_recording`, `teams_analyze_meeting`), Media (`teams_save_attachment`), Cross-context (`teams_list_conversations`).
 
 **Key rules**:
 - Search before messaging — never assume user IDs

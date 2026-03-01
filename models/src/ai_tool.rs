@@ -129,8 +129,6 @@ pub enum UseExternalServiceToolType {
     TeamsGetMeetingRecording,
     TeamsTranscribeMeeting,
     TeamsSaveAttachment,
-    TeamsDescribeImage,
-    TeamsTranscribeAudio,
     TeamsListContexts,
     SpawnContextExecution,
     #[serde(rename = "clickup_create_task")]
@@ -173,8 +171,6 @@ impl UseExternalServiceToolType {
             | UseExternalServiceToolType::TeamsGetMeetingRecording
             | UseExternalServiceToolType::TeamsTranscribeMeeting
             | UseExternalServiceToolType::TeamsSaveAttachment
-            | UseExternalServiceToolType::TeamsDescribeImage
-            | UseExternalServiceToolType::TeamsTranscribeAudio
             | UseExternalServiceToolType::TeamsListContexts => Some("teams"),
 
             UseExternalServiceToolType::ClickUpCreateTask
@@ -211,8 +207,6 @@ impl UseExternalServiceToolType {
                 UseExternalServiceToolType::TeamsGetMeetingRecording,
                 UseExternalServiceToolType::TeamsTranscribeMeeting,
                 UseExternalServiceToolType::TeamsSaveAttachment,
-                UseExternalServiceToolType::TeamsDescribeImage,
-                UseExternalServiceToolType::TeamsTranscribeAudio,
                 UseExternalServiceToolType::TeamsListContexts,
             ],
             "clickup" => vec![

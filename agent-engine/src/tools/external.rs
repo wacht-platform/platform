@@ -44,8 +44,6 @@ enum TeamsAction {
     ListMessages,
     GetMeetingRecording,
     AnalyzeMeeting,
-    DescribeImage,
-    TranscribeAudio,
 }
 
 impl TeamsAction {
@@ -56,8 +54,6 @@ impl TeamsAction {
             Self::ListMessages => "list_messages",
             Self::GetMeetingRecording => "get_meeting_recording",
             Self::AnalyzeMeeting => "analyze_meeting",
-            Self::DescribeImage => "describe_image",
-            Self::TranscribeAudio => "transcribe_audio",
         }
     }
 }
@@ -378,24 +374,6 @@ impl ToolExecutor {
             UseExternalServiceToolType::TeamsSaveAttachment => {
                 self.execute_teams_save_attachment(tool, execution_params)
                     .await
-            }
-            UseExternalServiceToolType::TeamsDescribeImage => {
-                self.execute_teams_command(
-                    tool,
-                    TeamsAction::DescribeImage,
-                    execution_params,
-                    context_title,
-                )
-                .await
-            }
-            UseExternalServiceToolType::TeamsTranscribeAudio => {
-                self.execute_teams_command(
-                    tool,
-                    TeamsAction::TranscribeAudio,
-                    execution_params,
-                    context_title,
-                )
-                .await
             }
             UseExternalServiceToolType::TeamsListContexts => {
                 self.execute_teams_list_conversations(execution_params).await
