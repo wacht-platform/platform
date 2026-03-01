@@ -272,17 +272,29 @@ pub struct UpdateBillingAccountStatusCommand {
     pub status: String,
 }
 
+fn normalize_billing_account_status(status: &str) -> &'static str {
+    match status.to_ascii_lowercase().as_str() {
+        "active" => "active",
+        "pending" => "pending",
+        "cancelled" | "expired" => "cancelled",
+        "failed" | "on_hold" | "payment_failed" => "failed",
+        _ => "pending",
+    }
+}
+
 impl Command for UpdateBillingAccountStatusCommand {
     type Output = ();
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        let normalized_status = normalize_billing_account_status(&self.status);
+
         sqlx::query!(
             r#"
             UPDATE billing_accounts
             SET status = $1, updated_at = NOW()
             WHERE owner_id = $2
             "#,
-            self.status,
+            normalized_status,
             self.owner_id
         )
         .execute(&state.db_pool)
