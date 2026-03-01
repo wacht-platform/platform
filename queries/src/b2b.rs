@@ -606,17 +606,23 @@ impl Query for GetOrganizationMembersQuery {
         qb.push_bind(self.organization_id);
 
         if let Some(search) = &self.search {
-            if !search.trim().is_empty() {
-                let pattern = format!("%{}%", search.trim());
-                qb.push(" AND (u.first_name ILIKE ");
-                qb.push_bind(pattern.clone());
-                qb.push(" OR u.last_name ILIKE ");
-                qb.push_bind(pattern.clone());
-                qb.push(" OR u.username ILIKE ");
-                qb.push_bind(pattern.clone());
-                qb.push(" OR e.email_address ILIKE ");
-                qb.push_bind(pattern);
-                qb.push(")");
+            let trimmed_search = search.trim();
+            if !trimmed_search.is_empty() {
+                qb.push(
+                    r#" AND EXISTS (
+                        SELECT 1
+                        FROM search_users su
+                        WHERE su.user_id = u.id
+                          AND su.deployment_id = u.deployment_id
+                          AND su.organization_ids @> jsonb_build_array("#,
+                );
+                qb.push_bind(self.organization_id);
+                qb.push(
+                    r#")
+                          AND su.search_vector @@ websearch_to_tsquery('english', "#,
+                );
+                qb.push_bind(trimmed_search);
+                qb.push("))");
             }
         }
 
@@ -769,17 +775,23 @@ impl Query for GetWorkspaceMembersQuery {
         qb.push_bind(self.workspace_id);
 
         if let Some(search) = &self.search {
-            if !search.trim().is_empty() {
-                let pattern = format!("%{}%", search.trim());
-                qb.push(" AND (u.first_name ILIKE ");
-                qb.push_bind(pattern.clone());
-                qb.push(" OR u.last_name ILIKE ");
-                qb.push_bind(pattern.clone());
-                qb.push(" OR u.username ILIKE ");
-                qb.push_bind(pattern.clone());
-                qb.push(" OR e.email_address ILIKE ");
-                qb.push_bind(pattern);
-                qb.push(")");
+            let trimmed_search = search.trim();
+            if !trimmed_search.is_empty() {
+                qb.push(
+                    r#" AND EXISTS (
+                        SELECT 1
+                        FROM search_users su
+                        WHERE su.user_id = u.id
+                          AND su.deployment_id = u.deployment_id
+                          AND su.workspace_ids @> jsonb_build_array("#,
+                );
+                qb.push_bind(self.workspace_id);
+                qb.push(
+                    r#")
+                          AND su.search_vector @@ websearch_to_tsquery('english', "#,
+                );
+                qb.push_bind(trimmed_search);
+                qb.push("))");
             }
         }
 

@@ -126,18 +126,6 @@ impl Query for GetSegmentDataQuery {
             }
         }
 
-        if self.target_type == "user" {
-            if let Some(user_filters) = &self.user_filter {
-                if user_filters.email.is_some() {
-                    query_builder
-                        .push(" LEFT JOIN user_email_addresses uea ON t.id = uea.user_id ");
-                }
-                if user_filters.phone.is_some() {
-                    query_builder.push(" LEFT JOIN user_phone_numbers upn ON t.id = upn.user_id ");
-                }
-            }
-        }
-
         query_builder.push(" WHERE t.deployment_id = ");
         query_builder.push_bind(self.deployment_id);
         query_builder.push(" AND t.deleted_at IS NULL ");
@@ -181,26 +169,53 @@ impl Query for GetSegmentDataQuery {
             }
             "user" => {
                 if let Some(user_filters) = &self.user_filter {
+                    let mut has_any_user_filter = false;
+
                     if let Some(name_val) = &user_filters.name {
-                        if !name_val.is_empty() {
-                            query_builder.push(" AND (t.first_name ILIKE ");
-                            query_builder.push_bind(format!("%{}%", name_val));
-                            query_builder.push(" OR t.last_name ILIKE ");
-                            query_builder.push_bind(format!("%{}%", name_val));
+                        if !name_val.trim().is_empty() {
+                            if !has_any_user_filter {
+                                query_builder.push(
+                                    " AND EXISTS (SELECT 1 FROM search_users su WHERE su.user_id = t.id AND su.deployment_id = t.deployment_id ",
+                                );
+                                has_any_user_filter = true;
+                            }
+                            query_builder
+                                .push(" AND su.search_vector @@ websearch_to_tsquery('english', ");
+                            query_builder.push_bind(name_val.trim());
                             query_builder.push(")");
                         }
                     }
                     if let Some(email_val) = &user_filters.email {
-                        if !email_val.is_empty() {
-                            query_builder.push(" AND uea.email_address ILIKE ");
-                            query_builder.push_bind(format!("%{}%", email_val));
+                        if !email_val.trim().is_empty() {
+                            if !has_any_user_filter {
+                                query_builder.push(
+                                    " AND EXISTS (SELECT 1 FROM search_users su WHERE su.user_id = t.id AND su.deployment_id = t.deployment_id ",
+                                );
+                                has_any_user_filter = true;
+                            }
+                            query_builder
+                                .push(" AND su.search_vector @@ websearch_to_tsquery('english', ");
+                            query_builder.push_bind(email_val.trim());
+                            query_builder.push(")");
                         }
                     }
                     if let Some(phone_val) = &user_filters.phone {
-                        if !phone_val.is_empty() {
-                            query_builder.push(" AND upn.phone_number ILIKE ");
-                            query_builder.push_bind(format!("%{}%", phone_val));
+                        if !phone_val.trim().is_empty() {
+                            if !has_any_user_filter {
+                                query_builder.push(
+                                    " AND EXISTS (SELECT 1 FROM search_users su WHERE su.user_id = t.id AND su.deployment_id = t.deployment_id ",
+                                );
+                                has_any_user_filter = true;
+                            }
+                            query_builder
+                                .push(" AND su.search_vector @@ websearch_to_tsquery('english', ");
+                            query_builder.push_bind(phone_val.trim());
+                            query_builder.push(")");
                         }
+                    }
+
+                    if has_any_user_filter {
+                        query_builder.push(")");
                     }
                 }
             }

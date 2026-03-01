@@ -160,24 +160,19 @@ impl Query for DeploymentActiveUserListQuery {
         if let Some(search_term) = &self.search {
             let trimmed_search = search_term.trim();
             if !trimmed_search.is_empty() {
-                let search_pattern = format!("%{}%", trimmed_search);
-
-                query_builder.push(" AND (");
-
-                query_builder.push("u.first_name ILIKE ");
-                query_builder.push_bind(search_pattern.clone());
-
-                query_builder.push(" OR ");
-
-                query_builder.push("u.last_name ILIKE ");
-                query_builder.push_bind(search_pattern.clone());
-
-                query_builder.push(" OR ");
-
-                query_builder.push("u.username ILIKE ");
-                query_builder.push_bind(search_pattern);
-
-                query_builder.push(")");
+                query_builder.push(
+                    r#" AND EXISTS (
+                        SELECT 1
+                        FROM search_users su
+                        WHERE su.user_id = u.id
+                          AND su.deployment_id = "#,
+                );
+                query_builder.push_bind(self.deployment_id);
+                query_builder.push(
+                    r#" AND su.search_vector @@ websearch_to_tsquery('english', "#,
+                );
+                query_builder.push_bind(trimmed_search);
+                query_builder.push("))");
             }
         }
 
