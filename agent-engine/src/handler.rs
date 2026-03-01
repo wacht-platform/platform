@@ -7,10 +7,17 @@ use futures::StreamExt;
 use models::AiAgentWithFeatures;
 use models::ExecutionContextStatus;
 use queries::Query;
+use serde_json::Value;
 use tracing::{error, warn};
 
 pub struct AgentHandler {
     app_state: AppState,
+}
+
+enum SpawnControlSignal {
+    Stop,
+    Restart,
+    UpdateParams(Value),
 }
 
 #[derive(Clone)]
@@ -219,11 +226,11 @@ impl AgentHandler {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {e}")))?;
 
-        match parent_context_id {
-            Some(parent_id) => {
+        if let Some(parent_id) = parent_context_id {
+            loop {
                 tokio::select! {
                     result = agent_executor.execute_with_conversation_id(conversation_id) => {
-                        result
+                        return result;
                     }
                     _ = watch_for_cancellation(&mut watch, execution_id) => {
                         warn!("Execution cancelled for context {}", context_key);
@@ -232,34 +239,56 @@ impl AgentHandler {
                             context_id,
                             deployment_id,
                         ).await;
-                        Ok(())
+                        return Ok(());
                     }
-                    _ = wait_for_spawn_stop(spawn_control_sub), if spawn_control_sub.is_some() => {
-                        warn!("Spawn control stop received from parent context {}", parent_id);
-                        mark_context_failed_due_to_parent_abort(
-                            &self.app_state,
-                            context_id,
-                            deployment_id,
-                            parent_id,
-                        ).await?;
-                        Ok(())
+                    signal = wait_for_spawn_control(spawn_control_sub), if spawn_control_sub.is_some() => {
+                        match signal {
+                            SpawnControlSignal::Stop => {
+                                warn!("Spawn control stop received from parent context {}", parent_id);
+                                mark_context_failed_due_to_parent_abort(
+                                    &self.app_state,
+                                    context_id,
+                                    deployment_id,
+                                    parent_id,
+                                ).await?;
+                                return Ok(());
+                            }
+                            SpawnControlSignal::Restart => {
+                                warn!("Spawn control restart received for child context {}", context_id);
+                                record_spawn_control_restart(
+                                    &self.app_state,
+                                    context_id,
+                                    deployment_id,
+                                ).await?;
+                                continue;
+                            }
+                            SpawnControlSignal::UpdateParams(params) => {
+                                warn!("Spawn control update_params received for child context {}", context_id);
+                                apply_spawn_control_params(
+                                    &self.app_state,
+                                    context_id,
+                                    deployment_id,
+                                    params,
+                                ).await?;
+                                continue;
+                            }
+                        }
                     }
                 }
             }
-            None => {
-                tokio::select! {
-                    result = agent_executor.execute_with_conversation_id(conversation_id) => {
-                        result
-                    }
-                    _ = watch_for_cancellation(&mut watch, execution_id) => {
-                        warn!("Execution cancelled for context {}", context_key);
-                        mark_context_cancelled(
-                            &self.app_state,
-                            context_id,
-                            deployment_id,
-                        ).await;
-                        Ok(())
-                    }
+        } else {
+            tokio::select! {
+                result = agent_executor.execute_with_conversation_id(conversation_id) => {
+                    result
+                }
+                _ = watch_for_cancellation(&mut watch, execution_id) => {
+                    warn!("Execution cancelled for context {}", context_key);
+                    mark_context_cancelled(
+                        &self.app_state,
+                        context_id,
+                        deployment_id,
+                    ).await;
+                    Ok(())
                 }
             }
         }
@@ -282,11 +311,11 @@ impl AgentHandler {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {e}")))?;
 
-        match parent_context_id {
-            Some(parent_id) => {
+        if let Some(parent_id) = parent_context_id {
+            loop {
                 tokio::select! {
-                    result = agent_executor.resume_execution(resume_context) => {
-                        result
+                    result = agent_executor.resume_execution(resume_context.clone()) => {
+                        return result;
                     }
                     _ = watch_for_cancellation(&mut watch, execution_id) => {
                         warn!("Execution cancelled for context {}", context_key);
@@ -295,34 +324,56 @@ impl AgentHandler {
                             context_id,
                             deployment_id,
                         ).await;
-                        Ok(())
+                        return Ok(());
                     }
-                    _ = wait_for_spawn_stop(spawn_control_sub), if spawn_control_sub.is_some() => {
-                        warn!("Parent context {} aborted; cancelling child context {}", parent_id, context_key);
-                        mark_context_failed_due_to_parent_abort(
-                            &self.app_state,
-                            context_id,
-                            deployment_id,
-                            parent_id,
-                        ).await?;
-                        Ok(())
+                    signal = wait_for_spawn_control(spawn_control_sub), if spawn_control_sub.is_some() => {
+                        match signal {
+                            SpawnControlSignal::Stop => {
+                                warn!("Parent context {} aborted; cancelling child context {}", parent_id, context_key);
+                                mark_context_failed_due_to_parent_abort(
+                                    &self.app_state,
+                                    context_id,
+                                    deployment_id,
+                                    parent_id,
+                                ).await?;
+                                return Ok(());
+                            }
+                            SpawnControlSignal::Restart => {
+                                warn!("Spawn control restart received for child context {}", context_id);
+                                record_spawn_control_restart(
+                                    &self.app_state,
+                                    context_id,
+                                    deployment_id,
+                                ).await?;
+                                continue;
+                            }
+                            SpawnControlSignal::UpdateParams(params) => {
+                                warn!("Spawn control update_params received for child context {}", context_id);
+                                apply_spawn_control_params(
+                                    &self.app_state,
+                                    context_id,
+                                    deployment_id,
+                                    params,
+                                ).await?;
+                                continue;
+                            }
+                        }
                     }
                 }
             }
-            None => {
-                tokio::select! {
-                    result = agent_executor.resume_execution(resume_context) => {
-                        result
-                    }
-                    _ = watch_for_cancellation(&mut watch, execution_id) => {
-                        warn!("Execution cancelled for context {}", context_key);
-                        mark_context_cancelled(
-                            &self.app_state,
-                            context_id,
-                            deployment_id,
-                        ).await;
-                        Ok(())
-                    }
+        } else {
+            tokio::select! {
+                result = agent_executor.resume_execution(resume_context) => {
+                    result
+                }
+                _ = watch_for_cancellation(&mut watch, execution_id) => {
+                    warn!("Execution cancelled for context {}", context_key);
+                    mark_context_cancelled(
+                        &self.app_state,
+                        context_id,
+                        deployment_id,
+                    ).await;
+                    Ok(())
                 }
             }
         }
@@ -487,9 +538,11 @@ async fn subscribe_spawn_control(
     }
 }
 
-async fn wait_for_spawn_stop(subscriber: &mut Option<async_nats::Subscriber>) {
+async fn wait_for_spawn_control(
+    subscriber: &mut Option<async_nats::Subscriber>,
+) -> SpawnControlSignal {
     let Some(subscriber) = subscriber.as_mut() else {
-        return;
+        return SpawnControlSignal::Stop;
     };
 
     while let Some(message) = subscriber.next().await {
@@ -501,7 +554,69 @@ async fn wait_for_spawn_stop(subscriber: &mut Option<async_nats::Subscriber>) {
             .and_then(|v| v.as_str())
             .unwrap_or_default();
         if action.eq_ignore_ascii_case("stop") {
-            return;
+            return SpawnControlSignal::Stop;
+        }
+        if action.eq_ignore_ascii_case("restart") {
+            return SpawnControlSignal::Restart;
+        }
+        if action.eq_ignore_ascii_case("update_params") {
+            let value = payload.get("value").cloned().unwrap_or(serde_json::json!({}));
+            return SpawnControlSignal::UpdateParams(value);
         }
     }
+
+    SpawnControlSignal::Stop
+}
+
+async fn apply_spawn_control_params(
+    app_state: &AppState,
+    context_id: i64,
+    deployment_id: i64,
+    params: Value,
+) -> Result<(), AppError> {
+    let context = queries::GetExecutionContextQuery::new(context_id, deployment_id)
+        .execute(app_state)
+        .await?;
+
+    let mut metadata = context.external_resource_metadata.unwrap_or_else(|| serde_json::json!({}));
+    if !metadata.is_object() {
+        metadata = serde_json::json!({});
+    }
+    if let Some(obj) = metadata.as_object_mut() {
+        obj.insert("spawn_control_params".to_string(), params);
+        obj.insert(
+            "spawn_control_params_updated_at".to_string(),
+            serde_json::json!(chrono::Utc::now().to_rfc3339()),
+        );
+    }
+
+    commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
+        .with_external_resource_metadata(metadata)
+        .execute(app_state)
+        .await?;
+
+    commands::PostStatusUpdateCommand::new(
+        context_id,
+        deployment_id,
+        "Parent updated execution parameters".to_string(),
+    )
+    .execute(app_state)
+    .await?;
+
+    Ok(())
+}
+
+async fn record_spawn_control_restart(
+    app_state: &AppState,
+    context_id: i64,
+    deployment_id: i64,
+) -> Result<(), AppError> {
+    commands::PostStatusUpdateCommand::new(
+        context_id,
+        deployment_id,
+        "Parent requested execution restart".to_string(),
+    )
+    .execute(app_state)
+    .await?;
+    Ok(())
 }

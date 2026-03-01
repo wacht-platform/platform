@@ -321,13 +321,6 @@ pub fn internal_tools() -> Vec<(
                     required: true,
                     ..Default::default()
                 },
-                SchemaField {
-                    name: "trigger_execution".to_string(),
-                    field_type: "BOOLEAN".to_string(),
-                    description: Some("If true, the parent agent will be triggered to process this message immediately. Default: false (message is queued for next parent iteration)".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
             ],
         ),
         (

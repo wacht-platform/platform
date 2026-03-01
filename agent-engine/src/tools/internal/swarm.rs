@@ -1,10 +1,15 @@
 use super::{parse_params, ToolExecutor};
 use commands::Command;
 use common::error::AppError;
+use futures::TryStreamExt;
 use models::{AiTool, InternalToolType};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::time::{sleep, Duration};
+
+const SWARM_MAILBOX_BUCKET: &str = "agent_swarm_mailbox";
+const SWARM_MAILBOX_TTL_SECS: u64 = 3600;
+const EXECUTION_KV_BUCKET: &str = "agent_execution_kv";
 
 #[derive(Debug, Deserialize)]
 struct UpdateStatusParams {
@@ -22,11 +27,96 @@ struct SleepParams {
 #[derive(Debug, Deserialize)]
 struct NotifyParentParams {
     message: String,
-    #[serde(default)]
-    trigger_execution: bool,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SwarmMailboxMessage {
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    message_id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    parent_context_id: i64,
+    #[serde(with = "models::utils::serde::i64_as_string")]
+    child_context_id: i64,
+    sender: String,
+    message: String,
+    created_at: String,
+}
+
+fn mailbox_key(parent_context_id: i64, child_context_id: i64, message_id: i64) -> String {
+    format!("p:{parent_context_id}:c:{child_context_id}:m:{message_id}")
+}
+
+fn mailbox_prefix(parent_context_id: i64) -> String {
+    format!("p:{parent_context_id}:")
 }
 
 impl ToolExecutor {
+    async fn get_or_create_swarm_mailbox(
+        &self,
+    ) -> Result<async_nats::jetstream::kv::Store, AppError> {
+        match self
+            .app_state()
+            .nats_jetstream
+            .get_key_value(SWARM_MAILBOX_BUCKET)
+            .await
+        {
+            Ok(store) => Ok(store),
+            Err(_) => {
+                let created = self
+                    .app_state()
+                    .nats_jetstream
+                    .create_key_value(async_nats::jetstream::kv::Config {
+                        bucket: SWARM_MAILBOX_BUCKET.to_string(),
+                        max_age: std::time::Duration::from_secs(SWARM_MAILBOX_TTL_SECS),
+                        history: 1,
+                        ..Default::default()
+                    })
+                    .await;
+                match created {
+                    Ok(store) => Ok(store),
+                    Err(create_error) => self
+                        .app_state()
+                        .nats_jetstream
+                        .get_key_value(SWARM_MAILBOX_BUCKET)
+                        .await
+                        .map_err(|get_error| {
+                            AppError::Internal(format!(
+                                "Failed to initialize swarm mailbox KV bucket: create error={}, get error={}",
+                                create_error, get_error
+                            ))
+                        }),
+                }
+            }
+        }
+    }
+
+    async fn current_execution_cursor(&self) -> Result<Option<i64>, AppError> {
+        let kv = match self
+            .app_state()
+            .nats_jetstream
+            .get_key_value(EXECUTION_KV_BUCKET)
+            .await
+        {
+            Ok(store) => store,
+            Err(_) => return Ok(None),
+        };
+
+        let Some(entry) = kv
+            .entry(self.context_id().to_string())
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to read execution cursor: {}", e)))?
+        else {
+            return Ok(None);
+        };
+
+        let raw = String::from_utf8(entry.value.to_vec())
+            .map_err(|e| AppError::Internal(format!("Invalid execution cursor encoding: {}", e)))?;
+        if raw.starts_with("cancel:") {
+            return Ok(None);
+        }
+        Ok(raw.parse::<i64>().ok())
+    }
+
     pub(super) async fn execute_sleep_tool(
         &self,
         tool: &AiTool,
@@ -111,24 +201,28 @@ impl ToolExecutor {
         .execute(self.app_state())
         .await?;
 
-        if params.trigger_execution {
-            commands::PublishAgentExecutionCommand::new_message(
-                self.agent().deployment_id,
-                parent_context_id,
-                None,
-                Some(self.agent().name.clone()),
-                conversation_id,
-            )
-            .execute(self.app_state())
-            .await?;
-        }
+        let mailbox_message = SwarmMailboxMessage {
+            message_id: conversation_id,
+            parent_context_id,
+            child_context_id: self.context_id(),
+            sender: format!("Child agent (context #{})", self.context_id()),
+            message: params.message,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        let mailbox_key = mailbox_key(parent_context_id, self.context_id(), conversation_id);
+        let mailbox_store = self.get_or_create_swarm_mailbox().await?;
+        let payload = serde_json::to_vec(&mailbox_message)
+            .map_err(|e| AppError::Internal(format!("Failed to serialize mailbox message: {}", e)))?;
+        mailbox_store
+            .put(mailbox_key, payload.into())
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to write mailbox message: {}", e)))?;
 
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
             "parent_context_id": parent_context_id,
-            "message_delivered": true,
-            "execution_triggered": params.trigger_execution
+            "message_delivered": true
         }))
     }
 
@@ -137,33 +231,58 @@ impl ToolExecutor {
         tool: &AiTool,
         _execution_params: &Value,
     ) -> Result<Value, AppError> {
-        use queries::Query;
+        let mailbox_store = self.get_or_create_swarm_mailbox().await?;
+        let prefix = mailbox_prefix(self.context_id());
+        let execution_cursor = self.current_execution_cursor().await?;
 
-        let all_conversations = queries::GetLLMConversationHistoryQuery::new(self.context_id())
-            .execute(self.app_state())
+        let keys_stream = mailbox_store
+            .keys()
             .await
-            .unwrap_or_default();
+            .map_err(|e| AppError::Internal(format!("Failed to list mailbox keys: {}", e)))?;
+        let keys: Vec<String> = keys_stream
+            .try_collect()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to collect mailbox keys: {}", e)))?;
 
-        let messages: Vec<Value> = all_conversations
-            .iter()
-            .filter(|conv| {
-                conv.message_type == models::ConversationMessageType::UserMessage
-                    && matches!(&conv.content, models::ConversationContent::UserMessage { sender_name: Some(name), .. } if name.starts_with("Child agent"))
-            })
-            .map(|conv| {
-                let (message, sender) = match &conv.content {
-                    models::ConversationContent::UserMessage { message, sender_name, .. } => {
-                        (message.clone(), sender_name.clone().unwrap_or_default())
-                    }
-                    _ => (String::new(), String::new()),
-                };
+        let mut messages_with_id: Vec<(i64, Value)> = Vec::new();
+        for key in keys {
+            if !key.starts_with(&prefix) {
+                continue;
+            }
+            let message_id = key
+                .split(":m:")
+                .nth(1)
+                .and_then(|v| v.parse::<i64>().ok())
+                .unwrap_or_default();
+            if let Some(cursor) = execution_cursor {
+                if message_id <= cursor {
+                    continue;
+                }
+            }
+
+            let entry = mailbox_store
+                .entry(key)
+                .await
+                .map_err(|e| AppError::Internal(format!("Failed to read mailbox entry: {}", e)))?;
+            let Some(entry) = entry else {
+                continue;
+            };
+            let payload = serde_json::from_slice::<SwarmMailboxMessage>(&entry.value).map_err(|e| {
+                AppError::Internal(format!("Failed to parse mailbox message payload: {}", e))
+            })?;
+            messages_with_id.push((
+                payload.message_id,
                 serde_json::json!({
-                    "sender": sender,
-                    "message": message,
-                    "received_at": conv.created_at.to_rfc3339(),
-                })
-            })
-            .collect();
+                    "sender": payload.sender,
+                    "message": payload.message,
+                    "received_at": payload.created_at,
+                    "child_context_id": payload.child_context_id.to_string(),
+                }),
+            ));
+        }
+
+        messages_with_id.sort_by_key(|(message_id, _)| *message_id);
+        let messages: Vec<Value> = messages_with_id.into_iter().map(|(_, v)| v).collect();
 
         let count = messages.len();
         Ok(serde_json::json!({
