@@ -14,7 +14,7 @@ use dto::json::agent_responses::{ActionsList, TaskExecution, TaskType};
 use dto::json::{StepDecisionContext, StreamEvent};
 use models::{
     ActionExecutionStatus, ActionResult, ActionResultStatus, AgentExecutionState, AiTool,
-    ConversationContent, ConversationMessageType, ExecutionContextStatus,
+    ConversationContent, ConversationMessageType, ExecutionContextStatus, UserInputRequestState,
 };
 use queries::Query;
 use serde_json::{json, Value};
@@ -374,43 +374,48 @@ impl AgentExecutor {
                                 });
                             }
                             Err(e) => {
+                                let task_type_str = match action.action_type {
+                                    TaskType::ToolCall => "tool_call",
+                                };
+                                let task_id = format!(
+                                    "{}_{}_{}",
+                                    task_type_str,
+                                    chrono::Utc::now().timestamp_millis(),
+                                    all_results.len()
+                                );
+                                let error_message = e.to_string();
+                                let task_result = dto::json::agent_executor::TaskExecutionResult {
+                                    task_id: task_id.clone(),
+                                    status: "failed".to_string(),
+                                    output: Some(self.standardize_tool_output(
+                                        &tool_name,
+                                        None,
+                                        Some(error_message.clone()),
+                                    )),
+                                    error: Some(error_message.clone()),
+                                };
+                                self.task_results.insert(task_id, task_result);
                                 all_results.push(ActionResult {
                                     action: action.purpose.clone(),
                                     status: ActionResultStatus::Error,
                                     result: None,
-                                    error: Some(e.to_string()),
+                                    error: Some(error_message),
                                 });
                             }
                         }
                     }
 
-                    if any_pending {
-                        let execution_state = AgentExecutionState {
-                            task_results: self
-                                .task_results
-                                .iter()
-                                .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
-                                .collect(),
-                            current_objective: self
-                                .current_objective
-                                .as_ref()
-                                .map(|o| serde_json::to_value(o).unwrap()),
-                            conversation_insights: self
-                                .conversation_insights
-                                .as_ref()
-                                .map(|c| serde_json::to_value(c).unwrap()),
-                            supervisor_mode_active: self.supervisor_mode_active,
-                            supervisor_task_board: self.supervisor_task_board.clone(),
-                            deep_think_mode_active: self.deep_think_mode_active,
-                            deep_think_used: self.deep_think_used,
-                            pending_input_request: None,
-                        };
+                    UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
+                        .with_execution_state(self.build_execution_state_snapshot(None))
+                        .execute(&self.ctx.app_state)
+                        .await?;
 
+                    if any_pending {
                         UpdateExecutionContextQuery::new(
                             self.ctx.context_id,
                             self.ctx.agent.deployment_id,
                         )
-                        .with_execution_state(execution_state)
+                        .with_execution_state(self.build_execution_state_snapshot(None))
                         .with_status(ExecutionContextStatus::WaitingForInput)
                         .execute(&self.ctx.app_state)
                         .await?;
@@ -817,8 +822,6 @@ impl AgentExecutor {
             .await?;
         }
 
-        self.consume_one_time_task_outputs();
-
         Ok(decision)
     }
 
@@ -972,58 +975,107 @@ impl AgentExecutor {
     }
 
     fn sanitize_task_result_output(&self, tool_name: &str, result: &Value) -> Value {
-        if tool_name == "read_image" {
-            return result.clone();
-        }
-
-        if tool_name != "spawn_context_execution" {
-            return serde_json::json!({
-                "tool": tool_name,
-                "success": true,
-            });
-        }
-
-        serde_json::json!({
-            "tool": tool_name,
-            "status": result.get("status").cloned().unwrap_or(serde_json::Value::Null),
-            "result": result.get("result").cloned().unwrap_or(serde_json::Value::Null),
-        })
+        self.standardize_tool_output(tool_name, Some(result), None)
     }
 
     fn build_task_results_for_decision_context(&self) -> std::collections::HashMap<String, Value> {
         self.task_results
             .iter()
             .map(|(k, v)| {
-                let mut value = serde_json::to_value(v).unwrap_or_else(|_| serde_json::json!({}));
-                if let Some(output) = value.get_mut("output").and_then(|o| o.as_object_mut()) {
-                    if output.get("tool").and_then(|t| t.as_str()) == Some("read_image") {
-                        output.remove("base64");
-                        output.insert("base64_included".to_string(), serde_json::json!(false));
-                    }
-                }
-                (k.clone(), value)
+                (
+                    k.clone(),
+                    serde_json::to_value(v).unwrap_or_else(|_| serde_json::json!({})),
+                )
             })
             .collect()
     }
 
-    fn consume_one_time_task_outputs(&mut self) {
-        for task_result in self.task_results.values_mut() {
-            let Some(output) = task_result.output.as_mut() else {
-                continue;
-            };
-            let Some(obj) = output.as_object_mut() else {
-                continue;
-            };
-            if obj.get("one_time").and_then(|v| v.as_bool()) != Some(true) {
-                continue;
-            }
+    fn standardize_tool_output(
+        &self,
+        tool_name: &str,
+        result: Option<&Value>,
+        error_message: Option<String>,
+    ) -> Value {
+        let status = if error_message.is_some() {
+            "error"
+        } else if result
+            .and_then(|r| r.get("status"))
+            .and_then(|s| s.as_str())
+            == Some("pending")
+        {
+            "pending"
+        } else {
+            "success"
+        };
 
-            obj.remove("base64");
-            obj.insert("one_time_consumed".to_string(), serde_json::json!(true));
-            obj.insert(
-                "note".to_string(),
-                serde_json::json!("One-time payload consumed. Call read_image again if needed."),
-            );
+        let mut data = result.cloned().unwrap_or(serde_json::Value::Null);
+        let structure_hint = data
+            .get("structure_hint")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        if let Some(obj) = data.as_object_mut() {
+            obj.remove("structure_hint");
+        }
+        let truncated = result
+            .and_then(|r| r.get("truncated"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let size_bytes = result
+            .and_then(|r| r.get("original_stats"))
+            .and_then(|s| s.get("size_bytes"))
+            .and_then(|v| v.as_u64());
+        let saved_output_path = result
+            .and_then(|r| r.get("saved_output_path"))
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                result
+                    .and_then(|r| r.get("original_stats"))
+                    .and_then(|s| s.get("saved_to_path"))
+                    .and_then(|v| v.as_str())
+            });
+
+        serde_json::json!({
+            "schema_version": 1,
+            "tool_name": tool_name,
+            "status": status,
+            "error": error_message.map(|msg| serde_json::json!({
+                "code": "tool_execution_error",
+                "message": msg,
+            })),
+            "data": data,
+            "meta": {
+                "truncated": truncated,
+                "structure_hint": structure_hint,
+                "size_bytes": size_bytes,
+                "saved_output_path": saved_output_path,
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+            }
+        })
+    }
+
+    fn build_execution_state_snapshot(
+        &self,
+        pending_input_request: Option<UserInputRequestState>,
+    ) -> AgentExecutionState {
+        AgentExecutionState {
+            task_results: self
+                .task_results
+                .iter()
+                .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
+                .collect(),
+            current_objective: self
+                .current_objective
+                .as_ref()
+                .map(|o| serde_json::to_value(o).unwrap()),
+            conversation_insights: self
+                .conversation_insights
+                .as_ref()
+                .map(|c| serde_json::to_value(c).unwrap()),
+            supervisor_mode_active: self.supervisor_mode_active,
+            supervisor_task_board: self.supervisor_task_board.clone(),
+            deep_think_mode_active: self.deep_think_mode_active,
+            deep_think_used: self.deep_think_used,
+            pending_input_request,
         }
     }
 

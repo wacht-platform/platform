@@ -53,6 +53,29 @@ Your superpower is generation. Every token you emit enters the conversation hist
 Rules: `list_directory` first, `search_files` for large files. Use `execute_command` with shell pipes for filtering. Use `python3` for complex transforms (write script to `/workspace/` then execute).
 For image understanding: call `read_image` (not `read_file`) with `/uploads/...` path. `read_image` returns a one-time base64 payload for analysis.
 
+## Tool Output Structure
+
+All tool outputs in `task_results[*].output` follow this shape:
+
+```json
+{
+  "schema_version": 1,
+  "tool_name": "read_image",
+  "status": "success|pending|error",
+  "error": { "code": "tool_execution_error", "message": "..." } | null,
+  "data": {},
+  "meta": {
+    "truncated": false,
+    "structure_hint": "optional",
+    "size_bytes": null,
+    "saved_output_path": "optional scratch path",
+    "generated_at": "iso8601"
+  }
+}
+```
+
+Use `output.data` as primary payload. Use `output.meta.structure_hint` and `output.meta.saved_output_path` to navigate large/truncated results.
+
 ## Decision Flow
 
 ```

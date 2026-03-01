@@ -1,6 +1,8 @@
+use agent_engine::{AgentHandler, ExecutionRequest};
 use commands::{Command, TriggerWebhookEventCommand};
 use common::state::AppState;
 use dto::json::{AgentExecutionRequest, AgentExecutionType, AgentStreamMessageType};
+use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures, Query};
 use redis::Script;
 use tokio::time::{Duration, sleep};
 
@@ -160,11 +162,6 @@ pub async fn process_agent_execution(
     app_state: &AppState,
     request: AgentExecutionRequest,
 ) -> Result<String, anyhow::Error> {
-    use agent_engine::{AgentHandler, ExecutionRequest};
-    use queries::{
-        GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures, GetExecutionContextQuery, Query,
-    };
-
     let execution_envelope = AgentExecutionEnvelope::try_from(request)?;
     if !register_execution_idempotency(app_state, &execution_envelope).await? {
         return Ok(format!(
