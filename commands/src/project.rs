@@ -1832,8 +1832,8 @@ impl Command for CreateStagingDeploymentCommand {
 
         sqlx::query!(
             r#"
-            INSERT INTO api_auth_apps (deployment_id, app_slug, name, description, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, true, $5, $6)
+            INSERT INTO api_auth_apps (deployment_id, app_slug, name, description, is_active, created_at, updated_at, key_prefix)
+            VALUES ($1, $2, $3, $4, true, $5, $6, 'sk_')
             "#,
             console_id,
             format!("aa_{}", deployment_row.id),
@@ -2590,8 +2590,8 @@ impl Command for CreateProductionDeploymentCommand {
 
         sqlx::query!(
             r#"
-            INSERT INTO api_auth_apps (deployment_id, app_slug, name, description, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, true, $5, $6)
+            INSERT INTO api_auth_apps (deployment_id, app_slug, name, description, is_active, created_at, updated_at, key_prefix)
+            VALUES ($1, $2, $3, $4, true, $5, $6, 'sk_')
             "#,
             console_id,
             format!("aa_{}", deployment_row.id),
