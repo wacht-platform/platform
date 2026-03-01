@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{self, Datelike, Utc};
 use commands::{Command, email::SendEmailCommand};
 use common::state::AppState;
-use models::{DeploymentInvitation, DeploymentWithSettings, SignIn, UserDetails};
+use models::{DeploymentInvitation, DeploymentWithSettings, EmailProvider, SignIn, UserDetails};
 use queries::{
     Query, deployment::GetDeploymentWithSettingsQuery, invitation::GetDeploymentInvitationQuery,
     signin::GetSignInQuery, user::GetUserDetailsQuery, workspace::GetWorkspaceNameQuery,
@@ -1055,6 +1055,10 @@ fn create_magic_link_variables(
             "expires_in_minutes": "15"
         }
     })
+}
+
+fn should_count_email_usage(deployment_settings: &DeploymentWithSettings) -> bool {
+    deployment_settings.email_provider != EmailProvider::CustomSmtp
 }
 
 async fn track_email_billing(deployment_id: i64, redis_client: &redis::Client) {
