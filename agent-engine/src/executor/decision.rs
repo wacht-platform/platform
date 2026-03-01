@@ -349,18 +349,13 @@ impl AgentExecutor {
                                         all_results.len()
                                     );
 
-                                    let task_result =
+                                    let _task_result =
                                         dto::json::agent_executor::TaskExecutionResult {
                                             task_id: task_id.clone(),
                                             status: "completed".to_string(),
-                                            output: Some(self.sanitize_task_result_output(
-                                                &tool_name,
-                                                &result_value,
-                                            )),
+                                            output: None,
                                             error: None,
                                         };
-
-                                    self.task_results.insert(task_id, task_result);
                                 }
                                 self.update_supervisor_board_from_tool_result(
                                     &tool_name,
@@ -369,7 +364,11 @@ impl AgentExecutor {
                                 all_results.push(ActionResult {
                                     action: action.purpose.clone(),
                                     status: ActionResultStatus::Success,
-                                    result: None,
+                                    result: Some(self.standardize_tool_output(
+                                        &tool_name,
+                                        Some(&result_value),
+                                        None,
+                                    )),
                                     error: None,
                                 });
                             }
@@ -384,21 +383,20 @@ impl AgentExecutor {
                                     all_results.len()
                                 );
                                 let error_message = e.to_string();
-                                let task_result = dto::json::agent_executor::TaskExecutionResult {
+                                let _task_result = dto::json::agent_executor::TaskExecutionResult {
                                     task_id: task_id.clone(),
                                     status: "failed".to_string(),
-                                    output: Some(self.standardize_tool_output(
+                                    output: None,
+                                    error: Some(error_message.clone()),
+                                };
+                                all_results.push(ActionResult {
+                                    action: action.purpose.clone(),
+                                    status: ActionResultStatus::Error,
+                                    result: Some(self.standardize_tool_output(
                                         &tool_name,
                                         None,
                                         Some(error_message.clone()),
                                     )),
-                                    error: Some(error_message.clone()),
-                                };
-                                self.task_results.insert(task_id, task_result);
-                                all_results.push(ActionResult {
-                                    action: action.purpose.clone(),
-                                    status: ActionResultStatus::Error,
-                                    result: None,
                                     error: Some(error_message),
                                 });
                             }
@@ -707,7 +705,7 @@ impl AgentExecutor {
                 .conversation_insights
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
-            task_results: self.build_task_results_for_decision_context(),
+            task_results: std::collections::HashMap::new(),
             available_tools: self
                 .available_tools_for_mode()
                 .iter()
@@ -974,22 +972,6 @@ impl AgentExecutor {
         }))
     }
 
-    fn sanitize_task_result_output(&self, tool_name: &str, result: &Value) -> Value {
-        self.standardize_tool_output(tool_name, Some(result), None)
-    }
-
-    fn build_task_results_for_decision_context(&self) -> std::collections::HashMap<String, Value> {
-        self.task_results
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    serde_json::to_value(v).unwrap_or_else(|_| serde_json::json!({})),
-                )
-            })
-            .collect()
-    }
-
     fn standardize_tool_output(
         &self,
         tool_name: &str,
@@ -1058,11 +1040,6 @@ impl AgentExecutor {
         pending_input_request: Option<UserInputRequestState>,
     ) -> AgentExecutionState {
         AgentExecutionState {
-            task_results: self
-                .task_results
-                .iter()
-                .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
-                .collect(),
             current_objective: self
                 .current_objective
                 .as_ref()
@@ -1134,7 +1111,6 @@ impl AgentExecutor {
             json!({
                 "conversation_history": self.get_conversation_history_for_llm().await,
                 "user_request": self.user_request,
-                "task_results": self.task_results,
                 "available_tools": self.ctx.agent.tools.clone(),
                 "available_knowledge_bases": self.ctx.agent.knowledge_bases.clone(),
             }),

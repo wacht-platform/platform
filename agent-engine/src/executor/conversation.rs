@@ -215,15 +215,6 @@ impl AgentExecutor {
             json!(self.conversations.len()),
         );
 
-        if !self.task_results.is_empty() {
-            let successful_tasks = self
-                .task_results
-                .values()
-                .filter(|r| r.status == "completed")
-                .count();
-            memory.insert("successful_task_count".to_string(), json!(successful_tasks));
-        }
-
         memory
     }
 
@@ -340,11 +331,6 @@ impl AgentExecutor {
         };
 
         let execution_state = AgentExecutionState {
-            task_results: self
-                .task_results
-                .iter()
-                .map(|(k, v)| (k.clone(), serde_json::to_value(v).unwrap()))
-                .collect(),
             current_objective: self
                 .current_objective
                 .as_ref()

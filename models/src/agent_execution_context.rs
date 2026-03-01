@@ -123,7 +123,6 @@ impl Default for ExecutionContextStatus {
 // Agent execution state that can be restored
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AgentExecutionState {
-    pub task_results: HashMap<String, serde_json::Value>,
     pub current_objective: Option<serde_json::Value>,
     pub conversation_insights: Option<serde_json::Value>,
     #[serde(default)]
@@ -146,8 +145,6 @@ pub struct UserInputRequestState {
     pub default_value: Option<String>,
     pub placeholder: Option<String>,
 }
-
-use std::collections::HashMap;
 
 // String conversions for database storage
 impl Display for ExecutionContextStatus {

@@ -2,7 +2,7 @@ use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
 use crate::tools::ToolExecutor;
 
 use common::error::AppError;
-use dto::json::agent_executor::{ConversationInsights, ObjectiveDefinition, TaskExecutionResult};
+use dto::json::agent_executor::{ConversationInsights, ObjectiveDefinition};
 use dto::json::StreamEvent;
 use models::{AgentExecutionState, ConversationRecord, ExecutionContextStatus, MemoryRecord};
 use models::{
@@ -17,7 +17,6 @@ use rmcp::{
     },
     ServiceExt,
 };
-use std::collections::HashMap;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
@@ -36,7 +35,6 @@ pub struct AgentExecutor {
     pub(super) user_request: String,
     pub(super) current_objective: Option<ObjectiveDefinition>,
     pub(super) conversation_insights: Option<ConversationInsights>,
-    pub(super) task_results: HashMap<String, TaskExecutionResult>,
     pub(super) system_instructions: Option<String>,
     pub(super) filesystem: AgentFilesystem,
     pub(super) shell: ShellExecutor,
@@ -216,7 +214,6 @@ impl AgentExecutorBuilder {
             conversations: Vec::new(),
             current_objective: None,
             conversation_insights: None,
-            task_results: HashMap::new(),
             system_instructions: None,
             filesystem,
             shell,
@@ -539,16 +536,6 @@ impl AgentExecutor {
         &mut self,
         state: AgentExecutionState,
     ) -> Result<(), AppError> {
-        self.task_results = state
-            .task_results
-            .into_iter()
-            .filter_map(|(k, v)| {
-                serde_json::from_value::<TaskExecutionResult>(v)
-                    .ok()
-                    .map(|result| (k, result))
-            })
-            .collect();
-
         if let Some(objective) = state.current_objective {
             self.current_objective = serde_json::from_value(objective).ok();
         }

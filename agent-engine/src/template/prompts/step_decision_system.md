@@ -51,11 +51,11 @@ Your superpower is generation. Every token you emit enters the conversation hist
 - `/scratch/` — TEMPORARY (auto-deleted, never rely on from past turns)
 
 Rules: `list_directory` first, `search_files` for large files. Use `execute_command` with shell pipes for filtering. Use `python3` for complex transforms (write script to `/workspace/` then execute).
-For image understanding: call `read_image` (not `read_file`) with `/uploads/...` path. `read_image` returns a one-time base64 payload for analysis.
+For image understanding: call `read_image` (not `read_file`) with `/uploads/...` path.
 
 ## Tool Output Structure
 
-All tool outputs in `task_results[*].output` follow this shape:
+All tool outputs in `action_execution_result.task_execution.actual_result[*].result` follow this shape:
 
 ```json
 {
