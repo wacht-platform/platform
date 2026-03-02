@@ -34,7 +34,7 @@ pub struct SessionClaims {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationMessage {
     pub id: i64,
-    pub user_id: i64,
+    pub user_id: Option<i64>,
     pub deployment_id: i64,
     pub organization_id: Option<i64>,
     pub workspace_id: Option<i64>,
@@ -283,46 +283,51 @@ fn should_send_notification(
     active_organization_id: Option<i64>,
     active_workspace_id: Option<i64>,
 ) -> bool {
-    // If no channels specified, default to "user" notifications only
-    let channels = match &params.channels {
-        Some(channels) if !channels.is_empty() => channels,
-        _ => return true, // Default behavior: send user notifications
+    let channels: Vec<&str> = match &params.channels {
+        Some(channels) if !channels.is_empty() => channels.iter().map(String::as_str).collect(),
+        _ => {
+            let mut derived = Vec::new();
+            if params
+                .organization_ids
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            {
+                derived.push("organization");
+            }
+            if params.workspace_ids.as_ref().is_some_and(|v| !v.is_empty()) {
+                derived.push("workspace");
+            }
+            if derived.is_empty() {
+                vec!["user"]
+            } else {
+                derived
+            }
+        }
     };
 
-    // Check each channel type
     for channel in channels {
-        match channel.as_str() {
+        match channel {
             "user" => {
-                // User notifications are always sent (they're targeted to this specific user)
                 return true;
             }
             "organization" => {
-                // Organization notifications: check if notification has organization_id
-                if notification.organization_id.is_some() && notification.workspace_id.is_none() {
-                    // Organization-level notification (has org_id but no workspace_id)
+                if let Some(notif_org_id) = notification.organization_id {
                     if let Some(org_ids) = &params.organization_ids {
-                        if let Some(notif_org_id) = notification.organization_id {
-                            if org_ids.contains(&notif_org_id) {
-                                return true;
-                            }
+                        if org_ids.contains(&notif_org_id) {
+                            return true;
                         }
                     } else {
-                        // No specific org IDs filter, include all org notifications
                         return true;
                     }
                 }
             }
             "workspace" => {
-                // Workspace notifications: check if notification has workspace_id
-                if notification.workspace_id.is_some() {
+                if let Some(notif_ws_id) = notification.workspace_id {
                     if let Some(ws_ids) = &params.workspace_ids {
-                        if let Some(notif_ws_id) = notification.workspace_id {
-                            if ws_ids.contains(&notif_ws_id) {
-                                return true;
-                            }
+                        if ws_ids.contains(&notif_ws_id) {
+                            return true;
                         }
                     } else {
-                        // No specific workspace IDs filter, include all workspace notifications
                         return true;
                     }
                 }
@@ -352,6 +357,7 @@ fn should_send_notification(
                     return true;
                 }
             }
+            "all" => return true,
             _ => {
                 // Unknown channel type, ignore
                 continue;

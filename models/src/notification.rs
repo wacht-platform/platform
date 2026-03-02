@@ -20,8 +20,8 @@ pub struct Notification {
     pub deployment_id: i64,
 
     // Recipients
-    #[serde(with = "crate::utils::serde::i64_as_string")]
-    pub user_id: i64,
+    #[serde(with = "crate::utils::serde::i64_as_string_option")]
+    pub user_id: Option<i64>,
     #[serde(with = "crate::utils::serde::i64_as_string_option")]
     pub organization_id: Option<i64>,
     #[serde(with = "crate::utils::serde::i64_as_string_option")]
@@ -66,7 +66,7 @@ pub struct Notification {
 pub struct NotificationRow {
     pub id: i64,
     pub deployment_id: i64,
-    pub user_id: i64,
+    pub user_id: Option<i64>,
     pub organization_id: Option<i64>,
     pub workspace_id: Option<i64>,
     pub title: String,

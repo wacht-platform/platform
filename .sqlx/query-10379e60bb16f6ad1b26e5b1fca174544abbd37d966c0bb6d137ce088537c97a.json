@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT om.user_id\n            FROM organization_memberships om\n            JOIN organizations o ON o.id = om.organization_id\n            WHERE o.deployment_id = $1\n              AND om.organization_id = $2\n              AND om.deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "10379e60bb16f6ad1b26e5b1fca174544abbd37d966c0bb6d137ce088537c97a"
+}

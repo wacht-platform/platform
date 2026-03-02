@@ -65,6 +65,23 @@ impl UpdateDeploymentAuthSettingsCommand {
     }
 }
 
+fn enables_phone_auth(updates: &DeploymentAuthSettingsUpdates) -> bool {
+    updates
+        .phone
+        .as_ref()
+        .map(|phone| {
+            phone.enabled == Some(true)
+                || phone.verify_signup == Some(true)
+                || phone.sms_verification_allowed == Some(true)
+        })
+        .unwrap_or(false)
+        || updates
+            .authentication_factors
+            .as_ref()
+            .and_then(|factors| factors.phone_otp_enabled)
+            == Some(true)
+}
+
 fn build_partial_json<T: serde::Serialize>(data: Option<&T>) -> Option<Value> {
     data.and_then(|d| match serde_json::to_value(d) {
         Ok(Value::Object(map)) => {
@@ -86,6 +103,30 @@ impl Command for UpdateDeploymentAuthSettingsCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        if enables_phone_auth(&self.updates) {
+            let deployment = sqlx::query!(
+                r#"
+                SELECT
+                    d.mode,
+                    COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!"
+                FROM deployments d
+                JOIN projects p ON p.id = d.project_id
+                JOIN billing_accounts ba ON ba.id = p.billing_account_id
+                WHERE d.id = $1 AND d.deleted_at IS NULL
+                "#,
+                self.deployment_id
+            )
+            .fetch_optional(&app_state.db_pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
+
+            if deployment.mode.eq_ignore_ascii_case("staging") && deployment.pulse_usage_disabled {
+                return Err(AppError::Validation(
+                    "Prepaid recharge is required before enabling phone authentication for staging deployments".to_string(),
+                ));
+            }
+        }
+
         let mut text_updates: Vec<(&str, String)> = Vec::new();
         let mut int_updates: Vec<(&str, i64)> = Vec::new();
         let mut jsonb_merges: Vec<(&str, Value)> = Vec::new();

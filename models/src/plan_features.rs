@@ -43,16 +43,21 @@ impl PlanTier {
                 HashSet::from([Organizations, Workspaces])
             }
             PlanTier::Growth => {
-                // Growth plan: CIAM suite + Webhooks + API Keys
-                HashSet::from([Webhooks, ApiKeys, Organizations, Workspaces])
-            }
-            PlanTier::Pro => {
-                // Pro plan: Everything (CIAM suite + AI agents + webhooks + API keys)
+                // Growth plan: CIAM suite + AI + Webhooks + API Keys
                 HashSet::from([
                     Webhooks,
                     AiAgents,
                     AiTools,
                     AiKnowledgeBase,
+                    ApiKeys,
+                    Organizations,
+                    Workspaces,
+                ])
+            }
+            PlanTier::Pro => {
+                // Pro plan: CIAM suite + webhooks + API keys (AI platform is Growth-only)
+                HashSet::from([
+                    Webhooks,
                     ApiKeys,
                     Organizations,
                     Workspaces,
@@ -84,19 +89,19 @@ mod tests {
     #[test]
     fn test_growth_plan_features() {
         let plan = PlanTier::Growth;
-        // Growth: CIAM + Webhooks + API Keys
+        // Growth: CIAM + AI + Webhooks + API Keys
         assert!(plan.has_feature(PlanFeature::Webhooks));
+        assert!(plan.has_feature(PlanFeature::AiAgents));
         assert!(plan.has_feature(PlanFeature::ApiKeys));
-        assert!(!plan.has_feature(PlanFeature::AiAgents));
         assert!(plan.has_feature(PlanFeature::Organizations));
     }
 
     #[test]
     fn test_pro_plan_features() {
         let plan = PlanTier::Pro;
-        // Pro: Everything
+        // Pro: no AI platform access (Growth-only)
         assert!(plan.has_feature(PlanFeature::Webhooks));
-        assert!(plan.has_feature(PlanFeature::AiAgents));
+        assert!(!plan.has_feature(PlanFeature::AiAgents));
         assert!(plan.has_feature(PlanFeature::ApiKeys));
         assert!(plan.has_feature(PlanFeature::Organizations));
     }

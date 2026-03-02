@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                pulse_balance_cents,\n                COALESCE(pulse_usage_disabled, false) AS \"pulse_usage_disabled!\"\n            FROM billing_accounts\n            WHERE owner_id = $1\n            FOR UPDATE\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "pulse_balance_cents",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "pulse_usage_disabled!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "6c19bf1968753dac1fe1ad6b2c80cb9e7e2ced9328819ec117f6418a18cc9e74"
+}

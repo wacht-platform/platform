@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE billing_accounts\n            SET\n                checkout_flow_state = 'failed',\n                last_billing_webhook_event = $1,\n                checkout_flow_error = $2,\n                updated_at = NOW()\n            WHERE owner_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d0146c76805461717507f62d8119983323c1dd371400edf204abbbb37856852c"
+}

@@ -1,8 +1,121 @@
-use crate::Command;
+use crate::{Command, notification::CreateNotificationCommand};
 use common::error::AppError;
 use common::state::AppState;
+use models::notification::NotificationSeverity;
 use models::pulse_transaction::{PulseTransaction, PulseTransactionType};
 use tracing::warn;
+
+const LOW_BALANCE_THRESHOLD_CENTS: i64 = 500;
+const DISABLE_THRESHOLD_CENTS: i64 = -500;
+
+struct BillingPulseState {
+    account_id: i64,
+    pulse_balance_cents: i64,
+    pulse_usage_disabled: bool,
+    notified_below_five: bool,
+    notified_below_zero: bool,
+    notified_disabled: bool,
+}
+
+struct PulseTransition {
+    usage_disabled_changed_to: Option<bool>,
+    notify_below_five: bool,
+    notify_below_zero: bool,
+    notify_disabled: bool,
+}
+
+fn compute_transition(old_balance: i64, new_balance: i64, old_disabled: bool) -> PulseTransition {
+    let new_disabled = if old_disabled {
+        new_balance <= LOW_BALANCE_THRESHOLD_CENTS
+    } else {
+        new_balance <= DISABLE_THRESHOLD_CENTS
+    };
+
+    PulseTransition {
+        usage_disabled_changed_to: (old_disabled != new_disabled).then_some(new_disabled),
+        notify_below_five: old_balance >= LOW_BALANCE_THRESHOLD_CENTS
+            && new_balance < LOW_BALANCE_THRESHOLD_CENTS,
+        notify_below_zero: old_balance >= 0 && new_balance < 0,
+        notify_disabled: !old_disabled && new_disabled,
+    }
+}
+
+fn parse_user_id_from_owner_id(owner_id: &str) -> Option<i64> {
+    owner_id.strip_prefix("user_")?.parse::<i64>().ok()
+}
+
+async fn find_notification_deployment_id(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    billing_account_id: i64,
+) -> Result<Option<i64>, AppError> {
+    let row = sqlx::query!(
+        r#"
+        SELECT d.id
+        FROM deployments d
+        JOIN projects p ON p.id = d.project_id
+        WHERE p.billing_account_id = $1
+          AND d.deleted_at IS NULL
+        ORDER BY d.created_at ASC
+        LIMIT 1
+        "#,
+        billing_account_id
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(row.map(|r| r.id))
+}
+
+async fn create_pulse_threshold_notifications(
+    state: &AppState,
+    owner_id: &str,
+    deployment_id: i64,
+    transition: &PulseTransition,
+) -> Result<(), AppError> {
+    let Some(user_id) = parse_user_id_from_owner_id(owner_id) else {
+        return Ok(());
+    };
+
+    if transition.notify_below_five {
+        CreateNotificationCommand::new(
+            deployment_id,
+            "Pulse credits running low".to_string(),
+            "Your Pulse balance is below $5. Add credits to avoid interruptions.".to_string(),
+        )
+        .with_user(user_id)
+        .with_severity(NotificationSeverity::Warning)
+        .execute(state)
+        .await?;
+    }
+
+    if transition.notify_below_zero {
+        CreateNotificationCommand::new(
+            deployment_id,
+            "Pulse balance is negative".to_string(),
+            "Your Pulse balance is below $0. Add credits soon to keep AI and SMS active."
+                .to_string(),
+        )
+        .with_user(user_id)
+        .with_severity(NotificationSeverity::Warning)
+        .execute(state)
+        .await?;
+    }
+
+    if transition.notify_disabled {
+        CreateNotificationCommand::new(
+            deployment_id,
+            "AI and SMS paused".to_string(),
+            "Your Pulse balance reached -$5. AI and SMS are paused until your balance goes above $5."
+                .to_string(),
+        )
+        .with_user(user_id)
+        .with_severity(NotificationSeverity::Error)
+        .execute(state)
+        .await?;
+    }
+
+    Ok(())
+}
 
 pub struct AddPulseCreditsCommand {
     pub owner_id: String,
@@ -15,25 +128,65 @@ impl Command for AddPulseCreditsCommand {
     type Output = PulseTransaction;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        if self.amount_pulse_cents <= 0 {
+            return Err(AppError::BadRequest(
+                "amount_pulse_cents must be greater than zero".to_string(),
+            ));
+        }
+
         let mut tx = state.db_pool.begin().await?;
 
-        let row = sqlx::query("SELECT id FROM billing_accounts WHERE owner_id = $1")
-            .bind(&self.owner_id)
-            .fetch_one(&mut *tx)
-            .await?;
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                id,
+                pulse_balance_cents,
+                COALESCE(pulse_usage_disabled, false) AS "pulse_usage_disabled!"
+            FROM billing_accounts
+            WHERE owner_id = $1
+            FOR UPDATE
+            "#,
+            self.owner_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
 
-        use sqlx::Row;
-        let account_id: i64 = row.get("id");
+        let current_state = BillingPulseState {
+            account_id: row.id,
+            pulse_balance_cents: row.pulse_balance_cents,
+            pulse_usage_disabled: row.pulse_usage_disabled,
+            notified_below_five: false,
+            notified_below_zero: false,
+            notified_disabled: false,
+        };
+        let old_balance = current_state.pulse_balance_cents;
+        let new_balance = old_balance + self.amount_pulse_cents;
+        let transition =
+            compute_transition(old_balance, new_balance, current_state.pulse_usage_disabled);
+        let new_disabled = transition
+            .usage_disabled_changed_to
+            .unwrap_or(current_state.pulse_usage_disabled);
 
-        sqlx::query("UPDATE billing_accounts SET pulse_balance_cents = pulse_balance_cents + $1, updated_at = NOW() WHERE id = $2")
-            .bind(self.amount_pulse_cents)
-            .bind(account_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            r#"
+            UPDATE billing_accounts
+            SET
+                pulse_balance_cents = $1,
+                pulse_usage_disabled = $2,
+                updated_at = NOW()
+            WHERE id = $3
+            "#,
+            new_balance,
+            new_disabled,
+            current_state.account_id
+        )
+        .execute(&mut *tx)
+        .await?;
 
         // 3. Log transaction
         let transaction_id = state.sf.next_id().unwrap() as i64;
-        let transaction = sqlx::query_as::<_, PulseTransaction>(
+        let transaction = sqlx::query_as!(
+            PulseTransaction,
             r#"
             INSERT INTO pulse_transactions (
                 id,
@@ -43,14 +196,16 @@ impl Command for AddPulseCreditsCommand {
                 reference_id,
                 created_at
             ) VALUES ($1, $2, $3, $4, $5, NOW())
-            RETURNING id, billing_account_id, amount_pulse_cents, transaction_type, reference_id, created_at
-            "#
+            RETURNING id, billing_account_id, amount_pulse_cents,
+                      transaction_type as "transaction_type: PulseTransactionType",
+                      reference_id, created_at
+            "#,
+            transaction_id,
+            current_state.account_id,
+            self.amount_pulse_cents,
+            self.transaction_type as _,
+            self.reference_id
         )
-        .bind(transaction_id)
-        .bind(account_id)
-        .bind(self.amount_pulse_cents)
-        .bind(&self.transaction_type)
-        .bind(&self.reference_id)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -71,31 +226,92 @@ impl Command for DeductPulseCreditsCommand {
     type Output = PulseTransaction;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        if self.amount_pulse_cents <= 0 {
+            return Err(AppError::BadRequest(
+                "amount_pulse_cents must be greater than zero".to_string(),
+            ));
+        }
+
         let mut tx = state.db_pool.begin().await?;
 
-        let row = sqlx::query(
-            "SELECT id, pulse_balance_cents FROM billing_accounts WHERE owner_id = $1 FOR UPDATE",
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                id,
+                pulse_balance_cents,
+                COALESCE(pulse_usage_disabled, false) AS "pulse_usage_disabled!",
+                COALESCE(pulse_notified_below_five, false) AS "pulse_notified_below_five!",
+                COALESCE(pulse_notified_below_zero, false) AS "pulse_notified_below_zero!",
+                COALESCE(pulse_notified_disabled, false) AS "pulse_notified_disabled!"
+            FROM billing_accounts
+            WHERE owner_id = $1
+            FOR UPDATE
+            "#,
+            self.owner_id
         )
-        .bind(&self.owner_id)
         .fetch_one(&mut *tx)
         .await?;
 
-        use sqlx::Row;
-        let account_id: i64 = row.get("id");
-        let pulse_balance_cents: i64 = row.get("pulse_balance_cents");
+        let current_state = BillingPulseState {
+            account_id: row.id,
+            pulse_balance_cents: row.pulse_balance_cents,
+            pulse_usage_disabled: row.pulse_usage_disabled,
+            notified_below_five: row.pulse_notified_below_five,
+            notified_below_zero: row.pulse_notified_below_zero,
+            notified_disabled: row.pulse_notified_disabled,
+        };
 
-        if pulse_balance_cents < self.amount_pulse_cents {
+        if current_state.pulse_balance_cents < self.amount_pulse_cents {
             warn!("Insufficient Pulse Credits");
         }
 
-        sqlx::query("UPDATE billing_accounts SET pulse_balance_cents = pulse_balance_cents - $1, updated_at = NOW() WHERE id = $2")
-            .bind(self.amount_pulse_cents)
-            .bind(account_id)
-            .execute(&mut *tx)
-            .await?;
+        let old_balance = current_state.pulse_balance_cents;
+        let requested_new_balance = old_balance - self.amount_pulse_cents;
+        let new_balance = requested_new_balance.max(DISABLE_THRESHOLD_CENTS);
+        let deducted_amount = old_balance - new_balance;
+        let transition =
+            compute_transition(old_balance, new_balance, current_state.pulse_usage_disabled);
+        let new_disabled = transition
+            .usage_disabled_changed_to
+            .unwrap_or(current_state.pulse_usage_disabled);
+        let should_mark_below_five =
+            transition.notify_below_five && !current_state.notified_below_five;
+        let should_mark_below_zero =
+            transition.notify_below_zero && !current_state.notified_below_zero;
+        let should_mark_disabled = transition.notify_disabled && !current_state.notified_disabled;
+
+        sqlx::query!(
+            r#"
+            UPDATE billing_accounts
+            SET
+                pulse_balance_cents = $1,
+                pulse_usage_disabled = $2,
+                pulse_notified_below_five = pulse_notified_below_five OR $3,
+                pulse_notified_below_zero = pulse_notified_below_zero OR $4,
+                pulse_notified_disabled = pulse_notified_disabled OR $5,
+                updated_at = NOW()
+            WHERE id = $6
+            "#,
+            new_balance,
+            new_disabled,
+            should_mark_below_five,
+            should_mark_below_zero,
+            should_mark_disabled,
+            current_state.account_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        let notification_deployment_id =
+            if should_mark_below_five || should_mark_below_zero || should_mark_disabled {
+                find_notification_deployment_id(&mut tx, current_state.account_id).await?
+            } else {
+                None
+            };
 
         let transaction_id = state.sf.next_id().unwrap() as i64;
-        let transaction = sqlx::query_as::<_, PulseTransaction>(
+        let transaction = sqlx::query_as!(
+            PulseTransaction,
             r#"
             INSERT INTO pulse_transactions (
                 id,
@@ -105,19 +321,71 @@ impl Command for DeductPulseCreditsCommand {
                 reference_id,
                 created_at
             ) VALUES ($1, $2, $3, $4, $5, NOW())
-            RETURNING id, billing_account_id, amount_pulse_cents, transaction_type, reference_id, created_at
-            "#
+            RETURNING id, billing_account_id, amount_pulse_cents,
+                      transaction_type as "transaction_type: PulseTransactionType",
+                      reference_id, created_at
+            "#,
+            transaction_id,
+            current_state.account_id,
+            -deducted_amount,
+            self.transaction_type as _,
+            self.reference_id
         )
-        .bind(transaction_id)
-        .bind(account_id)
-        .bind(-self.amount_pulse_cents)
-        .bind(&self.transaction_type)
-        .bind(&self.reference_id)
         .fetch_one(&mut *tx)
         .await?;
 
         tx.commit().await?;
 
+        if let Some(deployment_id) = notification_deployment_id {
+            let mut notify_transition = transition;
+            notify_transition.notify_below_five = should_mark_below_five;
+            notify_transition.notify_below_zero = should_mark_below_zero;
+            notify_transition.notify_disabled = should_mark_disabled;
+            create_pulse_threshold_notifications(
+                state,
+                &self.owner_id,
+                deployment_id,
+                &notify_transition,
+            )
+            .await?;
+        }
+
         Ok(transaction)
+    }
+}
+
+pub struct EnsurePulseUsageAllowedForDeploymentCommand {
+    pub deployment_id: i64,
+}
+
+impl EnsurePulseUsageAllowedForDeploymentCommand {
+    pub fn new(deployment_id: i64) -> Self {
+        Self { deployment_id }
+    }
+}
+
+impl Command for EnsurePulseUsageAllowedForDeploymentCommand {
+    type Output = ();
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!"
+            FROM deployments d
+            JOIN projects p ON p.id = d.project_id
+            JOIN billing_accounts ba ON ba.id = p.billing_account_id
+            WHERE d.id = $1
+            "#,
+            self.deployment_id
+        )
+        .fetch_one(&state.db_pool)
+        .await?;
+
+        let disabled = row.pulse_usage_disabled;
+        if disabled {
+            return Err(AppError::Forbidden("Pulse usage is paused".to_string()));
+        }
+
+        Ok(())
     }
 }

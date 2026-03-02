@@ -70,12 +70,12 @@ pub async fn create_project(
         .map(|id| format!("org_{id}"))
         .unwrap_or(format!("user_{}", auth.user_id));
 
-    CreateProjectWithStagingDeploymentCommand::new(name, methods)
+    let project = CreateProjectWithStagingDeploymentCommand::new(name, methods)
         .with_owner(owner_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+
+    Ok(project.into())
 }
 
 pub async fn create_staging_deployment(

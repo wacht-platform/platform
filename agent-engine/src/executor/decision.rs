@@ -403,10 +403,13 @@ impl AgentExecutor {
                         }
                     }
 
-                    UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
-                        .with_execution_state(self.build_execution_state_snapshot(None))
-                        .execute(&self.ctx.app_state)
-                        .await?;
+                    UpdateExecutionContextQuery::new(
+                        self.ctx.context_id,
+                        self.ctx.agent.deployment_id,
+                    )
+                    .with_execution_state(self.build_execution_state_snapshot(None))
+                    .execute(&self.ctx.app_state)
+                    .await?;
 
                     if any_pending {
                         UpdateExecutionContextQuery::new(

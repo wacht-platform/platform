@@ -13,6 +13,7 @@ use commands::{
 };
 use common::state::AppState;
 use dto::json::api_key::*;
+use models::plan_features::PlanTier;
 use models::api_key::{ApiAuthApp, ApiKeyWithSecret};
 
 use queries::{
@@ -29,6 +30,7 @@ use queries::{
         GetApiAuditTimeseriesQuery as GetApiAuditTimeseriesDataQuery,
     },
     rate_limit_scheme::{GetRateLimitSchemeQuery, ListRateLimitSchemesQuery, RateLimitSchemeData},
+    plan_access::GetDeploymentPlanTierQuery,
 };
 
 pub async fn list_api_auth_apps(
@@ -68,6 +70,17 @@ pub async fn create_api_auth_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateApiAuthAppRequest>,
 ) -> ApiResult<ApiAuthApp> {
+    let plan_tier = GetDeploymentPlanTierQuery::new(deployment_id)
+        .execute(&app_state)
+        .await?;
+    if !matches!(plan_tier, Some(PlanTier::Growth)) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "API auth app creation requires Growth plan",
+        )
+            .into());
+    }
+
     if request.user_id.is_some() && (request.permissions.is_some() || request.resources.is_some()) {
         return Err((
             StatusCode::BAD_REQUEST,

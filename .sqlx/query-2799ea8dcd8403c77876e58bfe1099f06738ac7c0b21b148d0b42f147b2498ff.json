@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE billing_accounts\n            SET\n                pulse_balance_cents = $1,\n                pulse_usage_disabled = $2,\n                pulse_notified_below_five = pulse_notified_below_five OR $3,\n                pulse_notified_below_zero = pulse_notified_below_zero OR $4,\n                pulse_notified_disabled = pulse_notified_disabled OR $5,\n                updated_at = NOW()\n            WHERE id = $6\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2799ea8dcd8403c77876e58bfe1099f06738ac7c0b21b148d0b42f147b2498ff"
+}

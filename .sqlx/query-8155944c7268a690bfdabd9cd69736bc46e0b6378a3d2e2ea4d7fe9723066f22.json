@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE billing_accounts\n            SET\n                last_checkout_session_created_at = NOW(),\n                last_checkout_session_id = $1,\n                checkout_flow_state = 'checkout_created',\n                last_payment_succeeded_at = NULL,\n                last_subscription_activated_at = NULL,\n                last_billing_webhook_event = NULL,\n                checkout_flow_error = NULL,\n                updated_at = NOW()\n            WHERE owner_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8155944c7268a690bfdabd9cd69736bc46e0b6378a3d2e2ea4d7fe9723066f22"
+}

@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO pulse_transactions (\n                id,\n                billing_account_id,\n                amount_pulse_cents,\n                transaction_type,\n                reference_id,\n                created_at\n            ) VALUES ($1, $2, $3, $4, $5, NOW())\n            RETURNING id, billing_account_id, amount_pulse_cents,\n                      transaction_type as \"transaction_type: PulseTransactionType\",\n                      reference_id, created_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "billing_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "amount_pulse_cents",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "transaction_type: PulseTransactionType",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "reference_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "d29fe67ef05ff5640e5929be421c7a2ba55831ef49fe4a05514399d6c32632e9"
+}

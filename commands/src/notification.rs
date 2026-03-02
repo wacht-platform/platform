@@ -13,7 +13,7 @@ use models::notification::{Notification, NotificationRow, NotificationSeverity};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationMessage {
     pub id: i64,
-    pub user_id: i64,
+    pub user_id: Option<i64>,
     pub deployment_id: i64,
     pub organization_id: Option<i64>,
     pub workspace_id: Option<i64>,
@@ -27,7 +27,7 @@ pub struct NotificationMessage {
 #[derive(Debug, Clone)]
 pub struct CreateNotificationCommand {
     pub deployment_id: i64,
-    pub user_id: i64,
+    pub user_id: Option<i64>,
     pub organization_id: Option<i64>,
     pub workspace_id: Option<i64>,
     pub title: String,
@@ -39,10 +39,10 @@ pub struct CreateNotificationCommand {
 }
 
 impl CreateNotificationCommand {
-    pub fn new(deployment_id: i64, user_id: i64, title: String, body: String) -> Self {
+    pub fn new(deployment_id: i64, title: String, body: String) -> Self {
         Self {
             deployment_id,
-            user_id,
+            user_id: None,
             organization_id: None,
             workspace_id: None,
             title,
@@ -52,6 +52,11 @@ impl CreateNotificationCommand {
             metadata: None,
             expires_at: None,
         }
+    }
+
+    pub fn with_user(mut self, user_id: i64) -> Self {
+        self.user_id = Some(user_id);
+        self
     }
 
     pub fn with_ctas(mut self, ctas: JsonValue) -> Self {
@@ -125,34 +130,33 @@ impl Command for CreateNotificationCommand {
             .map_err(|e| AppError::Internal(format!("Failed to convert notification: {}", e)))?;
 
         // Publish to NATS for real-time delivery
-        let subject = format!(
-            "notifications.{}.{}",
-            notification.deployment_id, notification.user_id
-        );
+        if let Some(user_id) = notification.user_id {
+            let subject = format!("notifications.{}.{}", notification.deployment_id, user_id);
 
-        // Serialize ctas back to JSON for NATS message
-        let ctas_json = notification
-            .ctas
-            .as_ref()
-            .and_then(|ctas| serde_json::to_value(ctas).ok());
+            // Serialize ctas back to JSON for NATS message
+            let ctas_json = notification
+                .ctas
+                .as_ref()
+                .and_then(|ctas| serde_json::to_value(ctas).ok());
 
-        let message = NotificationMessage {
-            id: notification.id,
-            user_id: notification.user_id,
-            deployment_id: notification.deployment_id,
-            organization_id: notification.organization_id,
-            workspace_id: notification.workspace_id,
-            title: notification.title.clone(),
-            body: notification.body.clone(),
-            severity: notification.severity.to_string(),
-            ctas: ctas_json,
-            created_at: notification.created_at,
-        };
+            let message = NotificationMessage {
+                id: notification.id,
+                user_id: notification.user_id,
+                deployment_id: notification.deployment_id,
+                organization_id: notification.organization_id,
+                workspace_id: notification.workspace_id,
+                title: notification.title.clone(),
+                body: notification.body.clone(),
+                severity: notification.severity.to_string(),
+                ctas: ctas_json,
+                created_at: notification.created_at,
+            };
 
-        if let Ok(payload) = serde_json::to_vec(&message) {
-            if let Err(e) = app_state.nats_client.publish(subject, payload.into()).await {
-                warn!("Failed to publish notification to NATS: {}", e);
-                // Don't fail the command, just log the error
+            if let Ok(payload) = serde_json::to_vec(&message) {
+                if let Err(e) = app_state.nats_client.publish(subject, payload.into()).await {
+                    warn!("Failed to publish notification to NATS: {}", e);
+                    // Don't fail the command, just log the error
+                }
             }
         }
 

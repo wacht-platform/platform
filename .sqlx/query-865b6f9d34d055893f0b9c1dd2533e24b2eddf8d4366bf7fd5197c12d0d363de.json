@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                pulse_balance_cents,\n                COALESCE(pulse_usage_disabled, false) AS \"pulse_usage_disabled!\",\n                COALESCE(pulse_notified_below_five, false) AS \"pulse_notified_below_five!\",\n                COALESCE(pulse_notified_below_zero, false) AS \"pulse_notified_below_zero!\",\n                COALESCE(pulse_notified_disabled, false) AS \"pulse_notified_disabled!\"\n            FROM billing_accounts\n            WHERE owner_id = $1\n            FOR UPDATE\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "pulse_balance_cents",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "pulse_usage_disabled!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "pulse_notified_below_five!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "pulse_notified_below_zero!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "pulse_notified_disabled!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "865b6f9d34d055893f0b9c1dd2533e24b2eddf8d4366bf7fd5197c12d0d363de"
+}

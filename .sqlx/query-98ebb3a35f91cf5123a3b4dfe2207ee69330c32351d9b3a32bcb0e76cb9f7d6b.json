@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT d.id\n        FROM deployments d\n        JOIN projects p ON p.id = d.project_id\n        WHERE p.billing_account_id = $1\n          AND d.deleted_at IS NULL\n        ORDER BY d.created_at ASC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "98ebb3a35f91cf5123a3b4dfe2207ee69330c32351d9b3a32bcb0e76cb9f7d6b"
+}

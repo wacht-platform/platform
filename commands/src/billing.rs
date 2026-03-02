@@ -47,9 +47,14 @@ impl Command for CreateBillingAccountCommand {
                 status,
                 currency,
                 locale,
+                pulse_balance_cents,
+                pulse_usage_disabled,
+                pulse_notified_below_five,
+                pulse_notified_below_zero,
+                pulse_notified_disabled,
                 created_at,
                 updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'USD', 'en-US', NOW(), NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'USD', 'en-US', 0, true, false, false, false, NOW(), NOW())
             "#,
             id,
             self.owner_id,
@@ -320,6 +325,136 @@ impl Command for SetProviderCustomerIdCommand {
             WHERE owner_id = $2
             "#,
             self.provider_customer_id,
+            self.owner_id
+        )
+        .execute(&state.db_pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+pub struct MarkCheckoutSessionCreatedCommand {
+    pub owner_id: String,
+    pub checkout_session_id: String,
+}
+
+impl Command for MarkCheckoutSessionCreatedCommand {
+    type Output = ();
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query!(
+            r#"
+            UPDATE billing_accounts
+            SET
+                last_checkout_session_created_at = NOW(),
+                last_checkout_session_id = $1,
+                checkout_flow_state = 'checkout_created',
+                last_payment_succeeded_at = NULL,
+                last_subscription_activated_at = NULL,
+                last_billing_webhook_event = NULL,
+                checkout_flow_error = NULL,
+                updated_at = NOW()
+            WHERE owner_id = $2
+            "#,
+            self.checkout_session_id,
+            self.owner_id
+        )
+        .execute(&state.db_pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+pub struct MarkPaymentSucceededCommand {
+    pub owner_id: String,
+    pub webhook_event: String,
+}
+
+impl Command for MarkPaymentSucceededCommand {
+    type Output = ();
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query!(
+            r#"
+            UPDATE billing_accounts
+            SET
+                last_payment_succeeded_at = NOW(),
+                last_billing_webhook_event = $1,
+                checkout_flow_state = CASE
+                    WHEN last_subscription_activated_at IS NOT NULL THEN 'active'
+                    ELSE 'payment_received_waiting_subscription'
+                END,
+                checkout_flow_error = NULL,
+                updated_at = NOW()
+            WHERE owner_id = $2
+            "#,
+            self.webhook_event,
+            self.owner_id
+        )
+        .execute(&state.db_pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+pub struct MarkSubscriptionActivatedCommand {
+    pub owner_id: String,
+    pub webhook_event: String,
+}
+
+impl Command for MarkSubscriptionActivatedCommand {
+    type Output = ();
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query!(
+            r#"
+            UPDATE billing_accounts
+            SET
+                last_subscription_activated_at = NOW(),
+                last_billing_webhook_event = $1,
+                checkout_flow_state = CASE
+                    WHEN last_payment_succeeded_at IS NOT NULL THEN 'active'
+                    ELSE 'subscription_active_waiting_payment'
+                END,
+                checkout_flow_error = NULL,
+                updated_at = NOW()
+            WHERE owner_id = $2
+            "#,
+            self.webhook_event,
+            self.owner_id
+        )
+        .execute(&state.db_pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+pub struct MarkCheckoutFlowFailedCommand {
+    pub owner_id: String,
+    pub webhook_event: String,
+    pub reason: String,
+}
+
+impl Command for MarkCheckoutFlowFailedCommand {
+    type Output = ();
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        sqlx::query!(
+            r#"
+            UPDATE billing_accounts
+            SET
+                checkout_flow_state = 'failed',
+                last_billing_webhook_event = $1,
+                checkout_flow_error = $2,
+                updated_at = NOW()
+            WHERE owner_id = $3
+            "#,
+            self.webhook_event,
+            self.reason,
             self.owner_id
         )
         .execute(&state.db_pool)

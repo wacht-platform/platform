@@ -211,8 +211,9 @@ impl ToolExecutor {
         };
         let mailbox_key = mailbox_key(parent_context_id, self.context_id(), conversation_id);
         let mailbox_store = self.get_or_create_swarm_mailbox().await?;
-        let payload = serde_json::to_vec(&mailbox_message)
-            .map_err(|e| AppError::Internal(format!("Failed to serialize mailbox message: {}", e)))?;
+        let payload = serde_json::to_vec(&mailbox_message).map_err(|e| {
+            AppError::Internal(format!("Failed to serialize mailbox message: {}", e))
+        })?;
         mailbox_store
             .put(mailbox_key, payload.into())
             .await
@@ -267,9 +268,10 @@ impl ToolExecutor {
             let Some(entry) = entry else {
                 continue;
             };
-            let payload = serde_json::from_slice::<SwarmMailboxMessage>(&entry.value).map_err(|e| {
-                AppError::Internal(format!("Failed to parse mailbox message payload: {}", e))
-            })?;
+            let payload =
+                serde_json::from_slice::<SwarmMailboxMessage>(&entry.value).map_err(|e| {
+                    AppError::Internal(format!("Failed to parse mailbox message payload: {}", e))
+                })?;
             messages_with_id.push((
                 payload.message_id,
                 serde_json::json!({

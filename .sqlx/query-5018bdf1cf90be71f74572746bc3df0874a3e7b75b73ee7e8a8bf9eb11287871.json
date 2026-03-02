@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT COALESCE(ba.pulse_usage_disabled, false) AS \"pulse_usage_disabled!\"\n            FROM deployments d\n            JOIN projects p ON p.id = d.project_id\n            JOIN billing_accounts ba ON ba.id = p.billing_account_id\n            WHERE d.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pulse_usage_disabled!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5018bdf1cf90be71f74572746bc3df0874a3e7b75b73ee7e8a8bf9eb11287871"
+}

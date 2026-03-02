@@ -18,6 +18,7 @@ use std::str::FromStr;
 use super::Command;
 
 const DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG: &str = "default";
+const MAX_PROJECTS_PER_BILLING_ACCOUNT: i64 = 5;
 const SOCIAL_AUTH_METHODS: &[&str] = &[
     "google",
     "apple",
@@ -41,6 +42,10 @@ const SOCIAL_AUTH_METHODS: &[&str] = &[
 
 fn is_social_auth_method(method: &str) -> bool {
     SOCIAL_AUTH_METHODS.contains(&method)
+}
+
+fn includes_phone_auth(auth_methods: &[String]) -> bool {
+    auth_methods.iter().any(|method| method == "phone")
 }
 
 fn generate_signing_secret() -> String {
@@ -269,7 +274,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         let billing_account = if let Some(ref owner_id) = self.owner_id {
             sqlx::query!(
-                "SELECT id, status FROM billing_accounts WHERE owner_id = $1",
+                "SELECT id, status, COALESCE(pulse_usage_disabled, false) AS \"pulse_usage_disabled!\" FROM billing_accounts WHERE owner_id = $1 FOR UPDATE",
                 owner_id
             )
             .fetch_optional(&mut *tx)
@@ -288,7 +293,32 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             )));
         }
 
+        if includes_phone_auth(&self.auth_methods) && billing_account.pulse_usage_disabled {
+            return Err(AppError::Validation(
+                "Prepaid recharge is required before enabling phone authentication for staging deployments".to_string(),
+            ));
+        }
+
         let billing_account_id = billing_account.id;
+
+        let project_count = sqlx::query!(
+            r#"
+            SELECT COUNT(*)::BIGINT as "count!"
+            FROM projects
+            WHERE billing_account_id = $1
+              AND deleted_at IS NULL
+            "#,
+            billing_account_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        if project_count.count >= MAX_PROJECTS_PER_BILLING_ACCOUNT {
+            return Err(AppError::Validation(format!(
+                "Project limit reached. You can create up to {} projects.",
+                MAX_PROJECTS_PER_BILLING_ACCOUNT
+            )));
+        }
 
         let owner_id = self
             .owner_id
@@ -900,23 +930,23 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
-        let signing_secret = generate_signing_secret();
-        sqlx::query!(
-            r#"
-            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, event_catalog_slug, is_active, created_at, updated_at, app_slug)
-            VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
-            "#,
-            console_id,
-            app_name,
-            format!("Webhooks for deployment {}", deployment_row.id),
-            signing_secret,
-            DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG,
-            chrono::Utc::now(),
-            chrono::Utc::now(),
-            format!("wh_{}", deployment_row.id)
-        )
-        .execute(&mut *tx)
-        .await?;
+        // let signing_secret = generate_signing_secret();
+        // sqlx::query!(
+        //     r#"
+        //     INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, event_catalog_slug, is_active, created_at, updated_at, app_slug)
+        //     VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
+        //     "#,
+        //     console_id,
+        //     app_name,
+        //     format!("Webhooks for deployment {}", deployment_row.id),
+        //     signing_secret,
+        //     DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG,
+        //     chrono::Utc::now(),
+        //     chrono::Utc::now(),
+        //     format!("wh_{}", deployment_row.id)
+        // )
+        // .execute(&mut *tx)
+        // .await?;
 
         sqlx::query!(
             r#"
@@ -1370,7 +1400,7 @@ impl Command for CreateStagingDeploymentCommand {
 
         let project = sqlx::query!(
             r#"
-            SELECT p.name, ba.status
+            SELECT p.name, ba.status, COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!"
             FROM projects p
             JOIN billing_accounts ba ON p.billing_account_id = ba.id
             WHERE p.id = $1 AND p.deleted_at IS NULL
@@ -1388,6 +1418,12 @@ impl Command for CreateStagingDeploymentCommand {
                 "Cannot create deployment. Billing account status is {}",
                 project.status
             )));
+        }
+
+        if includes_phone_auth(&self.auth_methods) && project.pulse_usage_disabled {
+            return Err(AppError::Validation(
+                "Prepaid recharge is required before enabling phone authentication for staging deployments".to_string(),
+            ));
         }
 
         // Check staging deployment limit (max 3)

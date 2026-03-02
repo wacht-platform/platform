@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT wm.user_id\n            FROM workspace_memberships wm\n            JOIN workspaces w ON w.id = wm.workspace_id\n            WHERE w.deployment_id = $1\n              AND wm.workspace_id = $2\n              AND wm.deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e2e742f8c9dc65025492ec609359abd2d0925af912d5e50f288d085bbd578992"
+}

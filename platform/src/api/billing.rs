@@ -7,9 +7,11 @@ use crate::application::response::{ApiResult, PaginatedResponse};
 use commands::{
     Command,
     billing::{
-        CreateBillingAccountCommand, SetProviderCustomerIdCommand, UpdateBillingAccountCommand,
+        CreateBillingAccountCommand, MarkCheckoutSessionCreatedCommand,
+        SetProviderCustomerIdCommand, UpdateBillingAccountCommand,
     },
 };
+use chrono::{Duration, Utc};
 use common::dodo::{
     ChangePlanParams, CheckoutCustomer, CreateCheckoutParams, CreateCustomerParams, DodoClient,
     ProductCartItem, UpdateCustomerParams,
@@ -43,6 +45,23 @@ pub struct CheckoutResponse {
 #[derive(Debug, Serialize)]
 pub struct PortalResponse {
     pub portal_url: String,
+}
+
+fn enforce_checkout_cooldown(account: &BillingAccountWithSubscription) -> Result<(), (StatusCode, String)> {
+    if let Some(last_created_at) = account.billing_account.last_checkout_session_created_at {
+        let next_allowed_at = last_created_at + Duration::minutes(2);
+        if next_allowed_at > Utc::now() {
+            let wait_seconds = (next_allowed_at - Utc::now()).num_seconds().max(1);
+            return Err((
+                StatusCode::TOO_MANY_REQUESTS,
+                format!(
+                    "Checkout already generated recently. Please retry in {} seconds.",
+                    wait_seconds
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,6 +121,9 @@ pub async fn create_checkout(
             if subscription.status == "active" {
                 return Err((StatusCode::CONFLICT, "Subscription already exists").into());
             }
+        }
+        if let Err(err) = enforce_checkout_cooldown(&account) {
+            return Err(err.into());
         }
     }
 
@@ -246,6 +268,13 @@ pub async fn create_checkout(
         )
     })?;
 
+    MarkCheckoutSessionCreatedCommand {
+        owner_id: owner_id.clone(),
+        checkout_session_id: checkout.checkout_id.clone(),
+    }
+    .execute(&state)
+    .await?;
+
     Ok(CheckoutResponse {
         checkout_id: checkout.checkout_id,
         checkout_url: checkout.checkout_url,
@@ -268,6 +297,10 @@ pub async fn update_billing_account(
         .execute(&state)
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
+
+    if let Err(err) = enforce_checkout_cooldown(&existing) {
+        return Err(err.into());
+    }
 
     let command = UpdateBillingAccountCommand {
         id: existing.billing_account.id,
@@ -527,6 +560,13 @@ pub async fn create_pulse_checkout(
             "Failed to create checkout session",
         )
     })?;
+
+    MarkCheckoutSessionCreatedCommand {
+        owner_id,
+        checkout_session_id: checkout.checkout_id.clone(),
+    }
+    .execute(&state)
+    .await?;
 
     Ok(CheckoutResponse {
         checkout_id: checkout.checkout_id,

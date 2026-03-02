@@ -7,7 +7,7 @@ use commands::agent_execution::{
 };
 use commands::{
     Command, CreateConversationCommand, CreateExecutionContextCommand,
-    UpdateExecutionContextCommand,
+    EnsurePulseUsageAllowedForDeploymentCommand, UpdateExecutionContextCommand,
 };
 use common::error::AppError;
 use common::state::AppState;
@@ -15,8 +15,13 @@ use dto::json::UpdateExecutionContextRequest;
 use dto::json::deployment::{
     CreateExecutionContextRequest, ExecuteAgentRequest, ExecuteAgentResponse,
 };
+use models::plan_features::PlanFeature;
 use models::{AgentExecutionContext, ExecutionContextStatus};
-use queries::{GetExecutionContextQuery, ListExecutionContextsQuery, Query as QueryTrait};
+use queries::{
+    GetDeploymentAiSettingsQuery,
+    GetExecutionContextQuery, ListExecutionContextsQuery,
+    plan_access::CheckDeploymentFeatureAccessQuery, Query as QueryTrait,
+};
 use serde::Deserialize;
 use tracing::{error, info};
 
@@ -234,6 +239,31 @@ pub async fn execute_agent_async(
         .into());
     }
 
+    // We allow agent creation/config for all plans, but actual execution requires AI feature access.
+    if cancel.is_none() {
+        let has_ai_access = CheckDeploymentFeatureAccessQuery::new(
+            deployment_id,
+            PlanFeature::AiAgents,
+        )
+        .execute(&app_state)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to check AI feature access: {}", e)))?;
+
+        if !has_ai_access {
+            return Err(AppError::Forbidden("AI agent usage requires Growth plan".to_string()).into());
+        }
+    }
+
+    let has_custom_gemini_key = if cancel.is_none() {
+        GetDeploymentAiSettingsQuery::new(deployment_id)
+            .execute(&app_state)
+            .await?
+            .and_then(|s| s.gemini_api_key)
+            .is_some()
+    } else {
+        false
+    };
+
     // Note: We pass agent_name through to the worker, which resolves the target agent.
     let agent_name = request.agent_name.clone();
 
@@ -244,6 +274,12 @@ pub async fn execute_agent_async(
         cancel,
     ) {
         (Some(new_message), None, None, None) => {
+            if !has_custom_gemini_key {
+                EnsurePulseUsageAllowedForDeploymentCommand::new(deployment_id)
+                    .execute(&app_state)
+                    .await?;
+            }
+
             if new_message.message.trim().is_empty()
                 && new_message
                     .files
@@ -327,6 +363,12 @@ pub async fn execute_agent_async(
         }
 
         (None, Some(user_input_response), None, None) => {
+            if !has_custom_gemini_key {
+                EnsurePulseUsageAllowedForDeploymentCommand::new(deployment_id)
+                    .execute(&app_state)
+                    .await?;
+            }
+
             if user_input_response.message.trim().is_empty() {
                 return Err(AppError::BadRequest("Message is required".to_string()).into());
             }

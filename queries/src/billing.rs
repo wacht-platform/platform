@@ -39,7 +39,19 @@ impl Query for GetBillingAccountQuery {
             SELECT
                 id, owner_id, owner_type, provider_customer_id, legal_name, tax_id, billing_email, billing_phone,
                 address_line1, address_line2, city, state, postal_code, country, status,
-                payment_method_status, currency, locale, pulse_balance_cents, created_at, updated_at
+                payment_method_status, currency, locale, pulse_balance_cents,
+                COALESCE(pulse_usage_disabled, false) AS pulse_usage_disabled,
+                COALESCE(pulse_notified_below_five, false) AS pulse_notified_below_five,
+                COALESCE(pulse_notified_below_zero, false) AS pulse_notified_below_zero,
+                COALESCE(pulse_notified_disabled, false) AS pulse_notified_disabled,
+                last_checkout_session_id,
+                checkout_flow_state,
+                last_payment_succeeded_at,
+                last_subscription_activated_at,
+                last_billing_webhook_event,
+                checkout_flow_error,
+                last_checkout_session_created_at,
+                created_at, updated_at
             FROM billing_accounts WHERE owner_id = $1
             "#
         )
@@ -109,7 +121,19 @@ impl Query for GetSubscriptionByProviderIdQuery {
                 SELECT
                     id, owner_id, owner_type, provider_customer_id, legal_name, tax_id, billing_email, billing_phone,
                     address_line1, address_line2, city, state, postal_code, country, status,
-                    payment_method_status, currency, locale, pulse_balance_cents, created_at, updated_at
+                    payment_method_status, currency, locale, pulse_balance_cents,
+                    COALESCE(pulse_usage_disabled, false) AS pulse_usage_disabled,
+                    COALESCE(pulse_notified_below_five, false) AS pulse_notified_below_five,
+                    COALESCE(pulse_notified_below_zero, false) AS pulse_notified_below_zero,
+                    COALESCE(pulse_notified_disabled, false) AS pulse_notified_disabled,
+                    last_checkout_session_id,
+                    checkout_flow_state,
+                    last_payment_succeeded_at,
+                    last_subscription_activated_at,
+                    last_billing_webhook_event,
+                    checkout_flow_error,
+                    last_checkout_session_created_at,
+                    created_at, updated_at
                 FROM billing_accounts WHERE id = $1
                 "#
             )

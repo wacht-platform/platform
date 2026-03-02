@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE billing_accounts\n            SET\n                last_payment_succeeded_at = NOW(),\n                last_billing_webhook_event = $1,\n                checkout_flow_state = CASE\n                    WHEN last_subscription_activated_at IS NOT NULL THEN 'active'\n                    ELSE 'payment_received_waiting_subscription'\n                END,\n                checkout_flow_error = NULL,\n                updated_at = NOW()\n            WHERE owner_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cd79a36b3c0f7a2ac760320c5a136ab62df74df2523dd80abe1a6219a9084859"
+}

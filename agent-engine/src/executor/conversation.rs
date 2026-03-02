@@ -322,9 +322,9 @@ impl AgentExecutor {
             } => {
                 format!("System Decision (Step: {}): {}", step, reasoning)
             }
-            ConversationContent::ActionExecutionResult {
-                ..
-            } => serde_json::to_string(content).unwrap_or_default(),
+            ConversationContent::ActionExecutionResult { .. } => {
+                serde_json::to_string(content).unwrap_or_default()
+            }
             _ => serde_json::to_string(content).unwrap_or_default(),
         }
     }

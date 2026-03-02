@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO billing_accounts (\n                id,\n                owner_id,\n                owner_type,\n                legal_name,\n                billing_email,\n                billing_phone,\n                tax_id,\n                address_line1,\n                address_line2,\n                city,\n                state,\n                postal_code,\n                country,\n                status,\n                currency,\n                locale,\n                pulse_balance_cents,\n                pulse_usage_disabled,\n                pulse_notified_below_five,\n                pulse_notified_below_zero,\n                pulse_notified_disabled,\n                created_at,\n                updated_at\n            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'USD', 'en-US', 0, true, false, false, false, NOW(), NOW())\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d593d57621ee132048a0685e43c24bbbd9d8c18148d9f209ada1deb69667384a"
+}

@@ -4,13 +4,20 @@ use axum::{
 };
 use commands::{
     Command,
-    billing::{UpdateBillingAccountStatusCommand, UpsertInvoiceCommand, UpsertSubscriptionCommand},
+    billing::{
+        MarkCheckoutFlowFailedCommand, MarkPaymentSucceededCommand,
+        MarkSubscriptionActivatedCommand, UpdateBillingAccountStatusCommand, UpsertInvoiceCommand,
+        UpsertSubscriptionCommand,
+    },
     pulse::AddPulseCreditsCommand,
 };
 use common::dodo::DodoClient;
 use common::state::AppState;
 use models::pulse_transaction::PulseTransactionType;
-use queries::{Query, billing::GetBillingAccountByProviderCustomerIdQuery};
+use queries::{
+    Query,
+    billing::{GetBillingAccountByProviderCustomerIdQuery, GetBillingAccountQuery},
+};
 use tracing::{error, info, warn};
 
 pub async fn handle_dodo_webhook(
@@ -148,6 +155,17 @@ async fn handle_subscription_active(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    MarkSubscriptionActivatedCommand {
+        owner_id: owner_id.clone(),
+        webhook_event: "subscription.active".to_string(),
+    }
+    .execute(app_state)
+    .await
+    .map_err(|e| {
+        error!("Failed to update checkout flow state: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     info!(
         "Subscription {} activated for owner {}",
         subscription_id, owner_id
@@ -183,6 +201,17 @@ async fn handle_subscription_renewed(
         .await
         .map_err(|e| {
             error!("Failed to update subscription on renewal: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        MarkSubscriptionActivatedCommand {
+            owner_id: owner_id.clone(),
+            webhook_event: "subscription.renewed".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update checkout flow state: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
@@ -223,6 +252,17 @@ async fn handle_subscription_plan_changed(
         .await
         .map_err(|e| {
             error!("Failed to update subscription on plan change: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        MarkSubscriptionActivatedCommand {
+            owner_id: owner_id.clone(),
+            webhook_event: "subscription.plan_changed".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update checkout flow state: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
@@ -278,6 +318,18 @@ async fn handle_subscription_cancelled(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+        MarkCheckoutFlowFailedCommand {
+            owner_id: owner_id.clone(),
+            webhook_event: "subscription.cancelled".to_string(),
+            reason: status.to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update checkout flow state: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
         info!(
             "Subscription {} cancelled for owner {}",
             subscription_id, owner_id
@@ -327,6 +379,18 @@ async fn handle_subscription_on_hold(
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        MarkCheckoutFlowFailedCommand {
+            owner_id: owner_id.clone(),
+            webhook_event: "subscription.on_hold".to_string(),
+            reason: status.to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update checkout flow state: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
@@ -382,6 +446,18 @@ async fn handle_subscription_failed(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+        MarkCheckoutFlowFailedCommand {
+            owner_id: owner_id.clone(),
+            webhook_event: "subscription.failed".to_string(),
+            reason: status.to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update checkout flow state: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
         info!(
             "Subscription {} failed for owner {}",
             subscription_id, owner_id
@@ -434,6 +510,18 @@ async fn handle_subscription_expired(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+        MarkCheckoutFlowFailedCommand {
+            owner_id: owner_id.clone(),
+            webhook_event: "subscription.expired".to_string(),
+            reason: status.to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update checkout flow state: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
         info!(
             "Subscription {} expired for owner {}",
             subscription_id, owner_id
@@ -455,19 +543,61 @@ async fn handle_payment_succeeded(
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
     if !owner_id.is_empty() {
-        UpdateBillingAccountStatusCommand {
-            owner_id: owner_id.clone(),
-            status: "active".to_string(),
+        let is_pulse_purchase = data["metadata"]
+            .as_object()
+            .and_then(|metadata| metadata.get("type"))
+            .and_then(|v| v.as_str())
+            == Some("pulse_purchase");
+
+        if !is_pulse_purchase {
+            let status = match GetBillingAccountQuery::new(owner_id.clone())
+                .execute(app_state)
+                .await
+            {
+                Ok(Some(account))
+                    if account
+                        .subscription
+                        .as_ref()
+                        .map(|s| s.status.eq_ignore_ascii_case("active"))
+                        .unwrap_or(false) =>
+                {
+                    "active"
+                }
+                Ok(_) => "pending",
+                Err(e) => {
+                    error!(
+                        "Failed to load billing account to determine post-payment status: {}",
+                        e
+                    );
+                    "pending"
+                }
+            };
+
+            UpdateBillingAccountStatusCommand {
+                owner_id: owner_id.clone(),
+                status: status.to_string(),
+            }
+            .execute(app_state)
+            .await
+            .map_err(|e| {
+                error!(
+                    "Failed to update billing account status on payment success: {}",
+                    e
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+            MarkPaymentSucceededCommand {
+                owner_id: owner_id.clone(),
+                webhook_event: "payment.succeeded".to_string(),
+            }
+            .execute(app_state)
+            .await
+            .map_err(|e| {
+                error!("Failed to update checkout flow state: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
         }
-        .execute(app_state)
-        .await
-        .map_err(|e| {
-            error!(
-                "Failed to update billing account status on payment success: {}",
-                e
-            );
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
 
         UpsertInvoiceCommand {
             owner_id: owner_id.clone(),
@@ -549,6 +679,18 @@ async fn handle_payment_failed(
                 "Failed to update billing account status on payment failure: {}",
                 e
             );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        MarkCheckoutFlowFailedCommand {
+            owner_id: owner_id.clone(),
+            webhook_event: "payment.failed".to_string(),
+            reason: "payment_failed".to_string(),
+        }
+        .execute(app_state)
+        .await
+        .map_err(|e| {
+            error!("Failed to update checkout flow state: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 

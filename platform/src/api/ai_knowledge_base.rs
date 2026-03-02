@@ -272,10 +272,8 @@ pub async fn upload_knowledge_base_document(
     }
 
     let file_name = file_name.ok_or((StatusCode::BAD_REQUEST, "File is required".to_string()))?;
-    let file_name = sanitize_upload_filename(&file_name).ok_or((
-        StatusCode::BAD_REQUEST,
-        "Invalid filename".to_string(),
-    ))?;
+    let file_name = sanitize_upload_filename(&file_name)
+        .ok_or((StatusCode::BAD_REQUEST, "Invalid filename".to_string()))?;
     let file_type = file_type.unwrap_or("application/octet-stream".to_string());
 
     let title = title.unwrap_or_else(|| {

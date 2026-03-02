@@ -560,7 +560,10 @@ async fn wait_for_spawn_control(
             return SpawnControlSignal::Restart;
         }
         if action.eq_ignore_ascii_case("update_params") {
-            let value = payload.get("value").cloned().unwrap_or(serde_json::json!({}));
+            let value = payload
+                .get("value")
+                .cloned()
+                .unwrap_or(serde_json::json!({}));
             return SpawnControlSignal::UpdateParams(value);
         }
     }
@@ -578,7 +581,9 @@ async fn apply_spawn_control_params(
         .execute(app_state)
         .await?;
 
-    let mut metadata = context.external_resource_metadata.unwrap_or_else(|| serde_json::json!({}));
+    let mut metadata = context
+        .external_resource_metadata
+        .unwrap_or_else(|| serde_json::json!({}));
     if !metadata.is_object() {
         metadata = serde_json::json!({});
     }

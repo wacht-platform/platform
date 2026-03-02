@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     routing::get,
     Router,
+    extract::State,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use hmac::{Hmac, Mac};
@@ -12,6 +13,11 @@ use sha2::{Digest, Sha256};
 use tower_service::Service;
 use url::Url;
 use worker::*;
+
+#[derive(Clone)]
+struct RelayConfig {
+    relay_secret: Option<Vec<u8>>,
+}
 
 #[derive(Debug, Deserialize)]
 struct OAuthParams {
@@ -25,20 +31,36 @@ struct OAuthParams {
     error_description: Option<String>,
 }
 
-fn router() -> Router {
+fn router(relay_config: RelayConfig) -> Router {
     Router::new()
         .route("/", get(handle_oauth_callback))
         .route("/health", get(health_check))
+        .with_state(relay_config)
 }
 
 #[event(fetch)]
 async fn fetch(
     req: HttpRequest,
-    _env: Env,
+    env: Env,
     _ctx: Context,
 ) -> Result<axum::http::Response<axum::body::Body>> {
     console_error_panic_hook::set_once();
-    Ok(router().call(req).await?)
+
+    let relay_secret = env
+        .var("ENCRYPTION_KEY")
+        .ok()
+        .map(|v| v.to_string())
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .map(|key| {
+            let mut hasher = Sha256::new();
+            hasher.update(b"ors1:");
+            hasher.update(key.as_bytes());
+            hasher.finalize().to_vec()
+        });
+
+    let relay_config = RelayConfig { relay_secret };
+    Ok(router(relay_config).call(req).await?)
 }
 
 /// Health check endpoint
@@ -47,7 +69,10 @@ async fn health_check() -> &'static str {
 }
 
 /// Handle OAuth callback and redirect to the target host
-async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
+async fn handle_oauth_callback(
+    State(relay_config): State<RelayConfig>,
+    Query(params): Query<OAuthParams>,
+) -> Response {
     let state = match params.state.as_ref() {
         Some(s) if !s.is_empty() => s,
         _ => {
@@ -85,7 +110,8 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
         }
     };
 
-    if !verify_relay_state_signature(&decoded_str, relay_sig) {
+    if !verify_relay_state_signature(&decoded_str, relay_sig, relay_config.relay_secret.as_deref())
+    {
         return (StatusCode::BAD_REQUEST, "Invalid relay state signature").into_response();
     }
 
@@ -165,23 +191,15 @@ async fn handle_oauth_callback(Query(params): Query<OAuthParams>) -> Response {
     Redirect::temporary(redirect_url.as_str()).into_response()
 }
 
-fn relay_state_secret() -> Option<Vec<u8>> {
-    let encryption_key = std::env::var("ENCRYPTION_KEY").ok()?;
-    let key = encryption_key.trim();
-    if key.is_empty() {
-        return None;
-    }
-    let mut hasher = Sha256::new();
-    hasher.update(b"ors1:");
-    hasher.update(key.as_bytes());
-    Some(hasher.finalize().to_vec())
-}
-
-fn verify_relay_state_signature(payload: &str, provided_signature: &str) -> bool {
+fn verify_relay_state_signature(
+    payload: &str,
+    provided_signature: &str,
+    relay_secret: Option<&[u8]>,
+) -> bool {
     if provided_signature.trim().is_empty() {
         return false;
     }
-    let Some(secret) = relay_state_secret() else {
+    let Some(secret) = relay_secret else {
         return false;
     };
     let Ok(provided_sig_bytes) = URL_SAFE_NO_PAD.decode(provided_signature) else {
