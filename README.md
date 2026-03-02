@@ -1,147 +1,130 @@
-# Wacht Platform API
+<h1 align="center">
+  <a href="https://wacht.dev" style="text-decoration:none;">Wacht Platform API</a>
+</h1>
 
-Backend API for the Wacht platform dashboard. Wacht is a development toolkit that helps you build enterprise apps fast - think authentication, user management, organizations, AI tools, and analytics all built-in.
+<p align="center">Core backend services for Wacht: auth APIs, gateway authorization, OAuth flows, realtime notifications, async workers, and billing/usage pipelines.</p>
 
-This API handles all the admin stuff - creating deployments, managing users, setting up organizations, configuring AI agents, and basically everything you need to run your customer-facing applications.
+<p align="center">
+  <a href="https://wacht.dev">Website</a> |
+  <a href="https://docs.wacht.dev">Documentation</a> |
+  <a href="https://github.com/wacht-platform/platform-api/issues">Issues</a>
+</p>
 
-## What's included
+## What this repository contains
 
-**Authentication stuff**
-- User signup/signin with sessions
-- MFA support
-- Social logins (OAuth)
-- Custom JWT templates
-- User profiles with image uploads
+This workspace runs the control-plane and runtime backend for Wacht.
 
-**B2B features**
-- Organizations and workspaces
-- Custom roles and permissions
-- Member invitations and management
+- API services for console, frontend/backend integration, OAuth, gateway authz, and realtime delivery
+- Background workers for webhook delivery, retries, notifications, billing processing, and agent tasks
+- Shared command/query/data crates used by all services
+- OAuth relay service for hosted OAuth callback relay scenarios
 
-**AI tools**
-- AI agents with knowledge base integration
-- Knowledge base management (supports PDFs)
-- REST API tools and platform events
+## Service map
 
-**Analytics**
-- Real-time user metrics
-- ClickHouse for fast analytics
-- Dashboard stats and insights
+| Service | Binary | Default port |
+| --- | --- | --- |
+| Console API | `console-api` | `3001` (`CONSOLE_API_PORT`) |
+| Backend API | `backend-api` | `3001` (`BACKEND_API_PORT`) |
+| OAuth API | `oauth-api` | `3002` (`OAUTH_API_PORT`) |
+| Gateway API | `gateway-api` | `3002` |
+| Realtime API | `realtime-api` | `3002` |
+| Worker | `worker` | N/A (NATS consumer) |
 
-**Infrastructure**
-- Custom domain verification
-- Email via Postmark
-- File uploads and CDN
-- Health checks
+Notes:
+- Several binaries share the same default port. Run each service on distinct ports in local development.
+- Worker does not expose an HTTP port; it consumes background jobs from NATS/JetStream.
 
-## Tech stack
+## Workspace layout
 
-- Rust (2024 edition) with Axum
-- PostgreSQL for main data
-- ClickHouse for analytics
-- Qdrant for vector search
-- Postmark for emails
-- Tokio for async
+- `platform/` - API binaries and routing/application handlers
+- `worker/` - async consumers, schedulers, and task processors
+- `agent-engine/` - agent execution runtime
+- `commands/` - write operations (mutations)
+- `queries/` - read operations
+- `models/` - data model layer
+- `dto/` - shared API DTOs
+- `common/` - shared state/services (DB, Redis, NATS, storage, integrations)
+- `oauth-relay/` - Cloudflare Worker relay crate
 
-## Getting started
+## Runtime dependencies
 
-You'll need:
-- Rust 1.70+
-- PostgreSQL 14+
+- PostgreSQL
+- Redis
+- NATS (JetStream)
+- S3-compatible object storage (R2)
 - ClickHouse
-- Qdrant
+- Cloudflare API access (custom hostname + DNS verification flows)
+- Postmark credentials (email delivery flows)
 
-## Setup
+## Environment variables
 
-**1. Clone and setup**
+`AppState::new_from_env()` requires these variables:
 
-```bash
-git clone <repository-url>
-cd wacht-dashboard-api
-```
+- `DATABASE_PRIMARY_PRIVATE` or `DATABASE_PRIMARY_PUBLIC`
+- `REDIS_URL`
+- `NATS_HOST`
+- `R2_ENDPOINT`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `CLOUDFLARE_API_KEY`
+- `CLOUDFLARE_ZONE_ID`
+- `POSTMARK_ACCOUNT_TOKEN`
+- `POSTMARK_SERVER_TOKEN`
+- `CLICKHOUSE_HOST`
+- `CLICKHOUSE_PASSWORD`
+- `ENCRYPTION_KEY`
 
-**2. Environment variables**
+Optional:
 
-Create a `.env` file:
+- `USE_PUBLIC_NETWORK` (switches DB URL selection)
+- `AGENT_STORAGE_GATEWAY_URL`
+- `AGENT_STORAGE_ACCESS_KEY`
+- `AGENT_STORAGE_SECRET_KEY`
+- `CONSOLE_DEPLOYMENT_ID` (used by selected worker tasks)
 
-```env
-# Database
-DATABASE_URL=postgresql://username:password@localhost/wacht_dashboard
+## Run locally
 
-# ClickHouse (Analytics)
-CLICKHOUSE_URL=http://localhost:8123
-CLICKHOUSE_DATABASE=analytics
-
-# Qdrant (Vector Database)
-QDRANT_URL=http://localhost:6333
-
-# Email (Postmark)
-POSTMARK_API_TOKEN=your_postmark_token
-
-# JWT
-JWT_SECRET=your_jwt_secret
-
-# CDN/File Upload
-CDN_ENDPOINT=your_cdn_endpoint
-CDN_ACCESS_KEY=your_access_key
-CDN_SECRET_KEY=your_secret_key
-
-# Application
-RUST_LOG=info
-```
-
-**3. Database**
+From this directory, in separate terminals:
 
 ```bash
-# Install diesel CLI if you don't have it
-cargo install diesel_cli --no-default-features --features postgres
+# Console API
+CONSOLE_API_PORT=3001 cargo run -p platform --bin console-api
 
-# Run migrations
-diesel migration run
+# Backend API
+BACKEND_API_PORT=3003 cargo run -p platform --bin backend-api
+
+# OAuth API
+OAUTH_API_PORT=3002 cargo run -p platform --bin oauth-api
+
+# Gateway API
+cargo run -p platform --bin gateway-api
+
+# Realtime API
+cargo run -p platform --bin realtime-api
+
+# Worker
+cargo run -p platform-worker --bin worker
 ```
 
-**4. Run it**
+## Build and checks
 
 ```bash
-# Development
-cargo run
-
-# Production
-cargo build --release
-./target/release/platform-api
+cargo check --workspace
+cargo build --workspace
 ```
 
-API runs on `http://localhost:3001`
+## Docker
 
-## Testing
+A workspace Dockerfile is included at [`Dockerfile`](./Dockerfile).
 
-```bash
-# Run all tests
-cargo test
+- Build stage compiles all binaries in release mode.
+- Runtime image expects command selection externally (`backend`, `console`, `oauth-api`, `realtime`, `gateway`, `worker`) via entrypoint.
 
-# Run tests with output
-cargo test -- --nocapture
+## Support
 
-# Run specific test
-cargo test test_name
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- Report issues: [GitHub Issues](https://github.com/wacht-platform/platform-api/issues)
+- Product docs: [docs.wacht.dev](https://docs.wacht.dev)
 
 ## License
 
-Licensed under GNU Affero General Public License v3.0 only (AGPL-3.0-only). See [LICENSE.md](LICENSE.md).
-
-## 🔗 Related Projects
-
-- [Console Frontend](https://github.com/wacht-platform/console) - React frontend for this API
-
-## 📞 Support
-
-For support and questions, please open an issue in the GitHub repository.
+GNU Affero General Public License v3.0 (AGPL-3.0-only). See [LICENSE.md](./LICENSE.md).

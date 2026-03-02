@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{SecondsFormat, Utc};
 use commands::{
     Command, SendEmailCommand,
     webhook_delivery::{
@@ -9,10 +9,13 @@ use commands::{
     },
     webhook_subscription::evaluate_filter,
 };
+use common::utils::webhook::generate_webhook_signature;
 use common::state::AppState;
 use dto::clickhouse::webhook::WebhookLog;
 use queries::{GetWebhookAppByNameQuery, Query};
+use reqwest::header::RETRY_AFTER;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::time::Instant;
 use tracing::{error, info, warn};
 
@@ -47,6 +50,30 @@ const STATUS_TOO_MANY_REQUESTS: u16 = 429;
 const STATUS_INTERNAL_SERVER_ERROR: u16 = 500;
 const WEBHOOK_FAILURE_EMAIL_COOLDOWN_SECONDS: u64 = 3600;
 
+fn parse_retry_after_header(
+    value: Option<&reqwest::header::HeaderValue>,
+) -> Option<std::time::Duration> {
+    let raw = value?.to_str().ok()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+
+    if let Ok(seconds) = raw.parse::<u64>() {
+        return Some(std::time::Duration::from_secs(seconds.max(1)));
+    }
+
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(raw) {
+        let now = Utc::now();
+        let target = dt.with_timezone(&Utc);
+        let delta_seconds = (target - now).num_seconds();
+        if delta_seconds > 0 {
+            return Some(std::time::Duration::from_secs(delta_seconds as u64));
+        }
+    }
+
+    None
+}
+
 pub async fn process_webhook_delivery(
     delivery_id: i64,
     deployment_id: i64,
@@ -69,6 +96,15 @@ pub async fn process_webhook_delivery(
         }
     };
 
+    let event_timestamp = chrono::DateTime::<Utc>::from_timestamp(delivery.webhook_timestamp, 0)
+        .unwrap_or_else(Utc::now)
+        .to_rfc3339_opts(SecondsFormat::Millis, true);
+    let outbound_payload = json!({
+        "type": delivery.event_name,
+        "timestamp": event_timestamp,
+        "data": payload,
+    });
+
     if let Some(filter_rules) = &delivery.filter_rules {
         let filter_match = evaluate_filter(filter_rules, &payload);
         info!(
@@ -81,7 +117,7 @@ pub async fn process_webhook_delivery(
         );
 
         if !filter_match {
-            let payload_json = serde_json::to_string(&payload).unwrap_or_default();
+            let payload_json = serde_json::to_string(&outbound_payload).unwrap_or_default();
             let ch_delivery = WebhookLog {
                 deployment_id,
                 delivery_id,
@@ -165,9 +201,9 @@ pub async fn process_webhook_delivery(
         .user_agent("Wacht-Webhook/1.0")
         .build()?;
 
-    let payload_json = serde_json::to_string(&payload).unwrap_or_default();
+    let payload_json = serde_json::to_string(&outbound_payload).unwrap_or_default();
 
-    let mut request = client.post(&delivery.url).json(&payload);
+    let mut request = client.post(&delivery.url).json(&outbound_payload);
 
     let mut final_headers = std::collections::HashMap::new();
     final_headers.insert("webhook-id".to_string(), delivery.webhook_id.clone());
@@ -175,11 +211,13 @@ pub async fn process_webhook_delivery(
         "webhook-timestamp".to_string(),
         delivery.webhook_timestamp.to_string(),
     );
-    if let Some(sig) = &delivery.signature {
-        final_headers.insert("webhook-signature".to_string(), sig.clone());
-    } else {
-        final_headers.insert("webhook-signature".to_string(), String::new());
-    }
+    let signature = generate_webhook_signature(
+        &delivery.signing_secret,
+        &delivery.webhook_id,
+        delivery.webhook_timestamp,
+        &outbound_payload,
+    );
+    final_headers.insert("webhook-signature".to_string(), signature);
 
     if let Some(headers) = &delivery.headers {
         if let Some(headers_obj) = headers.as_object() {
@@ -205,6 +243,7 @@ pub async fn process_webhook_delivery(
         Ok(response) => {
             let status = response.status();
             let status_code = status.as_u16();
+            let retry_after = parse_retry_after_header(response.headers().get(RETRY_AFTER));
             let response_body = response.text().await.ok();
 
             if status_code == 410 {
@@ -355,6 +394,7 @@ pub async fn process_webhook_delivery(
                     delivery.attempts + 1,
                     delivery.max_attempts,
                     Some(status_code),
+                    retry_after,
                     app_state,
                 )
                 .await?;
@@ -404,6 +444,7 @@ pub async fn process_webhook_delivery(
                 delivery.attempts + 1,
                 delivery.max_attempts,
                 None,
+                None,
                 app_state,
             )
             .await?;
@@ -422,6 +463,7 @@ async fn handle_delivery_failure(
     new_attempts: i32,
     max_attempts: i32,
     status_code: Option<u16>,
+    retry_after: Option<std::time::Duration>,
     app_state: &AppState,
 ) -> Result<DeliveryResult> {
     let should_retry = new_attempts < max_attempts
@@ -432,12 +474,20 @@ async fn handle_delivery_failure(
         });
 
     if should_retry {
-        let next_retry = calculate_next_retry(new_attempts);
-        let retry_delay = (next_retry - Utc::now()).num_seconds().max(1) as u64;
+        let retry_delay = if let Some(retry_after_duration) = retry_after {
+            retry_after_duration
+        } else {
+            let next_retry = calculate_next_retry(new_attempts);
+            std::time::Duration::from_secs((next_retry - Utc::now()).num_seconds().max(1) as u64)
+        };
+        let next_retry = Utc::now()
+            + chrono::Duration::from_std(retry_delay).unwrap_or_else(|_| chrono::Duration::hours(6));
 
         info!(
             "Scheduling retry for delivery {} at {} (delay: {}s)",
-            delivery_id, next_retry, retry_delay
+            delivery_id,
+            next_retry,
+            retry_delay.as_secs()
         );
 
         UpdateDeliveryAttemptsCommand {
@@ -449,7 +499,7 @@ async fn handle_delivery_failure(
         .await?;
 
         return Ok(DeliveryResult::RetryAfter(std::time::Duration::from_secs(
-            retry_delay,
+            retry_delay.as_secs(),
         )));
     } else {
         warn!(

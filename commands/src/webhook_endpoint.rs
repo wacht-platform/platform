@@ -311,11 +311,9 @@ impl Command for CreateWebhookEndpointCommand {
     type Output = WebhookEndpoint;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Validate URL format
         url::Url::parse(&self.url)
             .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
 
-        // Validate URL for SSRF protection
         validate_webhook_url(&self.url)
             .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
 
@@ -333,7 +331,6 @@ impl Command for CreateWebhookEndpointCommand {
 
         let mut tx = app_state.db_pool.begin().await?;
 
-        // Create endpoint with Snowflake ID
         let endpoint_id = app_state.sf.next_id()? as i64;
         let headers_json = self.headers.unwrap_or_else(|| serde_json::json!({}));
 
@@ -412,12 +409,10 @@ impl Command for UpdateWebhookEndpointCommand {
     type Output = WebhookEndpoint;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Validate URL if provided
         if let Some(ref url) = self.url {
             url::Url::parse(url)
                 .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
 
-            // Validate URL for SSRF protection
             validate_webhook_url(url)
                 .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
         }
@@ -472,7 +467,6 @@ impl Command for UpdateWebhookEndpointCommand {
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
 
-        // Update subscriptions if provided
         if let Some(subscriptions) = self.subscriptions {
             validate_event_subscriptions(
                 app_state,
@@ -482,7 +476,6 @@ impl Command for UpdateWebhookEndpointCommand {
             )
             .await?;
 
-            // Clear existing subscriptions
             query!(
                 r#"
                 DELETE FROM webhook_endpoint_subscriptions
@@ -493,7 +486,6 @@ impl Command for UpdateWebhookEndpointCommand {
             .execute(&mut *tx)
             .await?;
 
-            // Add new subscriptions with individual filter rules
             for subscription in subscriptions {
                 query!(
                     r#"
@@ -530,7 +522,6 @@ impl Command for UpdateEndpointSubscriptionsCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let mut tx = app_state.db_pool.begin().await?;
 
-        // Verify endpoint belongs to deployment and get app_slug
         let app_slug = query!(
             r#"
             SELECT e.app_slug
@@ -562,7 +553,6 @@ impl Command for UpdateEndpointSubscriptionsCommand {
         )
         .await?;
 
-        // Clear existing subscriptions
         query!(
             r#"
             DELETE FROM webhook_endpoint_subscriptions
@@ -573,7 +563,6 @@ impl Command for UpdateEndpointSubscriptionsCommand {
         .execute(&mut *tx)
         .await?;
 
-        // Add new subscriptions
         for event_name in &self.subscribe_to_events {
             query!(
                 r#"
@@ -635,7 +624,6 @@ impl Command for TestWebhookEndpointCommand {
     type Output = TestWebhookResult;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Get endpoint details to validate it exists
         let endpoint = query!(
             r#"
             SELECT e.url, e.headers, e.timeout_seconds, e.app_slug, a.signing_secret
@@ -650,17 +638,14 @@ impl Command for TestWebhookEndpointCommand {
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
 
-        // App slug is already in endpoint
         let app_slug = endpoint.app_slug.clone();
 
-        // Record test delivery to Tinybird for analytics
         let delivery_id = app_state.sf.next_id()? as i64;
         let now = Utc::now();
 
         let payload_json = serde_json::to_string(&self.test_payload).unwrap_or_default();
         let payload_size = payload_json.len() as i32;
 
-        // Log the event to Tinybird
         let log = WebhookLog {
             deployment_id: self.deployment_id,
             delivery_id,
@@ -684,7 +669,6 @@ impl Command for TestWebhookEndpointCommand {
             tracing::warn!("Failed to log test event to Tinybird: {}", e);
         }
 
-        // Create delivery in active_webhook_deliveries and let worker process it
         let webhook_id = format!("msg_{}", delivery_id);
         let webhook_timestamp = now.timestamp();
         let signature = generate_webhook_signature(
@@ -729,7 +713,6 @@ impl Command for TestWebhookEndpointCommand {
         .execute(&app_state.db_pool)
         .await?;
 
-        // Publish to worker for immediate processing
         let task_message = NatsTaskMessage {
             task_type: "webhook.deliver".to_string(),
             task_id: format!("webhook-test-{}", delivery_id),
@@ -748,11 +731,10 @@ impl Command for TestWebhookEndpointCommand {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to publish test webhook: {}", e)))?;
 
-        // Return simple success response - actual results will be available in delivery history
         Ok(TestWebhookResult {
             delivery_id: Some(delivery_id),
             success: true,
-            status_code: 202, // Accepted
+            status_code: 202,
             response_time_ms: 0,
             response_body: Some(
                 "Test webhook initiated. Check delivery history for results.".to_string(),
@@ -815,7 +797,6 @@ impl Command for ReactivateEndpointCommand {
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
 
-        // Clear failure counter in Redis
         ClearEndpointFailuresCommand {
             endpoint_id: self.endpoint_id,
         }
