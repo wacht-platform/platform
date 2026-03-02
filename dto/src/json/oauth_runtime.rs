@@ -88,8 +88,11 @@ pub struct OAuthServerMetadataResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub struct OAuthJwksResponse {
-    pub keys: Vec<serde_json::Value>,
+pub struct OAuthProtectedResourceMetadataResponse {
+    pub resource: String,
+    pub authorization_servers: Vec<String>,
+    pub bearer_methods_supported: Vec<String>,
+    pub scopes_supported: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,7 +115,15 @@ pub struct OAuthIntrospectResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub iss: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aud: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iat: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nbf: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

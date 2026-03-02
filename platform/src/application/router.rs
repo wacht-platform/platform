@@ -840,6 +840,10 @@ pub async fn create_oauth_router(state: AppState) -> Router {
             get(api::oauth_runtime::oauth_server_metadata),
         )
         .route(
+            "/.well-known/oauth-protected-resource",
+            get(api::oauth_runtime::oauth_protected_resource_metadata),
+        )
+        .route(
             "/oauth/authorize",
             get(api::oauth_runtime::oauth_authorize_get),
         )

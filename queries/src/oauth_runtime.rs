@@ -114,6 +114,7 @@ pub struct RuntimeIntrospectionData {
     pub app_slug: String,
     pub scopes: Vec<String>,
     pub resource: Option<String>,
+    pub issued_at: chrono::DateTime<chrono::Utc>,
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -886,6 +887,7 @@ impl Query for GetRuntimeIntrospectionDataQuery {
                     c.client_id,
                     t.scopes,
                     t.resource,
+                    t.created_at,
                     t.expires_at,
                     t.revoked_at
                 FROM oauth_access_tokens t
@@ -955,6 +957,7 @@ impl Query for GetRuntimeIntrospectionDataQuery {
                 tr.app_slug,
                 tr.scopes as "scopes: serde_json::Value",
                 tr.resource,
+                tr.created_at,
                 tr.expires_at,
                 (
                     tr.revoked_at IS NULL
@@ -1062,6 +1065,7 @@ impl Query for GetRuntimeIntrospectionDataQuery {
             app_slug: r.app_slug,
             scopes: serde_json::from_value(r.scopes).unwrap_or_default(),
             resource: r.resource,
+            issued_at: r.created_at,
             expires_at: r.expires_at,
         }))
     }

@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH token_row AS (\n                SELECT\n                    t.app_slug,\n                    t.oauth_grant_id,\n                    t.oauth_client_id,\n                    c.oauth_app_id,\n                    c.client_id,\n                    t.scopes,\n                    t.resource,\n                    t.created_at,\n                    t.expires_at,\n                    t.revoked_at\n                FROM oauth_access_tokens t\n                INNER JOIN oauth_clients c\n                    ON c.id = t.oauth_client_id\n                WHERE t.deployment_id = $1\n                  AND t.oauth_client_id = $2\n                  AND t.token_hash = $3\n                LIMIT 1\n            ),\n            grant_status AS (\n                SELECT\n                    EXISTS (\n                        SELECT 1\n                        FROM oauth_client_grants g\n                        INNER JOIN token_row tr ON TRUE\n                        WHERE g.deployment_id = $1\n                          AND g.oauth_client_id = tr.oauth_client_id\n                          AND tr.oauth_grant_id IS NOT NULL\n                          AND g.id = tr.oauth_grant_id\n                          AND g.status = 'active'\n                          AND (g.expires_at IS NULL OR g.expires_at > NOW())\n                    ) AS valid\n            ),\n            api_auth_user AS (\n                SELECT aa.user_id\n                FROM api_auth_apps aa\n                INNER JOIN token_row tr ON TRUE\n                WHERE aa.deployment_id = $1\n                  AND aa.app_slug = tr.app_slug\n                  AND aa.deleted_at IS NULL\n                LIMIT 1\n            ),\n            required_permissions AS (\n                SELECT DISTINCT perm.permission\n                FROM token_row tr\n                INNER JOIN oauth_apps oa\n                    ON oa.deployment_id = $1\n                   AND oa.id = tr.oauth_app_id\n                INNER JOIN LATERAL jsonb_array_elements(COALESCE(oa.scope_definitions, '[]'::jsonb)) AS def(scope_def) ON TRUE\n                INNER JOIN LATERAL (\n                    VALUES (\n                        LOWER(TRIM(COALESCE(def.scope_def->>'category', ''))),\n                        CASE\n                            WHEN tr.resource LIKE 'urn:wacht:organization:%'\n                                THEN NULLIF(TRIM(COALESCE(def.scope_def->>'organization_permission', '')), '')\n                            WHEN tr.resource LIKE 'urn:wacht:workspace:%'\n                                THEN NULLIF(TRIM(COALESCE(def.scope_def->>'workspace_permission', '')), '')\n                            ELSE NULL\n                        END\n                    )\n                ) AS perm(category, permission) ON TRUE\n                WHERE (def.scope_def->>'scope') IN (SELECT jsonb_array_elements_text(tr.scopes))\n                  AND (\n                      (tr.resource LIKE 'urn:wacht:organization:%' AND perm.category = 'organization') OR\n                      (tr.resource LIKE 'urn:wacht:workspace:%' AND perm.category = 'workspace')\n                  )\n                  AND perm.permission IS NOT NULL\n            ),\n            required_permission_array AS (\n                SELECT COALESCE(array_agg(permission), ARRAY[]::text[]) AS permissions\n                FROM required_permissions\n            )\n            SELECT\n                tr.oauth_grant_id,\n                tr.client_id,\n                tr.app_slug,\n                tr.scopes as \"scopes: serde_json::Value\",\n                tr.resource,\n                tr.created_at,\n                tr.expires_at,\n                (\n                    tr.revoked_at IS NULL\n                    AND tr.expires_at > NOW()\n                    AND COALESCE(gs.valid, FALSE)\n                    AND CASE\n                        WHEN tr.resource IS NULL THEN TRUE\n                        WHEN split_part(tr.resource, ':', 1) = 'urn'\n                          AND split_part(tr.resource, ':', 2) = 'wacht'\n                          AND split_part(tr.resource, ':', 3) = 'user'\n                          AND split_part(tr.resource, ':', 4) <> ''\n                          AND split_part(tr.resource, ':', 4) !~ '[^0-9]'\n                        THEN\n                            EXISTS (\n                                SELECT 1\n                                FROM api_auth_user au\n                                WHERE au.user_id = split_part(tr.resource, ':', 4)::bigint\n                                  AND cardinality((SELECT permissions FROM required_permission_array)) = 0\n                            )\n                        WHEN split_part(tr.resource, ':', 1) = 'urn'\n                          AND split_part(tr.resource, ':', 2) = 'wacht'\n                          AND split_part(tr.resource, ':', 3) = 'organization'\n                          AND split_part(tr.resource, ':', 4) <> ''\n                          AND split_part(tr.resource, ':', 4) !~ '[^0-9]'\n                        THEN\n                            EXISTS (\n                                SELECT 1\n                                FROM (\n                                    SELECT\n                                        COUNT(DISTINCT om.id) AS membership_count,\n                                        COALESCE(\n                                            array_agg(DISTINCT p.permission) FILTER (WHERE p.permission IS NOT NULL),\n                                            ARRAY[]::text[]\n                                        ) AS permissions\n                                    FROM api_auth_user au\n                                    INNER JOIN organization_memberships om\n                                        ON om.user_id = au.user_id\n                                       AND om.organization_id = split_part(tr.resource, ':', 4)::bigint\n                                       AND om.deleted_at IS NULL\n                                    INNER JOIN organizations o\n                                        ON o.id = om.organization_id\n                                       AND o.deployment_id = $1\n                                       AND o.deleted_at IS NULL\n                                    LEFT JOIN organization_membership_roles omr\n                                        ON omr.organization_membership_id = om.id\n                                    LEFT JOIN organization_roles r\n                                        ON r.id = omr.organization_role_id\n                                    LEFT JOIN LATERAL unnest(COALESCE(r.permissions, ARRAY[]::text[])) AS p(permission)\n                                        ON TRUE\n                                ) perms\n                                WHERE perms.membership_count > 0\n                                  AND perms.permissions @> (SELECT permissions FROM required_permission_array)\n                            )\n                        WHEN split_part(tr.resource, ':', 1) = 'urn'\n                          AND split_part(tr.resource, ':', 2) = 'wacht'\n                          AND split_part(tr.resource, ':', 3) = 'workspace'\n                          AND split_part(tr.resource, ':', 4) <> ''\n                          AND split_part(tr.resource, ':', 4) !~ '[^0-9]'\n                        THEN\n                            EXISTS (\n                                SELECT 1\n                                FROM (\n                                    SELECT\n                                        COUNT(DISTINCT wm.id) AS membership_count,\n                                        COALESCE(\n                                            array_agg(DISTINCT p.permission) FILTER (WHERE p.permission IS NOT NULL),\n                                            ARRAY[]::text[]\n                                        ) AS permissions\n                                    FROM api_auth_user au\n                                    INNER JOIN workspace_memberships wm\n                                        ON wm.user_id = au.user_id\n                                       AND wm.workspace_id = split_part(tr.resource, ':', 4)::bigint\n                                       AND wm.deleted_at IS NULL\n                                    INNER JOIN workspaces w\n                                        ON w.id = wm.workspace_id\n                                       AND w.deployment_id = $1\n                                       AND w.deleted_at IS NULL\n                                    LEFT JOIN workspace_membership_roles wmr\n                                        ON wmr.workspace_membership_id = wm.id\n                                    LEFT JOIN workspace_roles r\n                                        ON r.id = wmr.workspace_role_id\n                                    LEFT JOIN LATERAL unnest(COALESCE(r.permissions, ARRAY[]::text[])) AS p(permission)\n                                        ON TRUE\n                                ) perms\n                                WHERE perms.membership_count > 0\n                                  AND perms.permissions @> (SELECT permissions FROM required_permission_array)\n                            )\n                        ELSE FALSE\n                    END\n                ) AS active\n            FROM token_row tr\n            LEFT JOIN grant_status gs ON TRUE\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "oauth_grant_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "client_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "scopes: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "resource",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "active",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "8505e6173911c4d4f07a5dedce18773309a649defaa763c2f5209f46ea533fd6"
+}

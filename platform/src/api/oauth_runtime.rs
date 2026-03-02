@@ -22,8 +22,9 @@ use dto::json::oauth_runtime::{
     OAuthAuthorizeInitiatedResponse, OAuthAuthorizeRequest, OAuthConsentSubmitRequest,
     OAuthDynamicClientRegistrationRequest, OAuthDynamicClientRegistrationResponse,
     OAuthDynamicClientUpdateRequest, OAuthErrorResponse, OAuthIntrospectRequest,
-    OAuthIntrospectResponse, OAuthJwksResponse, OAuthRegisterPathParams, OAuthRevokeRequest,
-    OAuthRevokeResponse, OAuthServerMetadataResponse, OAuthTokenRequest, OAuthTokenResponse,
+    OAuthIntrospectResponse, OAuthProtectedResourceMetadataResponse, OAuthRegisterPathParams,
+    OAuthRevokeRequest, OAuthRevokeResponse, OAuthServerMetadataResponse, OAuthTokenRequest,
+    OAuthTokenResponse,
 };
 use hmac::{Hmac, Mac};
 use models::api_key::OAuthScopeDefinition;
@@ -126,8 +127,20 @@ pub async fn oauth_server_metadata(
     .into())
 }
 
-pub async fn oauth_server_jwks() -> ApiResult<OAuthJwksResponse> {
-    Ok(OAuthJwksResponse { keys: Vec::new() }.into())
+pub async fn oauth_protected_resource_metadata(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<OAuthProtectedResourceMetadataResponse> {
+    let oauth_app = resolve_oauth_app_from_host(&app_state, &headers).await?;
+    let issuer = resolve_issuer_from_host(&headers)?;
+
+    Ok(OAuthProtectedResourceMetadataResponse {
+        resource: issuer.clone(),
+        authorization_servers: vec![issuer],
+        bearer_methods_supported: vec!["header".to_string()],
+        scopes_supported: oauth_app.active_scopes(),
+    }
+    .into())
 }
 
 pub async fn oauth_authorize_get(
@@ -1094,7 +1107,11 @@ async fn oauth_introspect_impl(
             scope: None,
             client_id: None,
             token_type: None,
+            iss: None,
+            aud: None,
             exp: None,
+            iat: None,
+            nbf: None,
             sub: None,
             resource: None,
         }));
@@ -1106,7 +1123,11 @@ async fn oauth_introspect_impl(
             scope: None,
             client_id: None,
             token_type: None,
+            iss: None,
+            aud: None,
             exp: None,
+            iat: None,
+            nbf: None,
             sub: None,
             resource: None,
         }));
@@ -1124,8 +1145,12 @@ async fn oauth_introspect_impl(
         active: true,
         scope: Some(token.scopes.join(" ")),
         client_id: Some(token.client_id),
-        token_type: Some("access_token".to_string()),
+        token_type: Some("Bearer".to_string()),
+        iss: Some(resolve_issuer_from_host(&headers).map_err(map_token_app_error)?),
+        aud: token.resource.clone(),
         exp: Some(token.expires_at.timestamp()),
+        iat: Some(token.issued_at.timestamp()),
+        nbf: Some(token.issued_at.timestamp()),
         sub: Some(token.app_slug),
         resource: token.resource,
     }))
