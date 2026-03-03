@@ -9,6 +9,7 @@ use commands::{
         MarkSubscriptionActivatedCommand, UpdateBillingAccountStatusCommand, UpsertInvoiceCommand,
         UpsertSubscriptionCommand,
     },
+    email::SendRawEmailCommand,
     pulse::AddPulseCreditsCommand,
 };
 use common::dodo::DodoClient;
@@ -18,6 +19,7 @@ use queries::{
     Query,
     billing::{GetBillingAccountByProviderCustomerIdQuery, GetBillingAccountQuery},
 };
+use std::collections::HashSet;
 use tracing::{error, info, warn};
 
 pub async fn handle_dodo_webhook(
@@ -170,6 +172,13 @@ async fn handle_subscription_active(
         "Subscription {} activated for owner {}",
         subscription_id, owner_id
     );
+    send_billing_change_email(
+        app_state,
+        &owner_id,
+        "we detected a subscription activation event",
+        "Your subscription is now active.",
+    )
+    .await;
 
     Ok(())
 }
@@ -219,6 +228,13 @@ async fn handle_subscription_renewed(
             "Subscription {} renewed for owner {}",
             subscription_id, owner_id
         );
+        send_billing_change_email(
+            app_state,
+            &owner_id,
+            "we detected a subscription renewal event",
+            "Your subscription was renewed successfully.",
+        )
+        .await;
     }
 
     Ok(())
@@ -270,6 +286,13 @@ async fn handle_subscription_plan_changed(
             "Plan changed for subscription {} to product {} (owner: {})",
             subscription_id, new_product_id, owner_id
         );
+        send_billing_change_email(
+            app_state,
+            &owner_id,
+            "we detected a subscription plan change event",
+            "Your subscription plan was updated.",
+        )
+        .await;
     }
 
     Ok(())
@@ -334,6 +357,13 @@ async fn handle_subscription_cancelled(
             "Subscription {} cancelled for owner {}",
             subscription_id, owner_id
         );
+        send_billing_change_email(
+            app_state,
+            &owner_id,
+            "we detected a subscription cancellation event",
+            "Your subscription was cancelled.",
+        )
+        .await;
     }
 
     Ok(())
@@ -398,6 +428,13 @@ async fn handle_subscription_on_hold(
             "Subscription {} on hold for owner {}",
             subscription_id, owner_id
         );
+        send_billing_change_email(
+            app_state,
+            &owner_id,
+            "we detected that your subscription moved to on-hold status",
+            "Your subscription is currently on hold.",
+        )
+        .await;
     }
 
     Ok(())
@@ -462,6 +499,13 @@ async fn handle_subscription_failed(
             "Subscription {} failed for owner {}",
             subscription_id, owner_id
         );
+        send_billing_change_email(
+            app_state,
+            &owner_id,
+            "we detected a subscription payment failure event",
+            "Your subscription payment failed.",
+        )
+        .await;
     }
 
     Ok(())
@@ -526,6 +570,13 @@ async fn handle_subscription_expired(
             "Subscription {} expired for owner {}",
             subscription_id, owner_id
         );
+        send_billing_change_email(
+            app_state,
+            &owner_id,
+            "we detected a subscription expiration event",
+            "Your subscription has expired.",
+        )
+        .await;
     }
 
     Ok(())
@@ -627,6 +678,13 @@ async fn handle_payment_succeeded(
         })?;
 
         info!("Payment {} succeeded for owner {}", payment_id, owner_id);
+        send_billing_change_email(
+            app_state,
+            &owner_id,
+            "we detected a successful payment event",
+            "Your payment was successful.",
+        )
+        .await;
 
         if let Some(metadata) = data["metadata"].as_object() {
             if metadata.get("type").and_then(|v| v.as_str()) == Some("pulse_purchase") {
@@ -695,9 +753,115 @@ async fn handle_payment_failed(
         })?;
 
         info!("Payment {} failed for owner {}", payment_id, owner_id);
+        send_billing_change_email(
+            app_state,
+            &owner_id,
+            "we detected a failed payment event",
+            "Your payment failed. Please retry your payment method.",
+        )
+        .await;
     }
 
     Ok(())
+}
+
+fn parse_console_deployment_id() -> Option<i64> {
+    std::env::var("CONSOLE_DEPLOYMENT_ID")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+}
+
+fn split_recipients(raw: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    raw.split([',', ';'])
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .filter(|email| seen.insert(email.clone()))
+        .collect()
+}
+
+async fn send_billing_change_email(
+    app_state: &AppState,
+    owner_id: &str,
+    reason: &str,
+    message: &str,
+) {
+    let Some(console_deployment_id) = parse_console_deployment_id() else {
+        warn!("CONSOLE_DEPLOYMENT_ID not set; skipping billing change email");
+        return;
+    };
+
+    let account = match GetBillingAccountQuery::new(owner_id.to_string())
+        .execute(app_state)
+        .await
+    {
+        Ok(Some(account)) => account,
+        Ok(None) => return,
+        Err(e) => {
+            warn!(
+                "Failed to load billing account for {} while sending billing email: {}",
+                owner_id, e
+            );
+            return;
+        }
+    };
+
+    let recipients = split_recipients(&account.billing_account.billing_email);
+    if recipients.is_empty() {
+        return;
+    }
+
+    let plan_line = account
+        .subscription
+        .as_ref()
+        .and_then(|s| s.plan_name.as_ref())
+        .map(|name| format!("Current plan: {}.", name));
+
+    let mut lines = vec![message.to_string()];
+    if let Some(plan_line) = plan_line {
+        lines.push(plan_line);
+    }
+    lines.push(format!("Why you received this email: {}.", reason));
+    lines.push(
+        "You are receiving this email because this email is attached to your Wacht billing account."
+            .to_string(),
+    );
+
+    let final_message = lines.join("\n");
+
+    let subject = "Billing update".to_string();
+    let body_html_lines = lines
+        .iter()
+        .map(|line| {
+            format!(
+                "<p style=\"font-size:16px;line-height:1.6;margin:0 0 10px 0;\">{}</p>",
+                line
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let body_html = format!("<div>{}</div>", body_html_lines);
+
+    let body_text = final_message.clone();
+
+    for email in recipients {
+        if let Err(e) = SendRawEmailCommand::new(
+            console_deployment_id,
+            email.clone(),
+            subject.clone(),
+            body_html.clone(),
+            Some(body_text.clone()),
+        )
+        .execute(app_state)
+        .await
+        {
+            warn!(
+                "Failed to send billing change email to {} for {}: {}",
+                email, owner_id, e
+            );
+        }
+    }
 }
 
 async fn extract_owner_id(

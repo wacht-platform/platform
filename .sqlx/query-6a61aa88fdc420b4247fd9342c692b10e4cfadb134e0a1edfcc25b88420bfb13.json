@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT fqdn\n            FROM oauth_apps\n            WHERE deployment_id = $1\n              AND slug = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "fqdn",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6a61aa88fdc420b4247fd9342c692b10e4cfadb134e0a1edfcc25b88420bfb13"
+}

@@ -461,6 +461,10 @@ fn api_auth_routes() -> Router<AppState> {
             patch(api::oauth::update_oauth_app),
         )
         .route(
+            "/oauth/apps/{oauth_app_slug}/verify-domain",
+            post(api::oauth::verify_oauth_app_domain),
+        )
+        .route(
             "/oauth/apps/{oauth_app_slug}/scopes/{scope}",
             patch(api::oauth::update_oauth_scope),
         )

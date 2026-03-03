@@ -262,6 +262,13 @@ pub struct ListOAuthAppsResponse {
     pub apps: Vec<OAuthAppResponse>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct VerifyOAuthAppDomainResponse {
+    pub domain: String,
+    pub cname_target: String,
+    pub verified: bool,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateOAuthClientRequest {
     pub client_auth_method: String,

@@ -141,6 +141,48 @@ pub struct UpdateOAuthAppCommand {
     pub is_active: Option<bool>,
 }
 
+pub struct VerifyOAuthAppDomainResult {
+    pub domain: String,
+    pub cname_target: String,
+    pub verified: bool,
+}
+
+pub struct VerifyOAuthAppDomainCommand {
+    pub deployment_id: i64,
+    pub oauth_app_slug: String,
+}
+
+impl Command for VerifyOAuthAppDomainCommand {
+    type Output = VerifyOAuthAppDomainResult;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let oauth_app = sqlx::query!(
+            r#"
+            SELECT fqdn
+            FROM oauth_apps
+            WHERE deployment_id = $1
+              AND slug = $2
+            "#,
+            self.deployment_id,
+            self.oauth_app_slug
+        )
+        .fetch_optional(&app_state.db_pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("OAuth app not found".to_string()))?;
+
+        let verified = app_state
+            .cloudflare_service
+            .check_custom_hostname_status(&oauth_app.fqdn)
+            .await?;
+
+        Ok(VerifyOAuthAppDomainResult {
+            domain: oauth_app.fqdn,
+            cname_target: "oauth.wacht.services".to_string(),
+            verified,
+        })
+    }
+}
+
 impl Command for UpdateOAuthAppCommand {
     type Output = OAuthAppData;
 

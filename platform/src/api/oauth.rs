@@ -11,7 +11,7 @@ use commands::{
     oauth::{
         CreateOAuthAppCommand, CreateOAuthClientCommand, DeactivateOAuthClient,
         RevokeOAuthClientGrantCommand, RotateOAuthClientSecret, UpdateOAuthAppCommand,
-        UpdateOAuthClientSettings,
+        UpdateOAuthClientSettings, VerifyOAuthAppDomainCommand,
     },
 };
 use common::state::AppState;
@@ -20,6 +20,7 @@ use dto::json::api_key::{
     ListOAuthGrantsResponse, OAuthAppResponse, OAuthClientResponse, OAuthGrantResponse,
     RotateOAuthClientSecretResponse, SetOAuthScopeMappingRequest, UpdateOAuthAppRequest,
     UpdateOAuthClientRequest, UpdateOAuthScopeRequest,
+    VerifyOAuthAppDomainResponse,
 };
 use queries::{
     GetDeploymentWithSettingsQuery, Query as QueryTrait,
@@ -51,6 +52,26 @@ pub(crate) struct OAuthGrantPathParams {
 pub(crate) struct OAuthScopePathParams {
     oauth_app_slug: String,
     scope: String,
+}
+
+pub(crate) async fn verify_oauth_app_domain(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<OAuthAppPathParams>,
+) -> ApiResult<VerifyOAuthAppDomainResponse> {
+    let result = VerifyOAuthAppDomainCommand {
+        deployment_id,
+        oauth_app_slug: params.oauth_app_slug,
+    }
+    .execute(&app_state)
+    .await?;
+
+    Ok(VerifyOAuthAppDomainResponse {
+        domain: result.domain,
+        cname_target: result.cname_target,
+        verified: result.verified,
+    }
+    .into())
 }
 
 pub async fn list_oauth_apps(
