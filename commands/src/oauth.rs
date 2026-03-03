@@ -534,16 +534,7 @@ impl CreateOAuthClientCommand {
     }
 
     fn validate(&self) -> Result<(), AppError> {
-        if self.grant_types.is_empty() {
-            return Err(AppError::Validation(
-                "grant_types must include at least one grant".to_string(),
-            ));
-        }
-        if self.grant_types.iter().any(|g| g == "client_credentials") {
-            return Err(AppError::Validation(
-                "client_credentials is disabled for now".to_string(),
-            ));
-        }
+        validate_oauth_client_grant_types(&self.grant_types)?;
         let method = self.client_auth_method.as_str();
         let allowed = [
             "client_secret_basic",
@@ -1127,16 +1118,7 @@ impl Command for UpdateOAuthClientSettings {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         if let Some(grant_types) = &self.grant_types {
-            if grant_types.is_empty() {
-                return Err(AppError::Validation(
-                    "grant_types must include at least one grant".to_string(),
-                ));
-            }
-            if grant_types.iter().any(|g| g == "client_credentials") {
-                return Err(AppError::Validation(
-                    "client_credentials is disabled for now".to_string(),
-                ));
-            }
+            validate_oauth_client_grant_types(grant_types)?;
         }
 
         let current = sqlx::query!(
@@ -1474,6 +1456,51 @@ impl Command for UpdateOAuthClientSettings {
             }
         }))
     }
+}
+
+fn validate_oauth_client_grant_types(grant_types: &[String]) -> Result<(), AppError> {
+    if grant_types.is_empty() {
+        return Err(AppError::Validation(
+            "grant_types must include at least one grant".to_string(),
+        ));
+    }
+
+    let mut has_authorization_code = false;
+
+    for grant in grant_types {
+        let value = grant.trim();
+        if value.is_empty() {
+            return Err(AppError::Validation(
+                "grant_types must not contain empty values".to_string(),
+            ));
+        }
+
+        match value {
+            "authorization_code" => {
+                has_authorization_code = true;
+            }
+            "refresh_token" => {}
+            "client_credentials" => {
+                return Err(AppError::Validation(
+                    "client_credentials is disabled for now".to_string(),
+                ));
+            }
+            _ => {
+                return Err(AppError::Validation(format!(
+                    "unsupported grant_type: {}. supported values: authorization_code, refresh_token",
+                    value
+                )));
+            }
+        }
+    }
+
+    if !has_authorization_code {
+        return Err(AppError::Validation(
+            "authorization_code grant is required".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 pub struct RotateOAuthClientSecret {
