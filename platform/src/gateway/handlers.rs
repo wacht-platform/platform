@@ -684,7 +684,7 @@ async fn check_authz_oauth_access_token(
     }
     if let Some(requested_resource_urn) = token_data.resource.clone() {
         response_headers.insert(
-            "X-Wacht-Requested-Resource",
+            "X-Wacht-OAuth-Resource",
             safe_header_value(requested_resource_urn),
         );
     }
@@ -901,7 +901,7 @@ async fn check_authz_oauth_access_token(
             metadata: Some(serde_json::json!({
                 "principal_type": "oauth_access_token",
                 "scopes": token_data.scopes,
-                "resource": token_data.resource,
+                "oauth_resource": token_data.resource,
                 "granted_resource": token_data.granted_resource,
                 "expires_at": token_data.expires_at,
             })),
