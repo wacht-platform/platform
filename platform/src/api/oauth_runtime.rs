@@ -100,7 +100,7 @@ pub async fn oauth_server_metadata(
 ) -> ApiResult<OAuthServerMetadataResponse> {
     let oauth_app = resolve_oauth_app_from_host(&app_state, &headers).await?;
     let active_scopes = oauth_app.active_scopes();
-    let issuer = resolve_issuer_from_host(&headers)?;
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
 
     Ok(OAuthServerMetadataResponse {
         issuer: issuer.clone(),
@@ -132,7 +132,7 @@ pub async fn oauth_protected_resource_metadata(
     headers: HeaderMap,
 ) -> ApiResult<OAuthProtectedResourceMetadataResponse> {
     let oauth_app = resolve_oauth_app_from_host(&app_state, &headers).await?;
-    let issuer = resolve_issuer_from_host(&headers)?;
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
 
     Ok(OAuthProtectedResourceMetadataResponse {
         resource: issuer.clone(),
@@ -315,7 +315,7 @@ async fn authorize_impl(
         code_challenge_method: request.code_challenge_method,
     };
     let request_token = sign_oauth_consent_request_token(&claims)?;
-    let issuer = resolve_issuer_from_host(headers)?;
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
     let deployment_hosts = GetRuntimeDeploymentHostsByIdQuery::new(oauth_app.deployment_id)
         .execute(app_state)
         .await?
@@ -373,18 +373,6 @@ async fn authorize_impl(
         "{}/oauth/consent/init?handoff_id={}",
         backend_base, handoff_id
     );
-    tracing::info!(
-        event = "oauth.authorize.handoff_created",
-        deployment_id = oauth_app.deployment_id,
-        oauth_client_id = client.id,
-        handoff_id = %handoff_id,
-        redirect_uri = %handoff_payload.redirect_uri,
-        consent_url = %consent_url,
-        scopes = ?handoff_payload.scopes,
-        resource = ?handoff_payload.resource,
-        "OAuth consent handoff created"
-    );
-
     Ok(OAuthAuthorizeInitiatedResponse {
         consent_url,
         expires_in: 600,
@@ -436,6 +424,7 @@ async fn try_build_authorize_error_redirect(
         _ => "invalid_request",
     };
 
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app).ok();
     Some(append_oauth_redirect_params(
         redirect_uri.to_string(),
         &[
@@ -443,7 +432,7 @@ async fn try_build_authorize_error_redirect(
             ("error_description", description),
         ],
         request.state.clone(),
-        resolve_issuer_from_host(headers).ok(),
+        issuer,
     ))
 }
 
@@ -502,20 +491,9 @@ pub async fn oauth_consent_submit(
 ) -> Result<Redirect, ApiErrorResponse> {
     validate_consent_submit_secret(&headers)?;
     let claims = verify_oauth_consent_request_token(&request.request_token)?;
+    let oauth_app = resolve_oauth_app_from_host(&app_state, &headers).await?;
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
     let action = request.action.trim().to_ascii_lowercase();
-    tracing::info!(
-        event = "oauth.consent.submit.received",
-        deployment_id = claims.deployment_id,
-        oauth_client_id = claims.oauth_client_id,
-        client_id = %claims.client_id,
-        request_token_jti = %claims.jti,
-        action = %action,
-        claims_redirect_uri = %claims.redirect_uri,
-        claims_scopes = ?claims.scopes,
-        claims_resource = ?claims.resource,
-        "OAuth consent submit received"
-    );
-
     match action.as_str() {
         "approve" => {
             let approved_scopes = {
@@ -598,15 +576,7 @@ pub async fn oauth_consent_submit(
                 claims.redirect_uri,
                 &[("code", issued.code)],
                 claims.state,
-                resolve_issuer_from_host(&headers).ok(),
-            );
-            tracing::info!(
-                event = "oauth.consent.submit.approved",
-                deployment_id = claims.deployment_id,
-                oauth_client_id = claims.oauth_client_id,
-                request_token_jti = %claims.jti,
-                redirect_location = %redirect_uri,
-                "OAuth consent approved; redirecting client"
+                Some(issuer.clone()),
             );
             Ok(Redirect::to(&redirect_uri))
         }
@@ -615,15 +585,7 @@ pub async fn oauth_consent_submit(
                 claims.redirect_uri,
                 &[("error", "access_denied".to_string())],
                 claims.state,
-                resolve_issuer_from_host(&headers).ok(),
-            );
-            tracing::info!(
-                event = "oauth.consent.submit.denied",
-                deployment_id = claims.deployment_id,
-                oauth_client_id = claims.oauth_client_id,
-                request_token_jti = %claims.jti,
-                redirect_location = %redirect_uri,
-                "OAuth consent denied; redirecting client"
+                Some(issuer.clone()),
             );
             Ok(Redirect::to(&redirect_uri))
         }
@@ -649,7 +611,15 @@ async fn oauth_token_impl(
     let oauth_app = resolve_oauth_app_from_host(&app_state, &headers)
         .await
         .map_err(map_token_app_error)?;
-    let client = authenticate_client(&app_state, &headers, &request, oauth_app.id, "/oauth/token")
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app).map_err(map_token_app_error)?;
+    let client = authenticate_client(
+        &app_state,
+        &headers,
+        &issuer,
+        &request,
+        oauth_app.id,
+        "/oauth/token",
+    )
         .await
         .map_err(map_token_auth_error)?;
     if !client.grant_types.iter().any(|g| g == &request.grant_type) {
@@ -1037,6 +1007,7 @@ async fn oauth_revoke_impl(
     let oauth_app = resolve_oauth_app_from_host(&app_state, &headers)
         .await
         .map_err(map_token_app_error)?;
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app).map_err(map_token_app_error)?;
     let token_req = OAuthTokenRequest {
         grant_type: String::new(),
         code: None,
@@ -1052,6 +1023,7 @@ async fn oauth_revoke_impl(
     let client = authenticate_client(
         &app_state,
         &headers,
+        &issuer,
         &token_req,
         oauth_app.id,
         "/oauth/revoke",
@@ -1111,6 +1083,7 @@ async fn oauth_introspect_impl(
     let oauth_app = resolve_oauth_app_from_host(&app_state, &headers)
         .await
         .map_err(map_token_app_error)?;
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app).map_err(map_token_app_error)?;
     let auth_req = OAuthTokenRequest {
         grant_type: String::new(),
         code: None,
@@ -1126,6 +1099,7 @@ async fn oauth_introspect_impl(
     let client = authenticate_client(
         &app_state,
         &headers,
+        &issuer,
         &auth_req,
         oauth_app.id,
         "/oauth/introspect",
@@ -1185,7 +1159,7 @@ async fn oauth_introspect_impl(
         scope: Some(token.scopes.join(" ")),
         client_id: Some(token.client_id),
         token_type: Some("Bearer".to_string()),
-        iss: Some(resolve_issuer_from_host(&headers).map_err(map_token_app_error)?),
+        iss: Some(issuer),
         aud: token.resource.clone(),
         exp: Some(token.expires_at.timestamp()),
         iat: Some(token.issued_at.timestamp()),
@@ -1257,7 +1231,7 @@ pub async fn oauth_register_client(
     let issued_at = created.client.created_at.timestamp();
     let created_client_id = created.client.client_id.clone();
     let created_contacts = created.client.contacts_vec();
-    let issuer = resolve_issuer_from_host(&headers)?;
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
     let client_secret_expires_at = if created.client_secret.is_some() {
         Some(0)
     } else {
@@ -1297,7 +1271,7 @@ pub async fn oauth_get_registered_client(
         .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth client not found"))?;
 
     ensure_registration_access_token(&headers, client.registration_access_token_hash.as_deref())?;
-    let issuer = resolve_issuer_from_host(&headers)?;
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
 
     Ok(OAuthDynamicClientRegistrationResponse {
         client_id: client.client_id.clone(),
@@ -1358,7 +1332,7 @@ pub async fn oauth_update_registered_client(
     .await?
     .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth client not found"))?;
 
-    let issuer = resolve_issuer_from_host(&headers)?;
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
     let updated_client_id = updated.client_id.clone();
     let updated_method = updated.client_auth_method.clone();
     let updated_grant_types = updated.grant_types_vec();
@@ -1426,6 +1400,7 @@ async fn resolve_oauth_app_from_host(
 async fn authenticate_client(
     app_state: &AppState,
     headers: &HeaderMap,
+    issuer: &str,
     request: &OAuthTokenRequest,
     oauth_app_id: i64,
     endpoint_path: &str,
@@ -1441,8 +1416,7 @@ async fn authenticate_client(
     if !client.is_active {
         return Err(AppError::Unauthorized);
     }
-    let expected_assertion_audience =
-        format!("{}{}", resolve_issuer_from_host(headers)?, endpoint_path);
+    let expected_assertion_audience = format!("{}{}", issuer, endpoint_path);
 
     match client.client_auth_method.as_str() {
         "none" => Ok(client),
@@ -1887,12 +1861,19 @@ fn hash_value(value: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn resolve_issuer_from_host(headers: &HeaderMap) -> Result<String, AppError> {
-    let host = resolve_host(headers)
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| AppError::BadRequest("host header is required".to_string()))?;
-    let scheme = resolve_scheme(headers, &host);
-    Ok(format!("{}://{}", scheme, host))
+fn resolve_issuer_from_oauth_app(
+    oauth_app: &queries::RuntimeOAuthAppData,
+) -> Result<String, AppError> {
+    let fqdn = oauth_app.fqdn.trim();
+    if fqdn.is_empty() {
+        return Err(AppError::BadRequest("oauth app fqdn is required".to_string()));
+    }
+    if fqdn.contains("://") || fqdn.contains(':') || fqdn.contains('/') {
+        return Err(AppError::BadRequest(
+            "oauth app fqdn must be a bare host without scheme, port, or path".to_string(),
+        ));
+    }
+    Ok(format!("https://{}", fqdn))
 }
 
 fn resolve_host(headers: &HeaderMap) -> Option<&str> {
@@ -1926,24 +1907,6 @@ fn normalize_fqdn_host(host: &str) -> Option<&str> {
     } else {
         Some(stripped)
     }
-}
-
-fn resolve_scheme(headers: &HeaderMap, _host: &str) -> &'static str {
-    if let Some(proto) = headers
-        .get("x-forwarded-proto")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .map(str::trim)
-    {
-        if proto.eq_ignore_ascii_case("http") {
-            return "http";
-        }
-        if proto.eq_ignore_ascii_case("https") {
-            return "https";
-        }
-    }
-
-    "https"
 }
 
 fn ensure_registration_access_token(
