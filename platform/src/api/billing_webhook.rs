@@ -172,13 +172,7 @@ async fn handle_subscription_active(
         "Subscription {} activated for owner {}",
         subscription_id, owner_id
     );
-    send_billing_change_email(
-        app_state,
-        &owner_id,
-        "we detected a subscription activation event",
-        "Your subscription is now active.",
-    )
-    .await;
+    send_billing_change_email(app_state, &owner_id, "Your subscription is now active.").await;
 
     Ok(())
 }
@@ -231,7 +225,6 @@ async fn handle_subscription_renewed(
         send_billing_change_email(
             app_state,
             &owner_id,
-            "we detected a subscription renewal event",
             "Your subscription was renewed successfully.",
         )
         .await;
@@ -286,13 +279,8 @@ async fn handle_subscription_plan_changed(
             "Plan changed for subscription {} to product {} (owner: {})",
             subscription_id, new_product_id, owner_id
         );
-        send_billing_change_email(
-            app_state,
-            &owner_id,
-            "we detected a subscription plan change event",
-            "Your subscription plan was updated.",
-        )
-        .await;
+        send_billing_change_email(app_state, &owner_id, "Your subscription plan was updated.")
+            .await;
     }
 
     Ok(())
@@ -357,13 +345,7 @@ async fn handle_subscription_cancelled(
             "Subscription {} cancelled for owner {}",
             subscription_id, owner_id
         );
-        send_billing_change_email(
-            app_state,
-            &owner_id,
-            "we detected a subscription cancellation event",
-            "Your subscription was cancelled.",
-        )
-        .await;
+        send_billing_change_email(app_state, &owner_id, "Your subscription was cancelled.").await;
     }
 
     Ok(())
@@ -431,7 +413,6 @@ async fn handle_subscription_on_hold(
         send_billing_change_email(
             app_state,
             &owner_id,
-            "we detected that your subscription moved to on-hold status",
             "Your subscription is currently on hold.",
         )
         .await;
@@ -499,13 +480,7 @@ async fn handle_subscription_failed(
             "Subscription {} failed for owner {}",
             subscription_id, owner_id
         );
-        send_billing_change_email(
-            app_state,
-            &owner_id,
-            "we detected a subscription payment failure event",
-            "Your subscription payment failed.",
-        )
-        .await;
+        send_billing_change_email(app_state, &owner_id, "Your subscription payment failed.").await;
     }
 
     Ok(())
@@ -570,13 +545,7 @@ async fn handle_subscription_expired(
             "Subscription {} expired for owner {}",
             subscription_id, owner_id
         );
-        send_billing_change_email(
-            app_state,
-            &owner_id,
-            "we detected a subscription expiration event",
-            "Your subscription has expired.",
-        )
-        .await;
+        send_billing_change_email(app_state, &owner_id, "Your subscription has expired.").await;
     }
 
     Ok(())
@@ -678,13 +647,7 @@ async fn handle_payment_succeeded(
         })?;
 
         info!("Payment {} succeeded for owner {}", payment_id, owner_id);
-        send_billing_change_email(
-            app_state,
-            &owner_id,
-            "we detected a successful payment event",
-            "Your payment was successful.",
-        )
-        .await;
+        send_billing_change_email(app_state, &owner_id, "Your payment was successful.").await;
 
         if let Some(metadata) = data["metadata"].as_object() {
             if metadata.get("type").and_then(|v| v.as_str()) == Some("pulse_purchase") {
@@ -756,7 +719,6 @@ async fn handle_payment_failed(
         send_billing_change_email(
             app_state,
             &owner_id,
-            "we detected a failed payment event",
             "Your payment failed. Please retry your payment method.",
         )
         .await;
@@ -780,12 +742,7 @@ fn split_recipients(raw: &str) -> Vec<String> {
         .collect()
 }
 
-async fn send_billing_change_email(
-    app_state: &AppState,
-    owner_id: &str,
-    reason: &str,
-    message: &str,
-) {
+async fn send_billing_change_email(app_state: &AppState, owner_id: &str, message: &str) {
     let Some(console_deployment_id) = parse_console_deployment_id() else {
         warn!("CONSOLE_DEPLOYMENT_ID not set; skipping billing change email");
         return;
@@ -821,7 +778,6 @@ async fn send_billing_change_email(
     if let Some(plan_line) = plan_line {
         lines.push(plan_line);
     }
-    lines.push(format!("Why you received this email: {}.", reason));
     lines.push(
         "You are receiving this email because this email is attached to your Wacht billing account."
             .to_string(),
