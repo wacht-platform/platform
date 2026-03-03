@@ -676,9 +676,17 @@ async fn check_authz_oauth_access_token(
         "X-Wacht-OAuth-Client-ID",
         safe_header_value(token_data.client_id.clone()),
     );
+    response_headers.insert(
+        "X-Wacht-OAuth-Issuer",
+        safe_header_value(token_data.oauth_issuer.clone()),
+    );
     if let Some(granted_resource_urn) = token_data.granted_resource.clone() {
         response_headers.insert(
             "X-Wacht-Granted-Resource",
+            safe_header_value(granted_resource_urn.clone()),
+        );
+        response_headers.insert(
+            "X-Wacht-OAuth-Audience",
             safe_header_value(granted_resource_urn),
         );
     }
