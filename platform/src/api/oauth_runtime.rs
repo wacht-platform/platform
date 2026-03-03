@@ -567,7 +567,8 @@ pub async fn oauth_consent_submit(
                 code_challenge: claims.code_challenge,
                 code_challenge_method: claims.code_challenge_method,
                 scopes: approved_scopes,
-                resource: Some(selected_resource),
+                resource: claims.resource,
+                granted_resource: Some(selected_resource),
             }
             .execute(&app_state)
             .await?;
@@ -693,7 +694,7 @@ async fn oauth_token_impl(
                 code_row.oauth_grant_id,
                 code_row.app_slug.clone(),
                 code_row.scopes.clone(),
-                code_row.resource.clone(),
+                code_row.granted_resource.clone(),
                 &oauth_app.scope_definitions,
             )
             .await
@@ -738,6 +739,7 @@ async fn oauth_token_impl(
                 app_slug: code_row.app_slug,
                 scopes: code_row.scopes.clone(),
                 resource: code_row.resource,
+                granted_resource: code_row.granted_resource,
             }
             .execute(&app_state)
             .await
@@ -816,7 +818,7 @@ async fn oauth_token_impl(
                 refresh_row.oauth_grant_id,
                 refresh_row.app_slug.clone(),
                 refresh_row.scopes.clone(),
-                refresh_row.resource.clone(),
+                refresh_row.granted_resource.clone(),
                 &oauth_app.scope_definitions,
             )
             .await
@@ -870,6 +872,7 @@ async fn oauth_token_impl(
                 app_slug: refresh_row.app_slug,
                 scopes: effective_scopes.clone(),
                 resource: refresh_row.resource.clone(),
+                granted_resource: refresh_row.granted_resource.clone(),
             }
             .execute(&app_state)
             .await
@@ -1127,6 +1130,7 @@ async fn oauth_introspect_impl(
             nbf: None,
             sub: None,
             resource: None,
+            granted_resource: None,
         }));
     };
 
@@ -1143,6 +1147,7 @@ async fn oauth_introspect_impl(
             nbf: None,
             sub: None,
             resource: None,
+            granted_resource: None,
         }));
     }
     if let Some(grant_id) = token.oauth_grant_id {
@@ -1160,12 +1165,13 @@ async fn oauth_introspect_impl(
         client_id: Some(token.client_id),
         token_type: Some("Bearer".to_string()),
         iss: Some(issuer),
-        aud: token.resource.clone(),
+        aud: token.granted_resource.clone(),
         exp: Some(token.expires_at.timestamp()),
         iat: Some(token.issued_at.timestamp()),
         nbf: Some(token.issued_at.timestamp()),
         sub: Some(token.app_slug),
         resource: token.resource,
+        granted_resource: token.granted_resource,
     }))
 }
 

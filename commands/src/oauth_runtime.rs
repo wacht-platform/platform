@@ -18,6 +18,7 @@ pub struct IssueOAuthAuthorizationCode {
     pub code_challenge_method: Option<String>,
     pub scopes: Vec<String>,
     pub resource: Option<String>,
+    pub granted_resource: Option<String>,
 }
 
 pub struct OAuthAuthorizationCodeIssued {
@@ -48,9 +49,10 @@ impl Command for IssueOAuthAuthorizationCode {
                 pkce_code_challenge_method,
                 scopes,
                 resource,
+                granted_resource,
                 expires_at,
                 created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
             "#,
         )
         .bind(id)
@@ -64,6 +66,7 @@ impl Command for IssueOAuthAuthorizationCode {
         .bind(&self.code_challenge_method)
         .bind(serde_json::to_value(&self.scopes)?)
         .bind(&self.resource)
+        .bind(&self.granted_resource)
         .bind(expires_at)
         .execute(&app_state.db_pool)
         .await?;
@@ -105,6 +108,7 @@ pub struct IssueOAuthTokenPair {
     pub app_slug: String,
     pub scopes: Vec<String>,
     pub resource: Option<String>,
+    pub granted_resource: Option<String>,
 }
 
 pub struct OAuthTokenPairIssued {
@@ -137,9 +141,10 @@ impl Command for IssueOAuthTokenPair {
                 principal_type,
                 scopes,
                 resource,
+                granted_resource,
                 expires_at,
                 created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,'user_oauth',$7,$8,$9,NOW())
+            ) VALUES ($1,$2,$3,$4,$5,$6,'user_oauth',$7,$8,$9,$10,NOW())
             "#,
         )
         .bind(access_id)
@@ -150,6 +155,7 @@ impl Command for IssueOAuthTokenPair {
         .bind(access_hash)
         .bind(serde_json::to_value(&self.scopes)?)
         .bind(&self.resource)
+        .bind(&self.granted_resource)
         .bind(Utc::now() + Duration::hours(1))
         .execute(&app_state.db_pool)
         .await?;
@@ -165,9 +171,10 @@ impl Command for IssueOAuthTokenPair {
                 token_hash,
                 scopes,
                 resource,
+                granted_resource,
                 expires_at,
                 created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
             "#,
         )
         .bind(refresh_id)
@@ -178,6 +185,7 @@ impl Command for IssueOAuthTokenPair {
         .bind(refresh_hash)
         .bind(serde_json::to_value(&self.scopes)?)
         .bind(&self.resource)
+        .bind(&self.granted_resource)
         .bind(Utc::now() + Duration::days(30))
         .execute(&app_state.db_pool)
         .await?;

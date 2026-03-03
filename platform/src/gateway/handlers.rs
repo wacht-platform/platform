@@ -676,8 +676,17 @@ async fn check_authz_oauth_access_token(
         "X-Wacht-OAuth-Client-ID",
         safe_header_value(token_data.client_id.clone()),
     );
-    if let Some(resource_urn) = token_data.resource.clone() {
-        response_headers.insert("X-Wacht-Resource", safe_header_value(resource_urn));
+    if let Some(granted_resource_urn) = token_data.granted_resource.clone() {
+        response_headers.insert(
+            "X-Wacht-Granted-Resource",
+            safe_header_value(granted_resource_urn),
+        );
+    }
+    if let Some(requested_resource_urn) = token_data.resource.clone() {
+        response_headers.insert(
+            "X-Wacht-Requested-Resource",
+            safe_header_value(requested_resource_urn),
+        );
     }
     if !token_data.scopes.is_empty() {
         response_headers.insert(
@@ -689,7 +698,7 @@ async fn check_authz_oauth_access_token(
     let effective_permissions = derive_effective_permissions_from_oauth(
         &token_data.scopes,
         &token_data.scope_definitions,
-        token_data.resource.as_deref(),
+        token_data.granted_resource.as_deref(),
     );
 
     if !effective_permissions.is_empty() {
@@ -893,6 +902,7 @@ async fn check_authz_oauth_access_token(
                 "principal_type": "oauth_access_token",
                 "scopes": token_data.scopes,
                 "resource": token_data.resource,
+                "granted_resource": token_data.granted_resource,
                 "expires_at": token_data.expires_at,
             })),
             rate_limits: rate_limit_states,

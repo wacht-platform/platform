@@ -68,6 +68,7 @@ pub struct RuntimeOAuthClientData {
 pub struct RuntimeOAuthGrantData {
     pub scopes: Vec<String>,
     pub resource: String,
+    pub granted_resource: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +81,7 @@ pub struct RuntimeAuthorizationCodeData {
     pub pkce_code_challenge_method: Option<String>,
     pub scopes: Vec<String>,
     pub resource: Option<String>,
+    pub granted_resource: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +94,7 @@ pub struct RuntimeRefreshTokenData {
     pub expires_at: chrono::DateTime<chrono::Utc>,
     pub scopes: Vec<String>,
     pub resource: Option<String>,
+    pub granted_resource: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +105,7 @@ pub struct RuntimeAccessTokenData {
     pub client_id: String,
     pub scopes: Vec<String>,
     pub resource: Option<String>,
+    pub granted_resource: Option<String>,
     pub expires_at: chrono::DateTime<chrono::Utc>,
     pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -114,6 +118,7 @@ pub struct RuntimeIntrospectionData {
     pub app_slug: String,
     pub scopes: Vec<String>,
     pub resource: Option<String>,
+    pub granted_resource: Option<String>,
     pub issued_at: chrono::DateTime<chrono::Utc>,
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
@@ -128,6 +133,7 @@ pub struct GatewayOAuthAccessTokenData {
     pub owner_user_id: Option<i64>,
     pub scopes: Vec<String>,
     pub resource: Option<String>,
+    pub granted_resource: Option<String>,
     pub expires_at: chrono::DateTime<chrono::Utc>,
     pub rate_limits: Vec<RateLimit>,
     pub rate_limit_scheme_slug: Option<String>,
@@ -396,7 +402,7 @@ impl Query for ListActiveRuntimeOAuthGrantsQuery {
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let rows = sqlx::query(
             r#"
-            SELECT scopes, resource
+            SELECT scopes, resource, granted_resource
             FROM oauth_client_grants
             WHERE deployment_id = $1
               AND oauth_client_id = $2
@@ -416,6 +422,7 @@ impl Query for ListActiveRuntimeOAuthGrantsQuery {
             .map(|r| RuntimeOAuthGrantData {
                 scopes: serde_json::from_value(r.get("scopes")).unwrap_or_default(),
                 resource: r.get("resource"),
+                granted_resource: r.get("granted_resource"),
             })
             .collect())
     }
@@ -451,7 +458,8 @@ impl Query for GetRuntimeAuthorizationCodeForExchangeQuery {
                 pkce_code_challenge,
                 pkce_code_challenge_method,
                 scopes,
-                resource
+                resource,
+                granted_resource
             FROM oauth_authorization_codes
             WHERE deployment_id = $1
               AND oauth_client_id = $2
@@ -475,6 +483,7 @@ impl Query for GetRuntimeAuthorizationCodeForExchangeQuery {
             pkce_code_challenge_method: r.get("pkce_code_challenge_method"),
             scopes: serde_json::from_value(r.get("scopes")).unwrap_or_default(),
             resource: r.get("resource"),
+            granted_resource: r.get("granted_resource"),
         }))
     }
 }
@@ -509,7 +518,8 @@ impl Query for GetRuntimeRefreshTokenForExchangeQuery {
                 revoked_at,
                 expires_at,
                 scopes,
-                resource
+                resource,
+                granted_resource
             FROM oauth_refresh_tokens
             WHERE deployment_id = $1
               AND oauth_client_id = $2
@@ -533,6 +543,7 @@ impl Query for GetRuntimeRefreshTokenForExchangeQuery {
             expires_at: r.get("expires_at"),
             scopes: serde_json::from_value(r.get("scopes")).unwrap_or_default(),
             resource: r.get("resource"),
+            granted_resource: r.get("granted_resource"),
         }))
     }
 }
@@ -543,7 +554,7 @@ pub struct ResolveRuntimeOAuthGrantQuery {
     pub grant_id: Option<i64>,
     pub app_slug: Option<String>,
     pub scopes: Vec<String>,
-    pub resource: Option<String>,
+    pub granted_resource: Option<String>,
 }
 
 impl ResolveRuntimeOAuthGrantQuery {
@@ -554,7 +565,7 @@ impl ResolveRuntimeOAuthGrantQuery {
             grant_id: Some(grant_id),
             app_slug: None,
             scopes: Vec::new(),
-            resource: None,
+            granted_resource: None,
         }
     }
 
@@ -563,7 +574,7 @@ impl ResolveRuntimeOAuthGrantQuery {
         oauth_client_id: i64,
         app_slug: String,
         scopes: Vec<String>,
-        resource: Option<String>,
+        granted_resource: Option<String>,
     ) -> Self {
         Self {
             deployment_id,
@@ -571,7 +582,7 @@ impl ResolveRuntimeOAuthGrantQuery {
             grant_id: None,
             app_slug: Some(app_slug),
             scopes,
-            resource,
+            granted_resource,
         }
     }
 }
@@ -593,7 +604,7 @@ impl Query for ResolveRuntimeOAuthGrantQuery {
                   OR (
                     $3::bigint IS NULL
                     AND app_slug = $4
-                    AND ($5::text IS NULL OR resource = $5)
+                    AND ($5::text IS NULL OR granted_resource = $5)
                     AND scopes @> $6::jsonb
                   )
                 )
@@ -623,7 +634,7 @@ impl Query for ResolveRuntimeOAuthGrantQuery {
             self.oauth_client_id,
             self.grant_id,
             self.app_slug,
-            self.resource,
+            self.granted_resource,
             scopes_json
         )
         .fetch_one(&app_state.db_pool)
@@ -828,6 +839,7 @@ impl Query for GetRuntimeAccessTokenByHashQuery {
                 c.client_id,
                 t.scopes,
                 t.resource,
+                t.granted_resource,
                 t.expires_at,
                 t.revoked_at
             FROM oauth_access_tokens t
@@ -850,6 +862,7 @@ impl Query for GetRuntimeAccessTokenByHashQuery {
             client_id: r.get("client_id"),
             scopes: serde_json::from_value(r.get("scopes")).unwrap_or_default(),
             resource: r.get("resource"),
+            granted_resource: r.get("granted_resource"),
             expires_at: r.get("expires_at"),
             revoked_at: r.get("revoked_at"),
         }))
@@ -887,6 +900,7 @@ impl Query for GetRuntimeIntrospectionDataQuery {
                     c.client_id,
                     t.scopes,
                     t.resource,
+                    t.granted_resource,
                     t.created_at,
                     t.expires_at,
                     t.revoked_at
@@ -932,9 +946,9 @@ impl Query for GetRuntimeIntrospectionDataQuery {
                     VALUES (
                         LOWER(TRIM(COALESCE(def.scope_def->>'category', ''))),
                         CASE
-                            WHEN tr.resource LIKE 'urn:wacht:organization:%'
+                            WHEN tr.granted_resource LIKE 'urn:wacht:organization:%'
                                 THEN NULLIF(TRIM(COALESCE(def.scope_def->>'organization_permission', '')), '')
-                            WHEN tr.resource LIKE 'urn:wacht:workspace:%'
+                            WHEN tr.granted_resource LIKE 'urn:wacht:workspace:%'
                                 THEN NULLIF(TRIM(COALESCE(def.scope_def->>'workspace_permission', '')), '')
                             ELSE NULL
                         END
@@ -942,8 +956,8 @@ impl Query for GetRuntimeIntrospectionDataQuery {
                 ) AS perm(category, permission) ON TRUE
                 WHERE (def.scope_def->>'scope') IN (SELECT jsonb_array_elements_text(tr.scopes))
                   AND (
-                      (tr.resource LIKE 'urn:wacht:organization:%' AND perm.category = 'organization') OR
-                      (tr.resource LIKE 'urn:wacht:workspace:%' AND perm.category = 'workspace')
+                      (tr.granted_resource LIKE 'urn:wacht:organization:%' AND perm.category = 'organization') OR
+                      (tr.granted_resource LIKE 'urn:wacht:workspace:%' AND perm.category = 'workspace')
                   )
                   AND perm.permission IS NOT NULL
             ),
@@ -957,6 +971,7 @@ impl Query for GetRuntimeIntrospectionDataQuery {
                 tr.app_slug,
                 tr.scopes as "scopes: serde_json::Value",
                 tr.resource,
+                tr.granted_resource,
                 tr.created_at,
                 tr.expires_at,
                 (
@@ -964,24 +979,24 @@ impl Query for GetRuntimeIntrospectionDataQuery {
                     AND tr.expires_at > NOW()
                     AND COALESCE(gs.valid, FALSE)
                     AND CASE
-                        WHEN tr.resource IS NULL THEN TRUE
-                        WHEN split_part(tr.resource, ':', 1) = 'urn'
-                          AND split_part(tr.resource, ':', 2) = 'wacht'
-                          AND split_part(tr.resource, ':', 3) = 'user'
-                          AND split_part(tr.resource, ':', 4) <> ''
-                          AND split_part(tr.resource, ':', 4) !~ '[^0-9]'
+                        WHEN tr.granted_resource IS NULL THEN TRUE
+                        WHEN split_part(tr.granted_resource, ':', 1) = 'urn'
+                          AND split_part(tr.granted_resource, ':', 2) = 'wacht'
+                          AND split_part(tr.granted_resource, ':', 3) = 'user'
+                          AND split_part(tr.granted_resource, ':', 4) <> ''
+                          AND split_part(tr.granted_resource, ':', 4) !~ '[^0-9]'
                         THEN
                             EXISTS (
                                 SELECT 1
                                 FROM api_auth_user au
-                                WHERE au.user_id = split_part(tr.resource, ':', 4)::bigint
+                                WHERE au.user_id = split_part(tr.granted_resource, ':', 4)::bigint
                                   AND cardinality((SELECT permissions FROM required_permission_array)) = 0
                             )
-                        WHEN split_part(tr.resource, ':', 1) = 'urn'
-                          AND split_part(tr.resource, ':', 2) = 'wacht'
-                          AND split_part(tr.resource, ':', 3) = 'organization'
-                          AND split_part(tr.resource, ':', 4) <> ''
-                          AND split_part(tr.resource, ':', 4) !~ '[^0-9]'
+                        WHEN split_part(tr.granted_resource, ':', 1) = 'urn'
+                          AND split_part(tr.granted_resource, ':', 2) = 'wacht'
+                          AND split_part(tr.granted_resource, ':', 3) = 'organization'
+                          AND split_part(tr.granted_resource, ':', 4) <> ''
+                          AND split_part(tr.granted_resource, ':', 4) !~ '[^0-9]'
                         THEN
                             EXISTS (
                                 SELECT 1
@@ -995,7 +1010,7 @@ impl Query for GetRuntimeIntrospectionDataQuery {
                                     FROM api_auth_user au
                                     INNER JOIN organization_memberships om
                                         ON om.user_id = au.user_id
-                                       AND om.organization_id = split_part(tr.resource, ':', 4)::bigint
+                                       AND om.organization_id = split_part(tr.granted_resource, ':', 4)::bigint
                                        AND om.deleted_at IS NULL
                                     INNER JOIN organizations o
                                         ON o.id = om.organization_id
@@ -1011,11 +1026,11 @@ impl Query for GetRuntimeIntrospectionDataQuery {
                                 WHERE perms.membership_count > 0
                                   AND perms.permissions @> (SELECT permissions FROM required_permission_array)
                             )
-                        WHEN split_part(tr.resource, ':', 1) = 'urn'
-                          AND split_part(tr.resource, ':', 2) = 'wacht'
-                          AND split_part(tr.resource, ':', 3) = 'workspace'
-                          AND split_part(tr.resource, ':', 4) <> ''
-                          AND split_part(tr.resource, ':', 4) !~ '[^0-9]'
+                        WHEN split_part(tr.granted_resource, ':', 1) = 'urn'
+                          AND split_part(tr.granted_resource, ':', 2) = 'wacht'
+                          AND split_part(tr.granted_resource, ':', 3) = 'workspace'
+                          AND split_part(tr.granted_resource, ':', 4) <> ''
+                          AND split_part(tr.granted_resource, ':', 4) !~ '[^0-9]'
                         THEN
                             EXISTS (
                                 SELECT 1
@@ -1029,7 +1044,7 @@ impl Query for GetRuntimeIntrospectionDataQuery {
                                     FROM api_auth_user au
                                     INNER JOIN workspace_memberships wm
                                         ON wm.user_id = au.user_id
-                                       AND wm.workspace_id = split_part(tr.resource, ':', 4)::bigint
+                                       AND wm.workspace_id = split_part(tr.granted_resource, ':', 4)::bigint
                                        AND wm.deleted_at IS NULL
                                     INNER JOIN workspaces w
                                         ON w.id = wm.workspace_id
@@ -1065,6 +1080,7 @@ impl Query for GetRuntimeIntrospectionDataQuery {
             app_slug: r.app_slug,
             scopes: serde_json::from_value(r.scopes).unwrap_or_default(),
             resource: r.resource,
+            granted_resource: r.granted_resource,
             issued_at: r.created_at,
             expires_at: r.expires_at,
         }))
@@ -1096,6 +1112,7 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
                     t.app_slug,
                     t.scopes,
                     t.resource,
+                    t.granted_resource,
                     t.expires_at,
                     t.revoked_at,
                     aa.user_id,
@@ -1138,9 +1155,9 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
                     VALUES (
                         LOWER(TRIM(COALESCE(def.scope_def->>'category', ''))),
                         CASE
-                            WHEN tr.resource LIKE 'urn:wacht:organization:%'
+                            WHEN tr.granted_resource LIKE 'urn:wacht:organization:%'
                                 THEN NULLIF(TRIM(COALESCE(def.scope_def->>'organization_permission', '')), '')
-                            WHEN tr.resource LIKE 'urn:wacht:workspace:%'
+                            WHEN tr.granted_resource LIKE 'urn:wacht:workspace:%'
                                 THEN NULLIF(TRIM(COALESCE(def.scope_def->>'workspace_permission', '')), '')
                             ELSE NULL
                         END
@@ -1148,8 +1165,8 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
                 ) AS perm(category, permission) ON TRUE
                 WHERE (def.scope_def->>'scope') IN (SELECT jsonb_array_elements_text(tr.scopes))
                   AND (
-                      (tr.resource LIKE 'urn:wacht:organization:%' AND perm.category = 'organization') OR
-                      (tr.resource LIKE 'urn:wacht:workspace:%' AND perm.category = 'workspace')
+                      (tr.granted_resource LIKE 'urn:wacht:organization:%' AND perm.category = 'organization') OR
+                      (tr.granted_resource LIKE 'urn:wacht:workspace:%' AND perm.category = 'workspace')
                   )
                   AND perm.permission IS NOT NULL
             ),
@@ -1166,6 +1183,7 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
                 tr.user_id as "owner_user_id?",
                 tr.scopes as "scopes!: serde_json::Value",
                 tr.resource,
+                tr.granted_resource,
                 tr.expires_at,
                 tr.rate_limit_scheme_slug,
                 tr.scope_definitions as "scope_definitions!: serde_json::Value",
@@ -1175,20 +1193,20 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
                     AND tr.expires_at > NOW()
                     AND COALESCE(gs.valid, FALSE)
                     AND CASE
-                        WHEN tr.resource IS NULL THEN TRUE
-                        WHEN split_part(tr.resource, ':', 1) = 'urn'
-                          AND split_part(tr.resource, ':', 2) = 'wacht'
-                          AND split_part(tr.resource, ':', 3) = 'user'
-                          AND split_part(tr.resource, ':', 4) <> ''
-                          AND split_part(tr.resource, ':', 4) !~ '[^0-9]'
+                        WHEN tr.granted_resource IS NULL THEN TRUE
+                        WHEN split_part(tr.granted_resource, ':', 1) = 'urn'
+                          AND split_part(tr.granted_resource, ':', 2) = 'wacht'
+                          AND split_part(tr.granted_resource, ':', 3) = 'user'
+                          AND split_part(tr.granted_resource, ':', 4) <> ''
+                          AND split_part(tr.granted_resource, ':', 4) !~ '[^0-9]'
                         THEN
-                            tr.user_id = split_part(tr.resource, ':', 4)::bigint
+                            tr.user_id = split_part(tr.granted_resource, ':', 4)::bigint
                             AND cardinality((SELECT permissions FROM required_permission_array)) = 0
-                        WHEN split_part(tr.resource, ':', 1) = 'urn'
-                          AND split_part(tr.resource, ':', 2) = 'wacht'
-                          AND split_part(tr.resource, ':', 3) = 'organization'
-                          AND split_part(tr.resource, ':', 4) <> ''
-                          AND split_part(tr.resource, ':', 4) !~ '[^0-9]'
+                        WHEN split_part(tr.granted_resource, ':', 1) = 'urn'
+                          AND split_part(tr.granted_resource, ':', 2) = 'wacht'
+                          AND split_part(tr.granted_resource, ':', 3) = 'organization'
+                          AND split_part(tr.granted_resource, ':', 4) <> ''
+                          AND split_part(tr.granted_resource, ':', 4) !~ '[^0-9]'
                         THEN
                             EXISTS (
                                 SELECT 1
@@ -1211,17 +1229,17 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
                                     LEFT JOIN LATERAL unnest(COALESCE(r.permissions, ARRAY[]::text[])) AS p(permission)
                                         ON TRUE
                                     WHERE om.user_id = tr.user_id
-                                      AND om.organization_id = split_part(tr.resource, ':', 4)::bigint
+                                      AND om.organization_id = split_part(tr.granted_resource, ':', 4)::bigint
                                       AND om.deleted_at IS NULL
                                 ) perms
                                 WHERE perms.membership_count > 0
                                   AND perms.permissions @> (SELECT permissions FROM required_permission_array)
                             )
-                        WHEN split_part(tr.resource, ':', 1) = 'urn'
-                          AND split_part(tr.resource, ':', 2) = 'wacht'
-                          AND split_part(tr.resource, ':', 3) = 'workspace'
-                          AND split_part(tr.resource, ':', 4) <> ''
-                          AND split_part(tr.resource, ':', 4) !~ '[^0-9]'
+                        WHEN split_part(tr.granted_resource, ':', 1) = 'urn'
+                          AND split_part(tr.granted_resource, ':', 2) = 'wacht'
+                          AND split_part(tr.granted_resource, ':', 3) = 'workspace'
+                          AND split_part(tr.granted_resource, ':', 4) <> ''
+                          AND split_part(tr.granted_resource, ':', 4) !~ '[^0-9]'
                         THEN
                             EXISTS (
                                 SELECT 1
@@ -1244,7 +1262,7 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
                                     LEFT JOIN LATERAL unnest(COALESCE(r.permissions, ARRAY[]::text[])) AS p(permission)
                                         ON TRUE
                                     WHERE wm.user_id = tr.user_id
-                                      AND wm.workspace_id = split_part(tr.resource, ':', 4)::bigint
+                                      AND wm.workspace_id = split_part(tr.granted_resource, ':', 4)::bigint
                                       AND wm.deleted_at IS NULL
                                 ) perms
                                 WHERE perms.membership_count > 0
@@ -1270,6 +1288,7 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
             owner_user_id: r.owner_user_id,
             scopes: serde_json::from_value(r.scopes).unwrap_or_default(),
             resource: r.resource,
+            granted_resource: r.granted_resource,
             expires_at: r.expires_at,
             rate_limits: vec![],
             rate_limit_scheme_slug: r.rate_limit_scheme_slug,

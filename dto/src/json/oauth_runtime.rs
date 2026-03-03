@@ -128,6 +128,8 @@ pub struct OAuthIntrospectResponse {
     pub sub: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub granted_resource: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
