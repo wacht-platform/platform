@@ -373,6 +373,17 @@ async fn authorize_impl(
         "{}/oauth/consent/init?handoff_id={}",
         backend_base, handoff_id
     );
+    tracing::info!(
+        event = "oauth.authorize.handoff_created",
+        deployment_id = oauth_app.deployment_id,
+        oauth_client_id = client.id,
+        handoff_id = %handoff_id,
+        redirect_uri = %handoff_payload.redirect_uri,
+        consent_url = %consent_url,
+        scopes = ?handoff_payload.scopes,
+        resource = ?handoff_payload.resource,
+        "OAuth consent handoff created"
+    );
 
     Ok(OAuthAuthorizeInitiatedResponse {
         consent_url,
@@ -492,6 +503,18 @@ pub async fn oauth_consent_submit(
     validate_consent_submit_secret(&headers)?;
     let claims = verify_oauth_consent_request_token(&request.request_token)?;
     let action = request.action.trim().to_ascii_lowercase();
+    tracing::info!(
+        event = "oauth.consent.submit.received",
+        deployment_id = claims.deployment_id,
+        oauth_client_id = claims.oauth_client_id,
+        client_id = %claims.client_id,
+        request_token_jti = %claims.jti,
+        action = %action,
+        claims_redirect_uri = %claims.redirect_uri,
+        claims_scopes = ?claims.scopes,
+        claims_resource = ?claims.resource,
+        "OAuth consent submit received"
+    );
 
     match action.as_str() {
         "approve" => {
@@ -577,6 +600,14 @@ pub async fn oauth_consent_submit(
                 claims.state,
                 resolve_issuer_from_host(&headers).ok(),
             );
+            tracing::info!(
+                event = "oauth.consent.submit.approved",
+                deployment_id = claims.deployment_id,
+                oauth_client_id = claims.oauth_client_id,
+                request_token_jti = %claims.jti,
+                redirect_location = %redirect_uri,
+                "OAuth consent approved; redirecting client"
+            );
             Ok(Redirect::to(&redirect_uri))
         }
         "deny" => {
@@ -585,6 +616,14 @@ pub async fn oauth_consent_submit(
                 &[("error", "access_denied".to_string())],
                 claims.state,
                 resolve_issuer_from_host(&headers).ok(),
+            );
+            tracing::info!(
+                event = "oauth.consent.submit.denied",
+                deployment_id = claims.deployment_id,
+                oauth_client_id = claims.oauth_client_id,
+                request_token_jti = %claims.jti,
+                redirect_location = %redirect_uri,
+                "OAuth consent denied; redirecting client"
             );
             Ok(Redirect::to(&redirect_uri))
         }
