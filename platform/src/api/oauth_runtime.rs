@@ -269,7 +269,7 @@ async fn authorize_impl(
         if !is_valid_resource_indicator(resource) {
             return Err((
                 StatusCode::BAD_REQUEST,
-                "resource must be an absolute URI (e.g. urn:wacht:workspace:123)",
+                "resource must be an absolute URI",
             )
                 .into());
         }
@@ -516,33 +516,20 @@ pub async fn oauth_consent_submit(
                     }
                 }
             };
-            let selected_resource = if let Some(expected_resource) = claims.resource.clone() {
-                if let Some(provided_resource) = request.resource.as_deref() {
-                    if provided_resource.trim() != expected_resource {
-                        return Err((
-                            StatusCode::BAD_REQUEST,
-                            "resource does not match authorization request",
-                        )
-                            .into());
-                    }
-                }
-                expected_resource
-            } else {
-                let provided_resource = request
-                    .resource
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|v| !v.is_empty())
-                    .ok_or_else(|| (StatusCode::BAD_REQUEST, "resource is required"))?;
-                if !is_valid_resource_indicator(provided_resource) {
-                    return Err((
-                        StatusCode::BAD_REQUEST,
-                        "resource must be an absolute URI (e.g. urn:wacht:workspace:123)",
-                    )
-                        .into());
-                }
-                provided_resource.to_string()
-            };
+            let selected_resource = request
+                .granted_resource
+                .as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .ok_or_else(|| (StatusCode::BAD_REQUEST, "granted_resource is required"))?
+                .to_string();
+            if !is_valid_granted_resource_indicator(&selected_resource) {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "granted_resource must be a canonical Wacht URN (e.g. urn:wacht:workspace:123)",
+                )
+                    .into());
+            }
             let app_slug = EnsureUserApiAuthAppCommand::new(claims.deployment_id, request.user_id)
                 .execute(&app_state)
                 .await?;
@@ -1785,6 +1772,10 @@ fn verify_pkce(
 }
 
 fn is_valid_resource_indicator(resource: &str) -> bool {
+    url::Url::parse(resource).is_ok_and(|uri| !uri.scheme().is_empty())
+}
+
+fn is_valid_granted_resource_indicator(resource: &str) -> bool {
     if resource.starts_with("urn:wacht:organization:") {
         return resource
             .trim_start_matches("urn:wacht:organization:")

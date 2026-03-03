@@ -209,6 +209,7 @@ pub struct OAuthConsentSubmitRequest {
     pub request_token: String,
     pub action: String,
     pub resource: Option<String>,
+    pub granted_resource: Option<String>,
     pub scope: Option<String>,
     pub user_id: i64,
 }
