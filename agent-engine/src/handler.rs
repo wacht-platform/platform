@@ -40,7 +40,6 @@ impl AgentHandler {
         let deployment_id = request.agent.deployment_id;
 
         let kv = self.get_key_value_store().await?;
-        let watch = self.create_watcher(&kv, &context_key).await?;
 
         let deployment_ai_settings = queries::GetDeploymentAiSettingsQuery::new(deployment_id)
             .execute(&self.app_state)
@@ -83,7 +82,6 @@ impl AgentHandler {
                     &context_key,
                     execution_id,
                     &mut executor,
-                    watch,
                     ResumeContext::PlatformFunction(exec_id, result),
                     context.parent_context_id,
                     context.id,
@@ -99,7 +97,6 @@ impl AgentHandler {
                     execution_id,
                     &mut executor,
                     conv_id,
-                    watch,
                     context.parent_context_id,
                     context.id,
                     deployment_id,
@@ -216,7 +213,6 @@ impl AgentHandler {
         execution_id: i64,
         agent_executor: &mut AgentExecutor,
         conversation_id: i64,
-        mut watch: async_nats::jetstream::kv::Watch,
         parent_context_id: Option<i64>,
         context_id: i64,
         deployment_id: i64,
@@ -225,6 +221,7 @@ impl AgentHandler {
         kv.put(context_key, execution_id.to_string().into())
             .await
             .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {e}")))?;
+        let mut watch = self.create_watcher(kv, context_key).await?;
 
         if let Some(parent_id) = parent_context_id {
             loop {
@@ -300,7 +297,6 @@ impl AgentHandler {
         context_key: &str,
         execution_id: i64,
         agent_executor: &mut AgentExecutor,
-        mut watch: async_nats::jetstream::kv::Watch,
         resume_context: ResumeContext,
         parent_context_id: Option<i64>,
         context_id: i64,
@@ -310,6 +306,7 @@ impl AgentHandler {
         kv.put(context_key, execution_id.to_string().into())
             .await
             .map_err(|e| AppError::Internal(format!("Failed to store execution ID: {e}")))?;
+        let mut watch = self.create_watcher(kv, context_key).await?;
 
         if let Some(parent_id) = parent_context_id {
             loop {
@@ -455,14 +452,24 @@ async fn watch_for_cancellation(
     current_execution_id: i64,
 ) {
     loop {
-        while let Some(Ok(entry)) = watch.next().await {
-            let Ok(stored_id) = String::from_utf8(entry.value.to_vec()) else {
-                error!("Failed to parse execution ID from watch");
-                return;
-            };
+        match watch.next().await {
+            Some(Ok(entry)) => {
+                let Ok(stored_id) = String::from_utf8(entry.value.to_vec()) else {
+                    error!("Failed to parse execution ID from watch");
+                    continue;
+                };
 
-            if stored_id != current_execution_id.to_string() {
-                return;
+                if stored_id != current_execution_id.to_string() {
+                    return;
+                }
+            }
+            Some(Err(error)) => {
+                warn!("Error while watching execution cancellation key: {}", error);
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+            None => {
+                // Keep waiting without spinning if the watch stream momentarily yields no item.
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }
         }
     }
@@ -504,6 +511,7 @@ async fn mark_context_failed_due_to_parent_abort(
 async fn mark_context_cancelled(app_state: &AppState, context_id: i64, deployment_id: i64) {
     let _ = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
         .with_status(ExecutionContextStatus::Failed)
+        .mark_status_as_cancellation()
         .execute(app_state)
         .await;
 

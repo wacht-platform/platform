@@ -9,8 +9,8 @@ use commands::{
     },
     webhook_subscription::evaluate_filter,
 };
-use common::utils::webhook::generate_webhook_signature;
 use common::state::AppState;
+use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
 use queries::{GetWebhookAppByNameQuery, Query};
 use reqwest::header::RETRY_AFTER;
@@ -481,7 +481,8 @@ async fn handle_delivery_failure(
             std::time::Duration::from_secs((next_retry - Utc::now()).num_seconds().max(1) as u64)
         };
         let next_retry = Utc::now()
-            + chrono::Duration::from_std(retry_delay).unwrap_or_else(|_| chrono::Duration::hours(6));
+            + chrono::Duration::from_std(retry_delay)
+                .unwrap_or_else(|_| chrono::Duration::hours(6));
 
         info!(
             "Scheduling retry for delivery {} at {} (delay: {}s)",

@@ -8,6 +8,7 @@ use commands::agent_execution::{
 use commands::{
     Command, CreateConversationCommand, CreateExecutionContextCommand,
     EnsurePulseUsageAllowedForDeploymentCommand, UpdateExecutionContextCommand,
+    UpdateExecutionContextQuery,
 };
 use common::error::AppError;
 use common::state::AppState;
@@ -18,9 +19,8 @@ use dto::json::deployment::{
 use models::plan_features::PlanFeature;
 use models::{AgentExecutionContext, ExecutionContextStatus};
 use queries::{
-    GetDeploymentAiSettingsQuery,
-    GetExecutionContextQuery, ListExecutionContextsQuery,
-    plan_access::CheckDeploymentFeatureAccessQuery, Query as QueryTrait,
+    GetDeploymentAiSettingsQuery, GetExecutionContextQuery, ListExecutionContextsQuery,
+    Query as QueryTrait, plan_access::CheckDeploymentFeatureAccessQuery,
 };
 use serde::Deserialize;
 use tracing::{error, info};
@@ -241,16 +241,18 @@ pub async fn execute_agent_async(
 
     // We allow agent creation/config for all plans, but actual execution requires AI feature access.
     if cancel.is_none() {
-        let has_ai_access = CheckDeploymentFeatureAccessQuery::new(
-            deployment_id,
-            PlanFeature::AiAgents,
-        )
-        .execute(&app_state)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to check AI feature access: {}", e)))?;
+        let has_ai_access =
+            CheckDeploymentFeatureAccessQuery::new(deployment_id, PlanFeature::AiAgents)
+                .execute(&app_state)
+                .await
+                .map_err(|e| {
+                    AppError::Internal(format!("Failed to check AI feature access: {}", e))
+                })?;
 
         if !has_ai_access {
-            return Err(AppError::Forbidden("AI agent usage requires Growth plan".to_string()).into());
+            return Err(
+                AppError::Forbidden("AI agent usage requires Growth plan".to_string()).into(),
+            );
         }
     }
 
@@ -453,8 +455,9 @@ pub async fn execute_agent_async(
                     .await?;
             }
 
-            UpdateExecutionContextCommand::new(context_id, deployment_id)
+            UpdateExecutionContextQuery::new(context_id, deployment_id)
                 .with_status(ExecutionContextStatus::Failed)
+                .mark_status_as_cancellation()
                 .execute(&app_state)
                 .await?;
 

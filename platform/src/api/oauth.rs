@@ -19,8 +19,7 @@ use dto::json::api_key::{
     CreateOAuthClientRequest, ListOAuthAppsResponse, ListOAuthClientsResponse,
     ListOAuthGrantsResponse, OAuthAppResponse, OAuthClientResponse, OAuthGrantResponse,
     RotateOAuthClientSecretResponse, SetOAuthScopeMappingRequest, UpdateOAuthAppRequest,
-    UpdateOAuthClientRequest, UpdateOAuthScopeRequest,
-    VerifyOAuthAppDomainResponse,
+    UpdateOAuthClientRequest, UpdateOAuthScopeRequest, VerifyOAuthAppDomainResponse,
 };
 use queries::{
     GetDeploymentWithSettingsQuery, Query as QueryTrait,

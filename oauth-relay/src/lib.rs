@@ -1,10 +1,10 @@
 use axum::{
     extract::Query,
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Redirect, Response},
     routing::get,
     Router,
-    extract::State,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use hmac::{Hmac, Mac};
@@ -110,8 +110,11 @@ async fn handle_oauth_callback(
         }
     };
 
-    if !verify_relay_state_signature(&decoded_str, relay_sig, relay_config.relay_secret.as_deref())
-    {
+    if !verify_relay_state_signature(
+        &decoded_str,
+        relay_sig,
+        relay_config.relay_secret.as_deref(),
+    ) {
         return (StatusCode::BAD_REQUEST, "Invalid relay state signature").into_response();
     }
 

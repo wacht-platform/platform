@@ -162,9 +162,11 @@ impl ToolExecutor {
 
         let scratch_filename = format!("tool_output_{}_{}.txt", timestamp, random_suffix);
         let scratch_path = format!("scratch/{}", scratch_filename);
-        let _ = filesystem
+        let scratch_write_result = filesystem
             .write_file(&scratch_path, &result_str, None, None)
             .await;
+        let scratch_saved = scratch_write_result.is_ok();
+        let scratch_write_error = scratch_write_result.err().map(|e| e.to_string());
 
         let lines = result_str.lines().count();
         let size_bytes = result_str.len();
@@ -184,32 +186,63 @@ impl ToolExecutor {
                     "size_bytes": size_bytes,
                     "lines": lines,
                     "char_count": char_count,
-                    "saved_to_path": scratch_path
+                    "saved_to_path": if scratch_saved { serde_json::json!(scratch_path) } else { serde_json::Value::Null }
                 },
+                "persistence_error": scratch_write_error,
                 "hint": format!(
-                    "Output is larger than {} chars, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with read_file/execute_command.",
-                    threshold, scratch_path
+                    "{}",
+                    if scratch_saved {
+                        format!(
+                            "Output is larger than {} chars, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with read_file/execute_command.",
+                            threshold, scratch_path
+                        )
+                    } else {
+                        format!(
+                            "Output is larger than {} chars, so inline data is omitted. Could not persist a scratch copy due to a write error.",
+                            threshold
+                        )
+                    }
                 ),
             }));
         }
 
         if let Some(obj) = final_result.as_object_mut() {
-            obj.insert(
-                "saved_output_path".to_string(),
-                serde_json::json!(scratch_path),
-            );
+            if scratch_saved {
+                obj.insert(
+                    "saved_output_path".to_string(),
+                    serde_json::json!(scratch_path),
+                );
+            } else if let Some(error) = scratch_write_error.as_ref() {
+                obj.insert("persistence_error".to_string(), serde_json::json!(error));
+            }
             obj.insert(
                 "output_notice".to_string(),
-                serde_json::json!(
+                serde_json::json!(if scratch_saved {
                     "Output is shown inline once and saved as an execution-scoped temp file."
-                ),
+                } else {
+                    "Output is shown inline, but the execution-scoped temp file could not be persisted."
+                }),
             );
         } else {
-            final_result = serde_json::json!({
+            let mut payload = serde_json::json!({
                 "result": final_result,
-                "saved_output_path": scratch_path,
-                "output_notice": "Output is shown inline once and saved as an execution-scoped temp file."
+                "output_notice": if scratch_saved {
+                    "Output is shown inline once and saved as an execution-scoped temp file."
+                } else {
+                    "Output is shown inline, but the execution-scoped temp file could not be persisted."
+                }
             });
+            if let Some(obj) = payload.as_object_mut() {
+                if scratch_saved {
+                    obj.insert(
+                        "saved_output_path".to_string(),
+                        serde_json::json!(scratch_path),
+                    );
+                } else if let Some(error) = scratch_write_error.as_ref() {
+                    obj.insert("persistence_error".to_string(), serde_json::json!(error));
+                }
+            }
+            final_result = payload;
         }
 
         Ok(final_result)

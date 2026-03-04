@@ -206,6 +206,12 @@ Before outputting, check these conditions in order:
 5. **Would your query repeat a previous search?** → Choose different keywords or `complete`
 6. **Otherwise** → Output `knowledge_base` with good keywords
 
+## Reliability Guardrails
+
+- Never claim discovery that did not occur in prior search results.
+- Prefer `complete` over low-signal repeated searches when confidence is weak.
+- Do not fabricate relevance; only reason from observed search history and available KB metadata.
+
 ---
 
 ## Final Reminders

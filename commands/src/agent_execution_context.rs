@@ -103,6 +103,7 @@ pub struct UpdateExecutionContextQuery {
     pub completed_at: Option<Option<DateTime<Utc>>>,
     pub execution_state: Option<AgentExecutionState>,
     pub status: Option<ExecutionContextStatus>,
+    pub status_marked_as_cancellation: bool,
     pub external_resource_metadata: Option<serde_json::Value>,
 }
 
@@ -115,6 +116,7 @@ impl UpdateExecutionContextQuery {
             completed_at: None,
             execution_state: None,
             status: None,
+            status_marked_as_cancellation: false,
             external_resource_metadata: None,
         }
     }
@@ -136,6 +138,11 @@ impl UpdateExecutionContextQuery {
 
     pub fn with_status(mut self, status: ExecutionContextStatus) -> Self {
         self.status = Some(status);
+        self
+    }
+
+    pub fn mark_status_as_cancellation(mut self) -> Self {
+        self.status_marked_as_cancellation = true;
         self
     }
 
@@ -205,8 +212,10 @@ impl super::Command for UpdateExecutionContextQuery {
 
             let status_changed = status_update.rows_affected() > 0;
 
-            // If status is being set to Failed, it's likely a cancellation - log it in conversation
-            if status_changed && matches!(status, ExecutionContextStatus::Failed) {
+            if status_changed
+                && matches!(status, ExecutionContextStatus::Failed)
+                && self.status_marked_as_cancellation
+            {
                 use crate::CreateConversationCommand;
                 use models::{ConversationContent, ConversationMessageType};
 

@@ -156,7 +156,7 @@ pub fn internal_tools() -> Vec<(
         ),
         (
             "switch_execution_mode",
-            "Switch execution mode from normal mode only. Supported modes: 'supervisor' (orchestration-only) and 'long_think_and_reason' (high-quality reasoning for next decision only).",
+            "Switch execution mode from normal mode only. Supported modes: 'supervisor' (orchestration-only; decisions run on the reasoning model while active) and 'long_think_and_reason' (high-quality reasoning for next decision only).",
             InternalToolType::SwitchExecutionMode,
             vec![
                 SchemaField {

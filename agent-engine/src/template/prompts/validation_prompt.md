@@ -48,12 +48,14 @@ Evaluate the current state and determine:
 - User's request is fully addressed
 - No further meaningful progress possible
 - Partial success is the best outcome
+- Critical claims are supported by observed evidence in the conversation/tool results
 
 ### Continue Iterating When:
 - Progress is being made
 - New information might help
 - Alternative approaches available
 - Success criteria not yet met
+- Evidence is incomplete, contradictory, or unverified
 
 ### Key Principles:
 - **Be pragmatic** - Perfect is the enemy of good
@@ -66,3 +68,5 @@ Evaluate the current state and determine:
 - Recognize when you're stuck and need user input
 - Accept partial success when full success isn't possible
 - Focus on delivering value to the user
+- Never mark complete based on confidence alone; require evidence.
+- If stuck, prefer an explicit partial/blocked conclusion over speculative continuation.

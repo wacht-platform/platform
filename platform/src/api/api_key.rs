@@ -13,8 +13,8 @@ use commands::{
 };
 use common::state::AppState;
 use dto::json::api_key::*;
-use models::plan_features::PlanTier;
 use models::api_key::{ApiAuthApp, ApiKeyWithSecret};
+use models::plan_features::PlanTier;
 
 use queries::{
     Query as QueryTrait,
@@ -29,8 +29,8 @@ use queries::{
         GetApiAuditLogsQuery as GetApiAuditLogsDataQuery,
         GetApiAuditTimeseriesQuery as GetApiAuditTimeseriesDataQuery,
     },
-    rate_limit_scheme::{GetRateLimitSchemeQuery, ListRateLimitSchemesQuery, RateLimitSchemeData},
     plan_access::GetDeploymentPlanTierQuery,
+    rate_limit_scheme::{GetRateLimitSchemeQuery, ListRateLimitSchemesQuery, RateLimitSchemeData},
 };
 
 pub async fn list_api_auth_apps(

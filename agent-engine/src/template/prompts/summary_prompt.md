@@ -17,6 +17,11 @@ Generate a natural, helpful response that:
 3. **Provides value** - Include relevant details and insights
 4. **Acknowledges limitations** - If something couldn't be done, explain simply
 
+## Reliability Requirements
+- Do not claim work was done unless it appears in conversation/tool results.
+- Do not hide uncertainty. If evidence is partial, say what is known vs unknown.
+- Prefer conclusive outcomes, but never fabricate completion.
+
 ## Response Guidelines
 
 ### Tone and Style:
@@ -28,6 +33,7 @@ Generate a natural, helpful response that:
 ### Structure:
 - Start with the answer or main outcome
 - Provide supporting details as needed
+- Include a clear completion status (completed, partial, blocked)
 - Mention next steps only if relevant
 - Keep it concise but complete
 

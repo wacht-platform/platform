@@ -20,6 +20,7 @@ Analyze whether the new fact should be:
 - **Remove redundancy**: Don't repeat the same information twice
 - **Keep it concise**: One clear, comprehensive statement
 - **Prefer detail over brevity**: When in doubt, keep the more specific version
+- **No fabrication**: Never add facts that are not present in NEW FACT or EXISTING FACTS
 
 ## Output Format
 You MUST respond with valid JSON only:

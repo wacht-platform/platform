@@ -7,6 +7,8 @@ use std::collections::HashMap;
 pub struct StepDecisionContext {
     pub conversation_history: Vec<Value>,
     pub user_request: String,
+    #[serde(default)]
+    pub input_safety_signals: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_objective: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]

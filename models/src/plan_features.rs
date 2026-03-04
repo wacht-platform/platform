@@ -54,15 +54,7 @@ impl PlanTier {
                     Workspaces,
                 ])
             }
-            PlanTier::Pro => {
-                // Pro plan: CIAM suite + webhooks + API keys (AI platform is Growth-only)
-                HashSet::from([
-                    Webhooks,
-                    ApiKeys,
-                    Organizations,
-                    Workspaces,
-                ])
-            }
+            PlanTier::Pro => HashSet::from([Webhooks, ApiKeys, Organizations, Workspaces]),
         }
     }
 

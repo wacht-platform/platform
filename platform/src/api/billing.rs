@@ -4,6 +4,7 @@ use tracing::error;
 
 use crate::application::response::{ApiResult, PaginatedResponse};
 
+use chrono::{Duration, Utc};
 use commands::{
     Command,
     billing::{
@@ -11,7 +12,6 @@ use commands::{
         SetProviderCustomerIdCommand, UpdateBillingAccountCommand,
     },
 };
-use chrono::{Duration, Utc};
 use common::dodo::{
     ChangePlanParams, CheckoutCustomer, CreateCheckoutParams, CreateCustomerParams, DodoClient,
     ProductCartItem, UpdateCustomerParams,
@@ -47,7 +47,9 @@ pub struct PortalResponse {
     pub portal_url: String,
 }
 
-fn enforce_checkout_cooldown(account: &BillingAccountWithSubscription) -> Result<(), (StatusCode, String)> {
+fn enforce_checkout_cooldown(
+    account: &BillingAccountWithSubscription,
+) -> Result<(), (StatusCode, String)> {
     if let Some(last_created_at) = account.billing_account.last_checkout_session_created_at {
         let next_allowed_at = last_created_at + Duration::minutes(2);
         if next_allowed_at > Utc::now() {

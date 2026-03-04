@@ -46,8 +46,8 @@ impl AgentExecutor {
         message: String,
         images: Option<Vec<dto::json::agent_executor::ImageData>>,
     ) -> Result<ConversationRecord, AppError> {
-        let _model_images = if let Some(imgs) = images {
-            let mut uploaded_images = Vec::new();
+        let model_files = if let Some(imgs) = images {
+            let mut uploaded_files = Vec::new();
 
             for img in imgs {
                 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -60,14 +60,15 @@ impl AgentExecutor {
 
                 let relative_path = self.filesystem.save_upload(&filename, &bytes).await?;
 
-                uploaded_images.push(models::ImageData {
+                uploaded_files.push(models::FileData {
+                    filename,
                     mime_type: img.mime_type,
                     url: relative_path,
-                    size_bytes: Some(img.data.len() as u64),
+                    size_bytes: Some(bytes.len() as u64),
                 });
             }
 
-            Some(uploaded_images)
+            Some(uploaded_files)
         } else {
             None
         };
@@ -78,7 +79,7 @@ impl AgentExecutor {
             ConversationContent::UserMessage {
                 message,
                 sender_name: None,
-                files: None,
+                files: model_files,
             },
             ConversationMessageType::UserMessage,
         );

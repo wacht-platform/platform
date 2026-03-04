@@ -267,11 +267,7 @@ async fn authorize_impl(
         .map(|v| v.to_string());
     if let Some(resource) = final_resource.as_deref() {
         if !is_valid_resource_indicator(resource) {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "resource must be an absolute URI",
-            )
-                .into());
+            return Err((StatusCode::BAD_REQUEST, "resource must be an absolute URI").into());
         }
     }
     let resource_options = final_resource
@@ -608,8 +604,8 @@ async fn oauth_token_impl(
         oauth_app.id,
         "/oauth/token",
     )
-        .await
-        .map_err(map_token_auth_error)?;
+    .await
+    .map_err(map_token_auth_error)?;
     if !client.grant_types.iter().any(|g| g == &request.grant_type) {
         return Err(oauth_token_error(
             StatusCode::BAD_REQUEST,
@@ -1863,7 +1859,9 @@ fn resolve_issuer_from_oauth_app(
 ) -> Result<String, AppError> {
     let fqdn = oauth_app.fqdn.trim();
     if fqdn.is_empty() {
-        return Err(AppError::BadRequest("oauth app fqdn is required".to_string()));
+        return Err(AppError::BadRequest(
+            "oauth app fqdn is required".to_string(),
+        ));
     }
     if fqdn.contains("://") || fqdn.contains(':') || fqdn.contains('/') {
         return Err(AppError::BadRequest(

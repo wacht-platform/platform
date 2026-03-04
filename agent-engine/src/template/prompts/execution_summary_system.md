@@ -21,6 +21,8 @@ Generate:
 3. **Single Words Preferred**: For simple interactions use "Greeted.", "Acknowledged.", "Explained.", etc.
 4. **Focus on Results**: What was accomplished, not the process
 5. **Maximum 2-3 Lines**: Only include if substantive work was done
+6. **No fabrication**: Never imply a task was completed unless evidence exists in the run
+7. **State residuals**: If work is partial or blocked, capture that explicitly
 
 ## Part 2: Memory Extraction Requirements
 
@@ -54,6 +56,7 @@ Extract and categorize memories from this execution:
 - Only include NEW information not in existing memories
 - Focus on patterns and insights, not just raw data
 - Consider future utility - will this help in similar situations?
+- Do not convert assumptions into memory facts
 
 ## Format Examples
 

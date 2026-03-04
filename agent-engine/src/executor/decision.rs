@@ -669,6 +669,96 @@ impl AgentExecutor {
         Ok(())
     }
 
+    fn derive_input_safety_signals(&self) -> Vec<String> {
+        let Some((source, latest_input)) =
+            self.conversations
+                .iter()
+                .rev()
+                .find_map(|conv| match &conv.content {
+                    ConversationContent::UserMessage { message, .. } => {
+                        Some(("user_message", message.as_str()))
+                    }
+                    ConversationContent::PlatformFunctionResult { result, .. } => {
+                        Some(("platform_function_result", result.as_str()))
+                    }
+                    _ => None,
+                })
+        else {
+            return Vec::new();
+        };
+
+        let input_lower = latest_input.to_lowercase();
+        let mut seen = HashSet::new();
+        let mut signals = Vec::new();
+
+        let pattern_checks = [
+            (
+                "instruction_override",
+                "Attempt to override system rules detected",
+                &[
+                    "ignore previous instructions",
+                    "disregard prior instructions",
+                    "forget all rules",
+                    "override system prompt",
+                ][..],
+            ),
+            (
+                "prompt_exfiltration",
+                "Attempt to reveal hidden prompts or internal policy detected",
+                &[
+                    "show system prompt",
+                    "reveal your prompt",
+                    "print your instructions",
+                    "developer instructions",
+                ][..],
+            ),
+            (
+                "safety_bypass",
+                "Attempt to bypass safety constraints detected",
+                &[
+                    "disable safety",
+                    "jailbreak",
+                    "bypass policy",
+                    "no restrictions",
+                ][..],
+            ),
+            (
+                "secret_exfiltration",
+                "Request may involve secrets, credentials, or token exfiltration",
+                &[
+                    "api key",
+                    "access token",
+                    "password",
+                    "private key",
+                    "secret",
+                ][..],
+            ),
+            (
+                "destructive_operations",
+                "Potential destructive operation request detected",
+                &[
+                    "drop database",
+                    "delete all",
+                    "rm -rf",
+                    "truncate table",
+                    "wipe",
+                ][..],
+            ),
+        ];
+
+        for (tag, message, phrases) in pattern_checks {
+            if phrases.iter().any(|phrase| input_lower.contains(phrase)) && seen.insert(tag) {
+                signals.push(format!("[{}] {}", source, message));
+            }
+        }
+
+        if signals.len() > 6 {
+            signals.truncate(6);
+        }
+
+        signals
+    }
+
     async fn decide_next_step(&mut self) -> Result<StepDecision, AppError> {
         let exec_context = self.ctx.get_context().await?;
         let integration_status = self.ctx.integration_status().await?;
@@ -700,6 +790,7 @@ impl AgentExecutor {
         let context = StepDecisionContext {
             conversation_history: self.get_conversation_history_for_llm().await,
             user_request: self.user_request.clone(),
+            input_safety_signals: self.derive_input_safety_signals(),
             current_objective: self
                 .current_objective
                 .as_ref()
@@ -791,7 +882,8 @@ impl AgentExecutor {
             })?;
 
         let using_deep_think_model = self.deep_think_mode_active;
-        let (mut decision, signature) = if using_deep_think_model {
+        let use_reasoning_model = self.deep_think_mode_active || self.supervisor_mode_active;
+        let (mut decision, signature) = if use_reasoning_model {
             self.create_reasoning_llm()
                 .await?
                 .generate_structured_content::<StepDecision>(request_body)
@@ -1126,9 +1218,15 @@ impl AgentExecutor {
             .generate_structured_content::<Value>(request_body)
             .await?;
 
+        let summary_text = summary
+            .get("response")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Execution completed.")
+            .to_string();
+
         self.store_conversation(
             ConversationContent::AgentResponse {
-                response: summary.get("response").unwrap().as_str().unwrap().into(),
+                response: summary_text.clone(),
                 context_used: Default::default(),
                 thought_signature: None,
             },
@@ -1136,10 +1234,26 @@ impl AgentExecutor {
         )
         .await?;
 
-        UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
-            .with_status(ExecutionContextStatus::Idle)
+        let context = self.ctx.get_context().await?;
+        if context.parent_context_id.is_some() {
+            StoreCompletionSummaryEnhancedCommand::new(
+                self.ctx.context_id,
+                self.ctx.agent.deployment_id,
+                CompletionSummary {
+                    status: CompletionStatus::Success,
+                    result: Some(summary_text),
+                    error_message: None,
+                    metrics: None,
+                },
+            )
             .execute(&self.ctx.app_state)
             .await?;
+        } else {
+            UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
+                .with_status(ExecutionContextStatus::Idle)
+                .execute(&self.ctx.app_state)
+                .await?;
+        }
 
         Ok(())
     }

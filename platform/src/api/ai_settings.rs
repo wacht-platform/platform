@@ -5,7 +5,9 @@ use commands::{Command, UpdateDeploymentAiSettingsCommand};
 use common::error::AppError;
 use models::plan_features::PlanFeature;
 use models::{DeploymentAiSettingsResponse, UpdateDeploymentAiSettingsRequest};
-use queries::{GetDeploymentAiSettingsQuery, Query, plan_access::CheckDeploymentFeatureAccessQuery};
+use queries::{
+    GetDeploymentAiSettingsQuery, Query, plan_access::CheckDeploymentFeatureAccessQuery,
+};
 
 use axum::{Json, extract::State};
 
@@ -36,10 +38,11 @@ pub async fn update_ai_settings(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<UpdateDeploymentAiSettingsRequest>,
 ) -> ApiResult<DeploymentAiSettingsResponse> {
-    let has_ai_access = CheckDeploymentFeatureAccessQuery::new(deployment_id, PlanFeature::AiAgents)
-        .execute(&app_state)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to check AI feature access: {}", e)))?;
+    let has_ai_access =
+        CheckDeploymentFeatureAccessQuery::new(deployment_id, PlanFeature::AiAgents)
+            .execute(&app_state)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to check AI feature access: {}", e)))?;
 
     if !has_ai_access {
         return Err(AppError::Forbidden("AI agent usage requires Growth plan".to_string()).into());

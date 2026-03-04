@@ -11,7 +11,9 @@ use common::utils::jwt::verify_token;
 use dto::json::{AgentStreamMessageType, StreamEvent};
 use futures::StreamExt;
 use models::ConversationContent;
-use queries::{GetAgentSessionQuery, GetDeploymentWithKeyPairQuery, Query};
+use queries::{
+    GetAgentSessionQuery, GetDeploymentWithKeyPairQuery, GetExecutionContextQuery, Query,
+};
 use serde::Deserialize;
 use std::str::FromStr;
 use std::time::Duration;
@@ -52,12 +54,21 @@ pub async fn agent_sse_stream_handler(
     QueryParams(params): QueryParams<SSEParams>,
     State(app_state): State<AppState>,
 ) -> impl IntoResponse {
-    let context_id = match &params.context_id {
+    let context_id_raw = match &params.context_id {
         Some(id) => id.clone(),
         None => {
             return Response::builder()
                 .status(400)
                 .body(Body::from("context_id required"))
+                .unwrap();
+        }
+    };
+    let context_id = match context_id_raw.parse::<i64>() {
+        Ok(id) => id,
+        Err(_) => {
+            return Response::builder()
+                .status(400)
+                .body(Body::from("Invalid context_id"))
                 .unwrap();
         }
     };
@@ -109,7 +120,7 @@ pub async fn agent_sse_stream_handler(
         }
     };
 
-    let _agent_session = match GetAgentSessionQuery::new(session_id, deployment_id as i64)
+    let agent_session = match GetAgentSessionQuery::new(session_id, deployment_id as i64)
         .execute(&app_state)
         .await
     {
@@ -136,6 +147,37 @@ pub async fn agent_sse_stream_handler(
                 .unwrap();
         }
     };
+    let execution_context = match GetExecutionContextQuery::new(context_id, deployment_id as i64)
+        .execute(&app_state)
+        .await
+    {
+        Ok(context) => context,
+        Err(_) => {
+            warn!(
+                "SSE context {} not found for deployment {}",
+                context_id, deployment_id
+            );
+            return Response::builder()
+                .status(404)
+                .body(Body::from("Execution context not found"))
+                .unwrap();
+        }
+    };
+
+    let session_context_group = agent_session.context_group.trim();
+    if !session_context_group.is_empty() {
+        let context_group = execution_context.context_group.as_deref().unwrap_or("");
+        if context_group != session_context_group {
+            warn!(
+                "SSE context-group mismatch (session={}, context={}) for context {}",
+                session_context_group, context_group, context_id
+            );
+            return Response::builder()
+                .status(403)
+                .body(Body::from("Forbidden"))
+                .unwrap();
+        }
+    }
 
     info!(
         "SSE stream for context {} (session: {}, deployment: {})",
@@ -145,7 +187,7 @@ pub async fn agent_sse_stream_handler(
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<String, std::io::Error>>(100);
 
     let nats_client = app_state.nats_jetstream.clone();
-    let ctx_id = context_id.clone();
+    let ctx_id = context_id.to_string();
     let app_state_clone = app_state.clone();
 
     tokio::spawn(async move {

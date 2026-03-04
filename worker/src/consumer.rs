@@ -637,16 +637,6 @@ impl NatsConsumer {
             task_message.task_type, task_message.task_id
         );
 
-        // For long-running tasks like agent execution, ack immediately to prevent redelivery
-        // The task itself handles its own error recovery
-        let should_ack_early = task_message.task_type == "agent.execution_request";
-
-        if should_ack_early {
-            if let Err(e) = message.ack().await {
-                error!("Failed to early-ack task {}: {}", task_message.task_id, e);
-            }
-        }
-
         if let Some(handler) = self.task_handlers.get(&task_message.task_type) {
             let mut payload = task_message.payload;
             if task_message.task_type == "webhook.replay_batch" {
@@ -661,10 +651,8 @@ impl NatsConsumer {
             match handler(payload, self.app_state.clone()).await {
                 Ok(_) => {
                     info!("Task {} completed successfully", task_message.task_id);
-                    if !should_ack_early {
-                        if let Err(e) = message.ack().await {
-                            error!("Failed to acknowledge task {}: {}", task_message.task_id, e);
-                        }
+                    if let Err(e) = message.ack().await {
+                        error!("Failed to acknowledge task {}: {}", task_message.task_id, e);
                     }
                 }
                 Err(TaskError::RetryWithDelay(duration)) => {
