@@ -53,6 +53,49 @@ impl From<SocialConnectionProvider> for String {
     }
 }
 
+impl SocialConnectionProvider {
+    pub fn default_scopes(&self) -> Vec<String> {
+        match self {
+            SocialConnectionProvider::GoogleOauth => {
+                vec![
+                    "openid".to_string(),
+                    "email".to_string(),
+                    "profile".to_string(),
+                ]
+            }
+            SocialConnectionProvider::GithubOauth => {
+                vec!["read:user".to_string(), "user:email".to_string()]
+            }
+            SocialConnectionProvider::GitlabOauth => vec!["read_user".to_string()],
+            SocialConnectionProvider::MicrosoftOauth => vec![
+                "openid".to_string(),
+                "email".to_string(),
+                "profile".to_string(),
+                "https://graph.microsoft.com/User.Read".to_string(),
+            ],
+            SocialConnectionProvider::LinkedinOauth => {
+                vec![
+                    "openid".to_string(),
+                    "profile".to_string(),
+                    "email".to_string(),
+                ]
+            }
+            SocialConnectionProvider::DiscordOauth => {
+                vec!["identify".to_string(), "email".to_string()]
+            }
+            SocialConnectionProvider::FacebookOauth => {
+                vec!["public_profile".to_string(), "email".to_string()]
+            }
+            SocialConnectionProvider::AppleOauth => vec!["name".to_string(), "email".to_string()],
+            SocialConnectionProvider::XOauth => vec![
+                "tweet.read".to_string(),
+                "users.read".to_string(),
+                "users.email".to_string(),
+            ],
+        }
+    }
+}
+
 // Implement sqlx::Type and sqlx::Decode for SocialConnectionProvider
 impl sqlx::Type<sqlx::Postgres> for SocialConnectionProvider {
     fn type_info() -> PgTypeInfo {

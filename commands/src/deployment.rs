@@ -16,7 +16,7 @@ use models::{
 
 use chrono::Utc;
 use redis::AsyncCommands;
-use serde_json::{Map, Value, json};
+use serde_json::{json, Map, Value};
 
 pub struct ClearDeploymentCacheCommand {
     pub deployment_id: i64,
@@ -324,6 +324,10 @@ impl Command for UpsertDeploymentSocialConnectionCommand {
     type Output = DeploymentSocialConnection;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let provider = self.connection.provider;
+        let enabled = self.connection.enabled;
+        let mut credentials = self.connection.credentials;
+
         let deployment = sqlx::query!(
             r#"
             SELECT mode
@@ -337,24 +341,32 @@ impl Command for UpsertDeploymentSocialConnectionCommand {
         .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
 
         let is_production = deployment.mode.eq_ignore_ascii_case("production");
-        let is_enabling = self.connection.enabled.unwrap_or(false);
+        let is_enabling = enabled.unwrap_or(false);
 
         if is_production && is_enabling {
-            let credentials = self.connection.credentials.as_ref().ok_or_else(|| {
+            let credentials_ref = credentials.as_ref().ok_or_else(|| {
                 AppError::Validation(
                     "Custom credentials are required to enable social login in production"
                         .to_string(),
                 )
             })?;
 
-            if credentials.client_id.trim().is_empty()
-                || credentials.client_secret.trim().is_empty()
-                || credentials.redirect_uri.trim().is_empty()
+            if credentials_ref.client_id.trim().is_empty()
+                || credentials_ref.client_secret.trim().is_empty()
+                || credentials_ref.redirect_uri.trim().is_empty()
             {
                 return Err(AppError::Validation(
                     "Custom credentials are required to enable social login in production"
                         .to_string(),
                 ));
+            }
+        }
+
+        if let (Some(provider_ref), Some(credentials_ref)) =
+            (provider.as_ref(), credentials.as_mut())
+        {
+            if credentials_ref.scopes.is_empty() {
+                credentials_ref.scopes = provider_ref.default_scopes();
             }
         }
 
@@ -368,9 +380,9 @@ impl Command for UpsertDeploymentSocialConnectionCommand {
             Utc::now(),
             Utc::now(),
             self.deployment_id,
-            self.connection.provider.map(|p| String::from(p)),
-            self.connection.enabled,
-            serde_json::to_value(self.connection.credentials).unwrap(),
+            provider.map(String::from),
+            enabled,
+            serde_json::to_value(credentials).unwrap(),
         )
         .fetch_one(&app_state.db_pool)
         .await?;

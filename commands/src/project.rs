@@ -11,7 +11,7 @@ use models::{
     SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus,
 };
 
-use base64::{Engine, engine::general_purpose::STANDARD, prelude::BASE64_STANDARD};
+use base64::{engine::general_purpose::STANDARD, prelude::BASE64_STANDARD, Engine};
 use std::env;
 use std::str::FromStr;
 
@@ -46,6 +46,16 @@ fn is_social_auth_method(method: &str) -> bool {
 
 fn includes_phone_auth(auth_methods: &[String]) -> bool {
     auth_methods.iter().any(|method| method == "phone")
+}
+
+fn social_credentials_with_default_scopes(
+    provider: &SocialConnectionProvider,
+) -> Result<serde_json::Value, AppError> {
+    serde_json::to_value(OauthCredentials {
+        scopes: provider.default_scopes(),
+        ..OauthCredentials::default()
+    })
+    .map_err(|e| AppError::Serialization(e.to_string()))
 }
 
 fn generate_signing_secret() -> String {
@@ -854,9 +864,6 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             "gitlab",
         ];
 
-        let empty_credentials = serde_json::to_value(OauthCredentials::default())
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
-
         let mut ids = Vec::new();
         let mut deployment_ids = Vec::new();
         let mut providers = Vec::new();
@@ -867,17 +874,20 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
 
         let now = chrono::Utc::now();
 
-        for provider in social_providers.iter() {
-            let provider_with_oauth = format!("{}_oauth", provider);
-            if (self.auth_methods.contains(&provider.to_string())
-                || self.auth_methods.contains(&provider_with_oauth))
-                && SocialConnectionProvider::from_str(&provider_with_oauth).is_ok()
-            {
+        for provider_name in social_providers.iter() {
+            let provider_with_oauth = format!("{}_oauth", provider_name);
+            let is_selected = self.auth_methods.contains(&provider_name.to_string())
+                || self.auth_methods.contains(&provider_with_oauth);
+            if !is_selected {
+                continue;
+            }
+
+            if let Ok(provider) = SocialConnectionProvider::from_str(&provider_with_oauth) {
                 ids.push(app_state.sf.next_id()? as i64);
                 deployment_ids.push(deployment_row.id);
                 providers.push(provider_with_oauth);
                 enableds.push(true);
-                credentials_list.push(empty_credentials.clone());
+                credentials_list.push(social_credentials_with_default_scopes(&provider)?);
                 created_ats.push(now);
                 updated_ats.push(now);
             }
@@ -1829,9 +1839,6 @@ impl Command for CreateStagingDeploymentCommand {
             "gitlab",
         ];
 
-        let empty_credentials = serde_json::to_value(OauthCredentials::default())
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
-
         let mut ids = Vec::new();
         let mut deployment_ids = Vec::new();
         let mut providers = Vec::new();
@@ -1842,17 +1849,20 @@ impl Command for CreateStagingDeploymentCommand {
 
         let now = chrono::Utc::now();
 
-        for provider in social_providers.iter() {
-            let provider_with_oauth = format!("{}_oauth", provider);
-            if (self.auth_methods.contains(&provider.to_string())
-                || self.auth_methods.contains(&provider_with_oauth))
-                && SocialConnectionProvider::from_str(&provider_with_oauth).is_ok()
-            {
+        for provider_name in social_providers.iter() {
+            let provider_with_oauth = format!("{}_oauth", provider_name);
+            let is_selected = self.auth_methods.contains(&provider_name.to_string())
+                || self.auth_methods.contains(&provider_with_oauth);
+            if !is_selected {
+                continue;
+            }
+
+            if let Ok(provider) = SocialConnectionProvider::from_str(&provider_with_oauth) {
                 ids.push(app_state.sf.next_id()? as i64);
                 deployment_ids.push(deployment_row.id);
                 providers.push(provider_with_oauth);
                 enableds.push(true);
-                credentials_list.push(empty_credentials.clone());
+                credentials_list.push(social_credentials_with_default_scopes(&provider)?);
                 created_ats.push(now);
                 updated_ats.push(now);
             }
