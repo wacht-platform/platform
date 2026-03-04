@@ -6,25 +6,28 @@ use crate::application::response::{ApiResult, PaginatedResponse};
 
 use chrono::{Duration, Utc};
 use commands::{
-    Command,
     billing::{
         CreateBillingAccountCommand, MarkCheckoutSessionCreatedCommand,
         SetProviderCustomerIdCommand, UpdateBillingAccountCommand,
+        UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand,
     },
+    Command,
 };
 use common::dodo::{
     ChangePlanParams, CheckoutCustomer, CreateCheckoutParams, CreateCustomerParams, DodoClient,
     ProductCartItem, UpdateCustomerParams,
 };
 use common::state::AppState;
-use models::billing::BillingAccountWithSubscription;
+use models::billing::{BillingAccountWithSubscription, Subscription};
 use queries::{
-    Query as QueryTrait,
     billing::{
         GetBillingAccountQuery, GetBillingAccountUsageQuery, GetDodoProductQuery, UsageSnapshot,
     },
+    Query as QueryTrait,
 };
 use wacht::middleware::RequireAuth;
+
+const STARTER_PRODUCT_ID_FALLBACK: &str = "pdt_6eSgfwefWhNkDH53uKxf8";
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCheckoutRequest {
@@ -38,8 +41,9 @@ pub struct CreateCheckoutRequest {
 
 #[derive(Debug, Serialize)]
 pub struct CheckoutResponse {
-    pub checkout_id: String,
-    pub checkout_url: String,
+    pub requires_checkout: bool,
+    pub checkout_id: Option<String>,
+    pub checkout_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -80,6 +84,20 @@ pub struct UpdateBillingAccountRequest {
     pub country: Option<String>,
 }
 
+fn is_local_starter_subscription(subscription: &Subscription) -> bool {
+    subscription
+        .provider_subscription_id
+        .starts_with("local_starter_")
+}
+
+fn starter_activation_response() -> CheckoutResponse {
+    CheckoutResponse {
+        requires_checkout: false,
+        checkout_id: None,
+        checkout_url: None,
+    }
+}
+
 pub async fn get_billing_account(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
@@ -114,6 +132,8 @@ pub async fn create_checkout(
         "user"
     };
 
+    let is_starter_plan = req.plan_name.eq_ignore_ascii_case("starter");
+
     let existing = GetBillingAccountQuery::new(owner_id.clone())
         .execute(&state)
         .await?;
@@ -124,8 +144,10 @@ pub async fn create_checkout(
                 return Err((StatusCode::CONFLICT, "Subscription already exists").into());
             }
         }
-        if let Err(err) = enforce_checkout_cooldown(&account) {
-            return Err(err.into());
+        if !is_starter_plan {
+            if let Err(err) = enforce_checkout_cooldown(&account) {
+                return Err(err.into());
+            }
         }
     }
 
@@ -235,6 +257,34 @@ pub async fn create_checkout(
         customer.customer_id
     };
 
+    if is_starter_plan {
+        let starter_product_id = GetDodoProductQuery::new("starter")
+            .execute(&state)
+            .await?
+            .map(|p| p.product_id)
+            .unwrap_or_else(|| STARTER_PRODUCT_ID_FALLBACK.to_string());
+
+        UpsertSubscriptionCommand {
+            owner_id: owner_id.clone(),
+            provider_customer_id,
+            provider_subscription_id: format!("local_starter_{}", owner_id),
+            product_id: Some(starter_product_id),
+            status: "active".to_string(),
+            previous_billing_date: Some(Utc::now()),
+        }
+        .execute(&state)
+        .await?;
+
+        UpdateBillingAccountStatusCommand {
+            owner_id,
+            status: "active".to_string(),
+        }
+        .execute(&state)
+        .await?;
+
+        return Ok(starter_activation_response().into());
+    }
+
     let product = GetDodoProductQuery::new(&req.plan_name)
         .execute(&state)
         .await?
@@ -278,8 +328,9 @@ pub async fn create_checkout(
     .await?;
 
     Ok(CheckoutResponse {
-        checkout_id: checkout.checkout_id,
-        checkout_url: checkout.checkout_url,
+        requires_checkout: true,
+        checkout_id: Some(checkout.checkout_id),
+        checkout_url: Some(checkout.checkout_url),
     }
     .into())
 }
@@ -388,26 +439,28 @@ pub async fn list_invoices(
 pub struct ChangePlanRequest {
     pub plan_name: String,
     pub proration_mode: Option<String>,
+    pub return_url: Option<String>,
 }
 
 pub async fn change_plan(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
     Json(req): Json<ChangePlanRequest>,
-) -> ApiResult<()> {
+) -> ApiResult<CheckoutResponse> {
     let owner_id = if let Some(org_id) = auth.organization_id {
         format!("org_{}", org_id)
     } else {
         format!("user_{}", auth.user_id)
     };
 
-    let account = GetBillingAccountQuery::new(owner_id)
+    let account = GetBillingAccountQuery::new(owner_id.clone())
         .execute(&state)
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
 
     let subscription = account
         .subscription
+        .as_ref()
         .ok_or_else(|| (StatusCode::NOT_FOUND, "Subscription not found"))?;
 
     let product = GetDodoProductQuery::new(&req.plan_name)
@@ -419,6 +472,67 @@ pub async fn change_plan(
         })?;
 
     let dodo = DodoClient::new().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if is_local_starter_subscription(&subscription) {
+        if let Err(err) = enforce_checkout_cooldown(&account) {
+            return Err(err.into());
+        }
+
+        let return_url = req.return_url.ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                "return_url is required for starter upgrades",
+            )
+        })?;
+
+        let provider_customer_id = account
+            .billing_account
+            .provider_customer_id
+            .clone()
+            .filter(|v| !v.is_empty())
+            .unwrap_or(subscription.provider_customer_id.clone());
+
+        let params = CreateCheckoutParams {
+            product_cart: vec![ProductCartItem {
+                product_id: product.product_id,
+                quantity: 1,
+                amount: None,
+            }],
+            return_url,
+            customer: Some(CheckoutCustomer {
+                customer_id: Some(provider_customer_id),
+                email: Some(account.billing_account.billing_email),
+                name: Some(account.billing_account.legal_name),
+            }),
+            metadata: Some(serde_json::json!({
+                "owner_id": owner_id.clone(),
+                "owner_type": account.billing_account.owner_type,
+            })),
+            discount_code: None,
+        };
+
+        let checkout = dodo.create_checkout_session(params).await.map_err(|e| {
+            error!("Failed to create checkout session: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Checkout initialization failed",
+            )
+        })?;
+
+        MarkCheckoutSessionCreatedCommand {
+            owner_id,
+            checkout_session_id: checkout.checkout_id.clone(),
+        }
+        .execute(&state)
+        .await?;
+
+        return Ok(CheckoutResponse {
+            requires_checkout: true,
+            checkout_id: Some(checkout.checkout_id),
+            checkout_url: Some(checkout.checkout_url),
+        }
+        .into());
+    }
 
     dodo.change_plan(
         &subscription.provider_subscription_id,
@@ -433,7 +547,12 @@ pub async fn change_plan(
         (StatusCode::INTERNAL_SERVER_ERROR, "Failed to change plan")
     })?;
 
-    Ok(().into())
+    Ok(CheckoutResponse {
+        requires_checkout: false,
+        checkout_id: None,
+        checkout_url: None,
+    }
+    .into())
 }
 
 #[derive(Debug, Serialize)]
@@ -571,8 +690,9 @@ pub async fn create_pulse_checkout(
     .await?;
 
     Ok(CheckoutResponse {
-        checkout_id: checkout.checkout_id,
-        checkout_url: checkout.checkout_url,
+        requires_checkout: true,
+        checkout_id: Some(checkout.checkout_id),
+        checkout_url: Some(checkout.checkout_url),
     }
     .into())
 }
