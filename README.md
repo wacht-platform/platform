@@ -7,6 +7,18 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/wacht-platform/platform-api/stargazers">
+    <img alt="GitHub Stars" src="https://img.shields.io/github/stars/wacht-platform/platform-api?style=flat-square" />
+  </a>
+  <a href="https://github.com/wacht-platform/platform-api/blob/main/LICENSE.md">
+    <img alt="License" src="https://img.shields.io/github/license/wacht-platform/platform-api?style=flat-square" />
+  </a>
+  <img alt="Public Beta" src="https://img.shields.io/badge/status-public%20beta-blue?style=flat-square" />
+  <img alt="Runtime Rust" src="https://img.shields.io/badge/runtime-rust-orange?style=flat-square" />
+  <img alt="Service Platform API" src="https://img.shields.io/badge/service-platform--api-0f172a?style=flat-square" />
+</p>
+
+<p align="center">
   <a href="https://wacht.dev">Website</a> |
   <a href="https://docs.wacht.dev">Documentation</a> |
   <a href="https://github.com/wacht-platform/platform-api/issues">Issues</a>
