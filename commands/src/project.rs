@@ -11,7 +11,7 @@ use models::{
     SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus,
 };
 
-use base64::{engine::general_purpose::STANDARD, prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD, prelude::BASE64_STANDARD};
 use std::env;
 use std::str::FromStr;
 
@@ -940,23 +940,23 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         .execute(&mut *tx)
         .await?;
 
-        // let signing_secret = generate_signing_secret();
-        // sqlx::query!(
-        //     r#"
-        //     INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, event_catalog_slug, is_active, created_at, updated_at, app_slug)
-        //     VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
-        //     "#,
-        //     console_id,
-        //     app_name,
-        //     format!("Webhooks for deployment {}", deployment_row.id),
-        //     signing_secret,
-        //     DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG,
-        //     chrono::Utc::now(),
-        //     chrono::Utc::now(),
-        //     format!("wh_{}", deployment_row.id)
-        // )
-        // .execute(&mut *tx)
-        // .await?;
+        let signing_secret = generate_signing_secret();
+        sqlx::query!(
+            r#"
+            INSERT INTO webhook_apps (deployment_id, name, description, signing_secret, event_catalog_slug, is_active, created_at, updated_at, app_slug)
+            VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
+            "#,
+            console_id,
+            app_name,
+            format!("Webhooks for deployment {}", deployment_row.id),
+            signing_secret,
+            DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG,
+            chrono::Utc::now(),
+            chrono::Utc::now(),
+            format!("wh_{}", deployment_row.id)
+        )
+        .execute(&mut *tx)
+        .await?;
 
         sqlx::query!(
             r#"
