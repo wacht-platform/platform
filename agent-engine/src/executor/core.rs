@@ -43,6 +43,8 @@ pub struct AgentExecutor {
     pub(super) deep_think_used: usize,
     pub(super) supervisor_mode_active: bool,
     pub(super) supervisor_task_board: Vec<serde_json::Value>,
+    pub(super) last_decision_signature: Option<String>,
+    pub(super) repeated_decision_count: usize,
 }
 
 pub struct AgentExecutorBuilder {
@@ -222,6 +224,8 @@ impl AgentExecutorBuilder {
             deep_think_used: 0,
             supervisor_mode_active: false,
             supervisor_task_board: Vec::new(),
+            last_decision_signature: None,
+            repeated_decision_count: 0,
         };
 
         executor.system_instructions = context.system_instructions.clone();

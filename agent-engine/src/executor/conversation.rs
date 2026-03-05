@@ -255,6 +255,11 @@ impl AgentExecutor {
                     history.push(entry);
                     i += 1;
                 }
+                ConversationMessageType::SystemDecision => {
+                    // Persist system decisions for observability, but do not feed
+                    // internal reasoning text back into model context.
+                    i += 1;
+                }
                 _ => {
                     let mut entry = json!({
                         "role": self.map_conversation_type_to_role(&conv.message_type),
@@ -302,27 +307,11 @@ impl AgentExecutor {
             ConversationContent::UserMessage { message, .. } => message.clone(),
             ConversationContent::AssistantAcknowledgment {
                 acknowledgment_message,
-                further_action_required,
-                reasoning,
                 ..
-            } => {
-                let val = json!({
-                    "next_step": "acknowledge",
-                    "reasoning": reasoning,
-                    "acknowledgment": {
-                        "message": acknowledgment_message,
-                        "further_action_required": further_action_required
-                    }
-                });
-                val.to_string()
-            }
+            } => acknowledgment_message.clone(),
             ConversationContent::AgentResponse { response, .. } => response.clone(),
             ConversationContent::UserInputRequest { question, .. } => question.clone(),
-            ConversationContent::SystemDecision {
-                step, reasoning, ..
-            } => {
-                format!("System Decision (Step: {}): {}", step, reasoning)
-            }
+            ConversationContent::SystemDecision { .. } => String::new(),
             ConversationContent::ActionExecutionResult { .. } => {
                 serde_json::to_string(content).unwrap_or_default()
             }

@@ -32,34 +32,15 @@ pub async fn upload_image(
     let payload = MultipartPayload::parse(multipart).await?;
 
     for field in payload.fields() {
-        let content_type = field.content_type_or("").into_owned();
-
-        if !content_type.starts_with("image/") {
+        let Some(extension) = field.image_extension()? else {
             return Err((
                 StatusCode::BAD_REQUEST,
                 "Invalid file type. Only images are allowed.".to_string(),
             )
                 .into());
-        }
+        };
 
-        if content_type == "image/jpeg" || content_type == "image/jpg" {
-            file_extension = String::from("jpg");
-        } else if content_type == "image/png" {
-            file_extension = String::from("png");
-        } else if content_type == "image/gif" {
-            file_extension = String::from("gif");
-        } else if content_type == "image/webp" {
-            file_extension = String::from("webp");
-        } else if content_type == "image/x-icon" || content_type == "image/vnd.microsoft.icon" {
-            file_extension = String::from("ico");
-        } else {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "Unsupported image format. Supported formats: JPEG, PNG, GIF, WEBP, ICO"
-                    .to_string(),
-            )
-                .into());
-        }
+        file_extension = extension.to_string();
 
         image_buffer = field.bytes.clone();
     }

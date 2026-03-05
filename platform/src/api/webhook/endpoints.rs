@@ -180,7 +180,6 @@ pub async fn delete_webhook_endpoint_for_app(
     .await
 }
 
-
 pub async fn reactivate_webhook_endpoint(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -255,4 +254,3 @@ pub async fn test_webhook_endpoint(
     }
     .into())
 }
-

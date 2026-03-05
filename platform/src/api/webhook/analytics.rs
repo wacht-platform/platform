@@ -42,4 +42,3 @@ pub async fn get_webhook_timeseries(
 
     Ok(result.into())
 }
-

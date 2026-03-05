@@ -1,9 +1,45 @@
 use super::*;
+use crate::api::multipart::{MultipartField, MultipartPayload};
+use crate::application::response::ApiErrorResponse;
+
+fn parse_metadata_field(
+    field: &MultipartField,
+    label: &str,
+) -> Result<Option<serde_json::Value>, ApiErrorResponse> {
+    let metadata_str = field.text()?;
+    if metadata_str.trim().is_empty() {
+        return Ok(None);
+    }
+
+    serde_json::from_str(&metadata_str)
+        .map(Some)
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid {} metadata JSON: {}", label, e),
+            )
+                .into()
+        })
+}
+
+fn parse_image_upload(
+    field: &MultipartField,
+) -> Result<Option<(Vec<u8>, String)>, ApiErrorResponse> {
+    let Some(file_extension) = field.image_extension()? else {
+        return Ok(None);
+    };
+
+    if field.bytes.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some((field.bytes.clone(), file_extension.to_string())))
+}
 
 pub async fn create_organization(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> ApiResult<Organization> {
     let mut name = String::new();
     let mut description: Option<String> = None;
@@ -11,107 +47,47 @@ pub async fn create_organization(
     let mut public_metadata: Option<serde_json::Value> = None;
     let mut private_metadata: Option<serde_json::Value> = None;
 
-    // Parse multipart form data
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
-    {
-        let field_name = field.name().unwrap_or_default().to_string();
+    let payload = MultipartPayload::parse(multipart).await?;
 
-        match field_name.as_str() {
+    for field in payload.fields() {
+        match field.name.as_str() {
             "name" => {
-                name = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                name = field.text()?;
             }
             "description" => {
-                let desc = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                let desc = field.text()?;
                 if !desc.trim().is_empty() {
                     description = Some(desc.trim().to_string());
                 }
             }
             "public_metadata" => {
-                let metadata_str = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-                if !metadata_str.trim().is_empty() {
-                    public_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            format!("Invalid public metadata JSON: {}", e),
-                        )
-                    })?);
+                if let Some(metadata) = parse_metadata_field(field, "public")? {
+                    public_metadata = Some(metadata);
                 }
             }
             "private_metadata" => {
-                let metadata_str = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-                if !metadata_str.trim().is_empty() {
-                    private_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            format!("Invalid private metadata JSON: {}", e),
-                        )
-                    })?);
+                if let Some(metadata) = parse_metadata_field(field, "private")? {
+                    private_metadata = Some(metadata);
                 }
             }
             "organization_image" => {
-                let content_type = field.content_type().unwrap_or_default().to_string();
+                if let Some((image_buffer, file_extension)) = parse_image_upload(field)? {
+                    // Generate unique organization ID for file path
+                    let org_id = app_state
+                        .sf
+                        .next_id()
+                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                    let file_path = format!(
+                        "deployments/{}/organizations/{}/logo.{}",
+                        deployment_id, org_id, file_extension
+                    );
 
-                if content_type.starts_with("image/") {
-                    let file_extension = if content_type == "image/jpeg"
-                        || content_type == "image/jpg"
-                    {
-                        "jpg"
-                    } else if content_type == "image/png" {
-                        "png"
-                    } else if content_type == "image/gif" {
-                        "gif"
-                    } else if content_type == "image/webp" {
-                        "webp"
-                    } else if content_type == "image/x-icon"
-                        || content_type == "image/vnd.microsoft.icon"
-                    {
-                        "ico"
-                    } else {
-                        return Err((
-                            StatusCode::BAD_REQUEST,
-                            "Unsupported image format. Supported formats: JPEG, PNG, GIF, WEBP, ICO".to_string(),
-                        ).into());
-                    };
-
-                    let image_buffer = field
-                        .bytes()
+                    let url = UploadToCdnCommand::new(file_path, image_buffer)
+                        .execute(&app_state)
                         .await
-                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-                        .to_vec();
+                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-                    if !image_buffer.is_empty() {
-                        // Generate unique organization ID for file path
-                        let org_id = app_state
-                            .sf
-                            .next_id()
-                            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-                        let file_path = format!(
-                            "deployments/{}/organizations/{}/logo.{}",
-                            deployment_id, org_id, file_extension
-                        );
-
-                        let url = UploadToCdnCommand::new(file_path, image_buffer)
-                            .execute(&app_state)
-                            .await
-                            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-                        image_url = Some(url);
-                    }
+                    image_url = Some(url);
                 }
             }
             _ => {
@@ -147,7 +123,7 @@ pub async fn create_workspace_for_organization(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OrganizationParams>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> ApiResult<Workspace> {
     let mut name = String::new();
     let mut description: Option<String> = None;
@@ -155,107 +131,47 @@ pub async fn create_workspace_for_organization(
     let mut public_metadata: Option<serde_json::Value> = None;
     let mut private_metadata: Option<serde_json::Value> = None;
 
-    // Parse multipart form data
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
-    {
-        let field_name = field.name().unwrap_or_default().to_string();
+    let payload = MultipartPayload::parse(multipart).await?;
 
-        match field_name.as_str() {
+    for field in payload.fields() {
+        match field.name.as_str() {
             "name" => {
-                name = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                name = field.text()?;
             }
             "description" => {
-                let desc = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                let desc = field.text()?;
                 if !desc.trim().is_empty() {
                     description = Some(desc.trim().to_string());
                 }
             }
             "public_metadata" => {
-                let metadata_str = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-                if !metadata_str.trim().is_empty() {
-                    public_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            format!("Invalid public metadata JSON: {}", e),
-                        )
-                    })?);
+                if let Some(metadata) = parse_metadata_field(field, "public")? {
+                    public_metadata = Some(metadata);
                 }
             }
             "private_metadata" => {
-                let metadata_str = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-                if !metadata_str.trim().is_empty() {
-                    private_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            format!("Invalid private metadata JSON: {}", e),
-                        )
-                    })?);
+                if let Some(metadata) = parse_metadata_field(field, "private")? {
+                    private_metadata = Some(metadata);
                 }
             }
             "workspace_image" => {
-                let content_type = field.content_type().unwrap_or_default().to_string();
+                if let Some((image_buffer, file_extension)) = parse_image_upload(field)? {
+                    // Generate unique workspace ID for file path
+                    let workspace_id = app_state
+                        .sf
+                        .next_id()
+                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                    let file_path = format!(
+                        "deployments/{}/workspaces/{}/logo.{}",
+                        deployment_id, workspace_id, file_extension
+                    );
 
-                if content_type.starts_with("image/") {
-                    let file_extension = if content_type == "image/jpeg"
-                        || content_type == "image/jpg"
-                    {
-                        "jpg"
-                    } else if content_type == "image/png" {
-                        "png"
-                    } else if content_type == "image/gif" {
-                        "gif"
-                    } else if content_type == "image/webp" {
-                        "webp"
-                    } else if content_type == "image/x-icon"
-                        || content_type == "image/vnd.microsoft.icon"
-                    {
-                        "ico"
-                    } else {
-                        return Err((
-                            StatusCode::BAD_REQUEST,
-                            "Unsupported image format. Supported formats: JPEG, PNG, GIF, WEBP, ICO".to_string(),
-                        ).into());
-                    };
-
-                    let image_buffer = field
-                        .bytes()
+                    let url = UploadToCdnCommand::new(file_path, image_buffer)
+                        .execute(&app_state)
                         .await
-                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-                        .to_vec();
+                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-                    if !image_buffer.is_empty() {
-                        // Generate unique workspace ID for file path
-                        let workspace_id = app_state
-                            .sf
-                            .next_id()
-                            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-                        let file_path = format!(
-                            "deployments/{}/workspaces/{}/logo.{}",
-                            deployment_id, workspace_id, file_extension
-                        );
-
-                        let url = UploadToCdnCommand::new(file_path, image_buffer)
-                            .execute(&app_state)
-                            .await
-                            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-                        image_url = Some(url);
-                    }
+                    image_url = Some(url);
                 }
             }
             _ => {
@@ -292,7 +208,7 @@ pub async fn update_workspace(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WorkspaceParams>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> ApiResult<Workspace> {
     let mut name: Option<String> = None;
     let mut description: Option<String> = None;
@@ -301,112 +217,49 @@ pub async fn update_workspace(
     let mut private_metadata: Option<serde_json::Value> = None;
     let mut remove_image = false;
 
-    // Parse multipart form data
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
-    {
-        let field_name = field.name().unwrap_or_default().to_string();
+    let payload = MultipartPayload::parse(multipart).await?;
 
-        match field_name.as_str() {
+    for field in payload.fields() {
+        match field.name.as_str() {
             "name" => {
-                let workspace_name = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                let workspace_name = field.text()?;
                 if !workspace_name.trim().is_empty() {
                     name = Some(workspace_name.trim().to_string());
                 }
             }
             "description" => {
-                let desc = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                let desc = field.text()?;
                 if !desc.trim().is_empty() {
                     description = Some(desc.trim().to_string());
                 }
             }
             "public_metadata" => {
-                let metadata_str = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-                if !metadata_str.trim().is_empty() {
-                    public_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            format!("Invalid public metadata JSON: {}", e),
-                        )
-                    })?);
+                if let Some(metadata) = parse_metadata_field(field, "public")? {
+                    public_metadata = Some(metadata);
                 }
             }
             "private_metadata" => {
-                let metadata_str = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-                if !metadata_str.trim().is_empty() {
-                    private_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            format!("Invalid private metadata JSON: {}", e),
-                        )
-                    })?);
+                if let Some(metadata) = parse_metadata_field(field, "private")? {
+                    private_metadata = Some(metadata);
                 }
             }
             "remove_image" => {
-                let value = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                let value = field.text()?;
                 remove_image = value == "true";
             }
             "workspace_image" => {
-                let content_type = field.content_type().unwrap_or_default().to_string();
+                if let Some((image_buffer, file_extension)) = parse_image_upload(field)? {
+                    let file_path = format!(
+                        "deployments/{}/workspaces/{}/logo.{}",
+                        deployment_id, params.workspace_id, file_extension
+                    );
 
-                if content_type.starts_with("image/") {
-                    let file_extension = if content_type == "image/jpeg"
-                        || content_type == "image/jpg"
-                    {
-                        "jpg"
-                    } else if content_type == "image/png" {
-                        "png"
-                    } else if content_type == "image/gif" {
-                        "gif"
-                    } else if content_type == "image/webp" {
-                        "webp"
-                    } else if content_type == "image/x-icon"
-                        || content_type == "image/vnd.microsoft.icon"
-                    {
-                        "ico"
-                    } else {
-                        return Err((
-                            StatusCode::BAD_REQUEST,
-                            "Unsupported image format. Supported formats: JPEG, PNG, GIF, WEBP, ICO".to_string(),
-                        ).into());
-                    };
-
-                    let image_buffer = field
-                        .bytes()
+                    let url = UploadToCdnCommand::new(file_path, image_buffer)
+                        .execute(&app_state)
                         .await
-                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-                        .to_vec();
+                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-                    if !image_buffer.is_empty() {
-                        let file_path = format!(
-                            "deployments/{}/workspaces/{}/logo.{}",
-                            deployment_id, params.workspace_id, file_extension
-                        );
-
-                        let url = UploadToCdnCommand::new(file_path, image_buffer)
-                            .execute(&app_state)
-                            .await
-                            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-                        image_url = Some(url);
-                    }
+                    image_url = Some(url);
                 }
             }
             _ => {
@@ -447,7 +300,7 @@ pub async fn update_organization(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OrganizationParams>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> ApiResult<Organization> {
     let mut name: Option<String> = None;
     let mut description: Option<String> = None;
@@ -456,111 +309,49 @@ pub async fn update_organization(
     let mut private_metadata: Option<serde_json::Value> = None;
     let mut remove_image = false;
 
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
-    {
-        let field_name = field.name().unwrap_or_default().to_string();
+    let payload = MultipartPayload::parse(multipart).await?;
 
-        match field_name.as_str() {
+    for field in payload.fields() {
+        match field.name.as_str() {
             "name" => {
-                let org_name = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                let org_name = field.text()?;
                 if !org_name.trim().is_empty() {
                     name = Some(org_name.trim().to_string());
                 }
             }
             "description" => {
-                let desc = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                let desc = field.text()?;
                 if !desc.trim().is_empty() {
                     description = Some(desc.trim().to_string());
                 }
             }
             "public_metadata" => {
-                let metadata_str = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-                if !metadata_str.trim().is_empty() {
-                    public_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            format!("Invalid public metadata JSON: {}", e),
-                        )
-                    })?);
+                if let Some(metadata) = parse_metadata_field(field, "public")? {
+                    public_metadata = Some(metadata);
                 }
             }
             "private_metadata" => {
-                let metadata_str = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-                if !metadata_str.trim().is_empty() {
-                    private_metadata = Some(serde_json::from_str(&metadata_str).map_err(|e| {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            format!("Invalid private metadata JSON: {}", e),
-                        )
-                    })?);
+                if let Some(metadata) = parse_metadata_field(field, "private")? {
+                    private_metadata = Some(metadata);
                 }
             }
             "remove_image" => {
-                let value = field
-                    .text()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+                let value = field.text()?;
                 remove_image = value == "true";
             }
             "organization_image" => {
-                let content_type = field.content_type().unwrap_or_default().to_string();
+                if let Some((image_buffer, file_extension)) = parse_image_upload(field)? {
+                    let file_path = format!(
+                        "deployments/{}/organizations/{}/logo.{}",
+                        deployment_id, params.organization_id, file_extension
+                    );
 
-                if content_type.starts_with("image/") {
-                    let file_extension = if content_type == "image/jpeg"
-                        || content_type == "image/jpg"
-                    {
-                        "jpg"
-                    } else if content_type == "image/png" {
-                        "png"
-                    } else if content_type == "image/gif" {
-                        "gif"
-                    } else if content_type == "image/webp" {
-                        "webp"
-                    } else if content_type == "image/x-icon"
-                        || content_type == "image/vnd.microsoft.icon"
-                    {
-                        "ico"
-                    } else {
-                        return Err((
-                            StatusCode::BAD_REQUEST,
-                            "Unsupported image format. Supported formats: JPEG, PNG, GIF, WEBP, ICO".to_string(),
-                        ).into());
-                    };
-
-                    let image_buffer = field
-                        .bytes()
+                    let url = UploadToCdnCommand::new(file_path, image_buffer)
+                        .execute(&app_state)
                         .await
-                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-                        .to_vec();
+                        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-                    if !image_buffer.is_empty() {
-                        let file_path = format!(
-                            "deployments/{}/organizations/{}/logo.{}",
-                            deployment_id, params.organization_id, file_extension
-                        );
-
-                        let url = UploadToCdnCommand::new(file_path, image_buffer)
-                            .execute(&app_state)
-                            .await
-                            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-                        image_url = Some(url);
-                    }
+                    image_url = Some(url);
                 }
             }
             _ => {
@@ -616,4 +407,3 @@ pub async fn delete_workspace(
 }
 
 // Organization Member Management
-

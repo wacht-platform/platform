@@ -708,4 +708,3 @@ async fn cancel_replay_task(
         .invoke_async(redis_conn)
         .await
 }
-

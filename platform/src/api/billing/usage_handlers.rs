@@ -3,7 +3,10 @@ use axum::{extract::State, http::StatusCode};
 use crate::application::response::{ApiResult, PaginatedResponse};
 
 use common::state::AppState;
-use queries::{Query as QueryTrait, billing::{GetBillingAccountQuery, GetBillingAccountUsageQuery}};
+use queries::{
+    Query as QueryTrait,
+    billing::{GetBillingAccountQuery, GetBillingAccountUsageQuery},
+};
 use wacht::middleware::RequireAuth;
 
 use super::types::{UsageResponse, owner_id_from_auth};
@@ -50,9 +53,10 @@ pub async fn list_pulse_transactions(
         .await?
         .ok_or((StatusCode::NOT_FOUND, "Billing account not found"))?;
 
-    let transactions = queries::billing::ListPulseTransactionsQuery::new(account.billing_account.id)
-        .execute(&state)
-        .await?;
+    let transactions =
+        queries::billing::ListPulseTransactionsQuery::new(account.billing_account.id)
+            .execute(&state)
+            .await?;
 
     Ok(PaginatedResponse::from(transactions).into())
 }

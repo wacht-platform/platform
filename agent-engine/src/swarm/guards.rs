@@ -14,13 +14,17 @@ pub async fn acquire_dedupe_token(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to connect to Redis: {}", e)))?;
 
-    let inserted: bool = redis_conn
-        .set_nx(key, chrono::Utc::now().to_rfc3339())
+    let set_response: Option<String> = redis::cmd("SET")
+        .arg(key)
+        .arg(chrono::Utc::now().to_rfc3339())
+        .arg("NX")
+        .arg("EX")
+        .arg(ttl_seconds)
+        .query_async(&mut redis_conn)
         .await
-        .map_err(|e| AppError::Internal(format!("Redis set_nx failed: {}", e)))?;
+        .map_err(|e| AppError::Internal(format!("Redis SET NX EX failed: {}", e)))?;
 
-    if inserted {
-        let _: Result<bool, redis::RedisError> = redis_conn.expire(key, ttl_seconds as i64).await;
+    if set_response.as_deref() == Some("OK") {
         Ok(false)
     } else {
         Ok(true)

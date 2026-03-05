@@ -75,7 +75,6 @@ pub async fn get_webhook_delivery_details_for_app(
     .await
 }
 
-
 pub async fn get_webhook_stats(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,

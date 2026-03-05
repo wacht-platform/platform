@@ -9,6 +9,7 @@ use crate::application::{
     AppError,
     response::{ApiResult, PaginatedResponse},
 };
+use crate::api::multipart::MultipartPayload;
 use common::state::AppState;
 
 use commands::{
@@ -220,7 +221,7 @@ pub async fn upload_knowledge_base_document(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> ApiResult<AiKnowledgeBaseDocument> {
     let mut title: Option<String> = None;
     let mut description: Option<String> = None;
@@ -228,44 +229,20 @@ pub async fn upload_knowledge_base_document(
     let mut file_name: Option<String> = None;
     let mut file_type: Option<String> = None;
 
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("Failed to read multipart field: {}", e),
-        )
-    })? {
-        let field_name = field.name().unwrap_or("").to_string();
+    let payload = MultipartPayload::parse(multipart).await?;
 
-        match field_name.as_str() {
+    for field in payload.fields() {
+        match field.name.as_str() {
             "title" => {
-                title = Some(field.text().await.map_err(|e| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        format!("Failed to read title: {}", e),
-                    )
-                })?);
+                title = Some(field.text()?);
             }
             "description" => {
-                description = Some(field.text().await.map_err(|e| {
-                    (
-                        StatusCode::BAD_REQUEST,
-                        format!("Failed to read description: {}", e),
-                    )
-                })?);
+                description = Some(field.text()?);
             }
             "file" => {
-                file_name = field.file_name().map(|s| s.to_string());
-                file_type = field.content_type().map(|s| s.to_string());
-                file_content = field
-                    .bytes()
-                    .await
-                    .map_err(|e| {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            format!("Failed to read file content: {}", e),
-                        )
-                    })?
-                    .to_vec();
+                file_name = field.file_name.clone();
+                file_type = field.content_type.clone();
+                file_content = field.bytes.clone();
             }
             _ => {}
         }

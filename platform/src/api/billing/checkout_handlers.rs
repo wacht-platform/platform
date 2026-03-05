@@ -17,7 +17,10 @@ use common::dodo::{
     ProductCartItem, UpdateCustomerParams,
 };
 use common::state::AppState;
-use queries::{Query as QueryTrait, billing::{GetBillingAccountQuery, GetDodoProductQuery}};
+use queries::{
+    Query as QueryTrait,
+    billing::{GetBillingAccountQuery, GetDodoProductQuery},
+};
 use wacht::middleware::RequireAuth;
 
 use super::types::{

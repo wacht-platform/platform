@@ -271,4 +271,3 @@ pub async fn get_webhook_catalog(
 
     Ok(catalog.into())
 }
-

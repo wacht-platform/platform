@@ -1,5 +1,5 @@
-use super::*;
 use super::notifications::{extract_owner_id, send_billing_change_email};
+use super::*;
 
 pub(super) async fn handle_subscription_active(
     app_state: &AppState,

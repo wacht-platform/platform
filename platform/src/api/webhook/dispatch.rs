@@ -54,4 +54,3 @@ pub async fn trigger_webhook_event(
     }
     .into())
 }
-

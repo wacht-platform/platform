@@ -8,18 +8,24 @@ use crate::application::response::ApiErrorResponse;
 #[derive(Debug, Clone)]
 pub struct MultipartField {
     pub name: String,
+    pub file_name: Option<String>,
     pub content_type: Option<String>,
     pub bytes: Vec<u8>,
 }
 
 impl MultipartField {
-    pub fn text_trimmed(&self) -> Result<String, ApiErrorResponse> {
-        let text = String::from_utf8(self.bytes.clone()).map_err(|_| {
+    pub fn text(&self) -> Result<String, ApiErrorResponse> {
+        String::from_utf8(self.bytes.clone()).map_err(|_| {
             (
                 StatusCode::BAD_REQUEST,
                 format!("Multipart field '{}' must be valid UTF-8 text", self.name),
             )
-        })?;
+                .into()
+        })
+    }
+
+    pub fn text_trimmed(&self) -> Result<String, ApiErrorResponse> {
+        let text = self.text()?;
         Ok(text.trim().to_string())
     }
 
@@ -28,6 +34,31 @@ impl MultipartField {
             Some(v) => Cow::Borrowed(v),
             None => Cow::Borrowed(default),
         }
+    }
+
+    pub fn image_extension(&self) -> Result<Option<&'static str>, ApiErrorResponse> {
+        let content_type = self.content_type_or("");
+        if !content_type.starts_with("image/") {
+            return Ok(None);
+        }
+
+        let extension = match content_type.as_ref() {
+            "image/jpeg" | "image/jpg" => "jpg",
+            "image/png" => "png",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            "image/x-icon" | "image/vnd.microsoft.icon" => "ico",
+            _ => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "Unsupported image format. Supported formats: JPEG, PNG, GIF, WEBP, ICO"
+                        .to_string(),
+                )
+                    .into());
+            }
+        };
+
+        Ok(Some(extension))
     }
 }
 
@@ -49,6 +80,7 @@ impl MultipartPayload {
                 .name()
                 .ok_or_else(|| (StatusCode::BAD_REQUEST, "Multipart field name is missing"))?
                 .to_string();
+            let file_name = field.file_name().map(ToOwned::to_owned);
             let content_type = field.content_type().map(ToOwned::to_owned);
             let bytes = field
                 .bytes()
@@ -63,6 +95,7 @@ impl MultipartPayload {
 
             fields.push(MultipartField {
                 name,
+                file_name,
                 content_type,
                 bytes,
             });

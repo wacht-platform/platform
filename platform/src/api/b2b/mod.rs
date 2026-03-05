@@ -56,10 +56,10 @@ pub use entity_handlers::{
     update_organization, update_workspace,
 };
 pub use membership_handlers::{
-    add_organization_member, add_workspace_member, create_organization_role,
-    create_workspace_role, delete_organization_role, delete_workspace_role,
-    remove_organization_member, remove_workspace_member, update_organization_member,
-    update_organization_role, update_workspace_member, update_workspace_role,
+    add_organization_member, add_workspace_member, create_organization_role, create_workspace_role,
+    delete_organization_role, delete_workspace_role, remove_organization_member,
+    remove_workspace_member, update_organization_member, update_organization_role,
+    update_workspace_member, update_workspace_role,
 };
 pub use query_handlers::{
     get_deployment_org_roles, get_deployment_workspace_roles, get_organization_details,

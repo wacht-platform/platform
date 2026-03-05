@@ -197,6 +197,19 @@ impl AgentExecutor {
     }
 
     async fn process_decision(&mut self, decision: StepDecision) -> Result<bool, AppError> {
+        let repeated_pattern_count = self.track_decision_pattern(&decision);
+        if repeated_pattern_count >= 2 {
+            tracing::warn!(
+                context_id = self.ctx.context_id,
+                next_step = ?decision.next_step,
+                repeats = repeated_pattern_count,
+                "Detected repeated decision pattern; steering toward strategy change"
+            );
+            if !self.deep_think_mode_active && self.deep_think_used < MAX_DEEP_THINK_USES {
+                self.deep_think_mode_active = true;
+            }
+        }
+
         let result = match decision.next_step {
             NextStep::Acknowledge => {
                 let last_was_ack = self.conversations.last().map_or(false, |conv| {
@@ -224,9 +237,13 @@ impl AgentExecutor {
                 }
 
                 if let Some(ack_data) = decision.acknowledgment {
+                    let safe_ack_message = Self::sanitize_user_facing_message(
+                        &ack_data.message,
+                        "Working on it. I will proceed with the request and share updates.",
+                    );
                     self.store_conversation(
                         ConversationContent::AssistantAcknowledgment {
-                            acknowledgment_message: ack_data.message,
+                            acknowledgment_message: safe_ack_message,
                             further_action_required: ack_data.further_action_required,
                             reasoning: decision.reasoning.clone(),
                             thought_signature: decision.thought_signature.clone(),
@@ -286,6 +303,17 @@ impl AgentExecutor {
                             .unwrap_or_default()
                             .to_string();
 
+                        if Self::requires_supervisor_mode(&tool_name)
+                            && !self.supervisor_mode_active
+                        {
+                            return Err(AppError::BadRequest(
+                                format!(
+                                    "{} requires supervisor mode. Call switch_execution_mode(mode='supervisor') first.",
+                                    tool_name
+                                ),
+                            ));
+                        }
+
                         let result = if tool_name == "update_task_board" {
                             let tool_call = self
                                 .parse_tool_call(
@@ -317,11 +345,6 @@ impl AgentExecutor {
                             self.handle_exit_supervisor_mode(tool_call.parameters).await
                         } else {
                             if tool_name == "spawn_context_execution" {
-                                if !self.supervisor_mode_active {
-                                    return Err(AppError::BadRequest(
-                                        "spawn_context_execution requires supervisor mode. Call switch_execution_mode(mode='supervisor') first.".to_string(),
-                                    ));
-                                }
                                 if !board_updated_since_last_spawn {
                                     return Err(AppError::BadRequest(
                                         "Before each spawn_context_execution call, update_task_board must be called in the same action batch.".to_string(),
@@ -492,7 +515,9 @@ impl AgentExecutor {
 
             NextStep::Complete => {
                 self.reinforce_used_memories().await?;
-                let completion_message = decision.completion_message.clone();
+                let completion_message = decision.completion_message.as_deref().map(|m| {
+                    Self::sanitize_user_facing_message(m, "Completed the requested work.")
+                });
 
                 if let Some(message) = &completion_message {
                     self.store_conversation(
@@ -918,6 +943,211 @@ impl AgentExecutor {
         Ok(decision)
     }
 
+    fn track_decision_pattern(&mut self, decision: &StepDecision) -> usize {
+        let signature = Self::decision_loop_signature(decision);
+        if self
+            .last_decision_signature
+            .as_deref()
+            .map(|previous| Self::decision_signatures_similar(previous, &signature))
+            .unwrap_or(false)
+        {
+            self.repeated_decision_count += 1;
+            self.last_decision_signature = Some(signature);
+        } else {
+            self.last_decision_signature = Some(signature);
+            self.repeated_decision_count = 0;
+        }
+        self.repeated_decision_count
+    }
+
+    fn decision_loop_signature(decision: &StepDecision) -> String {
+        match decision.next_step {
+            NextStep::Acknowledge => {
+                let msg = decision
+                    .acknowledgment
+                    .as_ref()
+                    .map(|a| Self::normalize_loop_text(&a.message))
+                    .unwrap_or_default();
+                format!("ack:{msg}")
+            }
+            NextStep::GatherContext => {
+                if let Some(d) = &decision.context_gathering_directive {
+                    format!(
+                        "gather:{:?}:{}:{}",
+                        d.mode,
+                        Self::normalize_loop_text(&d.query),
+                        Self::normalize_loop_text(&d.target_output)
+                    )
+                } else {
+                    "gather:missing".to_string()
+                }
+            }
+            NextStep::LoadMemory => {
+                if let Some(d) = &decision.memory_loading_directive {
+                    let categories = d
+                        .categories
+                        .iter()
+                        .map(|category| format!("{:?}", category))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    format!(
+                        "memory:{:?}:{}:{}:{:?}",
+                        d.scope,
+                        Self::normalize_loop_text(&d.focus),
+                        Self::normalize_loop_text(&categories),
+                        d.depth
+                    )
+                } else {
+                    "memory:missing".to_string()
+                }
+            }
+            NextStep::ExecuteAction => {
+                let actions = decision
+                    .actions
+                    .as_ref()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|a| {
+                                let tool = a
+                                    .details
+                                    .get("tool_name")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or_default();
+                                format!("{}:{}", tool, Self::normalize_loop_text(&a.purpose))
+                            })
+                            .collect::<Vec<_>>()
+                            .join("|")
+                    })
+                    .unwrap_or_default();
+                format!("execute:{actions}")
+            }
+            NextStep::RequestUserInput => "requestuserinput".to_string(),
+            NextStep::LongThinkAndReason => "longthinkandreason".to_string(),
+            NextStep::Complete => format!(
+                "complete:{}",
+                decision
+                    .completion_message
+                    .as_deref()
+                    .map(Self::normalize_loop_text)
+                    .unwrap_or_default()
+            ),
+        }
+    }
+
+    fn normalize_loop_text(input: &str) -> String {
+        input
+            .to_ascii_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn decision_signatures_similar(previous: &str, current: &str) -> bool {
+        if previous == current {
+            return true;
+        }
+
+        let (previous_kind, previous_payload) = Self::split_decision_signature(previous);
+        let (current_kind, current_payload) = Self::split_decision_signature(current);
+        if previous_kind != current_kind {
+            return false;
+        }
+
+        if previous_payload.is_empty() || current_payload.is_empty() {
+            return previous_payload == current_payload;
+        }
+
+        Self::word_similarity(previous_payload, current_payload) >= 0.5
+    }
+
+    fn split_decision_signature(signature: &str) -> (&str, &str) {
+        match signature.split_once(':') {
+            Some((kind, payload)) => (kind, payload),
+            None => (signature, ""),
+        }
+    }
+
+    fn word_similarity(left: &str, right: &str) -> f32 {
+        let left_tokens = Self::tokenize_similarity_text(left);
+        let right_tokens = Self::tokenize_similarity_text(right);
+
+        if left_tokens.is_empty() || right_tokens.is_empty() {
+            return 0.0;
+        }
+
+        let intersection = left_tokens.intersection(&right_tokens).count() as f32;
+        let union = left_tokens.union(&right_tokens).count() as f32;
+        if union == 0.0 {
+            return 0.0;
+        }
+        intersection / union
+    }
+
+    fn tokenize_similarity_text(input: &str) -> HashSet<String> {
+        input
+            .split(|ch: char| !ch.is_ascii_alphanumeric())
+            .filter_map(|token| {
+                let token = token.trim().to_ascii_lowercase();
+                if token.len() >= 2 {
+                    Some(token)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn sanitize_user_facing_message(raw: &str, fallback: &str) -> String {
+        let cleaned = raw.trim();
+        if cleaned.is_empty() {
+            return fallback.to_string();
+        }
+
+        if Self::looks_like_internal_reasoning_dump(cleaned) {
+            return fallback.to_string();
+        }
+
+        cleaned.to_string()
+    }
+
+    fn looks_like_internal_reasoning_dump(text: &str) -> bool {
+        let lower = text.to_ascii_lowercase();
+        let markers = [
+            "the user is asking",
+            "i need to perform",
+            "universal search across all categories",
+            "user requested cancellation",
+            "loadmemory",
+            "internal reasoning",
+        ];
+        let marker_hits = markers.iter().filter(|m| lower.contains(**m)).count();
+
+        let numbered_lines = text
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim_start();
+                let digits = trimmed.chars().take_while(|c| c.is_ascii_digit()).count();
+                digits > 0 && trimmed.chars().nth(digits) == Some('.')
+            })
+            .count();
+
+        marker_hits >= 2 || (marker_hits >= 1 && numbered_lines >= 3)
+    }
+
+    fn requires_supervisor_mode(tool_name: &str) -> bool {
+        matches!(
+            tool_name,
+            "spawn_context_execution"
+                | "spawn_control"
+                | "get_child_status"
+                | "get_completion_summary"
+                | "get_child_messages"
+                | "update_task_board"
+                | "exit_supervisor_mode"
+        )
+    }
+
     fn available_tools_for_mode(&self) -> Vec<models::AiTool> {
         if !self.supervisor_mode_active {
             return self.ctx.agent.tools.clone();
@@ -1223,6 +1453,8 @@ impl AgentExecutor {
             .and_then(|v| v.as_str())
             .unwrap_or("Execution completed.")
             .to_string();
+        let summary_text =
+            Self::sanitize_user_facing_message(&summary_text, "Execution completed.");
 
         self.store_conversation(
             ConversationContent::AgentResponse {
@@ -2017,4 +2249,42 @@ fn truncate_for_research(input: &str, max_chars: usize) -> String {
     }
     out.push_str("...");
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AgentExecutor;
+
+    #[test]
+    fn detects_internal_reasoning_dump_with_numbered_lines() {
+        let text = "1. The user is asking about memory.\n2. I need to perform a universal search across all categories.\n3. The user is asking if I have any data in memory.";
+        assert!(AgentExecutor::looks_like_internal_reasoning_dump(text));
+    }
+
+    #[test]
+    fn does_not_flag_normal_user_facing_text() {
+        let text = "I checked and I do not have stored memory records yet.";
+        assert!(!AgentExecutor::looks_like_internal_reasoning_dump(text));
+    }
+
+    #[test]
+    fn sanitizes_internal_reasoning_dump_to_fallback() {
+        let text = "1. The user is asking about memory.\n2. I need to perform a universal search across all categories.";
+        let sanitized = AgentExecutor::sanitize_user_facing_message(text, "Fallback");
+        assert_eq!(sanitized, "Fallback");
+    }
+
+    #[test]
+    fn decision_signature_similarity_detects_near_duplicates() {
+        let a = "execute:read_file:inspect billing config and usage limits";
+        let b = "execute:read_file:inspect usage limits in billing config";
+        assert!(AgentExecutor::decision_signatures_similar(a, b));
+    }
+
+    #[test]
+    fn decision_signature_similarity_rejects_different_step_kinds() {
+        let a = "loadmemory:universal:billing";
+        let b = "execute:read_file:billing";
+        assert!(!AgentExecutor::decision_signatures_similar(a, b));
+    }
 }
