@@ -1,20 +1,24 @@
 use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
-use sqlx::query;
+use sqlx::{Executor, Postgres, Transaction, query};
 
 use crate::Command;
-use common::error::AppError;
-use common::state::AppState;
+use common::{
+    capabilities::{HasDbRouter, HasRedis},
+    error::AppError,
+    state::AppState,
+};
 
 #[derive(Debug)]
 pub struct GetActiveDeliveryCommand {
     pub delivery_id: i64,
 }
 
-impl Command for GetActiveDeliveryCommand {
-    type Output = Option<ActiveDeliveryInfo>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl GetActiveDeliveryCommand {
+    async fn execute_with_db<'e, E>(self, executor: E) -> Result<Option<ActiveDeliveryInfo>, AppError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         let delivery = query!(
             r#"
             SELECT d.id as "id!",
@@ -43,7 +47,7 @@ impl Command for GetActiveDeliveryCommand {
             "#,
             self.delivery_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(executor)
         .await?;
 
         Ok(delivery.map(|d| ActiveDeliveryInfo {
@@ -58,7 +62,7 @@ impl Command for GetActiveDeliveryCommand {
             attempts: d.attempts.unwrap_or(0),
             max_attempts: d.max_attempts.unwrap_or(5),
             next_retry_at: d.next_retry_at,
-            created_at: d.created_at.unwrap_or_else(|| Utc::now()),
+            created_at: d.created_at.unwrap_or_else(Utc::now),
             url: d.url,
             headers: d.headers,
             timeout_seconds: d.timeout_seconds.unwrap_or(30),
@@ -67,6 +71,28 @@ impl Command for GetActiveDeliveryCommand {
             signing_secret: d.signing_secret,
             rate_limit_config: d.rate_limit_config,
         }))
+    }
+
+    pub async fn execute_with<C>(self, deps: &C) -> Result<Option<ActiveDeliveryInfo>, AppError>
+    where
+        C: HasDbRouter + ?Sized,
+    {
+        self.execute_with_db(deps.writer_pool()).await
+    }
+
+    pub async fn execute_in_tx(
+        self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<Option<ActiveDeliveryInfo>, AppError> {
+        self.execute_with_db(tx.as_mut()).await
+    }
+}
+
+impl Command for GetActiveDeliveryCommand {
+    type Output = Option<ActiveDeliveryInfo>;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state).await
     }
 }
 
@@ -98,18 +124,38 @@ pub struct DeleteActiveDeliveryCommand {
     pub delivery_id: i64,
 }
 
-impl Command for DeleteActiveDeliveryCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl DeleteActiveDeliveryCommand {
+    async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         query!(
             "DELETE FROM active_webhook_deliveries WHERE id = $1",
             self.delivery_id
         )
-        .execute(&app_state.db_pool)
+        .execute(executor)
         .await?;
 
         Ok(())
+    }
+
+    pub async fn execute_with<C>(self, deps: &C) -> Result<(), AppError>
+    where
+        C: HasDbRouter + ?Sized,
+    {
+        self.execute_with_db(deps.writer_pool()).await
+    }
+
+    pub async fn execute_in_tx(self, tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
+        self.execute_with_db(tx.as_mut()).await
+    }
+}
+
+impl Command for DeleteActiveDeliveryCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state).await
     }
 }
 
@@ -120,10 +166,11 @@ pub struct UpdateDeliveryAttemptsCommand {
     pub next_retry_at: DateTime<Utc>,
 }
 
-impl Command for UpdateDeliveryAttemptsCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl UpdateDeliveryAttemptsCommand {
+    async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         query!(
             r#"
             UPDATE active_webhook_deliveries 
@@ -134,10 +181,29 @@ impl Command for UpdateDeliveryAttemptsCommand {
             self.new_attempts,
             self.next_retry_at
         )
-        .execute(&app_state.db_pool)
+        .execute(executor)
         .await?;
 
         Ok(())
+    }
+
+    pub async fn execute_with<C>(self, deps: &C) -> Result<(), AppError>
+    where
+        C: HasDbRouter + ?Sized,
+    {
+        self.execute_with_db(deps.writer_pool()).await
+    }
+
+    pub async fn execute_in_tx(self, tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
+        self.execute_with_db(tx.as_mut()).await
+    }
+}
+
+impl Command for UpdateDeliveryAttemptsCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state).await
     }
 }
 
@@ -150,8 +216,6 @@ impl Command for GetFailedDeliveryDetailsCommand {
     type Output = Option<String>;
 
     async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
-        // This command is no longer needed since payloads are stored directly in the database
-        // Keeping the function for API compatibility but returning None
         Ok(None)
     }
 }
@@ -161,10 +225,11 @@ pub struct DeactivateEndpointCommand {
     pub endpoint_id: i64,
 }
 
-impl Command for DeactivateEndpointCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl DeactivateEndpointCommand {
+    async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         query!(
             r#"
             UPDATE webhook_endpoints
@@ -174,10 +239,29 @@ impl Command for DeactivateEndpointCommand {
             "#,
             self.endpoint_id
         )
-        .execute(&app_state.db_pool)
+        .execute(executor)
         .await?;
 
         Ok(())
+    }
+
+    pub async fn execute_with<C>(self, deps: &C) -> Result<(), AppError>
+    where
+        C: HasDbRouter + ?Sized,
+    {
+        self.execute_with_db(deps.writer_pool()).await
+    }
+
+    pub async fn execute_in_tx(self, tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
+        self.execute_with_db(tx.as_mut()).await
+    }
+}
+
+impl Command for DeactivateEndpointCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state).await
     }
 }
 
@@ -186,27 +270,34 @@ pub struct CheckEndpointFailuresCommand {
     pub endpoint_id: i64,
 }
 
-impl Command for CheckEndpointFailuresCommand {
-    type Output = EndpointFailureInfo;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl CheckEndpointFailuresCommand {
+    pub async fn execute_with<C>(self, deps: &C) -> Result<EndpointFailureInfo, AppError>
+    where
+        C: HasRedis + ?Sized,
+    {
         use redis::AsyncCommands;
 
-        let mut redis_conn = app_state
-            .redis_client
+        let mut redis_conn = deps
+            .redis_client()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
 
         let failure_key = format!("webhook:endpoint:failures:{}", self.endpoint_id);
-
-        // Get current failure count
         let failure_count: i64 = redis_conn.get(&failure_key).await.unwrap_or(0);
 
         Ok(EndpointFailureInfo {
             failure_count,
             should_deactivate: failure_count >= 10,
         })
+    }
+}
+
+impl Command for CheckEndpointFailuresCommand {
+    type Output = EndpointFailureInfo;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state).await
     }
 }
 
@@ -221,30 +312,28 @@ pub struct IncrementEndpointFailuresCommand {
     pub endpoint_id: i64,
 }
 
-impl Command for IncrementEndpointFailuresCommand {
-    type Output = i64;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl IncrementEndpointFailuresCommand {
+    pub async fn execute_with<C>(self, deps: &C) -> Result<i64, AppError>
+    where
+        C: HasRedis + ?Sized,
+    {
         use redis::AsyncCommands;
 
-        let mut redis_conn = app_state
-            .redis_client
+        let mut redis_conn = deps
+            .redis_client()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
 
         let failure_key = format!("webhook:endpoint:failures:{}", self.endpoint_id);
-
-        // Increment failure counter
         let failure_count: i64 = redis_conn
             .incr(&failure_key, 1)
             .await
             .map_err(|e| AppError::Internal(format!("Redis incr failed: {}", e)))?;
 
-        // Set TTL only on first failure
         if failure_count == 1 {
             let _: () = redis_conn
-                .expire(&failure_key, 86400) // 24 hours
+                .expire(&failure_key, 86400)
                 .await
                 .map_err(|e| AppError::Internal(format!("Redis expire failed: {}", e)))?;
         }
@@ -253,19 +342,28 @@ impl Command for IncrementEndpointFailuresCommand {
     }
 }
 
+impl Command for IncrementEndpointFailuresCommand {
+    type Output = i64;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state).await
+    }
+}
+
 #[derive(Debug)]
 pub struct ClearEndpointFailuresCommand {
     pub endpoint_id: i64,
 }
 
-impl Command for ClearEndpointFailuresCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl ClearEndpointFailuresCommand {
+    pub async fn execute_with<C>(self, deps: &C) -> Result<(), AppError>
+    where
+        C: HasRedis + ?Sized,
+    {
         use redis::AsyncCommands;
 
-        let mut redis_conn = app_state
-            .redis_client
+        let mut redis_conn = deps
+            .redis_client()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
@@ -277,6 +375,14 @@ impl Command for ClearEndpointFailuresCommand {
             .map_err(|e| AppError::Internal(format!("Redis del failed: {}", e)))?;
 
         Ok(())
+    }
+}
+
+impl Command for ClearEndpointFailuresCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state).await
     }
 }
 
@@ -297,11 +403,11 @@ pub struct CleanupExpiredDeliveriesCommand {
     pub days_old: i32,
 }
 
-impl Command for CleanupExpiredDeliveriesCommand {
-    type Output = i64;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Delete deliveries that are too old and have exceeded max attempts
+impl CleanupExpiredDeliveriesCommand {
+    async fn execute_with_db<'e, E>(self, executor: E) -> Result<i64, AppError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         let result = query!(
             r#"
             DELETE FROM active_webhook_deliveries
@@ -310,9 +416,31 @@ impl Command for CleanupExpiredDeliveriesCommand {
             "#,
             self.days_old as f64
         )
-        .execute(&app_state.db_pool)
+        .execute(executor)
         .await?;
 
         Ok(result.rows_affected() as i64)
+    }
+
+    pub async fn execute_with<C>(self, deps: &C) -> Result<i64, AppError>
+    where
+        C: HasDbRouter + ?Sized,
+    {
+        self.execute_with_db(deps.writer_pool()).await
+    }
+
+    pub async fn execute_in_tx(
+        self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<i64, AppError> {
+        self.execute_with_db(tx.as_mut()).await
+    }
+}
+
+impl Command for CleanupExpiredDeliveriesCommand {
+    type Output = i64;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state).await
     }
 }

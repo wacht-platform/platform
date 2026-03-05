@@ -1,3 +1,4 @@
+use crate::api::multipart::MultipartPayload;
 use crate::{application::response::ApiResult, middleware::RequireDeployment};
 use common::state::AppState;
 use serde::Deserialize;
@@ -22,19 +23,16 @@ pub async fn upload_image(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<UploadPathParams>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> ApiResult<UploadResult> {
     let mut image_buffer: Vec<u8> = Vec::new();
     let mut file_extension = String::from("png");
 
     let mut updates = DeploymentDisplaySettingsUpdates::default();
+    let payload = MultipartPayload::parse(multipart).await?;
 
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
-    {
-        let content_type = field.content_type().unwrap_or_default().to_string();
+    for field in payload.fields() {
+        let content_type = field.content_type_or("").into_owned();
 
         if !content_type.starts_with("image/") {
             return Err((
@@ -63,11 +61,7 @@ pub async fn upload_image(
                 .into());
         }
 
-        image_buffer = field
-            .bytes()
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-            .to_vec();
+        image_buffer = field.bytes.clone();
     }
 
     if image_buffer.is_empty() {

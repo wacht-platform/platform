@@ -39,7 +39,6 @@ fn project_routes() -> Router<AppState> {
     Router::new()
         .route("/projects", get(api::project::get_projects))
         .route("/project", post(api::project::create_project))
-        .route("/project/{id}", delete(api::project::delete_project))
         .route(
             "/project/{project_id}/staging-deployment",
             post(api::project::create_staging_deployment),
@@ -47,10 +46,6 @@ fn project_routes() -> Router<AppState> {
         .route(
             "/project/{project_id}/production-deployment",
             post(api::project::create_production_deployment),
-        )
-        .route(
-            "/project/{project_id}/deployment/{deployment_id}",
-            delete(api::project::delete_deployment),
         )
 }
 

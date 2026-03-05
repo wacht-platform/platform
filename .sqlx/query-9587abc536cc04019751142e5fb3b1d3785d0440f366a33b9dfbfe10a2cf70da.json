@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO organization_roles (\n                id,\n                deployment_id,\n                name,\n                permissions,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "TextArray",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9587abc536cc04019751142e5fb3b1d3785d0440f366a33b9dfbfe10a2cf70da"
+}

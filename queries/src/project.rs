@@ -1,33 +1,37 @@
 use std::collections::BTreeMap;
 
-use sqlx::{Row, query};
-
-use common::error::AppError;
-use common::state::AppState;
+use common::{capabilities::HasDbRouter, db_router::ReadConsistency, error::AppError, state::AppState};
 use models::{Deployment, ProjectWithDeployments};
+use sqlx::{Executor, Postgres, Row, Transaction, query};
 
 use super::Query;
 
 #[allow(dead_code)]
 pub struct GetProjectsWithDeploymentQuery {
     owner_ids: Vec<String>,
+    consistency: ReadConsistency,
 }
 
 impl GetProjectsWithDeploymentQuery {
     pub fn new() -> Self {
         GetProjectsWithDeploymentQuery {
             owner_ids: Vec::new(),
+            consistency: ReadConsistency::Eventual,
         }
     }
 
     pub fn for_owner(owner_id: String) -> Self {
         GetProjectsWithDeploymentQuery {
             owner_ids: vec![owner_id],
+            consistency: ReadConsistency::Eventual,
         }
     }
 
     pub fn for_owners(owner_ids: Vec<String>) -> Self {
-        GetProjectsWithDeploymentQuery { owner_ids }
+        GetProjectsWithDeploymentQuery {
+            owner_ids,
+            consistency: ReadConsistency::Eventual,
+        }
     }
 
     pub fn for_user_or_organization(user_id: String, org_id: Option<String>) -> Self {
@@ -37,7 +41,15 @@ impl GetProjectsWithDeploymentQuery {
         } else {
             owner_ids.push(user_id);
         }
-        GetProjectsWithDeploymentQuery { owner_ids }
+        GetProjectsWithDeploymentQuery {
+            owner_ids,
+            consistency: ReadConsistency::Eventual,
+        }
+    }
+
+    pub fn with_consistency(mut self, consistency: ReadConsistency) -> Self {
+        self.consistency = consistency;
+        self
     }
 }
 
@@ -94,11 +106,11 @@ impl GetProjectsWithDeploymentQuery {
                 }),
         }
     }
-}
-impl Query for GetProjectsWithDeploymentQuery {
-    type Output = Vec<ProjectWithDeployments>;
 
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    async fn execute_with_executor<'e, E>(&self, executor: E) -> Result<Vec<ProjectWithDeployments>, AppError>
+    where
+        E: Executor<'e, Database = Postgres>,
+    {
         let mut query_str = r#"
             SELECT
                 p.id, p.created_at, p.updated_at, p.name, p.image_url,
@@ -116,9 +128,9 @@ impl Query for GetProjectsWithDeploymentQuery {
                 d.custom_smtp_config::jsonb as deployment_custom_smtp_config
             FROM projects p
             LEFT JOIN deployments d ON p.id = d.project_id AND d.deleted_at IS NULL
-        "#.to_string();
+        "#
+        .to_string();
 
-        // Add ownership filtering
         if !self.owner_ids.is_empty() {
             query_str.push_str(" WHERE p.owner_id = ANY($1)");
         }
@@ -126,11 +138,11 @@ impl Query for GetProjectsWithDeploymentQuery {
         query_str.push_str(" ORDER BY p.id DESC");
 
         let rows = if self.owner_ids.is_empty() {
-            query(&query_str).fetch_all(&app_state.db_pool).await?
+            query(&query_str).fetch_all(executor).await?
         } else {
             query(&query_str)
                 .bind(&self.owner_ids)
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(executor)
                 .await?
         };
 
@@ -168,5 +180,27 @@ impl Query for GetProjectsWithDeploymentQuery {
         }
 
         Ok(projects_map.values().cloned().collect())
+    }
+
+    pub async fn execute_with<C>(&self, deps: &C) -> Result<Vec<ProjectWithDeployments>, AppError>
+    where
+        C: HasDbRouter + ?Sized,
+    {
+        self.execute_with_executor(deps.reader_pool(self.consistency))
+            .await
+    }
+
+    pub async fn execute_in_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<Vec<ProjectWithDeployments>, AppError> {
+        self.execute_with_executor(tx.as_mut()).await
+    }
+}
+impl Query for GetProjectsWithDeploymentQuery {
+    type Output = Vec<ProjectWithDeployments>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state).await
     }
 }

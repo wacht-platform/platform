@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO deployment_ui_settings (id, deployment_id, app_name, tos_page_url, sign_in_page_url, sign_up_page_url, after_sign_out_one_page_url, after_sign_out_all_page_url, favicon_image_url, logo_image_url, privacy_policy_url, signup_terms_statement, signup_terms_statement_shown, light_mode_settings, dark_mode_settings, after_logo_click_url, organization_profile_url, create_organization_url, user_profile_url, after_signup_redirect_url, after_signin_redirect_url, after_create_organization_redirect_url, use_initials_for_user_profile_image, use_initials_for_organization_profile_image, default_user_profile_image_url, default_organization_profile_image_url, waitlist_page_url, support_page_url, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Bool",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ea15d9c227e78672c6380cc94968bfaa4adbe43368d9826a21784aad72b591f"
+}

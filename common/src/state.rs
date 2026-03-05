@@ -13,13 +13,14 @@ use std::error::Error;
 use wacht::{WachtClient, WachtConfig};
 
 use crate::{
-    ClickHouseService, CloudflareService, DnsVerificationService, EncryptionService,
+    ClickHouseService, CloudflareService, DbRouter, DnsVerificationService, EncryptionService,
     PostmarkService, TextProcessingService,
 };
 
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: PgPool,
+    pub db_router: DbRouter,
     pub s3_client: S3Client,
     pub agent_storage_client: Option<S3Client>,
     pub sf: sonyflake::Sonyflake,
@@ -37,19 +38,53 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub async fn new_from_env() -> Result<Self, Box<dyn Error>> {
-        let database_url = if !env("USE_PUBLIC_NETWORK").is_ok() {
-            env("DATABASE_PRIMARY_PRIVATE")?
+    fn resolve_writer_url() -> Result<String, Box<dyn Error>> {
+        if let Ok(url) = env("DATABASE_WRITER_URL") {
+            return Ok(url);
+        }
+
+        if !env("USE_PUBLIC_NETWORK").is_ok() {
+            Ok(env("DATABASE_PRIMARY_PRIVATE")?)
         } else {
-            env("DATABASE_PRIMARY_PUBLIC")?
-        };
-        let pool = PgPoolOptions::new()
+            Ok(env("DATABASE_PRIMARY_PUBLIC")?)
+        }
+    }
+
+    fn resolve_reader_urls() -> Vec<String> {
+        env("DATABASE_READER_URLS")
+            .ok()
+            .map(|urls| {
+                urls.split(',')
+                    .map(str::trim)
+                    .filter(|url| !url.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub async fn new_from_env() -> Result<Self, Box<dyn Error>> {
+        let writer_url = Self::resolve_writer_url()?;
+        let writer_pool = PgPoolOptions::new()
             .min_connections(5)
             .acquire_timeout(Duration::from_secs(30))
             .max_lifetime(Some(Duration::from_secs(150)))
             .max_connections(50)
-            .connect(&database_url)
+            .connect(&writer_url)
             .await?;
+        let reader_urls = Self::resolve_reader_urls();
+        let mut reader_pools = Vec::with_capacity(reader_urls.len());
+        for reader_url in reader_urls {
+            let pool = PgPoolOptions::new()
+                .min_connections(2)
+                .acquire_timeout(Duration::from_secs(30))
+                .max_lifetime(Some(Duration::from_secs(150)))
+                .max_connections(20)
+                .connect(&reader_url)
+                .await?;
+            reader_pools.push(pool);
+        }
+        let db_router = DbRouter::new(writer_pool.clone(), reader_pools);
 
         let s3_client = S3Client::new(
             &aws_config::defaults(BehaviorVersion::latest())
@@ -127,7 +162,8 @@ impl AppState {
             .and_then(|config| WachtClient::new(config).ok());
 
         Ok(Self {
-            db_pool: pool,
+            db_pool: writer_pool,
+            db_router,
             s3_client,
             agent_storage_client,
             sf,

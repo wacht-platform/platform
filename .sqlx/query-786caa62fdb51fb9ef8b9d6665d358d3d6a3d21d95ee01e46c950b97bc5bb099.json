@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO deployments (\n                id,\n                project_id,\n                mode,\n                backend_host,\n                frontend_host,\n                publishable_key,\n                maintenance_mode,\n                mail_from_host,\n                domain_verification_records,\n                email_verification_records,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n            RETURNING id, created_at, updated_at, deleted_at,\n                     maintenance_mode, backend_host, frontend_host, publishable_key, project_id, mode, mail_from_host,\n                     domain_verification_records::jsonb as domain_verification_records,\n                     email_verification_records::jsonb as email_verification_records,\n                     email_provider, custom_smtp_config::jsonb as custom_smtp_config\n            ",
+  "query": "\n            INSERT INTO deployments (\n                id,\n                project_id,\n                mode,\n                backend_host,\n                frontend_host,\n                publishable_key,\n                maintenance_mode,\n                mail_from_host,\n                domain_verification_records,\n                email_verification_records,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n            RETURNING id, created_at, updated_at, deleted_at,\n                     maintenance_mode, backend_host, frontend_host, publishable_key, project_id, mode, mail_from_host,\n                     email_provider, custom_smtp_config::jsonb as custom_smtp_config\n            ",
   "describe": {
     "columns": [
       {
@@ -60,21 +60,11 @@
       },
       {
         "ordinal": 11,
-        "name": "domain_verification_records",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 12,
-        "name": "email_verification_records",
-        "type_info": "Jsonb"
-      },
-      {
-        "ordinal": 13,
         "name": "email_provider",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 14,
+        "ordinal": 12,
         "name": "custom_smtp_config",
         "type_info": "Jsonb"
       }
@@ -107,11 +97,9 @@
       false,
       false,
       false,
-      true,
-      true,
       false,
       true
     ]
   },
-  "hash": "c1465359fc2957d11dcbb999bc1b2bf31bd83540c97f0c17071b49b669707513"
+  "hash": "786caa62fdb51fb9ef8b9d6665d358d3d6a3d21d95ee01e46c950b97bc5bb099"
 }

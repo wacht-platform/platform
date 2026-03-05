@@ -1,5 +1,7 @@
+pub mod capabilities;
 pub mod clickhouse;
 pub mod cloudflare;
+pub mod db_router;
 pub mod dns_verification;
 pub mod dodo;
 pub mod encryption;
@@ -11,8 +13,10 @@ pub mod tinybird;
 pub mod utils;
 pub mod validators;
 
+pub use capabilities::*;
 pub use clickhouse::*;
 pub use cloudflare::*;
+pub use db_router::*;
 pub use dns_verification::*;
 pub use dodo::*;
 pub use encryption::*;

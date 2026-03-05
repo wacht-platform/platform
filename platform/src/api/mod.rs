@@ -13,6 +13,7 @@ pub mod connection;
 pub mod enterprise_sso;
 pub mod health;
 pub mod mcp_servers;
+pub mod multipart;
 pub mod notifications;
 pub mod oauth;
 pub mod oauth_runtime;

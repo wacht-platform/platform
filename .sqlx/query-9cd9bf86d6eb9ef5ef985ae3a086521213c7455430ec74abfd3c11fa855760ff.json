@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM deployment_ui_settings\n            WHERE deployment_id = ANY($1::bigint[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9cd9bf86d6eb9ef5ef985ae3a086521213c7455430ec74abfd3c11fa855760ff"
+}
