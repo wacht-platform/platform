@@ -22,11 +22,6 @@ impl DeploymentAuthSettingsInsert {
         self.execute_with(tx.as_mut()).await
     }
 
-    #[allow(dead_code)]
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        self.execute_with(pool).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -137,11 +132,6 @@ impl DeploymentUiSettingsInsert {
         self.execute_with(tx.as_mut()).await
     }
 
-    #[allow(dead_code)]
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        self.execute_with(pool).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -249,11 +239,6 @@ impl DeploymentRestrictionsInsert {
         self.execute_with(tx.as_mut()).await
     }
 
-    #[allow(dead_code)]
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        self.execute_with(pool).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -351,11 +336,6 @@ impl DeploymentSmsTemplatesInsert {
         self.execute_with(tx.as_mut()).await
     }
 
-    #[allow(dead_code)]
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        self.execute_with(pool).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -436,11 +416,6 @@ impl DeploymentEmailTemplatesInsert {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<(), AppError> {
         self.execute_with(tx.as_mut()).await
-    }
-
-    #[allow(dead_code)]
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        self.execute_with(pool).await
     }
 
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
@@ -553,11 +528,6 @@ impl DeploymentAiSettingsInsert {
         self.execute_with(tx.as_mut()).await
     }
 
-    #[allow(dead_code)]
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        self.execute_with(pool).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -633,11 +603,6 @@ impl DeploymentKeyPairsInsert {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<(), AppError> {
         self.execute_with(tx.as_mut()).await
-    }
-
-    #[allow(dead_code)]
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        self.execute_with(pool).await
     }
 
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
@@ -770,7 +735,7 @@ impl DeploymentB2bBootstrapInsert {
     }
 
     #[allow(dead_code)]
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub(super) async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         let mut conn = pool.acquire().await?;
         self.execute_on_conn(&mut conn).await
     }
@@ -782,92 +747,37 @@ impl DeploymentB2bBootstrapInsert {
         let now = chrono::Utc::now();
         let deployment_id = self.b2b_settings.settings.deployment_id;
 
-        sqlx::query!(
-            r#"
-            INSERT INTO workspace_roles (
-                id,
-                deployment_id,
-                name,
-                permissions,
-                created_at,
-                updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            "#,
+        self.insert_workspace_role(
+            conn,
             self.workspace_creator_role_id,
             deployment_id,
-            &self.b2b_settings.default_workspace_creator_role.name,
-            &self.b2b_settings.default_workspace_creator_role.permissions,
-            now,
+            &self.b2b_settings.default_workspace_creator_role,
             now,
         )
-        .execute(&mut *conn)
         .await?;
-
-        sqlx::query!(
-            r#"
-            INSERT INTO workspace_roles (
-                id,
-                deployment_id,
-                name,
-                permissions,
-                created_at,
-                updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            "#,
+        self.insert_workspace_role(
+            conn,
             self.workspace_member_role_id,
             deployment_id,
-            &self.b2b_settings.default_workspace_member_role.name,
-            &self.b2b_settings.default_workspace_member_role.permissions,
-            now,
+            &self.b2b_settings.default_workspace_member_role,
             now,
         )
-        .execute(&mut *conn)
         .await?;
-
-        sqlx::query!(
-            r#"
-            INSERT INTO organization_roles (
-                id,
-                deployment_id,
-                name,
-                permissions,
-                created_at,
-                updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            "#,
+        self.insert_organization_role(
+            conn,
             self.org_creator_role_id,
             deployment_id,
-            &self.b2b_settings.default_org_creator_role.name,
-            &self.b2b_settings.default_org_creator_role.permissions,
-            now,
+            &self.b2b_settings.default_org_creator_role,
             now,
         )
-        .execute(&mut *conn)
         .await?;
-
-        sqlx::query!(
-            r#"
-            INSERT INTO organization_roles (
-                id,
-                deployment_id,
-                name,
-                permissions,
-                created_at,
-                updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            "#,
+        self.insert_organization_role(
+            conn,
             self.org_member_role_id,
             deployment_id,
-            &self.b2b_settings.default_org_member_role.name,
-            &self.b2b_settings.default_org_member_role.permissions,
-            now,
+            &self.b2b_settings.default_org_member_role,
             now,
         )
-        .execute(&mut *conn)
         .await?;
 
         sqlx::query!(
@@ -920,6 +830,72 @@ impl DeploymentB2bBootstrapInsert {
             self.b2b_settings.settings.workspaces_per_org_count,
             self.b2b_settings.settings.allow_users_to_create_orgs,
             self.b2b_settings.settings.max_orgs_per_user,
+            now,
+            now,
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn insert_workspace_role(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        id: i64,
+        deployment_id: i64,
+        role: &DeploymentWorkspaceRole,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), AppError> {
+        sqlx::query!(
+            r#"
+            INSERT INTO workspace_roles (
+                id,
+                deployment_id,
+                name,
+                permissions,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+            id,
+            deployment_id,
+            &role.name,
+            &role.permissions,
+            now,
+            now,
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn insert_organization_role(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        id: i64,
+        deployment_id: i64,
+        role: &DeploymentOrganizationRole,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), AppError> {
+        sqlx::query!(
+            r#"
+            INSERT INTO organization_roles (
+                id,
+                deployment_id,
+                name,
+                permissions,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+            id,
+            deployment_id,
+            &role.name,
+            &role.permissions,
             now,
             now,
         )
@@ -1018,7 +994,7 @@ impl ConsoleAppBootstrapInsert {
     }
 
     #[allow(dead_code)]
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub(super) async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         let mut conn = pool.acquire().await?;
         self.execute_on_conn(&mut conn).await
     }
@@ -1184,11 +1160,6 @@ impl DeploymentSocialConnectionsBulkInsert {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<(), AppError> {
         self.execute_with(tx.as_mut()).await
-    }
-
-    #[allow(dead_code)]
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        self.execute_with(pool).await
     }
 
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
@@ -1638,17 +1609,10 @@ impl ProjectForProductionQuery {
             .project_id
             .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?;
 
-        let row = sqlx::query!(
-            r#"
-            SELECT p.name, ba.status
-            FROM projects p
-            JOIN billing_accounts ba ON p.billing_account_id = ba.id
-            WHERE p.id = $1 AND p.deleted_at IS NULL
-            "#,
-            project_id
-        )
-        .fetch_optional(tx.as_mut())
-        .await?;
+        let row = ProjectWithBillingForStagingQuery::builder()
+            .project_id(project_id)
+            .execute_in_tx(tx)
+            .await?;
 
         Ok(row.map(|r| ProjectForProductionRow {
             name: r.name,
@@ -2039,7 +2003,7 @@ impl DeploymentByIdQuery {
         self
     }
 
-    pub(super) async fn execute_on_pool(
+    pub(super) async fn execute_with(
         &self,
         pool: &sqlx::PgPool,
     ) -> Result<DeploymentByIdRow, AppError> {
@@ -2115,7 +2079,7 @@ impl DeploymentDnsRecordsUpdate {
         self
     }
 
-    pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub(super) async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         let deployment_id = self
             .deployment_id
             .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;

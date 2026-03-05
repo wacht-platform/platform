@@ -7,23 +7,18 @@ use std::collections::HashMap;
 
 use crate::{
     api::pagination::paginate_results,
-    application::{
-        AppError,
-        response::{ApiResult, PaginatedResponse},
+    application::segments::{
+        assign_segment as run_assign_segment, create_segment as run_create_segment,
+        delete_segment as run_delete_segment, get_segment_data as run_get_segment_data,
+        list_segments as run_list_segments, remove_segment as run_remove_segment,
+        update_segment as run_update_segment, validate_segment_type,
     },
+    application::response::{ApiResult, PaginatedResponse},
     middleware::RequireDeployment,
-};
-use commands::{
-    Command,
-    segments::{
-        AssignSegmentCommand, CreateSegmentCommand, DeleteSegmentCommand, RemoveSegmentCommand,
-        UpdateSegmentCommand,
-    },
 };
 use common::state::AppState;
 use models::{AnalyzedEntity, Segment};
 use queries::{
-    Query,
     segments::{GetSegmentDataQuery, GetSegmentsQuery},
 };
 
@@ -101,16 +96,6 @@ fn resolve_segment_pagination(params: &SegmentQueryParams) -> (i64, i64) {
     (limit, offset)
 }
 
-fn validate_segment_type(segment_type: &str) -> Result<(), AppError> {
-    if matches!(segment_type, "organization" | "workspace" | "user") {
-        Ok(())
-    } else {
-        Err(AppError::BadRequest(
-            "Invalid segment type. Must be 'organization', 'workspace', or 'user'".into(),
-        ))
-    }
-}
-
 fn map_user_filter(
     filters: Option<&SegmentDataFilters>,
 ) -> Option<queries::segments::UserFilter> {
@@ -175,7 +160,7 @@ pub async fn get_segment_data(
 ) -> ApiResult<PaginatedResponse<AnalyzedEntity>> {
     let query = build_segment_data_query(deployment_id, payload);
 
-    let entities = query.execute(&state).await?;
+    let entities = run_get_segment_data(&state, query).await?;
 
     Ok(PaginatedResponse::from(entities).into())
 }
@@ -196,7 +181,7 @@ pub async fn list_segments(
         sort_order: params.sort_order,
     };
 
-    let segments = query.execute(&state).await?;
+    let segments = run_list_segments(&state, query).await?;
     Ok(paginate_results(segments, limit as i32, Some(offset)).into())
 }
 
@@ -207,13 +192,7 @@ pub async fn create_segment(
 ) -> ApiResult<Segment> {
     validate_segment_type(&payload.r#type)?;
 
-    let command = CreateSegmentCommand {
-        deployment_id,
-        name: payload.name,
-        r#type: payload.r#type,
-    };
-
-    let segment = command.execute(&state).await?;
+    let segment = run_create_segment(&state, deployment_id, payload.name, payload.r#type).await?;
 
     Ok(segment.into())
 }
@@ -224,13 +203,7 @@ pub async fn update_segment(
     Path(params): Path<SegmentParams>,
     Json(payload): Json<UpdateSegmentRequest>,
 ) -> ApiResult<Segment> {
-    let command = UpdateSegmentCommand {
-        id: params.id,
-        deployment_id,
-        name: payload.name,
-    };
-
-    let segment = command.execute(&state).await?;
+    let segment = run_update_segment(&state, params.id, deployment_id, payload.name).await?;
 
     Ok(segment.into())
 }
@@ -240,12 +213,7 @@ pub async fn delete_segment(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<SegmentParams>,
 ) -> ApiResult<serde_json::Value> {
-    let command = DeleteSegmentCommand {
-        id: params.id,
-        deployment_id,
-    };
-
-    let result = command.execute(&state).await?;
+    let result = run_delete_segment(&state, params.id, deployment_id).await?;
 
     Ok(result.into())
 }
@@ -256,13 +224,7 @@ pub async fn assign_segment(
     Path(params): Path<SegmentParams>,
     Json(payload): Json<AssignEntityRequest>,
 ) -> ApiResult<serde_json::Value> {
-    let command = AssignSegmentCommand {
-        segment_id: params.id,
-        deployment_id,
-        entity_id: payload.entity_id,
-    };
-
-    let result = command.execute(&state).await?;
+    let result = run_assign_segment(&state, params.id, deployment_id, payload.entity_id).await?;
 
     Ok(result.into())
 }
@@ -273,13 +235,7 @@ pub async fn remove_segment(
     Path(params): Path<SegmentParams>,
     Json(payload): Json<AssignEntityRequest>,
 ) -> ApiResult<serde_json::Value> {
-    let command = RemoveSegmentCommand {
-        segment_id: params.id,
-        deployment_id,
-        entity_id: payload.entity_id,
-    };
-
-    let result = command.execute(&state).await?;
+    let result = run_remove_segment(&state, params.id, deployment_id, payload.entity_id).await?;
 
     Ok(result.into())
 }

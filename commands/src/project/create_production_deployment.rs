@@ -5,7 +5,18 @@ pub struct CreateProductionDeploymentCommand {
     auth_methods: Vec<String>,
 }
 
+#[derive(Default)]
+pub struct CreateProductionDeploymentCommandBuilder {
+    project_id: Option<i64>,
+    custom_domain: Option<String>,
+    auth_methods: Option<Vec<String>>,
+}
+
 impl CreateProductionDeploymentCommand {
+    pub fn builder() -> CreateProductionDeploymentCommandBuilder {
+        CreateProductionDeploymentCommandBuilder::default()
+    }
+
     pub fn new(project_id: i64, custom_domain: String, auth_methods: Vec<String>) -> Self {
         Self {
             project_id,
@@ -45,7 +56,7 @@ impl CreateProductionDeploymentCommand {
 
     async fn cleanup_external_resources_on_failure(
         &self,
-        app_state: &AppState,
+        deps: &ProductionDeploymentDeps<'_>,
         frontend_hostname: &str,
         backend_hostname: &str,
         domain: &str,
@@ -53,7 +64,7 @@ impl CreateProductionDeploymentCommand {
     ) {
         tracing::warn!("Cleaning up external resources for domain: {}", domain);
 
-        if let Err(e) = app_state
+        if let Err(e) = deps
             .cloudflare_service
             .delete_custom_hostname(frontend_hostname)
             .await
@@ -70,7 +81,7 @@ impl CreateProductionDeploymentCommand {
             );
         }
 
-        if let Err(e) = app_state
+        if let Err(e) = deps
             .cloudflare_service
             .delete_custom_hostname(backend_hostname)
             .await
@@ -88,7 +99,7 @@ impl CreateProductionDeploymentCommand {
         }
 
         if let Some(domain_id) = postmark_domain_id {
-            if let Err(e) = app_state.postmark_service.delete_domain(domain_id).await {
+            if let Err(e) = deps.postmark_service.delete_domain(domain_id).await {
                 tracing::error!("Failed to cleanup Postmark domain {}: {}", domain_id, e);
             } else {
                 tracing::info!("Successfully cleaned up Postmark domain: {}", domain_id);
@@ -97,12 +108,12 @@ impl CreateProductionDeploymentCommand {
             tracing::info!("No Postmark domain to cleanup for: {}", domain);
         }
     }
-}
 
-impl Command for CreateProductionDeploymentCommand {
-    type Output = Deployment;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_in_tx(
+        self,
+        deps: &ProductionDeploymentDeps<'_>,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ) -> Result<Deployment, AppError> {
         let validator = ProjectValidator::new();
         validator.validate_domain_format(&self.custom_domain)?;
         validator.validate_auth_methods(&self.auth_methods)?;
@@ -123,11 +134,9 @@ impl Command for CreateProductionDeploymentCommand {
         let (public_key, private_key, saml_public_key, saml_private_key) =
             generate_deployment_key_pairs().await?;
 
-        let mut tx = app_state.db_pool.begin().await?;
-
         let project = ProjectForProductionQuery::builder()
             .project_id(self.project_id)
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?
             .ok_or_else(|| {
                 AppError::NotFound(format!("Project with id {} not found", self.project_id))
@@ -142,7 +151,7 @@ impl Command for CreateProductionDeploymentCommand {
 
         if ExistingProductionDeploymentQuery::builder()
             .project_id(self.project_id)
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?
             .is_some()
         {
@@ -153,7 +162,7 @@ impl Command for CreateProductionDeploymentCommand {
 
         if let Some(existing) = ExistingDomainDeploymentQuery::builder()
             .custom_domain(&self.custom_domain)
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?
         {
             return Err(AppError::BadRequest(format!(
@@ -166,7 +175,7 @@ impl Command for CreateProductionDeploymentCommand {
         let frontend_host = format!("accounts.{}", self.custom_domain);
         let mail_from_host = format!("wcmail.{}", self.custom_domain);
 
-        let domain_verification_records = app_state
+        let domain_verification_records = deps
             .cloudflare_service
             .generate_domain_verification_records(&frontend_host, &backend_host);
 
@@ -177,7 +186,7 @@ impl Command for CreateProductionDeploymentCommand {
         publishable_key.push_str(&base64_backend_host);
 
         let deployment_row = ProductionDeploymentInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(deps.ids.next_id()?)
             .project_id(self.project_id)
             .backend_host(backend_host)
             .frontend_host(frontend_host.clone())
@@ -191,15 +200,15 @@ impl Command for CreateProductionDeploymentCommand {
                 serde_json::to_value(&empty_email_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let auth_settings = self.create_auth_settings(deployment_row.id);
         DeploymentAuthSettingsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(deps.ids.next_id()?)
             .auth_settings(auth_settings)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let ui_settings = self.create_ui_settings(
@@ -211,76 +220,72 @@ impl Command for CreateProductionDeploymentCommand {
         let restrictions = self.create_restrictions(deployment_row.id);
         let email_templates = self.create_email_templates(deployment_row.id);
         let sms_templates = self.create_sms_templates(deployment_row.id);
-        // Use pre-generated key pair
         DeploymentKeyPairsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(deps.ids.next_id()?)
             .deployment_id(deployment_row.id)
             .public_key(public_key)
             .private_key(private_key)
             .saml_public_key(saml_public_key)
             .saml_private_key(saml_private_key)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let waitlist_url = format!("{}/waitlist", frontend_host);
         DeploymentUiSettingsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(deps.ids.next_id()?)
             .ui_settings(ui_settings)
             .waitlist_page_url(waitlist_url)
             .support_page_url("")
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         DeploymentB2bBootstrapInsert::builder()
-            .settings_row_id(app_state.sf.next_id()? as i64)
-            .workspace_creator_role_id(app_state.sf.next_id()? as i64)
-            .workspace_member_role_id(app_state.sf.next_id()? as i64)
-            .org_creator_role_id(app_state.sf.next_id()? as i64)
-            .org_member_role_id(app_state.sf.next_id()? as i64)
+            .settings_row_id(deps.ids.next_id()?)
+            .workspace_creator_role_id(deps.ids.next_id()?)
+            .workspace_member_role_id(deps.ids.next_id()?)
+            .org_creator_role_id(deps.ids.next_id()?)
+            .org_member_role_id(deps.ids.next_id()?)
             .b2b_settings(b2b_settings)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         DeploymentRestrictionsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(deps.ids.next_id()?)
             .restrictions(restrictions)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         DeploymentEmailTemplatesInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(deps.ids.next_id()?)
             .email_templates(email_templates)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         DeploymentSmsTemplatesInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(deps.ids.next_id()?)
             .sms_templates(sms_templates)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         DeploymentAiSettingsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(deps.ids.next_id()?)
             .deployment_id(deployment_row.id)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
-        // Production deployments do not auto-provision social connections.
-        // Social providers must be configured explicitly later with custom credentials.
-
-        let postmark_domain = app_state
+        let postmark_domain = deps
             .postmark_service
             .create_domain(&mail_from_host)
             .await?;
         let postmark_domain_id = postmark_domain.id;
-        let email_verification_records = app_state
+        let email_verification_records = deps
             .postmark_service
             .generate_email_verification_records(&postmark_domain);
 
@@ -290,13 +295,13 @@ impl Command for CreateProductionDeploymentCommand {
                 serde_json::to_value(&email_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let frontend_hostname = format!("accounts.{}", self.custom_domain);
         let backend_hostname = format!("frontend.{}", self.custom_domain);
 
-        let frontend_hostname_result = app_state
+        let frontend_hostname_result = deps
             .cloudflare_service
             .create_custom_hostname(&frontend_hostname, "accounts.wacht.services")
             .await;
@@ -319,7 +324,7 @@ impl Command for CreateProductionDeploymentCommand {
             }
         };
 
-        let backend_hostname_result = app_state
+        let backend_hostname_result = deps
             .cloudflare_service
             .create_custom_hostname(&backend_hostname, "frontend.wacht.services")
             .await;
@@ -335,7 +340,7 @@ impl Command for CreateProductionDeploymentCommand {
             Err(e) => {
                 tracing::error!("Failed to create backend custom hostname: {}", e);
                 self.cleanup_external_resources_on_failure(
-                    app_state,
+                    deps,
                     &frontend_hostname,
                     &backend_hostname,
                     &self.custom_domain,
@@ -364,7 +369,7 @@ impl Command for CreateProductionDeploymentCommand {
                 serde_json::to_value(&updated_domain_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let console_id = console_deployment_id()?;
@@ -374,10 +379,8 @@ impl Command for CreateProductionDeploymentCommand {
             .target_deployment_id(deployment_row.id)
             .event_catalog_slug(DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
-
-        tx.commit().await?;
 
         tracing::info!(
             "Successfully created production deployment for domain: {} with hostnames: {}, {}",
@@ -408,5 +411,53 @@ impl Command for CreateProductionDeploymentCommand {
                     c
                 }),
         })
+    }
+}
+
+impl CreateProductionDeploymentCommandBuilder {
+    pub fn project_id(mut self, project_id: i64) -> Self {
+        self.project_id = Some(project_id);
+        self
+    }
+
+    pub fn custom_domain(mut self, custom_domain: impl Into<String>) -> Self {
+        self.custom_domain = Some(custom_domain.into());
+        self
+    }
+
+    pub fn auth_methods(mut self, auth_methods: Vec<String>) -> Self {
+        self.auth_methods = Some(auth_methods);
+        self
+    }
+
+    pub fn build(self) -> Result<CreateProductionDeploymentCommand, AppError> {
+        Ok(CreateProductionDeploymentCommand {
+            project_id: self
+                .project_id
+                .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?,
+            custom_domain: self
+                .custom_domain
+                .ok_or_else(|| AppError::Validation("custom_domain is required".to_string()))?,
+            auth_methods: self
+                .auth_methods
+                .ok_or_else(|| AppError::Validation("auth_methods are required".to_string()))?,
+        })
+    }
+}
+
+impl Command for CreateProductionDeploymentCommand {
+    type Output = Deployment;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let mut tx = app_state.db_router.writer().begin().await?;
+        let ids = AppStateIdGenerator::new(app_state);
+        let deps = ProductionDeploymentDeps {
+            ids: &ids,
+            cloudflare_service: &app_state.cloudflare_service,
+            postmark_service: &app_state.postmark_service,
+        };
+        let result = self.execute_in_tx(&deps, &mut tx).await?;
+        tx.commit().await?;
+        Ok(result)
     }
 }

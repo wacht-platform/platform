@@ -2012,7 +2012,7 @@ impl AgentExecutor {
     }
 
     pub(super) async fn create_reasoning_llm(&self) -> Result<GeminiClient, AppError> {
-        self.ctx.create_llm("gemini-3-pro-preview").await
+        self.ctx.create_llm("gemini-3.1-pro-preview").await
     }
 }
 

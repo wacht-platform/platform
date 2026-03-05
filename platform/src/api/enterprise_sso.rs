@@ -3,29 +3,31 @@ use axum::{
     extract::{Path, Query, State},
 };
 use commands::{
-    Command,
     enterprise_connection::{
-        CreateEnterpriseConnectionCommand, CreateEnterpriseConnectionRequest,
-        DeleteEnterpriseConnectionCommand, DeleteEnterpriseConnectionRequest,
-        UpdateEnterpriseConnectionCommand, UpdateEnterpriseConnectionRequest,
+        CreateEnterpriseConnectionRequest, DeleteEnterpriseConnectionRequest,
+        UpdateEnterpriseConnectionRequest,
     },
     organization_domain::{
-        CreateOrganizationDomainCommand, CreateOrganizationDomainRequest,
-        CreateOrganizationDomainResponse, DeleteOrganizationDomainCommand,
-        DeleteOrganizationDomainRequest, VerifyOrganizationDomainCommand,
-        VerifyOrganizationDomainRequest, VerifyOrganizationDomainResponse,
+        CreateOrganizationDomainRequest, CreateOrganizationDomainResponse,
+        DeleteOrganizationDomainRequest, VerifyOrganizationDomainRequest,
+        VerifyOrganizationDomainResponse,
     },
+    scim_token::{GenerateScimTokenRequest, RevokeScimTokenRequest},
 };
 use common::state::AppState;
 use models::{
     enterprise_connection::EnterpriseConnection, organization_domain::OrganizationDomain,
     scim_token::ScimToken,
 };
-use queries::{ListEnterpriseConnectionsQuery, ListOrganizationDomainsQuery, Query as QueryTrait};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::api::pagination::paginate_results;
+use crate::application::enterprise_sso::{
+    ListInput, create_connection, create_domain, delete_connection, delete_domain,
+    generate_scim_token, get_scim_token, list_connections, list_domains, revoke_scim_token,
+    update_connection, verify_domain,
+};
 use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::RequireDeployment;
 
@@ -104,11 +106,8 @@ pub async fn list_domains_handler(
 ) -> ApiResult<PaginatedResponse<OrganizationDomain>> {
     let (limit, offset) = resolve_list_pagination(&query_params);
 
-    let domains = ListOrganizationDomainsQuery::new(deployment_id, params.org_id)
-        .limit(limit + 1)
-        .offset(offset)
-        .execute(&app_state)
-        .await?;
+    let input = ListInput::new(deployment_id, params.org_id, limit + 1, offset);
+    let domains = list_domains(&app_state, input).await?;
 
     Ok(paginate_results(domains, limit, Some(offset)).into())
 }
@@ -120,9 +119,7 @@ pub async fn create_domain_handler(
     Json(mut req): Json<CreateOrganizationDomainRequest>,
 ) -> ApiResult<CreateOrganizationDomainResponse> {
     req.organization_id = params.org_id;
-    let created = CreateOrganizationDomainCommand::new(deployment_id, req)
-        .execute(&app_state)
-        .await?;
+    let created = create_domain(&app_state, deployment_id, req).await?;
     Ok(created.into())
 }
 
@@ -135,9 +132,7 @@ pub async fn delete_domain_handler(
         organization_id: params.org_id,
         domain_id: params.domain_id,
     };
-    DeleteOrganizationDomainCommand::new(deployment_id, req)
-        .execute(&app_state)
-        .await?;
+    delete_domain(&app_state, deployment_id, req).await?;
     Ok(().into())
 }
 
@@ -150,9 +145,7 @@ pub async fn verify_domain_handler(
         organization_id: params.org_id,
         domain_id: params.domain_id,
     };
-    let verified = VerifyOrganizationDomainCommand::new(deployment_id, req)
-        .execute(&app_state)
-        .await?;
+    let verified = verify_domain(&app_state, deployment_id, req).await?;
     Ok(verified.into())
 }
 
@@ -166,11 +159,8 @@ pub async fn list_connections_handler(
 ) -> ApiResult<PaginatedResponse<EnterpriseConnection>> {
     let (limit, offset) = resolve_list_pagination(&query_params);
 
-    let connections = ListEnterpriseConnectionsQuery::new(deployment_id, params.org_id)
-        .limit(limit + 1)
-        .offset(offset)
-        .execute(&app_state)
-        .await?;
+    let input = ListInput::new(deployment_id, params.org_id, limit + 1, offset);
+    let connections = list_connections(&app_state, input).await?;
 
     Ok(paginate_results(connections, limit, Some(offset)).into())
 }
@@ -182,9 +172,7 @@ pub async fn create_connection_handler(
     Json(mut req): Json<CreateEnterpriseConnectionRequest>,
 ) -> ApiResult<EnterpriseConnection> {
     req.organization_id = params.org_id;
-    let connection = CreateEnterpriseConnectionCommand::new(deployment_id, req)
-        .execute(&app_state)
-        .await?;
+    let connection = create_connection(&app_state, deployment_id, req).await?;
     Ok(connection.into())
 }
 
@@ -196,9 +184,7 @@ pub async fn update_connection_handler(
 ) -> ApiResult<EnterpriseConnection> {
     req.organization_id = params.org_id;
     req.connection_id = params.connection_id;
-    let connection = UpdateEnterpriseConnectionCommand::new(deployment_id, req)
-        .execute(&app_state)
-        .await?;
+    let connection = update_connection(&app_state, deployment_id, req).await?;
     Ok(connection.into())
 }
 
@@ -211,9 +197,7 @@ pub async fn delete_connection_handler(
         organization_id: params.org_id,
         connection_id: params.connection_id,
     };
-    DeleteEnterpriseConnectionCommand::new(deployment_id, req)
-        .execute(&app_state)
-        .await?;
+    delete_connection(&app_state, deployment_id, req).await?;
     Ok(().into())
 }
 
@@ -242,9 +226,7 @@ pub async fn get_scim_token_handler(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ConnectionParams>,
 ) -> ApiResult<ScimTokenInfoResponse> {
-    let token = queries::GetScimTokenQuery::new(deployment_id, params.org_id, params.connection_id)
-        .execute(&app_state)
-        .await?;
+    let token = get_scim_token(&app_state, deployment_id, params.org_id, params.connection_id).await?;
 
     let response = build_scim_token_response(
         params.connection_id,
@@ -259,16 +241,12 @@ pub async fn generate_scim_token_handler(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ConnectionParams>,
 ) -> ApiResult<ScimTokenInfoResponse> {
-    use commands::scim_token::{GenerateScimTokenCommand, GenerateScimTokenRequest};
-
     let req = GenerateScimTokenRequest {
         organization_id: params.org_id,
         connection_id: params.connection_id,
     };
 
-    let result = GenerateScimTokenCommand::new(deployment_id, req)
-        .execute(&app_state)
-        .await?;
+    let result = generate_scim_token(&app_state, deployment_id, req).await?;
 
     let token = build_scim_token_details(&result.token, Some(result.plain_token));
     let response = build_scim_token_response(params.connection_id, Some(token));
@@ -281,15 +259,11 @@ pub async fn revoke_scim_token_handler(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ConnectionParams>,
 ) -> ApiResult<()> {
-    use commands::scim_token::{RevokeScimTokenCommand, RevokeScimTokenRequest};
-
     let req = RevokeScimTokenRequest {
         organization_id: params.org_id,
         connection_id: params.connection_id,
     };
 
-    RevokeScimTokenCommand::new(deployment_id, req)
-        .execute(&app_state)
-        .await?;
+    revoke_scim_token(&app_state, deployment_id, req).await?;
     Ok(().into())
 }

@@ -17,11 +17,21 @@ pub struct CreateEnterpriseConnectionRequest {
 }
 
 pub struct CreateEnterpriseConnectionCommand {
-    pub deployment_id: i64,
-    pub request: CreateEnterpriseConnectionRequest,
+    deployment_id: i64,
+    request: CreateEnterpriseConnectionRequest,
+}
+
+#[derive(Default)]
+pub struct CreateEnterpriseConnectionCommandBuilder {
+    deployment_id: Option<i64>,
+    request: Option<CreateEnterpriseConnectionRequest>,
 }
 
 impl CreateEnterpriseConnectionCommand {
+    pub fn builder() -> CreateEnterpriseConnectionCommandBuilder {
+        CreateEnterpriseConnectionCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, request: CreateEnterpriseConnectionRequest) -> Self {
         Self {
             deployment_id,
@@ -34,7 +44,17 @@ impl Command for CreateEnterpriseConnectionCommand {
     type Output = EnterpriseConnection;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let connection_id = app_state.sf.next_id()? as i64;
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl CreateEnterpriseConnectionCommand {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        connection_id: i64,
+    ) -> Result<EnterpriseConnection, AppError> {
         let now = Utc::now();
 
         let connection = sqlx::query_as::<_, EnterpriseConnection>(
@@ -65,10 +85,33 @@ impl Command for CreateEnterpriseConnectionCommand {
         .bind(self.request.idp_certificate)
         .bind(now)
         .bind(now)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?;
 
         Ok(connection)
+    }
+}
+
+impl CreateEnterpriseConnectionCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn request(mut self, request: CreateEnterpriseConnectionRequest) -> Self {
+        self.request = Some(request);
+        self
+    }
+
+    pub fn build(self) -> Result<CreateEnterpriseConnectionCommand, AppError> {
+        Ok(CreateEnterpriseConnectionCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            request: self
+                .request
+                .ok_or_else(|| AppError::Validation("request is required".to_string()))?,
+        })
     }
 }
 
@@ -84,11 +127,21 @@ pub struct UpdateEnterpriseConnectionRequest {
 }
 
 pub struct UpdateEnterpriseConnectionCommand {
-    pub deployment_id: i64,
-    pub request: UpdateEnterpriseConnectionRequest,
+    deployment_id: i64,
+    request: UpdateEnterpriseConnectionRequest,
+}
+
+#[derive(Default)]
+pub struct UpdateEnterpriseConnectionCommandBuilder {
+    deployment_id: Option<i64>,
+    request: Option<UpdateEnterpriseConnectionRequest>,
 }
 
 impl UpdateEnterpriseConnectionCommand {
+    pub fn builder() -> UpdateEnterpriseConnectionCommandBuilder {
+        UpdateEnterpriseConnectionCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, request: UpdateEnterpriseConnectionRequest) -> Self {
         Self {
             deployment_id,
@@ -101,6 +154,15 @@ impl Command for UpdateEnterpriseConnectionCommand {
     type Output = EnterpriseConnection;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateEnterpriseConnectionCommand {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+    ) -> Result<EnterpriseConnection, AppError> {
         let connection = sqlx::query_as::<_, EnterpriseConnection>(
             r#"
             UPDATE enterprise_connections
@@ -120,10 +182,33 @@ impl Command for UpdateEnterpriseConnectionCommand {
         .bind(self.request.connection_id)
         .bind(self.request.organization_id)
         .bind(self.deployment_id)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?;
 
         Ok(connection)
+    }
+}
+
+impl UpdateEnterpriseConnectionCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn request(mut self, request: UpdateEnterpriseConnectionRequest) -> Self {
+        self.request = Some(request);
+        self
+    }
+
+    pub fn build(self) -> Result<UpdateEnterpriseConnectionCommand, AppError> {
+        Ok(UpdateEnterpriseConnectionCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            request: self
+                .request
+                .ok_or_else(|| AppError::Validation("request is required".to_string()))?,
+        })
     }
 }
 
@@ -134,11 +219,21 @@ pub struct DeleteEnterpriseConnectionRequest {
 }
 
 pub struct DeleteEnterpriseConnectionCommand {
-    pub deployment_id: i64,
-    pub request: DeleteEnterpriseConnectionRequest,
+    deployment_id: i64,
+    request: DeleteEnterpriseConnectionRequest,
+}
+
+#[derive(Default)]
+pub struct DeleteEnterpriseConnectionCommandBuilder {
+    deployment_id: Option<i64>,
+    request: Option<DeleteEnterpriseConnectionRequest>,
 }
 
 impl DeleteEnterpriseConnectionCommand {
+    pub fn builder() -> DeleteEnterpriseConnectionCommandBuilder {
+        DeleteEnterpriseConnectionCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, request: DeleteEnterpriseConnectionRequest) -> Self {
         Self {
             deployment_id,
@@ -151,6 +246,12 @@ impl Command for DeleteEnterpriseConnectionCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl DeleteEnterpriseConnectionCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         let result = sqlx::query!(
             r#"
             DELETE FROM enterprise_connections
@@ -160,7 +261,7 @@ impl Command for DeleteEnterpriseConnectionCommand {
             self.request.organization_id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -170,5 +271,28 @@ impl Command for DeleteEnterpriseConnectionCommand {
         }
 
         Ok(())
+    }
+}
+
+impl DeleteEnterpriseConnectionCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn request(mut self, request: DeleteEnterpriseConnectionRequest) -> Self {
+        self.request = Some(request);
+        self
+    }
+
+    pub fn build(self) -> Result<DeleteEnterpriseConnectionCommand, AppError> {
+        Ok(DeleteEnterpriseConnectionCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            request: self
+                .request
+                .ok_or_else(|| AppError::Validation("request is required".to_string()))?,
+        })
     }
 }

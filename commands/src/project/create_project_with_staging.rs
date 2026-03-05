@@ -5,7 +5,18 @@ pub struct CreateProjectWithStagingDeploymentCommand {
     owner_id: Option<String>,
 }
 
+#[derive(Default)]
+pub struct CreateProjectWithStagingDeploymentCommandBuilder {
+    name: Option<String>,
+    auth_methods: Option<Vec<String>>,
+    owner_id: Option<String>,
+}
+
 impl CreateProjectWithStagingDeploymentCommand {
+    pub fn builder() -> CreateProjectWithStagingDeploymentCommandBuilder {
+        CreateProjectWithStagingDeploymentCommandBuilder::default()
+    }
+
     pub fn new(name: String, auth_methods: Vec<String>) -> Self {
         Self {
             name,
@@ -59,22 +70,20 @@ impl CreateProjectWithStagingDeploymentCommand {
             .filter(|value| !value.is_empty())
             .ok_or_else(|| AppError::Validation("Invalid owner id format".to_string()))
     }
-}
 
-impl Command for CreateProjectWithStagingDeploymentCommand {
-    type Output = ProjectWithDeployments;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_in_tx(
+        self,
+        ids: &dyn IdGenerator,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ) -> Result<ProjectWithDeployments, AppError> {
         let validator = ProjectValidator::new();
         validator.validate_project_name(&self.name)?;
         validator.validate_auth_methods(&self.auth_methods)?;
 
-        let project_id = app_state.sf.next_id()? as i64;
+        let project_id = ids.next_id()?;
 
         let (public_key, private_key, saml_public_key, saml_private_key) =
             generate_deployment_key_pairs().await?;
-
-        let mut tx = app_state.db_pool.begin().await?;
 
         let owner_id = self
             .owner_id
@@ -82,7 +91,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             .ok_or_else(|| AppError::Validation("Project must have an owner".to_string()))?;
         let billing_account = BillingAccountForOwnerLockQuery::builder()
             .owner_id(owner_id)
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?
             .ok_or_else(|| AppError::Validation("No billing account found".to_string()))?;
 
@@ -102,7 +111,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         let billing_account_id = billing_account.id;
         let project_count = ProjectsCountByBillingAccountQuery::builder()
             .billing_account_id(billing_account_id)
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         if project_count >= MAX_PROJECTS_PER_BILLING_ACCOUNT {
@@ -117,7 +126,7 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             .name(self.name.clone())
             .owner_id_fragment(self.owner_id_fragment()?)
             .billing_account_id(billing_account_id)
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let hostname = generate_nanoid();
@@ -130,21 +139,21 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         publishable_key.push_str(&base64_backend_host);
 
         let deployment_row = StagingDeploymentInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .project_id(project_row.id)
             .backend_host(backend_host)
             .frontend_host(frontend_host)
             .publishable_key(publishable_key)
             .mail_from_host("staging.wacht.services")
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let auth_settings = self.create_auth_settings(deployment_row.id);
         DeploymentAuthSettingsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .auth_settings(auth_settings)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let ui_settings = self.create_ui_settings(
@@ -153,21 +162,21 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         );
         let waitlist_url = format!("https://{}.accounts.trywacht.xyz/waitlist", hostname);
         DeploymentUiSettingsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .ui_settings(ui_settings)
             .waitlist_page_url(waitlist_url)
             .support_page_url("")
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let restrictions = self.create_restrictions(deployment_row.id);
 
         DeploymentRestrictionsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .restrictions(restrictions)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let b2b_settings = self.create_b2b_settings(deployment_row.id);
@@ -175,52 +184,51 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
         let sms_templates = self.create_sms_templates(deployment_row.id);
 
         DeploymentSmsTemplatesInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .sms_templates(sms_templates)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
-        // Use pre-generated key pair
         DeploymentKeyPairsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .deployment_id(deployment_row.id)
             .public_key(public_key)
             .private_key(private_key)
             .saml_public_key(saml_public_key)
             .saml_private_key(saml_private_key)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let email_templates = self.create_email_templates(deployment_row.id);
 
         DeploymentEmailTemplatesInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .email_templates(email_templates)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         DeploymentB2bBootstrapInsert::builder()
-            .settings_row_id(app_state.sf.next_id()? as i64)
-            .workspace_creator_role_id(app_state.sf.next_id()? as i64)
-            .workspace_member_role_id(app_state.sf.next_id()? as i64)
-            .org_creator_role_id(app_state.sf.next_id()? as i64)
-            .org_member_role_id(app_state.sf.next_id()? as i64)
+            .settings_row_id(ids.next_id()?)
+            .workspace_creator_role_id(ids.next_id()?)
+            .workspace_member_role_id(ids.next_id()?)
+            .org_creator_role_id(ids.next_id()?)
+            .org_member_role_id(ids.next_id()?)
             .b2b_settings(b2b_settings)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         if let Some(social_connections_insert) =
             DeploymentSocialConnectionsBulkInsert::from_auth_methods(
                 deployment_row.id,
                 &self.auth_methods,
-                || Ok(app_state.sf.next_id()? as i64),
+                || ids.next_id(),
             )?
         {
-            social_connections_insert.execute_in_tx(&mut tx).await?;
+            social_connections_insert.execute_in_tx(tx).await?;
         }
 
         let console_id = console_deployment_id()?;
@@ -230,17 +238,15 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             .target_deployment_id(deployment_row.id)
             .event_catalog_slug(DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         DeploymentAiSettingsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .deployment_id(deployment_row.id)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
-
-        tx.commit().await?;
 
         let deployment = Deployment {
             id: deployment_row.id,
@@ -269,5 +275,46 @@ impl Command for CreateProjectWithStagingDeploymentCommand {
             billing_account_id,
             deployments: vec![deployment],
         })
+    }
+}
+
+impl CreateProjectWithStagingDeploymentCommandBuilder {
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn auth_methods(mut self, auth_methods: Vec<String>) -> Self {
+        self.auth_methods = Some(auth_methods);
+        self
+    }
+
+    pub fn owner_id(mut self, owner_id: impl Into<String>) -> Self {
+        self.owner_id = Some(owner_id.into());
+        self
+    }
+
+    pub fn build(self) -> Result<CreateProjectWithStagingDeploymentCommand, AppError> {
+        Ok(CreateProjectWithStagingDeploymentCommand {
+            name: self
+                .name
+                .ok_or_else(|| AppError::Validation("name is required".to_string()))?,
+            auth_methods: self
+                .auth_methods
+                .ok_or_else(|| AppError::Validation("auth_methods are required".to_string()))?,
+            owner_id: self.owner_id,
+        })
+    }
+}
+
+impl Command for CreateProjectWithStagingDeploymentCommand {
+    type Output = ProjectWithDeployments;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let mut tx = app_state.db_router.writer().begin().await?;
+        let ids = AppStateIdGenerator::new(app_state);
+        let result = self.execute_in_tx(&ids, &mut tx).await?;
+        tx.commit().await?;
+        Ok(result)
     }
 }

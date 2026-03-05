@@ -3,20 +3,29 @@ pub struct VerifyDeploymentDnsRecordsCommand {
     deployment_id: i64,
 }
 
+#[derive(Default)]
+pub struct VerifyDeploymentDnsRecordsCommandBuilder {
+    deployment_id: Option<i64>,
+}
+
 impl VerifyDeploymentDnsRecordsCommand {
+    pub fn builder() -> VerifyDeploymentDnsRecordsCommandBuilder {
+        VerifyDeploymentDnsRecordsCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
     }
-}
 
-impl Command for VerifyDeploymentDnsRecordsCommand {
-    type Output = Deployment;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(
+        self,
+        deps: &VerifyDeploymentDnsDeps<'_>,
+        pool: &sqlx::PgPool,
+    ) -> Result<Deployment, AppError> {
         // Get current deployment with DNS records
         let deployment_row = DeploymentByIdQuery::builder()
             .deployment_id(self.deployment_id)
-            .execute_on_pool(&app_state.db_pool)
+            .execute_with(pool)
             .await?;
 
         // Extract domain from backend host for email verification
@@ -34,8 +43,7 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
             .domain_verification_records
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_else(|| {
-                app_state
-                    .cloudflare_service
+                deps.cloudflare_service
                     .generate_domain_verification_records(
                         &deployment_row.frontend_host,
                         &deployment_row.backend_host,
@@ -47,12 +55,10 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
 
-        // Verify domain records using DNS verification service with Cloudflare integration
-        app_state
-            .dns_verification_service
+        deps.dns_verification_service
             .verify_domain_records(
                 &mut domain_verification_records,
-                &app_state.cloudflare_service,
+                deps.cloudflare_service,
             )
             .await
             .map_err(|e| {
@@ -61,9 +67,7 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
             })
             .unwrap_or(());
 
-        // Verify email records using DNS verification service
-        app_state
-            .dns_verification_service
+        deps.dns_verification_service
             .verify_email_records(&mut email_verification_records)
             .await
             .map_err(|e| {
@@ -74,13 +78,10 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
 
         tracing::info!("DNS verification completed for domain: {}", domain);
 
-        // Determine verification status based on record verification
-        let domain_verified = app_state
+        let domain_verified = deps
             .dns_verification_service
             .are_domain_records_verified(&domain_verification_records);
-
-        // Check Postmark email verification status
-        let email_verified = app_state
+        let email_verified = deps
             .dns_verification_service
             .are_email_records_verified(&email_verification_records);
 
@@ -90,7 +91,6 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
             "in_progress"
         };
 
-        // Update the deployment with verified records (status update commented out until DB migration)
         DeploymentDnsRecordsUpdate::builder()
             .deployment_id(self.deployment_id)
             .domain_verification_records(
@@ -101,7 +101,7 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
                 serde_json::to_value(&email_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_on_pool(&app_state.db_pool)
+            .execute_with(pool)
             .await?;
 
         let _final_verification_status = match verification_status {
@@ -139,6 +139,33 @@ impl Command for VerifyDeploymentDnsRecordsCommand {
                     c.password = String::new();
                     c
                 }),
+        })
+    }
+}
+
+impl Command for VerifyDeploymentDnsRecordsCommand {
+    type Output = Deployment;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let deps = VerifyDeploymentDnsDeps {
+            cloudflare_service: &app_state.cloudflare_service,
+            dns_verification_service: &app_state.dns_verification_service,
+        };
+        self.execute_with(&deps, app_state.db_router.writer()).await
+    }
+}
+
+impl VerifyDeploymentDnsRecordsCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn build(self) -> Result<VerifyDeploymentDnsRecordsCommand, AppError> {
+        Ok(VerifyDeploymentDnsRecordsCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
         })
     }
 }

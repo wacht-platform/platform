@@ -1,5 +1,14 @@
 mod error;
+pub mod agent_integrations;
+pub mod analytics;
+pub mod ai_settings;
+pub mod connection;
+pub mod enterprise_sso;
+pub mod notifications;
+pub mod project;
 pub mod response;
+pub mod session_tickets;
+pub mod segments;
 mod router;
 
 pub use common::error::AppError;

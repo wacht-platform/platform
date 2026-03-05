@@ -20,11 +20,21 @@ pub struct GenerateScimTokenResponse {
 }
 
 pub struct GenerateScimTokenCommand {
-    pub deployment_id: i64,
-    pub request: GenerateScimTokenRequest,
+    deployment_id: i64,
+    request: GenerateScimTokenRequest,
+}
+
+#[derive(Default)]
+pub struct GenerateScimTokenCommandBuilder {
+    deployment_id: Option<i64>,
+    request: Option<GenerateScimTokenRequest>,
 }
 
 impl GenerateScimTokenCommand {
+    pub fn builder() -> GenerateScimTokenCommandBuilder {
+        GenerateScimTokenCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, request: GenerateScimTokenRequest) -> Self {
         Self {
             deployment_id,
@@ -51,6 +61,17 @@ impl Command for GenerateScimTokenCommand {
     type Output = GenerateScimTokenResponse;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl GenerateScimTokenCommand {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        token_id: i64,
+    ) -> Result<GenerateScimTokenResponse, AppError> {
         // Delete any existing token for this connection
         sqlx::query!(
             r#"
@@ -59,12 +80,11 @@ impl Command for GenerateScimTokenCommand {
             "#,
             self.request.connection_id
         )
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         // Generate new token
         let (plain_token, token_prefix, token_hash) = Self::generate_token();
-        let token_id = app_state.sf.next_id()? as i64;
         let now = Utc::now();
 
         let token = sqlx::query_as::<_, ScimToken>(
@@ -93,10 +113,33 @@ impl Command for GenerateScimTokenCommand {
         .bind(true)
         .bind(now)
         .bind(now)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?;
 
         Ok(GenerateScimTokenResponse { token, plain_token })
+    }
+}
+
+impl GenerateScimTokenCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn request(mut self, request: GenerateScimTokenRequest) -> Self {
+        self.request = Some(request);
+        self
+    }
+
+    pub fn build(self) -> Result<GenerateScimTokenCommand, AppError> {
+        Ok(GenerateScimTokenCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            request: self
+                .request
+                .ok_or_else(|| AppError::Validation("request is required".to_string()))?,
+        })
     }
 }
 
@@ -107,11 +150,21 @@ pub struct RevokeScimTokenRequest {
 }
 
 pub struct RevokeScimTokenCommand {
-    pub deployment_id: i64,
-    pub request: RevokeScimTokenRequest,
+    deployment_id: i64,
+    request: RevokeScimTokenRequest,
+}
+
+#[derive(Default)]
+pub struct RevokeScimTokenCommandBuilder {
+    deployment_id: Option<i64>,
+    request: Option<RevokeScimTokenRequest>,
 }
 
 impl RevokeScimTokenCommand {
+    pub fn builder() -> RevokeScimTokenCommandBuilder {
+        RevokeScimTokenCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, request: RevokeScimTokenRequest) -> Self {
         Self {
             deployment_id,
@@ -124,6 +177,12 @@ impl Command for RevokeScimTokenCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RevokeScimTokenCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         let result = sqlx::query!(
             r#"
             DELETE FROM scim_tokens
@@ -135,7 +194,7 @@ impl Command for RevokeScimTokenCommand {
             self.request.organization_id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -143,5 +202,28 @@ impl Command for RevokeScimTokenCommand {
         }
 
         Ok(())
+    }
+}
+
+impl RevokeScimTokenCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn request(mut self, request: RevokeScimTokenRequest) -> Self {
+        self.request = Some(request);
+        self
+    }
+
+    pub fn build(self) -> Result<RevokeScimTokenCommand, AppError> {
+        Ok(RevokeScimTokenCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            request: self
+                .request
+                .ok_or_else(|| AppError::Validation("request is required".to_string()))?,
+        })
     }
 }

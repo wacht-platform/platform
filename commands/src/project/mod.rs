@@ -1,4 +1,5 @@
 use common::error::AppError;
+use common::{CloudflareService, DnsVerificationService, PostmarkService};
 use common::state::AppState;
 use common::validators::ProjectValidator;
 use models::{
@@ -16,6 +17,37 @@ use std::env;
 use std::str::FromStr;
 
 use super::Command;
+
+pub trait IdGenerator: Send + Sync {
+    fn next_id(&self) -> Result<i64, AppError>;
+}
+
+pub struct AppStateIdGenerator<'a> {
+    app_state: &'a AppState,
+}
+
+impl<'a> AppStateIdGenerator<'a> {
+    pub fn new(app_state: &'a AppState) -> Self {
+        Self { app_state }
+    }
+}
+
+impl IdGenerator for AppStateIdGenerator<'_> {
+    fn next_id(&self) -> Result<i64, AppError> {
+        Ok(self.app_state.sf.next_id()? as i64)
+    }
+}
+
+pub struct ProductionDeploymentDeps<'a> {
+    pub ids: &'a dyn IdGenerator,
+    pub cloudflare_service: &'a CloudflareService,
+    pub postmark_service: &'a PostmarkService,
+}
+
+pub struct VerifyDeploymentDnsDeps<'a> {
+    pub cloudflare_service: &'a CloudflareService,
+    pub dns_verification_service: &'a DnsVerificationService,
+}
 
 const DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG: &str = "default";
 const MAX_PROJECTS_PER_BILLING_ACCOUNT: i64 = 5;

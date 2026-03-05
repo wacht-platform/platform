@@ -329,6 +329,7 @@ fn is_displayable_message_type(content: &ConversationContent) -> bool {
         ConversationContent::UserMessage { .. }
             | ConversationContent::AgentResponse { .. }
             | ConversationContent::AssistantAcknowledgment { .. }
+            | ConversationContent::SystemDecision { .. }
             | ConversationContent::UserInputRequest { .. }
     )
 }

@@ -1,17 +1,48 @@
 use crate::Command;
-use common::error::AppError;
+use common::{EncryptionService, error::AppError};
 use common::state::AppState;
 use models::{DeploymentAiSettings, UpdateDeploymentAiSettingsRequest};
 
+pub trait AiSettingsEncryptor: Send + Sync {
+    fn encrypt(&self, plaintext: &str) -> Result<String, AppError>;
+}
+
+impl AiSettingsEncryptor for EncryptionService {
+    fn encrypt(&self, plaintext: &str) -> Result<String, AppError> {
+        EncryptionService::encrypt(self, plaintext)
+    }
+}
+
 /// Command to create initial AI settings for a new deployment
 pub struct CreateDeploymentAiSettingsCommand {
-    pub deployment_id: i64,
+    deployment_id: i64,
+}
+
+#[derive(Default)]
+pub struct CreateDeploymentAiSettingsCommandBuilder {
+    deployment_id: Option<i64>,
+}
+
+impl CreateDeploymentAiSettingsCommand {
+    pub fn builder() -> CreateDeploymentAiSettingsCommandBuilder {
+        CreateDeploymentAiSettingsCommandBuilder::default()
+    }
+
+    pub fn new(deployment_id: i64) -> Self {
+        Self { deployment_id }
+    }
 }
 
 impl Command for CreateDeploymentAiSettingsCommand {
     type Output = DeploymentAiSettings;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl CreateDeploymentAiSettingsCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<DeploymentAiSettings, AppError> {
         let result = sqlx::query_as::<_, DeploymentAiSettings>(
             r#"
             INSERT INTO deployment_ai_settings (deployment_id)
@@ -20,20 +51,45 @@ impl Command for CreateDeploymentAiSettingsCommand {
             "#,
         )
         .bind(self.deployment_id)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?;
 
         Ok(result)
     }
 }
 
+impl CreateDeploymentAiSettingsCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn build(self) -> Result<CreateDeploymentAiSettingsCommand, AppError> {
+        Ok(CreateDeploymentAiSettingsCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+        })
+    }
+}
+
 /// Command to update deployment AI settings (simple update, not upsert)
 pub struct UpdateDeploymentAiSettingsCommand {
-    pub deployment_id: i64,
-    pub updates: UpdateDeploymentAiSettingsRequest,
+    deployment_id: i64,
+    updates: UpdateDeploymentAiSettingsRequest,
+}
+
+#[derive(Default)]
+pub struct UpdateDeploymentAiSettingsCommandBuilder {
+    deployment_id: Option<i64>,
+    updates: Option<UpdateDeploymentAiSettingsRequest>,
 }
 
 impl UpdateDeploymentAiSettingsCommand {
+    pub fn builder() -> UpdateDeploymentAiSettingsCommandBuilder {
+        UpdateDeploymentAiSettingsCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, updates: UpdateDeploymentAiSettingsRequest) -> Self {
         Self {
             deployment_id,
@@ -42,30 +98,64 @@ impl UpdateDeploymentAiSettingsCommand {
     }
 }
 
+impl UpdateDeploymentAiSettingsCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn updates(mut self, updates: UpdateDeploymentAiSettingsRequest) -> Self {
+        self.updates = Some(updates);
+        self
+    }
+
+    pub fn build(self) -> Result<UpdateDeploymentAiSettingsCommand, AppError> {
+        Ok(UpdateDeploymentAiSettingsCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            updates: self
+                .updates
+                .ok_or_else(|| AppError::Validation("updates are required".to_string()))?,
+        })
+    }
+}
+
 impl Command for UpdateDeploymentAiSettingsCommand {
     type Output = DeploymentAiSettings;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, &app_state.encryption_service)
+            .await
+    }
+}
+
+impl UpdateDeploymentAiSettingsCommand {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        encryptor: &dyn AiSettingsEncryptor,
+    ) -> Result<DeploymentAiSettings, AppError> {
         // Encrypt API keys before storing
         let encrypted_gemini = self
             .updates
             .gemini_api_key
             .as_ref()
-            .map(|k| app_state.encryption_service.encrypt(k))
+            .map(|k| encryptor.encrypt(k))
             .transpose()?;
 
         let encrypted_openai = self
             .updates
             .openai_api_key
             .as_ref()
-            .map(|k| app_state.encryption_service.encrypt(k))
+            .map(|k| encryptor.encrypt(k))
             .transpose()?;
 
         let encrypted_anthropic = self
             .updates
             .anthropic_api_key
             .as_ref()
-            .map(|k| app_state.encryption_service.encrypt(k))
+            .map(|k| encryptor.encrypt(k))
             .transpose()?;
 
         let result = sqlx::query_as::<_, DeploymentAiSettings>(
@@ -83,7 +173,7 @@ impl Command for UpdateDeploymentAiSettingsCommand {
         .bind(&encrypted_gemini)
         .bind(&encrypted_openai)
         .bind(&encrypted_anthropic)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?;
 
         Ok(result)
@@ -92,8 +182,20 @@ impl Command for UpdateDeploymentAiSettingsCommand {
 
 /// Command to clear a specific API key from deployment AI settings
 pub struct ClearDeploymentAiKeyCommand {
-    pub deployment_id: i64,
-    pub key_type: AiKeyType,
+    deployment_id: i64,
+    key_type: AiKeyType,
+}
+
+#[derive(Default)]
+pub struct ClearDeploymentAiKeyCommandBuilder {
+    deployment_id: Option<i64>,
+    key_type: Option<AiKeyType>,
+}
+
+impl ClearDeploymentAiKeyCommand {
+    pub fn builder() -> ClearDeploymentAiKeyCommandBuilder {
+        ClearDeploymentAiKeyCommandBuilder::default()
+    }
 }
 
 pub enum AiKeyType {
@@ -111,10 +213,39 @@ impl ClearDeploymentAiKeyCommand {
     }
 }
 
+impl ClearDeploymentAiKeyCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn key_type(mut self, key_type: AiKeyType) -> Self {
+        self.key_type = Some(key_type);
+        self
+    }
+
+    pub fn build(self) -> Result<ClearDeploymentAiKeyCommand, AppError> {
+        Ok(ClearDeploymentAiKeyCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            key_type: self
+                .key_type
+                .ok_or_else(|| AppError::Validation("key_type is required".to_string()))?,
+        })
+    }
+}
+
 impl Command for ClearDeploymentAiKeyCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl ClearDeploymentAiKeyCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         let column = match self.key_type {
             AiKeyType::Gemini => "gemini_api_key",
             AiKeyType::OpenAI => "openai_api_key",
@@ -128,7 +259,7 @@ impl Command for ClearDeploymentAiKeyCommand {
 
         sqlx::query(&query)
             .bind(self.deployment_id)
-            .execute(&app_state.db_pool)
+            .execute(pool)
             .await?;
 
         Ok(())

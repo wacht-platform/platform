@@ -4,7 +4,17 @@ pub struct CreateStagingDeploymentCommand {
     auth_methods: Vec<String>,
 }
 
+#[derive(Default)]
+pub struct CreateStagingDeploymentCommandBuilder {
+    project_id: Option<i64>,
+    auth_methods: Option<Vec<String>>,
+}
+
 impl CreateStagingDeploymentCommand {
+    pub fn builder() -> CreateStagingDeploymentCommandBuilder {
+        CreateStagingDeploymentCommandBuilder::default()
+    }
+
     pub fn new(project_id: i64, auth_methods: Vec<String>) -> Self {
         Self {
             project_id,
@@ -40,23 +50,21 @@ impl CreateStagingDeploymentCommand {
     fn create_email_templates(&self, deployment_id: i64) -> DeploymentEmailTemplate {
         build_email_templates(deployment_id)
     }
-}
 
-impl Command for CreateStagingDeploymentCommand {
-    type Output = Deployment;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_in_tx(
+        self,
+        ids: &dyn IdGenerator,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ) -> Result<Deployment, AppError> {
         let validator = ProjectValidator::new();
         validator.validate_auth_methods(&self.auth_methods)?;
 
         let (public_key, private_key, saml_public_key, saml_private_key) =
             generate_deployment_key_pairs().await?;
 
-        let mut tx = app_state.db_pool.begin().await?;
-
         let project = ProjectWithBillingForStagingQuery::builder()
             .project_id(self.project_id)
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?
             .ok_or_else(|| {
                 AppError::NotFound(format!("Project with id {} not found", self.project_id))
@@ -75,10 +83,9 @@ impl Command for CreateStagingDeploymentCommand {
             ));
         }
 
-        // Check staging deployment limit (max 3)
         let staging_count = StagingDeploymentCountByProjectQuery::builder()
             .project_id(self.project_id)
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         if staging_count >= 3 {
@@ -96,21 +103,21 @@ impl Command for CreateStagingDeploymentCommand {
         publishable_key.push_str(&base64_backend_host);
 
         let deployment_row = StagingDeploymentInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .project_id(self.project_id)
             .backend_host(backend_host)
             .frontend_host(frontend_host)
             .publishable_key(publishable_key)
             .mail_from_host("staging.wacht.services")
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let auth_settings = self.create_auth_settings(deployment_row.id);
         DeploymentAuthSettingsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .auth_settings(auth_settings)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let ui_settings = self.create_ui_settings(
@@ -120,82 +127,80 @@ impl Command for CreateStagingDeploymentCommand {
         );
         let waitlist_url = format!("https://{}/waitlist", deployment_row.frontend_host);
         DeploymentUiSettingsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .ui_settings(ui_settings)
             .waitlist_page_url(waitlist_url)
             .support_page_url("")
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let b2b_settings = self.create_b2b_settings(deployment_row.id);
 
         DeploymentB2bBootstrapInsert::builder()
-            .settings_row_id(app_state.sf.next_id()? as i64)
-            .workspace_creator_role_id(app_state.sf.next_id()? as i64)
-            .workspace_member_role_id(app_state.sf.next_id()? as i64)
-            .org_creator_role_id(app_state.sf.next_id()? as i64)
-            .org_member_role_id(app_state.sf.next_id()? as i64)
+            .settings_row_id(ids.next_id()?)
+            .workspace_creator_role_id(ids.next_id()?)
+            .workspace_member_role_id(ids.next_id()?)
+            .org_creator_role_id(ids.next_id()?)
+            .org_member_role_id(ids.next_id()?)
             .b2b_settings(b2b_settings)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let restrictions = self.create_restrictions(deployment_row.id);
 
         DeploymentRestrictionsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .restrictions(restrictions)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let sms_templates = self.create_sms_templates(deployment_row.id);
 
         DeploymentSmsTemplatesInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .sms_templates(sms_templates)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
-        // Create empty AI settings row for this deployment
         DeploymentAiSettingsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .deployment_id(deployment_row.id)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
-        // Use pre-generated key pair
         DeploymentKeyPairsInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .deployment_id(deployment_row.id)
             .public_key(public_key)
             .private_key(private_key)
             .saml_public_key(saml_public_key)
             .saml_private_key(saml_private_key)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         let email_templates = self.create_email_templates(deployment_row.id);
 
         DeploymentEmailTemplatesInsert::builder()
-            .id(app_state.sf.next_id()? as i64)
+            .id(ids.next_id()?)
             .email_templates(email_templates)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
 
         if let Some(social_connections_insert) =
             DeploymentSocialConnectionsBulkInsert::from_auth_methods(
                 deployment_row.id,
                 &self.auth_methods,
-                || Ok(app_state.sf.next_id()? as i64),
+                || ids.next_id(),
             )?
         {
-            social_connections_insert.execute_in_tx(&mut tx).await?;
+            social_connections_insert.execute_in_tx(tx).await?;
         }
 
         let console_id = console_deployment_id()?;
@@ -205,10 +210,8 @@ impl Command for CreateStagingDeploymentCommand {
             .target_deployment_id(deployment_row.id)
             .event_catalog_slug(DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG)
             .build()?
-            .execute_in_tx(&mut tx)
+            .execute_in_tx(tx)
             .await?;
-
-        tx.commit().await?;
 
         Ok(Deployment {
             id: deployment_row.id,
@@ -226,5 +229,40 @@ impl Command for CreateStagingDeploymentCommand {
             email_provider: EmailProvider::default(),
             custom_smtp_config: None,
         })
+    }
+}
+
+impl CreateStagingDeploymentCommandBuilder {
+    pub fn project_id(mut self, project_id: i64) -> Self {
+        self.project_id = Some(project_id);
+        self
+    }
+
+    pub fn auth_methods(mut self, auth_methods: Vec<String>) -> Self {
+        self.auth_methods = Some(auth_methods);
+        self
+    }
+
+    pub fn build(self) -> Result<CreateStagingDeploymentCommand, AppError> {
+        Ok(CreateStagingDeploymentCommand {
+            project_id: self
+                .project_id
+                .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?,
+            auth_methods: self
+                .auth_methods
+                .ok_or_else(|| AppError::Validation("auth_methods are required".to_string()))?,
+        })
+    }
+}
+
+impl Command for CreateStagingDeploymentCommand {
+    type Output = Deployment;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let mut tx = app_state.db_router.writer().begin().await?;
+        let ids = AppStateIdGenerator::new(app_state);
+        let result = self.execute_in_tx(&ids, &mut tx).await?;
+        tx.commit().await?;
+        Ok(result)
     }
 }

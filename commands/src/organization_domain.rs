@@ -1,5 +1,6 @@
 use crate::Command;
 use chrono::Utc;
+use common::DnsVerificationService;
 use common::error::AppError;
 use common::state::AppState;
 use models::DnsRecord;
@@ -22,11 +23,21 @@ pub struct CreateOrganizationDomainResponse {
 }
 
 pub struct CreateOrganizationDomainCommand {
-    pub deployment_id: i64,
-    pub request: CreateOrganizationDomainRequest,
+    deployment_id: i64,
+    request: CreateOrganizationDomainRequest,
+}
+
+#[derive(Default)]
+pub struct CreateOrganizationDomainCommandBuilder {
+    deployment_id: Option<i64>,
+    request: Option<CreateOrganizationDomainRequest>,
 }
 
 impl CreateOrganizationDomainCommand {
+    pub fn builder() -> CreateOrganizationDomainCommandBuilder {
+        CreateOrganizationDomainCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, request: CreateOrganizationDomainRequest) -> Self {
         Self {
             deployment_id,
@@ -39,6 +50,17 @@ impl Command for CreateOrganizationDomainCommand {
     type Output = CreateOrganizationDomainResponse;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl CreateOrganizationDomainCommand {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        domain_id: i64,
+    ) -> Result<CreateOrganizationDomainResponse, AppError> {
         self.request
             .validate()
             .map_err(|e| AppError::Validation(e.to_string()))?;
@@ -68,14 +90,14 @@ impl Command for CreateOrganizationDomainCommand {
             VALUES ($1, $2, $3, $4, false, 'TXT', '_wacht-verification', $5, 0, $6, $6)
             RETURNING *
             "#,
-            app_state.sf.next_id()? as i64,
+            domain_id,
             self.request.organization_id,
             self.deployment_id,
             self.request.fqdn,
             verification_token,
             Utc::now()
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await
         .map_err(|e| match e {
             sqlx::Error::Database(ref db_err) if db_err.code().as_deref() == Some("23505") => {
@@ -91,6 +113,29 @@ impl Command for CreateOrganizationDomainCommand {
     }
 }
 
+impl CreateOrganizationDomainCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn request(mut self, request: CreateOrganizationDomainRequest) -> Self {
+        self.request = Some(request);
+        self
+    }
+
+    pub fn build(self) -> Result<CreateOrganizationDomainCommand, AppError> {
+        Ok(CreateOrganizationDomainCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            request: self
+                .request
+                .ok_or_else(|| AppError::Validation("request is required".to_string()))?,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeleteOrganizationDomainRequest {
     pub organization_id: i64,
@@ -98,11 +143,21 @@ pub struct DeleteOrganizationDomainRequest {
 }
 
 pub struct DeleteOrganizationDomainCommand {
-    pub deployment_id: i64,
-    pub request: DeleteOrganizationDomainRequest,
+    deployment_id: i64,
+    request: DeleteOrganizationDomainRequest,
+}
+
+#[derive(Default)]
+pub struct DeleteOrganizationDomainCommandBuilder {
+    deployment_id: Option<i64>,
+    request: Option<DeleteOrganizationDomainRequest>,
 }
 
 impl DeleteOrganizationDomainCommand {
+    pub fn builder() -> DeleteOrganizationDomainCommandBuilder {
+        DeleteOrganizationDomainCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, request: DeleteOrganizationDomainRequest) -> Self {
         Self {
             deployment_id,
@@ -115,6 +170,12 @@ impl Command for DeleteOrganizationDomainCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl DeleteOrganizationDomainCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         let result = sqlx::query!(
             r#"
             DELETE FROM organization_domains
@@ -124,7 +185,7 @@ impl Command for DeleteOrganizationDomainCommand {
             self.request.organization_id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -132,6 +193,29 @@ impl Command for DeleteOrganizationDomainCommand {
         }
 
         Ok(())
+    }
+}
+
+impl DeleteOrganizationDomainCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn request(mut self, request: DeleteOrganizationDomainRequest) -> Self {
+        self.request = Some(request);
+        self
+    }
+
+    pub fn build(self) -> Result<DeleteOrganizationDomainCommand, AppError> {
+        Ok(DeleteOrganizationDomainCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            request: self
+                .request
+                .ok_or_else(|| AppError::Validation("request is required".to_string()))?,
+        })
     }
 }
 
@@ -148,11 +232,21 @@ pub struct VerifyOrganizationDomainResponse {
 }
 
 pub struct VerifyOrganizationDomainCommand {
-    pub deployment_id: i64,
-    pub request: VerifyOrganizationDomainRequest,
+    deployment_id: i64,
+    request: VerifyOrganizationDomainRequest,
+}
+
+#[derive(Default)]
+pub struct VerifyOrganizationDomainCommandBuilder {
+    deployment_id: Option<i64>,
+    request: Option<VerifyOrganizationDomainRequest>,
 }
 
 impl VerifyOrganizationDomainCommand {
+    pub fn builder() -> VerifyOrganizationDomainCommandBuilder {
+        VerifyOrganizationDomainCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, request: VerifyOrganizationDomainRequest) -> Self {
         Self {
             deployment_id,
@@ -165,6 +259,17 @@ impl Command for VerifyOrganizationDomainCommand {
     type Output = VerifyOrganizationDomainResponse;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, &app_state.dns_verification_service)
+            .await
+    }
+}
+
+impl VerifyOrganizationDomainCommand {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        dns_verification_service: &DnsVerificationService,
+    ) -> Result<VerifyOrganizationDomainResponse, AppError> {
         // Fetch the domain
         let domain = sqlx::query_as!(
             OrganizationDomain,
@@ -176,7 +281,7 @@ impl Command for VerifyOrganizationDomainCommand {
             self.request.organization_id,
             self.deployment_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?;
 
         if domain.verified {
@@ -195,7 +300,7 @@ impl Command for VerifyOrganizationDomainCommand {
             "#,
             domain.id
         )
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         let txt_record_name = format!(
@@ -223,11 +328,7 @@ impl Command for VerifyOrganizationDomainCommand {
         };
 
         // Verify DNS TXT record using the service
-        match app_state
-            .dns_verification_service
-            .verify_dns_record(&dns_record)
-            .await
-        {
+        match dns_verification_service.verify_dns_record(&dns_record).await {
             Ok(true) => {
                 // Mark as verified
                 sqlx::query!(
@@ -239,7 +340,7 @@ impl Command for VerifyOrganizationDomainCommand {
                     Utc::now(),
                     domain.id
                 )
-                .execute(&app_state.db_pool)
+                .execute(pool)
                 .await?;
 
                 Ok(VerifyOrganizationDomainResponse {
@@ -255,5 +356,28 @@ impl Command for VerifyOrganizationDomainCommand {
                 )),
             }),
         }
+    }
+}
+
+impl VerifyOrganizationDomainCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn request(mut self, request: VerifyOrganizationDomainRequest) -> Self {
+        self.request = Some(request);
+        self
+    }
+
+    pub fn build(self) -> Result<VerifyOrganizationDomainCommand, AppError> {
+        Ok(VerifyOrganizationDomainCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            request: self
+                .request
+                .ok_or_else(|| AppError::Validation("request is required".to_string()))?,
+        })
     }
 }

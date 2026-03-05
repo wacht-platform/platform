@@ -11,7 +11,7 @@ fn get_model_pricing(model: &str) -> (i64, i64, i64, i64) {
         "gemini-2.5-flash-lite" => (10, 2, 40, 0),
         "gemini-2.5-flash" => (10, 2, 40, 0),
         "gemini-3-flash-preview" => (50, 12, 300, 14),
-        "gemini-3-pro-preview" => (200, 50, 1200, 0),
+        "gemini-3.1-pro-preview" => (200, 50, 1200, 0),
         _ => panic!("Unknown model for pricing: {}", model),
     }
 }
