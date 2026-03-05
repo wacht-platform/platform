@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use futures::future::BoxFuture;
 use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::error::AppError;
@@ -50,12 +49,11 @@ impl DbRouter {
         !self.readers.is_empty()
     }
 
-    pub async fn with_tx<T>(
-        &self,
-        f: impl for<'tx> FnOnce(
-            &'tx mut Transaction<'_, Postgres>,
-        ) -> BoxFuture<'tx, Result<T, AppError>>,
-    ) -> Result<T, AppError> {
+    pub async fn with_tx<T, F, Fut>(&self, f: F) -> Result<T, AppError>
+    where
+        F: FnOnce(&mut Transaction<'_, Postgres>) -> Fut,
+        Fut: std::future::Future<Output = Result<T, AppError>>,
+    {
         let mut tx = self.writer.begin().await?;
         let out = f(&mut tx).await?;
         tx.commit().await?;

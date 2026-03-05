@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use common::{capabilities::HasDbRouter, db_router::ReadConsistency, error::AppError, state::AppState};
+use common::{
+    capabilities::HasDbRouter, db_router::ReadConsistency, error::AppError, state::AppState,
+};
 use models::{Deployment, ProjectWithDeployments};
 use sqlx::{Executor, Postgres, Row, Transaction, query};
 
@@ -107,7 +109,10 @@ impl GetProjectsWithDeploymentQuery {
         }
     }
 
-    async fn execute_with_executor<'e, E>(&self, executor: E) -> Result<Vec<ProjectWithDeployments>, AppError>
+    async fn execute_with_executor<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<ProjectWithDeployments>, AppError>
     where
         E: Executor<'e, Database = Postgres>,
     {

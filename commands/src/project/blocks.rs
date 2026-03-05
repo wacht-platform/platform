@@ -103,9 +103,7 @@ impl DeploymentAuthSettingsInsertBuilder {
             AppError::Validation("deployment_auth_settings insert id is required".to_string())
         })?;
         let auth_settings = self.auth_settings.ok_or_else(|| {
-            AppError::Validation(
-                "deployment_auth_settings payload is required".to_string(),
-            )
+            AppError::Validation("deployment_auth_settings payload is required".to_string())
         })?;
 
         Ok(DeploymentAuthSettingsInsert { id, auth_settings })
@@ -777,7 +775,10 @@ impl DeploymentB2bBootstrapInsert {
         self.execute_on_conn(&mut conn).await
     }
 
-    pub(super) async fn execute_on_conn(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_on_conn(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<(), AppError> {
         let now = chrono::Utc::now();
         let deployment_id = self.b2b_settings.settings.deployment_id;
 
@@ -1022,7 +1023,10 @@ impl ConsoleAppBootstrapInsert {
         self.execute_on_conn(&mut conn).await
     }
 
-    pub(super) async fn execute_on_conn(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_on_conn(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<(), AppError> {
         let app_name = self.target_deployment_id.to_string();
         let now = chrono::Utc::now();
 
@@ -1081,12 +1085,12 @@ impl ConsoleAppBootstrapInsertBuilder {
     }
 
     pub(super) fn build(self) -> Result<ConsoleAppBootstrapInsert, AppError> {
-        let console_deployment_id = self.console_deployment_id.ok_or_else(|| {
-            AppError::Validation("console deployment id is required".to_string())
-        })?;
-        let target_deployment_id = self.target_deployment_id.ok_or_else(|| {
-            AppError::Validation("target deployment id is required".to_string())
-        })?;
+        let console_deployment_id = self
+            .console_deployment_id
+            .ok_or_else(|| AppError::Validation("console deployment id is required".to_string()))?;
+        let target_deployment_id = self
+            .target_deployment_id
+            .ok_or_else(|| AppError::Validation("target deployment id is required".to_string()))?;
 
         Ok(ConsoleAppBootstrapInsert {
             console_deployment_id,
@@ -1142,7 +1146,9 @@ impl DeploymentSocialConnectionsBulkInsert {
         for provider_name in social_providers {
             let provider_with_oauth = format!("{}_oauth", provider_name);
             let is_selected = auth_methods.iter().any(|method| method == provider_name)
-                || auth_methods.iter().any(|method| method == &provider_with_oauth);
+                || auth_methods
+                    .iter()
+                    .any(|method| method == &provider_with_oauth);
             if !is_selected {
                 continue;
             }
@@ -1217,7 +1223,6 @@ impl DeploymentSocialConnectionsBulkInsert {
     }
 }
 
-
 pub(super) struct BillingAccountLockResult {
     pub(super) id: i64,
     pub(super) status: String,
@@ -1282,9 +1287,9 @@ impl ProjectsCountByBillingAccountQuery {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<i64, AppError> {
-        let billing_account_id = self.billing_account_id.ok_or_else(|| {
-            AppError::Validation("billing_account_id is required".to_string())
-        })?;
+        let billing_account_id = self
+            .billing_account_id
+            .ok_or_else(|| AppError::Validation("billing_account_id is required".to_string()))?;
 
         let row = sqlx::query!(
             r#"
@@ -1454,9 +1459,9 @@ impl StagingDeploymentInsert {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<StagingDeploymentInsertedRow, AppError> {
-        let id = self.id.ok_or_else(|| {
-            AppError::Validation("staging deployment id is required".to_string())
-        })?;
+        let id = self
+            .id
+            .ok_or_else(|| AppError::Validation("staging deployment id is required".to_string()))?;
         let project_id = self.project_id.ok_or_else(|| {
             AppError::Validation("staging deployment project_id is required".to_string())
         })?;
@@ -1709,9 +1714,10 @@ impl ExistingDomainDeploymentQuery {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<Option<ExistingDomainDeploymentRow>, AppError> {
-        let custom_domain = self.custom_domain.as_deref().ok_or_else(|| {
-            AppError::Validation("custom_domain is required".to_string())
-        })?;
+        let custom_domain = self
+            .custom_domain
+            .as_deref()
+            .ok_or_else(|| AppError::Validation("custom_domain is required".to_string()))?;
 
         let row = sqlx::query!(
             "SELECT id FROM deployments WHERE (backend_host = $1 OR frontend_host = $2 OR mail_from_host = $3) AND deleted_at IS NULL",
@@ -1826,12 +1832,18 @@ impl ProductionDeploymentInsert {
         let mail_from_host = self.mail_from_host.as_deref().ok_or_else(|| {
             AppError::Validation("production deployment mail_from_host is required".to_string())
         })?;
-        let domain_verification_records = self.domain_verification_records.as_ref().ok_or_else(|| {
-            AppError::Validation("production deployment domain_verification_records are required".to_string())
-        })?;
-        let email_verification_records = self.email_verification_records.as_ref().ok_or_else(|| {
-            AppError::Validation("production deployment email_verification_records are required".to_string())
-        })?;
+        let domain_verification_records =
+            self.domain_verification_records.as_ref().ok_or_else(|| {
+                AppError::Validation(
+                    "production deployment domain_verification_records are required".to_string(),
+                )
+            })?;
+        let email_verification_records =
+            self.email_verification_records.as_ref().ok_or_else(|| {
+                AppError::Validation(
+                    "production deployment email_verification_records are required".to_string(),
+                )
+            })?;
 
         let now = chrono::Utc::now();
 
@@ -1917,13 +1929,11 @@ impl DeploymentEmailVerificationUpdate {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<(), AppError> {
-        let deployment_id = self.deployment_id.ok_or_else(|| {
-            AppError::Validation("deployment_id is required".to_string())
-        })?;
-        let email_verification_records = self
-            .email_verification_records
-            .as_ref()
-            .ok_or_else(|| {
+        let deployment_id = self
+            .deployment_id
+            .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
+        let email_verification_records =
+            self.email_verification_records.as_ref().ok_or_else(|| {
                 AppError::Validation("email_verification_records are required".to_string())
             })?;
 
@@ -1972,13 +1982,11 @@ impl DeploymentDomainVerificationUpdate {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<(), AppError> {
-        let deployment_id = self.deployment_id.ok_or_else(|| {
-            AppError::Validation("deployment_id is required".to_string())
-        })?;
-        let domain_verification_records = self
-            .domain_verification_records
-            .as_ref()
-            .ok_or_else(|| {
+        let deployment_id = self
+            .deployment_id
+            .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
+        let domain_verification_records =
+            self.domain_verification_records.as_ref().ok_or_else(|| {
                 AppError::Validation("domain_verification_records are required".to_string())
             })?;
 
@@ -2035,9 +2043,9 @@ impl DeploymentByIdQuery {
         &self,
         pool: &sqlx::PgPool,
     ) -> Result<DeploymentByIdRow, AppError> {
-        let deployment_id = self.deployment_id.ok_or_else(|| {
-            AppError::Validation("deployment_id is required".to_string())
-        })?;
+        let deployment_id = self
+            .deployment_id
+            .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
 
         let row = sqlx::query!(
             r#"
@@ -2108,19 +2116,15 @@ impl DeploymentDnsRecordsUpdate {
     }
 
     pub(super) async fn execute_on_pool(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        let deployment_id = self.deployment_id.ok_or_else(|| {
-            AppError::Validation("deployment_id is required".to_string())
-        })?;
-        let domain_verification_records = self
-            .domain_verification_records
-            .as_ref()
-            .ok_or_else(|| {
+        let deployment_id = self
+            .deployment_id
+            .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
+        let domain_verification_records =
+            self.domain_verification_records.as_ref().ok_or_else(|| {
                 AppError::Validation("domain_verification_records are required".to_string())
             })?;
-        let email_verification_records = self
-            .email_verification_records
-            .as_ref()
-            .ok_or_else(|| {
+        let email_verification_records =
+            self.email_verification_records.as_ref().ok_or_else(|| {
                 AppError::Validation("email_verification_records are required".to_string())
             })?;
 
@@ -2200,9 +2204,10 @@ impl DeleteDeploymentSocialConnectionsByIds {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<(), AppError> {
-        let deployment_ids = self.deployment_ids.as_ref().ok_or_else(|| {
-            AppError::Validation("deployment_ids are required".to_string())
-        })?;
+        let deployment_ids = self
+            .deployment_ids
+            .as_ref()
+            .ok_or_else(|| AppError::Validation("deployment_ids are required".to_string()))?;
 
         if deployment_ids.is_empty() {
             return Ok(());
@@ -2241,9 +2246,10 @@ impl DeleteDeploymentAuthSettingsByIds {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<(), AppError> {
-        let deployment_ids = self.deployment_ids.as_ref().ok_or_else(|| {
-            AppError::Validation("deployment_ids are required".to_string())
-        })?;
+        let deployment_ids = self
+            .deployment_ids
+            .as_ref()
+            .ok_or_else(|| AppError::Validation("deployment_ids are required".to_string()))?;
 
         if deployment_ids.is_empty() {
             return Ok(());
@@ -2282,9 +2288,10 @@ impl DeleteDeploymentUiSettingsByIds {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<(), AppError> {
-        let deployment_ids = self.deployment_ids.as_ref().ok_or_else(|| {
-            AppError::Validation("deployment_ids are required".to_string())
-        })?;
+        let deployment_ids = self
+            .deployment_ids
+            .as_ref()
+            .ok_or_else(|| AppError::Validation("deployment_ids are required".to_string()))?;
 
         if deployment_ids.is_empty() {
             return Ok(());
@@ -2323,9 +2330,10 @@ impl DeleteDeploymentB2bSettingsByIds {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<(), AppError> {
-        let deployment_ids = self.deployment_ids.as_ref().ok_or_else(|| {
-            AppError::Validation("deployment_ids are required".to_string())
-        })?;
+        let deployment_ids = self
+            .deployment_ids
+            .as_ref()
+            .ok_or_else(|| AppError::Validation("deployment_ids are required".to_string()))?;
 
         if deployment_ids.is_empty() {
             return Ok(());

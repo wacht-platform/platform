@@ -59,7 +59,6 @@ impl CreateProjectWithStagingDeploymentCommand {
             .filter(|value| !value.is_empty())
             .ok_or_else(|| AppError::Validation("Invalid owner id format".to_string()))
     }
-
 }
 
 impl Command for CreateProjectWithStagingDeploymentCommand {

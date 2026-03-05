@@ -16,7 +16,7 @@ use models::{
 
 use chrono::Utc;
 use redis::AsyncCommands;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 pub struct ClearDeploymentCacheCommand {
     pub deployment_id: i64,

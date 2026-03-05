@@ -6,12 +6,12 @@ use crate::application::response::{ApiResult, PaginatedResponse};
 
 use chrono::{Duration, Utc};
 use commands::{
+    Command,
     billing::{
         CreateBillingAccountCommand, MarkCheckoutSessionCreatedCommand,
         SetProviderCustomerIdCommand, UpdateBillingAccountCommand,
         UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand,
     },
-    Command,
 };
 use common::dodo::{
     ChangePlanParams, CheckoutCustomer, CreateCheckoutParams, CreateCustomerParams, DodoClient,
@@ -20,10 +20,10 @@ use common::dodo::{
 use common::state::AppState;
 use models::billing::{BillingAccountWithSubscription, Subscription};
 use queries::{
+    Query as QueryTrait,
     billing::{
         GetBillingAccountQuery, GetBillingAccountUsageQuery, GetDodoProductQuery, UsageSnapshot,
     },
-    Query as QueryTrait,
 };
 use wacht::middleware::RequireAuth;
 

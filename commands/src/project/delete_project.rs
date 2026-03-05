@@ -2,12 +2,11 @@ use super::*;
 #[allow(dead_code)]
 pub struct DeleteProjectCommand {
     id: i64,
-    created_by: i64,
 }
 
 impl DeleteProjectCommand {
-    pub fn new(id: i64, created_by: i64) -> Self {
-        Self { id, created_by }
+    pub fn new(id: i64) -> Self {
+        Self { id }
     }
 }
 

@@ -85,10 +85,12 @@ fn generate_nanoid() -> String {
 
 async fn generate_deployment_key_pairs() -> Result<(String, String, String, String), AppError> {
     let key_pair_task = tokio::task::spawn_blocking(|| {
-        let ecdsa_pair = rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
+        let ecdsa_pair =
+            rcgen::KeyPair::generate().map_err(|e| AppError::Internal(e.to_string()))?;
 
-        let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256)
-            .map_err(|e| AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e)))?;
+        let saml_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_RSA_SHA256).map_err(|e| {
+            AppError::Internal(format!("Failed to generate SAML RSA keypair: {}", e))
+        })?;
 
         Ok::<_, AppError>((
             ecdsa_pair.public_key_pem(),
@@ -264,16 +266,16 @@ fn console_deployment_id() -> Result<i64, AppError> {
 }
 
 mod blocks;
+mod create_production_deployment;
 mod create_project_with_staging;
 mod create_staging_deployment;
-mod create_production_deployment;
-mod verify_deployment_dns_records;
 mod delete_project;
+mod verify_deployment_dns_records;
 
 use blocks::*;
 
+pub use create_production_deployment::CreateProductionDeploymentCommand;
 pub use create_project_with_staging::CreateProjectWithStagingDeploymentCommand;
 pub use create_staging_deployment::CreateStagingDeploymentCommand;
-pub use create_production_deployment::CreateProductionDeploymentCommand;
-pub use verify_deployment_dns_records::VerifyDeploymentDnsRecordsCommand;
 pub use delete_project::DeleteProjectCommand;
+pub use verify_deployment_dns_records::VerifyDeploymentDnsRecordsCommand;

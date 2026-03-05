@@ -1,6 +1,4 @@
-use axum::{
-    extract::{Json, Multipart, Path, State},
-};
+use axum::extract::{Json, Multipart, Path, State};
 use common::db_router::ReadConsistency;
 use wacht::middleware::extractors::RequireAuth;
 

@@ -15,7 +15,10 @@ pub struct GetActiveDeliveryCommand {
 }
 
 impl GetActiveDeliveryCommand {
-    async fn execute_with_db<'e, E>(self, executor: E) -> Result<Option<ActiveDeliveryInfo>, AppError>
+    async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<Option<ActiveDeliveryInfo>, AppError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -429,10 +432,7 @@ impl CleanupExpiredDeliveriesCommand {
         self.execute_with_db(deps.writer_pool()).await
     }
 
-    pub async fn execute_in_tx(
-        self,
-        tx: &mut Transaction<'_, Postgres>,
-    ) -> Result<i64, AppError> {
+    pub async fn execute_in_tx(self, tx: &mut Transaction<'_, Postgres>) -> Result<i64, AppError> {
         self.execute_with_db(tx.as_mut()).await
     }
 }
