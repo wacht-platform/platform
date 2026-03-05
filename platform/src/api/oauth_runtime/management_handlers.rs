@@ -57,14 +57,7 @@ async fn oauth_revoke_impl(
         client_assertion,
     } = request;
 
-    let token_value = token.trim();
-    if token_value.is_empty() {
-        return Err(oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            Some("token is required"),
-        ));
-    }
+    let token_value = required_token_value(token.as_str())?;
     let (oauth_app, client, _) = authenticate_management_endpoint(
         &app_state,
         &headers,
@@ -126,14 +119,7 @@ async fn oauth_introspect_impl(
         client_assertion,
     } = request;
 
-    let token_value = token.trim();
-    if token_value.is_empty() {
-        return Err(oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            Some("token is required"),
-        ));
-    }
+    let token_value = required_token_value(token.as_str())?;
     let (oauth_app, client, issuer) = authenticate_management_endpoint(
         &app_state,
         &headers,
@@ -450,4 +436,16 @@ fn map_runtime_client_registration_response(
         registration_client_uri: format!("{}/oauth/register/{}", issuer, client_id),
         registration_access_token: None,
     }
+}
+
+fn required_token_value(token: &str) -> Result<&str, OAuthEndpointError> {
+    let token_value = token.trim();
+    if token_value.is_empty() {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            Some("token is required"),
+        ));
+    }
+    Ok(token_value)
 }

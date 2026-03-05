@@ -6,8 +6,8 @@ use axum::{
 use serde::Deserialize;
 
 use crate::api::multipart::MultipartPayload;
+use crate::api::pagination::paginate_results;
 use crate::application::{
-    AppError,
     response::{ApiResult, PaginatedResponse},
 };
 use common::state::AppState;
@@ -79,6 +79,10 @@ fn sanitize_upload_filename(name: &str) -> Option<String> {
     }
 }
 
+fn knowledge_base_not_found_error() -> crate::application::response::ApiErrorResponse {
+    (StatusCode::NOT_FOUND, "Knowledge base not found".to_string()).into()
+}
+
 pub async fn get_ai_knowledge_bases(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -93,19 +97,13 @@ pub async fn get_ai_knowledge_bases(
         query_builder = query_builder.with_search(search);
     }
 
-    let mut knowledge_bases = query_builder
-        .execute(&app_state)
-        .await
-        .map_err(|e| AppError::from(e))?;
+    let knowledge_bases = query_builder.execute(&app_state).await?;
 
-    let has_more = knowledge_bases.len() > limit;
-    if has_more {
-        knowledge_bases.pop();
-    }
+    let paginated = paginate_results(knowledge_bases, limit as i32, Some(offset as i64));
 
     Ok(KnowledgeBaseResponse {
-        data: knowledge_bases,
-        has_more,
+        data: paginated.data,
+        has_more: paginated.has_more,
     }
     .into())
 }
@@ -135,8 +133,7 @@ pub async fn get_ai_knowledge_base_by_id(
 ) -> ApiResult<AiKnowledgeBaseWithDetails> {
     let knowledge_base = GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
         .execute(&app_state)
-        .await
-        .map_err(AppError::from)?;
+        .await?;
     Ok(knowledge_base.into())
 }
 
@@ -259,12 +256,7 @@ pub async fn upload_knowledge_base_document(
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
         .execute(&app_state)
         .await
-        .map_err(|_| {
-            (
-                StatusCode::NOT_FOUND,
-                "Knowledge base not found".to_string(),
-            )
-        })?;
+        .map_err(|_| knowledge_base_not_found_error())?;
 
     let document = UploadKnowledgeBaseDocumentCommand::new(
         params.kb_id,
@@ -288,33 +280,16 @@ pub async fn get_knowledge_base_documents(
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
         .execute(&app_state)
         .await
-        .map_err(|_| {
-            (
-                StatusCode::NOT_FOUND,
-                "Knowledge base not found".to_string(),
-            )
-        })?;
+        .map_err(|_| knowledge_base_not_found_error())?;
 
     let limit = query.limit.unwrap_or(20);
     let offset = query.offset.unwrap_or(0);
 
-    let mut documents = GetKnowledgeBaseDocumentsQuery::new(params.kb_id, limit + 1, offset)
+    let documents = GetKnowledgeBaseDocumentsQuery::new(params.kb_id, limit + 1, offset)
         .execute(&app_state)
-        .await
-        .map_err(|e| AppError::from(e))?;
+        .await?;
 
-    let has_more = documents.len() > limit;
-    if has_more {
-        documents.pop();
-    }
-
-    Ok(PaginatedResponse {
-        data: documents,
-        has_more,
-        limit: Some(limit as i32),
-        offset: Some(offset as i32),
-    }
-    .into())
+    Ok(paginate_results(documents, limit as i32, Some(offset as i64)).into())
 }
 
 pub async fn delete_knowledge_base_document(

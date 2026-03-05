@@ -34,6 +34,7 @@ impl Command for CreateAiKnowledgeBaseCommand {
     type Output = AiKnowledgeBase;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        validate_knowledge_base_name(&self.name)?;
         let knowledge_base_id = app_state.sf.next_id()? as i64;
         let now = Utc::now();
 
@@ -106,6 +107,10 @@ impl Command for UpdateAiKnowledgeBaseCommand {
     type Output = AiKnowledgeBase;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        if let Some(ref name) = self.name {
+            validate_knowledge_base_name(name)?;
+        }
+
         let now = Utc::now();
 
         // Build dynamic query based on provided fields
@@ -171,6 +176,35 @@ impl Command for UpdateAiKnowledgeBaseCommand {
             configuration: knowledge_base.get("configuration"),
         })
     }
+}
+
+fn validate_knowledge_base_name(name: &str) -> Result<(), AppError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::BadRequest(
+            "Knowledge base name cannot be empty".to_string(),
+        ));
+    }
+
+    if trimmed == "." || trimmed == ".." {
+        return Err(AppError::BadRequest(
+            "Knowledge base name cannot be '.' or '..'".to_string(),
+        ));
+    }
+
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        return Err(AppError::BadRequest(
+            "Knowledge base name cannot contain path separators".to_string(),
+        ));
+    }
+
+    if trimmed.chars().any(|ch| ch.is_control()) {
+        return Err(AppError::BadRequest(
+            "Knowledge base name cannot contain control characters".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 pub struct DeleteAiKnowledgeBaseCommand {

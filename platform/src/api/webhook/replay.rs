@@ -10,12 +10,12 @@ use dto::json::webhook_requests::{
     ReplayTaskCancelResponse, ReplayTaskListQuery, ReplayTaskListResponse,
     ReplayTaskStatusResponse, ReplayWebhookDeliveryRequest, ReplayWebhookDeliveryResponse,
 };
-use queries::{GetWebhookAppByNameQuery, Query as QueryTrait};
 use redis::{AsyncCommands, Script};
 
 use crate::api::pagination::paginate_results;
 use crate::application::response::{ApiError, ApiErrorResponse, ApiResult};
 use crate::middleware::RequireDeployment;
+use super::helpers::{ensure_webhook_app_exists, get_webhook_app_or_404};
 
 const LUA_REPLAY_RESERVE: &str = r#"
         local idem_key = KEYS[1]
@@ -136,6 +136,51 @@ fn replay_bad_request(_code: &str, message: impl Into<String>) -> ApiErrorRespon
         .into()
 }
 
+fn generate_auto_replay_idempotency_key(app_state: &AppState) -> Result<String, ApiErrorResponse> {
+    Ok(format!(
+        "auto_{}",
+        app_state
+            .sf
+            .next_id()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    ))
+}
+
+fn build_replay_task_status_response(
+    task_id: String,
+    app_slug: String,
+    data: &HashMap<String, String>,
+) -> ReplayTaskStatusResponse {
+    ReplayTaskStatusResponse {
+        task_id,
+        app_slug,
+        status: data
+            .get("status")
+            .cloned()
+            .unwrap_or_else(|| "queued".to_string()),
+        created_at: data.get("created_at").cloned(),
+        started_at: data.get("started_at").cloned(),
+        completed_at: data.get("completed_at").cloned(),
+        total_count: parse_replay_i64(data, "total_count"),
+        processed: parse_replay_i64(data, "processed_count"),
+        replayed_count: parse_replay_i64(data, "replayed_count"),
+        failed_count: parse_replay_i64(data, "failed_count"),
+        last_delivery_id: {
+            let v = parse_replay_i64(data, "last_delivery_id");
+            if v > 0 { Some(v) } else { None }
+        },
+    }
+}
+
+async fn resolve_webhook_app_slug(
+    app_state: &AppState,
+    deployment_id: i64,
+    app_slug: String,
+) -> Result<String, ApiErrorResponse> {
+    let app = get_webhook_app_or_404(app_state, deployment_id, app_slug).await?;
+    Ok(app.app_slug)
+}
+
 pub async fn replay_webhook_delivery(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -152,10 +197,7 @@ pub async fn replay_webhook_delivery(
     const RESERVE_RESULT_LIMIT: i32 = 2;
 
     // Ensure app belongs to deployment
-    GetWebhookAppByNameQuery::new(deployment_id, app_slug.clone())
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found".to_string()))?;
+    ensure_webhook_app_exists(&app_state, deployment_id, app_slug.clone()).await?;
 
     let now = chrono::Utc::now();
     let idempotency_key = match &request {
@@ -225,24 +267,12 @@ pub async fn replay_webhook_delivery(
     let effective_idempotency_key = if let Some(raw_key) = idempotency_key {
         let trimmed = raw_key.trim().to_string();
         if trimmed.is_empty() {
-            format!(
-                "auto_{}",
-                app_state
-                    .sf
-                    .next_id()
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-            )
+            generate_auto_replay_idempotency_key(&app_state)?
         } else {
             trimmed
         }
     } else {
-        format!(
-            "auto_{}",
-            app_state
-                .sf
-                .next_id()
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        )
+        generate_auto_replay_idempotency_key(&app_state)?
     };
 
     let redis_key = replay_idempotency_key(&app_slug, &effective_idempotency_key);
@@ -428,10 +458,7 @@ pub async fn get_webhook_replay_task_status(
     RequireDeployment(deployment_id): RequireDeployment,
     Path((app_slug, task_id)): Path<(String, String)>,
 ) -> ApiResult<ReplayTaskStatusResponse> {
-    GetWebhookAppByNameQuery::new(deployment_id, app_slug.clone())
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found".to_string()))?;
+    ensure_webhook_app_exists(&app_state, deployment_id, app_slug.clone()).await?;
 
     let mut redis_conn = app_state
         .redis_client
@@ -456,26 +483,7 @@ pub async fn get_webhook_replay_task_status(
         return Err((StatusCode::NOT_FOUND, "Replay task not found").into());
     }
 
-    Ok(ReplayTaskStatusResponse {
-        task_id,
-        app_slug,
-        status: data
-            .get("status")
-            .cloned()
-            .unwrap_or_else(|| "queued".to_string()),
-        created_at: data.get("created_at").cloned(),
-        started_at: data.get("started_at").cloned(),
-        completed_at: data.get("completed_at").cloned(),
-        total_count: parse_replay_i64(&data, "total_count"),
-        processed: parse_replay_i64(&data, "processed_count"),
-        replayed_count: parse_replay_i64(&data, "replayed_count"),
-        failed_count: parse_replay_i64(&data, "failed_count"),
-        last_delivery_id: {
-            let v = parse_replay_i64(&data, "last_delivery_id");
-            if v > 0 { Some(v) } else { None }
-        },
-    }
-    .into())
+    Ok(build_replay_task_status_response(task_id, app_slug, &data).into())
 }
 
 pub async fn cancel_webhook_replay_task(
@@ -483,17 +491,14 @@ pub async fn cancel_webhook_replay_task(
     RequireDeployment(deployment_id): RequireDeployment,
     Path((app_slug, task_id)): Path<(String, String)>,
 ) -> ApiResult<ReplayTaskCancelResponse> {
-    let app = GetWebhookAppByNameQuery::new(deployment_id, app_slug.clone())
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found".to_string()))?;
+    let app_slug = resolve_webhook_app_slug(&app_state, deployment_id, app_slug).await?;
 
     let mut redis_conn = app_state
         .redis_client
         .get_multiplexed_async_connection()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let snapshot_key = replay_task_snapshot_key(&app.app_slug, &task_id);
+    let snapshot_key = replay_task_snapshot_key(&app_slug, &task_id);
 
     let exists: i32 = redis_conn
         .exists(&snapshot_key)
@@ -504,7 +509,7 @@ pub async fn cancel_webhook_replay_task(
     }
 
     let now = chrono::Utc::now().to_rfc3339();
-    let active_count_key = replay_active_count_key(&app.app_slug);
+    let active_count_key = replay_active_count_key(&app_slug);
     let _: i32 = cancel_replay_task(
         &mut redis_conn,
         &snapshot_key,
@@ -528,10 +533,7 @@ pub async fn list_webhook_replay_tasks(
     Path(app_slug): Path<String>,
     Query(params): Query<ReplayTaskListQuery>,
 ) -> ApiResult<ReplayTaskListResponse> {
-    GetWebhookAppByNameQuery::new(deployment_id, app_slug.clone())
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found".to_string()))?;
+    ensure_webhook_app_exists(&app_state, deployment_id, app_slug.clone()).await?;
 
     let limit = params.limit.unwrap_or(20).clamp(1, 100);
     let offset = params.offset.unwrap_or(0).max(0);
@@ -573,25 +575,11 @@ pub async fn list_webhook_replay_tasks(
         if fields.is_empty() {
             continue;
         }
-        data.push(ReplayTaskStatusResponse {
+        data.push(build_replay_task_status_response(
             task_id,
-            app_slug: app_slug.clone(),
-            status: fields
-                .get("status")
-                .cloned()
-                .unwrap_or_else(|| "queued".to_string()),
-            created_at: fields.get("created_at").cloned(),
-            started_at: fields.get("started_at").cloned(),
-            completed_at: fields.get("completed_at").cloned(),
-            total_count: parse_replay_i64(&fields, "total_count"),
-            processed: parse_replay_i64(&fields, "processed_count"),
-            replayed_count: parse_replay_i64(&fields, "replayed_count"),
-            failed_count: parse_replay_i64(&fields, "failed_count"),
-            last_delivery_id: {
-                let v = parse_replay_i64(&fields, "last_delivery_id");
-                if v > 0 { Some(v) } else { None }
-            },
-        });
+            app_slug.clone(),
+            &fields,
+        ));
     }
 
     Ok(ReplayTaskListResponse {

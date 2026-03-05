@@ -99,6 +99,53 @@ pub struct McpServerCreateResponse {
     pub discovery_result: McpAuthDiscoveryResult,
 }
 
+fn simple_discovery_result(
+    requires_auth: bool,
+    recommended_auth_mode: Option<String>,
+    message: String,
+) -> McpAuthDiscoveryResult {
+    McpAuthDiscoveryResult {
+        requires_auth,
+        recommended_auth_mode,
+        token_url: None,
+        auth_url: None,
+        register_url: None,
+        resource_metadata_url: None,
+        resource: None,
+        scopes: Vec::new(),
+        token_endpoint_auth_methods_supported: Vec::new(),
+        authorization_servers: Vec::new(),
+        message,
+    }
+}
+
+fn requires_runtime_validation(config: &McpServerConfig) -> bool {
+    !matches!(
+        config.auth,
+        Some(McpAuthConfig::OAuthAuthorizationCodePublicPkce { .. })
+            | Some(McpAuthConfig::OAuthAuthorizationCodeConfidentialPkce { .. })
+    )
+}
+
+async fn prepare_mcp_server_config(
+    app_state: &AppState,
+    deployment_id: i64,
+    config: &mut McpServerConfig,
+) -> Result<(), common::error::AppError> {
+    hydrate_and_register_mcp_auth_config(app_state, deployment_id, config).await?;
+    validate_mcp_server_config(config)?;
+    Ok(())
+}
+
+async fn validate_mcp_runtime_if_required(
+    config: &McpServerConfig,
+) -> Result<(), common::error::AppError> {
+    if requires_runtime_validation(config) {
+        validate_mcp_server_runtime(config).await?;
+    }
+    Ok(())
+}
+
 fn parse_quoted_auth_param(header: &str, key: &str) -> Option<String> {
     let needle = format!("{key}=\"");
     let start = header.find(&needle)? + needle.len();
@@ -924,19 +971,11 @@ pub async fn discover_mcp_server_auth(
     };
 
     match validate_mcp_server_runtime(&probe_config).await {
-        Ok(_) => Ok(McpAuthDiscoveryResult {
-            requires_auth: false,
-            recommended_auth_mode: None,
-            token_url: None,
-            auth_url: None,
-            register_url: None,
-            resource_metadata_url: None,
-            resource: None,
-            scopes: Vec::new(),
-            token_endpoint_auth_methods_supported: Vec::new(),
-            authorization_servers: Vec::new(),
-            message: "No authorization required. This MCP server can be used directly.".to_string(),
-        }
+        Ok(_) => Ok(simple_discovery_result(
+            false,
+            None,
+            "No authorization required. This MCP server can be used directly.".to_string(),
+        )
         .into()),
         Err(err) => {
             let err_text = err.to_string().to_lowercase();
@@ -947,38 +986,21 @@ pub async fn discover_mcp_server_auth(
                 || err_text.contains("auth required")
                 || err_text.contains("invalid_token")
             {
-                Ok(McpAuthDiscoveryResult {
-                    requires_auth: true,
-                    recommended_auth_mode: Some("oauth_authorization_code_public_pkce".to_string()),
-                    token_url: None,
-                    auth_url: None,
-                    register_url: None,
-                    resource_metadata_url: None,
-                    resource: None,
-                    scopes: Vec::new(),
-                    token_endpoint_auth_methods_supported: Vec::new(),
-                    authorization_servers: Vec::new(),
-                    message: "Authorization required. Configure credentials before saving."
-                        .to_string(),
-                }
+                Ok(simple_discovery_result(
+                    true,
+                    Some("oauth_authorization_code_public_pkce".to_string()),
+                    "Authorization required. Configure credentials before saving.".to_string(),
+                )
                 .into())
             } else {
-                Ok(McpAuthDiscoveryResult {
-                    requires_auth: false,
-                    recommended_auth_mode: None,
-                    token_url: None,
-                    auth_url: None,
-                    register_url: None,
-                    resource_metadata_url: None,
-                    resource: None,
-                    scopes: Vec::new(),
-                    token_endpoint_auth_methods_supported: Vec::new(),
-                    authorization_servers: Vec::new(),
-                    message: format!(
+                Ok(simple_discovery_result(
+                    false,
+                    None,
+                    format!(
                         "Could not conclusively detect authorization requirement: {}",
                         err
                     ),
-                }
+                )
                 .into())
             }
         }
@@ -1007,8 +1029,7 @@ pub async fn create_mcp_server(
     Json(request): Json<CreateMcpServerRequest>,
 ) -> ApiResult<McpServerCreateResponse> {
     let mut config = request.config;
-    hydrate_and_register_mcp_auth_config(&app_state, deployment_id, &mut config).await?;
-    validate_mcp_server_config(&config)?;
+    prepare_mcp_server_config(&app_state, deployment_id, &mut config).await?;
 
     let discovery_result = if config.auth.is_none() {
         let (
@@ -1043,20 +1064,11 @@ pub async fn create_mcp_server(
         };
 
         match validate_mcp_server_runtime(&probe_config).await {
-            Ok(_) => McpAuthDiscoveryResult {
-                requires_auth: false,
-                recommended_auth_mode: None,
-                token_url: None,
-                auth_url: None,
-                register_url: None,
-                resource_metadata_url: None,
-                resource: None,
-                scopes: Vec::new(),
-                token_endpoint_auth_methods_supported: Vec::new(),
-                authorization_servers: Vec::new(),
-                message: "No authorization required. This MCP server can be used directly."
-                    .to_string(),
-            },
+            Ok(_) => simple_discovery_result(
+                false,
+                None,
+                "No authorization required. This MCP server can be used directly.".to_string(),
+            ),
             Err(err) => {
                 let err_text = err.to_string().to_lowercase();
                 if err_text.contains("401")
@@ -1071,45 +1083,18 @@ pub async fn create_mcp_server(
                     ))
                     .into());
                 }
-                McpAuthDiscoveryResult {
-                    requires_auth: false,
-                    recommended_auth_mode: None,
-                    token_url: None,
-                    auth_url: None,
-                    register_url: None,
-                    resource_metadata_url: None,
-                    resource: None,
-                    scopes: Vec::new(),
-                    token_endpoint_auth_methods_supported: Vec::new(),
-                    authorization_servers: Vec::new(),
-                    message: format!("Validation note: {}", err),
-                }
+                simple_discovery_result(false, None, format!("Validation note: {}", err))
             }
         }
     } else {
-        McpAuthDiscoveryResult {
-            requires_auth: true,
-            recommended_auth_mode: None,
-            token_url: None,
-            auth_url: None,
-            register_url: None,
-            resource_metadata_url: None,
-            resource: None,
-            scopes: Vec::new(),
-            token_endpoint_auth_methods_supported: Vec::new(),
-            authorization_servers: Vec::new(),
-            message: "Authorization configured and validated.".to_string(),
-        }
+        simple_discovery_result(
+            true,
+            None,
+            "Authorization configured and validated.".to_string(),
+        )
     };
 
-    let is_runtime_validated = !matches!(
-        config.auth,
-        Some(McpAuthConfig::OAuthAuthorizationCodePublicPkce { .. })
-            | Some(McpAuthConfig::OAuthAuthorizationCodeConfidentialPkce { .. })
-    );
-    if is_runtime_validated {
-        validate_mcp_server_runtime(&config).await?;
-    }
+    validate_mcp_runtime_if_required(&config).await?;
 
     let server = CreateMcpServerCommand::new(deployment_id, request.name, config)
         .execute(&app_state)
@@ -1146,16 +1131,8 @@ pub async fn update_mcp_server(
     }
     if let Some(config) = request.config {
         let mut config = config;
-        hydrate_and_register_mcp_auth_config(&app_state, deployment_id, &mut config).await?;
-        validate_mcp_server_config(&config)?;
-        let is_runtime_validated = !matches!(
-            config.auth,
-            Some(McpAuthConfig::OAuthAuthorizationCodePublicPkce { .. })
-                | Some(McpAuthConfig::OAuthAuthorizationCodeConfidentialPkce { .. })
-        );
-        if is_runtime_validated {
-            validate_mcp_server_runtime(&config).await?;
-        }
+        prepare_mcp_server_config(&app_state, deployment_id, &mut config).await?;
+        validate_mcp_runtime_if_required(&config).await?;
         command = command.with_config(config);
     }
 

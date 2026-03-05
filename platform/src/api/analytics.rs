@@ -32,6 +32,19 @@ pub struct AnalyticsStatsResponse {
     pub recent_signins: Vec<RecentSignup>,
 }
 
+fn previous_window(from: DateTime<Utc>, to: DateTime<Utc>) -> (DateTime<Utc>, DateTime<Utc>) {
+    let duration = to.signed_duration_since(from);
+    (from - duration, to - duration)
+}
+
+fn calculate_change(current: i64, previous: i64) -> Option<f64> {
+    if previous == 0 {
+        if current > 0 { Some(100.0) } else { None }
+    } else {
+        Some(((current - previous) as f64 / previous as f64) * 100.0)
+    }
+}
+
 #[instrument(skip(app_state))]
 pub async fn get_analytics_stats(
     State(app_state): State<AppState>,
@@ -39,11 +52,7 @@ pub async fn get_analytics_stats(
     Query(query): Query<AnalyticsQuery>,
 ) -> Result<Json<AnalyticsStatsResponse>, StatusCode> {
     let clickhouse = &app_state.clickhouse_service;
-
-    let duration = query.to.signed_duration_since(query.from);
-
-    let previous_from = query.from - duration;
-    let previous_to = query.to - duration;
+    let (previous_from, previous_to) = previous_window(query.from, query.to);
 
     let stats = clickhouse
         .get_analytics_stats(
@@ -61,14 +70,6 @@ pub async fn get_analytics_stats(
 
     let recent_signups = stats.get_recent_signups();
     let recent_signins = stats.get_recent_signins();
-
-    let calculate_change = |current: i64, previous: i64| -> Option<f64> {
-        if previous == 0 {
-            if current > 0 { Some(100.0) } else { None }
-        } else {
-            Some(((current - previous) as f64 / previous as f64) * 100.0)
-        }
-    };
 
     Ok(Json(AnalyticsStatsResponse {
         unique_signins: stats.unique_signins as i64,

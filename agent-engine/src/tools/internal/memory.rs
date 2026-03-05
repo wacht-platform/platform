@@ -166,7 +166,9 @@ impl ToolExecutor {
             },
             "memory_id": memory.id.to_string(),
             "category": category_str,
-            "consolidated_count": consolidated_count
+            "consolidated_count": consolidated_count,
+            "created_at": memory.created_at.to_rfc3339(),
+            "updated_at": memory.updated_at.to_rfc3339()
         }))
     }
 }

@@ -19,6 +19,7 @@ use commands::{
 use common::state::AppState;
 use models::{
     enterprise_connection::EnterpriseConnection, organization_domain::OrganizationDomain,
+    scim_token::ScimToken,
 };
 use queries::{ListEnterpriseConnectionsQuery, ListOrganizationDomainsQuery, Query as QueryTrait};
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,28 @@ fn scim_base_url(connection_id: i64) -> String {
     let base =
         std::env::var("FRONTEND_API_URL").unwrap_or_else(|_| DEFAULT_FRONTEND_API_URL.to_string());
     format!("{}/scim/v2/{}", base, connection_id)
+}
+
+fn build_scim_token_details(token: &ScimToken, plain_token: Option<String>) -> ScimTokenDetails {
+    ScimTokenDetails {
+        token: plain_token,
+        token_prefix: token.token_prefix.clone(),
+        enabled: token.enabled,
+        created_at: token.created_at.to_rfc3339(),
+        updated_at: token.updated_at.to_rfc3339(),
+        last_used_at: token.last_used_at.map(|dt| dt.to_rfc3339()),
+    }
+}
+
+fn build_scim_token_response(
+    connection_id: i64,
+    token: Option<ScimTokenDetails>,
+) -> ScimTokenInfoResponse {
+    ScimTokenInfoResponse {
+        exists: token.is_some(),
+        scim_base_url: scim_base_url(connection_id),
+        token,
+    }
 }
 
 #[derive(Deserialize)]
@@ -219,31 +242,14 @@ pub async fn get_scim_token_handler(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ConnectionParams>,
 ) -> ApiResult<ScimTokenInfoResponse> {
-    let scim_base_url = scim_base_url(params.connection_id);
-
     let token = queries::GetScimTokenQuery::new(deployment_id, params.org_id, params.connection_id)
         .execute(&app_state)
         .await?;
 
-    let response = match token {
-        Some(t) => ScimTokenInfoResponse {
-            exists: true,
-            scim_base_url,
-            token: Some(ScimTokenDetails {
-                token: None,
-                token_prefix: t.token_prefix,
-                enabled: t.enabled,
-                created_at: t.created_at.to_rfc3339(),
-                updated_at: t.updated_at.to_rfc3339(),
-                last_used_at: t.last_used_at.map(|dt| dt.to_rfc3339()),
-            }),
-        },
-        None => ScimTokenInfoResponse {
-            exists: false,
-            scim_base_url,
-            token: None,
-        },
-    };
+    let response = build_scim_token_response(
+        params.connection_id,
+        token.as_ref().map(|scim_token| build_scim_token_details(scim_token, None)),
+    );
 
     Ok(response.into())
 }
@@ -264,20 +270,8 @@ pub async fn generate_scim_token_handler(
         .execute(&app_state)
         .await?;
 
-    let scim_base_url = scim_base_url(params.connection_id);
-
-    let response = ScimTokenInfoResponse {
-        exists: true,
-        scim_base_url,
-        token: Some(ScimTokenDetails {
-            token: Some(result.plain_token),
-            token_prefix: result.token.token_prefix,
-            enabled: result.token.enabled,
-            created_at: result.token.created_at.to_rfc3339(),
-            updated_at: result.token.updated_at.to_rfc3339(),
-            last_used_at: None,
-        }),
-    };
+    let token = build_scim_token_details(&result.token, Some(result.plain_token));
+    let response = build_scim_token_response(params.connection_id, Some(token));
 
     Ok(response.into())
 }

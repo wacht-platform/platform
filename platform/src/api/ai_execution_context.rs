@@ -34,6 +34,9 @@ pub struct ListExecutionContextsParams {
     pub context_group: Option<String>,
 }
 
+const EXECUTION_VARIANT_VALIDATION_ERROR: &str =
+    "Exactly one execution_type variant must be provided";
+
 fn build_create_execution_context_command(
     deployment_id: i64,
     request: CreateExecutionContextRequest,
@@ -110,6 +113,47 @@ async fn list_execution_contexts_inner(
         limit as i32,
         Some(offset as i64),
     ))
+}
+
+fn queued_execution_response(conversation_id: Option<i64>) -> ExecuteAgentResponse {
+    ExecuteAgentResponse {
+        status: "queued".to_string(),
+        conversation_id: conversation_id.map(|id| id.to_string()),
+    }
+}
+
+fn next_conversation_id(app_state: &AppState) -> Result<i64, AppError> {
+    Ok(app_state
+        .sf
+        .next_id()
+        .map_err(|e| AppError::Internal(format!("Failed to generate conversation ID: {}", e)))?
+        as i64)
+}
+
+async fn ensure_pulse_usage_if_needed(
+    app_state: &AppState,
+    deployment_id: i64,
+    has_custom_gemini_key: bool,
+) -> Result<(), AppError> {
+    if !has_custom_gemini_key {
+        EnsurePulseUsageAllowedForDeploymentCommand::new(deployment_id)
+            .execute(app_state)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn cancel_running_execution_if_needed(
+    app_state: &AppState,
+    context_id: i64,
+    has_running_execution: bool,
+) -> Result<(), AppError> {
+    if has_running_execution {
+        SignalAgentExecutionCancellationCommand::new(context_id)
+            .execute(app_state)
+            .await?;
+    }
+    Ok(())
 }
 
 pub async fn create_execution_context(
@@ -204,10 +248,7 @@ pub async fn execute_agent_async(
     ];
 
     if execution_variants.iter().filter(|&&v| v).count() != 1 {
-        return Err(AppError::BadRequest(
-            "Exactly one execution_type variant must be provided".to_string(),
-        )
-        .into());
+        return Err(AppError::BadRequest(EXECUTION_VARIANT_VALIDATION_ERROR.to_string()).into());
     }
 
     // We allow agent creation/config for all plans, but actual execution requires AI feature access.
@@ -247,11 +288,7 @@ pub async fn execute_agent_async(
         cancel,
     ) {
         (Some(new_message), None, None, None) => {
-            if !has_custom_gemini_key {
-                EnsurePulseUsageAllowedForDeploymentCommand::new(deployment_id)
-                    .execute(&app_state)
-                    .await?;
-            }
+            ensure_pulse_usage_if_needed(&app_state, deployment_id, has_custom_gemini_key).await?;
 
             if new_message.message.trim().is_empty()
                 && new_message
@@ -274,9 +311,7 @@ pub async fn execute_agent_async(
                     }
                 };
 
-            let conversation_id = app_state.sf.next_id().map_err(|e| {
-                AppError::Internal(format!("Failed to generate conversation ID: {}", e))
-            })? as i64;
+            let conversation_id = next_conversation_id(&app_state)?;
 
             let message = if new_message.message.trim().is_empty() {
                 let file_names = model_files
@@ -307,11 +342,7 @@ pub async fn execute_agent_async(
             .execute(&app_state)
             .await?;
 
-            if has_running_execution {
-                SignalAgentExecutionCancellationCommand::new(context_id)
-                    .execute(&app_state)
-                    .await?;
-            }
+            cancel_running_execution_if_needed(&app_state, context_id, has_running_execution).await?;
 
             PublishAgentExecutionCommand::new_message(
                 deployment_id,
@@ -328,27 +359,17 @@ pub async fn execute_agent_async(
                 context_id, conversation_id
             );
 
-            Ok(ExecuteAgentResponse {
-                status: "queued".to_string(),
-                conversation_id: Some(conversation_id.to_string()),
-            }
-            .into())
+            Ok(queued_execution_response(Some(conversation_id)).into())
         }
 
         (None, Some(user_input_response), None, None) => {
-            if !has_custom_gemini_key {
-                EnsurePulseUsageAllowedForDeploymentCommand::new(deployment_id)
-                    .execute(&app_state)
-                    .await?;
-            }
+            ensure_pulse_usage_if_needed(&app_state, deployment_id, has_custom_gemini_key).await?;
 
             if user_input_response.message.trim().is_empty() {
                 return Err(AppError::BadRequest("Message is required".to_string()).into());
             }
 
-            let conversation_id = app_state.sf.next_id().map_err(|e| {
-                AppError::Internal(format!("Failed to generate conversation ID: {}", e))
-            })? as i64;
+            let conversation_id = next_conversation_id(&app_state)?;
 
             CreateConversationCommand::new(
                 conversation_id,
@@ -363,11 +384,7 @@ pub async fn execute_agent_async(
             .execute(&app_state)
             .await?;
 
-            if has_running_execution {
-                SignalAgentExecutionCancellationCommand::new(context_id)
-                    .execute(&app_state)
-                    .await?;
-            }
+            cancel_running_execution_if_needed(&app_state, context_id, has_running_execution).await?;
 
             PublishAgentExecutionCommand::user_input_response(
                 deployment_id,
@@ -384,11 +401,7 @@ pub async fn execute_agent_async(
                 context_id, conversation_id
             );
 
-            Ok(ExecuteAgentResponse {
-                status: "queued".to_string(),
-                conversation_id: Some(conversation_id.to_string()),
-            }
-            .into())
+            Ok(queued_execution_response(Some(conversation_id)).into())
         }
 
         (None, None, Some(platform_function_result), None) => {
@@ -412,19 +425,11 @@ pub async fn execute_agent_async(
                 context_id, platform_function_result.execution_id
             );
 
-            Ok(ExecuteAgentResponse {
-                status: "queued".to_string(),
-                conversation_id: None,
-            }
-            .into())
+            Ok(queued_execution_response(None).into())
         }
 
         (None, None, None, Some(_)) => {
-            if has_running_execution {
-                SignalAgentExecutionCancellationCommand::new(context_id)
-                    .execute(&app_state)
-                    .await?;
-            }
+            cancel_running_execution_if_needed(&app_state, context_id, has_running_execution).await?;
 
             UpdateExecutionContextQuery::new(context_id, deployment_id)
                 .with_status(ExecutionContextStatus::Failed)
@@ -438,9 +443,6 @@ pub async fn execute_agent_async(
             }
             .into())
         }
-        _ => Err(AppError::BadRequest(
-            "Exactly one execution_type variant must be provided".to_string(),
-        )
-        .into()),
+        _ => Err(AppError::BadRequest(EXECUTION_VARIANT_VALIDATION_ERROR.to_string()).into()),
     }
 }

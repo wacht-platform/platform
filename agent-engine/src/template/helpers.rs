@@ -241,11 +241,20 @@ impl handlebars::HelperDef for FormatMemoriesHelper {
                     .get("content")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No content");
-                let importance = memory
-                    .get("importance")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0);
-                format!("- {content} (importance: {importance:.2})")
+                let category = memory
+                    .get("memory_category")
+                    .or_else(|| memory.get("category"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let created_at = memory
+                    .get("created_at")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let scope = match memory.get("creation_context_id").and_then(|v| v.as_i64()) {
+                    Some(_) => "session",
+                    None => "cross-session",
+                };
+                format!("- [{category}][{scope}] {content} (created_at: {created_at})")
             })
             .collect();
 

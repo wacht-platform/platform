@@ -5,6 +5,7 @@ use std::collections::HashMap;
 // Template Context for LLM Calls
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepDecisionContext {
+    pub current_datetime_utc: String,
     pub conversation_history: Vec<Value>,
     pub user_request: String,
     #[serde(default)]
@@ -14,6 +15,8 @@ pub struct StepDecisionContext {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation_insights: Option<Value>,
     pub task_results: HashMap<String, Value>,
+    #[serde(default)]
+    pub loaded_memories: Vec<Value>,
     pub available_tools: Vec<Value>,
     pub available_knowledge_bases: Vec<Value>,
     #[serde(default)]

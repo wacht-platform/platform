@@ -14,6 +14,7 @@ use models::api_key::OAuthScopeDefinition;
 use queries::Query as QueryTrait;
 use queries::{
     GetRuntimeDeploymentHostsByIdQuery, GetRuntimeOAuthClientByClientIdQuery, RuntimeOAuthAppData,
+    RuntimeOAuthClientData,
 };
 use redis::AsyncCommands;
 
@@ -99,12 +100,8 @@ async fn authorize_impl(
     headers: &HeaderMap,
     request: OAuthAuthorizeRequest,
 ) -> Result<OAuthAuthorizeInitiatedResponse, ApiErrorResponse> {
-    let response_type = request
-        .response_type
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, "missing response_type"))?;
+    let response_type =
+        required_authorize_param(request.response_type.as_deref(), "missing response_type")?;
     if response_type != "code" {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -112,26 +109,14 @@ async fn authorize_impl(
         )
             .into());
     }
-    let client_id = request
-        .client_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, "missing client_id"))?
-        .to_string();
-    let redirect_uri = request
-        .redirect_uri
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, "missing redirect_uri"))?
-        .to_string();
+    let client_id =
+        required_authorize_param(request.client_id.as_deref(), "missing client_id")?.to_string();
+    let redirect_uri =
+        required_authorize_param(request.redirect_uri.as_deref(), "missing redirect_uri")?
+            .to_string();
 
     let oauth_app = resolve_oauth_app_from_host(app_state, headers).await?;
-    let client = GetRuntimeOAuthClientByClientIdQuery::new(oauth_app.id, client_id)
-        .execute(app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth client not found"))?;
+    let client = get_runtime_oauth_client(app_state, oauth_app.id, client_id).await?;
     if !client.is_active {
         return Err((StatusCode::BAD_REQUEST, "OAuth client is inactive").into());
     }
@@ -288,10 +273,9 @@ async fn try_build_authorize_error_redirect(
         .filter(|v| !v.is_empty())?
         .to_string();
     let oauth_app = resolve_oauth_app_from_host(app_state, headers).await.ok()?;
-    let client = GetRuntimeOAuthClientByClientIdQuery::new(oauth_app.id, client_id)
-        .execute(app_state)
+    let client = get_runtime_oauth_client(app_state, oauth_app.id, client_id)
         .await
-        .ok()??;
+        .ok()?;
     let redirect_registered = client.redirect_uris.iter().any(|u| u == redirect_uri);
     if !redirect_registered {
         return None;
@@ -426,25 +410,34 @@ pub async fn oauth_consent_submit(
             .execute(&app_state)
             .await?;
 
-            let redirect_uri = append_oauth_redirect_params(
+            let redirect_uri = build_consent_redirect_uri(
                 claims.redirect_uri,
-                &[("code", issued.code)],
                 claims.state,
-                Some(issuer.clone()),
+                &issuer,
+                &[("code", issued.code)],
             );
             Ok(Redirect::to(&redirect_uri))
         }
         "deny" => {
-            let redirect_uri = append_oauth_redirect_params(
+            let redirect_uri = build_consent_redirect_uri(
                 claims.redirect_uri,
-                &[("error", "access_denied".to_string())],
                 claims.state,
-                Some(issuer.clone()),
+                &issuer,
+                &[("error", "access_denied".to_string())],
             );
             Ok(Redirect::to(&redirect_uri))
         }
         _ => Err((StatusCode::BAD_REQUEST, "action must be approve or deny").into()),
     }
+}
+
+fn build_consent_redirect_uri(
+    redirect_uri: String,
+    state: Option<String>,
+    issuer: &str,
+    params: &[(&str, String)],
+) -> String {
+    append_oauth_redirect_params(redirect_uri, params, state, Some(issuer.to_string()))
 }
 
 async fn resolve_oauth_app_and_issuer(
@@ -514,4 +507,25 @@ fn resolve_scope_definitions(
                 })
         })
         .collect()
+}
+
+fn required_authorize_param<'a>(
+    value: Option<&'a str>,
+    message: &'static str,
+) -> Result<&'a str, ApiErrorResponse> {
+    value
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, message).into())
+}
+
+async fn get_runtime_oauth_client(
+    app_state: &AppState,
+    oauth_app_id: i64,
+    client_id: String,
+) -> Result<RuntimeOAuthClientData, ApiErrorResponse> {
+    GetRuntimeOAuthClientByClientIdQuery::new(oauth_app_id, client_id)
+        .execute(app_state)
+        .await?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth client not found").into())
 }

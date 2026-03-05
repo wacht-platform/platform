@@ -19,6 +19,41 @@ use crate::middleware::platform_source::{
 };
 use common::state::AppState;
 
+fn cors_layer() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any)
+}
+
+fn apply_common_http_layers<S>(router: Router<S>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    router
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request<_>| {
+                    tracing::info_span!(
+                        "http_request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        version = ?request.version(),
+                    )
+                })
+                .on_failure(
+                    |error: ServerErrorsFailureClass, latency: Duration, _span: &tracing::Span| {
+                        tracing::error!(
+                            status = %error,
+                            latency_ms = latency.as_millis(),
+                            "response failed"
+                        );
+                    },
+                ),
+        )
+        .layer(cors_layer())
+}
+
 fn health_routes() -> Router<AppState> {
     Router::new().route("/health", get(api::health::check))
 }
@@ -694,11 +729,6 @@ fn backend_specific_routes() -> Router<AppState> {
 }
 
 pub async fn create_console_router(state: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
     wacht::init_from_env().await.unwrap();
 
     use wacht::middleware::AuthLayer;
@@ -718,33 +748,14 @@ pub async fn create_console_router(state: AppState) -> Router {
         .nest("/deployments/{deployment_id}", deployment_routes)
         .layer(auth_layer);
 
-    Router::new()
+    apply_common_http_layers(
+        Router::new()
         .merge(health_routes())
         .merge(public_webhook_routes())
         .merge(protected_routes)
         .with_state(state)
         .layer(axum::middleware::from_fn(mark_console_platform_source))
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(|request: &Request<_>| {
-                    tracing::info_span!(
-                        "http_request",
-                        method = %request.method(),
-                        uri = %request.uri(),
-                        version = ?request.version(),
-                    )
-                })
-                .on_failure(
-                    |error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
-                        tracing::error!(
-                            status = %error,
-                            latency_ms = _latency.as_millis(),
-                            "response failed"
-                        );
-                    },
-                ),
-        )
-        .layer(cors)
+    )
 }
 
 pub async fn create_backend_router(state: AppState) -> Router {
@@ -752,11 +763,6 @@ pub async fn create_backend_router(state: AppState) -> Router {
         state.wacht_client.is_some(),
         "Backend API requires Wacht gateway client. Ensure WACHT_API_KEY and WACHT_FRONTEND_HOST are set."
     );
-
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
 
     let backend_routes = base_deployment_routes()
         .merge(ai_routes())
@@ -766,73 +772,26 @@ pub async fn create_backend_router(state: AppState) -> Router {
             backend_deployment_middleware,
         ));
 
-    Router::new()
+    apply_common_http_layers(
+        Router::new()
         .merge(health_routes())
         .merge(backend_routes)
         .with_state(state)
         .layer(axum::middleware::from_fn(mark_backend_platform_source))
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(|request: &Request<_>| {
-                    tracing::info_span!(
-                        "http_request",
-                        method = %request.method(),
-                        uri = %request.uri(),
-                        version = ?request.version(),
-                    )
-                })
-                .on_failure(
-                    |error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
-                        tracing::error!(
-                            status = %error,
-                            latency_ms = _latency.as_millis(),
-                            "response failed"
-                        );
-                    },
-                ),
-        )
-        .layer(cors)
+    )
 }
 
 pub async fn create_frontend_router(state: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
-    Router::new()
+    apply_common_http_layers(
+        Router::new()
         .merge(health_routes())
         .with_state(state)
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(|request: &Request<_>| {
-                    tracing::info_span!(
-                        "http_request",
-                        method = %request.method(),
-                        uri = %request.uri(),
-                        version = ?request.version(),
-                    )
-                })
-                .on_failure(
-                    |error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
-                        tracing::error!(
-                            status = %error,
-                            latency_ms = _latency.as_millis(),
-                            "response failed"
-                        );
-                    },
-                ),
-        )
-        .layer(cors)
+    )
 }
 
 pub async fn create_oauth_router(state: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
-    Router::new()
+    apply_common_http_layers(
+        Router::new()
         .route("/health", get(api::health::check))
         .route(
             "/.well-known/oauth-authorization-server",
@@ -867,25 +826,5 @@ pub async fn create_oauth_router(state: AppState) -> Router {
                 .delete(api::oauth_runtime::oauth_delete_registered_client),
         )
         .with_state(state)
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(|request: &Request<_>| {
-                    tracing::info_span!(
-                        "http_request",
-                        method = %request.method(),
-                        uri = %request.uri(),
-                        version = ?request.version(),
-                    )
-                })
-                .on_failure(
-                    |error: ServerErrorsFailureClass, _latency: Duration, _span: &tracing::Span| {
-                        tracing::error!(
-                            status = %error,
-                            latency_ms = _latency.as_millis(),
-                            "response failed"
-                        );
-                    },
-                ),
-        )
-        .layer(cors)
+    )
 }

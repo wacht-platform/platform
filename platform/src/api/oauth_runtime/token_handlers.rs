@@ -45,29 +45,14 @@ async fn oauth_token_impl(
     request: OAuthTokenRequest,
 ) -> Result<Json<OAuthTokenResponse>, OAuthEndpointError> {
     let context = resolve_token_context(&app_state, &headers, &request).await?;
-    if !context
-        .client
-        .grant_types
-        .iter()
-        .any(|grant_type| grant_type == &request.grant_type)
-    {
-        return Err(oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unauthorized_client",
-            Some("grant_type is not allowed for this client"),
-        ));
-    }
+    ensure_client_allows_grant_type(&context.client, &request.grant_type)?;
 
     match request.grant_type.as_str() {
         "authorization_code" => {
             handle_authorization_code_grant(&app_state, &request, &context).await
         }
         "refresh_token" => handle_refresh_token_grant(&app_state, &request, &context).await,
-        _ => Err(oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unsupported_grant_type",
-            None,
-        )),
+        _ => Err(unsupported_grant_type_error()),
     }
 }
 
@@ -336,6 +321,29 @@ fn required_form_field<'a>(
 
 fn invalid_grant_error() -> OAuthEndpointError {
     oauth_token_error(StatusCode::BAD_REQUEST, "invalid_grant", None)
+}
+
+fn unsupported_grant_type_error() -> OAuthEndpointError {
+    oauth_token_error(StatusCode::BAD_REQUEST, "unsupported_grant_type", None)
+}
+
+fn ensure_client_allows_grant_type(
+    client: &RuntimeOAuthClientData,
+    grant_type: &str,
+) -> Result<(), OAuthEndpointError> {
+    if client
+        .grant_types
+        .iter()
+        .any(|client_grant_type| client_grant_type == grant_type)
+    {
+        Ok(())
+    } else {
+        Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            Some("grant_type is not allowed for this client"),
+        ))
+    }
 }
 
 pub(super) fn enqueue_grant_last_used(

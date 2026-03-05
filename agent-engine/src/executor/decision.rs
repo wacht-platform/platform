@@ -813,6 +813,9 @@ impl AgentExecutor {
         };
 
         let context = StepDecisionContext {
+            current_datetime_utc: chrono::Utc::now()
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string(),
             conversation_history: self.get_conversation_history_for_llm().await,
             user_request: self.user_request.clone(),
             input_safety_signals: self.derive_input_safety_signals(),
@@ -825,6 +828,11 @@ impl AgentExecutor {
                 .as_ref()
                 .map(|c| serde_json::to_value(c).unwrap()),
             task_results: std::collections::HashMap::new(),
+            loaded_memories: self
+                .memories
+                .iter()
+                .map(|memory| serde_json::to_value(memory).unwrap())
+                .collect(),
             available_tools: self
                 .available_tools_for_mode()
                 .iter()

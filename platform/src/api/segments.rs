@@ -111,37 +111,69 @@ fn validate_segment_type(segment_type: &str) -> Result<(), AppError> {
     }
 }
 
+fn map_user_filter(
+    filters: Option<&SegmentDataFilters>,
+) -> Option<queries::segments::UserFilter> {
+    filters.and_then(|segment_filters| {
+        segment_filters
+            .user
+            .as_ref()
+            .map(|user| queries::segments::UserFilter {
+                name: user.name.clone(),
+                email: user.email.clone(),
+                phone: user.phone.clone(),
+            })
+    })
+}
+
+fn map_organization_filter(
+    filters: Option<&SegmentDataFilters>,
+) -> Option<queries::segments::OrganizationFilter> {
+    filters.and_then(|segment_filters| {
+        segment_filters
+            .organization
+            .as_ref()
+            .map(|organization| queries::segments::OrganizationFilter {
+                name: organization.name.clone(),
+            })
+    })
+}
+
+fn map_workspace_filter(
+    filters: Option<&SegmentDataFilters>,
+) -> Option<queries::segments::WorkspaceFilter> {
+    filters.and_then(|segment_filters| {
+        segment_filters
+            .workspace
+            .as_ref()
+            .map(|workspace| queries::segments::WorkspaceFilter {
+                name: workspace.name.clone(),
+            })
+    })
+}
+
+fn build_segment_data_query(
+    deployment_id: i64,
+    payload: GetSegmentDataRequest,
+) -> GetSegmentDataQuery {
+    let filters = payload.filters.as_ref();
+
+    GetSegmentDataQuery {
+        deployment_id,
+        target_type: payload.target_type,
+        segment_id: filters.and_then(|segment_filters| segment_filters.segment_id),
+        user_filter: map_user_filter(filters),
+        organization_filter: map_organization_filter(filters),
+        workspace_filter: map_workspace_filter(filters),
+    }
+}
+
 pub async fn get_segment_data(
     State(state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(payload): Json<GetSegmentDataRequest>,
 ) -> ApiResult<PaginatedResponse<AnalyzedEntity>> {
-    let query = GetSegmentDataQuery {
-        deployment_id,
-        target_type: payload.target_type,
-        segment_id: payload.filters.as_ref().and_then(|f| f.segment_id),
-        user_filter: payload.filters.as_ref().and_then(|f| {
-            f.user.as_ref().map(|u| queries::segments::UserFilter {
-                name: u.name.clone(),
-                email: u.email.clone(),
-                phone: u.phone.clone(),
-            })
-        }),
-        organization_filter: payload.filters.as_ref().and_then(|f| {
-            f.organization
-                .as_ref()
-                .map(|o| queries::segments::OrganizationFilter {
-                    name: o.name.clone(),
-                })
-        }),
-        workspace_filter: payload.filters.as_ref().and_then(|f| {
-            f.workspace
-                .as_ref()
-                .map(|w| queries::segments::WorkspaceFilter {
-                    name: w.name.clone(),
-                })
-        }),
-    };
+    let query = build_segment_data_query(deployment_id, payload);
 
     let entities = query.execute(&state).await?;
 

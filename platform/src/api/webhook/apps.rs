@@ -19,13 +19,14 @@ use dto::json::webhook_requests::{
 };
 use models::webhook::WebhookApp;
 use queries::{
-    GetWebhookAppByNameQuery, Query as QueryTrait,
+    Query as QueryTrait,
     webhook::{GetWebhookAppsQuery, GetWebhookEventsQuery},
 };
 
 use crate::api::pagination::paginate_results;
 use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::RequireDeployment;
+use super::helpers::get_webhook_app_or_404;
 
 pub async fn list_webhook_apps(
     State(app_state): State<AppState>,
@@ -193,12 +194,7 @@ pub async fn get_webhook_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
 ) -> ApiResult<WebhookApp> {
-    let command = GetWebhookAppByNameQuery::new(deployment_id, app_slug);
-
-    let app = command
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found".to_string()))?;
+    let app = get_webhook_app_or_404(&app_state, deployment_id, app_slug).await?;
 
     Ok(app.into())
 }
@@ -261,10 +257,7 @@ pub async fn get_webhook_catalog(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
 ) -> ApiResult<models::webhook::WebhookEventCatalog> {
-    let app = GetWebhookAppByNameQuery::new(deployment_id, app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found".to_string()))?;
+    let app = get_webhook_app_or_404(&app_state, deployment_id, app_slug).await?;
 
     let catalog_slug = app.event_catalog_slug.ok_or_else(|| {
         (

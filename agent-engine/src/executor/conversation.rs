@@ -117,7 +117,10 @@ impl AgentExecutor {
 
                         history.push(json!({
                             "role": "model",
-                            "content": agent_execution,
+                            "content": format!(
+                                "[Compressed execution script map]\n{}",
+                                agent_execution
+                            ),
                             "timestamp": conv.created_at,
                             "type": "execution_summary",
                         }));

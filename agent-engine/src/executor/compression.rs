@@ -8,8 +8,8 @@ use commands::{
 };
 use common::error::AppError;
 use dto::json::agent_memory::MemoryCategory;
-use models::{ConversationContent, ConversationMessageType};
-use serde_json::json;
+use models::{ActionResult, ConversationContent, ConversationMessageType, ConversationRecord};
+use serde_json::{json, Value};
 
 impl AgentExecutor {
     pub(super) async fn check_and_generate_summaries(&mut self) -> Result<(), AppError> {
@@ -107,12 +107,18 @@ impl AgentExecutor {
 
             let execution_messages: Vec<_> = self.conversations[*start_idx..*end_idx]
                 .iter()
-                .filter_map(|msg| match serde_json::to_value(msg) {
-                    Ok(_) => Some(json!({
+                .filter_map(|msg| {
+                    let compact_content = self.compact_execution_message(msg);
+                    if compact_content.is_empty() {
+                        return None;
+                    }
+
+                    Some(json!({
                         "role": self.map_conversation_type_to_role(&msg.message_type),
-                        "content": self.extract_conversation_content(&msg.content),
-                    })),
-                    Err(_) => None,
+                        "message_type": conversation_message_type_label(&msg.message_type),
+                        "timestamp": msg.created_at.to_rfc3339(),
+                        "content": compact_content,
+                    }))
                 })
                 .collect();
 
@@ -264,5 +270,164 @@ impl AgentExecutor {
                 let _ = create_cmd.execute(&self.ctx.app_state).await;
             }
         }
+    }
+
+    fn compact_execution_message(&self, message: &ConversationRecord) -> String {
+        match &message.content {
+            ConversationContent::UserMessage { message, .. } => {
+                format!("USER {}", truncate_for_summary(message, 240))
+            }
+            ConversationContent::AssistantAcknowledgment {
+                acknowledgment_message,
+                ..
+            } => format!("ACK {}", truncate_for_summary(acknowledgment_message, 220)),
+            ConversationContent::AgentResponse { response, .. } => {
+                format!("RESP {}", truncate_for_summary(response, 320))
+            }
+            ConversationContent::UserInputRequest { question, context, .. } => format!(
+                "ASK question={} context={}",
+                truncate_for_summary(question, 180),
+                truncate_for_summary(context, 140)
+            ),
+            ConversationContent::SystemDecision {
+                step,
+                reasoning,
+                confidence,
+                ..
+            } => format!(
+                "DECISION step={} confidence={:.2} reasoning={}",
+                step,
+                confidence,
+                truncate_for_summary(reasoning, 220)
+            ),
+            ConversationContent::ActionExecutionResult {
+                task_execution,
+                execution_status,
+                blocking_reason,
+            } => {
+                let action_count = task_execution.actions.actions.len();
+                let result_items = task_execution
+                    .actual_result
+                    .as_ref()
+                    .map(|results| {
+                        results
+                            .iter()
+                            .map(compact_action_result)
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    })
+                    .unwrap_or_else(|| "no_results".to_string());
+
+                let blocking = blocking_reason
+                    .as_deref()
+                    .map(|reason| format!(" blocking={}", truncate_for_summary(reason, 140)))
+                    .unwrap_or_default();
+
+                format!(
+                    "ACTION status={:?} actions={} approach={} results=[{}]{}",
+                    execution_status,
+                    action_count,
+                    truncate_for_summary(&task_execution.approach, 120),
+                    result_items,
+                    blocking
+                )
+            }
+            ConversationContent::ContextResults {
+                query,
+                result_count,
+                results,
+                ..
+            } => format!(
+                "CONTEXT query={} count={} preview={}",
+                truncate_for_summary(query, 120),
+                result_count,
+                truncate_for_summary(&compact_json_preview(results, 220), 220)
+            ),
+            ConversationContent::ExecutionSummary {
+                agent_execution, ..
+            } => format!("SUMMARY {}", truncate_for_summary(agent_execution, 320)),
+            ConversationContent::PlatformFunctionResult {
+                execution_id,
+                result,
+            } => format!(
+                "PLATFORM execution_id={} result={}",
+                execution_id,
+                truncate_for_summary(result, 220)
+            ),
+        }
+    }
+}
+
+fn compact_action_result(result: &ActionResult) -> String {
+    let tool_name = result
+        .result
+        .as_ref()
+        .and_then(|v| v.get("tool_name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown_tool");
+
+    let output = result.result.as_ref();
+    let output_status = output
+        .and_then(|v| v.get("status"))
+        .and_then(|v| v.as_str())
+        .unwrap_or(match result.status {
+            models::ActionResultStatus::Success => "success",
+            models::ActionResultStatus::Error => "error",
+        });
+    let saved_output_path = output
+        .and_then(|v| v.get("meta"))
+        .and_then(|v| v.get("saved_output_path"))
+        .and_then(|v| v.as_str());
+    let preview = output
+        .and_then(|v| v.get("data"))
+        .map(|data| compact_json_preview(data, 160))
+        .unwrap_or_else(|| {
+            output
+                .map(|data| compact_json_preview(data, 160))
+                .unwrap_or_else(|| "no_output".to_string())
+        });
+
+    match saved_output_path {
+        Some(path) => format!(
+            "{}:{} preview={} saved={}",
+            tool_name,
+            output_status,
+            truncate_for_summary(&preview, 160),
+            path
+        ),
+        None => format!(
+            "{}:{} preview={}",
+            tool_name,
+            output_status,
+            truncate_for_summary(&preview, 160)
+        ),
+    }
+}
+
+fn compact_json_preview(value: &Value, limit: usize) -> String {
+    let raw = serde_json::to_string(value).unwrap_or_else(|_| "<unserializable>".to_string());
+    truncate_for_summary(&raw, limit)
+}
+
+fn truncate_for_summary(input: &str, limit: usize) -> String {
+    let normalized = input.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut truncated = normalized.chars().take(limit).collect::<String>();
+    if normalized.chars().count() > limit {
+        truncated.push_str("...");
+    }
+    truncated
+}
+
+fn conversation_message_type_label(message_type: &ConversationMessageType) -> &'static str {
+    match message_type {
+        ConversationMessageType::UserMessage => "user_message",
+        ConversationMessageType::AgentResponse => "agent_response",
+        ConversationMessageType::AssistantAcknowledgment => "assistant_acknowledgment",
+        ConversationMessageType::ActionExecutionResult => "action_execution_result",
+        ConversationMessageType::SystemDecision => "system_decision",
+        ConversationMessageType::ContextResults => "context_results",
+        ConversationMessageType::UserInputRequest => "user_input_request",
+        ConversationMessageType::ExecutionSummary => "execution_summary",
+        ConversationMessageType::PlatformFunctionResult => "platform_function_result",
     }
 }

@@ -4,12 +4,15 @@ use common::state::AppState;
 use dto::json::{AgentExecutionRequest, AgentExecutionType, AgentStreamMessageType};
 use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures, Query};
 use redis::Script;
-use tokio::time::{Duration, sleep};
+use tokio::sync::oneshot;
+use tokio::time::{Duration, interval, sleep};
 
 const MAX_DEPLOYMENT_CONCURRENT_EXECUTIONS: i64 = 2000;
 const EXECUTION_SLOT_TTL_SECONDS: i64 = 600;
 const IDEMPOTENCY_TTL_SECONDS: i64 = 600;
 const CONTEXT_LOCK_TTL_SECONDS: i64 = 3600;
+const EXECUTION_SLOT_HEARTBEAT_SECONDS: u64 = 120;
+const CONTEXT_LOCK_HEARTBEAT_SECONDS: u64 = 300;
 
 #[derive(Debug, Clone)]
 enum AgentResolutionStrategy {
@@ -296,10 +299,15 @@ pub async fn process_agent_execution(
 struct DeploymentExecutionGuard {
     app_state: AppState,
     key: String,
+    heartbeat_stop: Option<oneshot::Sender<()>>,
 }
 
 impl Drop for DeploymentExecutionGuard {
     fn drop(&mut self) {
+        if let Some(stop_tx) = self.heartbeat_stop.take() {
+            let _ = stop_tx.send(());
+        }
+
         let app_state = self.app_state.clone();
         let key = self.key.clone();
         tokio::spawn(async move {
@@ -308,7 +316,16 @@ impl Drop for DeploymentExecutionGuard {
                 .get_multiplexed_async_connection()
                 .await
             {
-                let _: Result<i64, _> = redis::cmd("DECR").arg(&key).query_async(&mut conn).await;
+                let decrement_script = Script::new(
+                    r#"
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+if current <= 1 then
+  return redis.call('DEL', KEYS[1])
+end
+return redis.call('DECR', KEYS[1])
+"#,
+                );
+                let _: Result<i64, _> = decrement_script.key(&key).invoke_async(&mut conn).await;
             }
         });
     }
@@ -318,10 +335,15 @@ struct ContextExecutionLockGuard {
     app_state: AppState,
     key: String,
     token: String,
+    heartbeat_stop: Option<oneshot::Sender<()>>,
 }
 
 impl Drop for ContextExecutionLockGuard {
     fn drop(&mut self) {
+        if let Some(stop_tx) = self.heartbeat_stop.take() {
+            let _ = stop_tx.send(());
+        }
+
         let app_state = self.app_state.clone();
         let key = self.key.clone();
         let token = self.token.clone();
@@ -347,6 +369,109 @@ return 0
             }
         });
     }
+}
+
+fn spawn_deployment_slot_heartbeat(
+    app_state: AppState,
+    key: String,
+) -> oneshot::Sender<()> {
+    let (stop_tx, mut stop_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let mut ticker = interval(Duration::from_secs(EXECUTION_SLOT_HEARTBEAT_SECONDS));
+        ticker.tick().await;
+
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    match app_state.redis_client.get_multiplexed_async_connection().await {
+                        Ok(mut conn) => {
+                            let refresh_result: Result<bool, _> = redis::cmd("EXPIRE")
+                                .arg(&key)
+                                .arg(EXECUTION_SLOT_TTL_SECONDS)
+                                .query_async(&mut conn)
+                                .await;
+
+                            match refresh_result {
+                                Ok(true) => {}
+                                Ok(false) => {
+                                    tracing::warn!("Execution slot heartbeat lost key {}", key);
+                                    break;
+                                }
+                                Err(error) => {
+                                    tracing::warn!("Failed to refresh execution slot heartbeat for {}: {}", key, error);
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!("Failed to get Redis connection for execution slot heartbeat {}: {}", key, error);
+                        }
+                    }
+                }
+                _ = &mut stop_rx => break,
+            }
+        }
+    });
+
+    stop_tx
+}
+
+fn spawn_context_lock_heartbeat(
+    app_state: AppState,
+    key: String,
+    token: String,
+) -> oneshot::Sender<()> {
+    let (stop_tx, mut stop_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let mut ticker = interval(Duration::from_secs(CONTEXT_LOCK_HEARTBEAT_SECONDS));
+        ticker.tick().await;
+        let refresh_script = Script::new(
+            r#"
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('EXPIRE', KEYS[1], ARGV[2])
+end
+return 0
+"#,
+        );
+
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    match app_state.redis_client.get_multiplexed_async_connection().await {
+                        Ok(mut conn) => {
+                            let refresh_result: Result<i64, _> = refresh_script
+                                .key(&key)
+                                .arg(&token)
+                                .arg(CONTEXT_LOCK_TTL_SECONDS)
+                                .invoke_async(&mut conn)
+                                .await;
+
+                            match refresh_result {
+                                Ok(1) => {}
+                                Ok(0) => {
+                                    tracing::warn!("Context lock heartbeat lost ownership for {}", key);
+                                    break;
+                                }
+                                Ok(other) => {
+                                    tracing::warn!("Unexpected context lock heartbeat result for {}: {}", key, other);
+                                }
+                                Err(error) => {
+                                    tracing::warn!("Failed to refresh context lock heartbeat for {}: {}", key, error);
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!("Failed to get Redis connection for context lock heartbeat {}: {}", key, error);
+                        }
+                    }
+                }
+                _ = &mut stop_rx => break,
+            }
+        }
+    });
+
+    stop_tx
 }
 
 async fn acquire_deployment_execution_slot(
@@ -381,9 +506,12 @@ return current
             .invoke_async(&mut conn)
             .await?;
         if acquired_count > 0 {
+            let heartbeat_stop =
+                spawn_deployment_slot_heartbeat(app_state.clone(), key.clone());
             return Ok(DeploymentExecutionGuard {
                 app_state: app_state.clone(),
                 key,
+                heartbeat_stop: Some(heartbeat_stop),
             });
         }
         sleep(Duration::from_millis(250)).await;
@@ -422,10 +550,13 @@ return 0
             .invoke_async(&mut conn)
             .await?;
         if acquired == 1 {
+            let heartbeat_stop =
+                spawn_context_lock_heartbeat(app_state.clone(), key.clone(), token.clone());
             return Ok(ContextExecutionLockGuard {
                 app_state: app_state.clone(),
                 key,
                 token,
+                heartbeat_stop: Some(heartbeat_stop),
             });
         }
         sleep(Duration::from_millis(100)).await;

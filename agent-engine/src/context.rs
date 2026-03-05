@@ -1,4 +1,5 @@
 use commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
+use crate::filesystem::knowledge_base_mount_name;
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::agent_executor::{
@@ -119,6 +120,7 @@ impl ContextOrchestrator {
                     .find(|kb| kb.id == *kb_id)
                     .map(|kb| kb.name.clone())
                     .unwrap_or_else(|| format!("kb_{}", kb_id));
+                let kb_mount_name = knowledge_base_mount_name(&kb_id.to_string(), &kb_name);
                 kb_names.insert(kb_name.clone());
 
                 let doc_title = result
@@ -127,7 +129,7 @@ impl ContextOrchestrator {
                     .and_then(|v| v.as_str())
                     .unwrap_or("document")
                     .to_string();
-                let path = format!("/knowledge/{}/{}", kb_name, doc_title);
+                let path = format!("/knowledge/{}/{}", kb_mount_name, doc_title);
 
                 let doc_key = format!("{}_{}", kb_id, document_id);
                 if !seen_documents.contains(&doc_key) {

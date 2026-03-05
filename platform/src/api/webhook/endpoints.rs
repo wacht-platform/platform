@@ -6,7 +6,8 @@ use axum::{
 use commands::{
     Command,
     webhook_endpoint::{
-        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, ReactivateEndpointCommand,
+        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, EventSubscriptionData,
+        ReactivateEndpointCommand,
         TestWebhookEndpointCommand, UpdateWebhookEndpointCommand,
     },
 };
@@ -26,8 +27,54 @@ use queries::{
 };
 
 use crate::api::pagination::paginate_results;
-use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::application::response::{ApiErrorResponse, ApiResult, PaginatedResponse};
 use crate::middleware::RequireDeployment;
+
+fn serialize_optional_json<T: serde::Serialize>(
+    value: Option<T>,
+    field_name: &'static str,
+) -> Result<Option<serde_json::Value>, ApiErrorResponse> {
+    value
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid {}: {}", field_name, e),
+            )
+                .into()
+        })
+}
+
+async fn ensure_endpoint_belongs_to_app(
+    app_state: &AppState,
+    deployment_id: i64,
+    app_slug: String,
+    endpoint_id: i64,
+) -> Result<(), ApiErrorResponse> {
+    let endpoints = GetWebhookEndpointsQuery::new(deployment_id)
+        .for_app(app_slug)
+        .with_inactive(true)
+        .execute(app_state)
+        .await?;
+    if endpoints.iter().any(|endpoint| endpoint.id == endpoint_id) {
+        Ok(())
+    } else {
+        Err((StatusCode::NOT_FOUND, "Webhook endpoint not found").into())
+    }
+}
+
+fn map_event_subscriptions(
+    subscriptions: Vec<dto::json::webhook_requests::EventSubscription>,
+) -> Vec<EventSubscriptionData> {
+    subscriptions
+        .into_iter()
+        .map(|subscription| EventSubscriptionData {
+            event_name: subscription.event_name,
+            filter_rules: subscription.filter_rules,
+        })
+        .collect()
+}
 
 pub async fn list_webhook_endpoints(
     State(app_state): State<AppState>,
@@ -56,27 +103,10 @@ pub async fn create_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
-    use commands::webhook_endpoint::EventSubscriptionData;
-    let rate_limit_config = request
-        .rate_limit_config
-        .map(serde_json::to_value)
-        .transpose()
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid rate_limit_config: {}", e),
-            )
-        })?;
+    let rate_limit_config = serialize_optional_json(request.rate_limit_config, "rate_limit_config")?;
 
     // Convert API subscriptions to command subscriptions
-    let subscriptions: Vec<EventSubscriptionData> = request
-        .subscriptions
-        .into_iter()
-        .map(|sub| EventSubscriptionData {
-            event_name: sub.event_name,
-            filter_rules: sub.filter_rules,
-        })
-        .collect();
+    let subscriptions = map_event_subscriptions(request.subscriptions);
 
     let command = CreateWebhookEndpointCommand::new(deployment_id, request.app_slug, request.url)
         .with_description(request.description)
@@ -112,16 +142,7 @@ pub async fn update_webhook_endpoint(
     Path(endpoint_id): Path<i64>,
     Json(request): Json<UpdateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
-    let rate_limit_config = request
-        .rate_limit_config
-        .map(serde_json::to_value)
-        .transpose()
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("Invalid rate_limit_config: {}", e),
-            )
-        })?;
+    let rate_limit_config = serialize_optional_json(request.rate_limit_config, "rate_limit_config")?;
 
     let command = UpdateWebhookEndpointCommand::new(endpoint_id, deployment_id)
         .with_url(request.url)
@@ -130,11 +151,7 @@ pub async fn update_webhook_endpoint(
         .with_max_retries(request.max_retries)
         .with_timeout_seconds(request.timeout_seconds)
         .with_is_active(request.is_active)
-        .with_subscriptions(
-            request
-                .subscriptions
-                .map(|subs| subs.into_iter().map(Into::into).collect()),
-        )
+        .with_subscriptions(request.subscriptions.map(map_event_subscriptions))
         .with_rate_limit_config(rate_limit_config);
 
     let endpoint = command.execute(&app_state).await?;
@@ -147,14 +164,7 @@ pub async fn update_webhook_endpoint_for_app(
     Path((app_slug, endpoint_id)): Path<(String, i64)>,
     Json(request): Json<UpdateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
-    let endpoints = GetWebhookEndpointsQuery::new(deployment_id)
-        .for_app(app_slug)
-        .with_inactive(true)
-        .execute(&app_state)
-        .await?;
-    if !endpoints.iter().any(|e| e.id == endpoint_id) {
-        return Err((StatusCode::NOT_FOUND, "Webhook endpoint not found").into());
-    }
+    ensure_endpoint_belongs_to_app(&app_state, deployment_id, app_slug, endpoint_id).await?;
 
     update_webhook_endpoint(
         State(app_state),
@@ -181,14 +191,7 @@ pub async fn delete_webhook_endpoint_for_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Path((app_slug, endpoint_id)): Path<(String, i64)>,
 ) -> ApiResult<()> {
-    let endpoints = GetWebhookEndpointsQuery::new(deployment_id)
-        .for_app(app_slug)
-        .with_inactive(true)
-        .execute(&app_state)
-        .await?;
-    if !endpoints.iter().any(|e| e.id == endpoint_id) {
-        return Err((StatusCode::NOT_FOUND, "Webhook endpoint not found").into());
-    }
+    ensure_endpoint_belongs_to_app(&app_state, deployment_id, app_slug, endpoint_id).await?;
 
     delete_webhook_endpoint(
         State(app_state),

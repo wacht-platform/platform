@@ -8,6 +8,43 @@ use tokio::process::Command;
 pub mod sandbox;
 pub mod shell;
 
+pub fn knowledge_base_mount_name(kb_id: &str, kb_name: &str) -> String {
+    let mut sanitized = String::with_capacity(kb_name.len());
+    let mut prev_was_separator = false;
+
+    for ch in kb_name.chars() {
+        let normalized = if ch.is_ascii_alphanumeric() {
+            prev_was_separator = false;
+            Some(ch.to_ascii_lowercase())
+        } else if ch == '-' || ch == '_' {
+            prev_was_separator = false;
+            Some(ch)
+        } else if ch.is_whitespace() {
+            if prev_was_separator {
+                None
+            } else {
+                prev_was_separator = true;
+                Some('_')
+            }
+        } else {
+            None
+        };
+
+        if let Some(value) = normalized {
+            sanitized.push(value);
+        }
+    }
+
+    let sanitized = sanitized.trim_matches(['_', '-']).to_string();
+    let sanitized = if sanitized.is_empty() {
+        "knowledge_base".to_string()
+    } else {
+        sanitized
+    };
+
+    format!("{}_{}", sanitized, kb_id)
+}
+
 #[derive(Clone)]
 pub struct AgentFilesystem {
     base_path: PathBuf,
@@ -109,7 +146,10 @@ impl AgentFilesystem {
 
     pub async fn link_knowledge_base(&self, kb_id: &str, kb_name: &str) -> Result<(), AppError> {
         let source = self.shared_kb_path(kb_id);
-        let target = self.execution_root().join("knowledge").join(kb_name);
+        let target = self
+            .execution_root()
+            .join("knowledge")
+            .join(knowledge_base_mount_name(kb_id, kb_name));
 
         if !source.exists() {
             fs::create_dir_all(&source)

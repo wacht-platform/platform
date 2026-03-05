@@ -11,12 +11,13 @@ use dto::{
 };
 use models::webhook_analytics::WebhookAnalyticsResult;
 use queries::{
-    GetWebhookAppByNameQuery, Query as QueryTrait, webhook_analytics::GetWebhookAnalyticsQuery,
+    Query as QueryTrait, webhook_analytics::GetWebhookAnalyticsQuery,
 };
 
 use crate::api::pagination::paginate_results;
 use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::RequireDeployment;
+use super::helpers::ensure_webhook_app_exists;
 
 pub async fn get_webhook_delivery_details(
     State(app_state): State<AppState>,
@@ -79,10 +80,7 @@ pub async fn get_webhook_delivery_details_for_app(
     Path((app_slug, delivery_id)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
 ) -> ApiResult<WebhookDeliveryDetails> {
-    GetWebhookAppByNameQuery::new(deployment_id, app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Webhook app not found".to_string()))?;
+    ensure_webhook_app_exists(&app_state, deployment_id, app_slug).await?;
 
     get_webhook_delivery_details(
         State(app_state),
