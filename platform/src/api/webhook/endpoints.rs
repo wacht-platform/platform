@@ -1,5 +1,33 @@
-use super::*;
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+    http::StatusCode,
+};
+use commands::{
+    Command,
+    webhook_endpoint::{
+        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, ReactivateEndpointCommand,
+        TestWebhookEndpointCommand, UpdateWebhookEndpointCommand,
+    },
+};
+use common::state::AppState;
+use dto::{
+    clickhouse::webhook::WebhookLog,
+    json::webhook_requests::{
+        CreateWebhookEndpointRequest, ListWebhookEndpointsQuery, ReactivateEndpointResponse,
+        TestWebhookEndpointRequest, TestWebhookEndpointResponse,
+        UpdateWebhookEndpointRequest, WebhookEndpoint as WebhookEndpointDto,
+    },
+};
+use models::webhook::WebhookEndpoint;
+use queries::{
+    Query as QueryTrait,
+    webhook::{GetWebhookEndpointsQuery, GetWebhookEndpointsWithSubscriptionsQuery},
+};
+
 use crate::api::pagination::paginate_results;
+use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::middleware::RequireDeployment;
 
 pub async fn list_webhook_endpoints(
     State(app_state): State<AppState>,
@@ -119,7 +147,7 @@ pub async fn update_webhook_endpoint_for_app(
     Path((app_slug, endpoint_id)): Path<(String, i64)>,
     Json(request): Json<UpdateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
-    let endpoints = queries::webhook::GetWebhookEndpointsQuery::new(deployment_id)
+    let endpoints = GetWebhookEndpointsQuery::new(deployment_id)
         .for_app(app_slug)
         .with_inactive(true)
         .execute(&app_state)
@@ -153,7 +181,7 @@ pub async fn delete_webhook_endpoint_for_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Path((app_slug, endpoint_id)): Path<(String, i64)>,
 ) -> ApiResult<()> {
-    let endpoints = queries::webhook::GetWebhookEndpointsQuery::new(deployment_id)
+    let endpoints = GetWebhookEndpointsQuery::new(deployment_id)
         .for_app(app_slug)
         .with_inactive(true)
         .execute(&app_state)

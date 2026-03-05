@@ -1,5 +1,33 @@
-use super::*;
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+    http::StatusCode,
+};
+use commands::{
+    Command,
+    webhook_app::{
+        CreateWebhookAppCommand, DeleteWebhookAppCommand, RotateWebhookSecretCommand,
+        UpdateWebhookAppCommand,
+    },
+    webhook_event_catalog::{
+        CreateEventCatalogCommand, UpdateEventCatalogCommand,
+    },
+};
+use common::state::AppState;
+use dto::json::webhook_requests::{
+    AppendEventsToCatalogRequest, ArchiveEventInCatalogRequest, CreateEventCatalogRequest,
+    CreateWebhookAppRequest, GetAvailableEventsResponse, ListWebhookAppsQuery,
+    UpdateEventCatalogRequest, UpdateWebhookAppRequest,
+};
+use models::webhook::WebhookApp;
+use queries::{
+    GetWebhookAppByNameQuery, Query as QueryTrait,
+    webhook::{GetWebhookAppsQuery, GetWebhookEventsQuery},
+};
+
 use crate::api::pagination::paginate_results;
+use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::middleware::RequireDeployment;
 
 pub async fn list_webhook_apps(
     State(app_state): State<AppState>,

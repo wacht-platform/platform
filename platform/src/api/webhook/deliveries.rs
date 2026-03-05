@@ -1,15 +1,32 @@
-use super::*;
+use std::collections::HashMap;
+
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+};
+use common::state::AppState;
+use dto::{
+    clickhouse::webhook::WebhookDeliveryListResponse,
+    json::webhook_requests::{GetAppWebhookDeliveriesQuery, WebhookDeliveryDetails},
+};
+use models::webhook_analytics::WebhookAnalyticsResult;
+use queries::{
+    GetWebhookAppByNameQuery, Query as QueryTrait, webhook_analytics::GetWebhookAnalyticsQuery,
+};
+
 use crate::api::pagination::paginate_results;
+use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::middleware::RequireDeployment;
 
 pub async fn get_webhook_delivery_details(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path(delivery_id): Path<String>,
-    Query(params): Query<std::collections::HashMap<String, String>>,
-) -> ApiResult<dto::json::webhook_requests::WebhookDeliveryDetails> {
+    Query(params): Query<HashMap<String, String>>,
+) -> ApiResult<WebhookDeliveryDetails> {
     let delivery_id = delivery_id
         .parse::<i64>()
-        .map_err(|_| (axum::http::StatusCode::BAD_REQUEST, "Invalid delivery ID"))?;
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid delivery ID"))?;
 
     // Check if status=pending to look in PostgreSQL instead of ClickHouse
     let status = params.get("status").map(|s| s.as_str());
@@ -34,7 +51,7 @@ pub async fn get_webhook_delivery_details(
         .and_then(|p| serde_json::from_str(&p).ok());
 
     // Convert WebhookDelivery to WebhookDeliveryDetails
-    let delivery_details = dto::json::webhook_requests::WebhookDeliveryDetails {
+    let delivery_details = WebhookDeliveryDetails {
         delivery_id: delivery.delivery_id,
         deployment_id: delivery.deployment_id,
         app_slug: delivery.app_slug,
@@ -60,8 +77,8 @@ pub async fn get_webhook_delivery_details_for_app(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Path((app_slug, delivery_id)): Path<(String, String)>,
-    Query(params): Query<std::collections::HashMap<String, String>>,
-) -> ApiResult<dto::json::webhook_requests::WebhookDeliveryDetails> {
+    Query(params): Query<HashMap<String, String>>,
+) -> ApiResult<WebhookDeliveryDetails> {
     GetWebhookAppByNameQuery::new(deployment_id, app_slug)
         .execute(&app_state)
         .await?
