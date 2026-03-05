@@ -22,11 +22,10 @@ pub async fn add_user_email(
     Path(params): Path<UserParams>,
     Json(request): Json<AddEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    AddUserEmailCommand::new(deployment_id, params.user_id, request)
+    let email = AddUserEmailCommand::new(deployment_id, params.user_id, request)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(email.into())
 }
 
 pub async fn update_user_email(
@@ -35,11 +34,11 @@ pub async fn update_user_email(
     Path(params): Path<UserEmailParams>,
     Json(request): Json<UpdateEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    UpdateUserEmailCommand::new(deployment_id, params.user_id, params.email_id, request)
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    let email =
+        UpdateUserEmailCommand::new(deployment_id, params.user_id, params.email_id, request)
+            .execute(&app_state)
+            .await?;
+    Ok(email.into())
 }
 
 pub async fn delete_user_email(
@@ -60,11 +59,10 @@ pub async fn add_user_phone(
     Path(params): Path<UserParams>,
     Json(request): Json<AddPhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    AddUserPhoneCommand::new(deployment_id, params.user_id, request)
+    let phone = AddUserPhoneCommand::new(deployment_id, params.user_id, request)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(phone.into())
 }
 
 pub async fn update_user_phone(
@@ -73,11 +71,10 @@ pub async fn update_user_phone(
     Path(params): Path<UserPhoneParams>,
     Json(request): Json<UpdatePhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    UpdateUserPhoneCommand::new(params.user_id, params.phone_id, request)
+    let phone = UpdateUserPhoneCommand::new(params.user_id, params.phone_id, request)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(phone.into())
 }
 
 pub async fn delete_user_phone(
@@ -87,9 +84,8 @@ pub async fn delete_user_phone(
 ) -> ApiResult<()> {
     DeleteUserPhoneCommand::new(params.user_id, params.phone_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn delete_user_social_connection(
@@ -99,7 +95,6 @@ pub async fn delete_user_social_connection(
 ) -> ApiResult<()> {
     DeleteUserSocialConnectionCommand::new(params.user_id, params.connection_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }

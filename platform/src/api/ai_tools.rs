@@ -60,7 +60,7 @@ pub async fn create_ai_tool(
 ) -> ApiResult<AiTool> {
     let tool_type = AiToolType::from(request.tool_type);
 
-    CreateAiToolCommand::new(
+    let tool = CreateAiToolCommand::new(
         deployment_id,
         request.name,
         request.description,
@@ -68,9 +68,8 @@ pub async fn create_ai_tool(
         request.configuration,
     )
     .execute(&app_state)
-    .await
-    .map(Into::into)
-    .map_err(Into::into)
+    .await?;
+    Ok(tool.into())
 }
 
 pub async fn get_ai_tool_by_id(
@@ -78,11 +77,10 @@ pub async fn get_ai_tool_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ToolParams>,
 ) -> ApiResult<AiToolWithDetails> {
-    GetAiToolByIdQuery::new(deployment_id, params.tool_id)
+    let tool = GetAiToolByIdQuery::new(deployment_id, params.tool_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(tool.into())
 }
 
 pub async fn get_agent_tools(
@@ -90,12 +88,10 @@ pub async fn get_agent_tools(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<PaginatedResponse<AiTool>> {
-    GetAgentToolsQuery::new(deployment_id, params.agent_id)
+    let tools = GetAgentToolsQuery::new(deployment_id, params.agent_id)
         .execute(&app_state)
-        .await
-        .map(PaginatedResponse::from)
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(PaginatedResponse::from(tools).into())
 }
 
 pub async fn attach_tool_to_agent(
@@ -105,9 +101,8 @@ pub async fn attach_tool_to_agent(
 ) -> ApiResult<()> {
     AttachToolToAgentCommand::new(deployment_id, params.agent_id, params.tool_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn detach_tool_from_agent(
@@ -117,9 +112,8 @@ pub async fn detach_tool_from_agent(
 ) -> ApiResult<()> {
     DetachToolFromAgentCommand::new(deployment_id, params.agent_id, params.tool_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn update_ai_tool(
@@ -143,11 +137,8 @@ pub async fn update_ai_tool(
         command = command.with_configuration(configuration);
     }
 
-    command
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    let tool = command.execute(&app_state).await?;
+    Ok(tool.into())
 }
 
 pub async fn delete_ai_tool(
@@ -157,7 +148,6 @@ pub async fn delete_ai_tool(
 ) -> ApiResult<()> {
     DeleteAiToolCommand::new(deployment_id, params.tool_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }

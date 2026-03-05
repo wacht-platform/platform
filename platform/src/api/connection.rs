@@ -1,5 +1,5 @@
 use crate::{
-    application::response::{ApiResult, ApiSuccess, PaginatedResponse},
+    application::response::{ApiResult, PaginatedResponse},
     middleware::RequireDeployment,
 };
 use common::state::AppState;
@@ -14,12 +14,10 @@ pub async fn get_deployment_social_connections(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<PaginatedResponse<DeploymentSocialConnection>> {
-    GetDeploymentSocialConnectionsQuery::new(deployment_id)
+    let connections = GetDeploymentSocialConnectionsQuery::new(deployment_id)
         .execute(&app_state)
-        .await
-        .map(Into::<PaginatedResponse<_>>::into)
-        .map(ApiSuccess::from)
-        .map_err(Into::into)
+        .await?;
+    Ok(PaginatedResponse::from(connections).into())
 }
 
 pub async fn upsert_deployment_social_connection(
@@ -27,10 +25,8 @@ pub async fn upsert_deployment_social_connection(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(payload): Json<DeploymentSocialConnectionUpsert>,
 ) -> ApiResult<DeploymentSocialConnection> {
-    UpsertDeploymentSocialConnectionCommand::new(deployment_id, payload)
+    let connection = UpsertDeploymentSocialConnectionCommand::new(deployment_id, payload)
         .execute(&app_state)
-        .await
-        .map(Into::<DeploymentSocialConnection>::into)
-        .map(ApiSuccess::from)
-        .map_err(Into::into)
+        .await?;
+    Ok(connection.into())
 }

@@ -1,6 +1,9 @@
 use axum::extract::{Json, Path, Query, State};
 use axum::http::StatusCode;
 
+use super::helpers::{
+    ensure_api_key_exists_for_app, get_api_auth_app_by_slug, resolve_api_key_membership_context,
+};
 use crate::application::response::ApiResult;
 use crate::middleware::RequireDeployment;
 use commands::{
@@ -10,15 +13,7 @@ use commands::{
 use common::state::AppState;
 use dto::json::api_key::*;
 use models::api_key::ApiKeyWithSecret;
-use queries::{
-    Query as QueryTrait,
-    api_key::{
-        GetApiAuthAppBySlugQuery, GetApiKeysByAppQuery,
-        GetOrganizationMembershipIdByUserAndOrganizationQuery,
-        GetOrganizationMembershipPermissionsQuery, GetWorkspaceMembershipIdByUserAndWorkspaceQuery,
-        GetWorkspaceMembershipPermissionsQuery,
-    },
-};
+use queries::{Query as QueryTrait, api_key::GetApiKeysByAppQuery};
 
 pub async fn list_api_keys(
     State(app_state): State<AppState>,
@@ -26,11 +21,7 @@ pub async fn list_api_keys(
     Path(app_slug): Path<String>,
     Query(params): Query<ListApiKeysQuery>,
 ) -> ApiResult<ListApiKeysResponse> {
-    // First get the app by name to find its ID
-    let app = GetApiAuthAppBySlugQuery::new(deployment_id, app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+    let app = get_api_auth_app_by_slug(&app_state, deployment_id, app_slug).await?;
 
     let include_inactive = params.include_inactive.unwrap_or(false);
 
@@ -48,11 +39,7 @@ pub async fn create_api_key(
     Path(app_slug): Path<String>,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> ApiResult<ApiKeyWithSecret> {
-    // First get the app by name to find its ID
-    let app = GetApiAuthAppBySlugQuery::new(deployment_id, app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+    let app = get_api_auth_app_by_slug(&app_state, deployment_id, app_slug).await?;
 
     let mut command = CreateApiKeyCommand::new(
         app.app_slug.clone(),
@@ -66,61 +53,7 @@ pub async fn create_api_key(
         command = command.with_permissions(permissions);
     }
 
-    let mut org_membership_id: Option<i64> = None;
-    let mut workspace_membership_id: Option<i64> = None;
-
-    if let (Some(user_id), Some(organization_id)) = (app.user_id, app.organization_id) {
-        org_membership_id =
-            GetOrganizationMembershipIdByUserAndOrganizationQuery::new(user_id, organization_id)
-                .execute(&app_state)
-                .await?;
-        if org_membership_id.is_none() {
-            return Err((StatusCode::BAD_REQUEST, "user is not a member of the org").into());
-        }
-    }
-
-    if let (Some(user_id), Some(workspace_id)) = (app.user_id, app.workspace_id) {
-        workspace_membership_id =
-            GetWorkspaceMembershipIdByUserAndWorkspaceQuery::new(user_id, workspace_id)
-                .execute(&app_state)
-                .await?;
-        if workspace_membership_id.is_none() {
-            return Err((StatusCode::BAD_REQUEST, "user is not a member of the org").into());
-        }
-    }
-
-    let mut organization_id: Option<i64> = None;
-    let mut workspace_id: Option<i64> = None;
-    let mut org_role_permissions: Vec<String> = vec![];
-    let mut workspace_role_permissions: Vec<String> = vec![];
-
-    if let Some(org_membership_id) = org_membership_id {
-        let org_perm = GetOrganizationMembershipPermissionsQuery::new(org_membership_id)
-            .execute(&app_state)
-            .await?
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "Organization membership not found"))?;
-        organization_id = Some(org_perm.organization_id);
-        org_role_permissions = org_perm.permissions;
-    }
-
-    if let Some(workspace_membership_id) = workspace_membership_id {
-        let workspace_perm = GetWorkspaceMembershipPermissionsQuery::new(workspace_membership_id)
-            .execute(&app_state)
-            .await?
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "Workspace membership not found"))?;
-        if let Some(existing_org_id) = organization_id {
-            if existing_org_id != workspace_perm.organization_id {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "organization_membership_id and workspace_membership_id belong to different organizations",
-                )
-                    .into());
-            }
-        }
-        organization_id = Some(workspace_perm.organization_id);
-        workspace_id = Some(workspace_perm.workspace_id);
-        workspace_role_permissions = workspace_perm.permissions;
-    }
+    let membership_context = resolve_api_key_membership_context(&app_state, &app).await?;
 
     if let Some(expires_at) = request.expires_at {
         command = command.with_expiration(expires_at);
@@ -131,12 +64,12 @@ pub async fn create_api_key(
     command = command
         .with_rate_limit_scheme_slug(app.rate_limit_scheme_slug.clone())
         .with_membership_context(
-            organization_id,
-            workspace_id,
-            org_membership_id,
-            workspace_membership_id,
-            org_role_permissions,
-            workspace_role_permissions,
+            membership_context.organization_id,
+            membership_context.workspace_id,
+            membership_context.organization_membership_id,
+            membership_context.workspace_membership_id,
+            membership_context.org_role_permissions,
+            membership_context.workspace_role_permissions,
         );
 
     let key_with_secret = command.execute(&app_state).await?;
@@ -170,18 +103,8 @@ pub async fn revoke_api_key_for_app(
     Path((app_slug, key_id)): Path<(String, i64)>,
     Json(request): Json<RevokeApiKeyRequest>,
 ) -> ApiResult<()> {
-    let app = GetApiAuthAppBySlugQuery::new(deployment_id, app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
-
-    let keys = GetApiKeysByAppQuery::new(app.app_slug.clone(), deployment_id)
-        .with_inactive(true)
-        .execute(&app_state)
-        .await?;
-    if !keys.iter().any(|k| k.id == key_id) {
-        return Err((StatusCode::NOT_FOUND, "API key not found").into());
-    }
+    let app = get_api_auth_app_by_slug(&app_state, deployment_id, app_slug).await?;
+    ensure_api_key_exists_for_app(&app_state, deployment_id, &app.app_slug, key_id).await?;
 
     let command = RevokeApiKeyCommand {
         key_id,
@@ -212,18 +135,8 @@ pub async fn rotate_api_key_for_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Path((app_slug, key_id)): Path<(String, i64)>,
 ) -> ApiResult<ApiKeyWithSecret> {
-    let app = GetApiAuthAppBySlugQuery::new(deployment_id, app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
-
-    let keys = GetApiKeysByAppQuery::new(app.app_slug.clone(), deployment_id)
-        .with_inactive(true)
-        .execute(&app_state)
-        .await?;
-    if !keys.iter().any(|k| k.id == key_id) {
-        return Err((StatusCode::NOT_FOUND, "API key not found").into());
-    }
+    let app = get_api_auth_app_by_slug(&app_state, deployment_id, app_slug).await?;
+    ensure_api_key_exists_for_app(&app_state, deployment_id, &app.app_slug, key_id).await?;
 
     let command = RotateApiKeyCommand {
         key_id,

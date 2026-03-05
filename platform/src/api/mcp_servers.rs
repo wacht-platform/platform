@@ -1,5 +1,5 @@
-use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::api::pagination::paginate_results;
+use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
 use common::utils::ssrf::validate_webhook_url;
@@ -1127,11 +1127,10 @@ pub async fn get_mcp_server_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<McpServerParams>,
 ) -> ApiResult<McpServer> {
-    GetMcpServerByIdQuery::new(deployment_id, params.mcp_server_id)
+    let server = GetMcpServerByIdQuery::new(deployment_id, params.mcp_server_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(server.into())
 }
 
 pub async fn update_mcp_server(
@@ -1160,11 +1159,8 @@ pub async fn update_mcp_server(
         command = command.with_config(config);
     }
 
-    command
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    let server = command.execute(&app_state).await?;
+    Ok(server.into())
 }
 
 pub async fn delete_mcp_server(
@@ -1174,9 +1170,8 @@ pub async fn delete_mcp_server(
 ) -> ApiResult<()> {
     DeleteMcpServerCommand::new(deployment_id, params.mcp_server_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn get_agent_mcp_servers(
@@ -1184,12 +1179,10 @@ pub async fn get_agent_mcp_servers(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<PaginatedResponse<McpServer>> {
-    GetAgentMcpServersQuery::new(deployment_id, params.agent_id)
+    let servers = GetAgentMcpServersQuery::new(deployment_id, params.agent_id)
         .execute(&app_state)
-        .await
-        .map(PaginatedResponse::from)
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(PaginatedResponse::from(servers).into())
 }
 
 pub async fn attach_mcp_server_to_agent(
@@ -1199,9 +1192,8 @@ pub async fn attach_mcp_server_to_agent(
 ) -> ApiResult<()> {
     AttachMcpServerToAgentCommand::new(deployment_id, params.agent_id, params.mcp_server_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn detach_mcp_server_from_agent(
@@ -1211,7 +1203,6 @@ pub async fn detach_mcp_server_from_agent(
 ) -> ApiResult<()> {
     DetachMcpServerFromAgentCommand::new(deployment_id, params.agent_id, params.mcp_server_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }

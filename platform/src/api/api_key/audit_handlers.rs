@@ -1,13 +1,13 @@
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 
+use super::helpers::get_api_auth_app_by_slug;
 use crate::application::response::ApiResult;
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 use dto::json::api_key::*;
 use queries::{
     Query as QueryTrait,
-    api_key::GetApiAuthAppBySlugQuery,
     api_key_audit::{
         GetApiAuditAnalyticsQuery as GetApiAuditAnalyticsDataQuery,
         GetApiAuditLogsQuery as GetApiAuditLogsDataQuery,
@@ -21,10 +21,7 @@ pub async fn get_api_audit_logs(
     Path(app_slug): Path<String>,
     Query(params): Query<ListApiAuditLogsQuery>,
 ) -> ApiResult<ApiAuditLogsResponse> {
-    GetApiAuthAppBySlugQuery::new(deployment_id, app_slug.clone())
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+    get_api_auth_app_by_slug(&app_state, deployment_id, app_slug.clone()).await?;
 
     let mut cursor_ts = params.cursor_ts;
     let mut cursor_id = params.cursor_id.clone();
@@ -73,10 +70,7 @@ pub async fn get_api_audit_analytics(
     Path(app_slug): Path<String>,
     Query(params): Query<GetApiAuditAnalyticsQuery>,
 ) -> ApiResult<ApiAuditAnalyticsResponse> {
-    GetApiAuthAppBySlugQuery::new(deployment_id, app_slug.clone())
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+    get_api_auth_app_by_slug(&app_state, deployment_id, app_slug.clone()).await?;
 
     let result = GetApiAuditAnalyticsDataQuery {
         deployment_id,
@@ -102,10 +96,7 @@ pub async fn get_api_audit_timeseries(
     Path(app_slug): Path<String>,
     Query(params): Query<GetApiAuditTimeseriesQuery>,
 ) -> ApiResult<ApiAuditTimeseriesResponse> {
-    GetApiAuthAppBySlugQuery::new(deployment_id, app_slug.clone())
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+    get_api_auth_app_by_slug(&app_state, deployment_id, app_slug.clone()).await?;
 
     let interval = params.interval.unwrap_or_else(|| "hour".to_string());
     let normalized_interval = match interval.as_str() {

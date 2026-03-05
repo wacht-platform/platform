@@ -151,7 +151,8 @@ impl UpdateDeploymentAuthSettingsCommand {
             }
 
             if let Some(email_password) = auth_factors.email_password_enabled {
-                auth_factors_enabled_updates.insert("email_password".to_string(), json!(email_password));
+                auth_factors_enabled_updates
+                    .insert("email_password".to_string(), json!(email_password));
             }
             if let Some(username_password) = auth_factors.username_password_enabled {
                 auth_factors_enabled_updates

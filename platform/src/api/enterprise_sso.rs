@@ -24,9 +24,23 @@ use queries::{ListEnterpriseConnectionsQuery, ListOrganizationDomainsQuery, Quer
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::api::pagination::paginate_results;
+use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::RequireDeployment;
+
+const DEFAULT_FRONTEND_API_URL: &str = "https://api.wacht.dev";
+
+fn resolve_list_pagination(params: &ListQueryParams) -> (i32, i64) {
+    let limit = params.limit.unwrap_or(50);
+    let offset = params.offset.unwrap_or(0);
+    (limit, offset)
+}
+
+fn scim_base_url(connection_id: i64) -> String {
+    let base =
+        std::env::var("FRONTEND_API_URL").unwrap_or_else(|_| DEFAULT_FRONTEND_API_URL.to_string());
+    format!("{}/scim/v2/{}", base, connection_id)
+}
 
 #[derive(Deserialize)]
 pub struct OrganizationParams {
@@ -65,8 +79,7 @@ pub async fn list_domains_handler(
     Path(params): Path<OrganizationParams>,
     Query(query_params): Query<ListQueryParams>,
 ) -> ApiResult<PaginatedResponse<OrganizationDomain>> {
-    let limit = query_params.limit.unwrap_or(50);
-    let offset = query_params.offset.unwrap_or(0);
+    let (limit, offset) = resolve_list_pagination(&query_params);
 
     let domains = ListOrganizationDomainsQuery::new(deployment_id, params.org_id)
         .limit(limit + 1)
@@ -84,11 +97,10 @@ pub async fn create_domain_handler(
     Json(mut req): Json<CreateOrganizationDomainRequest>,
 ) -> ApiResult<CreateOrganizationDomainResponse> {
     req.organization_id = params.org_id;
-    CreateOrganizationDomainCommand::new(deployment_id, req)
+    let created = CreateOrganizationDomainCommand::new(deployment_id, req)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(created.into())
 }
 
 pub async fn delete_domain_handler(
@@ -102,9 +114,8 @@ pub async fn delete_domain_handler(
     };
     DeleteOrganizationDomainCommand::new(deployment_id, req)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn verify_domain_handler(
@@ -116,11 +127,10 @@ pub async fn verify_domain_handler(
         organization_id: params.org_id,
         domain_id: params.domain_id,
     };
-    VerifyOrganizationDomainCommand::new(deployment_id, req)
+    let verified = VerifyOrganizationDomainCommand::new(deployment_id, req)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(verified.into())
 }
 
 // --- Connection Handlers ---
@@ -131,8 +141,7 @@ pub async fn list_connections_handler(
     Path(params): Path<OrganizationParams>,
     Query(query_params): Query<ListQueryParams>,
 ) -> ApiResult<PaginatedResponse<EnterpriseConnection>> {
-    let limit = query_params.limit.unwrap_or(50);
-    let offset = query_params.offset.unwrap_or(0);
+    let (limit, offset) = resolve_list_pagination(&query_params);
 
     let connections = ListEnterpriseConnectionsQuery::new(deployment_id, params.org_id)
         .limit(limit + 1)
@@ -150,11 +159,10 @@ pub async fn create_connection_handler(
     Json(mut req): Json<CreateEnterpriseConnectionRequest>,
 ) -> ApiResult<EnterpriseConnection> {
     req.organization_id = params.org_id;
-    CreateEnterpriseConnectionCommand::new(deployment_id, req)
+    let connection = CreateEnterpriseConnectionCommand::new(deployment_id, req)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(connection.into())
 }
 
 pub async fn update_connection_handler(
@@ -165,11 +173,10 @@ pub async fn update_connection_handler(
 ) -> ApiResult<EnterpriseConnection> {
     req.organization_id = params.org_id;
     req.connection_id = params.connection_id;
-    UpdateEnterpriseConnectionCommand::new(deployment_id, req)
+    let connection = UpdateEnterpriseConnectionCommand::new(deployment_id, req)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(connection.into())
 }
 
 pub async fn delete_connection_handler(
@@ -183,9 +190,8 @@ pub async fn delete_connection_handler(
     };
     DeleteEnterpriseConnectionCommand::new(deployment_id, req)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 #[derive(Serialize)]
@@ -213,11 +219,7 @@ pub async fn get_scim_token_handler(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ConnectionParams>,
 ) -> ApiResult<ScimTokenInfoResponse> {
-    let scim_base_url = format!(
-        "{}/scim/v2/{}",
-        std::env::var("FRONTEND_API_URL").unwrap_or_else(|_| "https://api.wacht.dev".to_string()),
-        params.connection_id
-    );
+    let scim_base_url = scim_base_url(params.connection_id);
 
     let token = queries::GetScimTokenQuery::new(deployment_id, params.org_id, params.connection_id)
         .execute(&app_state)
@@ -262,11 +264,7 @@ pub async fn generate_scim_token_handler(
         .execute(&app_state)
         .await?;
 
-    let scim_base_url = format!(
-        "{}/scim/v2/{}",
-        std::env::var("FRONTEND_API_URL").unwrap_or_else(|_| "https://api.wacht.dev".to_string()),
-        params.connection_id
-    );
+    let scim_base_url = scim_base_url(params.connection_id);
 
     let response = ScimTokenInfoResponse {
         exists: true,
@@ -298,7 +296,6 @@ pub async fn revoke_scim_token_handler(
 
     RevokeScimTokenCommand::new(deployment_id, req)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }

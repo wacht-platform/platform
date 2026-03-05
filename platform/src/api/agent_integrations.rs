@@ -1,5 +1,6 @@
 use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
+use common::error::AppError;
 use serde::Deserialize;
 
 use crate::api::pagination::paginate_results;
@@ -19,6 +20,22 @@ const INTEGRATIONS_BETA_DISABLED_MESSAGE: &str =
 
 fn integrations_beta_enabled() -> bool {
     true
+}
+
+fn ensure_integrations_beta_enabled() -> Result<(), AppError> {
+    if integrations_beta_enabled() {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            INTEGRATIONS_BETA_DISABLED_MESSAGE.to_string(),
+        ))
+    }
+}
+
+fn resolve_pagination(query: &GetIntegrationsQuery) -> (i64, Option<i64>) {
+    let limit = query.limit.unwrap_or(50);
+    let offset = query.offset;
+    (limit, offset)
 }
 
 #[derive(Deserialize)]
@@ -51,11 +68,13 @@ pub struct UpdateIntegrationRequest {
     pub config: Option<serde_json::Value>,
 }
 
-fn parse_integration_type(s: &str) -> Result<IntegrationType, String> {
-    let parsed = IntegrationType::from_str(s)?;
+fn parse_integration_type(s: &str) -> Result<IntegrationType, AppError> {
+    let parsed = IntegrationType::from_str(s).map_err(AppError::BadRequest)?;
     match parsed {
         IntegrationType::Teams | IntegrationType::ClickUp => Ok(parsed),
-        _ => Err("Only 'teams' and 'clickup' integrations are supported".to_string()),
+        _ => Err(AppError::BadRequest(
+            "Only 'teams' and 'clickup' integrations are supported".to_string(),
+        )),
     }
 }
 
@@ -69,9 +88,9 @@ fn is_console_supported_integration_type(integration_type: IntegrationType) -> b
 fn normalize_integration_config(
     integration_type: IntegrationType,
     config: serde_json::Value,
-) -> Result<serde_json::Value, common::error::AppError> {
+) -> Result<serde_json::Value, AppError> {
     match integration_type {
-        IntegrationType::Mcp => Err(common::error::AppError::BadRequest(
+        IntegrationType::Mcp => Err(AppError::BadRequest(
             "MCP servers must be managed via /ai/mcp-servers APIs".to_string(),
         )),
         IntegrationType::Teams | IntegrationType::ClickUp => Ok(config),
@@ -85,8 +104,7 @@ pub async fn get_agent_integrations(
     Path(params): Path<AgentParams>,
     Query(query): Query<GetIntegrationsQuery>,
 ) -> ApiResult<PaginatedResponse<AgentIntegration>> {
-    let limit = query.limit.unwrap_or(50);
-    let offset = query.offset;
+    let (limit, offset) = resolve_pagination(&query);
 
     let integrations = GetAgentIntegrationsQuery::new(deployment_id, params.agent_id)
         .with_limit(Some(limit as u32 + 1))
@@ -109,18 +127,12 @@ pub async fn create_agent_integration(
     Path(params): Path<AgentParams>,
     Json(request): Json<CreateIntegrationRequest>,
 ) -> ApiResult<AgentIntegration> {
-    if !integrations_beta_enabled() {
-        return Err(common::error::AppError::Forbidden(
-            INTEGRATIONS_BETA_DISABLED_MESSAGE.to_string(),
-        )
-        .into());
-    }
+    ensure_integrations_beta_enabled()?;
 
-    let integration_type = parse_integration_type(&request.integration_type)
-        .map_err(|e| common::error::AppError::BadRequest(e))?;
+    let integration_type = parse_integration_type(&request.integration_type)?;
     let normalized_config = normalize_integration_config(integration_type, request.config)?;
 
-    CreateAgentIntegrationCommand::new(
+    let integration = CreateAgentIntegrationCommand::new(
         deployment_id,
         params.agent_id,
         integration_type,
@@ -128,9 +140,8 @@ pub async fn create_agent_integration(
         normalized_config,
     )
     .execute(&app_state)
-    .await
-    .map(Into::into)
-    .map_err(Into::into)
+    .await?;
+    Ok(integration.into())
 }
 
 /// GET /agents/:agent_id/integrations/:integration_id
@@ -139,11 +150,11 @@ pub async fn get_agent_integration_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentIntegrationParams>,
 ) -> ApiResult<AgentIntegration> {
-    GetAgentIntegrationByIdQuery::new(deployment_id, params.agent_id, params.integration_id)
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    let integration =
+        GetAgentIntegrationByIdQuery::new(deployment_id, params.agent_id, params.integration_id)
+            .execute(&app_state)
+            .await?;
+    Ok(integration.into())
 }
 
 /// PATCH /agents/:agent_id/integrations/:integration_id
@@ -167,7 +178,7 @@ pub async fn update_agent_integration(
         .execute(&app_state)
         .await?;
         if !is_console_supported_integration_type(existing_integration.integration_type) {
-            return Err(common::error::AppError::BadRequest(
+            return Err(AppError::BadRequest(
                 "Only 'teams' and 'clickup' integrations are supported".to_string(),
             )
             .into());
@@ -177,11 +188,8 @@ pub async fn update_agent_integration(
         command = command.with_config(normalized_config);
     }
 
-    command
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    let integration = command.execute(&app_state).await?;
+    Ok(integration.into())
 }
 
 /// DELETE /agents/:agent_id/integrations/:integration_id
@@ -192,7 +200,6 @@ pub async fn delete_agent_integration(
 ) -> ApiResult<()> {
     DeleteAgentIntegrationCommand::new(deployment_id, params.integration_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }

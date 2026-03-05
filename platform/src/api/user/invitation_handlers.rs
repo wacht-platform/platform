@@ -57,17 +57,15 @@ pub async fn get_user_waitlist(
     Ok(paginate_results(waitlist, limit, Some(offset)).into())
 }
 
-
 pub async fn invite_user(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<InviteUserRequest>,
 ) -> ApiResult<DeploymentInvitation> {
-    InviteUserCommand::new(deployment_id, request)
+    let invitation = InviteUserCommand::new(deployment_id, request)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(invitation.into())
 }
 
 pub async fn delete_invitation(
@@ -77,9 +75,8 @@ pub async fn delete_invitation(
 ) -> ApiResult<()> {
     DeleteInvitationCommand::new(deployment_id, params.invitation_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn approve_waitlist_user(
@@ -87,9 +84,8 @@ pub async fn approve_waitlist_user(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WaitlistUserParams>,
 ) -> ApiResult<DeploymentInvitation> {
-    ApproveWaitlistUserCommand::new(deployment_id, params.waitlist_user_id)
+    let invitation = ApproveWaitlistUserCommand::new(deployment_id, params.waitlist_user_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(invitation.into())
 }

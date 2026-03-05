@@ -95,6 +95,22 @@ pub struct GetSegmentDataRequest {
     pub filters: Option<SegmentDataFilters>,
 }
 
+fn resolve_segment_pagination(params: &SegmentQueryParams) -> (i64, i64) {
+    let limit = params.limit.unwrap_or(20).clamp(1, 100);
+    let offset = params.offset.unwrap_or(0).max(0);
+    (limit, offset)
+}
+
+fn validate_segment_type(segment_type: &str) -> Result<(), AppError> {
+    if matches!(segment_type, "organization" | "workspace" | "user") {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(
+            "Invalid segment type. Must be 'organization', 'workspace', or 'user'".into(),
+        ))
+    }
+}
+
 pub async fn get_segment_data(
     State(state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
@@ -137,8 +153,7 @@ pub async fn list_segments(
     RequireDeployment(deployment_id): RequireDeployment,
     AxumQuery(params): AxumQuery<SegmentQueryParams>,
 ) -> ApiResult<PaginatedResponse<Segment>> {
-    let limit = params.limit.unwrap_or(20).max(1).min(100);
-    let offset = params.offset.unwrap_or(0).max(0);
+    let (limit, offset) = resolve_segment_pagination(&params);
 
     let query = GetSegmentsQuery {
         deployment_id,
@@ -158,13 +173,7 @@ pub async fn create_segment(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(payload): Json<CreateSegmentRequest>,
 ) -> ApiResult<Segment> {
-    if payload.r#type != "organization" && payload.r#type != "workspace" && payload.r#type != "user"
-    {
-        return Err(AppError::BadRequest(
-            "Invalid segment type. Must be 'organization', 'workspace', or 'user'".into(),
-        )
-        .into());
-    }
+    validate_segment_type(&payload.r#type)?;
 
     let command = CreateSegmentCommand {
         deployment_id,

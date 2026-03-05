@@ -25,7 +25,10 @@ impl UpsertDeploymentSocialConnectionCommand {
 }
 
 impl UpsertDeploymentSocialConnectionCommand {
-    pub async fn execute_with(self, app_state: &AppState) -> Result<DeploymentSocialConnection, AppError> {
+    pub async fn execute_with(
+        self,
+        app_state: &AppState,
+    ) -> Result<DeploymentSocialConnection, AppError> {
         let provider = self.connection.provider;
         let enabled = self.connection.enabled;
         let mut credentials = self.connection.credentials;

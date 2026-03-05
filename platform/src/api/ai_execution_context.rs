@@ -34,11 +34,10 @@ pub struct ListExecutionContextsParams {
     pub context_group: Option<String>,
 }
 
-pub async fn create_execution_context(
-    State(app_state): State<AppState>,
-    ConsoleDeployment(deployment_id): ConsoleDeployment,
-    Json(request): Json<CreateExecutionContextRequest>,
-) -> ApiResult<AgentExecutionContext> {
+fn build_create_execution_context_command(
+    deployment_id: i64,
+    request: CreateExecutionContextRequest,
+) -> CreateExecutionContextCommand {
     let mut command = CreateExecutionContextCommand::new(deployment_id);
 
     if let Some(title) = request.title {
@@ -54,99 +53,14 @@ pub async fn create_execution_context(
     }
 
     command
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
 }
 
-pub async fn create_execution_context_backend(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Json(request): Json<CreateExecutionContextRequest>,
-) -> ApiResult<AgentExecutionContext> {
-    let mut command = CreateExecutionContextCommand::new(deployment_id);
-
-    if let Some(title) = request.title {
-        command = command.with_title(title);
-    }
-
-    if let Some(system_instructions) = request.system_instructions {
-        command = command.with_system_instructions(system_instructions);
-    }
-
-    if let Some(context_group) = request.context_group {
-        command = command.with_context_group(context_group);
-    }
-
-    command
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
-}
-
-pub async fn get_execution_contexts(
-    State(app_state): State<AppState>,
-    ConsoleDeployment(deployment_id): ConsoleDeployment,
-    Query(params): Query<ListExecutionContextsParams>,
-) -> ApiResult<PaginatedResponse<AgentExecutionContext>> {
-    let limit = params.limit.unwrap_or(50);
-    let offset = params.offset.unwrap_or(0);
-
-    let mut query = ListExecutionContextsQuery::new(deployment_id)
-        .with_limit(limit + 1)
-        .with_offset(offset);
-
-    if let Some(status) = params.status {
-        query = query.with_status_filter(status);
-    }
-
-    if let Some(context_group) = params.context_group {
-        query = query.with_context_group_filter(context_group);
-    }
-
-    let contexts = query.execute(&app_state).await?;
-
-    Ok(paginate_results(contexts, limit as i32, Some(offset as i64)).into())
-}
-
-pub async fn get_execution_contexts_backend(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Query(params): Query<ListExecutionContextsParams>,
-) -> ApiResult<PaginatedResponse<AgentExecutionContext>> {
-    let limit = params.limit.unwrap_or(50);
-    let offset = params.offset.unwrap_or(0);
-
-    let mut query = ListExecutionContextsQuery::new(deployment_id)
-        .with_limit(limit + 1)
-        .with_offset(offset);
-
-    if let Some(status) = params.status {
-        query = query.with_status_filter(status);
-    }
-
-    if let Some(context_group) = params.context_group {
-        query = query.with_context_group_filter(context_group);
-    }
-
-    let contexts = query.execute(&app_state).await?;
-
-    Ok(paginate_results(contexts, limit as i32, Some(offset as i64)).into())
-}
-#[derive(Deserialize)]
-pub struct ContextIdParam {
-    pub context_id: i64,
-}
-
-pub async fn update_execution_context(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<ContextIdParam>,
-    Json(request): Json<UpdateExecutionContextRequest>,
-) -> ApiResult<AgentExecutionContext> {
-    let mut command = UpdateExecutionContextCommand::new(params.context_id, deployment_id);
+fn build_update_execution_context_command(
+    context_id: i64,
+    deployment_id: i64,
+    request: UpdateExecutionContextRequest,
+) -> UpdateExecutionContextCommand {
+    let mut command = UpdateExecutionContextCommand::new(context_id, deployment_id);
 
     if let Some(title) = request.title {
         command = command.with_title(title);
@@ -168,10 +82,90 @@ pub async fn update_execution_context(
     }
 
     command
+}
+
+async fn list_execution_contexts_inner(
+    app_state: &AppState,
+    deployment_id: i64,
+    params: ListExecutionContextsParams,
+) -> Result<PaginatedResponse<AgentExecutionContext>, AppError> {
+    let limit = params.limit.unwrap_or(50);
+    let offset = params.offset.unwrap_or(0);
+
+    let mut query = ListExecutionContextsQuery::new(deployment_id)
+        .with_limit(limit + 1)
+        .with_offset(offset);
+
+    if let Some(status) = params.status {
+        query = query.with_status_filter(status);
+    }
+
+    if let Some(context_group) = params.context_group {
+        query = query.with_context_group_filter(context_group);
+    }
+
+    let contexts = query.execute(app_state).await?;
+    Ok(paginate_results(
+        contexts,
+        limit as i32,
+        Some(offset as i64),
+    ))
+}
+
+pub async fn create_execution_context(
+    State(app_state): State<AppState>,
+    ConsoleDeployment(deployment_id): ConsoleDeployment,
+    Json(request): Json<CreateExecutionContextRequest>,
+) -> ApiResult<AgentExecutionContext> {
+    let context = build_create_execution_context_command(deployment_id, request)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(context.into())
+}
+
+pub async fn create_execution_context_backend(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Json(request): Json<CreateExecutionContextRequest>,
+) -> ApiResult<AgentExecutionContext> {
+    let context = build_create_execution_context_command(deployment_id, request)
+        .execute(&app_state)
+        .await?;
+    Ok(context.into())
+}
+
+pub async fn get_execution_contexts(
+    State(app_state): State<AppState>,
+    ConsoleDeployment(deployment_id): ConsoleDeployment,
+    Query(params): Query<ListExecutionContextsParams>,
+) -> ApiResult<PaginatedResponse<AgentExecutionContext>> {
+    let contexts = list_execution_contexts_inner(&app_state, deployment_id, params).await?;
+    Ok(contexts.into())
+}
+
+pub async fn get_execution_contexts_backend(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Query(params): Query<ListExecutionContextsParams>,
+) -> ApiResult<PaginatedResponse<AgentExecutionContext>> {
+    let contexts = list_execution_contexts_inner(&app_state, deployment_id, params).await?;
+    Ok(contexts.into())
+}
+#[derive(Deserialize)]
+pub struct ContextIdParam {
+    pub context_id: i64,
+}
+
+pub async fn update_execution_context(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<ContextIdParam>,
+    Json(request): Json<UpdateExecutionContextRequest>,
+) -> ApiResult<AgentExecutionContext> {
+    let context = build_update_execution_context_command(params.context_id, deployment_id, request)
+        .execute(&app_state)
+        .await?;
+    Ok(context.into())
 }
 
 #[derive(Deserialize)]

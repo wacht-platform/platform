@@ -183,7 +183,6 @@ impl Command for CreateUserCommand {
     }
 }
 
-
 pub struct UpdateUserCommand {
     deployment_id: i64,
     user_id: i64,

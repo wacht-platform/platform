@@ -130,4 +130,3 @@ impl Command for SyncOAuthGrantLastUsedBatch {
         Ok(synced)
     }
 }
-

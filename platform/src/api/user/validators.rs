@@ -4,12 +4,11 @@ use common::state::AppState;
 use dto::json::{CreateUserRequest, UpdateUserRequest};
 use queries::{GetDeploymentAuthSettingsQuery, Query};
 
-pub(super) async fn validate_create_user_request(
+async fn get_deployment_auth_settings(
     app_state: &AppState,
     deployment_id: i64,
-    request: &CreateUserRequest,
-) -> Result<(), (StatusCode, String)> {
-    let auth_settings = GetDeploymentAuthSettingsQuery::new(deployment_id)
+) -> Result<models::DeploymentAuthSettings, (StatusCode, String)> {
+    GetDeploymentAuthSettingsQuery::new(deployment_id)
         .execute(app_state)
         .await
         .map_err(|e| {
@@ -17,7 +16,15 @@ pub(super) async fn validate_create_user_request(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to get deployment auth settings: {}", e),
             )
-        })?;
+        })
+}
+
+pub(super) async fn validate_create_user_request(
+    app_state: &AppState,
+    deployment_id: i64,
+    request: &CreateUserRequest,
+) -> Result<(), (StatusCode, String)> {
+    let auth_settings = get_deployment_auth_settings(app_state, deployment_id).await?;
 
     if auth_settings.first_name.enabled
         && auth_settings.first_name.required.unwrap_or(true)
@@ -86,15 +93,7 @@ pub(super) async fn validate_update_user_request(
     deployment_id: i64,
     request: &UpdateUserRequest,
 ) -> Result<(), (StatusCode, String)> {
-    let auth_settings = GetDeploymentAuthSettingsQuery::new(deployment_id)
-        .execute(app_state)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to get deployment auth settings: {}", e),
-            )
-        })?;
+    let auth_settings = get_deployment_auth_settings(app_state, deployment_id).await?;
 
     if let Some(first_name) = &request.first_name {
         if auth_settings.first_name.enabled

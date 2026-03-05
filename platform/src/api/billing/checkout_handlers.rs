@@ -7,8 +7,7 @@ use crate::application::response::ApiResult;
 use commands::{
     Command,
     billing::{
-        CreateBillingAccountCommand, MarkCheckoutSessionCreatedCommand,
-        SetProviderCustomerIdCommand, UpdateBillingAccountCommand,
+        CreateBillingAccountCommand, SetProviderCustomerIdCommand, UpdateBillingAccountCommand,
         UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand,
     },
 };
@@ -17,12 +16,13 @@ use common::dodo::{
     ProductCartItem, UpdateCustomerParams,
 };
 use common::state::AppState;
-use queries::{
-    Query as QueryTrait,
-    billing::{GetBillingAccountQuery, GetDodoProductQuery},
-};
+use queries::{Query as QueryTrait, billing::GetBillingAccountQuery};
 use wacht::middleware::RequireAuth;
 
+use super::helpers::{
+    checkout_response, create_checkout_session, create_dodo_client, get_billing_account_or_404,
+    get_plan_product_or_404, get_pulse_product_or_500, mark_checkout_session_created,
+};
 use super::types::{
     ChangePlanRequest, CheckoutResponse, CreateCheckoutRequest, CreatePulseCheckoutRequest,
     enforce_checkout_cooldown, is_local_starter_subscription, owner_id_from_auth,
@@ -57,13 +57,7 @@ pub async fn create_checkout(
         }
     }
 
-    let dodo = DodoClient::new().map_err(|e| {
-        error!("Failed to create Dodo client: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Payment gateway initialization failed",
-        )
-    })?;
+    let dodo = create_dodo_client()?;
 
     let provider_customer_id = if let Some(ref account) = existing {
         UpdateBillingAccountCommand {
@@ -164,7 +158,7 @@ pub async fn create_checkout(
     };
 
     if is_starter_plan {
-        let starter_product_id = GetDodoProductQuery::new("starter")
+        let starter_product_id = queries::billing::GetDodoProductQuery::new("starter")
             .execute(&state)
             .await?
             .map(|p| p.product_id)
@@ -191,13 +185,7 @@ pub async fn create_checkout(
         return Ok(starter_activation_response().into());
     }
 
-    let product = GetDodoProductQuery::new(&req.plan_name)
-        .execute(&state)
-        .await?
-        .ok_or_else(|| {
-            error!("Product not found for plan: {}", req.plan_name);
-            (StatusCode::NOT_FOUND, "Plan not found")
-        })?;
+    let product = get_plan_product_or_404(&state, &req.plan_name).await?;
 
     let params = CreateCheckoutParams {
         product_cart: vec![ProductCartItem {
@@ -218,27 +206,11 @@ pub async fn create_checkout(
         discount_code: None,
     };
 
-    let checkout = dodo.create_checkout_session(params).await.map_err(|e| {
-        error!("Failed to create checkout session: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Checkout initialization failed",
-        )
-    })?;
+    let checkout =
+        create_checkout_session(&dodo, params, "plan", "Checkout initialization failed").await?;
+    mark_checkout_session_created(&state, &owner_id, &checkout.checkout_id).await?;
 
-    MarkCheckoutSessionCreatedCommand {
-        owner_id: owner_id.clone(),
-        checkout_session_id: checkout.checkout_id.clone(),
-    }
-    .execute(&state)
-    .await?;
-
-    Ok(CheckoutResponse {
-        requires_checkout: true,
-        checkout_id: Some(checkout.checkout_id),
-        checkout_url: Some(checkout.checkout_url),
-    }
-    .into())
+    Ok(checkout_response(checkout).into())
 }
 
 pub async fn change_plan(
@@ -248,23 +220,14 @@ pub async fn change_plan(
 ) -> ApiResult<CheckoutResponse> {
     let owner_id = owner_id_from_auth(&auth);
 
-    let account = GetBillingAccountQuery::new(owner_id.clone())
-        .execute(&state)
-        .await?
-        .ok_or((StatusCode::NOT_FOUND, "Billing account not found"))?;
+    let account = get_billing_account_or_404(&state, &owner_id).await?;
 
     let subscription = account
         .subscription
         .as_ref()
         .ok_or((StatusCode::NOT_FOUND, "Subscription not found"))?;
 
-    let product = GetDodoProductQuery::new(&req.plan_name)
-        .execute(&state)
-        .await?
-        .ok_or_else(|| {
-            error!("Product not found for plan: {}", req.plan_name);
-            (StatusCode::NOT_FOUND, "Plan not found")
-        })?;
+    let product = get_plan_product_or_404(&state, &req.plan_name).await?;
 
     let dodo = DodoClient::new().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -304,27 +267,12 @@ pub async fn change_plan(
             discount_code: None,
         };
 
-        let checkout = dodo.create_checkout_session(params).await.map_err(|e| {
-            error!("Failed to create checkout session: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Checkout initialization failed",
-            )
-        })?;
+        let checkout =
+            create_checkout_session(&dodo, params, "plan", "Checkout initialization failed")
+                .await?;
+        mark_checkout_session_created(&state, &owner_id, &checkout.checkout_id).await?;
 
-        MarkCheckoutSessionCreatedCommand {
-            owner_id,
-            checkout_session_id: checkout.checkout_id.clone(),
-        }
-        .execute(&state)
-        .await?;
-
-        return Ok(CheckoutResponse {
-            requires_checkout: true,
-            checkout_id: Some(checkout.checkout_id),
-            checkout_url: Some(checkout.checkout_url),
-        }
-        .into());
+        return Ok(checkout_response(checkout).into());
     }
 
     dodo.change_plan(
@@ -355,36 +303,18 @@ pub async fn create_pulse_checkout(
 ) -> ApiResult<CheckoutResponse> {
     let owner_id = owner_id_from_auth(&auth);
 
-    let existing = GetBillingAccountQuery::new(owner_id.clone())
-        .execute(&state)
-        .await?
-        .ok_or((StatusCode::NOT_FOUND, "Billing account not found"))?;
+    let existing = get_billing_account_or_404(&state, &owner_id).await?;
 
     let provider_customer_id = existing
         .billing_account
         .provider_customer_id
         .ok_or((StatusCode::NOT_FOUND, "Payment provider customer not found"))?;
 
-    let product = GetDodoProductQuery::new("pulse_credits")
-        .execute(&state)
-        .await?
-        .ok_or_else(|| {
-            error!("Product 'pulse_credits' not found");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Pulse product configuration missing",
-            )
-        })?;
+    let product = get_pulse_product_or_500(&state).await?;
 
     let total_charge = ((req.pulse_amount + 50) as f64 / 0.96).ceil() as i64;
 
-    let dodo = DodoClient::new().map_err(|e| {
-        error!("Failed to create Dodo client: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Payment gateway initialization failed",
-        )
-    })?;
+    let dodo = create_dodo_client()?;
 
     let params = CreateCheckoutParams {
         product_cart: vec![ProductCartItem {
@@ -405,25 +335,10 @@ pub async fn create_pulse_checkout(
         discount_code: None,
     };
 
-    let checkout = dodo.create_checkout_session(params).await.map_err(|e| {
-        error!("Failed to create pulse checkout session: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to create checkout session",
-        )
-    })?;
+    let checkout =
+        create_checkout_session(&dodo, params, "pulse", "Failed to create checkout session")
+            .await?;
+    mark_checkout_session_created(&state, &owner_id, &checkout.checkout_id).await?;
 
-    MarkCheckoutSessionCreatedCommand {
-        owner_id,
-        checkout_session_id: checkout.checkout_id.clone(),
-    }
-    .execute(&state)
-    .await?;
-
-    Ok(CheckoutResponse {
-        requires_checkout: true,
-        checkout_id: Some(checkout.checkout_id),
-        checkout_url: Some(checkout.checkout_url),
-    }
-    .into())
+    Ok(checkout_response(checkout).into())
 }

@@ -75,11 +75,8 @@ pub async fn create_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    let agent = command.execute(&app_state).await?;
+    Ok(agent.into())
 }
 
 pub async fn get_ai_agent_by_id(
@@ -87,11 +84,10 @@ pub async fn get_ai_agent_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<AiAgentWithDetails> {
-    GetAiAgentByIdQuery::new(deployment_id, params.agent_id)
+    let agent = GetAiAgentByIdQuery::new(deployment_id, params.agent_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(agent.into())
 }
 
 /// Get full agent details including integrations, tools, knowledge bases
@@ -196,11 +192,8 @@ pub async fn update_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    let agent = command.execute(&app_state).await?;
+    Ok(agent.into())
 }
 
 pub async fn delete_ai_agent(
@@ -210,9 +203,8 @@ pub async fn delete_ai_agent(
 ) -> ApiResult<()> {
     DeleteAiAgentCommand::new(deployment_id, params.agent_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 /// Get sub-agents attached to an agent
@@ -241,9 +233,8 @@ pub async fn attach_sub_agent_to_agent(
 ) -> ApiResult<()> {
     AttachSubAgentToAgentCommand::new(deployment_id, params.agent_id, params.sub_agent_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 /// Detach a sub-agent from an agent
@@ -254,9 +245,8 @@ pub async fn detach_sub_agent_from_agent(
 ) -> ApiResult<()> {
     DetachSubAgentFromAgentCommand::new(deployment_id, params.agent_id, params.sub_agent_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 /// Get integrations attached to an agent

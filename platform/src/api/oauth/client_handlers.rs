@@ -16,12 +16,10 @@ use dto::json::api_key::{
     CreateOAuthClientRequest, ListOAuthClientsResponse, OAuthClientResponse,
     RotateOAuthClientSecretResponse, UpdateOAuthClientRequest,
 };
-use queries::{
-    Query as QueryTrait,
-    oauth::{GetOAuthAppBySlugQuery, GetOAuthClientByIdQuery, ListOAuthClientsByOAuthAppQuery},
-};
+use queries::{Query as QueryTrait, oauth::ListOAuthClientsByOAuthAppQuery};
 
-use super::mappers::map_oauth_client_response;
+use super::helpers::{get_oauth_app_by_slug, get_oauth_client_by_id};
+use super::mappers::{map_oauth_client_response, map_oauth_client_response_with_secret};
 use super::types::{OAuthAppPathParams, OAuthClientPathParams};
 
 pub(crate) async fn list_oauth_clients(
@@ -29,10 +27,7 @@ pub(crate) async fn list_oauth_clients(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthAppPathParams>,
 ) -> ApiResult<ListOAuthClientsResponse> {
-    let oauth_app = GetOAuthAppBySlugQuery::new(deployment_id, params.oauth_app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth app not found"))?;
+    let oauth_app = get_oauth_app_by_slug(&app_state, deployment_id, params.oauth_app_slug).await?;
 
     let clients = ListOAuthClientsByOAuthAppQuery::new(deployment_id, oauth_app.id)
         .execute(&app_state)
@@ -50,10 +45,7 @@ pub(crate) async fn create_oauth_client(
     Path(params): Path<OAuthAppPathParams>,
     Json(request): Json<CreateOAuthClientRequest>,
 ) -> ApiResult<OAuthClientResponse> {
-    let oauth_app = GetOAuthAppBySlugQuery::new(deployment_id, params.oauth_app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth app not found"))?;
+    let oauth_app = get_oauth_app_by_slug(&app_state, deployment_id, params.oauth_app_slug).await?;
 
     let created = CreateOAuthClientCommand {
         deployment_id,
@@ -77,35 +69,7 @@ pub(crate) async fn create_oauth_client(
     .execute(&app_state)
     .await?;
 
-    let grant_types = created.client.grant_types_vec();
-    let redirect_uris = created.client.redirect_uris_vec();
-    let contacts = created.client.contacts_vec();
-
-    Ok(OAuthClientResponse {
-        id: created.client.id,
-        oauth_app_id: created.client.oauth_app_id,
-        client_id: created.client.client_id,
-        client_auth_method: created.client.client_auth_method,
-        grant_types,
-        redirect_uris,
-        client_name: created.client.client_name,
-        client_uri: created.client.client_uri,
-        logo_uri: created.client.logo_uri,
-        tos_uri: created.client.tos_uri,
-        policy_uri: created.client.policy_uri,
-        contacts,
-        software_id: created.client.software_id,
-        software_version: created.client.software_version,
-        token_endpoint_auth_signing_alg: created.client.token_endpoint_auth_signing_alg,
-        jwks_uri: created.client.jwks_uri,
-        jwks: created.client.jwks,
-        public_key_pem: created.client.public_key_pem,
-        is_active: created.client.is_active,
-        created_at: created.client.created_at,
-        updated_at: created.client.updated_at,
-        client_secret: created.client_secret,
-    }
-    .into())
+    Ok(map_oauth_client_response_with_secret(created.client, created.client_secret).into())
 }
 
 pub(crate) async fn update_oauth_client(
@@ -114,15 +78,14 @@ pub(crate) async fn update_oauth_client(
     Path(params): Path<OAuthClientPathParams>,
     Json(request): Json<UpdateOAuthClientRequest>,
 ) -> ApiResult<OAuthClientResponse> {
-    let oauth_app = GetOAuthAppBySlugQuery::new(deployment_id, params.oauth_app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth app not found"))?;
-
-    let client = GetOAuthClientByIdQuery::new(deployment_id, oauth_app.id, params.oauth_client_id)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth client not found"))?;
+    let oauth_app = get_oauth_app_by_slug(&app_state, deployment_id, params.oauth_app_slug).await?;
+    let client = get_oauth_client_by_id(
+        &app_state,
+        deployment_id,
+        oauth_app.id,
+        params.oauth_client_id,
+    )
+    .await?;
 
     let updated = UpdateOAuthClientSettings {
         oauth_app_id: oauth_app.id,
@@ -155,15 +118,14 @@ pub(crate) async fn deactivate_oauth_client(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthClientPathParams>,
 ) -> ApiResult<()> {
-    let oauth_app = GetOAuthAppBySlugQuery::new(deployment_id, params.oauth_app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth app not found"))?;
-
-    let client = GetOAuthClientByIdQuery::new(deployment_id, oauth_app.id, params.oauth_client_id)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth client not found"))?;
+    let oauth_app = get_oauth_app_by_slug(&app_state, deployment_id, params.oauth_app_slug).await?;
+    let client = get_oauth_client_by_id(
+        &app_state,
+        deployment_id,
+        oauth_app.id,
+        params.oauth_client_id,
+    )
+    .await?;
 
     let updated = DeactivateOAuthClient {
         oauth_app_id: oauth_app.id,
@@ -188,15 +150,14 @@ pub(crate) async fn rotate_oauth_client_secret(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthClientPathParams>,
 ) -> ApiResult<RotateOAuthClientSecretResponse> {
-    let oauth_app = GetOAuthAppBySlugQuery::new(deployment_id, params.oauth_app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth app not found"))?;
-
-    let client = GetOAuthClientByIdQuery::new(deployment_id, oauth_app.id, params.oauth_client_id)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth client not found"))?;
+    let oauth_app = get_oauth_app_by_slug(&app_state, deployment_id, params.oauth_app_slug).await?;
+    let client = get_oauth_client_by_id(
+        &app_state,
+        deployment_id,
+        oauth_app.id,
+        params.oauth_client_id,
+    )
+    .await?;
 
     let client_secret = RotateOAuthClientSecret {
         oauth_app_id: oauth_app.id,

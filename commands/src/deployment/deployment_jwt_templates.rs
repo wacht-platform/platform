@@ -24,7 +24,10 @@ impl CreateDeploymentJwtTemplateCommand {
 }
 
 impl CreateDeploymentJwtTemplateCommand {
-    pub async fn execute_with(self, app_state: &AppState) -> Result<DeploymentJwtTemplate, AppError> {
+    pub async fn execute_with(
+        self,
+        app_state: &AppState,
+    ) -> Result<DeploymentJwtTemplate, AppError> {
         let result = sqlx::query!(
             r#"
             INSERT INTO deployment_jwt_templates (id, created_at, updated_at, deployment_id, name, token_lifetime, allowed_clock_skew, custom_signing_key, template)
@@ -92,7 +95,10 @@ impl UpdateDeploymentJwtTemplateCommand {
 }
 
 impl UpdateDeploymentJwtTemplateCommand {
-    pub async fn execute_with(self, app_state: &AppState) -> Result<DeploymentJwtTemplate, AppError> {
+    pub async fn execute_with(
+        self,
+        app_state: &AppState,
+    ) -> Result<DeploymentJwtTemplate, AppError> {
         let mut query_builder =
             sqlx::QueryBuilder::new("UPDATE deployment_jwt_templates SET updated_at = NOW() ");
 

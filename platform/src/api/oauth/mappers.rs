@@ -1,6 +1,13 @@
 use dto::json::api_key::{OAuthAppResponse, OAuthClientResponse};
 
 pub(crate) fn map_oauth_client_response(c: queries::oauth::OAuthClientData) -> OAuthClientResponse {
+    map_oauth_client_response_with_secret(c, None)
+}
+
+pub(crate) fn map_oauth_client_response_with_secret(
+    c: queries::oauth::OAuthClientData,
+    client_secret: Option<String>,
+) -> OAuthClientResponse {
     let grant_types = c.grant_types_vec();
     let redirect_uris = c.redirect_uris_vec();
     let contacts = c.contacts_vec();
@@ -26,7 +33,7 @@ pub(crate) fn map_oauth_client_response(c: queries::oauth::OAuthClientData) -> O
         is_active: c.is_active,
         created_at: c.created_at,
         updated_at: c.updated_at,
-        client_secret: None,
+        client_secret,
     }
 }
 

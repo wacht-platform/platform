@@ -104,7 +104,8 @@ impl UpdateDeploymentDisplaySettingsCommand {
             query_builder.push_bind(create_organization_url);
         }
 
-        if let Some(default_user_profile_image_url) = &self.settings.default_user_profile_image_url {
+        if let Some(default_user_profile_image_url) = &self.settings.default_user_profile_image_url
+        {
             query_builder.push(", default_user_profile_image_url = ");
             query_builder.push_bind(default_user_profile_image_url);
         }

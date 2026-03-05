@@ -1,51 +1,6 @@
 use std::collections::HashMap;
 
-use crate::middleware::RequireDeployment;
-use axum::Json;
-use axum::extract::{Multipart, Path, Query as QueryParams, State};
-use axum::http::StatusCode;
 use serde::Deserialize;
-
-use crate::application::{response::ApiResult, response::PaginatedResponse};
-use commands::{
-    AddOrganizationMemberCommand, AddWorkspaceMemberCommand, Command, CreateOrganizationCommand,
-    CreateOrganizationRoleCommand, CreateWorkspaceCommand, CreateWorkspaceRoleCommand,
-    DeleteOrganizationCommand, DeleteOrganizationRoleCommand, DeleteWorkspaceCommand,
-    DeleteWorkspaceRoleCommand, RemoveOrganizationMemberCommand, RemoveWorkspaceMemberCommand,
-    UpdateDeploymentB2bSettingsCommand, UpdateOrganizationCommand, UpdateOrganizationMemberCommand,
-    UpdateOrganizationRoleCommand, UpdateWorkspaceCommand, UpdateWorkspaceMemberCommand,
-    UpdateWorkspaceRoleCommand, UploadToCdnCommand,
-};
-use common::state::AppState;
-use dto::{
-    json::{
-        b2b::{
-            AddOrganizationMemberRequest, AddWorkspaceMemberRequest, CreateOrganizationRoleRequest,
-            CreateWorkspaceRoleRequest, UpdateOrganizationMemberRequest,
-            UpdateOrganizationRoleRequest, UpdateWorkspaceMemberRequest,
-            UpdateWorkspaceRoleRequest,
-        },
-        deployment_settings::DeploymentB2bSettingsUpdates,
-        nats::{
-            ApiKeyOrgMembershipSyncPayload, ApiKeyOrgRoleSyncPayload,
-            ApiKeyWorkspaceMembershipSyncPayload, ApiKeyWorkspaceRoleSyncPayload, NatsTaskMessage,
-        },
-    },
-    query::OrganizationListQueryParams,
-};
-use models::{DeploymentOrganizationRole, DeploymentWorkspaceRole};
-use models::{
-    Organization, OrganizationDetails, OrganizationMemberDetails, OrganizationRole, Workspace,
-    WorkspaceDetails, WorkspaceMemberDetails, WorkspaceRole, WorkspaceWithOrganizationName,
-};
-use queries::api_key::{
-    GetOrganizationMembershipIdsByRoleQuery, GetWorkspaceMembershipIdsByRoleQuery,
-};
-use queries::{
-    DeploymentOrganizationListQuery, DeploymentWorkspaceListQuery, GetOrganizationDetailsQuery,
-    GetOrganizationMembersQuery, GetWorkspaceDetailsQuery, GetWorkspaceMembersQuery,
-};
-use queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery, Query};
 
 mod entity_handlers;
 mod membership_handlers;
@@ -103,12 +58,6 @@ pub struct WorkspaceMemberParams {
     pub rest: HashMap<String, String>,
     pub workspace_id: i64,
     pub membership_id: i64,
-}
-
-#[derive(Deserialize)]
-pub struct PaginationParams {
-    pub offset: Option<i64>,
-    pub limit: Option<i32>,
 }
 
 #[derive(Deserialize)]

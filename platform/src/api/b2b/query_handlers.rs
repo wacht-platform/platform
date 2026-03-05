@@ -1,28 +1,49 @@
-use super::*;
+use axum::{
+    Json,
+    extract::{Path, Query as QueryParams, State},
+};
+
 use crate::api::pagination::paginate_results;
+use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::middleware::RequireDeployment;
+use commands::{Command, UpdateDeploymentB2bSettingsCommand};
+use common::state::AppState;
+use dto::{
+    json::deployment_settings::DeploymentB2bSettingsUpdates, query::OrganizationListQueryParams,
+};
+use models::{
+    DeploymentOrganizationRole, DeploymentWorkspaceRole, Organization, OrganizationDetails,
+    OrganizationMemberDetails, WorkspaceDetails, WorkspaceMemberDetails,
+    WorkspaceWithOrganizationName,
+};
+use queries::{
+    DeploymentOrganizationListQuery, DeploymentWorkspaceListQuery, GetOrganizationDetailsQuery,
+    GetOrganizationMembersQuery, GetWorkspaceDetailsQuery, GetWorkspaceMembersQuery, Query,
+};
+use queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery};
+
+use super::{
+    OrganizationMemberQueryParams, OrganizationParams, WorkspaceMemberQueryParams, WorkspaceParams,
+};
 
 pub async fn get_deployment_workspace_roles(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<PaginatedResponse<DeploymentWorkspaceRole>> {
-    GetDeploymentWorkspaceRolesQuery::new(deployment_id)
+    let roles = GetDeploymentWorkspaceRolesQuery::new(deployment_id)
         .execute(&app_state)
-        .await
-        .map(PaginatedResponse::from)
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(PaginatedResponse::from(roles).into())
 }
 
 pub async fn get_deployment_org_roles(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<PaginatedResponse<DeploymentOrganizationRole>> {
-    GetDeploymentOrganizationRolesQuery::new(deployment_id)
+    let roles = GetDeploymentOrganizationRolesQuery::new(deployment_id)
         .execute(&app_state)
-        .await
-        .map(PaginatedResponse::from)
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(PaginatedResponse::from(roles).into())
 }
 
 pub async fn update_deployment_b2b_settings(
@@ -32,9 +53,8 @@ pub async fn update_deployment_b2b_settings(
 ) -> ApiResult<()> {
     UpdateDeploymentB2bSettingsCommand::new(deployment_id, settings)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn get_organization_list(
@@ -82,11 +102,10 @@ pub async fn get_organization_details(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OrganizationParams>,
 ) -> ApiResult<OrganizationDetails> {
-    GetOrganizationDetailsQuery::new(deployment_id, params.organization_id)
+    let organization = GetOrganizationDetailsQuery::new(deployment_id, params.organization_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(organization.into())
 }
 
 pub async fn get_workspace_details(
@@ -94,11 +113,10 @@ pub async fn get_workspace_details(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WorkspaceParams>,
 ) -> ApiResult<WorkspaceDetails> {
-    GetWorkspaceDetailsQuery::new(deployment_id, params.workspace_id)
+    let workspace = GetWorkspaceDetailsQuery::new(deployment_id, params.workspace_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(workspace.into())
 }
 
 pub async fn get_organization_members(
@@ -119,13 +137,7 @@ pub async fn get_organization_members(
         .execute(&app_state)
         .await?;
 
-    Ok(PaginatedResponse {
-        data: members,
-        has_more,
-        limit: Some(limit as i32),
-        offset: Some(offset as i32),
-    }
-    .into())
+    Ok(paginated_with_has_more(members, has_more, limit, offset).into())
 }
 
 pub async fn get_workspace_members(
@@ -146,11 +158,22 @@ pub async fn get_workspace_members(
         .execute(&app_state)
         .await?;
 
-    Ok(PaginatedResponse {
-        data: members,
+    Ok(paginated_with_has_more(members, has_more, limit, offset).into())
+}
+
+fn paginated_with_has_more<T>(
+    data: Vec<T>,
+    has_more: bool,
+    limit: i32,
+    offset: i64,
+) -> PaginatedResponse<T>
+where
+    T: serde::Serialize,
+{
+    PaginatedResponse {
+        data,
         has_more,
-        limit: Some(limit as i32),
+        limit: Some(limit),
         offset: Some(offset as i32),
     }
-    .into())
 }

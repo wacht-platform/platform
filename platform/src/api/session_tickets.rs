@@ -3,6 +3,7 @@ use crate::{
     middleware::RequireDeployment,
 };
 use axum::{Json, extract::State};
+use commands::session_ticket::{AgentSessionIdentifier, SessionTicketType};
 use commands::{Command, GenerateSessionTicketCommand};
 use common::state::AppState;
 use dto::json::session_ticket::{AgentSessionIdentifierDto, CreateSessionTicketRequest};
@@ -13,33 +14,44 @@ pub struct CreateSessionTicketResponse {
     pub expires_at: i64,
 }
 
+fn parse_ticket_type(ticket_type: &str) -> Result<SessionTicketType, AppError> {
+    match ticket_type {
+        "impersonation" => Ok(SessionTicketType::Impersonation),
+        "agent_access" => Ok(SessionTicketType::AgentAccess),
+        "webhook_app_access" => Ok(SessionTicketType::WebhookAppAccess),
+        "api_auth_access" => Ok(SessionTicketType::ApiAuthAccess),
+        _ => Err(AppError::BadRequest(
+            "Invalid ticket_type. Must be 'impersonation', 'agent_access', 'webhook_app_access', or 'api_auth_access'".to_string(),
+        )),
+    }
+}
+
+fn parse_console_deployment_id() -> Result<i64, AppError> {
+    std::env::var("CONSOLE_DEPLOYMENT_ID")
+        .map_err(|_| AppError::Internal("CONSOLE_DEPLOYMENT_ID is not set".to_string()))?
+        .parse::<i64>()
+        .map_err(|e| AppError::Internal(format!("Invalid CONSOLE_DEPLOYMENT_ID: {}", e)))
+}
+
+fn map_agent_session_identifier(identifier: AgentSessionIdentifierDto) -> AgentSessionIdentifier {
+    match identifier {
+        AgentSessionIdentifierDto::Static => AgentSessionIdentifier::Static,
+        AgentSessionIdentifierDto::Signin => AgentSessionIdentifier::Signin,
+    }
+}
+
 pub async fn create_session_ticket(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateSessionTicketRequest>,
 ) -> ApiResult<CreateSessionTicketResponse> {
-    let ticket_type = match request.ticket_type.as_str() {
-        "impersonation" => commands::session_ticket::SessionTicketType::Impersonation,
-        "agent_access" => commands::session_ticket::SessionTicketType::AgentAccess,
-        "webhook_app_access" => commands::session_ticket::SessionTicketType::WebhookAppAccess,
-        "api_auth_access" => commands::session_ticket::SessionTicketType::ApiAuthAccess,
-        _ => {
-            return Err(crate::application::AppError::BadRequest(
-                "Invalid ticket_type. Must be 'impersonation', 'agent_access', 'webhook_app_access', or 'api_auth_access'".to_string(),
-            )
-            .into());
-        }
-    };
-
-    let console_deployment_id = std::env::var("CONSOLE_DEPLOYMENT_ID")
-        .map_err(|_| AppError::Internal("CONSOLE_DEPLOYMENT_ID is not set".to_string()))?
-        .parse::<i64>()
-        .map_err(|e| AppError::Internal(format!("Invalid CONSOLE_DEPLOYMENT_ID: {}", e)))?;
+    let ticket_type = parse_ticket_type(&request.ticket_type)?;
+    let console_deployment_id = parse_console_deployment_id()?;
 
     let mut command = GenerateSessionTicketCommand::new(deployment_id, ticket_type.clone());
 
     match ticket_type {
-        commands::session_ticket::SessionTicketType::Impersonation => {
+        SessionTicketType::Impersonation => {
             if let Some(user_id) = request.user_id {
                 command = command.with_user_id(user_id);
             } else {
@@ -49,7 +61,7 @@ pub async fn create_session_ticket(
                 .into());
             }
         }
-        commands::session_ticket::SessionTicketType::AgentAccess => {
+        SessionTicketType::AgentAccess => {
             if let Some(agent_ids) = request.agent_ids {
                 if agent_ids.is_empty() {
                     return Err(crate::application::AppError::BadRequest(
@@ -66,18 +78,11 @@ pub async fn create_session_ticket(
             }
 
             if let Some(identifier) = request.agent_session_identifier {
-                let mode = match identifier {
-                    AgentSessionIdentifierDto::Static => {
-                        commands::session_ticket::AgentSessionIdentifier::Static
-                    }
-                    AgentSessionIdentifierDto::Signin => {
-                        commands::session_ticket::AgentSessionIdentifier::Signin
-                    }
-                };
+                let mode = map_agent_session_identifier(identifier);
                 command = command.with_agent_session_identifier(mode);
             }
         }
-        commands::session_ticket::SessionTicketType::WebhookAppAccess => {
+        SessionTicketType::WebhookAppAccess => {
             command = GenerateSessionTicketCommand::new(console_deployment_id, ticket_type.clone());
             if let Some(webhook_app_slug) = request.webhook_app_slug {
                 if webhook_app_slug.is_empty() {
@@ -95,7 +100,7 @@ pub async fn create_session_ticket(
                 .into());
             }
         }
-        commands::session_ticket::SessionTicketType::ApiAuthAccess => {
+        SessionTicketType::ApiAuthAccess => {
             command = GenerateSessionTicketCommand::new(console_deployment_id, ticket_type.clone());
             if let Some(api_auth_app_slug) = request.api_auth_app_slug {
                 if api_auth_app_slug.is_empty() {

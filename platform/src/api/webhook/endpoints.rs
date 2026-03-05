@@ -15,8 +15,8 @@ use dto::{
     clickhouse::webhook::WebhookLog,
     json::webhook_requests::{
         CreateWebhookEndpointRequest, ListWebhookEndpointsQuery, ReactivateEndpointResponse,
-        TestWebhookEndpointRequest, TestWebhookEndpointResponse,
-        UpdateWebhookEndpointRequest, WebhookEndpoint as WebhookEndpointDto,
+        TestWebhookEndpointRequest, TestWebhookEndpointResponse, UpdateWebhookEndpointRequest,
+        WebhookEndpoint as WebhookEndpointDto,
     },
 };
 use models::webhook::WebhookEndpoint;

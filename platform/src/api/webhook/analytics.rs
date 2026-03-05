@@ -2,8 +2,8 @@ use axum::extract::{Path, Query, State};
 use common::state::AppState;
 use dto::json::webhook_requests::{WebhookAnalyticsQuery, WebhookTimeseriesQuery};
 use models::webhook_analytics::{WebhookAnalyticsResult, WebhookTimeseriesResult};
-use queries::webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery};
 use queries::Query as QueryTrait;
+use queries::webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery};
 
 use crate::application::response::ApiResult;
 use crate::middleware::RequireDeployment;

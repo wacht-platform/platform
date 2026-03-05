@@ -32,7 +32,7 @@ pub async fn upload_image(
     let payload = MultipartPayload::parse(multipart).await?;
 
     for field in payload.fields() {
-        let Some(extension) = field.image_extension()? else {
+        let Some((bytes, extension)) = field.image_upload()? else {
             return Err((
                 StatusCode::BAD_REQUEST,
                 "Invalid file type. Only images are allowed.".to_string(),
@@ -40,9 +40,8 @@ pub async fn upload_image(
                 .into());
         };
 
-        file_extension = extension.to_string();
-
-        image_buffer = field.bytes.clone();
+        file_extension = extension;
+        image_buffer = bytes;
     }
 
     if image_buffer.is_empty() {

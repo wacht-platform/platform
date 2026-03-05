@@ -3,8 +3,8 @@ use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
 use models::api_key::OAuthScopeDefinition;
 
-use crate::api::multipart::{MultipartField, MultipartPayload};
-use crate::application::response::{ApiErrorResponse, ApiResult};
+use crate::api::multipart::MultipartPayload;
+use crate::application::response::ApiResult;
 use crate::middleware::RequireDeployment;
 use commands::{
     Command, UploadToCdnCommand,
@@ -14,44 +14,10 @@ use common::state::AppState;
 use dto::json::api_key::{
     ListOAuthAppsResponse, OAuthAppResponse, UpdateOAuthAppRequest, VerifyOAuthAppDomainResponse,
 };
-use queries::{
-    Query as QueryTrait,
-    oauth::{ListOAuthAppsByDeploymentQuery, OAuthAppData},
-};
+use queries::{Query as QueryTrait, oauth::ListOAuthAppsByDeploymentQuery};
 
+use super::mappers::map_oauth_app_response;
 use super::types::OAuthAppPathParams;
-
-fn parse_logo_upload(field: &MultipartField) -> Result<Option<(Vec<u8>, String)>, ApiErrorResponse> {
-    let Some(file_extension) = field.image_extension()? else {
-        return Ok(None);
-    };
-
-    if field.bytes.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some((field.bytes.clone(), file_extension.to_string())))
-}
-
-fn to_oauth_app_response(app: OAuthAppData) -> OAuthAppResponse {
-    let supported_scopes = app.supported_scopes_vec();
-    let scope_definitions = app.scope_definitions_vec();
-
-    OAuthAppResponse {
-        id: app.id,
-        slug: app.slug,
-        name: app.name,
-        description: app.description,
-        logo_url: app.logo_url,
-        fqdn: app.fqdn,
-        supported_scopes,
-        scope_definitions,
-        allow_dynamic_client_registration: app.allow_dynamic_client_registration,
-        is_active: app.is_active,
-        created_at: app.created_at,
-        updated_at: app.updated_at,
-    }
-}
 
 pub(crate) async fn verify_oauth_app_domain(
     State(app_state): State<AppState>,
@@ -81,7 +47,7 @@ pub async fn list_oauth_apps(
         .execute(&app_state)
         .await?
         .into_iter()
-        .map(to_oauth_app_response)
+        .map(map_oauth_app_response)
         .collect();
 
     Ok(ListOAuthAppsResponse { apps }.into())
@@ -105,28 +71,16 @@ pub async fn create_oauth_app(
     for field in payload.fields() {
         match field.name.as_str() {
             "slug" => {
-                let trimmed = field.text_trimmed()?;
-                if !trimmed.is_empty() {
-                    slug = Some(trimmed);
-                }
+                slug = field.optional_text_trimmed()?;
             }
             "name" => {
-                let trimmed = field.text_trimmed()?;
-                if !trimmed.is_empty() {
-                    name = Some(trimmed);
-                }
+                name = field.optional_text_trimmed()?;
             }
             "description" => {
-                let trimmed = field.text_trimmed()?;
-                if !trimmed.is_empty() {
-                    description = Some(trimmed);
-                }
+                description = field.optional_text_trimmed()?;
             }
             "fqdn" | "domain" => {
-                let trimmed = field.text_trimmed()?;
-                if !trimmed.is_empty() {
-                    fqdn = Some(trimmed);
-                }
+                fqdn = field.optional_text_trimmed()?;
             }
             "supported_scopes" => {
                 let value = field.text()?;
@@ -156,7 +110,7 @@ pub async fn create_oauth_app(
                 );
             }
             "logo" => {
-                if let Some(image) = parse_logo_upload(field)? {
+                if let Some(image) = field.image_upload()? {
                     logo_image_data = Some(image);
                 }
             }
@@ -196,7 +150,7 @@ pub async fn create_oauth_app(
     .execute(&app_state)
     .await?;
 
-    Ok(to_oauth_app_response(created).into())
+    Ok(map_oauth_app_response(created).into())
 }
 
 pub(crate) async fn update_oauth_app(
@@ -218,5 +172,5 @@ pub(crate) async fn update_oauth_app(
     .execute(&app_state)
     .await?;
 
-    Ok(to_oauth_app_response(updated).into())
+    Ok(map_oauth_app_response(updated).into())
 }

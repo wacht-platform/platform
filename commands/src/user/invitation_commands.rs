@@ -250,7 +250,6 @@ impl Command for ApproveWaitlistUserCommand {
     }
 }
 
-
 pub struct DeleteInvitationCommand {
     deployment_id: i64,
     invitation_id: i64,

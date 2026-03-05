@@ -1,6 +1,7 @@
 use axum::extract::{Json, Path, Query, State};
 use axum::http::StatusCode;
 
+use super::helpers::get_api_auth_app_by_slug;
 use crate::application::response::ApiResult;
 use crate::middleware::RequireDeployment;
 use commands::{
@@ -12,9 +13,7 @@ use dto::json::api_key::*;
 use models::api_key::ApiAuthApp;
 use models::plan_features::PlanTier;
 use queries::{
-    Query as QueryTrait,
-    api_key::{GetApiAuthAppBySlugQuery, GetApiAuthAppsQuery},
-    plan_access::GetDeploymentPlanTierQuery,
+    Query as QueryTrait, api_key::GetApiAuthAppsQuery, plan_access::GetDeploymentPlanTierQuery,
 };
 
 pub async fn list_api_auth_apps(
@@ -41,10 +40,7 @@ pub async fn get_api_auth_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
 ) -> ApiResult<ApiAuthApp> {
-    let app = GetApiAuthAppBySlugQuery::new(deployment_id, app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+    let app = get_api_auth_app_by_slug(&app_state, deployment_id, app_slug).await?;
 
     Ok(app.into())
 }
@@ -94,10 +90,7 @@ pub async fn create_api_auth_app(
     command = command.with_resources(request.resources.unwrap_or_default());
 
     let created = command.execute(&app_state).await?;
-    let app = GetApiAuthAppBySlugQuery::new(deployment_id, created.app_slug.clone())
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+    let app = get_api_auth_app_by_slug(&app_state, deployment_id, created.app_slug).await?;
 
     Ok(app.into())
 }
@@ -108,10 +101,7 @@ pub async fn update_api_auth_app(
     Path(app_slug): Path<String>,
     Json(request): Json<UpdateApiAuthAppRequest>,
 ) -> ApiResult<ApiAuthApp> {
-    let app = GetApiAuthAppBySlugQuery::new(deployment_id, app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+    let app = get_api_auth_app_by_slug(&app_state, deployment_id, app_slug).await?;
 
     let command = UpdateApiAuthAppCommand {
         app_slug: app.app_slug.clone(),
@@ -137,10 +127,7 @@ pub async fn update_api_auth_app(
 
     let updated = command.execute(&app_state).await?;
 
-    let app = GetApiAuthAppBySlugQuery::new(deployment_id, updated.app_slug.clone())
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+    let app = get_api_auth_app_by_slug(&app_state, deployment_id, updated.app_slug).await?;
 
     Ok(app.into())
 }
@@ -150,11 +137,7 @@ pub async fn delete_api_auth_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
 ) -> ApiResult<()> {
-    // First get the app by name to find its ID
-    let app = GetApiAuthAppBySlugQuery::new(deployment_id, app_slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "API key app not found"))?;
+    let app = get_api_auth_app_by_slug(&app_state, deployment_id, app_slug).await?;
 
     let command = DeleteApiAuthAppCommand {
         app_slug: app.app_slug.clone(),

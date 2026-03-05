@@ -8,7 +8,8 @@ use common::state::AppState;
 
 use commands::{
     Command, CreateUserCommand, DeleteUserCommand, GenerateImpersonationTokenCommand,
-    UpdateUserCommand, UpdateUserPasswordCommand, UpdateUserProfileImageCommand, UploadToCdnCommand,
+    UpdateUserCommand, UpdateUserPasswordCommand, UpdateUserProfileImageCommand,
+    UploadToCdnCommand,
 };
 use dto::{
     json::{CreateUserRequest, UpdatePasswordRequest, UpdateUserRequest},
@@ -26,16 +27,46 @@ use axum::{
 use super::types::UserParams;
 use super::validators::{validate_create_user_request, validate_update_user_request};
 
-fn parse_image_upload(field: &MultipartField) -> Result<Option<(Vec<u8>, String)>, ApiErrorResponse> {
-    let Some(file_extension) = field.image_extension()? else {
-        return Ok(None);
-    };
-
-    if field.bytes.is_empty() {
+fn parse_json_value_field(
+    field: &MultipartField,
+) -> Result<Option<serde_json::Value>, ApiErrorResponse> {
+    let metadata_str = field.text()?;
+    if metadata_str.trim().is_empty() {
         return Ok(None);
     }
+    match serde_json::from_str(&metadata_str) {
+        Ok(value) => Ok(Some(value)),
+        Err(_) => Ok(None),
+    }
+}
 
-    Ok(Some((field.bytes.clone(), file_extension.to_string())))
+async fn refresh_user_details(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+) -> ApiResult<UserDetails> {
+    let user_details = GetUserDetailsQuery::new(deployment_id, user_id)
+        .execute(app_state)
+        .await?;
+    Ok(user_details.into())
+}
+
+async fn upload_user_profile_image(
+    app_state: &AppState,
+    deployment_id: i64,
+    user_id: i64,
+    image_buffer: Vec<u8>,
+    file_extension: String,
+) -> Result<String, ApiErrorResponse> {
+    let file_path = format!(
+        "deployments/{}/users/{}/profile.{}",
+        deployment_id, user_id, file_extension
+    );
+
+    UploadToCdnCommand::new(file_path, image_buffer)
+        .execute(app_state)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into())
 }
 
 pub async fn get_active_user_list(
@@ -63,11 +94,10 @@ pub async fn get_user_details(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<UserParams>,
 ) -> ApiResult<UserDetails> {
-    GetUserDetailsQuery::new(deployment_id, params.user_id)
+    let user_details = GetUserDetailsQuery::new(deployment_id, params.user_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(user_details.into())
 }
 
 pub async fn create_user(
@@ -97,35 +127,22 @@ pub async fn create_user(
                 request.last_name = field.text()?;
             }
             "email_address" => {
-                let email = field.text_trimmed()?;
-                if !email.is_empty() {
-                    request.email_address = Some(email);
-                }
+                request.email_address = field.optional_text_trimmed()?;
             }
             "phone_number" => {
-                let phone = field.text_trimmed()?;
-                if !phone.is_empty() {
-                    request.phone_number = Some(phone);
-                }
+                request.phone_number = field.optional_text_trimmed()?;
             }
             "username" => {
-                let username = field.text_trimmed()?;
-                if !username.is_empty() {
-                    request.username = Some(username);
-                }
+                request.username = field.optional_text_trimmed()?;
             }
             "password" => {
-                let password = field.text_trimmed()?;
-                if !password.is_empty() {
-                    request.password = Some(password);
-                }
+                request.password = field.optional_text_trimmed()?;
             }
             "skip_password_check" => {
-                let value = field.text()?;
-                request.skip_password_check = value == "true";
+                request.skip_password_check = field.bool_true()?;
             }
             "profile_image" => {
-                if let Some(image) = parse_image_upload(field)? {
+                if let Some(image) = field.image_upload()? {
                     profile_image_data = Some(image);
                 }
             }
@@ -145,15 +162,14 @@ pub async fn create_user(
 
     // If there's a profile image, upload it and update the user
     if let Some((image_buffer, file_extension)) = profile_image_data {
-        let file_path = format!(
-            "deployments/{}/users/{}/profile.{}",
-            deployment_id, user.id, file_extension
-        );
-
-        let url = UploadToCdnCommand::new(file_path, image_buffer)
-            .execute(&app_state)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let url = upload_user_profile_image(
+            &app_state,
+            deployment_id,
+            user.id,
+            image_buffer,
+            file_extension,
+        )
+        .await?;
 
         UpdateUserProfileImageCommand::new(deployment_id, user.id, url)
             .execute(&app_state)
@@ -204,19 +220,13 @@ pub async fn update_user(
                 }
             }
             "public_metadata" => {
-                let metadata_str = field.text()?;
-                if !metadata_str.is_empty() {
-                    if let Ok(metadata) = serde_json::from_str(&metadata_str) {
-                        request.public_metadata = Some(metadata);
-                    }
+                if let Some(metadata) = parse_json_value_field(field)? {
+                    request.public_metadata = Some(metadata);
                 }
             }
             "private_metadata" => {
-                let metadata_str = field.text()?;
-                if !metadata_str.is_empty() {
-                    if let Ok(metadata) = serde_json::from_str(&metadata_str) {
-                        request.private_metadata = Some(metadata);
-                    }
+                if let Some(metadata) = parse_json_value_field(field)? {
+                    request.private_metadata = Some(metadata);
                 }
             }
             "disabled" => {
@@ -226,11 +236,10 @@ pub async fn update_user(
                 }
             }
             "remove_profile_image" => {
-                let value = field.text()?;
-                remove_profile_image = value == "true";
+                remove_profile_image = field.bool_true()?;
             }
             "profile_image" => {
-                if let Some(image) = parse_image_upload(field)? {
+                if let Some(image) = field.image_upload()? {
                     profile_image_data = Some(image);
                 }
             }
@@ -254,41 +263,29 @@ pub async fn update_user(
             .execute(&app_state)
             .await?;
 
-        // Fetch updated user details to return
-        let updated_user_details = GetUserDetailsQuery::new(deployment_id, params.user_id)
-            .execute(&app_state)
-            .await?;
-
-        return Ok(updated_user_details.into());
+        return refresh_user_details(&app_state, deployment_id, params.user_id).await;
     }
 
     // If there's a profile image, upload it and update the user
     if let Some((image_buffer, file_extension)) = profile_image_data {
-        let file_path = format!(
-            "deployments/{}/users/{}/profile.{}",
-            deployment_id, params.user_id, file_extension
-        );
-
-        let url = UploadToCdnCommand::new(file_path, image_buffer)
-            .execute(&app_state)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let url = upload_user_profile_image(
+            &app_state,
+            deployment_id,
+            params.user_id,
+            image_buffer,
+            file_extension,
+        )
+        .await?;
 
         UpdateUserProfileImageCommand::new(deployment_id, params.user_id, url)
             .execute(&app_state)
             .await?;
 
-        // Fetch updated user details to return the new profile picture URL
-        let updated_user_details = GetUserDetailsQuery::new(deployment_id, params.user_id)
-            .execute(&app_state)
-            .await?;
-
-        return Ok(updated_user_details.into());
+        return refresh_user_details(&app_state, deployment_id, params.user_id).await;
     }
 
     Ok(user_details.into())
 }
-
 
 pub async fn update_user_password(
     State(app_state): State<AppState>,
@@ -303,9 +300,8 @@ pub async fn update_user_password(
         request.skip_password_check,
     )
     .execute(&app_state)
-    .await
-    .map(Into::into)
-    .map_err(Into::into)
+    .await?;
+    Ok(().into())
 }
 
 pub async fn delete_user(
@@ -325,9 +321,8 @@ pub async fn impersonate_user(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<UserParams>,
 ) -> ApiResult<commands::GenerateImpersonationTokenResponse> {
-    GenerateImpersonationTokenCommand::new(deployment_id, params.user_id)
+    let response = GenerateImpersonationTokenCommand::new(deployment_id, params.user_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(response.into())
 }

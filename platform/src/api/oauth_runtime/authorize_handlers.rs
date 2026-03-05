@@ -12,7 +12,9 @@ use dto::json::oauth_runtime::{
 };
 use models::api_key::OAuthScopeDefinition;
 use queries::Query as QueryTrait;
-use queries::{GetRuntimeDeploymentHostsByIdQuery, GetRuntimeOAuthClientByClientIdQuery};
+use queries::{
+    GetRuntimeDeploymentHostsByIdQuery, GetRuntimeOAuthClientByClientIdQuery, RuntimeOAuthAppData,
+};
 use redis::AsyncCommands;
 
 use crate::application::response::{ApiErrorResponse, ApiResult};
@@ -30,9 +32,8 @@ pub async fn oauth_server_metadata(
     State(app_state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<OAuthServerMetadataResponse> {
-    let oauth_app = resolve_oauth_app_from_host(&app_state, &headers).await?;
+    let (oauth_app, issuer) = resolve_oauth_app_and_issuer(&app_state, &headers).await?;
     let active_scopes = oauth_app.active_scopes();
-    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
 
     Ok(OAuthServerMetadataResponse {
         issuer: issuer.clone(),
@@ -63,8 +64,7 @@ pub async fn oauth_protected_resource_metadata(
     State(app_state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<OAuthProtectedResourceMetadataResponse> {
-    let oauth_app = resolve_oauth_app_from_host(&app_state, &headers).await?;
-    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
+    let (oauth_app, issuer) = resolve_oauth_app_and_issuer(&app_state, &headers).await?;
 
     Ok(OAuthProtectedResourceMetadataResponse {
         resource: issuer.clone(),
@@ -149,30 +149,7 @@ async fn authorize_impl(
         )
             .into());
     }
-    if client.client_auth_method == "none" {
-        let code_challenge = request
-            .code_challenge
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .ok_or_else(|| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    "code_challenge is required for public clients",
-                )
-            })?;
-        if code_challenge.len() < 43 || code_challenge.len() > 128 {
-            return Err((StatusCode::BAD_REQUEST, "invalid code_challenge").into());
-        }
-        let method = request
-            .code_challenge_method
-            .as_deref()
-            .unwrap_or("S256")
-            .trim();
-        if method != "S256" {
-            return Err((StatusCode::BAD_REQUEST, "unsupported code_challenge_method").into());
-        }
-    }
+    validate_public_client_pkce(&client.client_auth_method, &request)?;
 
     let final_scopes = parse_scope_string(request.scope.as_deref());
     let active_scopes = oauth_app.active_scopes();
@@ -206,25 +183,7 @@ async fn authorize_impl(
         .as_ref()
         .map(|r| vec![r.clone()])
         .unwrap_or_default();
-    let scope_definitions: Vec<OAuthScopeDefinition> = final_scopes
-        .iter()
-        .map(|scope| {
-            oauth_app
-                .scope_definitions
-                .iter()
-                .find(|definition| definition.scope == *scope)
-                .cloned()
-                .unwrap_or_else(|| OAuthScopeDefinition {
-                    scope: scope.clone(),
-                    display_name: scope.clone(),
-                    description: String::new(),
-                    archived: false,
-                    category: String::new(),
-                    organization_permission: None,
-                    workspace_permission: None,
-                })
-        })
-        .collect();
+    let scope_definitions = resolve_scope_definitions(&oauth_app, &final_scopes);
 
     let iat = Utc::now().timestamp();
     let exp = iat + 600;
@@ -399,8 +358,7 @@ pub async fn oauth_consent_submit(
 ) -> Result<Redirect, ApiErrorResponse> {
     validate_consent_submit_secret(&headers)?;
     let claims = verify_oauth_consent_request_token(&request.request_token)?;
-    let oauth_app = resolve_oauth_app_from_host(&app_state, &headers).await?;
-    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
+    let (_, issuer) = resolve_oauth_app_and_issuer(&app_state, &headers).await?;
     let action = request.action.trim().to_ascii_lowercase();
     match action.as_str() {
         "approve" => {
@@ -487,4 +445,73 @@ pub async fn oauth_consent_submit(
         }
         _ => Err((StatusCode::BAD_REQUEST, "action must be approve or deny").into()),
     }
+}
+
+async fn resolve_oauth_app_and_issuer(
+    app_state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(RuntimeOAuthAppData, String), ApiErrorResponse> {
+    let oauth_app = resolve_oauth_app_from_host(app_state, headers).await?;
+    let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
+    Ok((oauth_app, issuer))
+}
+
+fn validate_public_client_pkce(
+    client_auth_method: &str,
+    request: &OAuthAuthorizeRequest,
+) -> Result<(), ApiErrorResponse> {
+    if client_auth_method != "none" {
+        return Ok(());
+    }
+
+    let code_challenge = request
+        .code_challenge
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                "code_challenge is required for public clients",
+            )
+        })?;
+    if code_challenge.len() < 43 || code_challenge.len() > 128 {
+        return Err((StatusCode::BAD_REQUEST, "invalid code_challenge").into());
+    }
+
+    let method = request
+        .code_challenge_method
+        .as_deref()
+        .unwrap_or("S256")
+        .trim();
+    if method != "S256" {
+        return Err((StatusCode::BAD_REQUEST, "unsupported code_challenge_method").into());
+    }
+
+    Ok(())
+}
+
+fn resolve_scope_definitions(
+    oauth_app: &RuntimeOAuthAppData,
+    scopes: &[String],
+) -> Vec<OAuthScopeDefinition> {
+    scopes
+        .iter()
+        .map(|scope| {
+            oauth_app
+                .scope_definitions
+                .iter()
+                .find(|definition| definition.scope == *scope)
+                .cloned()
+                .unwrap_or_else(|| OAuthScopeDefinition {
+                    scope: scope.clone(),
+                    display_name: scope.clone(),
+                    description: String::new(),
+                    archived: false,
+                    category: String::new(),
+                    organization_permission: None,
+                    workspace_permission: None,
+                })
+        })
+        .collect()
 }

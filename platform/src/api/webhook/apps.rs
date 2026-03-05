@@ -9,9 +9,7 @@ use commands::{
         CreateWebhookAppCommand, DeleteWebhookAppCommand, RotateWebhookSecretCommand,
         UpdateWebhookAppCommand,
     },
-    webhook_event_catalog::{
-        CreateEventCatalogCommand, UpdateEventCatalogCommand,
-    },
+    webhook_event_catalog::{CreateEventCatalogCommand, UpdateEventCatalogCommand},
 };
 use common::state::AppState;
 use dto::json::webhook_requests::{
@@ -80,13 +78,7 @@ pub async fn list_event_catalogs(
             .execute(&app_state)
             .await?;
 
-    Ok(PaginatedResponse {
-        data: catalogs,
-        has_more: false,
-        limit: None,
-        offset: None,
-    }
-    .into())
+    Ok(PaginatedResponse::from(catalogs).into())
 }
 
 pub async fn create_event_catalog(

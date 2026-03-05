@@ -412,7 +412,6 @@ impl Command for CreateOAuthClientCommand {
     }
 }
 
-
 pub struct SetOAuthClientRegistrationAccessToken {
     pub oauth_app_id: i64,
     pub client_id: String,

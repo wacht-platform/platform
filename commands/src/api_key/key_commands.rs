@@ -513,4 +513,3 @@ impl Command for RotateApiKeyCommand {
         create_command.execute(app_state).await
     }
 }
-

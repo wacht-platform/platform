@@ -5,11 +5,11 @@ use axum::{
 };
 use serde::Deserialize;
 
+use crate::api::multipart::MultipartPayload;
 use crate::application::{
     AppError,
     response::{ApiResult, PaginatedResponse},
 };
-use crate::api::multipart::MultipartPayload;
 use common::state::AppState;
 
 use commands::{
@@ -117,16 +117,15 @@ pub async fn create_ai_knowledge_base(
 ) -> ApiResult<AiKnowledgeBase> {
     let configuration = request.configuration.unwrap_or(serde_json::json!({}));
 
-    CreateAiKnowledgeBaseCommand::new(
+    let knowledge_base = CreateAiKnowledgeBaseCommand::new(
         deployment_id,
         request.name,
         request.description,
         configuration,
     )
     .execute(&app_state)
-    .await
-    .map(Into::into)
-    .map_err(Into::into)
+    .await?;
+    Ok(knowledge_base.into())
 }
 
 pub async fn get_ai_knowledge_base_by_id(
@@ -134,11 +133,11 @@ pub async fn get_ai_knowledge_base_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
 ) -> ApiResult<AiKnowledgeBaseWithDetails> {
-    GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
+    let knowledge_base = GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
         .execute(&app_state)
         .await
-        .map(Into::into)
-        .map_err(|e| AppError::from(e).into())
+        .map_err(AppError::from)?;
+    Ok(knowledge_base.into())
 }
 
 pub async fn get_agent_knowledge_bases(
@@ -146,12 +145,10 @@ pub async fn get_agent_knowledge_bases(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<PaginatedResponse<AiKnowledgeBaseWithDetails>> {
-    GetAgentKnowledgeBasesQuery::new(deployment_id, params.agent_id)
+    let knowledge_bases = GetAgentKnowledgeBasesQuery::new(deployment_id, params.agent_id)
         .execute(&app_state)
-        .await
-        .map(PaginatedResponse::from)
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(PaginatedResponse::from(knowledge_bases).into())
 }
 
 pub async fn attach_knowledge_base_to_agent(
@@ -161,9 +158,8 @@ pub async fn attach_knowledge_base_to_agent(
 ) -> ApiResult<()> {
     AttachKnowledgeBaseToAgentCommand::new(deployment_id, params.agent_id, params.kb_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn detach_knowledge_base_from_agent(
@@ -173,9 +169,8 @@ pub async fn detach_knowledge_base_from_agent(
 ) -> ApiResult<()> {
     DetachKnowledgeBaseFromAgentCommand::new(deployment_id, params.agent_id, params.kb_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn update_ai_knowledge_base(
@@ -198,11 +193,8 @@ pub async fn update_ai_knowledge_base(
         command = command.with_configuration(configuration);
     }
 
-    command
-        .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+    let knowledge_base = command.execute(&app_state).await?;
+    Ok(knowledge_base.into())
 }
 
 pub async fn delete_ai_knowledge_base(
@@ -212,9 +204,8 @@ pub async fn delete_ai_knowledge_base(
 ) -> ApiResult<()> {
     DeleteAiKnowledgeBaseCommand::new(deployment_id, params.kb_id)
         .execute(&app_state)
-        .await
-        .map(|_| ().into())
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }
 
 pub async fn upload_knowledge_base_document(
@@ -275,7 +266,7 @@ pub async fn upload_knowledge_base_document(
             )
         })?;
 
-    UploadKnowledgeBaseDocumentCommand::new(
+    let document = UploadKnowledgeBaseDocumentCommand::new(
         params.kb_id,
         title,
         description,
@@ -284,9 +275,8 @@ pub async fn upload_knowledge_base_document(
         file_type,
     )
     .execute(&app_state)
-    .await
-    .map(Into::into)
-    .map_err(Into::into)
+    .await?;
+    Ok(document.into())
 }
 
 pub async fn get_knowledge_base_documents(
@@ -334,7 +324,6 @@ pub async fn delete_knowledge_base_document(
 ) -> ApiResult<()> {
     DeleteKnowledgeBaseDocumentCommand::new(deployment_id, params.kb_id, params.document_id)
         .execute(&app_state)
-        .await
-        .map(|_| ().into())
-        .map_err(Into::into)
+        .await?;
+    Ok(().into())
 }

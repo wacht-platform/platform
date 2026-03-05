@@ -29,6 +29,19 @@ impl MultipartField {
         Ok(text.trim().to_string())
     }
 
+    pub fn optional_text_trimmed(&self) -> Result<Option<String>, ApiErrorResponse> {
+        let value = self.text_trimmed()?;
+        if value.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(value))
+        }
+    }
+
+    pub fn bool_true(&self) -> Result<bool, ApiErrorResponse> {
+        Ok(self.text()? == "true")
+    }
+
     pub fn content_type_or<'a>(&'a self, default: &'a str) -> Cow<'a, str> {
         match &self.content_type {
             Some(v) => Cow::Borrowed(v),
@@ -59,6 +72,18 @@ impl MultipartField {
         };
 
         Ok(Some(extension))
+    }
+
+    pub fn image_upload(&self) -> Result<Option<(Vec<u8>, String)>, ApiErrorResponse> {
+        let Some(file_extension) = self.image_extension()? else {
+            return Ok(None);
+        };
+
+        if self.bytes.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some((self.bytes.clone(), file_extension.to_string())))
     }
 }
 

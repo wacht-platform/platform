@@ -107,7 +107,6 @@ impl Command for RevokeOAuthRefreshTokenByHash {
     }
 }
 
-
 pub struct RevokeOAuthRefreshTokenFamily {
     pub deployment_id: i64,
     pub oauth_client_id: i64,
@@ -196,4 +195,3 @@ impl Command for RevokeOAuthTokensByGrant {
         Ok(())
     }
 }
-

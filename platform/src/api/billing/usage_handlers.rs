@@ -3,22 +3,18 @@ use axum::{extract::State, http::StatusCode};
 use crate::application::response::{ApiResult, PaginatedResponse};
 
 use common::state::AppState;
-use queries::{
-    Query as QueryTrait,
-    billing::{GetBillingAccountQuery, GetBillingAccountUsageQuery},
-};
+use queries::{Query as QueryTrait, billing::GetBillingAccountUsageQuery};
 use wacht::middleware::RequireAuth;
 
+use super::helpers::get_billing_account_or_404;
 use super::types::{UsageResponse, owner_id_from_auth};
 
 pub async fn get_current_usage(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
 ) -> ApiResult<UsageResponse> {
-    let account_with_sub = GetBillingAccountQuery::new(owner_id_from_auth(&auth))
-        .execute(&state)
-        .await?
-        .ok_or((StatusCode::NOT_FOUND, "Billing account not found"))?;
+    let owner_id = owner_id_from_auth(&auth);
+    let account_with_sub = get_billing_account_or_404(&state, &owner_id).await?;
 
     let subscription = account_with_sub.subscription.ok_or((
         StatusCode::NOT_FOUND,
@@ -48,10 +44,8 @@ pub async fn list_pulse_transactions(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
 ) -> ApiResult<PaginatedResponse<models::pulse_transaction::PulseTransaction>> {
-    let account = GetBillingAccountQuery::new(owner_id_from_auth(&auth))
-        .execute(&state)
-        .await?
-        .ok_or((StatusCode::NOT_FOUND, "Billing account not found"))?;
+    let owner_id = owner_id_from_auth(&auth);
+    let account = get_billing_account_or_404(&state, &owner_id).await?;
 
     let transactions =
         queries::billing::ListPulseTransactionsQuery::new(account.billing_account.id)

@@ -445,13 +445,12 @@ pub async fn get_webhook_replay_task_status(
         })?;
 
     let snapshot_key = replay_task_snapshot_key(&app_slug, &task_id);
-    let data: HashMap<String, String> =
-        redis_conn.hgetall(&snapshot_key).await.map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to read replay task status: {}", e),
-            )
-        })?;
+    let data: HashMap<String, String> = redis_conn.hgetall(&snapshot_key).await.map_err(|e| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read replay task status: {}", e),
+        )
+    })?;
 
     if data.is_empty() {
         return Err((StatusCode::NOT_FOUND, "Replay task not found").into());

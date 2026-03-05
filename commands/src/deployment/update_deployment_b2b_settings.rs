@@ -78,7 +78,9 @@ impl UpdateDeploymentB2bSettingsCommand {
         let existing_workspace_catalog = existing_workspace_catalog
             .map(serde_json::from_value::<Vec<DeploymentPermissionCatalogEntry>>)
             .transpose()
-            .map_err(|_| AppError::BadRequest("Invalid workspace permission catalog".to_string()))?;
+            .map_err(|_| {
+                AppError::BadRequest("Invalid workspace permission catalog".to_string())
+            })?;
 
         let existing_organization_catalog = existing_organization_catalog
             .map(serde_json::from_value::<Vec<DeploymentPermissionCatalogEntry>>)
@@ -169,7 +171,9 @@ impl UpdateDeploymentB2bSettingsCommand {
             query_builder.push_bind(allow_users_to_create_orgs);
         }
 
-        if let Some(limit_workspace_creation_per_org) = self.settings.limit_workspace_creation_per_org {
+        if let Some(limit_workspace_creation_per_org) =
+            self.settings.limit_workspace_creation_per_org
+        {
             query_builder.push(", limit_workspace_creation_per_org = ");
             query_builder.push_bind(limit_workspace_creation_per_org);
         }
@@ -184,23 +188,25 @@ impl UpdateDeploymentB2bSettingsCommand {
             query_builder.push_bind(workspaces_per_org_count);
         }
 
-        let workspace_catalog = if let Some(workspace_catalog) = self.settings.workspace_permission_catalog {
-            let normalized = normalize_permission_catalog(workspace_catalog)?;
-            query_builder.push(", workspace_permission_catalog = ");
-            query_builder.push_bind(serde_json::to_value(&normalized)?);
-            Some(normalized)
-        } else {
-            existing_workspace_catalog
-        };
+        let workspace_catalog =
+            if let Some(workspace_catalog) = self.settings.workspace_permission_catalog {
+                let normalized = normalize_permission_catalog(workspace_catalog)?;
+                query_builder.push(", workspace_permission_catalog = ");
+                query_builder.push_bind(serde_json::to_value(&normalized)?);
+                Some(normalized)
+            } else {
+                existing_workspace_catalog
+            };
 
-        let organization_catalog = if let Some(organization_catalog) = self.settings.organization_permission_catalog {
-            let normalized = normalize_permission_catalog(organization_catalog)?;
-            query_builder.push(", organization_permission_catalog = ");
-            query_builder.push_bind(serde_json::to_value(&normalized)?);
-            Some(normalized)
-        } else {
-            existing_organization_catalog
-        };
+        let organization_catalog =
+            if let Some(organization_catalog) = self.settings.organization_permission_catalog {
+                let normalized = normalize_permission_catalog(organization_catalog)?;
+                query_builder.push(", organization_permission_catalog = ");
+                query_builder.push_bind(serde_json::to_value(&normalized)?);
+                Some(normalized)
+            } else {
+                existing_organization_catalog
+            };
 
         if let Some(workspace_catalog) = workspace_catalog.as_ref() {
             query_builder.push(", workspace_permissions = ");

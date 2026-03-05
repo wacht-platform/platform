@@ -3,11 +3,7 @@ use serde_json::Value;
 use sqlx::{Executor, Postgres, Transaction, query};
 
 use crate::Command;
-use common::{
-    capabilities::HasDbRouter,
-    error::AppError,
-    state::AppState,
-};
+use common::{capabilities::HasDbRouter, error::AppError, state::AppState};
 
 #[derive(Debug)]
 pub struct GetActiveDeliveryCommand {

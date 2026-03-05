@@ -1,11 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 
 use crate::Command;
-use common::{
-    capabilities::HasRedis,
-    error::AppError,
-    state::AppState,
-};
+use common::{capabilities::HasRedis, error::AppError, state::AppState};
 
 #[derive(Debug)]
 pub struct CheckEndpointFailuresCommand {

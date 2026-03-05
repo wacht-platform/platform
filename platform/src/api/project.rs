@@ -26,13 +26,7 @@ pub async fn get_projects(
     .execute(&app_state)
     .await?;
 
-    Ok(PaginatedResponse {
-        data: projects,
-        has_more: false,
-        limit: None,
-        offset: None,
-    }
-    .into())
+    Ok(PaginatedResponse::from(projects).into())
 }
 
 pub async fn create_project(
@@ -90,9 +84,8 @@ pub async fn verify_deployment_dns_records(
     State(app_state): State<AppState>,
     Path(deployment_id): Path<i64>,
 ) -> ApiResult<Deployment> {
-    VerifyDeploymentDnsRecordsCommand::new(deployment_id)
+    let deployment = VerifyDeploymentDnsRecordsCommand::new(deployment_id)
         .execute(&app_state)
-        .await
-        .map(Into::into)
-        .map_err(Into::into)
+        .await?;
+    Ok(deployment.into())
 }

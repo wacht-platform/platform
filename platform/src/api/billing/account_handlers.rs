@@ -9,6 +9,7 @@ use queries::{Query as QueryTrait, billing::GetBillingAccountQuery};
 use tracing::error;
 use wacht::middleware::RequireAuth;
 
+use super::helpers::get_billing_account_or_404;
 use super::types::{
     PortalResponse, UpdateBillingAccountRequest, enforce_checkout_cooldown, owner_id_from_auth,
 };
@@ -31,10 +32,7 @@ pub async fn update_billing_account(
 ) -> ApiResult<()> {
     let owner_id = owner_id_from_auth(&auth);
 
-    let existing = GetBillingAccountQuery::new(owner_id)
-        .execute(&state)
-        .await?
-        .ok_or((StatusCode::NOT_FOUND, "Billing account not found"))?;
+    let existing = get_billing_account_or_404(&state, &owner_id).await?;
 
     if let Err(err) = enforce_checkout_cooldown(&existing) {
         return Err(err.into());
@@ -63,10 +61,8 @@ pub async fn get_portal_url(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
 ) -> ApiResult<PortalResponse> {
-    let account = GetBillingAccountQuery::new(owner_id_from_auth(&auth))
-        .execute(&state)
-        .await?
-        .ok_or((StatusCode::NOT_FOUND, "Billing account not found"))?;
+    let owner_id = owner_id_from_auth(&auth);
+    let account = get_billing_account_or_404(&state, &owner_id).await?;
 
     let provider_customer_id = account
         .billing_account
@@ -96,10 +92,8 @@ pub async fn list_invoices(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
 ) -> ApiResult<serde_json::Value> {
-    let account = GetBillingAccountQuery::new(owner_id_from_auth(&auth))
-        .execute(&state)
-        .await?
-        .ok_or((StatusCode::NOT_FOUND, "Billing account not found"))?;
+    let owner_id = owner_id_from_auth(&auth);
+    let account = get_billing_account_or_404(&state, &owner_id).await?;
 
     let invoices = queries::billing::ListBillingInvoicesQuery::new(account.billing_account.id)
         .execute(&state)
