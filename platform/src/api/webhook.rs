@@ -15,7 +15,8 @@ use commands::{
         UpdateWebhookAppCommand,
     },
     webhook_endpoint::{
-        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, UpdateWebhookEndpointCommand,
+        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, ReactivateEndpointCommand,
+        TestWebhookEndpointCommand, UpdateWebhookEndpointCommand,
     },
     webhook_event_catalog::{CreateEventCatalogCommand, UpdateEventCatalogCommand},
     webhook_trigger::TriggerWebhookEventCommand,
@@ -482,17 +483,13 @@ pub async fn create_webhook_endpoint(
         })
         .collect();
 
-    let command = CreateWebhookEndpointCommand {
-        deployment_id,
-        app_slug: request.app_slug,
-        url: request.url,
-        description: request.description,
-        headers: request.headers,
-        subscriptions,
-        max_retries: request.max_retries,
-        timeout_seconds: request.timeout_seconds,
-        rate_limit_config,
-    };
+    let command = CreateWebhookEndpointCommand::new(deployment_id, request.app_slug, request.url)
+        .with_description(request.description)
+        .with_headers(request.headers)
+        .with_subscriptions(subscriptions)
+        .with_max_retries(request.max_retries)
+        .with_timeout_seconds(request.timeout_seconds)
+        .with_rate_limit_config(rate_limit_config);
 
     let endpoint = command.execute(&app_state).await?;
 
@@ -531,20 +528,19 @@ pub async fn update_webhook_endpoint(
             )
         })?;
 
-    let command = UpdateWebhookEndpointCommand {
-        endpoint_id,
-        deployment_id,
-        url: request.url,
-        description: request.description,
-        headers: request.headers,
-        max_retries: request.max_retries,
-        timeout_seconds: request.timeout_seconds,
-        is_active: request.is_active,
-        subscriptions: request
-            .subscriptions
-            .map(|subs| subs.into_iter().map(Into::into).collect()),
-        rate_limit_config,
-    };
+    let command = UpdateWebhookEndpointCommand::new(endpoint_id, deployment_id)
+        .with_url(request.url)
+        .with_description(request.description)
+        .with_headers(request.headers)
+        .with_max_retries(request.max_retries)
+        .with_timeout_seconds(request.timeout_seconds)
+        .with_is_active(request.is_active)
+        .with_subscriptions(
+            request
+                .subscriptions
+                .map(|subs| subs.into_iter().map(Into::into).collect()),
+        )
+        .with_rate_limit_config(rate_limit_config);
 
     let endpoint = command.execute(&app_state).await?;
     Ok(endpoint.into())
@@ -579,10 +575,7 @@ pub async fn delete_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
 ) -> ApiResult<()> {
-    let command = DeleteWebhookEndpointCommand {
-        endpoint_id,
-        deployment_id,
-    };
+    let command = DeleteWebhookEndpointCommand::new(endpoint_id, deployment_id);
     command.execute(&app_state).await?;
 
     Ok(().into())
@@ -1335,15 +1328,10 @@ pub async fn reactivate_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
 ) -> ApiResult<ReactivateEndpointResponse> {
-    use commands::webhook_endpoint::ReactivateEndpointCommand;
-
     // Reactivate the endpoint and clear failure counter
-    let endpoint = ReactivateEndpointCommand {
-        endpoint_id,
-        deployment_id,
-    }
-    .execute(&app_state)
-    .await?;
+    let endpoint = ReactivateEndpointCommand::new(endpoint_id, deployment_id)
+        .execute(&app_state)
+        .await?;
 
     // Log reactivation to Tinybird
     if let Ok(log_id) = app_state.sf.next_id() {
@@ -1387,8 +1375,6 @@ pub async fn test_webhook_endpoint(
     Path((_app_name, endpoint_id)): Path<(String, i64)>,
     Json(request): Json<TestWebhookEndpointRequest>,
 ) -> ApiResult<TestWebhookEndpointResponse> {
-    use commands::webhook_endpoint::TestWebhookEndpointCommand;
-
     // Use the payload from the request
     let test_payload = request.payload.unwrap_or_else(|| {
         serde_json::json!({
@@ -1398,13 +1384,9 @@ pub async fn test_webhook_endpoint(
         })
     });
 
-    let result = TestWebhookEndpointCommand {
-        endpoint_id,
-        deployment_id,
-        test_payload,
-    }
-    .execute(&app_state)
-    .await?;
+    let result = TestWebhookEndpointCommand::new(endpoint_id, deployment_id, test_payload)
+        .execute(&app_state)
+        .await?;
 
     Ok(TestWebhookEndpointResponse {
         success: result.success,
