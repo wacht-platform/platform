@@ -1,10 +1,9 @@
 use axum::{extract::State, http::StatusCode, response::Json};
-use serde::{Deserialize, Serialize};
+use chrono::Utc;
 use tracing::error;
 
-use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::application::response::ApiResult;
 
-use chrono::{Duration, Utc};
 use commands::{
     Command,
     billing::{
@@ -18,120 +17,24 @@ use common::dodo::{
     ProductCartItem, UpdateCustomerParams,
 };
 use common::state::AppState;
-use models::billing::{BillingAccountWithSubscription, Subscription};
-use queries::{
-    Query as QueryTrait,
-    billing::{
-        GetBillingAccountQuery, GetBillingAccountUsageQuery, GetDodoProductQuery, UsageSnapshot,
-    },
-};
+use queries::{Query as QueryTrait, billing::{GetBillingAccountQuery, GetDodoProductQuery}};
 use wacht::middleware::RequireAuth;
 
+use super::types::{
+    ChangePlanRequest, CheckoutResponse, CreateCheckoutRequest, CreatePulseCheckoutRequest,
+    enforce_checkout_cooldown, is_local_starter_subscription, owner_id_from_auth,
+    owner_type_from_owner_id, starter_activation_response,
+};
+
 const STARTER_PRODUCT_ID_FALLBACK: &str = "pdt_6eSgfwefWhNkDH53uKxf8";
-
-#[derive(Debug, Deserialize)]
-pub struct CreateCheckoutRequest {
-    pub plan_name: String,
-    pub legal_name: String,
-    pub billing_email: String,
-    pub billing_phone: Option<String>,
-    pub tax_id: Option<String>,
-    pub return_url: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CheckoutResponse {
-    pub requires_checkout: bool,
-    pub checkout_id: Option<String>,
-    pub checkout_url: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PortalResponse {
-    pub portal_url: String,
-}
-
-fn enforce_checkout_cooldown(
-    account: &BillingAccountWithSubscription,
-) -> Result<(), (StatusCode, String)> {
-    if let Some(last_created_at) = account.billing_account.last_checkout_session_created_at {
-        let next_allowed_at = last_created_at + Duration::minutes(2);
-        if next_allowed_at > Utc::now() {
-            let wait_seconds = (next_allowed_at - Utc::now()).num_seconds().max(1);
-            return Err((
-                StatusCode::TOO_MANY_REQUESTS,
-                format!(
-                    "Checkout already generated recently. Please retry in {} seconds.",
-                    wait_seconds
-                ),
-            ));
-        }
-    }
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateBillingAccountRequest {
-    pub legal_name: Option<String>,
-    pub billing_email: Option<String>,
-    pub billing_phone: Option<String>,
-    pub tax_id: Option<String>,
-    pub address_line1: Option<String>,
-    pub address_line2: Option<String>,
-    pub city: Option<String>,
-    pub state: Option<String>,
-    pub postal_code: Option<String>,
-    pub country: Option<String>,
-}
-
-fn is_local_starter_subscription(subscription: &Subscription) -> bool {
-    subscription
-        .provider_subscription_id
-        .starts_with("local_starter_")
-}
-
-fn starter_activation_response() -> CheckoutResponse {
-    CheckoutResponse {
-        requires_checkout: false,
-        checkout_id: None,
-        checkout_url: None,
-    }
-}
-
-pub async fn get_billing_account(
-    State(state): State<AppState>,
-    RequireAuth(auth): RequireAuth,
-) -> ApiResult<Option<BillingAccountWithSubscription>> {
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
-
-    let account = GetBillingAccountQuery::new(owner_id)
-        .execute(&state)
-        .await?;
-
-    Ok(account.into())
-}
 
 pub async fn create_checkout(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
     Json(req): Json<CreateCheckoutRequest>,
 ) -> ApiResult<CheckoutResponse> {
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
-
-    let owner_type = if owner_id.starts_with("org_") {
-        "organization"
-    } else {
-        "user"
-    };
-
+    let owner_id = owner_id_from_auth(&auth);
+    let owner_type = owner_type_from_owner_id(&owner_id);
     let is_starter_plan = req.plan_name.eq_ignore_ascii_case("starter");
 
     let existing = GetBillingAccountQuery::new(owner_id.clone())
@@ -335,133 +238,22 @@ pub async fn create_checkout(
     .into())
 }
 
-pub async fn update_billing_account(
-    State(state): State<AppState>,
-    RequireAuth(auth): RequireAuth,
-    Json(req): Json<UpdateBillingAccountRequest>,
-) -> ApiResult<()> {
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
-
-    let existing = GetBillingAccountQuery::new(owner_id.clone())
-        .execute(&state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
-
-    if let Err(err) = enforce_checkout_cooldown(&existing) {
-        return Err(err.into());
-    }
-
-    let command = UpdateBillingAccountCommand {
-        id: existing.billing_account.id,
-        legal_name: req.legal_name,
-        billing_email: req.billing_email,
-        billing_phone: req.billing_phone,
-        tax_id: req.tax_id,
-        address_line1: req.address_line1,
-        address_line2: req.address_line2,
-        city: req.city,
-        state: req.state,
-        postal_code: req.postal_code,
-        country: req.country,
-    };
-
-    command.execute(&state).await?;
-
-    Ok(().into())
-}
-
-pub async fn get_portal_url(
-    State(state): State<AppState>,
-    RequireAuth(auth): RequireAuth,
-) -> ApiResult<PortalResponse> {
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
-
-    let account = GetBillingAccountQuery::new(owner_id)
-        .execute(&state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
-
-    let provider_customer_id = account
-        .billing_account
-        .provider_customer_id
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Payment provider customer not found"))?;
-
-    let dodo = DodoClient::new().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let portal = dodo
-        .create_portal_session(&provider_customer_id)
-        .await
-        .map_err(|e| {
-            error!("Failed to create portal session: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to create portal session",
-            )
-        })?;
-
-    Ok(PortalResponse {
-        portal_url: portal.url,
-    }
-    .into())
-}
-
-pub async fn list_invoices(
-    State(state): State<AppState>,
-    RequireAuth(auth): RequireAuth,
-) -> ApiResult<serde_json::Value> {
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
-
-    let account = GetBillingAccountQuery::new(owner_id)
-        .execute(&state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
-
-    let invoices = queries::billing::ListBillingInvoicesQuery::new(account.billing_account.id)
-        .execute(&state)
-        .await?;
-
-    Ok(serde_json::json!({ "items": invoices }).into())
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ChangePlanRequest {
-    pub plan_name: String,
-    pub proration_mode: Option<String>,
-    pub return_url: Option<String>,
-}
-
 pub async fn change_plan(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
     Json(req): Json<ChangePlanRequest>,
 ) -> ApiResult<CheckoutResponse> {
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
+    let owner_id = owner_id_from_auth(&auth);
 
     let account = GetBillingAccountQuery::new(owner_id.clone())
         .execute(&state)
         .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Billing account not found"))?;
 
     let subscription = account
         .subscription
         .as_ref()
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Subscription not found"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Subscription not found"))?;
 
     let product = GetDodoProductQuery::new(&req.plan_name)
         .execute(&state)
@@ -473,17 +265,15 @@ pub async fn change_plan(
 
     let dodo = DodoClient::new().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    if is_local_starter_subscription(&subscription) {
+    if is_local_starter_subscription(subscription) {
         if let Err(err) = enforce_checkout_cooldown(&account) {
             return Err(err.into());
         }
 
-        let return_url = req.return_url.ok_or_else(|| {
-            (
-                StatusCode::BAD_REQUEST,
-                "return_url is required for starter upgrades",
-            )
-        })?;
+        let return_url = req.return_url.ok_or((
+            StatusCode::BAD_REQUEST,
+            "return_url is required for starter upgrades",
+        ))?;
 
         let provider_customer_id = account
             .billing_account
@@ -555,84 +345,22 @@ pub async fn change_plan(
     .into())
 }
 
-#[derive(Debug, Serialize)]
-pub struct UsageResponse {
-    pub snapshots: Vec<UsageSnapshot>,
-    pub billing_period: String,
-}
-
-pub async fn get_current_usage(
-    State(state): State<AppState>,
-    RequireAuth(auth): RequireAuth,
-) -> ApiResult<UsageResponse> {
-    // 1. Determine owner_id from auth context
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
-
-    // 2. Fetch Billing Account & Subscription
-    let account_with_sub = GetBillingAccountQuery::new(owner_id)
-        .execute(&state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
-
-    let subscription = account_with_sub.subscription.ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            "No active subscription found for this billing account",
-        )
-    })?;
-
-    // 3. Get Billing Period (Start Date)
-    let billing_period_timestamp = subscription.previous_billing_date.ok_or_else(|| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Subscription missing previous_billing_date",
-        )
-    })?;
-
-    // 4. Fetch Usage for the Billing Account
-    let snapshots = GetBillingAccountUsageQuery::new(
-        account_with_sub.billing_account.id,
-        billing_period_timestamp,
-    )
-    .execute(&state)
-    .await?;
-
-    Ok(UsageResponse {
-        snapshots,
-        billing_period: billing_period_timestamp.to_rfc3339(),
-    }
-    .into())
-}
-#[derive(Debug, Deserialize)]
-pub struct CreatePulseCheckoutRequest {
-    pub pulse_amount: i64, // e.g., 1000 for $10 worth of Pulse
-    pub return_url: String,
-}
-
 pub async fn create_pulse_checkout(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
     Json(req): Json<CreatePulseCheckoutRequest>,
 ) -> ApiResult<CheckoutResponse> {
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
+    let owner_id = owner_id_from_auth(&auth);
 
     let existing = GetBillingAccountQuery::new(owner_id.clone())
         .execute(&state)
         .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Billing account not found"))?;
 
     let provider_customer_id = existing
         .billing_account
         .provider_customer_id
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Payment provider customer not found"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Payment provider customer not found"))?;
 
     let product = GetDodoProductQuery::new("pulse_credits")
         .execute(&state)
@@ -695,26 +423,4 @@ pub async fn create_pulse_checkout(
         checkout_url: Some(checkout.checkout_url),
     }
     .into())
-}
-pub async fn list_pulse_transactions(
-    State(state): State<AppState>,
-    RequireAuth(auth): RequireAuth,
-) -> ApiResult<PaginatedResponse<models::pulse_transaction::PulseTransaction>> {
-    let owner_id = if let Some(org_id) = auth.organization_id {
-        format!("org_{}", org_id)
-    } else {
-        format!("user_{}", auth.user_id)
-    };
-
-    let account = GetBillingAccountQuery::new(owner_id)
-        .execute(&state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Billing account not found"))?;
-
-    let transactions =
-        queries::billing::ListPulseTransactionsQuery::new(account.billing_account.id)
-            .execute(&state)
-            .await?;
-
-    Ok(PaginatedResponse::from(transactions).into())
 }
