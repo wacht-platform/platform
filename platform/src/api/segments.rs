@@ -6,6 +6,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::{
+    api::pagination::paginate_results,
     application::{
         AppError,
         response::{ApiResult, PaginatedResponse},
@@ -149,21 +150,7 @@ pub async fn list_segments(
     };
 
     let segments = query.execute(&state).await?;
-
-    let has_more = segments.len() > limit as usize;
-    let segments = if has_more {
-        segments.into_iter().take(limit as usize).collect()
-    } else {
-        segments
-    };
-
-    Ok(PaginatedResponse {
-        data: segments,
-        has_more,
-        limit: Some(limit as i32),
-        offset: Some(offset as i32),
-    }
-    .into())
+    Ok(paginate_results(segments, limit as i32, Some(offset)).into())
 }
 
 pub async fn create_segment(

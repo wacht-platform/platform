@@ -1,4 +1,5 @@
 use super::*;
+use crate::api::pagination::paginate_results;
 
 pub async fn get_deployment_workspace_roles(
     State(app_state): State<AppState>,
@@ -42,30 +43,18 @@ pub async fn get_organization_list(
     QueryParams(query_params): QueryParams<OrganizationListQueryParams>,
 ) -> ApiResult<PaginatedResponse<Organization>> {
     let limit = query_params.limit.unwrap_or(10);
+    let offset = query_params.offset.unwrap_or(0);
 
     let organizations = DeploymentOrganizationListQuery::new(deployment_id)
         .limit(limit + 1)
-        .offset(query_params.offset.unwrap_or(0))
+        .offset(offset)
         .sort_key(query_params.sort_key)
         .sort_order(query_params.sort_order)
         .search(query_params.search)
         .execute(&app_state)
         .await?;
 
-    let has_more = organizations.len() > limit as usize;
-    let organizations = if has_more {
-        organizations[..limit as usize].to_vec()
-    } else {
-        organizations
-    };
-
-    Ok(PaginatedResponse {
-        data: organizations,
-        has_more,
-        limit: Some(limit),
-        offset: Some(query_params.offset.unwrap_or(0) as i32),
-    }
-    .into())
+    Ok(paginate_results(organizations, limit, Some(offset)).into())
 }
 
 pub async fn get_workspace_list(
@@ -74,30 +63,18 @@ pub async fn get_workspace_list(
     QueryParams(query_params): QueryParams<OrganizationListQueryParams>,
 ) -> ApiResult<PaginatedResponse<WorkspaceWithOrganizationName>> {
     let limit = query_params.limit.unwrap_or(10);
+    let offset = query_params.offset.unwrap_or(0);
 
     let workspaces = DeploymentWorkspaceListQuery::new(deployment_id)
         .limit(limit + 1)
-        .offset(query_params.offset.unwrap_or(0))
+        .offset(offset)
         .sort_key(query_params.sort_key)
         .sort_order(query_params.sort_order)
         .search(query_params.search)
         .execute(&app_state)
         .await?;
 
-    let has_more = workspaces.len() > limit as usize;
-    let workspaces = if has_more {
-        workspaces[..limit as usize].to_vec()
-    } else {
-        workspaces
-    };
-
-    Ok(PaginatedResponse {
-        data: workspaces,
-        has_more,
-        limit: Some(limit),
-        offset: Some(query_params.offset.unwrap_or(0) as i32),
-    }
-    .into())
+    Ok(paginate_results(workspaces, limit, Some(offset)).into())
 }
 
 pub async fn get_organization_details(

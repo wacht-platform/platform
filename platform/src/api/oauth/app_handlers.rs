@@ -14,7 +14,10 @@ use common::state::AppState;
 use dto::json::api_key::{
     ListOAuthAppsResponse, OAuthAppResponse, UpdateOAuthAppRequest, VerifyOAuthAppDomainResponse,
 };
-use queries::{Query as QueryTrait, oauth::ListOAuthAppsByDeploymentQuery};
+use queries::{
+    Query as QueryTrait,
+    oauth::{ListOAuthAppsByDeploymentQuery, OAuthAppData},
+};
 
 use super::types::OAuthAppPathParams;
 
@@ -28,6 +31,26 @@ fn parse_logo_upload(field: &MultipartField) -> Result<Option<(Vec<u8>, String)>
     }
 
     Ok(Some((field.bytes.clone(), file_extension.to_string())))
+}
+
+fn to_oauth_app_response(app: OAuthAppData) -> OAuthAppResponse {
+    let supported_scopes = app.supported_scopes_vec();
+    let scope_definitions = app.scope_definitions_vec();
+
+    OAuthAppResponse {
+        id: app.id,
+        slug: app.slug,
+        name: app.name,
+        description: app.description,
+        logo_url: app.logo_url,
+        fqdn: app.fqdn,
+        supported_scopes,
+        scope_definitions,
+        allow_dynamic_client_registration: app.allow_dynamic_client_registration,
+        is_active: app.is_active,
+        created_at: app.created_at,
+        updated_at: app.updated_at,
+    }
 }
 
 pub(crate) async fn verify_oauth_app_domain(
@@ -58,24 +81,7 @@ pub async fn list_oauth_apps(
         .execute(&app_state)
         .await?
         .into_iter()
-        .map(|a| {
-            let supported_scopes = a.supported_scopes_vec();
-            let scope_definitions = a.scope_definitions_vec();
-            OAuthAppResponse {
-                id: a.id,
-                slug: a.slug,
-                name: a.name,
-                description: a.description,
-                logo_url: a.logo_url,
-                fqdn: a.fqdn,
-                supported_scopes,
-                scope_definitions,
-                allow_dynamic_client_registration: a.allow_dynamic_client_registration,
-                is_active: a.is_active,
-                created_at: a.created_at,
-                updated_at: a.updated_at,
-            }
-        })
+        .map(to_oauth_app_response)
         .collect();
 
     Ok(ListOAuthAppsResponse { apps }.into())
@@ -190,23 +196,7 @@ pub async fn create_oauth_app(
     .execute(&app_state)
     .await?;
 
-    let supported_scopes = created.supported_scopes_vec();
-    let scope_definitions = created.scope_definitions_vec();
-    Ok(OAuthAppResponse {
-        id: created.id,
-        slug: created.slug,
-        name: created.name,
-        description: created.description,
-        logo_url: created.logo_url,
-        fqdn: created.fqdn,
-        supported_scopes,
-        scope_definitions,
-        allow_dynamic_client_registration: created.allow_dynamic_client_registration,
-        is_active: created.is_active,
-        created_at: created.created_at,
-        updated_at: created.updated_at,
-    }
-    .into())
+    Ok(to_oauth_app_response(created).into())
 }
 
 pub(crate) async fn update_oauth_app(
@@ -228,21 +218,5 @@ pub(crate) async fn update_oauth_app(
     .execute(&app_state)
     .await?;
 
-    let supported_scopes = updated.supported_scopes_vec();
-    let scope_definitions = updated.scope_definitions_vec();
-    Ok(OAuthAppResponse {
-        id: updated.id,
-        slug: updated.slug,
-        name: updated.name,
-        description: updated.description,
-        logo_url: updated.logo_url,
-        fqdn: updated.fqdn,
-        supported_scopes,
-        scope_definitions,
-        allow_dynamic_client_registration: updated.allow_dynamic_client_registration,
-        is_active: updated.is_active,
-        created_at: updated.created_at,
-        updated_at: updated.updated_at,
-    }
-    .into())
+    Ok(to_oauth_app_response(updated).into())
 }

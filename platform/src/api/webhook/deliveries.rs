@@ -1,4 +1,5 @@
 use super::*;
+use crate::api::pagination::paginate_results;
 
 pub async fn get_webhook_delivery_details(
     State(app_state): State<AppState>,
@@ -109,19 +110,8 @@ pub async fn get_app_webhook_deliveries(
         )
         .await?;
 
-    let has_more = delivery_rows.len() > limit as usize;
-    let mut deliveries: Vec<WebhookDeliveryListResponse> =
+    let deliveries: Vec<WebhookDeliveryListResponse> =
         delivery_rows.into_iter().map(|row| row.into()).collect();
 
-    if has_more {
-        deliveries.truncate(limit as usize);
-    }
-
-    Ok(PaginatedResponse {
-        data: deliveries,
-        has_more,
-        limit: Some(limit),
-        offset: Some(offset),
-    }
-    .into())
+    Ok(paginate_results(deliveries, limit, Some(offset as i64)).into())
 }

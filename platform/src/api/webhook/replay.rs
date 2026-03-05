@@ -1,4 +1,5 @@
 use super::*;
+use crate::api::pagination::paginate_results;
 
 const LUA_REPLAY_RESERVE: &str = r#"
         local idem_key = KEYS[1]
@@ -545,12 +546,9 @@ pub async fn list_webhook_replay_tasks(
             )
         })?;
 
-    let has_more = task_ids.len() > limit as usize;
-    let ids = if has_more {
-        task_ids[..limit as usize].to_vec()
-    } else {
-        task_ids
-    };
+    let paged_ids = paginate_results(task_ids, limit as i32, Some(offset as i64));
+    let has_more = paged_ids.has_more;
+    let ids = paged_ids.data;
 
     let mut data = Vec::with_capacity(ids.len());
     for task_id in ids {

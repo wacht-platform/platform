@@ -17,6 +17,7 @@ pub mod multipart;
 pub mod notifications;
 pub mod oauth;
 pub mod oauth_runtime;
+pub(crate) mod pagination;
 pub mod prelude_webhook;
 pub mod project;
 pub mod segments;

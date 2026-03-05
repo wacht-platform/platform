@@ -2,6 +2,7 @@ use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
 use serde::Deserialize;
 
+use crate::api::pagination::paginate_results;
 use crate::application::response::{ApiResult, PaginatedResponse};
 use common::state::AppState;
 
@@ -84,11 +85,12 @@ pub async fn get_agent_integrations(
     Path(params): Path<AgentParams>,
     Query(query): Query<GetIntegrationsQuery>,
 ) -> ApiResult<PaginatedResponse<AgentIntegration>> {
-    let limit = query.limit.unwrap_or(50) as u32;
+    let limit = query.limit.unwrap_or(50);
+    let offset = query.offset;
 
     let integrations = GetAgentIntegrationsQuery::new(deployment_id, params.agent_id)
-        .with_limit(Some(limit + 1))
-        .with_offset(query.offset.map(|o| o as u32))
+        .with_limit(Some(limit as u32 + 1))
+        .with_offset(offset.map(|o| o as u32))
         .execute(&app_state)
         .await?;
 
@@ -97,20 +99,7 @@ pub async fn get_agent_integrations(
         .filter(|integration| is_console_supported_integration_type(integration.integration_type))
         .collect();
 
-    let has_more = integrations.len() > limit as usize;
-    let integrations = if has_more {
-        integrations[..limit as usize].to_vec()
-    } else {
-        integrations
-    };
-
-    Ok(PaginatedResponse {
-        data: integrations,
-        has_more,
-        limit: Some(limit as i32),
-        offset: query.offset.map(|o| o as i32),
-    }
-    .into())
+    Ok(paginate_results(integrations, limit as i32, offset).into())
 }
 
 /// POST /agents/:agent_id/integrations

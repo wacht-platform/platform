@@ -1,3 +1,4 @@
+use crate::api::pagination::paginate_results;
 use crate::application::response::{ApiResult, PaginatedResponse};
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
 use axum::extract::{Json, Path, Query, State};
@@ -91,10 +92,11 @@ pub async fn get_execution_contexts(
     Query(params): Query<ListExecutionContextsParams>,
 ) -> ApiResult<PaginatedResponse<AgentExecutionContext>> {
     let limit = params.limit.unwrap_or(50);
+    let offset = params.offset.unwrap_or(0);
 
     let mut query = ListExecutionContextsQuery::new(deployment_id)
         .with_limit(limit + 1)
-        .with_offset(params.offset.unwrap_or(0));
+        .with_offset(offset);
 
     if let Some(status) = params.status {
         query = query.with_status_filter(status);
@@ -106,20 +108,7 @@ pub async fn get_execution_contexts(
 
     let contexts = query.execute(&app_state).await?;
 
-    let has_more = contexts.len() > limit as usize;
-    let contexts = if has_more {
-        contexts[..limit as usize].to_vec()
-    } else {
-        contexts
-    };
-
-    Ok(PaginatedResponse {
-        data: contexts,
-        has_more,
-        limit: Some(limit as i32),
-        offset: Some(params.offset.unwrap_or(0) as i32),
-    }
-    .into())
+    Ok(paginate_results(contexts, limit as i32, Some(offset as i64)).into())
 }
 
 pub async fn get_execution_contexts_backend(
@@ -128,10 +117,11 @@ pub async fn get_execution_contexts_backend(
     Query(params): Query<ListExecutionContextsParams>,
 ) -> ApiResult<PaginatedResponse<AgentExecutionContext>> {
     let limit = params.limit.unwrap_or(50);
+    let offset = params.offset.unwrap_or(0);
 
     let mut query = ListExecutionContextsQuery::new(deployment_id)
         .with_limit(limit + 1)
-        .with_offset(params.offset.unwrap_or(0));
+        .with_offset(offset);
 
     if let Some(status) = params.status {
         query = query.with_status_filter(status);
@@ -143,20 +133,7 @@ pub async fn get_execution_contexts_backend(
 
     let contexts = query.execute(&app_state).await?;
 
-    let has_more = contexts.len() > limit as usize;
-    let contexts = if has_more {
-        contexts[..limit as usize].to_vec()
-    } else {
-        contexts
-    };
-
-    Ok(PaginatedResponse {
-        data: contexts,
-        has_more,
-        limit: Some(limit as i32),
-        offset: Some(params.offset.unwrap_or(0) as i32),
-    }
-    .into())
+    Ok(paginate_results(contexts, limit as i32, Some(offset as i64)).into())
 }
 #[derive(Deserialize)]
 pub struct ContextIdParam {

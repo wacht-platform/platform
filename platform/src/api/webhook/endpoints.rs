@@ -1,4 +1,5 @@
 use super::*;
+use crate::api::pagination::paginate_results;
 
 pub async fn list_webhook_endpoints(
     State(app_state): State<AppState>,
@@ -12,25 +13,14 @@ pub async fn list_webhook_endpoints(
 
     // Fetch one extra to determine if there are more
     // The query already returns dto::json::webhook_requests::WebhookEndpoint with subscriptions
-    let mut endpoints = GetWebhookEndpointsWithSubscriptionsQuery::new(deployment_id)
+    let endpoints = GetWebhookEndpointsWithSubscriptionsQuery::new(deployment_id)
         .with_inactive(include_inactive)
         .for_app(app_slug)
         .with_pagination(Some(limit + 1), Some(offset))
         .execute(&app_state)
         .await?;
 
-    let has_more = endpoints.len() > limit as usize;
-    if has_more {
-        endpoints.truncate(limit as usize);
-    }
-
-    Ok(PaginatedResponse {
-        data: endpoints,
-        has_more,
-        limit: Some(limit),
-        offset: Some(offset),
-    }
-    .into())
+    Ok(paginate_results(endpoints, limit, Some(offset as i64)).into())
 }
 
 pub async fn create_webhook_endpoint(

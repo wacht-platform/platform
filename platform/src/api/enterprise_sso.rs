@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::api::pagination::paginate_results;
 use crate::middleware::RequireDeployment;
 
 #[derive(Deserialize)]
@@ -65,27 +66,15 @@ pub async fn list_domains_handler(
     Query(query_params): Query<ListQueryParams>,
 ) -> ApiResult<PaginatedResponse<OrganizationDomain>> {
     let limit = query_params.limit.unwrap_or(50);
+    let offset = query_params.offset.unwrap_or(0);
 
     let domains = ListOrganizationDomainsQuery::new(deployment_id, params.org_id)
         .limit(limit + 1)
-        .offset(query_params.offset.unwrap_or(0))
+        .offset(offset)
         .execute(&app_state)
         .await?;
 
-    let has_more = domains.len() > limit as usize;
-    let domains = if has_more {
-        domains[..limit as usize].to_vec()
-    } else {
-        domains
-    };
-
-    Ok(PaginatedResponse {
-        data: domains,
-        has_more,
-        limit: Some(limit),
-        offset: Some(query_params.offset.unwrap_or(0) as i32),
-    }
-    .into())
+    Ok(paginate_results(domains, limit, Some(offset)).into())
 }
 
 pub async fn create_domain_handler(
@@ -143,27 +132,15 @@ pub async fn list_connections_handler(
     Query(query_params): Query<ListQueryParams>,
 ) -> ApiResult<PaginatedResponse<EnterpriseConnection>> {
     let limit = query_params.limit.unwrap_or(50);
+    let offset = query_params.offset.unwrap_or(0);
 
     let connections = ListEnterpriseConnectionsQuery::new(deployment_id, params.org_id)
         .limit(limit + 1)
-        .offset(query_params.offset.unwrap_or(0))
+        .offset(offset)
         .execute(&app_state)
         .await?;
 
-    let has_more = connections.len() > limit as usize;
-    let connections = if has_more {
-        connections[..limit as usize].to_vec()
-    } else {
-        connections
-    };
-
-    Ok(PaginatedResponse {
-        data: connections,
-        has_more,
-        limit: Some(limit),
-        offset: Some(query_params.offset.unwrap_or(0) as i32),
-    }
-    .into())
+    Ok(paginate_results(connections, limit, Some(offset)).into())
 }
 
 pub async fn create_connection_handler(

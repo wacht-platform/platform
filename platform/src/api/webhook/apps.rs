@@ -1,4 +1,5 @@
 use super::*;
+use crate::api::pagination::paginate_results;
 
 pub async fn list_webhook_apps(
     State(app_state): State<AppState>,
@@ -9,24 +10,13 @@ pub async fn list_webhook_apps(
     let limit = params.limit.unwrap_or(50) as u64;
     let offset = params.offset.unwrap_or(0) as u64;
 
-    let mut apps = GetWebhookAppsQuery::new(deployment_id)
+    let apps = GetWebhookAppsQuery::new(deployment_id)
         .with_inactive(include_inactive)
         .with_pagination(Some(limit as i64 + 1), Some(offset as i64))
         .execute(&app_state)
         .await?;
 
-    let has_more = apps.len() > limit as usize;
-    if has_more {
-        apps.pop();
-    }
-
-    Ok(PaginatedResponse {
-        data: apps,
-        has_more,
-        limit: Some(limit as i32),
-        offset: Some(offset as i32),
-    }
-    .into())
+    Ok(paginate_results(apps, limit as i32, Some(offset as i64)).into())
 }
 
 pub async fn create_webhook_app(

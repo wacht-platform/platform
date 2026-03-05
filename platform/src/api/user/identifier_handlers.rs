@@ -49,8 +49,7 @@ pub async fn delete_user_email(
 ) -> ApiResult<()> {
     DeleteUserEmailCommand::new(params.user_id, params.email_id)
         .execute(&app_state)
-        .await
-        .unwrap();
+        .await?;
 
     Ok(().into())
 }
@@ -104,4 +103,3 @@ pub async fn delete_user_social_connection(
         .map(Into::into)
         .map_err(Into::into)
 }
-

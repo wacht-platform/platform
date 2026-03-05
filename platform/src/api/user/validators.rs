@@ -73,9 +73,7 @@ pub(super) async fn validate_create_user_request(
                     ));
                 }
             }
-        } else if auth_settings.password.min_length.is_some()
-            && auth_settings.password.min_length.unwrap() > 0
-        {
+        } else if auth_settings.password.min_length.unwrap_or(0) > 0 {
             return Err((StatusCode::BAD_REQUEST, "Password is required".to_string()));
         }
     }

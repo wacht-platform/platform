@@ -1,4 +1,7 @@
-use crate::{application::response::ApiResult, middleware::RequireDeployment};
+use crate::{
+    application::{AppError, response::ApiResult},
+    middleware::RequireDeployment,
+};
 use axum::{Json, extract::State};
 use commands::{Command, GenerateSessionTicketCommand};
 use common::state::AppState;
@@ -29,8 +32,9 @@ pub async fn create_session_ticket(
     };
 
     let console_deployment_id = std::env::var("CONSOLE_DEPLOYMENT_ID")
-        .map(|id| id.parse().unwrap())
-        .unwrap();
+        .map_err(|_| AppError::Internal("CONSOLE_DEPLOYMENT_ID is not set".to_string()))?
+        .parse::<i64>()
+        .map_err(|e| AppError::Internal(format!("Invalid CONSOLE_DEPLOYMENT_ID: {}", e)))?;
 
     let mut command = GenerateSessionTicketCommand::new(deployment_id, ticket_type.clone());
 

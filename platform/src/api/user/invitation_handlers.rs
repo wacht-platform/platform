@@ -1,4 +1,5 @@
 use crate::{
+    api::pagination::paginate_results,
     application::response::{ApiResult, PaginatedResponse},
     middleware::RequireDeployment,
 };
@@ -22,31 +23,18 @@ pub async fn get_invited_user_list(
     QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentInvitation>> {
     let limit = params.limit.unwrap_or(10) as i32;
+    let offset = params.offset.unwrap_or(0);
 
     let invitations = DeploymentInvitationQuery::new(deployment_id)
         .limit(limit + 1)
-        .offset(params.offset.unwrap_or(0))
+        .offset(offset)
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .search(params.search.clone())
         .execute(&app_state)
-        .await
-        .unwrap();
+        .await?;
 
-    let has_more = invitations.len() > limit as usize;
-    let invitations = if has_more {
-        invitations[..limit as usize].to_vec()
-    } else {
-        invitations
-    };
-
-    Ok(PaginatedResponse {
-        data: invitations,
-        has_more,
-        limit: Some(limit),
-        offset: Some(params.offset.unwrap_or(0) as i32),
-    }
-    .into())
+    Ok(paginate_results(invitations, limit, Some(offset)).into())
 }
 
 pub async fn get_user_waitlist(
@@ -55,31 +43,18 @@ pub async fn get_user_waitlist(
     QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentWaitlistUser>> {
     let limit = params.limit.unwrap_or(10) as i32;
+    let offset = params.offset.unwrap_or(0);
 
     let waitlist = DeploymentWaitlistQuery::new(deployment_id)
         .limit(limit + 1)
-        .offset(params.offset.unwrap_or(0))
+        .offset(offset)
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .search(params.search.clone())
         .execute(&app_state)
-        .await
-        .unwrap();
+        .await?;
 
-    let has_more = waitlist.len() > limit as usize;
-    let waitlist = if has_more {
-        waitlist[..limit as usize].to_vec()
-    } else {
-        waitlist
-    };
-
-    Ok(PaginatedResponse {
-        data: waitlist,
-        has_more,
-        limit: Some(limit),
-        offset: Some(params.offset.unwrap_or(0) as i32),
-    }
-    .into())
+    Ok(paginate_results(waitlist, limit, Some(offset)).into())
 }
 
 
@@ -118,4 +93,3 @@ pub async fn approve_waitlist_user(
         .map(Into::into)
         .map_err(Into::into)
 }
-

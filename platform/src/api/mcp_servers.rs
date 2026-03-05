@@ -1,4 +1,5 @@
 use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::api::pagination::paginate_results;
 use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
 use common::utils::ssrf::validate_webhook_url;
@@ -989,27 +990,15 @@ pub async fn get_mcp_servers(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<GetMcpServersQueryParams>,
 ) -> ApiResult<PaginatedResponse<McpServer>> {
-    let limit = query.limit.unwrap_or(50) as u32;
+    let limit = query.limit.unwrap_or(50);
+    let offset = query.offset;
     let servers = GetMcpServersQuery::new(deployment_id)
-        .with_limit(Some(limit + 1))
-        .with_offset(query.offset.map(|o| o as u32))
+        .with_limit(Some(limit as u32 + 1))
+        .with_offset(offset.map(|o| o as u32))
         .execute(&app_state)
         .await?;
 
-    let has_more = servers.len() > limit as usize;
-    let servers = if has_more {
-        servers[..limit as usize].to_vec()
-    } else {
-        servers
-    };
-
-    Ok(PaginatedResponse {
-        data: servers,
-        has_more,
-        limit: Some(limit as i32),
-        offset: query.offset.map(|o| o as i32),
-    }
-    .into())
+    Ok(paginate_results(servers, limit as i32, offset).into())
 }
 
 pub async fn create_mcp_server(

@@ -1,5 +1,6 @@
 use crate::{
     api::multipart::{MultipartField, MultipartPayload},
+    api::pagination::paginate_results,
     application::response::{ApiErrorResponse, ApiResult, PaginatedResponse},
     middleware::RequireDeployment,
 };
@@ -43,31 +44,18 @@ pub async fn get_active_user_list(
     QueryParams(params): QueryParams<ActiveUserListQueryParams>,
 ) -> ApiResult<PaginatedResponse<UserWithIdentifiers>> {
     let limit = params.limit.unwrap_or(10) as i32;
+    let offset = params.offset.unwrap_or(0);
 
     let users = DeploymentActiveUserListQuery::new(deployment_id)
         .limit(limit + 1)
-        .offset(params.offset.unwrap_or(0))
+        .offset(offset)
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .search(params.search.clone())
         .execute(&app_state)
-        .await
-        .unwrap();
+        .await?;
 
-    let has_more = users.len() > limit as usize;
-    let users = if has_more {
-        users[..limit as usize].to_vec()
-    } else {
-        users
-    };
-
-    Ok(PaginatedResponse {
-        data: users,
-        has_more,
-        limit: Some(limit),
-        offset: Some(params.offset.unwrap_or(0) as i32),
-    }
-    .into())
+    Ok(paginate_results(users, limit, Some(offset)).into())
 }
 
 pub async fn get_user_details(
@@ -327,8 +315,7 @@ pub async fn delete_user(
 ) -> ApiResult<()> {
     DeleteUserCommand::new(deployment_id, params.user_id)
         .execute(&app_state)
-        .await
-        .unwrap();
+        .await?;
 
     Ok(().into())
 }

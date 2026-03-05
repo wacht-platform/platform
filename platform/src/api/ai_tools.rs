@@ -2,6 +2,7 @@ use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
 use serde::Deserialize;
 
+use crate::api::pagination::paginate_results;
 use crate::application::response::{ApiResult, PaginatedResponse};
 use common::state::AppState;
 
@@ -38,29 +39,18 @@ pub async fn get_ai_tools(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<GetToolsQuery>,
 ) -> ApiResult<PaginatedResponse<AiToolWithDetails>> {
-    let limit = query.limit.unwrap_or(50) as u32;
+    let limit = query.limit.unwrap_or(50) as i32;
+    let query_limit = limit as u32;
+    let offset = query.offset.map(|o| o as i64);
 
     let tools = GetAiToolsQuery::new(deployment_id)
-        .with_limit(Some(limit + 1))
-        .with_offset(query.offset.map(|o| o as u32))
+        .with_limit(Some(query_limit + 1))
+        .with_offset(offset.map(|o| o as u32))
         .with_search(query.search)
         .execute(&app_state)
         .await?;
 
-    let has_more = tools.len() > limit as usize;
-    let tools = if has_more {
-        tools[..limit as usize].to_vec()
-    } else {
-        tools
-    };
-
-    Ok(PaginatedResponse {
-        data: tools,
-        has_more,
-        limit: Some(limit as i32),
-        offset: query.offset.map(|o| o as i32),
-    }
-    .into())
+    Ok(paginate_results(tools, limit, offset).into())
 }
 
 pub async fn create_ai_tool(
