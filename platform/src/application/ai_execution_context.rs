@@ -22,7 +22,7 @@ use tracing::{error, info};
 
 use crate::{
     api::pagination::paginate_results,
-    application::{response::PaginatedResponse, AppState},
+    application::{AppState, response::PaginatedResponse},
 };
 
 const EXECUTION_VARIANT_VALIDATION_ERROR: &str =
@@ -120,10 +120,7 @@ pub async fn create_execution_context(
     request: CreateExecutionContextRequest,
 ) -> Result<AgentExecutionContext, AppError> {
     build_create_execution_context_command(deployment_id, request)
-        .execute_with(
-            app_state.db_router.writer(),
-            app_state.sf.next_id()? as i64,
-        )
+        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
         .await
 }
 
@@ -149,7 +146,11 @@ pub async fn get_execution_contexts(
     let contexts = query
         .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
-    Ok(paginate_results(contexts, limit as i32, Some(offset as i64)))
+    Ok(paginate_results(
+        contexts,
+        limit as i32,
+        Some(offset as i64),
+    ))
 }
 
 pub async fn update_execution_context(
@@ -192,7 +193,9 @@ pub async fn execute_agent_async(
     ];
 
     if execution_variants.iter().filter(|&&v| v).count() != 1 {
-        return Err(AppError::BadRequest(EXECUTION_VARIANT_VALIDATION_ERROR.to_string()));
+        return Err(AppError::BadRequest(
+            EXECUTION_VARIANT_VALIDATION_ERROR.to_string(),
+        ));
     }
 
     if cancel.is_none() {
@@ -205,7 +208,9 @@ pub async fn execute_agent_async(
                 })?;
 
         if !has_ai_access {
-            return Err(AppError::Forbidden("AI agent usage requires Growth plan".to_string()));
+            return Err(AppError::Forbidden(
+                "AI agent usage requires Growth plan".to_string(),
+            ));
         }
     }
 
@@ -231,27 +236,31 @@ pub async fn execute_agent_async(
             ensure_pulse_usage_if_needed(app_state, deployment_id, has_custom_gemini_key).await?;
 
             if new_message.message.trim().is_empty()
-                && new_message.files.as_ref().is_none_or(|files| files.is_empty())
+                && new_message
+                    .files
+                    .as_ref()
+                    .is_none_or(|files| files.is_empty())
             {
-                return Err(AppError::BadRequest("Message or files required".to_string()));
+                return Err(AppError::BadRequest(
+                    "Message or files required".to_string(),
+                ));
             }
 
             let upload_files_command =
                 UploadFilesToS3Command::new(deployment_id, context_id, new_message.files);
-            let storage_client = app_state
-                .agent_storage_client
-                .as_ref()
-                .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+            let storage_client = app_state.agent_storage_client.as_ref().ok_or_else(|| {
+                AppError::Internal("Agent storage client not configured".to_string())
+            })?;
             let model_files = match upload_files_command
                 .execute_with(storage_client, || Ok(app_state.sf.next_id()? as i64))
                 .await
             {
-                    Ok(files) => files,
-                    Err(e) => {
-                        error!("Failed to upload files: {}", e);
-                        None
-                    }
-                };
+                Ok(files) => files,
+                Err(e) => {
+                    error!("Failed to upload files: {}", e);
+                    None
+                }
+            };
 
             let conversation_id = next_conversation_id(app_state)?;
             let message = if new_message.message.trim().is_empty() {
@@ -283,7 +292,8 @@ pub async fn execute_agent_async(
             .execute_with(app_state.db_router.writer())
             .await?;
 
-            cancel_running_execution_if_needed(app_state, context_id, has_running_execution).await?;
+            cancel_running_execution_if_needed(app_state, context_id, has_running_execution)
+                .await?;
 
             let publish_command = PublishAgentExecutionCommand::new_message(
                 deployment_id,
@@ -324,7 +334,8 @@ pub async fn execute_agent_async(
             .execute_with(app_state.db_router.writer())
             .await?;
 
-            cancel_running_execution_if_needed(app_state, context_id, has_running_execution).await?;
+            cancel_running_execution_if_needed(app_state, context_id, has_running_execution)
+                .await?;
 
             let publish_command = PublishAgentExecutionCommand::user_input_response(
                 deployment_id,
@@ -369,20 +380,22 @@ pub async fn execute_agent_async(
             Ok(queued_execution_response(None))
         }
         (None, None, None, Some(_)) => {
-            cancel_running_execution_if_needed(app_state, context_id, has_running_execution).await?;
-
-            let update_context_command = UpdateExecutionContextQuery::new(context_id, deployment_id)
-                .with_status(ExecutionContextStatus::Failed)
-                .mark_status_as_cancellation();
-            update_context_command
-                .execute_with_deps(app_state)
+            cancel_running_execution_if_needed(app_state, context_id, has_running_execution)
                 .await?;
+
+            let update_context_command =
+                UpdateExecutionContextQuery::new(context_id, deployment_id)
+                    .with_status(ExecutionContextStatus::Failed)
+                    .mark_status_as_cancellation();
+            update_context_command.execute_with_deps(app_state).await?;
 
             Ok(ExecuteAgentResponse {
                 status: "cancelled".to_string(),
                 conversation_id: None,
             })
         }
-        _ => Err(AppError::BadRequest(EXECUTION_VARIANT_VALIDATION_ERROR.to_string())),
+        _ => Err(AppError::BadRequest(
+            EXECUTION_VARIANT_VALIDATION_ERROR.to_string(),
+        )),
     }
 }

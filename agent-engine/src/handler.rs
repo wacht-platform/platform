@@ -498,9 +498,7 @@ async fn mark_context_failed_due_to_parent_abort(
 ) -> Result<(), AppError> {
     let fail_context_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
         .with_status(ExecutionContextStatus::Failed);
-    fail_context_cmd
-        .execute_with_deps(app_state)
-        .await?;
+    fail_context_cmd.execute_with_deps(app_state).await?;
 
     let summary_cmd = commands::StoreCompletionSummaryEnhancedCommand::new(
         context_id,
@@ -624,9 +622,7 @@ async fn apply_spawn_control_params(
 
     let update_context_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
         .with_external_resource_metadata(metadata);
-    update_context_cmd
-        .execute_with_deps(app_state)
-        .await?;
+    update_context_cmd.execute_with_deps(app_state).await?;
 
     let status_cmd = commands::PostStatusUpdateCommand::new(
         context_id,

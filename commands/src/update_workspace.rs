@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::Workspace;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -141,13 +139,5 @@ impl UpdateWorkspaceCommand {
             public_metadata: row.get("public_metadata"),
             private_metadata: row.get("private_metadata"),
         })
-    }
-}
-
-impl Command for UpdateWorkspaceCommand {
-    type Output = Workspace;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

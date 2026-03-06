@@ -1,7 +1,5 @@
-use commands::{
-    rate_limit_scheme::{
-        CreateRateLimitSchemeCommand, DeleteRateLimitSchemeCommand, UpdateRateLimitSchemeCommand,
-    },
+use commands::rate_limit_scheme::{
+    CreateRateLimitSchemeCommand, DeleteRateLimitSchemeCommand, UpdateRateLimitSchemeCommand,
 };
 use common::db_router::ReadConsistency;
 use common::state::AppState;
@@ -9,7 +7,9 @@ use dto::json::api_key::{
     CreateRateLimitSchemeRequest, ListRateLimitSchemesResponse, UpdateRateLimitSchemeRequest,
 };
 use models::error::AppError;
-use queries::rate_limit_scheme::{GetRateLimitSchemeQuery, ListRateLimitSchemesQuery, RateLimitSchemeData};
+use queries::rate_limit_scheme::{
+    GetRateLimitSchemeQuery, ListRateLimitSchemesQuery, RateLimitSchemeData,
+};
 
 pub async fn list_rate_limit_schemes(
     app_state: &AppState,

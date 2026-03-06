@@ -1,10 +1,9 @@
 use axum::http::StatusCode;
 use commands::{
-    AddOrganizationMemberCommand, AddWorkspaceMemberCommand,
-    CreateOrganizationRoleCommand, CreateWorkspaceRoleCommand, DeleteOrganizationRoleCommand,
-    DeleteWorkspaceRoleCommand, RemoveOrganizationMemberCommand, RemoveWorkspaceMemberCommand,
-    UpdateOrganizationMemberCommand, UpdateOrganizationRoleCommand, UpdateWorkspaceMemberCommand,
-    UpdateWorkspaceRoleCommand,
+    AddOrganizationMemberCommand, AddWorkspaceMemberCommand, CreateOrganizationRoleCommand,
+    CreateWorkspaceRoleCommand, DeleteOrganizationRoleCommand, DeleteWorkspaceRoleCommand,
+    RemoveOrganizationMemberCommand, RemoveWorkspaceMemberCommand, UpdateOrganizationMemberCommand,
+    UpdateOrganizationRoleCommand, UpdateWorkspaceMemberCommand, UpdateWorkspaceRoleCommand,
 };
 use common::db_router::ReadConsistency;
 use common::error::AppError;
@@ -20,12 +19,12 @@ use dto::json::{
     },
 };
 use models::{OrganizationMemberDetails, OrganizationRole, WorkspaceMemberDetails, WorkspaceRole};
-use queries::{
-    api_key::{GetOrganizationMembershipIdsByRoleQuery, GetWorkspaceMembershipIdsByRoleQuery},
+use queries::api_key::{
+    GetOrganizationMembershipIdsByRoleQuery, GetWorkspaceMembershipIdsByRoleQuery,
 };
 use serde::Serialize;
 
-use crate::application::{response::ApiErrorResponse, AppState};
+use crate::application::{AppState, response::ApiErrorResponse};
 
 pub async fn add_organization_member(
     app_state: &AppState,
@@ -113,16 +112,21 @@ pub async fn create_organization_role(
     organization_id: i64,
     request: CreateOrganizationRoleRequest,
 ) -> Result<OrganizationRole, ApiErrorResponse> {
-    CreateOrganizationRoleCommand::new(deployment_id, organization_id, request.name, request.permissions)
-        .execute_with(
-            app_state.db_router.writer(),
-            app_state
-                .sf
-                .next_id()
-                .map_err(|e| AppError::Internal(e.to_string()))? as i64,
-        )
-        .await
-        .map_err(Into::into)
+    CreateOrganizationRoleCommand::new(
+        deployment_id,
+        organization_id,
+        request.name,
+        request.permissions,
+    )
+    .execute_with(
+        app_state.db_router.writer(),
+        app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+    )
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn update_organization_role(
@@ -189,16 +193,21 @@ pub async fn create_workspace_role(
     workspace_id: i64,
     request: CreateWorkspaceRoleRequest,
 ) -> Result<WorkspaceRole, ApiErrorResponse> {
-    CreateWorkspaceRoleCommand::new(deployment_id, workspace_id, request.name, request.permissions)
-        .execute_with(
-            app_state.db_router.writer(),
-            app_state
-                .sf
-                .next_id()
-                .map_err(|e| AppError::Internal(e.to_string()))? as i64,
-        )
-        .await
-        .map_err(Into::into)
+    CreateWorkspaceRoleCommand::new(
+        deployment_id,
+        workspace_id,
+        request.name,
+        request.permissions,
+    )
+    .execute_with(
+        app_state.db_router.writer(),
+        app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+    )
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn update_workspace_role(

@@ -1,6 +1,4 @@
-use crate::Command;
 use common::{EncryptionService, HasDbRouter, HasEncryptionService, error::AppError};
-use common::state::AppState;
 use models::{DeploymentAiSettings, UpdateDeploymentAiSettingsRequest};
 
 pub trait AiSettingsEncryptor: Send + Sync {
@@ -30,14 +28,6 @@ impl CreateDeploymentAiSettingsCommand {
 
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
-    }
-}
-
-impl Command for CreateDeploymentAiSettingsCommand {
-    type Output = DeploymentAiSettings;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -129,14 +119,6 @@ impl UpdateDeploymentAiSettingsCommandBuilder {
                 .updates
                 .ok_or_else(|| AppError::Validation("updates are required".to_string()))?,
         })
-    }
-}
-
-impl Command for UpdateDeploymentAiSettingsCommand {
-    type Output = DeploymentAiSettings;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
     }
 }
 
@@ -266,14 +248,6 @@ impl ClearDeploymentAiKeyCommandBuilder {
                 .key_type
                 .ok_or_else(|| AppError::Validation("key_type is required".to_string()))?,
         })
-    }
-}
-
-impl Command for ClearDeploymentAiKeyCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

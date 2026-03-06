@@ -3,9 +3,7 @@
 use super::core::AgentExecutor;
 use crate::template::{render_template_with_prompt, AgentTemplates};
 
-use commands::{
-    CreateConversationCommand, CreateMemoryCommand, GenerateEmbeddingsCommand,
-};
+use commands::{CreateConversationCommand, CreateMemoryCommand, GenerateEmbeddingsCommand};
 use common::error::AppError;
 use dto::json::agent_memory::MemoryCategory;
 use models::{ActionResult, ConversationContent, ConversationMessageType, ConversationRecord};
@@ -296,7 +294,9 @@ impl AgentExecutor {
             ConversationContent::AgentResponse { response, .. } => {
                 format!("RESP {}", truncate_for_summary(response, 320))
             }
-            ConversationContent::UserInputRequest { question, context, .. } => format!(
+            ConversationContent::UserInputRequest {
+                question, context, ..
+            } => format!(
                 "ASK question={} context={}",
                 truncate_for_summary(question, 180),
                 truncate_for_summary(context, 140)

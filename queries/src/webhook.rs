@@ -2,7 +2,6 @@ use serde::Deserialize;
 use sqlx::{query, query_as};
 
 use common::{HasClickHouseService, HasDbRouter, error::AppError};
-use common::state::AppState;
 use dto::json::webhook_requests::{
     WebhookEndpoint, WebhookEndpointSubscription as WebhookEndpointSubscriptionDTO,
 };
@@ -10,8 +9,6 @@ use models::webhook::{
     PendingDeliveryRow, WebhookApp, WebhookEndpoint as ModelWebhookEndpoint,
     WebhookEndpointSubscription,
 };
-
-use super::Query;
 
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookAppsQuery {
@@ -103,14 +100,6 @@ impl GetWebhookAppsQuery {
         };
 
         Ok(apps)
-    }
-}
-
-impl Query for GetWebhookAppsQuery {
-    type Output = Vec<WebhookApp>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -227,14 +216,6 @@ impl GetWebhookEndpointsQuery {
         };
 
         Ok(endpoints)
-    }
-}
-
-impl Query for GetWebhookEndpointsQuery {
-    type Output = Vec<ModelWebhookEndpoint>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -412,14 +393,6 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
     }
 }
 
-impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
-    type Output = Vec<WebhookEndpoint>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 // Query for getting webhook app by name
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookAppByNameQuery {
@@ -463,14 +436,6 @@ impl GetWebhookAppByNameQuery {
         .await?;
 
         Ok(app)
-    }
-}
-
-impl Query for GetWebhookAppByNameQuery {
-    type Output = Option<WebhookApp>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -533,14 +498,6 @@ impl GetWebhookEventsQuery {
         }
 
         Ok(Vec::new())
-    }
-}
-
-impl Query for GetWebhookEventsQuery {
-    type Output = Vec<models::webhook::WebhookEventDefinition>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -616,14 +573,6 @@ impl GetWebhookStatsQuery {
     }
 }
 
-impl Query for GetWebhookStatsQuery {
-    type Output = dto::json::WebhookStats;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}
-
 pub struct GetPendingWebhookDeliveryQuery {
     pub deployment_id: i64,
     pub delivery_id: i64,
@@ -690,13 +639,5 @@ impl GetPendingWebhookDeliveryQuery {
             timestamp: row.timestamp,
             request_headers: None,
         })
-    }
-}
-
-impl Query for GetPendingWebhookDeliveryQuery {
-    type Output = dto::clickhouse::webhook::WebhookLog;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

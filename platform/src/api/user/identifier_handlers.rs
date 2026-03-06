@@ -20,9 +20,13 @@ pub async fn add_user_email(
     Path(params): Path<UserParams>,
     Json(request): Json<AddEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    let email =
-        user_identifier_use_cases::add_user_email(&app_state, deployment_id, params.user_id, request)
-            .await?;
+    let email = user_identifier_use_cases::add_user_email(
+        &app_state,
+        deployment_id,
+        params.user_id,
+        request,
+    )
+    .await?;
     Ok(email.into())
 }
 
@@ -59,9 +63,13 @@ pub async fn add_user_phone(
     Path(params): Path<UserParams>,
     Json(request): Json<AddPhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    let phone =
-        user_identifier_use_cases::add_user_phone(&app_state, deployment_id, params.user_id, request)
-            .await?;
+    let phone = user_identifier_use_cases::add_user_phone(
+        &app_state,
+        deployment_id,
+        params.user_id,
+        request,
+    )
+    .await?;
     Ok(phone.into())
 }
 
@@ -71,9 +79,13 @@ pub async fn update_user_phone(
     Path(params): Path<UserPhoneParams>,
     Json(request): Json<UpdatePhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    let phone =
-        user_identifier_use_cases::update_user_phone(&app_state, params.user_id, params.phone_id, request)
-            .await?;
+    let phone = user_identifier_use_cases::update_user_phone(
+        &app_state,
+        params.user_id,
+        params.phone_id,
+        request,
+    )
+    .await?;
     Ok(phone.into())
 }
 

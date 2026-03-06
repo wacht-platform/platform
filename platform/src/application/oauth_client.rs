@@ -1,8 +1,6 @@
-use commands::{
-    oauth::{
-        CreateOAuthClientCommand, DeactivateOAuthClient, RotateOAuthClientSecret,
-        UpdateOAuthClientSettings,
-    },
+use commands::oauth::{
+    CreateOAuthClientCommand, DeactivateOAuthClient, RotateOAuthClientSecret,
+    UpdateOAuthClientSettings,
 };
 use common::db_router::ReadConsistency;
 use common::state::AppState;
@@ -86,7 +84,8 @@ pub async fn update_oauth_client(
 ) -> Result<OAuthClientResponse, AppError> {
     let writer = app_state.db_router.writer();
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
-    let client = get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
+    let client =
+        get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
 
     let updated = UpdateOAuthClientSettings {
         oauth_app_id: oauth_app.id,
@@ -122,7 +121,8 @@ pub async fn deactivate_oauth_client(
 ) -> Result<(), AppError> {
     let writer = app_state.db_router.writer();
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
-    let client = get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
+    let client =
+        get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
 
     let updated = DeactivateOAuthClient {
         oauth_app_id: oauth_app.id,
@@ -148,7 +148,8 @@ pub async fn rotate_oauth_client_secret(
 ) -> Result<RotateOAuthClientSecretResponse, AppError> {
     let writer = app_state.db_router.writer();
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
-    let client = get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
+    let client =
+        get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
 
     let client_secret = RotateOAuthClientSecret {
         oauth_app_id: oauth_app.id,

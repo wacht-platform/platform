@@ -182,11 +182,8 @@ impl CreateProductionDeploymentCommand {
             .execute_with(tx.as_mut())
             .await?;
 
-        let ui_settings = build_ui_settings(
-            deployment_row.id,
-            &frontend_host,
-            project.name.clone(),
-        );
+        let ui_settings =
+            build_ui_settings(deployment_row.id, &frontend_host, project.name.clone());
         let b2b_settings = build_b2b_settings(deployment_row.id);
         let restrictions = build_restrictions(deployment_row.id);
         let email_templates = build_email_templates(deployment_row.id);
@@ -251,10 +248,7 @@ impl CreateProductionDeploymentCommand {
             .execute_with(tx.as_mut())
             .await?;
 
-        let postmark_domain = deps
-            .postmark_service
-            .create_domain(&mail_from_host)
-            .await?;
+        let postmark_domain = deps.postmark_service.create_domain(&mail_from_host).await?;
         let postmark_domain_id = postmark_domain.id;
         let email_verification_records = deps
             .postmark_service
@@ -444,13 +438,5 @@ impl CreateProductionDeploymentCommandBuilder {
                 .auth_methods
                 .ok_or_else(|| AppError::Validation("auth_methods are required".to_string()))?,
         })
-    }
-}
-
-impl Command for CreateProductionDeploymentCommand {
-    type Output = Deployment;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
     }
 }

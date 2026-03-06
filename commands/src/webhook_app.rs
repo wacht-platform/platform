@@ -1,9 +1,7 @@
 use serde::Deserialize;
 use sqlx::{query, query_as};
 
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::WebhookApp;
 
 fn generate_signing_secret() -> String {
@@ -55,18 +53,6 @@ impl CreateWebhookAppCommand {
     pub fn with_event_catalog_slug(mut self, slug: String) -> Self {
         self.event_catalog_slug = Some(slug);
         self
-    }
-}
-
-impl Command for CreateWebhookAppCommand {
-    type Output = WebhookApp;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            format!("slug_{}", app_state.sf.next_id()?),
-        )
-        .await
     }
 }
 
@@ -132,14 +118,6 @@ pub struct UpdateWebhookAppCommand {
     pub event_catalog_slug: Option<String>,
 }
 
-impl Command for UpdateWebhookAppCommand {
-    type Output = WebhookApp;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateWebhookAppCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
     where
@@ -194,14 +172,6 @@ pub struct DeleteWebhookAppCommand {
     pub app_slug: String,
 }
 
-impl Command for DeleteWebhookAppCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl DeleteWebhookAppCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -231,14 +201,6 @@ impl DeleteWebhookAppCommand {
 pub struct RotateWebhookSecretCommand {
     pub deployment_id: i64,
     pub app_slug: String,
-}
-
-impl Command for RotateWebhookSecretCommand {
-    type Output = WebhookApp;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl RotateWebhookSecretCommand {

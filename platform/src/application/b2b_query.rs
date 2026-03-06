@@ -2,7 +2,9 @@ use commands::UpdateDeploymentB2bSettingsCommand;
 use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
-use dto::{json::deployment_settings::DeploymentB2bSettingsUpdates, query::OrganizationListQueryParams};
+use dto::{
+    json::deployment_settings::DeploymentB2bSettingsUpdates, query::OrganizationListQueryParams,
+};
 use models::{
     DeploymentOrganizationRole, DeploymentWorkspaceRole, Organization, OrganizationDetails,
     OrganizationMemberDetails, WorkspaceDetails, WorkspaceMemberDetails,
@@ -16,7 +18,12 @@ use queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQu
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 
-fn paginated_with_has_more<T>(data: Vec<T>, has_more: bool, limit: i32, offset: i64) -> PaginatedResponse<T>
+fn paginated_with_has_more<T>(
+    data: Vec<T>,
+    has_more: bool,
+    limit: i32,
+    offset: i64,
+) -> PaginatedResponse<T>
 where
     T: serde::Serialize,
 {

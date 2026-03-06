@@ -2,9 +2,7 @@ use std::str::FromStr;
 
 use chrono::Utc;
 
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use dto::json::DeploymentSocialConnectionUpsert;
 use models::{DeploymentSocialConnection, OauthCredentials, SocialConnectionProvider};
 
@@ -135,19 +133,6 @@ impl UpsertDeploymentSocialConnectionCommand {
             .await?;
 
         Ok(connection)
-    }
-}
-
-impl Command for UpsertDeploymentSocialConnectionCommand {
-    type Output = DeploymentSocialConnection;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            app_state.sf.next_id()? as i64,
-            &app_state.redis_client,
-        )
-        .await
     }
 }
 

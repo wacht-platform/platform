@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::{AiTool, AiToolConfiguration, AiToolType};
 
 use chrono::Utc;
@@ -117,15 +115,6 @@ impl CreateAiToolCommand {
             deployment_id: tool.deployment_id,
             configuration,
         })
-    }
-}
-
-impl Command for CreateAiToolCommand {
-    type Output = AiTool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -301,14 +290,6 @@ impl UpdateAiToolCommand {
     }
 }
 
-impl Command for UpdateAiToolCommand {
-    type Output = AiTool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct DeleteAiToolCommand {
     pub deployment_id: i64,
     pub tool_id: i64,
@@ -365,13 +346,5 @@ impl DeleteAiToolCommand {
         .map_err(AppError::Database)?;
 
         Ok(())
-    }
-}
-
-impl Command for DeleteAiToolCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

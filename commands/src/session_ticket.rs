@@ -1,6 +1,5 @@
 use chrono::Utc;
 use common::error::AppError;
-use common::state::AppState;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 
@@ -120,19 +119,6 @@ impl GenerateSessionTicketCommand {
 pub struct GenerateSessionTicketResponse {
     pub ticket: String,
     pub expires_at: i64,
-}
-
-impl crate::Command for GenerateSessionTicketCommand {
-    type Output = GenerateSessionTicketResponse;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let ticket_id = app_state
-            .sf
-            .next_id()
-            .map_err(|e| AppError::Internal(format!("Failed to generate ticket ID: {}", e)))?
-            as i64;
-        self.execute_with(&app_state.redis_client, ticket_id).await
-    }
 }
 
 impl GenerateSessionTicketCommand {

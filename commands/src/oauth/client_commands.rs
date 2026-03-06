@@ -1,6 +1,4 @@
-use crate::Command;
 use common::{EncryptionService, HasDbRouter, HasEncryptionService, error::AppError};
-use common::state::AppState;
 use models::api_key::JwksDocument;
 use queries::oauth::OAuthClientData;
 use sha2::{Digest, Sha256};
@@ -204,19 +202,6 @@ fn validate_redirect_uris(
     }
 
     Ok(())
-}
-
-impl Command for CreateOAuthClientCommand {
-    type Output = OAuthClientWithSecret;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            &app_state.encryption_service,
-            app_state.sf.next_id()? as i64,
-        )
-        .await
-    }
 }
 
 impl CreateOAuthClientCommand {
@@ -460,14 +445,6 @@ pub struct SetOAuthClientRegistrationAccessToken {
     pub registration_access_token_hash: Option<String>,
 }
 
-impl Command for SetOAuthClientRegistrationAccessToken {
-    type Output = bool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl SetOAuthClientRegistrationAccessToken {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
     where
@@ -504,14 +481,6 @@ impl SetOAuthClientRegistrationAccessToken {
 pub struct DeactivateOAuthClient {
     pub oauth_app_id: i64,
     pub client_id: String,
-}
-
-impl Command for DeactivateOAuthClient {
-    type Output = bool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl DeactivateOAuthClient {
@@ -568,19 +537,8 @@ pub struct UpdateOAuthClientSettings {
     pub software_version: Option<String>,
 }
 
-impl Command for UpdateOAuthClientSettings {
-    type Output = Option<OAuthClientData>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateOAuthClientSettings {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-    ) -> Result<Option<OAuthClientData>, AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Option<OAuthClientData>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -588,10 +546,7 @@ impl UpdateOAuthClientSettings {
         self.execute_with_deps(conn).await
     }
 
-    async fn execute_with_deps<C>(
-        self,
-        mut conn: C,
-    ) -> Result<Option<OAuthClientData>, AppError>
+    async fn execute_with_deps<C>(self, mut conn: C) -> Result<Option<OAuthClientData>, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {
@@ -1001,14 +956,6 @@ impl RotateOAuthClientSecret {
         let hash = format!("{:x}", hasher.finalize());
         let encrypted = encryptor.encrypt(&secret)?;
         Ok((secret, hash, encrypted))
-    }
-}
-
-impl Command for RotateOAuthClientSecret {
-    type Output = Option<String>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
     }
 }
 

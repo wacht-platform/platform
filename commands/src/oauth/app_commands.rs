@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::api_key::OAuthScopeDefinition;
 use queries::oauth::OAuthAppData;
 
@@ -14,19 +12,6 @@ pub struct CreateOAuthAppCommand {
     pub supported_scopes: Vec<String>,
     pub scope_definitions: Option<Vec<OAuthScopeDefinition>>,
     pub allow_dynamic_client_registration: bool,
-}
-
-impl Command for CreateOAuthAppCommand {
-    type Output = OAuthAppData;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            &app_state.cloudflare_service,
-            app_state.sf.next_id()? as i64,
-        )
-        .await
-    }
 }
 
 impl CreateOAuthAppCommand {
@@ -132,7 +117,9 @@ impl CreateOAuthAppCommand {
             Ok(row) => row,
             Err(e) => {
                 if let Some(custom_hostname_id) = cloudflare_custom_hostname_id {
-                    let _ = cloudflare_service.delete_custom_hostname(&custom_hostname_id).await;
+                    let _ = cloudflare_service
+                        .delete_custom_hostname(&custom_hostname_id)
+                        .await;
                 }
                 return Err(e.into());
             }
@@ -176,15 +163,6 @@ pub struct VerifyOAuthAppDomainResult {
 pub struct VerifyOAuthAppDomainCommand {
     pub deployment_id: i64,
     pub oauth_app_slug: String,
-}
-
-impl Command for VerifyOAuthAppDomainCommand {
-    type Output = VerifyOAuthAppDomainResult;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), &app_state.cloudflare_service)
-            .await
-    }
 }
 
 impl VerifyOAuthAppDomainCommand {
@@ -234,19 +212,8 @@ impl VerifyOAuthAppDomainCommand {
     }
 }
 
-impl Command for UpdateOAuthAppCommand {
-    type Output = OAuthAppData;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateOAuthAppCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-    ) -> Result<OAuthAppData, AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OAuthAppData, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

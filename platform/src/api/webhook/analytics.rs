@@ -3,10 +3,7 @@ use common::state::AppState;
 use dto::json::webhook_requests::{WebhookAnalyticsQuery, WebhookTimeseriesQuery};
 use models::webhook_analytics::{WebhookAnalyticsResult, WebhookTimeseriesResult};
 
-use crate::application::{
-    response::ApiResult,
-    webhook_analytics as webhook_analytics_use_cases,
-};
+use crate::application::{response::ApiResult, webhook_analytics as webhook_analytics_use_cases};
 use crate::middleware::RequireDeployment;
 
 pub async fn get_webhook_analytics(

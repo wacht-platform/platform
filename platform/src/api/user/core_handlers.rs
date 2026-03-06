@@ -40,7 +40,8 @@ pub async fn get_active_user_list(
     RequireDeployment(deployment_id): RequireDeployment,
     QueryParams(params): QueryParams<ActiveUserListQueryParams>,
 ) -> ApiResult<PaginatedResponse<UserWithIdentifiers>> {
-    let users = user_core_use_cases::get_active_user_list(&app_state, deployment_id, params).await?;
+    let users =
+        user_core_use_cases::get_active_user_list(&app_state, deployment_id, params).await?;
     Ok(users.into())
 }
 
@@ -92,8 +93,9 @@ pub async fn create_user(
 
     validate_create_user_request(&app_state, deployment_id, &request).await?;
 
-    let user = user_core_use_cases::create_user(&app_state, deployment_id, request, profile_image_data)
-        .await?;
+    let user =
+        user_core_use_cases::create_user(&app_state, deployment_id, request, profile_image_data)
+            .await?;
     Ok(user.into())
 }
 

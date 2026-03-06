@@ -1,14 +1,12 @@
 use axum::{extract::State, response::Json};
 
-use crate::application::{
-    billing as billing_use_cases,
-    response::ApiResult,
-};
+use crate::application::{billing as billing_use_cases, response::ApiResult};
 use common::state::AppState;
 use wacht::middleware::RequireAuth;
 
 use super::types::{
-    ChangePlanRequest, CheckoutResponse, CreateCheckoutRequest, CreatePulseCheckoutRequest, owner_id_from_auth,
+    ChangePlanRequest, CheckoutResponse, CreateCheckoutRequest, CreatePulseCheckoutRequest,
+    owner_id_from_auth,
 };
 
 pub async fn create_checkout(

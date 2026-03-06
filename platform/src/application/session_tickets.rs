@@ -1,5 +1,5 @@
-use commands::session_ticket::{AgentSessionIdentifier, SessionTicketType};
 use commands::GenerateSessionTicketCommand;
+use commands::session_ticket::{AgentSessionIdentifier, SessionTicketType};
 use dto::json::session_ticket::{AgentSessionIdentifierDto, CreateSessionTicketRequest};
 
 use crate::application::{AppError, AppState};
@@ -60,9 +60,12 @@ fn require_non_empty_string(
 }
 
 fn require_non_empty_agent_ids(value: Option<Vec<String>>) -> Result<Vec<String>, AppError> {
-    let value = value.ok_or_else(|| bad_request("agent_ids is required for agent_access tickets"))?;
+    let value =
+        value.ok_or_else(|| bad_request("agent_ids is required for agent_access tickets"))?;
     if value.is_empty() {
-        return Err(bad_request("agent_ids cannot be empty for agent_access tickets"));
+        return Err(bad_request(
+            "agent_ids cannot be empty for agent_access tickets",
+        ));
     }
     Ok(value)
 }
@@ -85,7 +88,8 @@ fn apply_ticket_type_fields(
             command = command.agent_ids(agent_ids);
 
             if let Some(identifier) = request.agent_session_identifier.take() {
-                command = command.agent_session_identifier(map_agent_session_identifier(identifier));
+                command =
+                    command.agent_session_identifier(map_agent_session_identifier(identifier));
             }
         }
         SessionTicketType::WebhookAppAccess => {

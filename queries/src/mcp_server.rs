@@ -72,14 +72,6 @@ impl GetMcpServersQuery {
     }
 }
 
-impl Query for GetMcpServersQuery {
-    type Output = Vec<McpServer>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetMcpServerByIdQuery {
     deployment_id: i64,
     mcp_server_id: i64,
@@ -124,14 +116,6 @@ impl GetMcpServerByIdQuery {
             name: row.get("name"),
             config,
         })
-    }
-}
-
-impl Query for GetMcpServerByIdQuery {
-    type Output = McpServer;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -255,14 +239,6 @@ impl GetActiveAgentMcpServerIdsForContextQuery {
     }
 }
 
-impl Query for GetActiveAgentMcpServerIdsForContextQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl GetActiveAgentMcpServerConnectionMetadataQuery {
     pub async fn execute_with<'a, A>(
         &self,
@@ -304,21 +280,5 @@ impl GetActiveAgentMcpServerConnectionMetadataQuery {
             })?;
 
         Ok(metadata)
-    }
-}
-
-impl Query for GetActiveAgentMcpServerConnectionMetadataQuery {
-    type Output = Option<McpConnectionMetadata>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
-impl Query for GetAgentMcpServersQuery {
-    type Output = Vec<McpServer>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

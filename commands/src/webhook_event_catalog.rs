@@ -1,10 +1,8 @@
 use serde::Deserialize;
-use sqlx::query_as;
 use sqlx::Connection;
+use sqlx::query_as;
 
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::webhook::{WebhookEventCatalog, WebhookEventDefinition};
 
 #[derive(Debug, Deserialize)]
@@ -14,14 +12,6 @@ pub struct CreateEventCatalogCommand {
     pub name: String,
     pub description: Option<String>,
     pub events: Vec<WebhookEventDefinition>,
-}
-
-impl Command for CreateEventCatalogCommand {
-    type Output = WebhookEventCatalog;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl CreateEventCatalogCommand {
@@ -67,14 +57,6 @@ pub struct UpdateEventCatalogCommand {
     pub description: Option<String>,
 }
 
-impl Command for UpdateEventCatalogCommand {
-    type Output = WebhookEventCatalog;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateEventCatalogCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
     where
@@ -115,14 +97,6 @@ pub struct AppendEventsToCatalogCommand {
     pub deployment_id: i64,
     pub slug: String,
     pub events: Vec<WebhookEventDefinition>,
-}
-
-impl Command for AppendEventsToCatalogCommand {
-    type Output = WebhookEventCatalog;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl AppendEventsToCatalogCommand {
@@ -206,14 +180,6 @@ pub struct ArchiveEventInCatalogCommand {
     pub slug: String,
     pub event_name: String,
     pub is_archived: bool,
-}
-
-impl Command for ArchiveEventInCatalogCommand {
-    type Output = WebhookEventCatalog;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl ArchiveEventInCatalogCommand {
@@ -352,7 +318,10 @@ impl ListEventCatalogsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Vec<WebhookEventCatalog>, AppError>
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+    ) -> Result<Vec<WebhookEventCatalog>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

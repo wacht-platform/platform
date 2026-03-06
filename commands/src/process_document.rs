@@ -1,7 +1,5 @@
-use crate::{Command, DispatchDocumentBatchTaskCommand};
 use chrono::Utc;
 use common::error::AppError;
-use common::state::AppState;
 use sqlx::Connection;
 use std::future::Future;
 
@@ -66,7 +64,8 @@ impl ProcessDocumentCommand {
             .into_bytes()
             .to_vec();
 
-        let text = text_processing_service.extract_text_from_file(&file_content, &document.file_type)?;
+        let text =
+            text_processing_service.extract_text_from_file(&file_content, &document.file_type)?;
         let cleaned_text = text_processing_service.clean_text(&text);
         let chunks = text_processing_service.chunk_text(&cleaned_text, 2000, 200)?;
 
@@ -166,30 +165,5 @@ impl ProcessDocumentCommand {
             document.title,
             chunks.len()
         ))
-    }
-}
-
-impl Command for ProcessDocumentCommand {
-    type Output = String;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let storage_client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
-        self.execute_with(
-            app_state.db_router.writer(),
-            storage_client,
-            &app_state.text_processing_service,
-            |deployment_id, knowledge_base_id, batch_size| async move {
-                let dispatch_task = DispatchDocumentBatchTaskCommand::new(
-                    deployment_id,
-                    knowledge_base_id,
-                    batch_size,
-                );
-                dispatch_task.execute_with(&app_state.nats_client).await
-            },
-        )
-        .await
     }
 }

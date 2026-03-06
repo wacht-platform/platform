@@ -6,15 +6,13 @@ use axum::body::Body;
 use axum::extract::{Query as QueryParams, State};
 use axum::http::{HeaderMap, header, header::COOKIE};
 use axum::response::{IntoResponse, Response};
-use common::state::AppState;
 use common::db_router::ReadConsistency;
+use common::state::AppState;
 use common::utils::jwt::verify_token;
 use dto::json::{AgentStreamMessageType, StreamEvent};
 use futures::StreamExt;
 use models::ConversationContent;
-use queries::{
-    GetAgentSessionQuery, GetDeploymentWithKeyPairQuery, GetExecutionContextQuery,
-};
+use queries::{GetAgentSessionQuery, GetDeploymentWithKeyPairQuery, GetExecutionContextQuery};
 use serde::Deserialize;
 use std::str::FromStr;
 use std::time::Duration;

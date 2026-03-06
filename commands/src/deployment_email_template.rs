@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use dto::params::deployment::DeploymentNameParams;
 use models::EmailTemplate;
 use scraper::{Html, Selector};
@@ -46,15 +44,6 @@ impl UpdateDeploymentEmailTemplateCommand {
             template_name,
             template,
         }
-    }
-}
-
-impl Command for UpdateDeploymentEmailTemplateCommand {
-    type Output = EmailTemplate;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
-            .await
     }
 }
 

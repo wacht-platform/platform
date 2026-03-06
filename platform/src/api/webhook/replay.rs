@@ -8,10 +8,7 @@ use dto::json::webhook_requests::{
     ReplayTaskStatusResponse, ReplayWebhookDeliveryRequest, ReplayWebhookDeliveryResponse,
 };
 
-use crate::application::{
-    response::ApiResult,
-    webhook_replay as webhook_replay_use_cases,
-};
+use crate::application::{response::ApiResult, webhook_replay as webhook_replay_use_cases};
 use crate::middleware::RequireDeployment;
 
 pub async fn replay_webhook_delivery(
@@ -20,9 +17,13 @@ pub async fn replay_webhook_delivery(
     Path(app_slug): Path<String>,
     Json(request): Json<ReplayWebhookDeliveryRequest>,
 ) -> ApiResult<ReplayWebhookDeliveryResponse> {
-    let response =
-        webhook_replay_use_cases::replay_webhook_delivery(&app_state, deployment_id, app_slug, request)
-            .await?;
+    let response = webhook_replay_use_cases::replay_webhook_delivery(
+        &app_state,
+        deployment_id,
+        app_slug,
+        request,
+    )
+    .await?;
 
     Ok(response.into())
 }

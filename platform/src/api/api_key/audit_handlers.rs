@@ -11,8 +11,9 @@ pub async fn get_api_audit_logs(
     Path(app_slug): Path<String>,
     Query(params): Query<ListApiAuditLogsQuery>,
 ) -> ApiResult<ApiAuditLogsResponse> {
-    let result = api_key_audit_use_cases::get_api_audit_logs(&app_state, deployment_id, app_slug, params)
-        .await?;
+    let result =
+        api_key_audit_use_cases::get_api_audit_logs(&app_state, deployment_id, app_slug, params)
+            .await?;
     Ok(result.into())
 }
 
@@ -22,9 +23,13 @@ pub async fn get_api_audit_analytics(
     Path(app_slug): Path<String>,
     Query(params): Query<GetApiAuditAnalyticsQuery>,
 ) -> ApiResult<ApiAuditAnalyticsResponse> {
-    let result =
-        api_key_audit_use_cases::get_api_audit_analytics(&app_state, deployment_id, app_slug, params)
-            .await?;
+    let result = api_key_audit_use_cases::get_api_audit_analytics(
+        &app_state,
+        deployment_id,
+        app_slug,
+        params,
+    )
+    .await?;
     Ok(result.into())
 }
 

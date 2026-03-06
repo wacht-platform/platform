@@ -1,8 +1,6 @@
-use commands::{
-    segments::{
-        AssignSegmentCommand, CreateSegmentCommand, DeleteSegmentCommand, RemoveSegmentCommand,
-        UpdateSegmentCommand,
-    },
+use commands::segments::{
+    AssignSegmentCommand, CreateSegmentCommand, DeleteSegmentCommand, RemoveSegmentCommand,
+    UpdateSegmentCommand,
 };
 use models::{AnalyzedEntity, Segment};
 use queries::segments::{GetSegmentDataQuery, GetSegmentsQuery};

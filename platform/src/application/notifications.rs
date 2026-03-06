@@ -9,8 +9,8 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeSet;
 
-use crate::application::response::ApiResult;
 use crate::application::AppState;
+use crate::application::response::ApiResult;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateNotificationRequest {
@@ -62,7 +62,11 @@ async fn add_organization_recipients(
         .deployment_id(deployment_id)
         .organization_id(org_id)
         .build()?
-        .execute_with(state.db_router.reader(common::db_router::ReadConsistency::Eventual))
+        .execute_with(
+            state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Eventual),
+        )
         .await?;
     recipients.extend(user_ids);
 
@@ -83,7 +87,11 @@ async fn add_workspace_recipients(
         .deployment_id(deployment_id)
         .workspace_id(ws_id)
         .build()?
-        .execute_with(state.db_router.reader(common::db_router::ReadConsistency::Eventual))
+        .execute_with(
+            state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Eventual),
+        )
         .await?;
     recipients.extend(user_ids);
 

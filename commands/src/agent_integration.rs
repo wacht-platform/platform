@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::Utc;
 use common::{HasDbRouter, HasIdGenerator, error::AppError};
-use common::state::AppState;
 use models::{AgentIntegration, IntegrationType};
 use sqlx::Row;
 use std::str::FromStr;
@@ -42,14 +40,6 @@ impl CreateAgentIntegrationCommand {
             name,
             config,
         }
-    }
-}
-
-impl Command for CreateAgentIntegrationCommand {
-    type Output = AgentIntegration;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
     }
 }
 
@@ -189,14 +179,6 @@ impl UpdateAgentIntegrationCommand {
     }
 }
 
-impl Command for UpdateAgentIntegrationCommand {
-    type Output = AgentIntegration;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateAgentIntegrationCommand {
     pub async fn execute_with(
         self,
@@ -321,14 +303,6 @@ impl DeleteAgentIntegrationCommand {
             deployment_id,
             integration_id,
         }
-    }
-}
-
-impl Command for DeleteAgentIntegrationCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

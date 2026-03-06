@@ -4,12 +4,11 @@ use serde_json::Value;
 use sqlx::query;
 
 use common::error::AppError;
-use common::state::AppState;
 use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
 use dto::json::nats::NatsTaskMessage;
 
-use super::{Command, GetSubscribedEndpointsCommand, webhook_subscription::evaluate_filter};
+use super::{GetSubscribedEndpointsCommand, webhook_subscription::evaluate_filter};
 
 #[derive(Debug, Deserialize)]
 pub struct TriggerWebhookEventCommand {
@@ -158,7 +157,9 @@ impl TriggerWebhookEventCommand {
                 .publish(
                     "worker.tasks.webhook.deliver",
                     serde_json::to_vec(&task_message)
-                        .map_err(|e| AppError::Internal(format!("Failed to serialize task: {}", e)))?
+                        .map_err(|e| {
+                            AppError::Internal(format!("Failed to serialize task: {}", e))
+                        })?
                         .into(),
                 )
                 .await
@@ -178,21 +179,6 @@ pub struct TriggerWebhookEventResult {
     pub delivery_ids: Vec<i64>,
     pub filtered_count: usize,
     pub delivered_count: usize,
-}
-
-impl Command for TriggerWebhookEventCommand {
-    type Output = TriggerWebhookEventResult;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            &app_state.redis_client,
-            &app_state.clickhouse_service,
-            &app_state.nats_client,
-            || Ok(app_state.sf.next_id()? as i64),
-        )
-        .await
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -280,7 +266,9 @@ impl ReplayWebhookDeliveryCommand {
                 endpoint.deployment_id,
                 self.deployment_id
             );
-            return Err(AppError::BadRequest("Endpoint belongs to different deployment".to_string()));
+            return Err(AppError::BadRequest(
+                "Endpoint belongs to different deployment".to_string(),
+            ));
         }
 
         let endpoint_active = query!(
@@ -384,19 +372,5 @@ impl ReplayWebhookDeliveryCommand {
             .map_err(|e| AppError::Internal(format!("Failed to publish replay to NATS: {}", e)))?;
 
         Ok(new_delivery.id)
-    }
-}
-
-impl Command for ReplayWebhookDeliveryCommand {
-    type Output = i64; // New delivery ID
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            &app_state.clickhouse_service,
-            &app_state.nats_client,
-            || Ok(app_state.sf.next_id()? as i64),
-        )
-        .await
     }
 }

@@ -1,7 +1,4 @@
 use common::error::AppError;
-use common::state::AppState;
-
-use super::Query;
 
 pub struct GetOrganizationNameQuery {
     organization_id: i64,
@@ -25,13 +22,5 @@ impl GetOrganizationNameQuery {
         .await?;
 
         Ok(row.name)
-    }
-}
-
-impl Query for GetOrganizationNameQuery {
-    type Output = String;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

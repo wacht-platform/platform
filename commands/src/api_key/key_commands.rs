@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use common::state::AppState;
 use models::api_key::{ApiKey, ApiKeyWithSecret};
 use sha2::{Digest, Sha256};
 
@@ -104,15 +102,6 @@ impl CreateApiKeyCommand {
             .collect();
 
         (full_key, key_hash, key_suffix)
-    }
-}
-
-impl Command for CreateApiKeyCommand {
-    type Output = ApiKeyWithSecret;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -239,14 +228,6 @@ pub struct RevokeApiKeyCommand {
     pub reason: Option<String>,
 }
 
-impl Command for RevokeApiKeyCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl RevokeApiKeyCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -290,15 +271,6 @@ impl RevokeApiKeyCommand {
 pub struct RotateApiKeyCommand {
     pub key_id: i64,
     pub deployment_id: i64,
-}
-
-impl Command for RotateApiKeyCommand {
-    type Output = ApiKeyWithSecret;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
-    }
 }
 
 impl RotateApiKeyCommand {

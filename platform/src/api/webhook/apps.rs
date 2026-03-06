@@ -30,7 +30,8 @@ pub async fn create_webhook_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateWebhookAppRequest>,
 ) -> ApiResult<WebhookApp> {
-    let app = webhook_apps_use_cases::create_webhook_app(&app_state, deployment_id, request).await?;
+    let app =
+        webhook_apps_use_cases::create_webhook_app(&app_state, deployment_id, request).await?;
     Ok(app.into())
 }
 
@@ -47,7 +48,8 @@ pub async fn create_event_catalog(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateEventCatalogRequest>,
 ) -> ApiResult<models::webhook::WebhookEventCatalog> {
-    let catalog = webhook_apps_use_cases::create_event_catalog(&app_state, deployment_id, request).await?;
+    let catalog =
+        webhook_apps_use_cases::create_event_catalog(&app_state, deployment_id, request).await?;
     Ok(catalog.into())
 }
 
@@ -56,7 +58,8 @@ pub async fn get_event_catalog(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(slug): Path<String>,
 ) -> ApiResult<models::webhook::WebhookEventCatalog> {
-    let catalog = webhook_apps_use_cases::get_event_catalog(&app_state, deployment_id, slug).await?;
+    let catalog =
+        webhook_apps_use_cases::get_event_catalog(&app_state, deployment_id, slug).await?;
     Ok(catalog.into())
 }
 
@@ -141,7 +144,8 @@ pub async fn get_webhook_events(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
 ) -> ApiResult<GetAvailableEventsResponse> {
-    let events = webhook_apps_use_cases::get_webhook_events(&app_state, deployment_id, app_slug).await?;
+    let events =
+        webhook_apps_use_cases::get_webhook_events(&app_state, deployment_id, app_slug).await?;
     Ok(events.into())
 }
 

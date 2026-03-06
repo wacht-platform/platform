@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::Utc;
 use common::error::AppError;
-use common::state::AppState;
 use redis::AsyncCommands;
 
 const OAUTH_GRANT_LAST_USED_DIRTY_KEY: &str = "oauth:grant:last_used:dirty";
@@ -10,14 +8,6 @@ pub struct EnqueueOAuthGrantLastUsed {
     pub deployment_id: i64,
     pub oauth_client_id: i64,
     pub grant_id: i64,
-}
-
-impl Command for EnqueueOAuthGrantLastUsed {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.redis_client).await
-    }
 }
 
 impl EnqueueOAuthGrantLastUsed {
@@ -47,15 +37,6 @@ impl EnqueueOAuthGrantLastUsed {
 
 pub struct SyncOAuthGrantLastUsedBatch {
     pub batch_size: usize,
-}
-
-impl Command for SyncOAuthGrantLastUsedBatch {
-    type Output = usize;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.redis_client, app_state.db_router.writer())
-            .await
-    }
 }
 
 impl SyncOAuthGrantLastUsedBatch {

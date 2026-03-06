@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use josekit::jws::{ES256, JwsHeader};
 use josekit::jwt::{self, JwtPayload};
 
@@ -116,12 +114,4 @@ impl GenerateImpersonationTokenCommand {
 pub struct GenerateImpersonationTokenResponse {
     pub token: String,
     pub redirect_url: String,
-}
-
-impl Command for GenerateImpersonationTokenCommand {
-    type Output = GenerateImpersonationTokenResponse;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }

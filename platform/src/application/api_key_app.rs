@@ -1,5 +1,5 @@
-use commands::{
-    api_key_app::{CreateApiAuthAppCommand, DeleteApiAuthAppCommand, UpdateApiAuthAppCommand},
+use commands::api_key_app::{
+    CreateApiAuthAppCommand, DeleteApiAuthAppCommand, UpdateApiAuthAppCommand,
 };
 use common::db_router::ReadConsistency;
 use common::state::AppState;

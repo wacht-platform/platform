@@ -1,8 +1,7 @@
 use commands::{
-    AttachKnowledgeBaseToAgentCommand, CreateAiKnowledgeBaseCommand,
-    DeleteAiKnowledgeBaseCommand, DeleteKnowledgeBaseDocumentCommand,
-    DetachKnowledgeBaseFromAgentCommand, UpdateAiKnowledgeBaseCommand,
-    UploadKnowledgeBaseDocumentCommand,
+    AttachKnowledgeBaseToAgentCommand, CreateAiKnowledgeBaseCommand, DeleteAiKnowledgeBaseCommand,
+    DeleteKnowledgeBaseDocumentCommand, DetachKnowledgeBaseFromAgentCommand,
+    UpdateAiKnowledgeBaseCommand, UploadKnowledgeBaseDocumentCommand,
 };
 use common::ReadConsistency;
 use common::error::AppError;
@@ -22,8 +21,8 @@ use queries::{
 use crate::{
     api::pagination::paginate_results,
     application::{
-        response::{ApiErrorResponse, PaginatedResponse},
         AppState,
+        response::{ApiErrorResponse, PaginatedResponse},
     },
 };
 
@@ -59,7 +58,11 @@ fn sanitize_upload_filename(name: &str) -> Option<String> {
 }
 
 fn knowledge_base_not_found_error() -> ApiErrorResponse {
-    (axum::http::StatusCode::NOT_FOUND, "Knowledge base not found".to_string()).into()
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        "Knowledge base not found".to_string(),
+    )
+        .into()
 }
 
 pub async fn get_ai_knowledge_bases(
@@ -190,8 +193,10 @@ pub async fn upload_knowledge_base_document(
     kb_id: i64,
     input: UploadKnowledgeBaseDocumentInput,
 ) -> Result<AiKnowledgeBaseDocument, ApiErrorResponse> {
-    let file_name = sanitize_upload_filename(&input.file_name)
-        .ok_or((axum::http::StatusCode::BAD_REQUEST, "Invalid filename".to_string()))?;
+    let file_name = sanitize_upload_filename(&input.file_name).ok_or((
+        axum::http::StatusCode::BAD_REQUEST,
+        "Invalid filename".to_string(),
+    ))?;
     let file_type = input
         .file_type
         .unwrap_or("application/octet-stream".to_string());
@@ -205,9 +210,11 @@ pub async fn upload_knowledge_base_document(
     });
 
     if input.file_content.is_empty() {
-        return Err(
-            (axum::http::StatusCode::BAD_REQUEST, "File content is empty".to_string()).into(),
-        );
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            "File content is empty".to_string(),
+        )
+            .into());
     }
 
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
@@ -258,7 +265,11 @@ pub async fn get_knowledge_base_documents(
         .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
-    Ok(paginate_results(documents, limit as i32, Some(offset as i64)))
+    Ok(paginate_results(
+        documents,
+        limit as i32,
+        Some(offset as i64),
+    ))
 }
 
 pub async fn delete_knowledge_base_document(

@@ -301,11 +301,3 @@ impl CreateProjectWithStagingDeploymentCommandBuilder {
         })
     }
 }
-
-impl Command for CreateProjectWithStagingDeploymentCommand {
-    type Output = ProjectWithDeployments;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}

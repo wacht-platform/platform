@@ -4,9 +4,7 @@ use serde_json::Value as JsonValue;
 use sqlx::{query, query_as};
 use tracing::warn;
 
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::notification::{Notification, NotificationRow, NotificationSeverity};
 
 // NATS notification message
@@ -105,15 +103,6 @@ impl CreateNotificationCommand {
     pub fn with_workspace(mut self, workspace_id: i64) -> Self {
         self.workspace_id = Some(workspace_id);
         self
-    }
-}
-
-impl Command for CreateNotificationCommand {
-    type Output = Notification;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), &app_state.nats_client)
-            .await
     }
 }
 
@@ -313,14 +302,6 @@ impl MarkNotificationReadCommand {
     }
 }
 
-impl Command for MarkNotificationReadCommand {
-    type Output = bool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl MarkNotificationReadCommandBuilder {
     pub fn notification_id(mut self, notification_id: i64) -> Self {
         self.notification_id = Some(notification_id);
@@ -385,14 +366,6 @@ impl MarkAllNotificationsReadCommand {
         .await?;
 
         Ok(result.rows_affected() as i64)
-    }
-}
-
-impl Command for MarkAllNotificationsReadCommand {
-    type Output = i64;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -467,14 +440,6 @@ impl ArchiveNotificationCommand {
     }
 }
 
-impl Command for ArchiveNotificationCommand {
-    type Output = bool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl ArchiveNotificationCommandBuilder {
     pub fn notification_id(mut self, notification_id: i64) -> Self {
         self.notification_id = Some(notification_id);
@@ -529,14 +494,6 @@ impl DeleteNotificationCommand {
     }
 }
 
-impl Command for DeleteNotificationCommand {
-    type Output = bool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl DeleteNotificationCommandBuilder {
     pub fn notification_id(mut self, notification_id: i64) -> Self {
         self.notification_id = Some(notification_id);
@@ -579,13 +536,5 @@ impl CleanupExpiredNotificationsCommand {
         .await?;
 
         Ok(result.rows_affected() as i64)
-    }
-}
-
-impl Command for CleanupExpiredNotificationsCommand {
-    type Output = i64;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -1,8 +1,5 @@
 use common::error::AppError;
-use common::state::AppState;
 use models::hybrid_search::{FullTextSearchResult, HybridSearchKbResult, HybridSearchMemoryResult};
-
-use super::Query;
 
 /// Query for hybrid search in knowledge base
 pub struct HybridSearchKnowledgeBaseQuery {
@@ -132,14 +129,6 @@ impl HybridSearchKnowledgeBaseQuery {
     }
 }
 
-impl Query for HybridSearchKnowledgeBaseQuery {
-    type Output = Vec<HybridSearchKbResult>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 /// Query for hybrid search in memories
 pub struct HybridSearchMemoriesQuery {
     pub query_text: String,
@@ -211,14 +200,6 @@ impl HybridSearchMemoriesQuery {
     }
 }
 
-impl Query for HybridSearchMemoriesQuery {
-    type Output = Vec<HybridSearchMemoryResult>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 /// Query for pure full-text search in knowledge base
 pub struct FullTextSearchKnowledgeBaseQuery {
     pub query_text: String,
@@ -267,13 +248,5 @@ impl FullTextSearchKnowledgeBaseQuery {
         })?;
 
         Ok(results)
-    }
-}
-
-impl Query for FullTextSearchKnowledgeBaseQuery {
-    type Output = Vec<FullTextSearchResult>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

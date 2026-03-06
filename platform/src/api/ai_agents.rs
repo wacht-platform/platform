@@ -50,8 +50,8 @@ pub async fn get_ai_agent_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<AiAgentWithDetails> {
-    let agent = ai_agents_use_cases::get_ai_agent_by_id(&app_state, deployment_id, params.agent_id)
-        .await?;
+    let agent =
+        ai_agents_use_cases::get_ai_agent_by_id(&app_state, deployment_id, params.agent_id).await?;
     Ok(agent.into())
 }
 

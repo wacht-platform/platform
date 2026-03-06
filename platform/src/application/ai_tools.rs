@@ -1,6 +1,6 @@
 use commands::{
-    AttachToolToAgentCommand, CreateAiToolCommand, DeleteAiToolCommand,
-    DetachToolFromAgentCommand, UpdateAiToolCommand,
+    AttachToolToAgentCommand, CreateAiToolCommand, DeleteAiToolCommand, DetachToolFromAgentCommand,
+    UpdateAiToolCommand,
 };
 use common::ReadConsistency;
 use common::error::AppError;
@@ -13,10 +13,7 @@ use queries::{GetAgentToolsQuery, GetAiToolByIdQuery, GetAiToolsQuery};
 
 use crate::{
     api::pagination::paginate_results,
-    application::{
-        response::PaginatedResponse,
-        AppState,
-    },
+    application::{AppState, response::PaginatedResponse},
 };
 
 pub async fn get_ai_tools(

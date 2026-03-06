@@ -38,7 +38,9 @@ impl AgentExecutor {
             content,
             message_type,
         );
-        command.execute_with(self.ctx.app_state.db_router.writer()).await
+        command
+            .execute_with(self.ctx.app_state.db_router.writer())
+            .await
     }
 
     pub(super) async fn store_user_message(

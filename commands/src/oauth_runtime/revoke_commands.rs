@@ -1,17 +1,7 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 
 pub struct RevokeOAuthRefreshTokenById {
     pub refresh_token_id: i64,
-}
-
-impl Command for RevokeOAuthRefreshTokenById {
-    type Output = bool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl RevokeOAuthRefreshTokenById {
@@ -40,14 +30,6 @@ pub struct SetOAuthRefreshTokenReplacement {
     pub new_refresh_token_id: i64,
 }
 
-impl Command for SetOAuthRefreshTokenReplacement {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl SetOAuthRefreshTokenReplacement {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -73,14 +55,6 @@ pub struct RevokeOAuthAccessTokenByHash {
     pub deployment_id: i64,
     pub oauth_client_id: i64,
     pub token_hash: String,
-}
-
-impl Command for RevokeOAuthAccessTokenByHash {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl RevokeOAuthAccessTokenByHash {
@@ -114,14 +88,6 @@ pub struct RevokeOAuthRefreshTokenByHash {
     pub token_hash: String,
 }
 
-impl Command for RevokeOAuthRefreshTokenByHash {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl RevokeOAuthRefreshTokenByHash {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -151,14 +117,6 @@ pub struct RevokeOAuthRefreshTokenFamily {
     pub deployment_id: i64,
     pub oauth_client_id: i64,
     pub root_refresh_token_id: i64,
-}
-
-impl Command for RevokeOAuthRefreshTokenFamily {
-    type Output = u64;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl RevokeOAuthRefreshTokenFamily {
@@ -204,14 +162,6 @@ pub struct RevokeOAuthTokensByGrant {
     pub deployment_id: i64,
     pub oauth_client_id: i64,
     pub oauth_grant_id: i64,
-}
-
-impl Command for RevokeOAuthTokensByGrant {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl RevokeOAuthTokensByGrant {

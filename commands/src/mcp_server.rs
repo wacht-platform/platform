@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::Utc;
 use common::error::AppError;
-use common::state::AppState;
 use models::{McpServer, McpServerConfig};
 use sqlx::Row;
 
@@ -65,15 +63,6 @@ impl CreateMcpServerCommand {
             name: row.get("name"),
             config,
         })
-    }
-}
-
-impl Command for CreateMcpServerCommand {
-    type Output = McpServer;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -172,14 +161,6 @@ impl UpdateMcpServerCommand {
     }
 }
 
-impl Command for UpdateMcpServerCommand {
-    type Output = McpServer;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct DeleteMcpServerCommand {
     pub deployment_id: i64,
     pub mcp_server_id: i64,
@@ -206,14 +187,6 @@ impl DeleteMcpServerCommand {
             .map_err(AppError::Database)?;
 
         Ok(())
-    }
-}
-
-impl Command for DeleteMcpServerCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -281,14 +254,6 @@ impl AttachMcpServerToAgentCommand {
     }
 }
 
-impl Command for AttachMcpServerToAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct DetachMcpServerFromAgentCommand {
     pub deployment_id: i64,
     pub agent_id: i64,
@@ -333,13 +298,5 @@ impl DetachMcpServerFromAgentCommand {
         .map_err(AppError::Database)?;
 
         Ok(())
-    }
-}
-
-impl Command for DetachMcpServerFromAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -7,9 +7,7 @@ use commands::{
 };
 use common::{DodoClient, ReadConsistency, state::AppState};
 use models::pulse_transaction::PulseTransactionType;
-use queries::{
-    billing::{GetDeploymentProviderSubscriptionQuery, ProviderSubscriptionInfo},
-};
+use queries::billing::{GetDeploymentProviderSubscriptionQuery, ProviderSubscriptionInfo};
 use redis::AsyncCommands as _;
 use tracing::{error, info, warn};
 

@@ -1,6 +1,4 @@
-use crate::Query;
 use common::error::AppError;
-use common::state::AppState;
 use models::plan_features::{PlanFeature, PlanTier};
 
 pub struct CheckDeploymentFeatureAccessQuery {
@@ -72,14 +70,6 @@ impl CheckDeploymentFeatureAccessQuery {
             Some(tier) => Ok(tier.has_feature(self.feature)),
             None => Ok(false), // Unknown plan = no access
         }
-    }
-}
-
-impl Query for CheckDeploymentFeatureAccessQuery {
-    type Output = bool;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -164,14 +154,6 @@ impl GetDeploymentPlanTierQuery {
         };
 
         Ok(PlanTier::from_product_id(&product_id))
-    }
-}
-
-impl Query for GetDeploymentPlanTierQuery {
-    type Output = Option<PlanTier>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }
 

@@ -1,8 +1,6 @@
-use crate::Command;
 use chrono::Utc;
 use common::DnsVerificationService;
 use common::{HasDbRouter, HasDnsVerificationService, HasIdGenerator, error::AppError};
-use common::state::AppState;
 use models::DnsRecord;
 use models::organization_domain::OrganizationDomain;
 use serde::{Deserialize, Serialize};
@@ -46,21 +44,17 @@ impl CreateOrganizationDomainCommand {
     }
 }
 
-impl Command for CreateOrganizationDomainCommand {
-    type Output = CreateOrganizationDomainResponse;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}
-
 impl CreateOrganizationDomainCommand {
-    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<CreateOrganizationDomainResponse, AppError>
+    pub async fn execute_with_deps<D>(
+        self,
+        deps: &D,
+    ) -> Result<CreateOrganizationDomainResponse, AppError>
     where
         D: HasDbRouter + HasIdGenerator,
     {
         let domain_id = deps.id_generator().next_id()? as i64;
-        self.execute_with(deps.db_router().writer(), domain_id).await
+        self.execute_with(deps.db_router().writer(), domain_id)
+            .await
     }
 
     pub async fn execute_with(
@@ -174,14 +168,6 @@ impl DeleteOrganizationDomainCommand {
     }
 }
 
-impl Command for DeleteOrganizationDomainCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl DeleteOrganizationDomainCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -274,16 +260,11 @@ impl VerifyOrganizationDomainCommand {
     }
 }
 
-impl Command for VerifyOrganizationDomainCommand {
-    type Output = VerifyOrganizationDomainResponse;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}
-
 impl VerifyOrganizationDomainCommand {
-    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<VerifyOrganizationDomainResponse, AppError>
+    pub async fn execute_with_deps<D>(
+        self,
+        deps: &D,
+    ) -> Result<VerifyOrganizationDomainResponse, AppError>
     where
         D: HasDbRouter + HasDnsVerificationService,
     {
@@ -355,7 +336,10 @@ impl VerifyOrganizationDomainCommand {
         };
 
         // Verify DNS TXT record using the service
-        match dns_verification_service.verify_dns_record(&dns_record).await {
+        match dns_verification_service
+            .verify_dns_record(&dns_record)
+            .await
+        {
             Ok(true) => {
                 // Mark as verified
                 sqlx::query!(
@@ -366,9 +350,9 @@ impl VerifyOrganizationDomainCommand {
                     "#,
                     Utc::now(),
                     domain.id
-        )
-        .execute(&mut *conn)
-        .await?;
+                )
+                .execute(&mut *conn)
+                .await?;
 
                 Ok(VerifyOrganizationDomainResponse {
                     verified: true,

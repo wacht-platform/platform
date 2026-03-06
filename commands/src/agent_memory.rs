@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::Utc;
 use common::error::AppError;
-use common::state::AppState;
 use dto::json::agent_memory::MemoryCategory;
 use models::MemoryRecord;
 use pgvector::HalfVector;
@@ -15,14 +13,6 @@ pub struct CreateMemoryCommand {
     pub creation_context_id: Option<i64>,
     pub agent_id: Option<i64>,
     pub initial_importance: f64,
-}
-
-impl Command for CreateMemoryCommand {
-    type Output = MemoryRecord;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl CreateMemoryCommand {
@@ -84,14 +74,6 @@ pub struct UpdateMemoryAccessCommand {
     pub memory_id: i64,
 }
 
-impl Command for UpdateMemoryAccessCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateMemoryAccessCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -117,14 +99,6 @@ impl UpdateMemoryAccessCommand {
 /// Delete multiple memories (used for consolidation)
 pub struct DeleteMemoriesCommand {
     pub memory_ids: Vec<i64>,
-}
-
-impl Command for DeleteMemoriesCommand {
-    type Output = u64;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl DeleteMemoriesCommand {

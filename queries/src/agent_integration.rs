@@ -127,14 +127,6 @@ fn parse_integration_type(s: &str) -> IntegrationType {
     }
 }
 
-impl Query for GetAgentIntegrationsQuery {
-    type Output = Vec<AgentIntegration>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetAgentIntegrationByIdQuery {
     deployment_id: i64,
     agent_id: i64,
@@ -161,10 +153,7 @@ impl GetAgentIntegrationByIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        &self,
-        acquirer: A,
-    ) -> StdResult<AgentIntegration, AppError>
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<AgentIntegration, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -228,14 +217,6 @@ impl GetAgentIntegrationByIdQueryBuilder {
     }
 }
 
-impl Query for GetAgentIntegrationByIdQuery {
-    type Output = AgentIntegration;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetActiveIntegrationsForContextQuery {
     deployment_id: i64,
     agent_id: i64,
@@ -251,7 +232,10 @@ impl GetActiveIntegrationsForContextQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<Vec<AgentIntegration>, AppError>
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> StdResult<Vec<AgentIntegration>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -286,14 +270,6 @@ impl GetActiveIntegrationsForContextQuery {
                 config: r.config,
             })
             .collect())
-    }
-}
-
-impl Query for GetActiveIntegrationsForContextQuery {
-    type Output = Vec<AgentIntegration>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -347,13 +323,5 @@ impl GetClickUpTokenQuery {
             })?;
 
         Ok(access_token.to_string())
-    }
-}
-
-impl Query for GetClickUpTokenQuery {
-    type Output = String;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

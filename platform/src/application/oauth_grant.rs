@@ -3,9 +3,7 @@ use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::api_key::{ListOAuthGrantsResponse, OAuthGrantResponse};
 use models::error::AppError;
-use queries::{
-    oauth::{ListOAuthGrantsByClientQuery, OAuthClientGrantData},
-};
+use queries::oauth::{ListOAuthGrantsByClientQuery, OAuthClientGrantData};
 
 use super::oauth_shared::{get_oauth_app_by_slug, get_oauth_client_by_id};
 

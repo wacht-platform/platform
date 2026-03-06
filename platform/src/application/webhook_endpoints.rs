@@ -1,9 +1,7 @@
 use axum::http::StatusCode;
-use commands::{
-    webhook_endpoint::{
-        CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, EventSubscriptionData,
-        ReactivateEndpointCommand, TestWebhookEndpointCommand, UpdateWebhookEndpointCommand,
-    },
+use commands::webhook_endpoint::{
+    CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, EventSubscriptionData,
+    ReactivateEndpointCommand, TestWebhookEndpointCommand, UpdateWebhookEndpointCommand,
 };
 use common::db_router::ReadConsistency;
 use common::error::AppError;
@@ -17,9 +15,7 @@ use dto::{
     },
 };
 use models::webhook::WebhookEndpoint;
-use queries::{
-    webhook::{GetWebhookEndpointsQuery, GetWebhookEndpointsWithSubscriptionsQuery},
-};
+use queries::webhook::{GetWebhookEndpointsQuery, GetWebhookEndpointsWithSubscriptionsQuery};
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 
@@ -88,7 +84,8 @@ pub async fn create_webhook_endpoint(
     deployment_id: i64,
     request: CreateWebhookEndpointRequest,
 ) -> Result<WebhookEndpoint, AppError> {
-    let rate_limit_config = serialize_optional_json(request.rate_limit_config, "rate_limit_config")?;
+    let rate_limit_config =
+        serialize_optional_json(request.rate_limit_config, "rate_limit_config")?;
     let subscriptions = map_event_subscriptions(request.subscriptions);
 
     let command = CreateWebhookEndpointCommand::new(deployment_id, request.app_slug, request.url)
@@ -114,7 +111,8 @@ pub async fn update_webhook_endpoint(
     endpoint_id: i64,
     request: UpdateWebhookEndpointRequest,
 ) -> Result<WebhookEndpoint, AppError> {
-    let rate_limit_config = serialize_optional_json(request.rate_limit_config, "rate_limit_config")?;
+    let rate_limit_config =
+        serialize_optional_json(request.rate_limit_config, "rate_limit_config")?;
 
     let command = UpdateWebhookEndpointCommand::new(endpoint_id, deployment_id)
         .with_url(request.url)
@@ -173,7 +171,10 @@ pub async fn reactivate_webhook_endpoint(
             timestamp: chrono::Utc::now(),
         };
 
-        let _ = app_state.clickhouse_service.insert_webhook_log(&ch_log).await;
+        let _ = app_state
+            .clickhouse_service
+            .insert_webhook_log(&ch_log)
+            .await;
     } else {
         tracing::warn!("Failed to generate snowflake id for webhook reactivation log");
     }

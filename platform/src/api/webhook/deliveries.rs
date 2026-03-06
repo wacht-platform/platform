@@ -57,7 +57,8 @@ pub async fn get_webhook_stats(
     Path(app_slug): Path<String>,
 ) -> ApiResult<WebhookAnalyticsResult> {
     let stats =
-        webhook_deliveries_use_cases::get_webhook_stats(&app_state, deployment_id, app_slug).await?;
+        webhook_deliveries_use_cases::get_webhook_stats(&app_state, deployment_id, app_slug)
+            .await?;
 
     Ok(stats.into())
 }

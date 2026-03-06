@@ -4,42 +4,42 @@ use axum::{
     response::Redirect,
 };
 use commands::{
-    CreateOAuthClientCommand, DeactivateOAuthClient, RevokeOAuthAccessTokenByHash,
-    RevokeOAuthRefreshTokenByHash, SetOAuthClientRegistrationAccessToken,
-    UpdateOAuthClientSettings,
-    ConsumeOAuthAuthorizationCode, IssueOAuthTokenPair, RevokeOAuthRefreshTokenById,
-    RevokeOAuthRefreshTokenFamily, RevokeOAuthTokensByGrant, SetOAuthRefreshTokenReplacement,
-    EnqueueOAuthGrantLastUsed, IssueOAuthAuthorizationCode, api_key_app::EnsureUserApiAuthAppCommand,
+    ConsumeOAuthAuthorizationCode, CreateOAuthClientCommand, DeactivateOAuthClient,
+    EnqueueOAuthGrantLastUsed, IssueOAuthAuthorizationCode, IssueOAuthTokenPair,
+    RevokeOAuthAccessTokenByHash, RevokeOAuthRefreshTokenByHash, RevokeOAuthRefreshTokenById,
+    RevokeOAuthRefreshTokenFamily, RevokeOAuthTokensByGrant, SetOAuthClientRegistrationAccessToken,
+    SetOAuthRefreshTokenReplacement, UpdateOAuthClientSettings,
+    api_key_app::EnsureUserApiAuthAppCommand,
 };
 use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::oauth_runtime::{
+    OAuthAuthorizeInitiatedResponse, OAuthAuthorizeRequest, OAuthConsentSubmitRequest,
     OAuthDynamicClientRegistrationRequest, OAuthDynamicClientRegistrationResponse,
     OAuthDynamicClientUpdateRequest, OAuthIntrospectRequest, OAuthIntrospectResponse,
-    OAuthRegisterPathParams, OAuthRevokeRequest, OAuthRevokeResponse, OAuthTokenRequest,
-    OAuthTokenResponse, OAuthAuthorizeInitiatedResponse, OAuthAuthorizeRequest,
-    OAuthConsentSubmitRequest, OAuthProtectedResourceMetadataResponse, OAuthServerMetadataResponse,
+    OAuthProtectedResourceMetadataResponse, OAuthRegisterPathParams, OAuthRevokeRequest,
+    OAuthRevokeResponse, OAuthServerMetadataResponse, OAuthTokenRequest, OAuthTokenResponse,
 };
 use models::api_key::OAuthScopeDefinition;
 use models::error::AppError;
 use queries::{
-    GetRuntimeIntrospectionDataQuery, GetRuntimeOAuthClientByClientIdQuery, RuntimeOAuthAppData,
-    RuntimeOAuthClientData, GetRuntimeAuthorizationCodeForExchangeQuery,
-    GetRuntimeRefreshTokenForExchangeQuery, GetRuntimeDeploymentHostsByIdQuery,
+    GetRuntimeAuthorizationCodeForExchangeQuery, GetRuntimeDeploymentHostsByIdQuery,
+    GetRuntimeIntrospectionDataQuery, GetRuntimeOAuthClientByClientIdQuery,
+    GetRuntimeRefreshTokenForExchangeQuery, RuntimeOAuthAppData, RuntimeOAuthClientData,
 };
 use redis::AsyncCommands;
 
 use crate::{
     api::oauth_runtime::{
         helpers::{
-            authenticate_client, client_secret_expires_at_for_method,
-            ensure_registration_access_token, generate_registration_access_token, hash_value,
-            resolve_issuer_from_oauth_app, resolve_oauth_app_from_host, parse_scope_string,
-            validate_grant_and_entitlement, verify_pkce,
-            append_oauth_redirect_params, derive_shared_secret, ensure_or_create_grant_coverage,
-            generate_prefixed_token, is_valid_granted_resource_indicator, is_valid_resource_indicator,
-            oauth_consent_backend_base_url, oauth_consent_handoff_redis_key,
-            sign_oauth_consent_request_token, verify_oauth_consent_request_token,
+            append_oauth_redirect_params, authenticate_client, client_secret_expires_at_for_method,
+            derive_shared_secret, ensure_or_create_grant_coverage,
+            ensure_registration_access_token, generate_prefixed_token,
+            generate_registration_access_token, hash_value, is_valid_granted_resource_indicator,
+            is_valid_resource_indicator, oauth_consent_backend_base_url,
+            oauth_consent_handoff_redis_key, parse_scope_string, resolve_issuer_from_oauth_app,
+            resolve_oauth_app_from_host, sign_oauth_consent_request_token,
+            validate_grant_and_entitlement, verify_oauth_consent_request_token, verify_pkce,
         },
         token_handlers::{
             OAuthEndpointError, map_token_app_error, map_token_auth_error, map_token_pkce_error,
@@ -51,7 +51,12 @@ use crate::{
     application::response::ApiErrorResponse,
 };
 
-fn enqueue_grant_last_used(app_state: AppState, deployment_id: i64, oauth_client_id: i64, grant_id: i64) {
+fn enqueue_grant_last_used(
+    app_state: AppState,
+    deployment_id: i64,
+    oauth_client_id: i64,
+    grant_id: i64,
+) {
     tokio::spawn(async move {
         let _ = EnqueueOAuthGrantLastUsed {
             deployment_id,

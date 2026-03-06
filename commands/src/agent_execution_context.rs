@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::{DateTime, Utc};
 use common::{HasDbRouter, HasIdGenerator, HasNatsJetStream, error::AppError};
-use common::state::AppState;
 use models::{
     AgentExecutionContext, AgentExecutionState, AgentStatusUpdate, ExecutionContextStatus,
 };
@@ -44,15 +42,6 @@ impl CreateExecutionContextCommand {
     pub fn with_parent(mut self, parent_context_id: i64) -> Self {
         self.parent_context_id = Some(parent_context_id);
         self
-    }
-}
-
-impl Command for CreateExecutionContextCommand {
-    type Output = AgentExecutionContext;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -289,14 +278,6 @@ impl UpdateExecutionContextQuery {
     }
 }
 
-impl super::Command for UpdateExecutionContextQuery {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}
-
 /// Cancel all descendant contexts for an aborted parent context.
 /// This is event-driven: marks descendants as cancelled and publishes spawn-control stop events.
 pub struct CancelDescendantExecutionsCommand {
@@ -378,14 +359,6 @@ impl CancelDescendantExecutionsCommand {
     }
 }
 
-impl Command for CancelDescendantExecutionsCommand {
-    type Output = usize;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}
-
 pub struct UpdateExecutionContextCommand {
     pub context_id: i64,
     pub deployment_id: i64,
@@ -425,15 +398,6 @@ impl UpdateExecutionContextCommand {
     pub fn with_status(mut self, status: ExecutionContextStatus) -> Self {
         self.status = Some(status);
         self
-    }
-}
-
-impl Command for UpdateExecutionContextCommand {
-    type Output = AgentExecutionContext;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut conn = app_state.db_router.writer().acquire().await?;
-        self.execute_with_deps(&mut conn).await
     }
 }
 
@@ -511,15 +475,6 @@ impl PostStatusUpdateCommand {
     }
 }
 
-impl Command for PostStatusUpdateCommand {
-    type Output = AgentStatusUpdate;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let id = app_state.sf.next_id()? as i64;
-        self.execute_with(app_state.db_router.writer(), id).await
-    }
-}
-
 impl PostStatusUpdateCommand {
     pub async fn execute_with<'a, A>(
         self,
@@ -590,15 +545,6 @@ impl CreateChildContextCommand {
     pub fn with_task_type(mut self, task_type: String) -> Self {
         self.task_type = task_type;
         self
-    }
-}
-
-impl Command for CreateChildContextCommand {
-    type Output = AgentExecutionContext;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let context_id = app_state.sf.next_id()? as i64;
-        self.execute_with(app_state.db_router.writer(), context_id).await
     }
 }
 
@@ -713,8 +659,7 @@ impl PublishSpawnControlCommand {
             "sender_context_id": self.sender_context_id,
             "action": action_type,
             "value": action_value,
-            "timestamp": chrono::Utc::now().to_rfc3339(),
-        });
+            "timestamp": chrono::Utc::now().to_rfc3339()});
 
         let payload_bytes = serde_json::to_vec(&payload).map_err(|e| {
             AppError::Internal(format!("Failed to serialize control message: {}", e))
@@ -732,14 +677,6 @@ impl PublishSpawnControlCommand {
         );
 
         Ok(())
-    }
-}
-
-impl Command for PublishSpawnControlCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.nats_jetstream).await
     }
 }
 
@@ -785,14 +722,6 @@ impl StoreCompletionSummaryEnhancedCommand {
             deployment_id,
             summary,
         }
-    }
-}
-
-impl Command for StoreCompletionSummaryEnhancedCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

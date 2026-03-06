@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 
 pub struct CreateBillingAccountCommand {
     pub owner_id: String,
@@ -15,15 +13,6 @@ pub struct CreateBillingAccountCommand {
     pub state: Option<String>,
     pub postal_code: Option<String>,
     pub country: Option<String>,
-}
-
-impl Command for CreateBillingAccountCommand {
-    type Output = i64;
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
-            .await
-    }
 }
 
 impl CreateBillingAccountCommand {
@@ -107,14 +96,6 @@ pub struct UpdateBillingAccountFromWebhookCommand {
     pub state: Option<String>,
     pub postal_code: Option<String>,
     pub country: Option<String>,
-}
-
-impl Command for UpdateBillingAccountCommand {
-    type Output = ();
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
 }
 
 impl UpdateBillingAccountCommand {
@@ -236,14 +217,6 @@ fn normalize_billing_account_status(status: &str) -> &'static str {
     }
 }
 
-impl Command for UpdateBillingAccountStatusCommand {
-    type Output = ();
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 impl UpdateBillingAccountStatusCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -273,14 +246,6 @@ pub struct SetProviderCustomerIdCommand {
     pub provider_customer_id: String,
 }
 
-impl Command for SetProviderCustomerIdCommand {
-    type Output = ();
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 impl SetProviderCustomerIdCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -306,14 +271,6 @@ impl SetProviderCustomerIdCommand {
 pub struct MarkCheckoutSessionCreatedCommand {
     pub owner_id: String,
     pub checkout_session_id: String,
-}
-
-impl Command for MarkCheckoutSessionCreatedCommand {
-    type Output = ();
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
 }
 
 impl MarkCheckoutSessionCreatedCommand {
@@ -351,14 +308,6 @@ pub struct MarkPaymentSucceededCommand {
     pub webhook_event: String,
 }
 
-impl Command for MarkPaymentSucceededCommand {
-    type Output = ();
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 impl MarkPaymentSucceededCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -392,14 +341,6 @@ impl MarkPaymentSucceededCommand {
 pub struct MarkSubscriptionActivatedCommand {
     pub owner_id: String,
     pub webhook_event: String,
-}
-
-impl Command for MarkSubscriptionActivatedCommand {
-    type Output = ();
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
 }
 
 impl MarkSubscriptionActivatedCommand {
@@ -438,14 +379,6 @@ pub struct MarkCheckoutFlowFailedCommand {
     pub reason: String,
 }
 
-impl Command for MarkCheckoutFlowFailedCommand {
-    type Output = ();
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 impl MarkCheckoutFlowFailedCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -470,14 +403,6 @@ impl MarkCheckoutFlowFailedCommand {
         .await?;
 
         Ok(())
-    }
-}
-
-impl Command for UpdateBillingAccountFromWebhookCommand {
-    type Output = ();
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }
 

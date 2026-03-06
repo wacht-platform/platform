@@ -2,7 +2,9 @@ use axum::http::{HeaderMap, header::AUTHORIZATION};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::Utc;
 use commands::CreateOAuthClientGrantCommand;
-use common::{db_router::ReadConsistency, error::AppError, state::AppState, utils::jwt::verify_token};
+use common::{
+    db_router::ReadConsistency, error::AppError, state::AppState, utils::jwt::verify_token,
+};
 use core::cmp::Ordering;
 use dto::json::oauth_runtime::OAuthTokenRequest;
 use hmac::{Hmac, Mac};

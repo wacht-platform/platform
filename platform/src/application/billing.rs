@@ -1,9 +1,7 @@
 use chrono::{Duration, Utc};
-use commands::{
-    billing::{
-        CreateBillingAccountCommand, MarkCheckoutSessionCreatedCommand, SetProviderCustomerIdCommand,
-        UpdateBillingAccountCommand, UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand,
-    },
+use commands::billing::{
+    CreateBillingAccountCommand, MarkCheckoutSessionCreatedCommand, SetProviderCustomerIdCommand,
+    UpdateBillingAccountCommand, UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand,
 };
 use common::{
     dodo::{
@@ -13,9 +11,7 @@ use common::{
     error::AppError,
 };
 use models::billing::BillingAccountWithSubscription;
-use queries::{
-    billing::{DodoProduct, GetBillingAccountQuery, GetDodoProductQuery},
-};
+use queries::billing::{DodoProduct, GetBillingAccountQuery, GetDodoProductQuery};
 use tracing::error;
 
 use crate::application::AppState;
@@ -113,7 +109,10 @@ async fn get_billing_account_or_404(
         .ok_or_else(|| AppError::NotFound("Billing account not found".to_string()))
 }
 
-async fn get_plan_product_or_404(state: &AppState, plan_name: &str) -> Result<DodoProduct, AppError> {
+async fn get_plan_product_or_404(
+    state: &AppState,
+    plan_name: &str,
+) -> Result<DodoProduct, AppError> {
     GetDodoProductQuery::new(plan_name)
         .execute_with(state.db_router.writer())
         .await?
@@ -187,15 +186,21 @@ pub async fn get_portal_url(state: &AppState, owner_id: &str) -> Result<String, 
 
     let dodo = DodoClient::new().map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let portal = dodo.create_portal_session(&provider_customer_id).await.map_err(|e| {
-        error!("Failed to create portal session: {}", e);
-        AppError::Internal("Failed to create portal session".to_string())
-    })?;
+    let portal = dodo
+        .create_portal_session(&provider_customer_id)
+        .await
+        .map_err(|e| {
+            error!("Failed to create portal session: {}", e);
+            AppError::Internal("Failed to create portal session".to_string())
+        })?;
 
     Ok(portal.url)
 }
 
-pub async fn list_invoices(state: &AppState, owner_id: &str) -> Result<serde_json::Value, AppError> {
+pub async fn list_invoices(
+    state: &AppState,
+    owner_id: &str,
+) -> Result<serde_json::Value, AppError> {
     let account = get_billing_account_or_404(state, owner_id).await?;
     let invoices = queries::billing::ListBillingInvoicesQuery::new(account.billing_account.id)
         .execute_with(state.db_router.writer())
@@ -217,13 +222,12 @@ pub async fn get_current_usage(
         AppError::Internal("Subscription missing previous_billing_date".to_string())
     })?;
 
-    let snapshots =
-        queries::billing::GetBillingAccountUsageQuery::new(
-            account_with_sub.billing_account.id,
-            billing_period_timestamp,
-        )
-        .execute_with(state.db_router.writer())
-        .await?;
+    let snapshots = queries::billing::GetBillingAccountUsageQuery::new(
+        account_with_sub.billing_account.id,
+        billing_period_timestamp,
+    )
+    .execute_with(state.db_router.writer())
+    .await?;
 
     Ok((snapshots, billing_period_timestamp.to_rfc3339()))
 }
@@ -253,7 +257,9 @@ pub async fn create_checkout(
     if let Some(account) = existing.clone() {
         if let Some(ref subscription) = account.subscription {
             if subscription.status == "active" {
-                return Err(AppError::Validation("Subscription already exists".to_string()));
+                return Err(AppError::Validation(
+                    "Subscription already exists".to_string(),
+                ));
             }
         }
         if !is_starter_plan {

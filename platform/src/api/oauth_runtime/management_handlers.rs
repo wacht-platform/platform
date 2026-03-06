@@ -38,7 +38,8 @@ pub async fn oauth_register_client(
     headers: HeaderMap,
     Json(request): Json<OAuthDynamicClientRegistrationRequest>,
 ) -> ApiResult<OAuthDynamicClientRegistrationResponse> {
-    let response = oauth_runtime_use_cases::oauth_register_client(&app_state, &headers, request).await?;
+    let response =
+        oauth_runtime_use_cases::oauth_register_client(&app_state, &headers, request).await?;
     Ok(response.into())
 }
 
@@ -47,7 +48,8 @@ pub async fn oauth_get_registered_client(
     headers: HeaderMap,
     Path(params): Path<OAuthRegisterPathParams>,
 ) -> ApiResult<OAuthDynamicClientRegistrationResponse> {
-    let response = oauth_runtime_use_cases::oauth_get_registered_client(&app_state, &headers, params).await?;
+    let response =
+        oauth_runtime_use_cases::oauth_get_registered_client(&app_state, &headers, params).await?;
     Ok(response.into())
 }
 
@@ -57,7 +59,10 @@ pub async fn oauth_update_registered_client(
     Path(params): Path<OAuthRegisterPathParams>,
     Json(request): Json<OAuthDynamicClientUpdateRequest>,
 ) -> ApiResult<OAuthDynamicClientRegistrationResponse> {
-    let response = oauth_runtime_use_cases::oauth_update_registered_client(&app_state, &headers, params, request).await?;
+    let response = oauth_runtime_use_cases::oauth_update_registered_client(
+        &app_state, &headers, params, request,
+    )
+    .await?;
     Ok(response.into())
 }
 

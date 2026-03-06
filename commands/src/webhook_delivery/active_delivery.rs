@@ -2,8 +2,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::{Executor, Postgres, query};
 
-use crate::Command;
-use common::{error::AppError, state::AppState};
+use common::error::AppError;
 
 #[derive(Debug)]
 pub struct GetActiveDeliveryCommand {
@@ -84,14 +83,6 @@ impl GetActiveDeliveryCommand {
     }
 }
 
-impl Command for GetActiveDeliveryCommand {
-    type Output = Option<ActiveDeliveryInfo>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 #[derive(Debug)]
 pub struct ActiveDeliveryInfo {
     pub id: i64,
@@ -144,14 +135,6 @@ impl DeleteActiveDeliveryCommand {
     }
 }
 
-impl Command for DeleteActiveDeliveryCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 #[derive(Debug)]
 pub struct UpdateDeliveryAttemptsCommand {
     pub delivery_id: i64,
@@ -189,25 +172,9 @@ impl UpdateDeliveryAttemptsCommand {
     }
 }
 
-impl Command for UpdateDeliveryAttemptsCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 #[derive(Debug)]
 pub struct GetFailedDeliveryDetailsCommand {
     pub delivery_id: i64,
-}
-
-impl Command for GetFailedDeliveryDetailsCommand {
-    type Output = Option<String>;
-
-    async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
-        Ok(None)
-    }
 }
 
 #[derive(Debug)]
@@ -241,13 +208,5 @@ impl DeactivateEndpointCommand {
     {
         let mut conn = acquirer.acquire().await?;
         self.execute_with_deps(&mut *conn).await
-    }
-}
-
-impl Command for DeactivateEndpointCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -1,20 +1,6 @@
-use common::error::AppError;
-use common::state::AppState;
-
 pub mod prelude {
-    pub use super::Query;
     pub use common::error::AppError;
-    pub use common::state::AppState;
     pub use std::result::Result as StdResult;
-}
-
-pub trait Query {
-    type Output;
-
-    fn execute(
-        &self,
-        app_state: &AppState,
-    ) -> impl std::future::Future<Output = Result<Self::Output, AppError>> + Send;
 }
 
 pub mod b2b;

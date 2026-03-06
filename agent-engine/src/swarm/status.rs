@@ -74,7 +74,8 @@ pub async fn get_child_status(
         .await?;
 
     let child_context_ids: Vec<i64> = children.iter().map(|child| child.id).collect();
-    let latest_updates_query = queries::GetLatestStatusUpdatesForContextsQuery::new(child_context_ids);
+    let latest_updates_query =
+        queries::GetLatestStatusUpdatesForContextsQuery::new(child_context_ids);
     let latest_updates = latest_updates_query
         .execute_with(
             app_state

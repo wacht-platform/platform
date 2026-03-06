@@ -26,9 +26,12 @@ pub async fn create_execution_context(
     ConsoleDeployment(deployment_id): ConsoleDeployment,
     Json(request): Json<CreateExecutionContextRequest>,
 ) -> ApiResult<AgentExecutionContext> {
-    let context =
-        ai_execution_context_use_cases::create_execution_context(&app_state, deployment_id, request)
-            .await?;
+    let context = ai_execution_context_use_cases::create_execution_context(
+        &app_state,
+        deployment_id,
+        request,
+    )
+    .await?;
     Ok(context.into())
 }
 
@@ -37,9 +40,12 @@ pub async fn create_execution_context_backend(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateExecutionContextRequest>,
 ) -> ApiResult<AgentExecutionContext> {
-    let context =
-        ai_execution_context_use_cases::create_execution_context(&app_state, deployment_id, request)
-            .await?;
+    let context = ai_execution_context_use_cases::create_execution_context(
+        &app_state,
+        deployment_id,
+        request,
+    )
+    .await?;
     Ok(context.into())
 }
 

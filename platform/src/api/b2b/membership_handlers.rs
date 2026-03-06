@@ -3,10 +3,7 @@ use axum::{
     extract::{Path, State},
 };
 
-use crate::application::{
-    b2b_membership as b2b_membership_use_cases,
-    response::ApiResult,
-};
+use crate::application::{b2b_membership as b2b_membership_use_cases, response::ApiResult};
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 use dto::json::b2b::{

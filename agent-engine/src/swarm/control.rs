@@ -42,9 +42,12 @@ pub async fn spawn_control(
         ),
     };
 
-    let publish_control_command =
-        commands::PublishSpawnControlCommand::new(request.child_context_id.0, deployment_id, action)
-            .with_sender(sender_context_id);
+    let publish_control_command = commands::PublishSpawnControlCommand::new(
+        request.child_context_id.0,
+        deployment_id,
+        action,
+    )
+    .with_sender(sender_context_id);
     publish_control_command
         .execute_with(&app_state.nats_jetstream)
         .await?;

@@ -1,6 +1,5 @@
-use crate::{Command, DispatchDocumentProcessingTaskCommand, WriteToAgentStorageCommand};
+use crate::{DispatchDocumentProcessingTaskCommand, WriteToAgentStorageCommand};
 use common::error::AppError;
-use common::state::AppState;
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument};
 use queries::GetAiKnowledgeBaseByIdQuery;
 
@@ -68,15 +67,6 @@ impl CreateAiKnowledgeBaseCommand {
             deployment_id: knowledge_base.deployment_id,
             configuration: knowledge_base.configuration,
         })
-    }
-}
-
-impl Command for CreateAiKnowledgeBaseCommand {
-    type Output = AiKnowledgeBase;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let knowledge_base_id = app_state.sf.next_id()? as i64;
-        self.execute_with(app_state.db_router.writer(), knowledge_base_id).await
     }
 }
 
@@ -184,14 +174,6 @@ impl UpdateAiKnowledgeBaseCommand {
     }
 }
 
-impl Command for UpdateAiKnowledgeBaseCommand {
-    type Output = AiKnowledgeBase;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 fn validate_knowledge_base_name(name: &str) -> Result<(), AppError> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -255,7 +237,10 @@ impl DeleteAiKnowledgeBaseCommand {
         .map_err(AppError::Database)?;
 
         if !dependent_tools.is_empty() {
-            let tool_names: Vec<String> = dependent_tools.iter().map(|tool| tool.name.clone()).collect();
+            let tool_names: Vec<String> = dependent_tools
+                .iter()
+                .map(|tool| tool.name.clone())
+                .collect();
             return Err(AppError::BadRequest(format!(
                 "Cannot delete knowledge base. The following tools depend on it: {}. Please delete or update these tools first.",
                 tool_names.join(", ")
@@ -279,7 +264,10 @@ impl DeleteAiKnowledgeBaseCommand {
         .map_err(AppError::Database)?;
 
         if !dependent_agents.is_empty() {
-            let agent_names: Vec<String> = dependent_agents.iter().map(|agent| agent.name.clone()).collect();
+            let agent_names: Vec<String> = dependent_agents
+                .iter()
+                .map(|agent| agent.name.clone())
+                .collect();
             return Err(AppError::BadRequest(format!(
                 "Cannot delete knowledge base. The following agents depend on it: {}. Please remove this knowledge base from these agents first.",
                 agent_names.join(", ")
@@ -321,18 +309,6 @@ impl DeleteAiKnowledgeBaseCommand {
 
         tx.commit().await.map_err(AppError::Database)?;
         Ok(())
-    }
-}
-
-impl Command for DeleteAiKnowledgeBaseCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let storage_client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
-        self.execute_with(app_state.db_router.writer(), storage_client).await
     }
 }
 
@@ -457,25 +433,6 @@ impl UploadKnowledgeBaseDocumentCommand {
     }
 }
 
-impl Command for UploadKnowledgeBaseDocumentCommand {
-    type Output = AiKnowledgeBaseDocument;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let document_id = app_state.sf.next_id()? as i64;
-        let storage_client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
-        self.execute_with(
-            app_state.db_router.writer(),
-            storage_client,
-            &app_state.nats_client,
-            document_id,
-        )
-        .await
-    }
-}
-
 pub struct DeleteKnowledgeBaseDocumentCommand {
     pub deployment_id: i64,
     pub knowledge_base_id: i64,
@@ -532,17 +489,5 @@ impl DeleteKnowledgeBaseDocumentCommand {
         .map_err(AppError::Database)?;
 
         Ok(())
-    }
-}
-
-impl Command for DeleteKnowledgeBaseDocumentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let storage_client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
-        self.execute_with(app_state.db_router.writer(), storage_client).await
     }
 }

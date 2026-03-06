@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use common::state::AppState;
 use models::billing_invoice::{BillingInvoice, InvoiceStatus};
 use serde_json::Value;
 
@@ -21,15 +19,6 @@ pub struct UpsertInvoiceCommand {
     pub period_start: Option<DateTime<Utc>>,
     pub period_end: Option<DateTime<Utc>>,
     pub metadata: Value,
-}
-
-impl Command for UpsertInvoiceCommand {
-    type Output = BillingInvoice;
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
-            .await
-    }
 }
 
 impl UpsertInvoiceCommand {

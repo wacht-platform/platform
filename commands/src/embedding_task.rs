@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use dto::json::nats::NatsTaskMessage;
 use serde_json;
 
@@ -17,14 +15,6 @@ impl DispatchDocumentProcessingTaskCommand {
             knowledge_base_id,
             document_id,
         }
-    }
-}
-
-impl Command for DispatchDocumentProcessingTaskCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.nats_client).await
     }
 }
 
@@ -75,14 +65,6 @@ impl DispatchDocumentBatchTaskCommand {
             knowledge_base_id,
             batch_size,
         }
-    }
-}
-
-impl Command for DispatchDocumentBatchTaskCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.nats_client).await
     }
 }
 

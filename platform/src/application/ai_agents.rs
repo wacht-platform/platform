@@ -15,10 +15,7 @@ use queries::{
 
 use crate::{
     api::pagination::paginate_results,
-    application::{
-        response::PaginatedResponse,
-        AppState,
-    },
+    application::{AppState, response::PaginatedResponse},
 };
 
 #[derive(serde::Serialize)]
@@ -109,10 +106,7 @@ pub async fn create_ai_agent(
     }
 
     command
-        .execute_with(
-            app_state.db_router.writer(),
-            app_state.sf.next_id()? as i64,
-        )
+        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
         .await
 }
 

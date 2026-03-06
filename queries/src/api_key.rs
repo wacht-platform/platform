@@ -1,6 +1,5 @@
-use super::{Query, rate_limit_scheme::GetRateLimitSchemeQuery};
+use super::rate_limit_scheme::GetRateLimitSchemeQuery;
 use common::error::AppError;
-use common::state::AppState;
 use models::api_key::{ApiAuthApp, ApiKey, ApiKeyWithIdentifers, RateLimit};
 
 async fn resolve_rate_limits_on_conn(
@@ -60,9 +59,12 @@ impl GetApiAuthAppsQuery {
 
         let mut apps = Vec::with_capacity(recs.len());
         for rec in recs {
-            let rate_limits =
-                resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
-                    .await?;
+            let rate_limits = resolve_rate_limits_on_conn(
+                &mut conn,
+                rec.deployment_id,
+                &rec.rate_limit_scheme_slug,
+            )
+            .await?;
             apps.push(ApiAuthApp {
                 deployment_id: rec.deployment_id,
                 user_id: rec.user_id,
@@ -87,14 +89,6 @@ impl GetApiAuthAppsQuery {
     }
 }
 
-impl Query for GetApiAuthAppsQuery {
-    type Output = Vec<ApiAuthApp>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetApiAuthAppBySlugQuery {
     pub deployment_id: i64,
     pub app_slug: String,
@@ -108,10 +102,7 @@ impl GetApiAuthAppBySlugQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        &self,
-        acquirer: A,
-    ) -> Result<Option<ApiAuthApp>, AppError>
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<ApiAuthApp>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -128,9 +119,12 @@ impl GetApiAuthAppBySlugQuery {
         .await?;
 
         if let Some(rec) = rec {
-            let rate_limits =
-                resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
-                    .await?;
+            let rate_limits = resolve_rate_limits_on_conn(
+                &mut conn,
+                rec.deployment_id,
+                &rec.rate_limit_scheme_slug,
+            )
+            .await?;
             Ok(Some(ApiAuthApp {
                 deployment_id: rec.deployment_id,
                 user_id: rec.user_id,
@@ -152,14 +146,6 @@ impl GetApiAuthAppBySlugQuery {
         } else {
             Ok(None)
         }
-    }
-}
-
-impl Query for GetApiAuthAppBySlugQuery {
-    type Output = Option<ApiAuthApp>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -176,10 +162,7 @@ impl GetApiAuthAppByNameQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        &self,
-        acquirer: A,
-    ) -> Result<Option<ApiAuthApp>, AppError>
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<ApiAuthApp>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -196,9 +179,12 @@ impl GetApiAuthAppByNameQuery {
         .await?;
 
         if let Some(rec) = rec {
-            let rate_limits =
-                resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
-                    .await?;
+            let rate_limits = resolve_rate_limits_on_conn(
+                &mut conn,
+                rec.deployment_id,
+                &rec.rate_limit_scheme_slug,
+            )
+            .await?;
             Ok(Some(ApiAuthApp {
                 deployment_id: rec.deployment_id,
                 user_id: rec.user_id,
@@ -220,14 +206,6 @@ impl GetApiAuthAppByNameQuery {
         } else {
             Ok(None)
         }
-    }
-}
-
-impl Query for GetApiAuthAppByNameQuery {
-    type Output = Option<ApiAuthApp>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -277,9 +255,12 @@ impl GetApiKeysByAppQuery {
 
             let mut keys = Vec::with_capacity(recs.len());
             for rec in recs {
-                let rate_limits =
-                    resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
-                        .await?;
+                let rate_limits = resolve_rate_limits_on_conn(
+                    &mut conn,
+                    rec.deployment_id,
+                    &rec.rate_limit_scheme_slug,
+                )
+                .await?;
                 keys.push(ApiKey {
                     id: rec.id,
                     deployment_id: rec.deployment_id,
@@ -349,9 +330,12 @@ impl GetApiKeysByAppQuery {
 
         let mut keys = Vec::with_capacity(recs.len());
         for rec in recs {
-            let rate_limits =
-                resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
-                    .await?;
+            let rate_limits = resolve_rate_limits_on_conn(
+                &mut conn,
+                rec.deployment_id,
+                &rec.rate_limit_scheme_slug,
+            )
+            .await?;
             keys.push(ApiKey {
                 id: rec.id,
                 deployment_id: rec.deployment_id,
@@ -402,14 +386,6 @@ impl GetApiKeysByAppQuery {
     }
 }
 
-impl Query for GetApiKeysByAppQuery {
-    type Output = Vec<ApiKey>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetApiKeyByHashQuery {
     pub key_hash: String,
 }
@@ -447,9 +423,12 @@ impl GetApiKeyByHashQuery {
         .await?;
 
         if let Some(rec) = rec {
-            let rate_limits =
-                resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
-                    .await?;
+            let rate_limits = resolve_rate_limits_on_conn(
+                &mut conn,
+                rec.deployment_id,
+                &rec.rate_limit_scheme_slug,
+            )
+            .await?;
             Ok(Some(ApiKey {
                 id: rec.id,
                 deployment_id: rec.deployment_id,
@@ -497,14 +476,6 @@ impl GetApiKeyByHashQuery {
         } else {
             Ok(None)
         }
-    }
-}
-
-impl Query for GetApiKeyByHashQuery {
-    type Output = Option<ApiKey>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -572,14 +543,6 @@ impl GetApiKeyIdentifiersByHashQuery {
     }
 }
 
-impl Query for GetApiKeyIdentifiersByHashQuery {
-    type Output = Option<ApiKeyWithIdentifers>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct SyncApiKeyRateLimitsForSchemeQuery {
     pub deployment_id: i64,
     pub scheme_slug: String,
@@ -628,14 +591,6 @@ impl SyncApiKeyRateLimitsForSchemeQuery {
         .await?;
 
         Ok(updated.into_iter().map(|r| r.id).collect())
-    }
-}
-
-impl Query for SyncApiKeyRateLimitsForSchemeQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -699,14 +654,6 @@ impl GetOrganizationMembershipPermissionsQuery {
     }
 }
 
-impl Query for GetOrganizationMembershipPermissionsQuery {
-    type Output = Option<OrganizationMembershipPermissions>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetWorkspaceMembershipPermissionsQuery {
     pub membership_id: i64,
 }
@@ -756,14 +703,6 @@ impl GetWorkspaceMembershipPermissionsQuery {
     }
 }
 
-impl Query for GetWorkspaceMembershipPermissionsQuery {
-    type Output = Option<WorkspaceMembershipPermissions>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetOrganizationMembershipIdByUserAndOrganizationQuery {
     pub user_id: i64,
     pub organization_id: i64,
@@ -798,14 +737,6 @@ impl GetOrganizationMembershipIdByUserAndOrganizationQuery {
         .await?;
 
         Ok(rec.map(|r| r.id))
-    }
-}
-
-impl Query for GetOrganizationMembershipIdByUserAndOrganizationQuery {
-    type Output = Option<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -846,14 +777,6 @@ impl GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
     }
 }
 
-impl Query for GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
-    type Output = Option<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetOrganizationMembershipIdsByRoleQuery {
     pub role_id: i64,
 }
@@ -883,14 +806,6 @@ impl GetOrganizationMembershipIdsByRoleQuery {
     }
 }
 
-impl Query for GetOrganizationMembershipIdsByRoleQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetWorkspaceMembershipIdsByRoleQuery {
     pub role_id: i64,
 }
@@ -917,14 +832,6 @@ impl GetWorkspaceMembershipIdsByRoleQuery {
         .await?;
 
         Ok(recs.into_iter().map(|r| r.id).collect())
-    }
-}
-
-impl Query for GetWorkspaceMembershipIdsByRoleQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -976,14 +883,6 @@ impl SyncApiKeyOrgRolePermissionsForMembershipsQuery {
     }
 }
 
-impl Query for SyncApiKeyOrgRolePermissionsForMembershipsQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
     pub membership_ids: Vec<i64>,
 }
@@ -1031,13 +930,5 @@ impl SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
         .await?;
 
         Ok(updated.into_iter().map(|r| r.id).collect())
-    }
-}
-
-impl Query for SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -1,10 +1,7 @@
 use chrono::{Duration, Utc};
 use std::future::Future;
 
-use crate::{Command, SendEmailCommand};
-use common::db_router::ReadConsistency;
 use common::error::AppError;
-use common::state::AppState;
 use dto::json::InviteUserRequest;
 use models::DeploymentInvitation;
 use sqlx::Connection;
@@ -119,31 +116,6 @@ impl InviteUserCommand {
             token,
             expiry,
         })
-    }
-}
-
-impl Command for InviteUserCommand {
-    type Output = DeploymentInvitation;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let reader = app_state.db_router.reader(ReadConsistency::Strong);
-        self.execute_with(
-            app_state.db_router.writer(),
-            reader,
-            |deployment_id, to_email, variables| async move {
-                let send_email_command = SendEmailCommand::new(
-                    deployment_id,
-                    "waitlist_invite_template".to_string(),
-                    to_email,
-                    variables,
-                );
-                send_email_command
-                    .execute_with_deps(app_state)
-                    .await
-            },
-            app_state.sf.next_id()? as i64,
-        )
-        .await
     }
 }
 
@@ -275,31 +247,6 @@ impl ApproveWaitlistUserCommand {
     }
 }
 
-impl Command for ApproveWaitlistUserCommand {
-    type Output = DeploymentInvitation;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let reader = app_state.db_router.reader(ReadConsistency::Strong);
-        self.execute_with(
-            app_state.db_router.writer(),
-            reader,
-            |deployment_id, to_email, variables| async move {
-                let send_email_command = SendEmailCommand::new(
-                    deployment_id,
-                    "waitlist_invite_template".to_string(),
-                    to_email,
-                    variables,
-                );
-                send_email_command
-                    .execute_with_deps(app_state)
-                    .await
-            },
-            app_state.sf.next_id()? as i64,
-        )
-        .await
-    }
-}
-
 pub struct DeleteInvitationCommand {
     deployment_id: i64,
     invitation_id: i64,
@@ -311,14 +258,6 @@ impl DeleteInvitationCommand {
             deployment_id,
             invitation_id,
         }
-    }
-}
-
-impl Command for DeleteInvitationCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

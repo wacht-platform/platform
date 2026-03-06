@@ -1,6 +1,4 @@
-use crate::Query;
 use common::error::AppError;
-use common::state::AppState;
 use models::DeploymentAiSettings;
 
 /// Query to fetch AI settings for a deployment
@@ -57,13 +55,5 @@ impl GetDeploymentAiSettingsQueryBuilder {
                 .deployment_id
                 .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
         })
-    }
-}
-
-impl Query for GetDeploymentAiSettingsQuery {
-    type Output = Option<DeploymentAiSettings>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

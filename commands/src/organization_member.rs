@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::OrganizationMemberDetails;
 
 use serde::{Deserialize, Serialize};
@@ -11,15 +9,6 @@ pub struct AddOrganizationMemberCommand {
     pub organization_id: i64,
     pub user_id: i64,
     pub role_ids: Vec<i64>,
-}
-
-impl Command for AddOrganizationMemberCommand {
-    type Output = OrganizationMemberDetails;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
-    }
 }
 
 impl AddOrganizationMemberCommand {
@@ -181,14 +170,6 @@ pub struct UpdateOrganizationMemberCommand {
     pub public_metadata: Option<serde_json::Value>,
 }
 
-impl Command for UpdateOrganizationMemberCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateOrganizationMemberCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -251,14 +232,6 @@ pub struct RemoveOrganizationMemberCommand {
     pub deployment_id: i64,
     pub organization_id: i64,
     pub membership_id: i64,
-}
-
-impl Command for RemoveOrganizationMemberCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl RemoveOrganizationMemberCommand {

@@ -37,14 +37,6 @@ impl GetDeploymentWorkspaceRolesQuery {
     }
 }
 
-impl Query for GetDeploymentWorkspaceRolesQuery {
-    type Output = Vec<DeploymentWorkspaceRole>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetDeploymentOrganizationRolesQuery {
     deployment_id: i64,
 }
@@ -71,14 +63,6 @@ impl GetDeploymentOrganizationRolesQuery {
         .await?;
 
         Ok(rows)
-    }
-}
-
-impl Query for GetDeploymentOrganizationRolesQuery {
-    type Output = Vec<DeploymentOrganizationRole>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -192,14 +176,6 @@ impl DeploymentOrganizationListQuery {
                 private_metadata: row.get("private_metadata"),
             })
             .collect())
-    }
-}
-
-impl Query for DeploymentOrganizationListQuery {
-    type Output = Vec<Organization>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -333,14 +309,6 @@ impl DeploymentWorkspaceListQuery {
     }
 }
 
-impl Query for DeploymentWorkspaceListQuery {
-    type Output = Vec<WorkspaceWithOrganizationName>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetOrganizationDetailsQuery {
     deployment_id: i64,
     organization_id: i64,
@@ -460,14 +428,6 @@ impl GetOrganizationDetailsQuery {
     }
 }
 
-impl Query for GetOrganizationDetailsQuery {
-    type Output = OrganizationDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetWorkspaceDetailsQuery {
     deployment_id: i64,
     workspace_id: i64,
@@ -557,14 +517,6 @@ impl GetWorkspaceDetailsQuery {
             roles,
             segments,
         })
-    }
-}
-
-impl Query for GetWorkspaceDetailsQuery {
-    type Output = WorkspaceDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -765,14 +717,6 @@ impl GetOrganizationMembersQuery {
     }
 }
 
-impl Query for GetOrganizationMembersQuery {
-    type Output = (Vec<OrganizationMemberDetails>, bool);
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetWorkspaceMembersQuery {
     workspace_id: i64,
     offset: i64,
@@ -967,13 +911,5 @@ impl GetWorkspaceMembersQuery {
             .collect();
 
         Ok((members, has_more))
-    }
-}
-
-impl Query for GetWorkspaceMembersQuery {
-    type Output = (Vec<WorkspaceMemberDetails>, bool);
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -1,15 +1,3 @@
-use common::error::AppError;
-use common::state::AppState;
-
-pub trait Command {
-    type Output;
-
-    fn execute(
-        self,
-        app_state: &AppState,
-    ) -> impl std::future::Future<Output = Result<Self::Output, AppError>> + Send;
-}
-
 pub mod agent_execution;
 pub mod agent_execution_context;
 pub mod agent_integration;

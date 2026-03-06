@@ -7,7 +7,9 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use tracing::instrument;
 
-use crate::application::analytics::{AnalyticsStatsResponse, get_analytics_stats as run_get_analytics_stats};
+use crate::application::analytics::{
+    AnalyticsStatsResponse, get_analytics_stats as run_get_analytics_stats,
+};
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 

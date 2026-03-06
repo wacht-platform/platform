@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::{ConversationContent, ConversationMessageType, ConversationRecord};
 
 use chrono::Utc;
@@ -70,14 +68,6 @@ impl CreateConversationCommand {
         let tokens = bpe.encode_with_special_tokens(&text);
 
         Ok(tokens.len() as i32)
-    }
-}
-
-impl Command for CreateConversationCommand {
-    type Output = ConversationRecord;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

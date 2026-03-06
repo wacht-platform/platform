@@ -14,9 +14,13 @@ pub async fn trigger_webhook_event(
     Path(app_slug): Path<String>,
     Json(request): Json<TriggerWebhookEventRequest>,
 ) -> ApiResult<TriggerWebhookEventResponse> {
-    let response =
-        webhook_dispatch_use_cases::trigger_webhook_event(&app_state, deployment_id, app_slug, request)
-            .await?;
+    let response = webhook_dispatch_use_cases::trigger_webhook_event(
+        &app_state,
+        deployment_id,
+        app_slug,
+        request,
+    )
+    .await?;
 
     Ok(response.into())
 }

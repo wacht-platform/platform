@@ -1,6 +1,4 @@
-use crate::Query;
 use common::error::AppError;
-use common::state::AppState;
 use models::api_key::{JwksDocument, OAuthScopeDefinition, RateLimit};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -191,14 +189,6 @@ impl ResolveOAuthAppByFqdnQuery {
     }
 }
 
-impl Query for ResolveOAuthAppByFqdnQuery {
-    type Output = Option<RuntimeOAuthAppData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetRuntimeDeploymentHostsByIdQuery {
     pub deployment_id: i64,
 }
@@ -232,14 +222,6 @@ impl GetRuntimeDeploymentHostsByIdQuery {
             backend_host: r.get("backend_host"),
             frontend_host: r.get("frontend_host"),
         }))
-    }
-}
-
-impl Query for GetRuntimeDeploymentHostsByIdQuery {
-    type Output = Option<RuntimeDeploymentHostsData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -282,14 +264,6 @@ impl ResolveApiAuthAppSlugByApiKeyHashQuery {
     }
 }
 
-impl Query for ResolveApiAuthAppSlugByApiKeyHashQuery {
-    type Output = Option<String>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetRuntimeApiAuthAppSlugByUserIdQuery {
     pub deployment_id: i64,
     pub user_id: i64,
@@ -325,14 +299,6 @@ impl GetRuntimeApiAuthAppSlugByUserIdQuery {
         .await?;
 
         Ok(row.map(|r| r.get("app_slug")))
-    }
-}
-
-impl Query for GetRuntimeApiAuthAppSlugByUserIdQuery {
-    type Output = Option<String>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -422,14 +388,6 @@ impl GetRuntimeOAuthClientByClientIdQuery {
     }
 }
 
-impl Query for GetRuntimeOAuthClientByClientIdQuery {
-    type Output = Option<RuntimeOAuthClientData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct ListActiveRuntimeOAuthGrantsQuery {
     pub deployment_id: i64,
     pub oauth_client_id: i64,
@@ -478,14 +436,6 @@ impl ListActiveRuntimeOAuthGrantsQuery {
                 granted_resource: r.get("granted_resource"),
             })
             .collect())
-    }
-}
-
-impl Query for ListActiveRuntimeOAuthGrantsQuery {
-    type Output = Vec<RuntimeOAuthGrantData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -552,14 +502,6 @@ impl GetRuntimeAuthorizationCodeForExchangeQuery {
     }
 }
 
-impl Query for GetRuntimeAuthorizationCodeForExchangeQuery {
-    type Output = Option<RuntimeAuthorizationCodeData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetRuntimeRefreshTokenForExchangeQuery {
     pub deployment_id: i64,
     pub oauth_client_id: i64,
@@ -620,14 +562,6 @@ impl GetRuntimeRefreshTokenForExchangeQuery {
             resource: r.get("resource"),
             granted_resource: r.get("granted_resource"),
         }))
-    }
-}
-
-impl Query for GetRuntimeRefreshTokenForExchangeQuery {
-    type Output = Option<RuntimeRefreshTokenData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -734,14 +668,6 @@ impl ResolveRuntimeOAuthGrantQuery {
     }
 }
 
-impl Query for ResolveRuntimeOAuthGrantQuery {
-    type Output = RuntimeOAuthGrantResolution;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetRuntimeApiAuthUserIdByAppSlugQuery {
     pub deployment_id: i64,
     pub app_slug: String,
@@ -776,14 +702,6 @@ impl GetRuntimeApiAuthUserIdByAppSlugQuery {
         .await?;
 
         Ok(row.map(|r| r.get("user_id")))
-    }
-}
-
-impl Query for GetRuntimeApiAuthUserIdByAppSlugQuery {
-    type Output = Option<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -914,14 +832,6 @@ impl ValidateRuntimeResourceEntitlementQuery {
     }
 }
 
-impl Query for ValidateRuntimeResourceEntitlementQuery {
-    type Output = bool;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetRuntimeAccessTokenByHashQuery {
     pub deployment_id: i64,
     pub token_hash: String,
@@ -979,14 +889,6 @@ impl GetRuntimeAccessTokenByHashQuery {
             expires_at: r.get("expires_at"),
             revoked_at: r.get("revoked_at"),
         }))
-    }
-}
-
-impl Query for GetRuntimeAccessTokenByHashQuery {
-    type Output = Option<RuntimeAccessTokenData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -1211,14 +1113,6 @@ impl GetRuntimeIntrospectionDataQuery {
     }
 }
 
-impl Query for GetRuntimeIntrospectionDataQuery {
-    type Output = Option<RuntimeIntrospectionData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetGatewayOAuthAccessTokenByHashQuery {
     pub token_hash: String,
 }
@@ -1433,13 +1327,5 @@ impl GetGatewayOAuthAccessTokenByHashQuery {
             scope_definitions: serde_json::from_value(r.scope_definitions).unwrap_or_default(),
             active: r.active,
         }))
-    }
-}
-
-impl Query for GetGatewayOAuthAccessTokenByHashQuery {
-    type Output = Option<GatewayOAuthAccessTokenData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

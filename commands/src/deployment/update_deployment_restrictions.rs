@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use dto::json::DeploymentRestrictionsUpdates;
 
 use super::ClearDeploymentCacheCommand;
@@ -97,14 +95,5 @@ impl UpdateDeploymentRestrictionsCommand {
             .await?;
 
         Ok(())
-    }
-}
-
-impl Command for UpdateDeploymentRestrictionsCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
-            .await
     }
 }

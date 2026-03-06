@@ -33,7 +33,11 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
 
     for (deployment_id, total_bytes) in dirty_deployments {
         let subscription_info = match GetDeploymentProviderSubscriptionQuery::new(deployment_id)
-            .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
+            .execute_with(
+                app_state
+                    .db_router
+                    .reader(common::db_router::ReadConsistency::Strong),
+            )
             .await
         {
             Ok(Some(info)) => info,

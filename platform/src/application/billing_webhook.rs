@@ -3,17 +3,16 @@ use std::collections::HashSet;
 use axum::http::{HeaderMap, StatusCode};
 use commands::{
     billing::{
-        MarkCheckoutFlowFailedCommand, MarkPaymentSucceededCommand, MarkSubscriptionActivatedCommand,
-        UpdateBillingAccountStatusCommand, UpsertInvoiceCommand, UpsertSubscriptionCommand,
+        MarkCheckoutFlowFailedCommand, MarkPaymentSucceededCommand,
+        MarkSubscriptionActivatedCommand, UpdateBillingAccountStatusCommand, UpsertInvoiceCommand,
+        UpsertSubscriptionCommand,
     },
     email::SendRawEmailCommand,
     pulse::AddPulseCreditsCommand,
 };
 use common::{db_router::ReadConsistency, dodo::DodoClient, state::AppState};
 use models::pulse_transaction::PulseTransactionType;
-use queries::{
-    billing::{GetBillingAccountByProviderCustomerIdQuery, GetBillingAccountQuery},
-};
+use queries::billing::{GetBillingAccountByProviderCustomerIdQuery, GetBillingAccountQuery};
 use tracing::{error, info, warn};
 
 pub async fn handle_dodo_webhook(
@@ -49,7 +48,8 @@ pub async fn handle_dodo_webhook(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let event: serde_json::Value = serde_json::from_str(body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let event: serde_json::Value =
+        serde_json::from_str(body).map_err(|_| StatusCode::BAD_REQUEST)?;
     let event_type = event["type"].as_str().unwrap_or("");
     let data = &event["data"];
 
@@ -156,10 +156,7 @@ async fn send_billing_change_email(app_state: &AppState, owner_id: &str, message
             body_html.clone(),
             Some(body_text.clone()),
         );
-        if let Err(e) = send_email_command
-            .execute_with_deps(app_state)
-            .await
-        {
+        if let Err(e) = send_email_command.execute_with_deps(app_state).await {
             warn!(
                 "Failed to send billing change email to {} for {}: {}",
                 email, owner_id, e
@@ -168,7 +165,11 @@ async fn send_billing_change_email(app_state: &AppState, owner_id: &str, message
     }
 }
 
-async fn extract_owner_id(app_state: &AppState, customer_id: &str, data: &serde_json::Value) -> String {
+async fn extract_owner_id(
+    app_state: &AppState,
+    customer_id: &str,
+    data: &serde_json::Value,
+) -> String {
     if let Some(metadata) = data["metadata"].as_object() {
         if let Some(owner_id) = metadata.get("owner_id").and_then(|v| v.as_str()) {
             return owner_id.to_string();
@@ -194,7 +195,10 @@ async fn extract_owner_id(app_state: &AppState, customer_id: &str, data: &serde_
     String::new()
 }
 
-async fn handle_payment_succeeded(app_state: &AppState, data: &serde_json::Value) -> Result<(), StatusCode> {
+async fn handle_payment_succeeded(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let payment_id = data["payment_id"].as_str().unwrap_or("");
     let amount = data["total_amount"].as_i64().unwrap_or(0);
@@ -241,7 +245,10 @@ async fn handle_payment_succeeded(app_state: &AppState, data: &serde_json::Value
             .execute_with(app_state.db_router.writer())
             .await
             .map_err(|e| {
-                error!("Failed to update billing account status on payment success: {}", e);
+                error!(
+                    "Failed to update billing account status on payment success: {}",
+                    e
+                );
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
@@ -329,7 +336,10 @@ async fn handle_payment_succeeded(app_state: &AppState, data: &serde_json::Value
     Ok(())
 }
 
-async fn handle_payment_failed(app_state: &AppState, data: &serde_json::Value) -> Result<(), StatusCode> {
+async fn handle_payment_failed(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let payment_id = data["payment_id"].as_str().unwrap_or("");
 
@@ -453,7 +463,10 @@ fn parse_previous_billing_date(data: &serde_json::Value) -> Option<chrono::DateT
         .map(|dt| dt.with_timezone(&chrono::Utc))
 }
 
-async fn handle_subscription_active(app_state: &AppState, data: &serde_json::Value) -> Result<(), StatusCode> {
+async fn handle_subscription_active(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
@@ -467,7 +480,10 @@ async fn handle_subscription_active(app_state: &AppState, data: &serde_json::Val
 
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
     if owner_id.is_empty() {
-        warn!("Could not determine owner_id from customer_id: {}", customer_id);
+        warn!(
+            "Could not determine owner_id from customer_id: {}",
+            customer_id
+        );
         return Ok(());
     }
 
@@ -484,11 +500,17 @@ async fn handle_subscription_active(app_state: &AppState, data: &serde_json::Val
     )
     .await?;
 
-    info!("Subscription {} activated for owner {}", subscription_id, owner_id);
+    info!(
+        "Subscription {} activated for owner {}",
+        subscription_id, owner_id
+    );
     Ok(())
 }
 
-async fn handle_subscription_renewed(app_state: &AppState, data: &serde_json::Value) -> Result<(), StatusCode> {
+async fn handle_subscription_renewed(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
@@ -512,7 +534,10 @@ async fn handle_subscription_renewed(app_state: &AppState, data: &serde_json::Va
     )
     .await?;
 
-    info!("Subscription {} renewed for owner {}", subscription_id, owner_id);
+    info!(
+        "Subscription {} renewed for owner {}",
+        subscription_id, owner_id
+    );
     Ok(())
 }
 
@@ -578,11 +603,17 @@ async fn handle_subscription_cancelled(
     )
     .await?;
 
-    info!("Subscription {} cancelled for owner {}", subscription_id, owner_id);
+    info!(
+        "Subscription {} cancelled for owner {}",
+        subscription_id, owner_id
+    );
     Ok(())
 }
 
-async fn handle_subscription_on_hold(app_state: &AppState, data: &serde_json::Value) -> Result<(), StatusCode> {
+async fn handle_subscription_on_hold(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
@@ -607,11 +638,17 @@ async fn handle_subscription_on_hold(app_state: &AppState, data: &serde_json::Va
     )
     .await?;
 
-    info!("Subscription {} on hold for owner {}", subscription_id, owner_id);
+    info!(
+        "Subscription {} on hold for owner {}",
+        subscription_id, owner_id
+    );
     Ok(())
 }
 
-async fn handle_subscription_failed(app_state: &AppState, data: &serde_json::Value) -> Result<(), StatusCode> {
+async fn handle_subscription_failed(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
@@ -636,11 +673,17 @@ async fn handle_subscription_failed(app_state: &AppState, data: &serde_json::Val
     )
     .await?;
 
-    info!("Subscription {} failed for owner {}", subscription_id, owner_id);
+    info!(
+        "Subscription {} failed for owner {}",
+        subscription_id, owner_id
+    );
     Ok(())
 }
 
-async fn handle_subscription_expired(app_state: &AppState, data: &serde_json::Value) -> Result<(), StatusCode> {
+async fn handle_subscription_expired(
+    app_state: &AppState,
+    data: &serde_json::Value,
+) -> Result<(), StatusCode> {
     let customer_id = get_customer_id(data);
     let subscription_id = data["subscription_id"].as_str().unwrap_or("");
     let product_id = data["product_id"].as_str().map(|s| s.to_string());
@@ -665,6 +708,9 @@ async fn handle_subscription_expired(app_state: &AppState, data: &serde_json::Va
     )
     .await?;
 
-    info!("Subscription {} expired for owner {}", subscription_id, owner_id);
+    info!(
+        "Subscription {} expired for owner {}",
+        subscription_id, owner_id
+    );
     Ok(())
 }

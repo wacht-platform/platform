@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use common::state::AppState;
 
 pub struct CreateOAuthClientGrantCommand {
     pub deployment_id: i64,
@@ -16,15 +14,6 @@ pub struct CreateOAuthClientGrantCommand {
 #[derive(Debug, Clone)]
 pub struct OAuthClientGrantCreated {
     pub id: i64,
-}
-
-impl Command for CreateOAuthClientGrantCommand {
-    type Output = OAuthClientGrantCreated;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
-    }
 }
 
 impl CreateOAuthClientGrantCommand {
@@ -146,14 +135,6 @@ pub struct RevokeOAuthClientGrantCommand {
     pub deployment_id: i64,
     pub oauth_client_id: i64,
     pub grant_id: i64,
-}
-
-impl Command for RevokeOAuthClientGrantCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl RevokeOAuthClientGrantCommand {

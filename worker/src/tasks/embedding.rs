@@ -30,8 +30,9 @@ pub async fn process_document_batch_impl(
             commands::GenerateEmbeddingsCommand::new(texts)
                 .execute_with(
                     &reqwest::Client::new(),
-                    &std::env::var("GEMINI_API_KEY")
-                        .map_err(|_| common::error::AppError::Internal("GEMINI_API_KEY is not set".to_string()))?,
+                    &std::env::var("GEMINI_API_KEY").map_err(|_| {
+                        common::error::AppError::Internal("GEMINI_API_KEY is not set".to_string())
+                    })?,
                     &std::env::var("GEMINI_EMBEDDING_MODEL")
                         .unwrap_or_else(|_| "models/gemini-embedding-001".to_string()),
                 )

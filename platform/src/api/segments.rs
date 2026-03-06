@@ -7,20 +7,18 @@ use std::collections::HashMap;
 
 use crate::{
     api::pagination::paginate_results,
+    application::response::{ApiResult, PaginatedResponse},
     application::segments::{
         assign_segment as run_assign_segment, create_segment as run_create_segment,
         delete_segment as run_delete_segment, get_segment_data as run_get_segment_data,
         list_segments as run_list_segments, remove_segment as run_remove_segment,
         update_segment as run_update_segment, validate_segment_type,
     },
-    application::response::{ApiResult, PaginatedResponse},
     middleware::RequireDeployment,
 };
 use common::state::AppState;
 use models::{AnalyzedEntity, Segment};
-use queries::{
-    segments::{GetSegmentDataQuery, GetSegmentsQuery},
-};
+use queries::segments::{GetSegmentDataQuery, GetSegmentsQuery};
 
 // --- Models ---
 
@@ -96,9 +94,7 @@ fn resolve_segment_pagination(params: &SegmentQueryParams) -> (i64, i64) {
     (limit, offset)
 }
 
-fn map_user_filter(
-    filters: Option<&SegmentDataFilters>,
-) -> Option<queries::segments::UserFilter> {
+fn map_user_filter(filters: Option<&SegmentDataFilters>) -> Option<queries::segments::UserFilter> {
     filters.and_then(|segment_filters| {
         segment_filters
             .user
@@ -115,12 +111,11 @@ fn map_organization_filter(
     filters: Option<&SegmentDataFilters>,
 ) -> Option<queries::segments::OrganizationFilter> {
     filters.and_then(|segment_filters| {
-        segment_filters
-            .organization
-            .as_ref()
-            .map(|organization| queries::segments::OrganizationFilter {
+        segment_filters.organization.as_ref().map(|organization| {
+            queries::segments::OrganizationFilter {
                 name: organization.name.clone(),
-            })
+            }
+        })
     })
 }
 

@@ -1,6 +1,4 @@
-use crate::Query;
 use common::error::AppError;
-use common::state::AppState;
 
 pub struct GetOrganizationNotificationRecipientUserIdsQuery {
     deployment_id: i64,
@@ -46,14 +44,6 @@ impl GetOrganizationNotificationRecipientUserIdsQuery {
         .await?;
 
         Ok(rows.into_iter().map(|r| r.user_id).collect())
-    }
-}
-
-impl Query for GetOrganizationNotificationRecipientUserIdsQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -124,14 +114,6 @@ impl GetWorkspaceNotificationRecipientUserIdsQuery {
         .await?;
 
         Ok(rows.into_iter().map(|r| r.user_id).collect())
-    }
-}
-
-impl Query for GetWorkspaceNotificationRecipientUserIdsQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }
 

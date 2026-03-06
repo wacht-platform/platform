@@ -3,13 +3,13 @@ use redis::Client as RedisClient;
 use sqlx::PgPool;
 
 use crate::{
+    clickhouse::ClickHouseService,
     cloudflare::CloudflareService,
     db_router::{DbRouter, ReadConsistency},
-    clickhouse::ClickHouseService,
     dns_verification::DnsVerificationService,
     encryption::EncryptionService,
-    postmark::PostmarkService,
     error::AppError,
+    postmark::PostmarkService,
     state::AppState,
 };
 

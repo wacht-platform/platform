@@ -1,9 +1,7 @@
 use chrono::Utc;
 use sqlx::Row;
 
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use dto::json::{NewDeploymentJwtTemplate, PartialDeploymentJwtTemplate};
 use models::DeploymentJwtTemplate;
 
@@ -73,19 +71,6 @@ impl CreateDeploymentJwtTemplateCommand {
             .await?;
 
         Ok(template)
-    }
-}
-
-impl Command for CreateDeploymentJwtTemplateCommand {
-    type Output = DeploymentJwtTemplate;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            app_state.sf.next_id()? as i64,
-            &app_state.redis_client,
-        )
-        .await
     }
 }
 
@@ -187,15 +172,6 @@ impl UpdateDeploymentJwtTemplateCommand {
     }
 }
 
-impl Command for UpdateDeploymentJwtTemplateCommand {
-    type Output = DeploymentJwtTemplate;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
-            .await
-    }
-}
-
 pub struct DeleteDeploymentJwtTemplateCommand {
     pub deployment_id: i64,
     pub id: i64,
@@ -237,14 +213,5 @@ impl DeleteDeploymentJwtTemplateCommand {
             .await?;
 
         Ok(())
-    }
-}
-
-impl Command for DeleteDeploymentJwtTemplateCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
-            .await
     }
 }

@@ -1,10 +1,7 @@
 use chrono::{Duration, Utc};
 use common::error::AppError;
-use common::state::AppState;
 use models::{ActiveAgentIntegration, IntegrationLinkCode};
 use serde::Serialize;
-
-use crate::Command;
 
 const BASE62_CHARS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -45,7 +42,11 @@ impl CreateIntegrationLinkCodeCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A, id: i64) -> Result<LinkCodeResponse, AppError>
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        id: i64,
+    ) -> Result<LinkCodeResponse, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -78,19 +79,6 @@ impl CreateIntegrationLinkCodeCommand {
 pub struct LinkCodeResponse {
     pub code: String,
     pub expires_at: chrono::DateTime<Utc>,
-}
-
-impl Command for CreateIntegrationLinkCodeCommand {
-    type Output = LinkCodeResponse;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let id = app_state
-            .sf
-            .next_id()
-            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
-            as i64;
-        self.execute_with(app_state.db_router.writer(), id).await
-    }
 }
 
 /// Command to validate a link code and create the connection
@@ -181,19 +169,6 @@ pub struct ValidateLinkCodeResponse {
     pub connection_id: i64,
 }
 
-impl Command for ValidateLinkCodeCommand {
-    type Output = ValidateLinkCodeResponse;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let connection_id = app_state
-            .sf
-            .next_id()
-            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
-            as i64;
-        self.execute_with(app_state.db_router.writer(), connection_id).await
-    }
-}
-
 /// Command to get user connection by external ID (read operation)
 pub struct GetActiveIntegrationCommand {
     pub integration_id: i64,
@@ -231,13 +206,5 @@ impl GetActiveIntegrationCommand {
         .map_err(AppError::Database)?;
 
         Ok(result)
-    }
-}
-
-impl Command for GetActiveIntegrationCommand {
-    type Output = Option<ActiveAgentIntegration>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

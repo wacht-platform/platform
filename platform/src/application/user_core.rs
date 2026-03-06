@@ -1,6 +1,6 @@
 use commands::{
-    CreateUserCommand, DeleteUserCommand, GenerateImpersonationTokenCommand,
-    UpdateUserCommand, UpdateUserPasswordCommand, UpdateUserProfileImageCommand, UploadToCdnCommand,
+    CreateUserCommand, DeleteUserCommand, GenerateImpersonationTokenCommand, UpdateUserCommand,
+    UpdateUserPasswordCommand, UpdateUserProfileImageCommand, UploadToCdnCommand,
 };
 use common::db_router::ReadConsistency;
 use common::error::AppError;
@@ -131,9 +131,7 @@ pub async fn update_user_password(
         request.new_password,
         request.skip_password_check,
     );
-    password_command
-        .execute_with_deps(app_state)
-        .await?;
+    password_command.execute_with_deps(app_state).await?;
     Ok(())
 }
 

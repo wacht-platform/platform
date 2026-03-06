@@ -2,13 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use common::error::AppError;
-use common::state::AppState;
 use models::webhook_analytics::{
     EndpointPerformance, EventCount, FailureReason, TimeseriesInterval, TimeseriesPoint,
     WebhookAnalyticsResult, WebhookTimeseriesResult,
 };
-
-use super::Query;
 
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookAnalyticsQuery {
@@ -168,14 +165,6 @@ impl GetWebhookAnalyticsQuery {
     }
 }
 
-impl Query for GetWebhookAnalyticsQuery {
-    type Output = WebhookAnalyticsResult;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.clickhouse_service).await
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookTimeseriesQuery {
     pub deployment_id: i64,
@@ -252,13 +241,5 @@ impl GetWebhookTimeseriesQuery {
             data,
             interval: format!("{:?}", self.interval).to_lowercase(),
         })
-    }
-}
-
-impl Query for GetWebhookTimeseriesQuery {
-    type Output = WebhookTimeseriesResult;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.clickhouse_service).await
     }
 }

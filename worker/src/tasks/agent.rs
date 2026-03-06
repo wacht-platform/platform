@@ -148,7 +148,11 @@ async fn publish_conversation_webhook(
 ) {
     let conversation_query = queries::GetConversationByIdQuery::new(conversation_id);
     if let Ok(conversation) = conversation_query
-        .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
+        .execute_with(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
         .await
     {
         let payload = serde_json::json!({
@@ -394,10 +398,7 @@ return 0
     }
 }
 
-fn spawn_deployment_slot_heartbeat(
-    app_state: AppState,
-    key: String,
-) -> oneshot::Sender<()> {
+fn spawn_deployment_slot_heartbeat(app_state: AppState, key: String) -> oneshot::Sender<()> {
     let (stop_tx, mut stop_rx) = oneshot::channel();
 
     tokio::spawn(async move {
@@ -529,8 +530,7 @@ return current
             .invoke_async(&mut conn)
             .await?;
         if acquired_count > 0 {
-            let heartbeat_stop =
-                spawn_deployment_slot_heartbeat(app_state.clone(), key.clone());
+            let heartbeat_stop = spawn_deployment_slot_heartbeat(app_state.clone(), key.clone());
             return Ok(DeploymentExecutionGuard {
                 app_state: app_state.clone(),
                 key,

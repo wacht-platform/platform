@@ -43,14 +43,6 @@ impl ListOrganizationDomainsQuery {
     }
 }
 
-impl Query for ListOrganizationDomainsQuery {
-    type Output = Vec<OrganizationDomain>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl ListOrganizationDomainsQuery {
     pub async fn execute_with<'a, A>(
         &self,
@@ -156,14 +148,6 @@ impl ListEnterpriseConnectionsQuery {
     }
 }
 
-impl Query for ListEnterpriseConnectionsQuery {
-    type Output = Vec<EnterpriseConnection>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl ListEnterpriseConnectionsQuery {
     pub async fn execute_with<'a, A>(
         &self,
@@ -252,14 +236,6 @@ impl GetScimTokenQuery {
             organization_id,
             connection_id,
         }
-    }
-}
-
-impl Query for GetScimTokenQuery {
-    type Output = Option<models::scim_token::ScimToken>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

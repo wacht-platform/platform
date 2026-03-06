@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use serde::{Deserialize, Serialize};
 use sqlx::Connection;
 
@@ -62,13 +60,5 @@ impl DeleteWorkspaceCommand {
         tx.commit().await.map_err(AppError::Database)?;
 
         Ok(())
-    }
-}
-
-impl Command for DeleteWorkspaceCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

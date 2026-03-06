@@ -127,8 +127,8 @@ async fn enrich_organization_payload(
         .execute_with(reader)
         .await
         .map_err(|e| {
-        TaskError::Permanent(format!("Failed to load organization {}: {}", org_id, e))
-    })?;
+            TaskError::Permanent(format!("Failed to load organization {}: {}", org_id, e))
+        })?;
 
     let org_json = serde_json::to_value(&org_details)
         .map_err(|e| TaskError::Permanent(format!("Failed to serialize organization: {}", e)))?;
@@ -153,8 +153,8 @@ async fn enrich_workspace_payload(
         .execute_with(reader)
         .await
         .map_err(|e| {
-        TaskError::Permanent(format!("Failed to load workspace {}: {}", workspace_id, e))
-    })?;
+            TaskError::Permanent(format!("Failed to load workspace {}: {}", workspace_id, e))
+        })?;
 
     let workspace_json = serde_json::to_value(&workspace_details)
         .map_err(|e| TaskError::Permanent(format!("Failed to serialize workspace: {}", e)))?;
@@ -177,7 +177,9 @@ async fn enrich_session_payload(
     let session_data = GetSessionWithSignInsQuery::new(session_id)
         .execute_with(reader)
         .await
-        .map_err(|e| TaskError::Permanent(format!("Failed to load session {}: {}", session_id, e)))?;
+        .map_err(|e| {
+            TaskError::Permanent(format!("Failed to load session {}: {}", session_id, e))
+        })?;
 
     let session_json = serde_json::to_value(&session_data)
         .map_err(|e| TaskError::Permanent(format!("Failed to serialize session: {}", e)))?;

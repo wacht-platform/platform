@@ -247,11 +247,3 @@ impl CreateStagingDeploymentCommandBuilder {
         })
     }
 }
-
-impl Command for CreateStagingDeploymentCommand {
-    type Output = Deployment;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}

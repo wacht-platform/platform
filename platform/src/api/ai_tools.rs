@@ -53,8 +53,8 @@ pub async fn get_ai_tool_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ToolParams>,
 ) -> ApiResult<AiToolWithDetails> {
-    let tool = ai_tools_use_cases::get_ai_tool_by_id(&app_state, deployment_id, params.tool_id)
-        .await?;
+    let tool =
+        ai_tools_use_cases::get_ai_tool_by_id(&app_state, deployment_id, params.tool_id).await?;
     Ok(tool.into())
 }
 
@@ -63,8 +63,8 @@ pub async fn get_agent_tools(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<PaginatedResponse<AiTool>> {
-    let tools = ai_tools_use_cases::get_agent_tools(&app_state, deployment_id, params.agent_id)
-        .await?;
+    let tools =
+        ai_tools_use_cases::get_agent_tools(&app_state, deployment_id, params.agent_id).await?;
     Ok(tools.into())
 }
 
@@ -73,8 +73,13 @@ pub async fn attach_tool_to_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentToolParams>,
 ) -> ApiResult<()> {
-    ai_tools_use_cases::attach_tool_to_agent(&app_state, deployment_id, params.agent_id, params.tool_id)
-        .await?;
+    ai_tools_use_cases::attach_tool_to_agent(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        params.tool_id,
+    )
+    .await?;
     Ok(().into())
 }
 
@@ -83,8 +88,13 @@ pub async fn detach_tool_from_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentToolParams>,
 ) -> ApiResult<()> {
-    ai_tools_use_cases::detach_tool_from_agent(&app_state, deployment_id, params.agent_id, params.tool_id)
-        .await?;
+    ai_tools_use_cases::detach_tool_from_agent(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        params.tool_id,
+    )
+    .await?;
     Ok(().into())
 }
 

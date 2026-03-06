@@ -750,11 +750,11 @@ pub async fn create_console_router(state: AppState) -> Router {
 
     apply_common_http_layers(
         Router::new()
-        .merge(health_routes())
-        .merge(public_webhook_routes())
-        .merge(protected_routes)
-        .with_state(state)
-        .layer(axum::middleware::from_fn(mark_console_platform_source))
+            .merge(health_routes())
+            .merge(public_webhook_routes())
+            .merge(protected_routes)
+            .with_state(state)
+            .layer(axum::middleware::from_fn(mark_console_platform_source)),
     )
 }
 
@@ -774,57 +774,53 @@ pub async fn create_backend_router(state: AppState) -> Router {
 
     apply_common_http_layers(
         Router::new()
-        .merge(health_routes())
-        .merge(backend_routes)
-        .with_state(state)
-        .layer(axum::middleware::from_fn(mark_backend_platform_source))
+            .merge(health_routes())
+            .merge(backend_routes)
+            .with_state(state)
+            .layer(axum::middleware::from_fn(mark_backend_platform_source)),
     )
 }
 
 pub async fn create_frontend_router(state: AppState) -> Router {
-    apply_common_http_layers(
-        Router::new()
-        .merge(health_routes())
-        .with_state(state)
-    )
+    apply_common_http_layers(Router::new().merge(health_routes()).with_state(state))
 }
 
 pub async fn create_oauth_router(state: AppState) -> Router {
     apply_common_http_layers(
         Router::new()
-        .route("/health", get(api::health::check))
-        .route(
-            "/.well-known/oauth-authorization-server",
-            get(api::oauth_runtime::oauth_server_metadata),
-        )
-        .route(
-            "/.well-known/oauth-protected-resource",
-            get(api::oauth_runtime::oauth_protected_resource_metadata),
-        )
-        .route(
-            "/oauth/authorize",
-            get(api::oauth_runtime::oauth_authorize_get),
-        )
-        .route(
-            "/oauth/consent/submit",
-            post(api::oauth_runtime::oauth_consent_submit),
-        )
-        .route("/oauth/token", post(api::oauth_runtime::oauth_token))
-        .route("/oauth/revoke", post(api::oauth_runtime::oauth_revoke))
-        .route(
-            "/oauth/introspect",
-            post(api::oauth_runtime::oauth_introspect),
-        )
-        .route(
-            "/oauth/register",
-            post(api::oauth_runtime::oauth_register_client),
-        )
-        .route(
-            "/oauth/register/{client_id}",
-            get(api::oauth_runtime::oauth_get_registered_client)
-                .put(api::oauth_runtime::oauth_update_registered_client)
-                .delete(api::oauth_runtime::oauth_delete_registered_client),
-        )
-        .with_state(state)
+            .route("/health", get(api::health::check))
+            .route(
+                "/.well-known/oauth-authorization-server",
+                get(api::oauth_runtime::oauth_server_metadata),
+            )
+            .route(
+                "/.well-known/oauth-protected-resource",
+                get(api::oauth_runtime::oauth_protected_resource_metadata),
+            )
+            .route(
+                "/oauth/authorize",
+                get(api::oauth_runtime::oauth_authorize_get),
+            )
+            .route(
+                "/oauth/consent/submit",
+                post(api::oauth_runtime::oauth_consent_submit),
+            )
+            .route("/oauth/token", post(api::oauth_runtime::oauth_token))
+            .route("/oauth/revoke", post(api::oauth_runtime::oauth_revoke))
+            .route(
+                "/oauth/introspect",
+                post(api::oauth_runtime::oauth_introspect),
+            )
+            .route(
+                "/oauth/register",
+                post(api::oauth_runtime::oauth_register_client),
+            )
+            .route(
+                "/oauth/register/{client_id}",
+                get(api::oauth_runtime::oauth_get_registered_client)
+                    .put(api::oauth_runtime::oauth_update_registered_client)
+                    .delete(api::oauth_runtime::oauth_delete_registered_client),
+            )
+            .with_state(state),
     )
 }

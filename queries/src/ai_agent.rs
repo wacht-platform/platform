@@ -1,6 +1,4 @@
-use crate::Query;
 use common::error::AppError;
-use common::state::AppState;
 use models::{AiAgent, AiAgentWithDetails, AiAgentWithFeatures};
 
 pub struct GetAiAgentsQuery {
@@ -146,14 +144,6 @@ impl GetAiAgentsQuery {
     }
 }
 
-impl Query for GetAiAgentsQuery {
-    type Output = Vec<AiAgentWithDetails>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetAiAgentByIdQuery {
     pub deployment_id: i64,
     pub agent_id: i64,
@@ -287,22 +277,6 @@ impl GetAiAgentsByIdsQuery {
     }
 }
 
-impl Query for GetAiAgentsByIdsQuery {
-    type Output = Vec<AiAgentWithDetails>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
-impl Query for GetAiAgentByIdQuery {
-    type Output = AiAgentWithDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetAiAgentByNameQuery {
     pub deployment_id: i64,
     pub agent_name: String,
@@ -352,14 +326,6 @@ impl GetAiAgentByNameQuery {
             sub_agents,
             spawn_config,
         })
-    }
-}
-
-impl Query for GetAiAgentByNameQuery {
-    type Output = AiAgent;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -495,14 +461,6 @@ impl GetAiAgentByNameWithFeatures {
     }
 }
 
-impl Query for GetAiAgentByNameWithFeatures {
-    type Output = AiAgentWithFeatures;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetAiAgentByIdWithFeatures {
     pub agent_id: i64,
 }
@@ -625,13 +583,5 @@ impl GetAiAgentByIdWithFeatures {
             sub_agents,
             spawn_config,
         })
-    }
-}
-
-impl Query for GetAiAgentByIdWithFeatures {
-    type Output = AiAgentWithFeatures;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

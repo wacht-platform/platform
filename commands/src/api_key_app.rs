@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::api_key::ApiAuthApp;
 
 async fn ensure_user_exists(
@@ -208,14 +206,6 @@ impl CreateApiAuthAppCommand {
     }
 }
 
-impl Command for CreateApiAuthAppCommand {
-    type Output = ApiAuthApp;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl CreateApiAuthAppCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<ApiAuthApp, AppError>
     where
@@ -233,7 +223,8 @@ impl CreateApiAuthAppCommand {
 
         if let Some(workspace_id) = self.workspace_id {
             let workspace_org_id =
-                resolve_workspace_organization(&mut *conn, self.deployment_id, workspace_id).await?;
+                resolve_workspace_organization(&mut *conn, self.deployment_id, workspace_id)
+                    .await?;
             if let Some(explicit_org_id) = organization_id {
                 if explicit_org_id != workspace_org_id {
                     return Err(AppError::Validation(
@@ -320,14 +311,6 @@ pub struct UpdateApiAuthAppCommand {
     pub resources: Option<Vec<String>>,
 }
 
-impl Command for UpdateApiAuthAppCommand {
-    type Output = ApiAuthApp;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateApiAuthAppCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<ApiAuthApp, AppError>
     where
@@ -359,7 +342,8 @@ impl UpdateApiAuthAppCommand {
 
         if let Some(workspace_id) = next_workspace_id {
             let workspace_org_id =
-                resolve_workspace_organization(&mut *conn, self.deployment_id, workspace_id).await?;
+                resolve_workspace_organization(&mut *conn, self.deployment_id, workspace_id)
+                    .await?;
             if let Some(explicit_org_id) = next_organization_id {
                 if explicit_org_id != workspace_org_id {
                     return Err(AppError::Validation(
@@ -462,14 +446,6 @@ pub struct DeleteApiAuthAppCommand {
     pub deployment_id: i64,
 }
 
-impl Command for DeleteApiAuthAppCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl DeleteApiAuthAppCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -514,14 +490,6 @@ impl EnsureUserApiAuthAppCommand {
             deployment_id,
             user_id,
         }
-    }
-}
-
-impl Command for EnsureUserApiAuthAppCommand {
-    type Output = String;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

@@ -1,12 +1,8 @@
 use std::collections::BTreeMap;
 
-use common::{
-    capabilities::HasDbRouter, db_router::ReadConsistency, error::AppError, state::AppState,
-};
+use common::{capabilities::HasDbRouter, db_router::ReadConsistency, error::AppError};
 use models::{Deployment, ProjectWithDeployments};
 use sqlx::{Executor, Postgres, Row, query};
-
-use super::Query;
 
 #[allow(dead_code)]
 pub struct GetProjectsWithDeploymentQuery {
@@ -193,13 +189,5 @@ impl GetProjectsWithDeploymentQuery {
     {
         self.execute_with_deps(deps.reader_pool(self.consistency))
             .await
-    }
-
-}
-impl Query for GetProjectsWithDeploymentQuery {
-    type Output = Vec<ProjectWithDeployments>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_router).await
     }
 }

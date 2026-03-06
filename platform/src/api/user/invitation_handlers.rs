@@ -33,8 +33,8 @@ pub async fn get_user_waitlist(
     RequireDeployment(deployment_id): RequireDeployment,
     QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentWaitlistUser>> {
-    let waitlist = user_invitation_use_cases::get_user_waitlist(&app_state, deployment_id, params)
-        .await?;
+    let waitlist =
+        user_invitation_use_cases::get_user_waitlist(&app_state, deployment_id, params).await?;
 
     Ok(waitlist.into())
 }
@@ -44,7 +44,8 @@ pub async fn invite_user(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<InviteUserRequest>,
 ) -> ApiResult<DeploymentInvitation> {
-    let invitation = user_invitation_use_cases::invite_user(&app_state, deployment_id, request).await?;
+    let invitation =
+        user_invitation_use_cases::invite_user(&app_state, deployment_id, request).await?;
     Ok(invitation.into())
 }
 

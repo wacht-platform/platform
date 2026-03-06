@@ -12,9 +12,7 @@ use common::state::AppState;
 use dashmap::DashMap;
 use futures::StreamExt;
 use moka::future::Cache;
-use queries::{
-    api_key_gateway::{ApiKeyGatewayData, GetApiKeyGatewayDataQuery},
-};
+use queries::api_key_gateway::{ApiKeyGatewayData, GetApiKeyGatewayDataQuery};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};

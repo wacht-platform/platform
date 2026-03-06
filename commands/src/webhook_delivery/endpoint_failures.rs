@@ -1,7 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 
-use crate::Command;
-use common::{capabilities::HasRedis, error::AppError, state::AppState};
+use common::{capabilities::HasRedis, error::AppError};
 
 #[derive(Debug)]
 pub struct CheckEndpointFailuresCommand {
@@ -28,14 +27,6 @@ impl CheckEndpointFailuresCommand {
             failure_count,
             should_deactivate: failure_count >= 10,
         })
-    }
-}
-
-impl Command for CheckEndpointFailuresCommand {
-    type Output = EndpointFailureInfo;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.redis_client).await
     }
 }
 
@@ -80,14 +71,6 @@ impl IncrementEndpointFailuresCommand {
     }
 }
 
-impl Command for IncrementEndpointFailuresCommand {
-    type Output = i64;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.redis_client).await
-    }
-}
-
 #[derive(Debug)]
 pub struct ClearEndpointFailuresCommand {
     pub endpoint_id: i64,
@@ -113,14 +96,6 @@ impl ClearEndpointFailuresCommand {
             .map_err(|e| AppError::Internal(format!("Redis del failed: {}", e)))?;
 
         Ok(())
-    }
-}
-
-impl Command for ClearEndpointFailuresCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.redis_client).await
     }
 }
 

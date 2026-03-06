@@ -2,8 +2,8 @@ use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::api_key::{OAuthAppResponse, OAuthClientResponse};
 use models::error::AppError;
-use queries::{
-    oauth::{GetOAuthAppBySlugQuery, GetOAuthClientByIdQuery, OAuthAppData, OAuthClientData},
+use queries::oauth::{
+    GetOAuthAppBySlugQuery, GetOAuthClientByIdQuery, OAuthAppData, OAuthClientData,
 };
 
 pub async fn get_oauth_app_by_slug(

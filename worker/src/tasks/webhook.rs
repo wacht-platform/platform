@@ -680,10 +680,7 @@ async fn send_webhook_failure_notification(
             recipient_email.clone(),
             variables,
         );
-        if let Err(e) = send_email_command
-            .execute_with_deps(app_state)
-            .await
-        {
+        if let Err(e) = send_email_command.execute_with_deps(app_state).await {
             error!(
                 deployment_id,
                 app_slug,

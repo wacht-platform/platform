@@ -5,8 +5,8 @@ use serde::Deserialize;
 use crate::api::pagination::paginate_results;
 use crate::application::agent_integrations::{
     create_agent_integration as run_create_agent_integration,
-    delete_agent_integration as run_delete_agent_integration,
-    ensure_integrations_beta_enabled, get_agent_integration_by_id as run_get_agent_integration_by_id,
+    delete_agent_integration as run_delete_agent_integration, ensure_integrations_beta_enabled,
+    get_agent_integration_by_id as run_get_agent_integration_by_id,
     list_agent_integrations as run_list_agent_integrations, normalize_integration_config,
     parse_integration_type, update_agent_integration as run_update_agent_integration,
 };
@@ -61,7 +61,8 @@ pub async fn get_agent_integrations(
     let (limit, offset) = resolve_pagination(&query);
 
     let integrations =
-        run_list_agent_integrations(&app_state, deployment_id, params.agent_id, limit, offset).await?;
+        run_list_agent_integrations(&app_state, deployment_id, params.agent_id, limit, offset)
+            .await?;
 
     Ok(paginate_results(integrations, limit as i32, offset).into())
 }
@@ -96,9 +97,13 @@ pub async fn get_agent_integration_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentIntegrationParams>,
 ) -> ApiResult<AgentIntegration> {
-    let integration =
-        run_get_agent_integration_by_id(&app_state, deployment_id, params.agent_id, params.integration_id)
-            .await?;
+    let integration = run_get_agent_integration_by_id(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        params.integration_id,
+    )
+    .await?;
     Ok(integration.into())
 }
 

@@ -1,9 +1,6 @@
 use aws_sdk_s3::primitives::ByteStream;
 use common::error::AppError;
-use common::state::AppState;
 use tracing::{debug, error, info};
-
-use crate::Command;
 
 pub struct WriteToAgentStorageCommand {
     pub key: String,
@@ -23,18 +20,6 @@ impl WriteToAgentStorageCommand {
     pub fn with_content_type(mut self, content_type: String) -> Self {
         self.content_type = Some(content_type);
         self
-    }
-}
-
-impl Command for WriteToAgentStorageCommand {
-    type Output = String;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
-        self.execute_with(client).await
     }
 }
 
@@ -119,18 +104,6 @@ impl DeleteFromAgentStorageCommand {
     }
 }
 
-impl Command for DeleteFromAgentStorageCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
-        self.execute_with(client).await
-    }
-}
-
 impl DeleteFromAgentStorageCommand {
     pub async fn execute_with(self, client: &aws_sdk_s3::Client) -> Result<(), AppError> {
         client
@@ -152,18 +125,6 @@ pub struct DeletePrefixFromAgentStorageCommand {
 impl DeletePrefixFromAgentStorageCommand {
     pub fn new(prefix: String) -> Self {
         Self { prefix }
-    }
-}
-
-impl Command for DeletePrefixFromAgentStorageCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
-        self.execute_with(client).await
     }
 }
 

@@ -1,8 +1,5 @@
 use common::error::AppError;
-use common::state::AppState;
 use models::DeploymentInvitation;
-
-use super::Query;
 
 pub struct GetDeploymentInvitationQuery {
     invitation_id: i64,
@@ -42,13 +39,5 @@ impl GetDeploymentInvitationQuery {
         };
 
         Ok(invitation)
-    }
-}
-
-impl Query for GetDeploymentInvitationQuery {
-    type Output = DeploymentInvitation;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

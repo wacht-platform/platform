@@ -57,10 +57,7 @@ impl VerifyDeploymentDnsRecordsCommand {
             .unwrap_or_default();
 
         deps.dns_verification_service
-            .verify_domain_records(
-                &mut domain_verification_records,
-                deps.cloudflare_service,
-            )
+            .verify_domain_records(&mut domain_verification_records, deps.cloudflare_service)
             .await
             .map_err(|e| {
                 tracing::warn!("Failed to verify domain records: {}", e);
@@ -141,18 +138,6 @@ impl VerifyDeploymentDnsRecordsCommand {
                     c
                 }),
         })
-    }
-}
-
-impl Command for VerifyDeploymentDnsRecordsCommand {
-    type Output = Deployment;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let deps = VerifyDeploymentDnsDeps {
-            cloudflare_service: &app_state.cloudflare_service,
-            dns_verification_service: &app_state.dns_verification_service,
-        };
-        self.execute_with(&deps, app_state.db_router.writer()).await
     }
 }
 

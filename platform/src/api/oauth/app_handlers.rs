@@ -15,7 +15,8 @@ use super::types::OAuthAppPathParams;
 
 async fn parse_create_oauth_app_input(
     multipart: Multipart,
-) -> Result<oauth_app_use_cases::CreateOAuthAppInput, crate::application::response::ApiErrorResponse> {
+) -> Result<oauth_app_use_cases::CreateOAuthAppInput, crate::application::response::ApiErrorResponse>
+{
     let mut slug: Option<String> = None;
     let mut name: Option<String> = None;
     let mut description: Option<String> = None;

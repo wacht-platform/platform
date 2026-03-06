@@ -6,8 +6,8 @@ use commands::{
     },
     webhook_event_catalog::{CreateEventCatalogCommand, UpdateEventCatalogCommand},
 };
-use common::error::AppError;
 use common::ReadConsistency;
+use common::error::AppError;
 use common::state::AppState;
 use dto::json::webhook_requests::{
     AppendEventsToCatalogRequest, ArchiveEventInCatalogRequest, CreateEventCatalogRequest,
@@ -238,13 +238,11 @@ pub async fn get_webhook_catalog(
         .event_catalog_slug
         .ok_or_else(|| AppError::NotFound("No catalog assigned to this app".to_string()))?;
 
-    let catalog = commands::webhook_event_catalog::GetEventCatalogQuery::new(
-        deployment_id,
-        catalog_slug,
-    )
-    .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
-    .await?
-    .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
+    let catalog =
+        commands::webhook_event_catalog::GetEventCatalogQuery::new(deployment_id, catalog_slug)
+            .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+            .await?
+            .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
 
     Ok(catalog)
 }

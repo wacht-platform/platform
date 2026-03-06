@@ -1,7 +1,5 @@
-use super::Query;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use common::state::AppState;
 use models::api_key::RateLimit;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -65,7 +63,10 @@ impl ListRateLimitSchemesQuery {
         self.execute_with_deps(&mut conn).await
     }
 
-    pub(crate) async fn execute_with_deps(&self, conn: &mut sqlx::PgConnection) -> Result<Vec<RateLimitSchemeData>, AppError> {
+    pub(crate) async fn execute_with_deps(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<Vec<RateLimitSchemeData>, AppError> {
         let rows = sqlx::query_as::<_, RateLimitSchemeRow>(
             r#"
             SELECT
@@ -87,14 +88,6 @@ impl ListRateLimitSchemesQuery {
         .await?;
 
         Ok(rows.into_iter().map(Into::into).collect())
-    }
-}
-
-impl Query for ListRateLimitSchemesQuery {
-    type Output = Vec<RateLimitSchemeData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -122,7 +115,10 @@ impl GetRateLimitSchemeQuery {
         self.execute_with_deps(&mut conn).await
     }
 
-    pub(crate) async fn execute_with_deps(&self, conn: &mut sqlx::PgConnection) -> Result<Option<RateLimitSchemeData>, AppError> {
+    pub(crate) async fn execute_with_deps(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<Option<RateLimitSchemeData>, AppError> {
         let rec = sqlx::query_as::<_, RateLimitSchemeRow>(
             r#"
             SELECT
@@ -145,13 +141,5 @@ impl GetRateLimitSchemeQuery {
         .await?;
 
         Ok(rec.map(Into::into))
-    }
-}
-
-impl Query for GetRateLimitSchemeQuery {
-    type Output = Option<RateLimitSchemeData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

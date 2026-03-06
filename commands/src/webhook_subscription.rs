@@ -3,9 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::query;
 
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EndpointWithRules {
@@ -105,15 +103,6 @@ impl GetSubscribedEndpointsCommand {
     }
 }
 
-impl Command for GetSubscribedEndpointsCommand {
-    type Output = Vec<EndpointWithRules>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
-            .await
-    }
-}
-
 // Helper command to invalidate cache when endpoints change
 #[derive(Debug, Deserialize)]
 pub struct InvalidateEndpointCacheCommand {
@@ -134,14 +123,6 @@ impl InvalidateEndpointCacheCommand {
             }
         }
         Ok(())
-    }
-}
-
-impl Command for InvalidateEndpointCacheCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.redis_client).await
     }
 }
 

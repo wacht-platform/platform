@@ -1,7 +1,5 @@
-use crate::Command;
 use aws_sdk_s3::primitives::{ByteStream, SdkBody};
 use common::error::AppError;
-use common::state::AppState;
 use serde_json::json;
 
 pub struct UploadToCdnCommand {
@@ -12,14 +10,6 @@ pub struct UploadToCdnCommand {
 impl UploadToCdnCommand {
     pub fn new(file_path: String, body: Vec<u8>) -> Self {
         Self { file_path, body }
-    }
-}
-
-impl Command for UploadToCdnCommand {
-    type Output = String;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.s3_client).await
     }
 }
 
@@ -59,14 +49,6 @@ pub struct UploadToKnowledgeBaseBucketCommand {
 impl UploadToKnowledgeBaseBucketCommand {
     pub fn new(file_path: String, body: Vec<u8>) -> Self {
         Self { file_path, body }
-    }
-}
-
-impl Command for UploadToKnowledgeBaseBucketCommand {
-    type Output = String;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.s3_client).await
     }
 }
 

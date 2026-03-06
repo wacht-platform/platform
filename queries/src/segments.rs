@@ -1,5 +1,3 @@
-use crate::Query;
-use common::state::AppState;
 use models::error::AppError;
 use models::{AnalyzedEntity, Segment};
 use sqlx::QueryBuilder;
@@ -11,14 +9,6 @@ pub struct GetSegmentsQuery {
     pub search: Option<String>,
     pub sort_key: Option<String>,
     pub sort_order: Option<String>,
-}
-
-impl Query for GetSegmentsQuery {
-    type Output = Vec<Segment>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl GetSegmentsQuery {
@@ -94,14 +84,6 @@ pub struct GetSegmentDataQuery {
     pub user_filter: Option<UserFilter>,
     pub organization_filter: Option<OrganizationFilter>,
     pub workspace_filter: Option<WorkspaceFilter>,
-}
-
-impl Query for GetSegmentDataQuery {
-    type Output = Vec<AnalyzedEntity>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl GetSegmentDataQuery {

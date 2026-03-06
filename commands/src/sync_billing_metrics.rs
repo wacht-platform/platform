@@ -1,7 +1,5 @@
 use chrono::{DateTime, Utc};
-use common::{error::AppError, state::AppState};
-
-use crate::Command;
+use common::error::AppError;
 
 pub struct SyncBillingMetricsCommand {
     pub deployment_id: i64,
@@ -9,15 +7,6 @@ pub struct SyncBillingMetricsCommand {
     pub billing_period: DateTime<Utc>,
     pub metrics: Vec<(String, i64)>,
     pub redis_prefix: String,
-}
-
-impl Command for SyncBillingMetricsCommand {
-    type Output = Vec<(String, i64)>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
-            .await
-    }
 }
 
 impl SyncBillingMetricsCommand {

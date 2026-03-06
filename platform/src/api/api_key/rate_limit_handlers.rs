@@ -22,7 +22,8 @@ pub async fn get_rate_limit_scheme(
     Path(slug): Path<String>,
 ) -> ApiResult<RateLimitSchemeData> {
     let scheme =
-        api_key_rate_limit_use_cases::get_rate_limit_scheme(&app_state, deployment_id, slug).await?;
+        api_key_rate_limit_use_cases::get_rate_limit_scheme(&app_state, deployment_id, slug)
+            .await?;
     Ok(scheme.into())
 }
 

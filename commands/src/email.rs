@@ -1,10 +1,8 @@
-use crate::Command;
+use common::smtp::{SmtpConfig, SmtpService};
 use common::{
     HasDbRouter, HasEncryptionService, HasPostmarkService, HasTemplateRenderer,
     db_router::ReadConsistency, error::AppError,
 };
-use common::smtp::{SmtpConfig, SmtpService};
-use common::state::AppState;
 use models::{CustomSmtpConfig, EmailProvider};
 use queries::GetEmailTemplateByNameQuery;
 
@@ -90,8 +88,10 @@ impl SendEmailCommand {
         if email_provider == EmailProvider::CustomSmtp {
             if let Some(config) = &smtp_config {
                 if config.verified {
-                    let decrypted_password =
-                        deps.encryption_service().decrypt(&config.password).map_err(|e| {
+                    let decrypted_password = deps
+                        .encryption_service()
+                        .decrypt(&config.password)
+                        .map_err(|e| {
                             tracing::error!("Failed to decrypt SMTP password: {}", e);
                             e
                         })?;
@@ -231,8 +231,10 @@ impl SendRawEmailCommand {
         if email_provider == EmailProvider::CustomSmtp {
             if let Some(config) = &smtp_config {
                 if config.verified {
-                    let decrypted_password =
-                        deps.encryption_service().decrypt(&config.password).map_err(|e| {
+                    let decrypted_password = deps
+                        .encryption_service()
+                        .decrypt(&config.password)
+                        .map_err(|e| {
                             tracing::error!("Failed to decrypt SMTP password: {}", e);
                             e
                         })?;
@@ -309,21 +311,5 @@ impl SendRawEmailCommand {
         }
 
         Ok(())
-    }
-}
-
-impl Command for SendEmailCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}
-
-impl Command for SendRawEmailCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
     }
 }

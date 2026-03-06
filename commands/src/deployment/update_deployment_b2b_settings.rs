@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use dto::json::DeploymentB2bSettingsUpdates;
 use models::DeploymentPermissionCatalogEntry;
 use serde_json::Value;
@@ -273,14 +271,5 @@ impl UpdateDeploymentB2bSettingsCommand {
             .await?;
 
         Ok(())
-    }
-}
-
-impl Command for UpdateDeploymentB2bSettingsCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
-            .await
     }
 }

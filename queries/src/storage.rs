@@ -1,4 +1,4 @@
-use common::{error::AppError, state::AppState};
+use common::error::AppError;
 
 pub struct GetDirtyStorageDeploymentsQuery;
 
@@ -22,13 +22,5 @@ impl GetDirtyStorageDeploymentsQuery {
             .collect();
 
         Ok(deployments)
-    }
-}
-
-impl crate::Query for GetDirtyStorageDeploymentsQuery {
-    type Output = Vec<(i64, i64)>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

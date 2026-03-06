@@ -3,9 +3,7 @@ use common::db_router::ReadConsistency;
 use common::error::AppError;
 use models::plan_features::PlanFeature;
 use models::{DeploymentAiSettingsResponse, UpdateDeploymentAiSettingsRequest};
-use queries::{
-    GetDeploymentAiSettingsQuery, plan_access::CheckDeploymentFeatureAccessQuery,
-};
+use queries::{GetDeploymentAiSettingsQuery, plan_access::CheckDeploymentFeatureAccessQuery};
 
 use crate::application::AppState;
 
@@ -43,7 +41,9 @@ pub async fn update_ai_settings(
         .map_err(|e| AppError::Internal(format!("Failed to check AI feature access: {}", e)))?;
 
     if !has_ai_access {
-        return Err(AppError::Forbidden("AI agent usage requires Growth plan".to_string()));
+        return Err(AppError::Forbidden(
+            "AI agent usage requires Growth plan".to_string(),
+        ));
     }
 
     let settings = UpdateDeploymentAiSettingsCommand::builder()

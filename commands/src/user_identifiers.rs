@@ -1,8 +1,6 @@
 use chrono::Utc;
 
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use dto::json::{AddEmailRequest, AddPhoneRequest, UpdateEmailRequest, UpdatePhoneRequest};
 use models::{UserEmailAddress, UserPhoneNumber, VerificationStrategy};
 use sqlx::Connection;
@@ -88,15 +86,6 @@ impl AddUserEmailCommand {
             verified_at: now,
             verification_strategy: VerificationStrategy::Otp,
         })
-    }
-}
-
-impl Command for AddUserEmailCommand {
-    type Output = UserEmailAddress;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -221,14 +210,6 @@ impl UpdateUserEmailCommand {
     }
 }
 
-impl Command for UpdateUserEmailCommand {
-    type Output = UserEmailAddress;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct DeleteUserEmailCommand {
     user_id: i64,
     email_id: i64,
@@ -265,14 +246,6 @@ impl DeleteUserEmailCommand {
         tx.commit().await?;
 
         Ok(())
-    }
-}
-
-impl Command for DeleteUserEmailCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -346,15 +319,6 @@ impl AddUserPhoneCommand {
             verified,
             verified_at: now,
         })
-    }
-}
-
-impl Command for AddUserPhoneCommand {
-    type Output = UserPhoneNumber;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -480,14 +444,6 @@ impl UpdateUserPhoneCommand {
     }
 }
 
-impl Command for UpdateUserPhoneCommand {
-    type Output = UserPhoneNumber;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct DeleteUserPhoneCommand {
     user_id: i64,
     phone_id: i64,
@@ -512,14 +468,6 @@ impl DeleteUserPhoneCommand {
         .await?;
 
         Ok(())
-    }
-}
-
-impl Command for DeleteUserPhoneCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -550,13 +498,5 @@ impl DeleteUserSocialConnectionCommand {
         .await?;
 
         Ok(())
-    }
-}
-
-impl Command for DeleteUserSocialConnectionCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

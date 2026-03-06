@@ -56,7 +56,10 @@ pub async fn get_analytics_stats(
         organizations_created: stats.organizations_created as i64,
         workspaces_created: stats.workspaces_created as i64,
         total_signups: stats.total_signups as i64,
-        unique_signins_change: calculate_change(stats.unique_signins as i64, stats.previous_signins as i64),
+        unique_signins_change: calculate_change(
+            stats.unique_signins as i64,
+            stats.previous_signins as i64,
+        ),
         signups_change: calculate_change(stats.signups as i64, stats.previous_signups as i64),
         organizations_created_change: calculate_change(
             stats.organizations_created as i64,

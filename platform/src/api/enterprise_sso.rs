@@ -226,11 +226,19 @@ pub async fn get_scim_token_handler(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<ConnectionParams>,
 ) -> ApiResult<ScimTokenInfoResponse> {
-    let token = get_scim_token(&app_state, deployment_id, params.org_id, params.connection_id).await?;
+    let token = get_scim_token(
+        &app_state,
+        deployment_id,
+        params.org_id,
+        params.connection_id,
+    )
+    .await?;
 
     let response = build_scim_token_response(
         params.connection_id,
-        token.as_ref().map(|scim_token| build_scim_token_details(scim_token, None)),
+        token
+            .as_ref()
+            .map(|scim_token| build_scim_token_details(scim_token, None)),
     );
 
     Ok(response.into())

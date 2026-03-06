@@ -5,24 +5,20 @@ use dto::json::api_key::{
     GetApiAuditAnalyticsQuery, GetApiAuditTimeseriesQuery, ListApiAuditLogsQuery,
 };
 use models::error::AppError;
-use queries::{
-    api_key_audit::{
-        GetApiAuditAnalyticsQuery as GetApiAuditAnalyticsDataQuery,
-        GetApiAuditLogsQuery as GetApiAuditLogsDataQuery,
-        GetApiAuditTimeseriesQuery as GetApiAuditTimeseriesDataQuery,
-    },
+use queries::api_key_audit::{
+    GetApiAuditAnalyticsQuery as GetApiAuditAnalyticsDataQuery,
+    GetApiAuditLogsQuery as GetApiAuditLogsDataQuery,
+    GetApiAuditTimeseriesQuery as GetApiAuditTimeseriesDataQuery,
 };
 
 use super::api_key_shared::get_api_auth_app_by_slug;
 
-fn decode_cursor(
-    cursor: String,
-) -> Result<(chrono::DateTime<chrono::Utc>, String), AppError> {
+fn decode_cursor(cursor: String) -> Result<(chrono::DateTime<chrono::Utc>, String), AppError> {
     let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(cursor)
         .map_err(|_| AppError::BadRequest("invalid cursor".to_string()))?;
-    let decoded =
-        String::from_utf8(decoded).map_err(|_| AppError::BadRequest("invalid cursor".to_string()))?;
+    let decoded = String::from_utf8(decoded)
+        .map_err(|_| AppError::BadRequest("invalid cursor".to_string()))?;
     let parts: Vec<&str> = decoded.splitn(2, '|').collect();
     if parts.len() != 2 {
         return Err(AppError::BadRequest("invalid cursor".to_string()));

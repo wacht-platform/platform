@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::WorkspaceRole;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -26,15 +24,6 @@ impl CreateWorkspaceRoleCommand {
             name,
             permissions,
         }
-    }
-}
-
-impl Command for CreateWorkspaceRoleCommand {
-    type Output = WorkspaceRole;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -116,14 +105,6 @@ impl UpdateWorkspaceRoleCommand {
             name,
             permissions,
         }
-    }
-}
-
-impl Command for UpdateWorkspaceRoleCommand {
-    type Output = WorkspaceRole;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -211,14 +192,6 @@ impl DeleteWorkspaceRoleCommand {
             workspace_id,
             role_id,
         }
-    }
-}
-
-impl Command for DeleteWorkspaceRoleCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

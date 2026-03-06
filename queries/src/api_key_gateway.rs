@@ -1,7 +1,5 @@
-use super::Query;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use common::state::AppState;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,13 +103,5 @@ impl GetApiKeyGatewayDataQuery {
             organization_membership_id: r.organization_membership_id,
             workspace_membership_id: r.workspace_membership_id,
         }))
-    }
-}
-
-impl Query for GetApiKeyGatewayDataQuery {
-    type Output = Option<ApiKeyGatewayData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

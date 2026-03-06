@@ -12,7 +12,8 @@ pub async fn list_api_keys(
     Path(app_slug): Path<String>,
     Query(params): Query<ListApiKeysQuery>,
 ) -> ApiResult<ListApiKeysResponse> {
-    let keys = api_key_key_use_cases::list_api_keys(&app_state, deployment_id, app_slug, params).await?;
+    let keys =
+        api_key_key_use_cases::list_api_keys(&app_state, deployment_id, app_slug, params).await?;
     Ok(keys.into())
 }
 
@@ -22,7 +23,8 @@ pub async fn create_api_key(
     Path(app_slug): Path<String>,
     Json(request): Json<CreateApiKeyRequest>,
 ) -> ApiResult<ApiKeyWithSecret> {
-    let key = api_key_key_use_cases::create_api_key(&app_state, deployment_id, app_slug, request).await?;
+    let key =
+        api_key_key_use_cases::create_api_key(&app_state, deployment_id, app_slug, request).await?;
     Ok(key.into())
 }
 

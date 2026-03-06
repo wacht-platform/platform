@@ -25,6 +25,7 @@ pub async fn upsert_deployment_social_connection(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(payload): Json<DeploymentSocialConnectionUpsert>,
 ) -> ApiResult<DeploymentSocialConnection> {
-    let connection = run_upsert_deployment_social_connection(&app_state, deployment_id, payload).await?;
+    let connection =
+        run_upsert_deployment_social_connection(&app_state, deployment_id, payload).await?;
     Ok(connection.into())
 }

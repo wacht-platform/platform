@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::ai_knowledge_base::DocumentChunkSearchResult;
 
 use pgvector::HalfVector;
@@ -121,19 +119,6 @@ impl GenerateEmbeddingCommand {
     }
 }
 
-impl Command for GenerateEmbeddingCommand {
-    type Output = Vec<f32>;
-
-    async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY")
-            .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
-        let model = std::env::var("GEMINI_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
-        let client = reqwest::Client::new();
-        self.execute_with(&client, &api_key, &model).await
-    }
-}
-
 #[derive(Clone)]
 pub struct GenerateEmbeddingsCommand {
     pub texts: Vec<String>,
@@ -226,19 +211,6 @@ impl GenerateEmbeddingsCommand {
     }
 }
 
-impl Command for GenerateEmbeddingsCommand {
-    type Output = Vec<Vec<f32>>;
-
-    async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY")
-            .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
-        let model = std::env::var("GEMINI_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
-        let client = reqwest::Client::new();
-        self.execute_with(&client, &api_key, &model).await
-    }
-}
-
 #[derive(Clone)]
 pub struct SearchKnowledgeBaseEmbeddingsCommand {
     pub knowledge_base_ids: Vec<i64>,
@@ -308,13 +280,5 @@ impl SearchKnowledgeBaseEmbeddingsCommand {
         }
 
         Ok(results)
-    }
-}
-
-impl Command for SearchKnowledgeBaseEmbeddingsCommand {
-    type Output = Vec<DocumentChunkSearchResult>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

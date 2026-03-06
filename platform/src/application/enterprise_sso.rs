@@ -20,9 +20,7 @@ use models::{
     enterprise_connection::EnterpriseConnection, organization_domain::OrganizationDomain,
     scim_token::ScimToken,
 };
-use queries::{
-    GetScimTokenQuery, ListEnterpriseConnectionsQuery, ListOrganizationDomainsQuery,
-};
+use queries::{GetScimTokenQuery, ListEnterpriseConnectionsQuery, ListOrganizationDomainsQuery};
 
 use crate::application::{AppError, AppState};
 

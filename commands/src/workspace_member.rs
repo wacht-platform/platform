@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::WorkspaceMemberDetails;
 use serde::{Deserialize, Serialize};
 
@@ -10,19 +8,6 @@ pub struct AddWorkspaceMemberCommand {
     pub workspace_id: i64,
     pub user_id: i64,
     pub role_ids: Vec<i64>,
-}
-
-impl Command for AddWorkspaceMemberCommand {
-    type Output = WorkspaceMemberDetails;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            app_state.sf.next_id()? as i64,
-            app_state.sf.next_id()? as i64,
-        )
-        .await
-    }
 }
 
 impl AddWorkspaceMemberCommand {
@@ -267,14 +252,6 @@ pub struct UpdateWorkspaceMemberCommand {
     pub public_metadata: Option<serde_json::Value>,
 }
 
-impl Command for UpdateWorkspaceMemberCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateWorkspaceMemberCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -342,14 +319,6 @@ pub struct RemoveWorkspaceMemberCommand {
     pub deployment_id: i64,
     pub workspace_id: i64,
     pub membership_id: i64,
-}
-
-impl Command for RemoveWorkspaceMemberCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl RemoveWorkspaceMemberCommand {

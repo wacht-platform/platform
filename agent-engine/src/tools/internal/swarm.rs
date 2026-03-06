@@ -147,7 +147,10 @@ impl ToolExecutor {
             status_update: params.status,
             metadata: params.metadata,
         }
-        .execute_with(self.app_state().db_router.writer(), self.app_state().sf.next_id()? as i64)
+        .execute_with(
+            self.app_state().db_router.writer(),
+            self.app_state().sf.next_id()? as i64,
+        )
         .await?;
 
         Ok(serde_json::json!({

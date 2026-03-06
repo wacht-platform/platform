@@ -2,10 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{Connection, query, query_as};
 
-use crate::Command;
-use common::db_router::ReadConsistency;
 use common::error::AppError;
-use common::state::AppState;
 use common::utils::ssrf::validate_webhook_url;
 use models::WebhookEndpoint;
 
@@ -88,8 +85,13 @@ impl CreateWebhookEndpointCommand {
         validate_webhook_url(&self.url)
             .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
 
-        validate_event_subscriptions(reader, self.deployment_id, &self.app_slug, &self.subscriptions)
-            .await?;
+        validate_event_subscriptions(
+            reader,
+            self.deployment_id,
+            &self.app_slug,
+            &self.subscriptions,
+        )
+        .await?;
 
         let max_allowed_retries = max_attempts_for_retry_window(MAX_ENDPOINT_RETRY_WINDOW_SECONDS);
         let endpoint_max_retries = self.max_retries.unwrap_or(max_allowed_retries);
@@ -152,19 +154,6 @@ impl CreateWebhookEndpointCommand {
 
         tx.commit().await?;
         Ok(endpoint)
-    }
-}
-
-impl Command for CreateWebhookEndpointCommand {
-    type Output = WebhookEndpoint;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            app_state.db_router.reader(ReadConsistency::Strong),
-            app_state.sf.next_id()? as i64,
-        )
-        .await
     }
 }
 
@@ -346,18 +335,6 @@ impl UpdateWebhookEndpointCommand {
     }
 }
 
-impl Command for UpdateWebhookEndpointCommand {
-    type Output = WebhookEndpoint;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            app_state.db_router.reader(ReadConsistency::Strong),
-        )
-        .await
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct UpdateEndpointSubscriptionsCommand {
     pub endpoint_id: i64,
@@ -455,18 +432,6 @@ impl UpdateEndpointSubscriptionsCommand {
     }
 }
 
-impl Command for UpdateEndpointSubscriptionsCommand {
-    type Output = Vec<String>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            app_state.db_router.reader(ReadConsistency::Strong),
-        )
-        .await
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct DeleteWebhookEndpointCommand {
     pub endpoint_id: i64,
@@ -502,13 +467,5 @@ impl DeleteWebhookEndpointCommand {
         }
 
         Ok(())
-    }
-}
-
-impl Command for DeleteWebhookEndpointCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

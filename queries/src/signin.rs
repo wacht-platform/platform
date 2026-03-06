@@ -1,11 +1,8 @@
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use common::state::AppState;
 use models::{Session, SignIn};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-
-use super::Query;
 
 pub struct GetSignInQuery {
     signin_id: i64,
@@ -56,14 +53,6 @@ impl GetSignInQuery {
         };
 
         Ok(signin)
-    }
-}
-
-impl Query for GetSignInQuery {
-    type Output = SignIn;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -124,14 +113,6 @@ pub struct SessionContext {
     pub user_id: i64,
     pub active_organization_id: Option<i64>,
     pub active_workspace_id: Option<i64>,
-}
-
-impl Query for GetSessionWithActiveContextQuery {
-    type Output = SessionContext;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -211,13 +192,5 @@ impl GetSessionWithSignInsQuery {
             .collect();
 
         Ok(SessionWithSignIns { session, signins })
-    }
-}
-
-impl Query for GetSessionWithSignInsQuery {
-    type Output = SessionWithSignIns;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

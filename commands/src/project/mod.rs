@@ -1,7 +1,7 @@
 use common::error::AppError;
-use common::{CloudflareService, DnsVerificationService, HasIdGenerator, PostmarkService};
 use common::state::AppState;
 use common::validators::ProjectValidator;
+use common::{CloudflareService, DnsVerificationService, HasIdGenerator, PostmarkService};
 use models::{
     AuthFactorsEnabled, CustomSmtpConfig, DarkModeSettings, Deployment, DeploymentAuthSettings,
     DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate, DeploymentMode,
@@ -15,8 +15,6 @@ use models::{
 use base64::{Engine, engine::general_purpose::STANDARD, prelude::BASE64_STANDARD};
 use std::env;
 use std::str::FromStr;
-
-use super::Command;
 
 pub trait IdGenerator: Send + Sync {
     fn next_id(&self) -> Result<i64, AppError>;

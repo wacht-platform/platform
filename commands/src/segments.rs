@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::Segment;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -22,15 +20,6 @@ pub struct CreateSegmentCommandBuilder {
 impl CreateSegmentCommand {
     pub fn builder() -> CreateSegmentCommandBuilder {
         CreateSegmentCommandBuilder::default()
-    }
-}
-
-impl Command for CreateSegmentCommand {
-    type Output = Segment;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let id = app_state.sf.next_id()? as i64;
-        self.execute_with(app_state.db_router.writer(), id).await
     }
 }
 
@@ -108,14 +97,6 @@ pub struct UpdateSegmentCommandBuilder {
 impl UpdateSegmentCommand {
     pub fn builder() -> UpdateSegmentCommandBuilder {
         UpdateSegmentCommandBuilder::default()
-    }
-}
-
-impl Command for UpdateSegmentCommand {
-    type Output = Segment;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -206,14 +187,6 @@ impl DeleteSegmentCommand {
     }
 }
 
-impl Command for DeleteSegmentCommand {
-    type Output = serde_json::Value;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl DeleteSegmentCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
     where
@@ -296,14 +269,6 @@ pub struct AssignSegmentCommandBuilder {
 impl AssignSegmentCommand {
     pub fn builder() -> AssignSegmentCommandBuilder {
         AssignSegmentCommandBuilder::default()
-    }
-}
-
-impl Command for AssignSegmentCommand {
-    type Output = serde_json::Value;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -452,14 +417,6 @@ pub struct RemoveSegmentCommandBuilder {
 impl RemoveSegmentCommand {
     pub fn builder() -> RemoveSegmentCommandBuilder {
         RemoveSegmentCommandBuilder::default()
-    }
-}
-
-impl Command for RemoveSegmentCommand {
-    type Output = serde_json::Value;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

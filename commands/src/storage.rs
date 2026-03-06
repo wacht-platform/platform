@@ -1,17 +1,7 @@
-use common::{error::AppError, state::AppState};
-
-use crate::Command;
+use common::error::AppError;
 
 pub struct MarkStorageAsCleanCommand {
     pub deployment_id: i64,
-}
-
-impl Command for MarkStorageAsCleanCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl MarkStorageAsCleanCommand {

@@ -1,8 +1,6 @@
-use crate::Command;
 use common::EncryptionService;
-use common::{HasDbRouter, HasEncryptionService, HasRedis, error::AppError};
 use common::smtp::{SmtpConfig, SmtpService};
-use common::state::AppState;
+use common::{HasDbRouter, HasEncryptionService, HasRedis, error::AppError};
 use models::{CustomSmtpConfig, EmailProvider};
 
 pub trait SmtpConfigEncryptor: Send + Sync {
@@ -41,14 +39,6 @@ impl VerifySmtpConnectionCommand {
             from_email,
             use_tls,
         }
-    }
-}
-
-impl Command for VerifySmtpConnectionCommand {
-    type Output = ();
-
-    async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with().await
     }
 }
 
@@ -99,14 +89,6 @@ impl UpdateDeploymentSmtpConfigCommand {
             from_email,
             use_tls,
         }
-    }
-}
-
-impl Command for UpdateDeploymentSmtpConfigCommand {
-    type Output = CustomSmtpConfig;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
     }
 }
 
@@ -191,14 +173,6 @@ pub struct RemoveDeploymentSmtpConfigCommand {
 impl RemoveDeploymentSmtpConfigCommand {
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
-    }
-}
-
-impl Command for RemoveDeploymentSmtpConfigCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
     }
 }
 

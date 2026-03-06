@@ -1,6 +1,4 @@
-use super::Query;
 use common::error::AppError;
-use common::state::AppState;
 use models::{
     DeploymentInvitation, DeploymentWaitlistUser, SocialConnection, UserDetails, UserEmailAddress,
     UserPhoneNumber, UserWithIdentifiers,
@@ -396,22 +394,6 @@ impl DeploymentWaitlistQuery {
     }
 }
 
-impl Query for DeploymentActiveUserListQuery {
-    type Output = Vec<UserWithIdentifiers>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
-impl Query for DeploymentInvitationQuery {
-    type Output = Vec<DeploymentInvitation>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetUserDetailsQuery {
     deployment_id: i64,
     user_id: i64,
@@ -601,22 +583,6 @@ impl GetUserDetailsQuery {
     }
 }
 
-impl Query for GetUserDetailsQuery {
-    type Output = UserDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
-impl Query for DeploymentWaitlistQuery {
-    type Output = Vec<DeploymentWaitlistUser>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetUserAuthenticatorQuery {
     user_id: i64,
 }
@@ -653,13 +619,5 @@ impl GetUserAuthenticatorQuery {
             totp_secret: row.totp_secret,
             otp_url: row.otp_url,
         })
-    }
-}
-
-impl Query for GetUserAuthenticatorQuery {
-    type Output = models::UserAuthenticator;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

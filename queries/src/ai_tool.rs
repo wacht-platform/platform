@@ -1,8 +1,6 @@
 use sqlx::Row;
 
-use crate::Query;
 use common::error::AppError;
-use common::state::AppState;
 use models::{AiTool, AiToolConfiguration, AiToolType, AiToolWithDetails};
 
 pub struct GetAiToolsQuery {
@@ -115,14 +113,6 @@ impl GetAiToolsQuery {
     }
 }
 
-impl Query for GetAiToolsQuery {
-    type Output = Vec<AiToolWithDetails>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetAiToolByIdQuery {
     pub deployment_id: i64,
     pub tool_id: i64,
@@ -176,14 +166,6 @@ impl GetAiToolByIdQuery {
             deployment_id: tool.deployment_id,
             configuration,
         })
-    }
-}
-
-impl Query for GetAiToolByIdQuery {
-    type Output = AiToolWithDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -244,14 +226,6 @@ impl GetAgentToolsQuery {
     }
 }
 
-impl Query for GetAgentToolsQuery {
-    type Output = Vec<AiTool>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetToolByIdQuery {
     pub tool_id: i64,
 }
@@ -305,14 +279,6 @@ impl GetToolByIdQuery {
             deployment_id: tool.deployment_id,
             configuration,
         })
-    }
-}
-
-impl Query for GetToolByIdQuery {
-    type Output = AiTool;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -381,13 +347,5 @@ impl GetAiToolsByIdsQuery {
                 }
             })
             .collect())
-    }
-}
-
-impl Query for GetAiToolsByIdsQuery {
-    type Output = Vec<AiTool>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -17,7 +17,8 @@ pub async fn create_session_ticket(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateSessionTicketRequest>,
 ) -> ApiResult<CreateSessionTicketResponse> {
-    let resp = session_tickets_app::create_session_ticket(&app_state, deployment_id, request).await?;
+    let resp =
+        session_tickets_app::create_session_ticket(&app_state, deployment_id, request).await?;
 
     Ok(CreateSessionTicketResponse {
         ticket: resp.ticket,

@@ -159,13 +159,11 @@ async fn execute_relay(
         let inherit_until = parent_history.last().map(|c| c.id).unwrap_or(0);
         let update_context_command =
             UpdateExecutionContextQuery::new(child_context.id, current_agent.deployment_id)
-            .with_external_resource_metadata(serde_json::json!({
-                "inherit_parent_context_id": current_context_id,
-                "inherit_parent_until_conversation_id": inherit_until,
-            }));
-        update_context_command
-            .execute_with_deps(app_state)
-            .await?;
+                .with_external_resource_metadata(serde_json::json!({
+                    "inherit_parent_context_id": current_context_id,
+                    "inherit_parent_until_conversation_id": inherit_until,
+                }));
+        update_context_command.execute_with_deps(app_state).await?;
 
         (child_context, true)
     };

@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use common::state::AppState;
 use models::billing::Subscription;
 
 pub struct CreateSubscriptionCommand {
@@ -9,15 +7,6 @@ pub struct CreateSubscriptionCommand {
     pub provider_customer_id: String,
     pub provider_subscription_id: String,
     pub status: String,
-}
-
-impl Command for CreateSubscriptionCommand {
-    type Output = Subscription;
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
-            .await
-    }
 }
 
 impl CreateSubscriptionCommand {
@@ -61,14 +50,6 @@ pub struct UpdateSubscriptionStatusCommand {
     pub status: String,
 }
 
-impl Command for UpdateSubscriptionStatusCommand {
-    type Output = Subscription;
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 impl UpdateSubscriptionStatusCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Subscription, AppError>
     where
@@ -99,15 +80,6 @@ pub struct UpsertSubscriptionCommand {
     pub product_id: Option<String>,
     pub status: String,
     pub previous_billing_date: Option<DateTime<Utc>>,
-}
-
-impl Command for UpsertSubscriptionCommand {
-    type Output = Subscription;
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
-            .await
-    }
 }
 
 impl UpsertSubscriptionCommand {

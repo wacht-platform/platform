@@ -1,8 +1,6 @@
 use sqlx::Row;
 
-use crate::Query;
 use common::error::AppError;
-use common::state::AppState;
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetails};
 
 pub struct GetAiKnowledgeBasesQuery {
@@ -92,14 +90,6 @@ impl GetAiKnowledgeBasesQuery {
     }
 }
 
-impl Query for GetAiKnowledgeBasesQuery {
-    type Output = Vec<AiKnowledgeBaseWithDetails>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetAiKnowledgeBaseByIdQuery {
     pub deployment_id: i64,
     pub knowledge_base_id: i64,
@@ -156,14 +146,6 @@ impl GetAiKnowledgeBaseByIdQuery {
                 .unwrap_or(0),
             total_size: knowledge_base.get("total_size"),
         })
-    }
-}
-
-impl Query for GetAiKnowledgeBaseByIdQuery {
-    type Output = AiKnowledgeBaseWithDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -229,14 +211,6 @@ impl GetAgentKnowledgeBasesQuery {
     }
 }
 
-impl Query for GetAgentKnowledgeBasesQuery {
-    type Output = Vec<AiKnowledgeBaseWithDetails>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetKnowledgeBaseDocumentsQuery {
     pub knowledge_base_id: i64,
     pub limit: usize,
@@ -298,14 +272,6 @@ impl GetKnowledgeBaseDocumentsQuery {
     }
 }
 
-impl Query for GetKnowledgeBaseDocumentsQuery {
-    type Output = Vec<AiKnowledgeBaseDocument>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetAiKnowledgeBasesByIdsQuery {
     pub deployment_id: i64,
     pub knowledge_base_ids: Vec<i64>,
@@ -318,12 +284,11 @@ impl GetAiKnowledgeBasesByIdsQuery {
             knowledge_base_ids,
         }
     }
-}
 
-impl Query for GetAiKnowledgeBasesByIdsQuery {
-    type Output = Vec<AiKnowledgeBase>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<AiKnowledgeBase>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
         if self.knowledge_base_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -347,8 +312,9 @@ impl Query for GetAiKnowledgeBasesByIdsQuery {
             query_builder = query_builder.bind(kb_id);
         }
 
+        let mut conn = acquirer.acquire().await?;
         let knowledge_bases = query_builder
-            .fetch_all(app_state.db_router.writer())
+            .fetch_all(&mut *conn)
             .await
             .map_err(|e| AppError::Database(e))?;
 
@@ -469,12 +435,4 @@ pub struct DocumentChunk {
     pub chunk_index: i32,
     pub knowledge_base_id: i64,
     pub deployment_id: i64,
-}
-
-impl Query for GetDocumentChunksQuery {
-    type Output = Vec<DocumentChunk>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }

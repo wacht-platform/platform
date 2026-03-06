@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use redis::AsyncCommands;
 
 pub struct ClearDeploymentCacheCommand {
@@ -44,14 +42,5 @@ impl ClearDeploymentCacheCommand {
         let _: () = redis_conn.del(cache_key).await?;
 
         Ok(())
-    }
-}
-
-impl Command for ClearDeploymentCacheCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
-            .await
     }
 }

@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::Utc;
 use common::error::AppError;
-use common::state::AppState;
 use models::enterprise_connection::{EnterpriseConnection, EnterpriseConnectionProtocol};
 use serde::{Deserialize, Serialize};
 
@@ -37,15 +35,6 @@ impl CreateEnterpriseConnectionCommand {
             deployment_id,
             request,
         }
-    }
-}
-
-impl Command for CreateEnterpriseConnectionCommand {
-    type Output = EnterpriseConnection;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -151,14 +140,6 @@ impl UpdateEnterpriseConnectionCommand {
     }
 }
 
-impl Command for UpdateEnterpriseConnectionCommand {
-    type Output = EnterpriseConnection;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateEnterpriseConnectionCommand {
     pub async fn execute_with(
         self,
@@ -241,14 +222,6 @@ impl DeleteEnterpriseConnectionCommand {
             deployment_id,
             request,
         }
-    }
-}
-
-impl Command for DeleteEnterpriseConnectionCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

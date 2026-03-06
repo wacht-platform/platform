@@ -149,9 +149,13 @@ impl DeleteProjectInput {
     }
 }
 
-pub async fn delete_project(app_state: &AppState, input: DeleteProjectInput) -> Result<(), AppError> {
+pub async fn delete_project(
+    app_state: &AppState,
+    input: DeleteProjectInput,
+) -> Result<(), AppError> {
     let command = DeleteProjectCommand::builder()
         .id(input.project_id)
-        .build()?;    command.execute_with(app_state.db_router.writer()).await?;
+        .build()?;
+    command.execute_with(app_state.db_router.writer()).await?;
     Ok(())
 }

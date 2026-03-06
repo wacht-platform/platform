@@ -1,6 +1,4 @@
-use commands::{
-    api_key::{CreateApiKeyCommand, RevokeApiKeyCommand, RotateApiKeyCommand},
-};
+use commands::api_key::{CreateApiKeyCommand, RevokeApiKeyCommand, RotateApiKeyCommand};
 use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::api_key::{

@@ -1,7 +1,5 @@
-use super::Query;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use common::state::AppState;
 use models::api_key::{JwksDocument, OAuthScopeDefinition};
 use serde::{Deserialize, Serialize};
 
@@ -156,14 +154,6 @@ impl ListOAuthAppsByDeploymentQuery {
     }
 }
 
-impl Query for ListOAuthAppsByDeploymentQuery {
-    type Output = Vec<OAuthAppData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetOAuthAppBySlugQuery {
     pub deployment_id: i64,
     pub oauth_app_slug: String,
@@ -226,14 +216,6 @@ impl GetOAuthAppBySlugQuery {
     }
 }
 
-impl Query for GetOAuthAppBySlugQuery {
-    type Output = Option<OAuthAppData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct ListOAuthClientsByOAuthAppQuery {
     pub deployment_id: i64,
     pub oauth_app_id: i64,
@@ -247,10 +229,7 @@ impl ListOAuthClientsByOAuthAppQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        &self,
-        acquirer: A,
-    ) -> Result<Vec<OAuthClientData>, AppError>
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<OAuthClientData>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -323,14 +302,6 @@ impl ListOAuthClientsByOAuthAppQuery {
                 }
             })
             .collect())
-    }
-}
-
-impl Query for ListOAuthClientsByOAuthAppQuery {
-    type Output = Vec<OAuthClientData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -426,14 +397,6 @@ impl GetOAuthClientByIdQuery {
     }
 }
 
-impl Query for GetOAuthClientByIdQuery {
-    type Output = Option<OAuthClientData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct ListOAuthGrantsByClientQuery {
     pub deployment_id: i64,
     pub oauth_client_id: i64,
@@ -500,13 +463,5 @@ impl ListOAuthGrantsByClientQuery {
                 updated_at: r.updated_at,
             })
             .collect())
-    }
-}
-
-impl Query for ListOAuthGrantsByClientQuery {
-    type Output = Vec<OAuthClientGrantData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

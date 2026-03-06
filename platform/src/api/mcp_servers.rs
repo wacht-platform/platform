@@ -1008,13 +1008,9 @@ pub async fn get_mcp_servers(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<GetMcpServersQueryParams>,
 ) -> ApiResult<PaginatedResponse<McpServer>> {
-    let servers = mcp_server_use_cases::get_mcp_servers(
-        &app_state,
-        deployment_id,
-        query.limit,
-        query.offset,
-    )
-    .await?;
+    let servers =
+        mcp_server_use_cases::get_mcp_servers(&app_state, deployment_id, query.limit, query.offset)
+            .await?;
     Ok(servers.into())
 }
 

@@ -1,7 +1,6 @@
 use commands::{
-    AddUserEmailCommand, AddUserPhoneCommand, DeleteUserEmailCommand,
-    DeleteUserPhoneCommand, DeleteUserSocialConnectionCommand, UpdateUserEmailCommand,
-    UpdateUserPhoneCommand,
+    AddUserEmailCommand, AddUserPhoneCommand, DeleteUserEmailCommand, DeleteUserPhoneCommand,
+    DeleteUserSocialConnectionCommand, UpdateUserEmailCommand, UpdateUserPhoneCommand,
 };
 use common::error::AppError;
 use common::state::AppState;

@@ -1,7 +1,5 @@
-use crate::Query;
 use chrono::Utc;
 use common::error::AppError;
-use common::state::AppState;
 use dto::json::agent_memory::MemoryCategory;
 use models::{ConversationRecord, MemoryBoundaries, MemoryRecord};
 use pgvector::HalfVector;
@@ -46,14 +44,6 @@ impl GetMRUMemoriesQuery {
     }
 }
 
-impl Query for GetMRUMemoriesQuery {
-    type Output = Vec<MemoryRecord>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 #[derive(Debug)]
 pub struct GetRecentConversationsQuery {
     pub context_id: i64,
@@ -95,14 +85,6 @@ impl GetRecentConversationsQuery {
     }
 }
 
-impl Query for GetRecentConversationsQuery {
-    type Output = Vec<ConversationRecord>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 #[derive(Debug)]
 pub struct GetConversationByIdQuery {
     pub conversation_id: i64,
@@ -136,14 +118,6 @@ impl GetConversationByIdQuery {
         })?;
 
         Ok(record)
-    }
-}
-
-impl Query for GetConversationByIdQuery {
-    type Output = ConversationRecord;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -223,14 +197,6 @@ impl GetLLMConversationHistoryQuery {
     }
 }
 
-impl Query for GetLLMConversationHistoryQuery {
-    type Output = Vec<ConversationRecord>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 /// Search memories with decay-adjusted scoring
 #[derive(Debug)]
 pub struct SearchMemoriesWithDecayQuery {
@@ -246,14 +212,6 @@ pub struct MemoryWithScore {
     pub memory: MemoryRecord,
     pub similarity_score: f64,
     pub decay_adjusted_score: f64,
-}
-
-impl Query for SearchMemoriesWithDecayQuery {
-    type Output = Vec<MemoryWithScore>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl SearchMemoriesWithDecayQuery {
@@ -354,14 +312,6 @@ pub struct SimilarMemory {
     pub similarity: f64,
 }
 
-impl Query for FindSimilarMemoriesQuery {
-    type Output = Vec<SimilarMemory>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl FindSimilarMemoriesQuery {
     pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<SimilarMemory>, AppError>
     where
@@ -405,14 +355,6 @@ pub struct GetMemoryByIdQuery {
     pub memory_id: i64,
 }
 
-impl Query for GetMemoryByIdQuery {
-    type Output = MemoryRecord;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl GetMemoryByIdQuery {
     pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<MemoryRecord, AppError>
     where
@@ -444,14 +386,6 @@ impl GetMemoryByIdQuery {
 pub struct SearchConversationsQuery {
     pub context_id: i64,
     pub limit: i64,
-}
-
-impl Query for SearchConversationsQuery {
-    type Output = Vec<ConversationRecord>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl SearchConversationsQuery {
@@ -486,14 +420,6 @@ impl SearchConversationsQuery {
 }
 
 pub struct GetAllMemoryBoundariesQuery;
-
-impl Query for GetAllMemoryBoundariesQuery {
-    type Output = Vec<MemoryBoundaries>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
 
 impl GetAllMemoryBoundariesQuery {
     pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryBoundaries>, AppError>
@@ -547,14 +473,6 @@ pub struct GetSessionMemoriesQuery {
     pub limit: i64,
 }
 
-impl Query for GetSessionMemoriesQuery {
-    type Output = Vec<MemoryRecord>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl GetSessionMemoriesQuery {
     pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
     where
@@ -598,14 +516,6 @@ pub struct GetAgentMemoriesQuery {
     pub agent_id: i64,
     pub categories: Option<Vec<MemoryCategory>>,
     pub limit: i64,
-}
-
-impl Query for GetAgentMemoriesQuery {
-    type Output = Vec<MemoryRecord>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl GetAgentMemoriesQuery {
@@ -655,14 +565,6 @@ pub struct GetAgentImportantMemoriesQuery {
     pub limit: i64,
 }
 
-impl Query for GetAgentImportantMemoriesQuery {
-    type Output = Vec<MemoryRecord>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl GetAgentImportantMemoriesQuery {
     pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
     where
@@ -701,14 +603,6 @@ impl GetAgentImportantMemoriesQuery {
         .map_err(AppError::from)?;
 
         Ok(records)
-    }
-}
-
-impl Query for GetMemoryBoundariesQuery {
-    type Output = MemoryBoundaries;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

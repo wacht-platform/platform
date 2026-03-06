@@ -106,11 +106,10 @@ async fn handle_notification_client(
 
     // Get deployment ID and public key from host
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
-    let (deployment_id, public_key) =
-        match GetDeploymentWithKeyPairQuery::new(host.clone())
-            .execute_with(reader)
-            .await
-        {
+    let (deployment_id, public_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
+        .execute_with(reader)
+        .await
+    {
         Ok(result) => result,
         Err(e) => {
             error!("Failed to get deployment for host {}: {}", host, e);

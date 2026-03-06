@@ -3,11 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{query, query_as};
 
-use crate::Command;
 use crate::webhook_delivery::ClearEndpointFailuresCommand;
 use common::capabilities::HasRedis;
 use common::error::AppError;
-use common::state::AppState;
 use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
 use dto::json::nats::NatsTaskMessage;
@@ -157,20 +155,6 @@ impl TestWebhookEndpointCommand {
     }
 }
 
-impl Command for TestWebhookEndpointCommand {
-    type Output = TestWebhookResult;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            &app_state.clickhouse_service,
-            &app_state.nats_client,
-            app_state.sf.next_id()? as i64,
-        )
-        .await
-    }
-}
-
 #[derive(Debug, Serialize)]
 pub struct TestWebhookResult {
     pub success: bool,
@@ -243,13 +227,5 @@ impl ReactivateEndpointCommand {
         .await?;
 
         Ok(endpoint)
-    }
-}
-
-impl Command for ReactivateEndpointCommand {
-    type Output = WebhookEndpoint;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state).await
     }
 }

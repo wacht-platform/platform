@@ -3,10 +3,8 @@ use serde_json::json;
 use sqlx::Connection;
 use sqlx::Execute;
 
-use crate::Command;
-use common::{HasDbRouter, HasIdGenerator, error::AppError};
-use common::state::AppState;
 use common::utils::{security::PasswordHasher, validation::UserValidator};
+use common::{HasDbRouter, HasIdGenerator, error::AppError};
 use dto::json::{CreateUserRequest, UpdateUserRequest};
 use models::{UserDetails, UserWithIdentifiers};
 use queries::{GetDeploymentAuthSettingsQuery, GetUserDetailsQuery};
@@ -45,7 +43,10 @@ impl CreateUserCommand {
         let user_id = ids.0;
 
         let auth_settings = GetDeploymentAuthSettingsQuery::new(self.deployment_id)
-            .execute_with(deps.db_router().reader(common::db_router::ReadConsistency::Strong))
+            .execute_with(
+                deps.db_router()
+                    .reader(common::db_router::ReadConsistency::Strong),
+            )
             .await?;
 
         let mut conn = deps.db_router().writer().acquire().await?;
@@ -201,14 +202,6 @@ impl CreateUserCommand {
     }
 }
 
-impl Command for CreateUserCommand {
-    type Output = UserWithIdentifiers;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}
-
 pub struct UpdateUserCommand {
     deployment_id: i64,
     user_id: i64,
@@ -303,14 +296,6 @@ impl UpdateUserCommand {
     }
 }
 
-impl Command for UpdateUserCommand {
-    type Output = UserDetails;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}
-
 #[derive(Debug)]
 pub struct UpdateUserProfileImageCommand {
     pub deployment_id: i64,
@@ -325,14 +310,6 @@ impl UpdateUserProfileImageCommand {
             user_id,
             profile_picture_url,
         }
-    }
-}
-
-impl Command for UpdateUserProfileImageCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -418,14 +395,6 @@ impl UpdateUserPasswordCommand {
     }
 }
 
-impl Command for UpdateUserPasswordCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with_deps(app_state).await
-    }
-}
-
 pub struct DeleteUserCommand {
     deployment_id: i64,
     user_id: i64,
@@ -437,14 +406,6 @@ impl DeleteUserCommand {
             deployment_id,
             user_id,
         }
-    }
-}
-
-impl Command for DeleteUserCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

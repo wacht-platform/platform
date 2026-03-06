@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use common::error::AppError;
-use common::state::AppState;
 use dto::params::deployment::DeploymentNameParams;
 use models::{
     DeploymentAuthSettings, DeploymentB2bSettings, DeploymentB2bSettingsWithRoles,
@@ -11,8 +10,6 @@ use models::{
     SecondFactorPolicy,
 };
 use sqlx::{Row, query};
-
-use super::Query;
 
 pub struct GetDeploymentIdByBackendHostQuery {
     backend_host: String,
@@ -37,14 +34,6 @@ impl GetDeploymentIdByBackendHostQuery {
 
         let row = row.ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
         Ok(row.id)
-    }
-}
-
-impl Query for GetDeploymentIdByBackendHostQuery {
-    type Output = i64;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -81,14 +70,6 @@ impl GetDeploymentWithKeyPairQuery {
             .ok_or_else(|| AppError::NotFound("Deployment key pair not found".to_string()))?;
 
         Ok((row.id, public_key))
-    }
-}
-
-impl Query for GetDeploymentWithKeyPairQuery {
-    type Output = (i64, String); // (deployment_id, public_key)
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -515,14 +496,6 @@ impl GetDeploymentWithSettingsQuery {
     }
 }
 
-impl Query for GetDeploymentWithSettingsQuery {
-    type Output = DeploymentWithSettings;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetDeploymentSocialConnectionsQuery {
     deployment_id: i64,
 }
@@ -599,14 +572,6 @@ impl GetDeploymentSocialConnectionsQueryBuilder {
     }
 }
 
-impl Query for GetDeploymentSocialConnectionsQuery {
-    type Output = Vec<DeploymentSocialConnection>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetDeploymentJwtTemplatesQuery {
     deployment_id: i64,
 }
@@ -662,14 +627,6 @@ impl GetDeploymentJwtTemplatesQuery {
             .collect();
 
         Ok(templates)
-    }
-}
-
-impl Query for GetDeploymentJwtTemplatesQuery {
-    type Output = Vec<DeploymentJwtTemplate>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -842,14 +799,6 @@ impl GetDeploymentEmailTemplateQuery {
     }
 }
 
-impl Query for GetDeploymentEmailTemplateQuery {
-    type Output = EmailTemplate;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 // Helper query for getting specific email templates by name
 pub struct GetEmailTemplateByNameQuery {
     deployment_id: i64,
@@ -904,14 +853,6 @@ impl GetEmailTemplateByNameQuery {
             .map_err(|e| AppError::BadRequest(format!("Failed to parse email template: {}", e)))?;
 
         Ok(template)
-    }
-}
-
-impl Query for GetEmailTemplateByNameQuery {
-    type Output = EmailTemplate;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -1009,14 +950,6 @@ impl GetDeploymentAuthSettingsQuery {
     }
 }
 
-impl Query for GetDeploymentAuthSettingsQuery {
-    type Output = models::DeploymentAuthSettings;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 // Query to get deployment with its project for access control
 pub struct GetDeploymentWithProjectQuery {
     deployment_id: i64,
@@ -1064,14 +997,6 @@ pub struct DeploymentWithProject {
     pub project_owner_id: Option<String>,
 }
 
-impl Query for GetDeploymentWithProjectQuery {
-    type Output = Option<DeploymentWithProject>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct GetDeploymentChargebeeSubscriptionIdQuery {
     pub deployment_id: i64,
 }
@@ -1101,13 +1026,5 @@ impl GetDeploymentChargebeeSubscriptionIdQuery {
         .await?;
 
         Ok(row.and_then(|r| Some(r.provider_subscription_id)))
-    }
-}
-
-impl Query for GetDeploymentChargebeeSubscriptionIdQuery {
-    type Output = Option<String>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

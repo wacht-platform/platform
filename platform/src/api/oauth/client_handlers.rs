@@ -17,9 +17,12 @@ pub(crate) async fn list_oauth_clients(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthAppPathParams>,
 ) -> ApiResult<ListOAuthClientsResponse> {
-    let clients =
-        oauth_client_use_cases::list_oauth_clients(&app_state, deployment_id, params.oauth_app_slug)
-            .await?;
+    let clients = oauth_client_use_cases::list_oauth_clients(
+        &app_state,
+        deployment_id,
+        params.oauth_app_slug,
+    )
+    .await?;
     Ok(clients.into())
 }
 

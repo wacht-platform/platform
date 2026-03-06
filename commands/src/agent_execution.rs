@@ -1,9 +1,8 @@
 use common::error::AppError;
-use common::state::AppState;
 use dto::json::{AgentExecutionRequest, AgentExecutionType, NatsTaskMessage};
 use models::{FileData, ImageData};
 
-use crate::{Command, WriteToAgentStorageCommand};
+use crate::WriteToAgentStorageCommand;
 
 const AGENT_EXECUTION_KV_BUCKET: &str = "agent_execution_kv";
 
@@ -48,19 +47,6 @@ impl UploadImagesToS3Command {
             context_id,
             images,
         }
-    }
-}
-
-impl Command for UploadImagesToS3Command {
-    type Output = Option<Vec<ImageData>>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
-        self.execute_with(client, || Ok(app_state.sf.next_id()? as i64))
-            .await
     }
 }
 
@@ -139,19 +125,6 @@ impl UploadFilesToS3Command {
     }
 }
 
-impl Command for UploadFilesToS3Command {
-    type Output = Option<Vec<FileData>>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
-        self.execute_with(client, || Ok(app_state.sf.next_id()? as i64))
-            .await
-    }
-}
-
 impl UploadFilesToS3Command {
     pub async fn execute_with<IdFn>(
         self,
@@ -222,18 +195,6 @@ impl SignalAgentExecutionCancellationCommand {
     }
 }
 
-impl Command for SignalAgentExecutionCancellationCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            &app_state.nats_jetstream,
-            app_state.sf.next_id()? as i64,
-        )
-        .await
-    }
-}
-
 impl SignalAgentExecutionCancellationCommand {
     pub async fn execute_with(
         self,
@@ -261,8 +222,7 @@ impl SignalAgentExecutionCancellationCommand {
                             ))
                         })?
                 }
-            },
-        };
+            }};
 
         let marker = format!("cancel:{}", marker_id);
         kv.put(self.context_id.to_string(), marker.into())
@@ -343,15 +303,6 @@ impl PublishAgentExecutionCommand {
                 },
             },
         }
-    }
-}
-
-impl Command for PublishAgentExecutionCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
-            .await
     }
 }
 

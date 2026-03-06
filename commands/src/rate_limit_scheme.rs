@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::api_key::RateLimit;
 use queries::rate_limit_scheme::RateLimitSchemeData;
 use sqlx::Row;
@@ -65,15 +63,6 @@ pub struct CreateRateLimitSchemeCommand {
     pub rules: Vec<RateLimit>,
 }
 
-impl Command for CreateRateLimitSchemeCommand {
-    type Output = RateLimitSchemeData;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
-    }
-}
-
 impl CreateRateLimitSchemeCommand {
     pub async fn execute_with(
         self,
@@ -129,14 +118,6 @@ pub struct UpdateRateLimitSchemeCommand {
     pub rules: Option<Vec<RateLimit>>,
 }
 
-impl Command for UpdateRateLimitSchemeCommand {
-    type Output = RateLimitSchemeData;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateRateLimitSchemeCommand {
     pub async fn execute_with(
         self,
@@ -155,8 +136,8 @@ impl UpdateRateLimitSchemeCommand {
         }
 
         let existing = get_scheme_by_slug(&mut conn, self.deployment_id, &self.slug)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Rate limit scheme not found".to_string()))?;
+            .await?
+            .ok_or_else(|| AppError::NotFound("Rate limit scheme not found".to_string()))?;
 
         let rules_to_store = self.rules.unwrap_or(existing.rules);
         let rules_json = serde_json::to_value(&rules_to_store)
@@ -189,14 +170,6 @@ impl UpdateRateLimitSchemeCommand {
 pub struct DeleteRateLimitSchemeCommand {
     pub deployment_id: i64,
     pub slug: String,
-}
-
-impl Command for DeleteRateLimitSchemeCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
 }
 
 impl DeleteRateLimitSchemeCommand {

@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::{Duration, Utc};
 use common::error::AppError;
-use common::state::AppState;
 
 use super::helpers::{generate_token, hash_value};
 
@@ -21,15 +19,6 @@ pub struct IssueOAuthAuthorizationCode {
 pub struct OAuthAuthorizationCodeIssued {
     pub code: String,
     pub expires_in: i64,
-}
-
-impl Command for IssueOAuthAuthorizationCode {
-    type Output = OAuthAuthorizationCodeIssued;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
-    }
 }
 
 impl IssueOAuthAuthorizationCode {
@@ -104,14 +93,6 @@ pub struct ConsumeOAuthAuthorizationCode {
     pub code_id: i64,
 }
 
-impl Command for ConsumeOAuthAuthorizationCode {
-    type Output = bool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl ConsumeOAuthAuthorizationCode {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
     where
@@ -148,19 +129,6 @@ pub struct OAuthTokenPairIssued {
     pub refresh_token: String,
     pub refresh_token_id: i64,
     pub access_expires_in: i64,
-}
-
-impl Command for IssueOAuthTokenPair {
-    type Output = OAuthTokenPairIssued;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            app_state.db_router.writer(),
-            app_state.sf.next_id()? as i64,
-            app_state.sf.next_id()? as i64,
-        )
-        .await
-    }
 }
 
 impl IssueOAuthTokenPair {

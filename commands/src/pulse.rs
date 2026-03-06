@@ -1,6 +1,5 @@
-use crate::{Command, notification::CreateNotificationCommand};
+use crate::notification::CreateNotificationCommand;
 use common::error::AppError;
-use common::state::AppState;
 use models::notification::NotificationSeverity;
 use models::pulse_transaction::{PulseTransaction, PulseTransactionType};
 use sqlx::Connection;
@@ -124,15 +123,6 @@ pub struct AddPulseCreditsCommand {
     pub amount_pulse_cents: i64,
     pub transaction_type: PulseTransactionType,
     pub reference_id: Option<String>,
-}
-
-impl Command for AddPulseCreditsCommand {
-    type Output = PulseTransaction;
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
-            .await
-    }
 }
 
 impl AddPulseCreditsCommand {
@@ -373,19 +363,6 @@ impl DeductPulseCreditsCommand {
     }
 }
 
-impl Command for DeductPulseCreditsCommand {
-    type Output = PulseTransaction;
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(
-            state.db_router.writer(),
-            &state.nats_client,
-            state.sf.next_id()? as i64,
-        )
-        .await
-    }
-}
-
 pub struct EnsurePulseUsageAllowedForDeploymentCommand {
     pub deployment_id: i64,
 }
@@ -393,14 +370,6 @@ pub struct EnsurePulseUsageAllowedForDeploymentCommand {
 impl EnsurePulseUsageAllowedForDeploymentCommand {
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
-    }
-}
-
-impl Command for EnsurePulseUsageAllowedForDeploymentCommand {
-    type Output = ();
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }
 

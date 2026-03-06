@@ -14,7 +14,10 @@ impl GetAgentSessionQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<Option<AgentSession>, AppError>
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> StdResult<Option<AgentSession>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -36,13 +39,5 @@ impl GetAgentSessionQuery {
         .await?;
 
         Ok(result)
-    }
-}
-
-impl Query for GetAgentSessionQuery {
-    type Output = Option<AgentSession>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

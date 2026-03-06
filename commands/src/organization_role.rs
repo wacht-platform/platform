@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::OrganizationRole;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -26,15 +24,6 @@ impl CreateOrganizationRoleCommand {
             name,
             permissions,
         }
-    }
-}
-
-impl Command for CreateOrganizationRoleCommand {
-    type Output = OrganizationRole;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -132,14 +121,6 @@ impl UpdateOrganizationRoleCommand {
     }
 }
 
-impl Command for UpdateOrganizationRoleCommand {
-    type Output = OrganizationRole;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateOrganizationRoleCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OrganizationRole, AppError>
     where
@@ -226,14 +207,6 @@ impl DeleteOrganizationRoleCommand {
             organization_id,
             role_id,
         }
-    }
-}
-
-impl Command for DeleteOrganizationRoleCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

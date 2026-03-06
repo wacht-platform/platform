@@ -201,10 +201,7 @@ pub async fn update_smtp_config(
     })
 }
 
-pub async fn remove_smtp_config(
-    app_state: &AppState,
-    deployment_id: i64,
-) -> Result<(), AppError> {
+pub async fn remove_smtp_config(app_state: &AppState, deployment_id: i64) -> Result<(), AppError> {
     let writer = app_state.db_router.writer();
     RemoveDeploymentSmtpConfigCommand::new(deployment_id)
         .execute_with(writer, &app_state.redis_client)

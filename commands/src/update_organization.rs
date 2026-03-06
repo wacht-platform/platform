@@ -1,6 +1,4 @@
-use crate::Command;
 use common::error::AppError;
-use common::state::AppState;
 use models::Organization;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -121,13 +119,5 @@ impl UpdateOrganizationCommand {
             public_metadata: organization.get("public_metadata"),
             private_metadata: organization.get("private_metadata"),
         })
-    }
-}
-
-impl Command for UpdateOrganizationCommand {
-    type Output = Organization;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -1,7 +1,5 @@
-use crate::Query;
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use common::state::AppState;
 use models::billing::{BillingAccount, BillingAccountWithSubscription, Subscription};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -86,14 +84,6 @@ impl GetBillingAccountQuery {
     }
 }
 
-impl Query for GetBillingAccountQuery {
-    type Output = Option<BillingAccountWithSubscription>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 pub struct GetSubscriptionByProviderIdQuery {
     provider_subscription_id: String,
 }
@@ -163,14 +153,6 @@ impl GetSubscriptionByProviderIdQuery {
     }
 }
 
-impl Query for GetSubscriptionByProviderIdQuery {
-    type Output = Option<BillingAccountWithSubscription>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ProviderSubscriptionInfo {
     pub provider_customer_id: String,
@@ -225,14 +207,6 @@ impl GetDeploymentProviderSubscriptionQuery {
     }
 }
 
-impl Query for GetDeploymentProviderSubscriptionQuery {
-    type Output = Option<ProviderSubscriptionInfo>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UsageSnapshot {
     pub metric_name: String,
@@ -284,14 +258,6 @@ impl GetDeploymentUsageQuery {
     }
 }
 
-impl Query for GetDeploymentUsageQuery {
-    type Output = Vec<UsageSnapshot>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 pub struct GetBillingAccountUsageQuery {
     pub billing_account_id: i64,
     pub billing_period: DateTime<Utc>,
@@ -334,14 +300,6 @@ impl GetBillingAccountUsageQuery {
             .collect();
 
         Ok(snapshots)
-    }
-}
-
-impl Query for GetBillingAccountUsageQuery {
-    type Output = Vec<UsageSnapshot>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -395,14 +353,6 @@ impl GetDodoProductQuery {
     }
 }
 
-impl Query for GetDodoProductQuery {
-    type Output = Option<DodoProduct>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 pub struct GetBillingAccountByProviderCustomerIdQuery {
     provider_customer_id: String,
 }
@@ -427,14 +377,6 @@ impl GetBillingAccountByProviderCustomerIdQuery {
         .await?;
 
         Ok(owner_id)
-    }
-}
-
-impl Query for GetBillingAccountByProviderCustomerIdQuery {
-    type Output = Option<String>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -472,14 +414,6 @@ impl GetAllDodoProductsQuery {
     }
 }
 
-impl Query for GetAllDodoProductsQuery {
-    type Output = Vec<DodoProduct>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
-    }
-}
-
 pub struct GetOwnerIdByDeploymentIdQuery {
     pub deployment_id: i64,
 }
@@ -508,14 +442,6 @@ impl GetOwnerIdByDeploymentIdQuery {
 
         use sqlx::Row;
         Ok(row.and_then(|r| r.get("owner_id")))
-    }
-}
-
-impl Query for GetOwnerIdByDeploymentIdQuery {
-    type Output = Option<String>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -549,14 +475,6 @@ impl ListPulseTransactionsQuery {
         .await?;
 
         Ok(rows)
-    }
-}
-
-impl Query for ListPulseTransactionsQuery {
-    type Output = Vec<models::pulse_transaction::PulseTransaction>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -624,13 +542,5 @@ impl ListBillingInvoicesQuery {
         }
 
         Ok(results)
-    }
-}
-
-impl Query for ListBillingInvoicesQuery {
-    type Output = Vec<models::billing_invoice::BillingInvoice>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(state.db_router.writer()).await
     }
 }

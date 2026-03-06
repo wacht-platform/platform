@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::Utc;
 use common::error::AppError;
-use common::state::AppState;
 use models::AiAgent;
 
 pub struct CreateAiAgentCommand {
@@ -52,15 +50,6 @@ impl CreateAiAgentCommand {
     pub fn with_spawn_config(mut self, spawn_config: models::SpawnConfig) -> Self {
         self.spawn_config = Some(spawn_config);
         self
-    }
-}
-
-impl Command for CreateAiAgentCommand {
-    type Output = AiAgent;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -198,14 +187,6 @@ impl UpdateAiAgentCommand {
     }
 }
 
-impl Command for UpdateAiAgentCommand {
-    type Output = AiAgent;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl UpdateAiAgentCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiAgent, AppError>
     where
@@ -321,14 +302,6 @@ impl AttachToolToAgentCommand {
     }
 }
 
-impl Command for AttachToolToAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct DetachToolFromAgentCommand {
     pub deployment_id: i64,
     pub agent_id: i64,
@@ -371,14 +344,6 @@ impl DetachToolFromAgentCommand {
     }
 }
 
-impl Command for DetachToolFromAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct AttachKnowledgeBaseToAgentCommand {
     pub deployment_id: i64,
     pub agent_id: i64,
@@ -417,14 +382,6 @@ impl AttachKnowledgeBaseToAgentCommand {
         .map_err(AppError::Database)?;
 
         Ok(())
-    }
-}
-
-impl Command for AttachKnowledgeBaseToAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -470,14 +427,6 @@ impl DetachKnowledgeBaseFromAgentCommand {
     }
 }
 
-impl Command for DetachKnowledgeBaseFromAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 pub struct AttachSubAgentToAgentCommand {
     pub deployment_id: i64,
     pub agent_id: i64,
@@ -491,14 +440,6 @@ impl AttachSubAgentToAgentCommand {
             agent_id,
             sub_agent_id,
         }
-    }
-}
-
-impl Command for AttachSubAgentToAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -591,14 +532,6 @@ impl DetachSubAgentFromAgentCommand {
     }
 }
 
-impl Command for DetachSubAgentFromAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 impl DetachSubAgentFromAgentCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
@@ -652,14 +585,6 @@ impl DeleteAiAgentCommand {
             deployment_id,
             agent_id,
         }
-    }
-}
-
-impl Command for DeleteAiAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

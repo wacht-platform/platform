@@ -1,7 +1,5 @@
-use crate::Command;
 use chrono::Utc;
 use common::error::AppError;
-use common::state::AppState;
 use models::scim_token::ScimToken;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -54,15 +52,6 @@ impl GenerateScimTokenCommand {
         let token_hash = hex::encode(hasher.finalize());
 
         (plain_token, token_prefix, token_hash)
-    }
-}
-
-impl Command for GenerateScimTokenCommand {
-    type Output = GenerateScimTokenResponse;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-            .await
     }
 }
 
@@ -171,14 +160,6 @@ impl RevokeScimTokenCommand {
             deployment_id,
             request,
         }
-    }
-}
-
-impl Command for RevokeScimTokenCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

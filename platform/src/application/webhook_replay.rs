@@ -402,7 +402,8 @@ pub async fn replay_webhook_delivery(
         .publish("worker.tasks.webhook.replay_batch", task_bytes.into())
         .await
     {
-        let _ = rollback_replay_slot(&mut redis_conn, &redis_key, &active_count_key, &pending).await;
+        let _ =
+            rollback_replay_slot(&mut redis_conn, &redis_key, &active_count_key, &pending).await;
         return Err((
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to queue replay task: {}", e),
@@ -429,7 +430,8 @@ pub async fn replay_webhook_delivery(
         .zadd(&index_key, &task_id, now.timestamp())
         .expire(&index_key, 86400);
     if let Err(e) = pipe.query_async::<()>(&mut redis_conn).await {
-        let _ = rollback_replay_slot(&mut redis_conn, &redis_key, &active_count_key, &pending).await;
+        let _ =
+            rollback_replay_slot(&mut redis_conn, &redis_key, &active_count_key, &pending).await;
         return Err((
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to persist replay task snapshot: {}", e),
@@ -618,7 +620,10 @@ fn replay_active_count_key(app_slug: &str) -> String {
 }
 
 fn replay_idempotency_key(app_slug: &str, idempotency_key: &str) -> String {
-    format!("worker:webhook:replay:idem:{}:{}", app_slug, idempotency_key)
+    format!(
+        "worker:webhook:replay:idem:{}:{}",
+        app_slug, idempotency_key
+    )
 }
 
 fn parse_replay_idempotency_value(value: &str) -> (String, Option<String>, Option<String>) {

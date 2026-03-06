@@ -1,5 +1,4 @@
 use common::error::AppError;
-use common::state::AppState;
 use models::{
     AgentExecutionContext, AgentExecutionState, AgentStatusUpdate, ExecutionContextStatus,
 };
@@ -74,14 +73,6 @@ impl GetExecutionContextQuery {
     {
         let mut conn = acquirer.acquire().await?;
         self.execute_with_deps(&mut *conn).await
-    }
-}
-
-impl super::Query for GetExecutionContextQuery {
-    type Output = AgentExecutionContext;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -228,14 +219,6 @@ impl ListExecutionContextsQuery {
     }
 }
 
-impl super::Query for ListExecutionContextsQuery {
-    type Output = Vec<AgentExecutionContext>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 /// Get all child contexts spawned by a parent agent
 pub struct GetChildContextsQuery {
     pub parent_context_id: i64,
@@ -324,14 +307,6 @@ impl GetChildContextsQuery {
     }
 }
 
-impl super::Query for GetChildContextsQuery {
-    type Output = Vec<AgentExecutionContext>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 /// Get status update timeline for a context
 pub struct GetStatusUpdatesQuery {
     pub context_id: i64,
@@ -350,22 +325,22 @@ impl GetStatusUpdatesQuery {
         self.limit = Some(limit);
         self
     }
-}
 
-impl super::Query for GetStatusUpdatesQuery {
-    type Output = Vec<AgentStatusUpdate>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<AgentStatusUpdate>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
         let limit = self.limit.unwrap_or(100);
+        let mut conn = acquirer.acquire().await?;
 
         let rows = sqlx::query!(
             "SELECT id, context_id, status_update, metadata, created_at FROM agent_status_updates WHERE context_id = $1 ORDER BY created_at ASC LIMIT $2",
             self.context_id,
             limit
         )
-        .fetch_all(app_state.db_router.writer())
+        .fetch_all(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         let mut result = Vec::new();
         for row in rows {
@@ -437,14 +412,6 @@ impl GetLatestStatusUpdatesForContextsQuery {
     }
 }
 
-impl super::Query for GetLatestStatusUpdatesForContextsQuery {
-    type Output = Vec<LatestStatusUpdate>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
-    }
-}
-
 /// Get the parent context of a child agent
 pub struct GetParentContextQuery {
     pub context_id: i64,
@@ -458,20 +425,23 @@ impl GetParentContextQuery {
             deployment_id,
         }
     }
-}
 
-impl super::Query for GetParentContextQuery {
-    type Output = Option<AgentExecutionContext>;
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<AgentExecutionContext>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
 
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // First get parent_id
         let parent_id_opt = sqlx::query_scalar!(
             "SELECT parent_context_id FROM agent_execution_contexts
              WHERE id = $1 AND deployment_id = $2",
             self.context_id,
             self.deployment_id
         )
-        .fetch_optional(app_state.db_router.writer())
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(parent_id) = parent_id_opt {
@@ -487,7 +457,7 @@ impl super::Query for GetParentContextQuery {
                 parent_id,
                 self.deployment_id
             )
-            .fetch_one(app_state.db_router.writer())
+            .fetch_one(&mut *conn)
             .await?;
 
             let status = ExecutionContextStatus::from_str(&ctx.status).unwrap_or_default();
@@ -541,7 +511,10 @@ impl GetChildCompletionSummaryQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<serde_json::Value>, AppError>
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<serde_json::Value>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -578,14 +551,6 @@ impl GetChildCompletionSummaryQuery {
         };
 
         Ok(completion_summary)
-    }
-}
-
-impl super::Query for GetChildCompletionSummaryQuery {
-    type Output = Option<serde_json::Value>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -638,14 +603,6 @@ impl GetChildrenCompletionSummariesQuery {
         }
 
         Ok(result)
-    }
-}
-
-impl super::Query for GetChildrenCompletionSummariesQuery {
-    type Output = Vec<ChildCompletionSummary>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

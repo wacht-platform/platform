@@ -1,6 +1,4 @@
-use crate::Query;
 use common::error::AppError;
-use common::state::AppState;
 use rust_decimal::Decimal;
 
 pub struct GetSmsPricingQuery {
@@ -25,13 +23,5 @@ impl GetSmsPricingQuery {
         .await?;
 
         Ok(result)
-    }
-}
-
-impl Query for GetSmsPricingQuery {
-    type Output = Option<Decimal>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state.db_router.writer()).await
     }
 }

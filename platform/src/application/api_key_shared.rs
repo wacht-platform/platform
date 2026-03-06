@@ -2,13 +2,11 @@ use common::db_router::ReadConsistency;
 use common::state::AppState;
 use models::api_key::ApiAuthApp;
 use models::error::AppError;
-use queries::{
-    api_key::{
-        GetApiAuthAppBySlugQuery, GetApiKeysByAppQuery,
-        GetOrganizationMembershipIdByUserAndOrganizationQuery,
-        GetOrganizationMembershipPermissionsQuery, GetWorkspaceMembershipIdByUserAndWorkspaceQuery,
-        GetWorkspaceMembershipPermissionsQuery,
-    },
+use queries::api_key::{
+    GetApiAuthAppBySlugQuery, GetApiKeysByAppQuery,
+    GetOrganizationMembershipIdByUserAndOrganizationQuery,
+    GetOrganizationMembershipPermissionsQuery, GetWorkspaceMembershipIdByUserAndWorkspaceQuery,
+    GetWorkspaceMembershipPermissionsQuery,
 };
 
 #[derive(Debug, Default)]
