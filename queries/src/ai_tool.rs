@@ -36,12 +36,12 @@ impl GetAiToolsQuery {
         self.search = search;
         self
     }
-}
 
-impl Query for GetAiToolsQuery {
-    type Output = Vec<AiToolWithDetails>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<AiToolWithDetails>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut query = r#"
             SELECT
                 t.id, t.created_at, t.updated_at, t.name, t.description,
@@ -89,9 +89,9 @@ impl Query for GetAiToolsQuery {
             .bind(self.offset.unwrap_or(0) as i64);
 
         let tools = query_builder
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(&mut *conn)
             .await
-            .map_err(|e| AppError::Database(e))?;
+            .map_err(AppError::Database)?;
 
         Ok(tools
             .into_iter()
@@ -115,6 +115,14 @@ impl Query for GetAiToolsQuery {
     }
 }
 
+impl Query for GetAiToolsQuery {
+    type Output = Vec<AiToolWithDetails>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetAiToolByIdQuery {
     pub deployment_id: i64,
     pub tool_id: i64,
@@ -127,12 +135,12 @@ impl GetAiToolByIdQuery {
             tool_id,
         }
     }
-}
 
-impl Query for GetAiToolByIdQuery {
-    type Output = AiToolWithDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiToolWithDetails, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let tool = sqlx::query!(
             r#"
             SELECT
@@ -150,9 +158,9 @@ impl Query for GetAiToolByIdQuery {
             self.tool_id,
             self.deployment_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         let tool_type = AiToolType::from(tool.tool_type);
         let configuration: AiToolConfiguration =
@@ -171,6 +179,14 @@ impl Query for GetAiToolByIdQuery {
     }
 }
 
+impl Query for GetAiToolByIdQuery {
+    type Output = AiToolWithDetails;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetAgentToolsQuery {
     pub deployment_id: i64,
     pub agent_id: i64,
@@ -183,12 +199,12 @@ impl GetAgentToolsQuery {
             agent_id,
         }
     }
-}
 
-impl Query for GetAgentToolsQuery {
-    type Output = Vec<AiTool>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<AiTool>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let tools = sqlx::query!(
             r#"
             SELECT
@@ -202,7 +218,7 @@ impl Query for GetAgentToolsQuery {
             self.deployment_id,
             self.agent_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -225,6 +241,14 @@ impl Query for GetAgentToolsQuery {
                 }
             })
             .collect())
+    }
+}
+
+impl Query for GetAgentToolsQuery {
+    type Output = Vec<AiTool>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

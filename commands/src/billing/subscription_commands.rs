@@ -82,11 +82,26 @@ impl Command for UpsertSubscriptionCommand {
     type Output = Subscription;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool, state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl UpsertSubscriptionCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        subscription_id: i64,
+    ) -> Result<Subscription, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let billing_account_id: Option<i64> = sqlx::query_scalar!(
             "SELECT id FROM billing_accounts WHERE owner_id = $1",
             self.owner_id
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let billing_account_id = match billing_account_id {
@@ -102,7 +117,7 @@ impl Command for UpsertSubscriptionCommand {
             "SELECT id FROM subscriptions WHERE billing_account_id = $1",
             billing_account_id
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let subscription = if let Some(id) = existing_id {
@@ -125,10 +140,9 @@ impl Command for UpsertSubscriptionCommand {
             .bind(&self.status)
             .bind(self.previous_billing_date)
             .bind(id)
-            .fetch_one(&state.db_pool)
+            .fetch_one(&mut *conn)
             .await?
         } else {
-            let id = state.sf.next_id().unwrap() as i64;
             sqlx::query_as::<_, Subscription>(
                 r#"
                 INSERT INTO subscriptions (
@@ -145,14 +159,14 @@ impl Command for UpsertSubscriptionCommand {
                 RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
                 "#,
             )
-            .bind(id)
+            .bind(subscription_id)
             .bind(billing_account_id)
             .bind(&self.provider_customer_id)
             .bind(&self.provider_subscription_id)
             .bind(&self.product_id)
             .bind(&self.status)
             .bind(self.previous_billing_date)
-            .fetch_one(&state.db_pool)
+            .fetch_one(&mut *conn)
             .await?
         };
 

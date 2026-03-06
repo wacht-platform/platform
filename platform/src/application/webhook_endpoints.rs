@@ -1,11 +1,11 @@
 use axum::http::StatusCode;
 use commands::{
-    Command,
     webhook_endpoint::{
         CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, EventSubscriptionData,
         ReactivateEndpointCommand, TestWebhookEndpointCommand, UpdateWebhookEndpointCommand,
     },
 };
+use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
 use dto::{
@@ -18,7 +18,6 @@ use dto::{
 };
 use models::webhook::WebhookEndpoint;
 use queries::{
-    Query as QueryTrait,
     webhook::{GetWebhookEndpointsQuery, GetWebhookEndpointsWithSubscriptionsQuery},
 };
 
@@ -55,7 +54,7 @@ pub async fn ensure_endpoint_belongs_to_app(
     let endpoints = GetWebhookEndpointsQuery::new(deployment_id)
         .for_app(app_slug)
         .with_inactive(true)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
     if endpoints.iter().any(|endpoint| endpoint.id == endpoint_id) {
         Ok(())
@@ -78,7 +77,7 @@ pub async fn list_webhook_endpoints(
         .with_inactive(include_inactive)
         .for_app(app_slug)
         .with_pagination(Some(limit + 1), Some(offset))
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(paginate_results(endpoints, limit, Some(offset as i64)))
@@ -100,7 +99,13 @@ pub async fn create_webhook_endpoint(
         .with_timeout_seconds(request.timeout_seconds)
         .with_rate_limit_config(rate_limit_config);
 
-    command.execute(app_state).await
+    command
+        .execute_with(
+            app_state.db_router.writer(),
+            app_state,
+            app_state.sf.next_id()? as i64,
+        )
+        .await
 }
 
 pub async fn update_webhook_endpoint(
@@ -121,7 +126,9 @@ pub async fn update_webhook_endpoint(
         .with_subscriptions(request.subscriptions.map(map_event_subscriptions))
         .with_rate_limit_config(rate_limit_config);
 
-    command.execute(app_state).await
+    command
+        .execute_with(app_state.db_router.writer(), app_state)
+        .await
 }
 
 pub async fn delete_webhook_endpoint(
@@ -130,7 +137,7 @@ pub async fn delete_webhook_endpoint(
     endpoint_id: i64,
 ) -> Result<(), AppError> {
     let command = DeleteWebhookEndpointCommand::new(endpoint_id, deployment_id);
-    command.execute(app_state).await?;
+    command.execute_with(app_state.db_router.writer()).await?;
     Ok(())
 }
 
@@ -140,7 +147,7 @@ pub async fn reactivate_webhook_endpoint(
     endpoint_id: i64,
 ) -> Result<ReactivateEndpointResponse, AppError> {
     let endpoint = ReactivateEndpointCommand::new(endpoint_id, deployment_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer(), app_state)
         .await?;
 
     if let Ok(log_id) = app_state.sf.next_id() {
@@ -189,7 +196,11 @@ pub async fn test_webhook_endpoint(
     });
 
     let result = TestWebhookEndpointCommand::new(endpoint_id, deployment_id, test_payload)
-        .execute(app_state)
+        .execute_with(
+            app_state.db_router.writer(),
+            app_state,
+            app_state.sf.next_id()? as i64,
+        )
         .await?;
 
     Ok(TestWebhookEndpointResponse {

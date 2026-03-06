@@ -77,6 +77,16 @@ impl Command for CreateConversationCommand {
     type Output = ConversationRecord;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl CreateConversationCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<ConversationRecord, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         // Convert typed content to JSON for database storage
@@ -118,7 +128,7 @@ impl Command for CreateConversationCommand {
         .bind(token_count)
         .bind(now)
         .bind(&self.metadata)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(AppError::from)?;
 

@@ -54,12 +54,12 @@ impl UpdateWorkspaceCommand {
         self.private_metadata = Some(private_metadata);
         self
     }
-}
 
-impl Command for UpdateWorkspaceCommand {
-    type Output = Workspace;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Workspace, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut query_parts = Vec::new();
         let mut param_count = 3; // deployment_id and workspace_id are $1 and $2
 
@@ -125,13 +125,10 @@ impl Command for UpdateWorkspaceCommand {
 
         query = query.bind(chrono::Utc::now());
 
-        let row = query
-            .fetch_one(&app_state.db_pool)
-            .await
-            .map_err(|e| match e {
-                sqlx::Error::RowNotFound => AppError::NotFound("Workspace not found".to_string()),
-                _ => AppError::Database(e),
-            })?;
+        let row = query.fetch_one(&mut *conn).await.map_err(|e| match e {
+            sqlx::Error::RowNotFound => AppError::NotFound("Workspace not found".to_string()),
+            _ => AppError::Database(e),
+        })?;
 
         Ok(Workspace {
             id: row.get("id"),
@@ -144,5 +141,13 @@ impl Command for UpdateWorkspaceCommand {
             public_metadata: row.get("public_metadata"),
             private_metadata: row.get("private_metadata"),
         })
+    }
+}
+
+impl Command for UpdateWorkspaceCommand {
+    type Output = Workspace;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

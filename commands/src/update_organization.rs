@@ -37,12 +37,12 @@ impl UpdateOrganizationCommand {
             private_metadata,
         }
     }
-}
 
-impl Command for UpdateOrganizationCommand {
-    type Output = Organization;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Organization, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut query_parts = Vec::new();
         let mut param_count = 3; // deployment_id and organization_id are $1 and $2
 
@@ -108,7 +108,7 @@ impl Command for UpdateOrganizationCommand {
 
         query = query.bind(chrono::Utc::now());
 
-        let organization = query.fetch_one(&app_state.db_pool).await?;
+        let organization = query.fetch_one(&mut *conn).await?;
 
         Ok(Organization {
             id: organization.get("id"),
@@ -121,5 +121,13 @@ impl Command for UpdateOrganizationCommand {
             public_metadata: organization.get("public_metadata"),
             private_metadata: organization.get("private_metadata"),
         })
+    }
+}
+
+impl Command for UpdateOrganizationCommand {
+    type Output = Organization;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

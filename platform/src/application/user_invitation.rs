@@ -1,9 +1,10 @@
-use commands::{ApproveWaitlistUserCommand, Command, DeleteInvitationCommand, InviteUserCommand};
+use commands::{ApproveWaitlistUserCommand, DeleteInvitationCommand, InviteUserCommand};
+use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
 use dto::{json::InviteUserRequest, query::InvitationsWaitlistQueryParams};
 use models::{DeploymentInvitation, DeploymentWaitlistUser};
-use queries::{DeploymentInvitationQuery, DeploymentWaitlistQuery, Query};
+use queries::{DeploymentInvitationQuery, DeploymentWaitlistQuery};
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 
@@ -21,7 +22,7 @@ pub async fn get_invited_user_list(
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .search(params.search.clone())
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
 
     Ok(paginate_results(invitations, limit, Some(offset)))
@@ -41,7 +42,7 @@ pub async fn get_user_waitlist(
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .search(params.search.clone())
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
 
     Ok(paginate_results(waitlist, limit, Some(offset)))
@@ -53,7 +54,11 @@ pub async fn invite_user(
     request: InviteUserRequest,
 ) -> Result<DeploymentInvitation, AppError> {
     InviteUserCommand::new(deployment_id, request)
-        .execute(app_state)
+        .execute_with(
+            app_state.db_router.writer(),
+            app_state,
+            app_state.sf.next_id()? as i64,
+        )
         .await
 }
 
@@ -62,8 +67,9 @@ pub async fn delete_invitation(
     deployment_id: i64,
     invitation_id: i64,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     DeleteInvitationCommand::new(deployment_id, invitation_id)
-        .execute(app_state)
+        .execute_with(writer)
         .await?;
     Ok(())
 }
@@ -74,6 +80,10 @@ pub async fn approve_waitlist_user(
     waitlist_user_id: i64,
 ) -> Result<DeploymentInvitation, AppError> {
     ApproveWaitlistUserCommand::new(deployment_id, waitlist_user_id)
-        .execute(app_state)
+        .execute_with(
+            app_state.db_router.writer(),
+            app_state,
+            app_state.sf.next_id()? as i64,
+        )
         .await
 }

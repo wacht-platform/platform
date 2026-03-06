@@ -442,7 +442,7 @@ async fn publish_stream_event(
         webhook_payload,
     );
 
-    if let Err(e) = trigger_command.execute(app_state).await {
+    if let Err(e) = Command::execute(trigger_command, app_state).await {
         tracing::warn!(
             deployment_id = deployment_id,
             webhook_event = %message_type.webhook_event_name(),
@@ -489,12 +489,11 @@ async fn mark_context_failed_due_to_parent_abort(
     deployment_id: i64,
     parent_context_id: i64,
 ) -> Result<(), AppError> {
-    commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
-        .with_status(ExecutionContextStatus::Failed)
-        .execute(app_state)
-        .await?;
+    let fail_context_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
+        .with_status(ExecutionContextStatus::Failed);
+    Command::execute(fail_context_cmd, app_state).await?;
 
-    commands::StoreCompletionSummaryEnhancedCommand::new(
+    let summary_cmd = commands::StoreCompletionSummaryEnhancedCommand::new(
         context_id,
         deployment_id,
         commands::CompletionSummary {
@@ -506,9 +505,8 @@ async fn mark_context_failed_due_to_parent_abort(
             )),
             metrics: None,
         },
-    )
-    .execute(app_state)
-    .await?;
+    );
+    Command::execute(summary_cmd, app_state).await?;
 
     Ok(())
 }
@@ -517,13 +515,12 @@ async fn mark_context_failed_due_to_parent_abort(
 /// Setting status to Failed triggers CancelDescendantExecutionsCommand internally,
 /// which BFS-walks all descendants and sends NATS stop signals.
 async fn mark_context_cancelled(app_state: &AppState, context_id: i64, deployment_id: i64) {
-    let _ = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
+    let cancel_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
         .with_status(ExecutionContextStatus::Failed)
-        .mark_status_as_cancellation()
-        .execute(app_state)
-        .await;
+        .mark_status_as_cancellation();
+    let _ = Command::execute(cancel_cmd, app_state).await;
 
-    let _ = commands::StoreCompletionSummaryEnhancedCommand::new(
+    let summary_cmd = commands::StoreCompletionSummaryEnhancedCommand::new(
         context_id,
         deployment_id,
         commands::CompletionSummary {
@@ -532,9 +529,8 @@ async fn mark_context_cancelled(app_state: &AppState, context_id: i64, deploymen
             error_message: Some("Execution cancelled by user.".to_string()),
             metrics: None,
         },
-    )
-    .execute(app_state)
-    .await;
+    );
+    let _ = Command::execute(summary_cmd, app_state).await;
 }
 
 async fn subscribe_spawn_control(
@@ -593,9 +589,11 @@ async fn apply_spawn_control_params(
     deployment_id: i64,
     params: Value,
 ) -> Result<(), AppError> {
-    let context = queries::GetExecutionContextQuery::new(context_id, deployment_id)
-        .execute(app_state)
-        .await?;
+    let context = Query::execute(
+        &queries::GetExecutionContextQuery::new(context_id, deployment_id),
+        app_state,
+    )
+    .await?;
 
     let mut metadata = context
         .external_resource_metadata
@@ -611,18 +609,16 @@ async fn apply_spawn_control_params(
         );
     }
 
-    commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
-        .with_external_resource_metadata(metadata)
-        .execute(app_state)
-        .await?;
+    let update_context_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
+        .with_external_resource_metadata(metadata);
+    Command::execute(update_context_cmd, app_state).await?;
 
-    commands::PostStatusUpdateCommand::new(
+    let status_cmd = commands::PostStatusUpdateCommand::new(
         context_id,
         deployment_id,
         "Parent updated execution parameters".to_string(),
-    )
-    .execute(app_state)
-    .await?;
+    );
+    Command::execute(status_cmd, app_state).await?;
 
     Ok(())
 }
@@ -632,12 +628,11 @@ async fn record_spawn_control_restart(
     context_id: i64,
     deployment_id: i64,
 ) -> Result<(), AppError> {
-    commands::PostStatusUpdateCommand::new(
+    let status_cmd = commands::PostStatusUpdateCommand::new(
         context_id,
         deployment_id,
         "Parent requested execution restart".to_string(),
-    )
-    .execute(app_state)
-    .await?;
+    );
+    Command::execute(status_cmd, app_state).await?;
     Ok(())
 }

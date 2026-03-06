@@ -124,7 +124,7 @@ async fn trigger_execution_webhook(
         payload,
     );
 
-    if let Err(error) = trigger_command.execute(app_state).await {
+    if let Err(error) = Command::execute(trigger_command, app_state).await {
         tracing::error!("Failed to trigger {} webhook: {}", error_context, error);
     }
 }
@@ -139,9 +139,8 @@ async fn publish_conversation_webhook(
 ) {
     use queries::Query;
 
-    if let Ok(conversation) = queries::GetConversationByIdQuery::new(conversation_id)
-        .execute(app_state)
-        .await
+    let conversation_query = queries::GetConversationByIdQuery::new(conversation_id);
+    if let Ok(conversation) = Query::execute(&conversation_query, app_state).await
     {
         let payload = serde_json::json!({
             "context_id": context_id,
@@ -188,13 +187,18 @@ pub async fn process_agent_execution(
     );
 
     let agent = match &execution_envelope.agent_resolution {
-        AgentResolutionStrategy::AgentId(agent_id) => GetAiAgentByIdWithFeatures::new(*agent_id)
-            .execute(app_state)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to get agent by ID {}: {}", agent_id, e))?,
+        AgentResolutionStrategy::AgentId(agent_id) => {
+            let by_id_query = GetAiAgentByIdWithFeatures::new(*agent_id);
+            Query::execute(&by_id_query, app_state)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to get agent by ID {}: {}", agent_id, e))?
+        }
         AgentResolutionStrategy::AgentName(agent_name) => {
-            GetAiAgentByNameWithFeatures::new(execution_envelope.deployment_id, agent_name.clone())
-                .execute(app_state)
+            let by_name_query = GetAiAgentByNameWithFeatures::new(
+                execution_envelope.deployment_id,
+                agent_name.clone(),
+            );
+            Query::execute(&by_name_query, app_state)
                 .await
                 .map_err(|_| anyhow::anyhow!("Agent '{}' not found", agent_name))?
         }

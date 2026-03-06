@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use axum::http::StatusCode;
+use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
 use dto::{
@@ -17,8 +18,9 @@ async fn ensure_webhook_app_exists(
     deployment_id: i64,
     app_slug: String,
 ) -> Result<(), AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let app = queries::GetWebhookAppByNameQuery::new(deployment_id, app_slug)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
     if app.is_some() {
         Ok(())
@@ -40,8 +42,9 @@ pub async fn get_webhook_delivery_details(
     let status = params.get("status").map(|s| s.as_str());
 
     let delivery = if status == Some("pending") {
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         queries::webhook::GetPendingWebhookDeliveryQuery::new(deployment_id, delivery_id)
-            .execute(app_state)
+            .execute_with(reader)
             .await?
     } else {
         app_state
@@ -92,7 +95,7 @@ pub async fn get_webhook_stats(
     app_slug: String,
 ) -> Result<WebhookAnalyticsResult, AppError> {
     let query = GetWebhookAnalyticsQuery::new(deployment_id).with_app_slug(app_slug);
-    query.execute(app_state).await
+    QueryTrait::execute(&query, app_state).await
 }
 
 pub async fn get_app_webhook_deliveries(

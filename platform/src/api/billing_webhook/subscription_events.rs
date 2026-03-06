@@ -12,6 +12,13 @@ use tracing::{error, info, warn};
 
 use super::get_customer_id;
 
+fn next_subscription_id(app_state: &AppState) -> Result<i64, StatusCode> {
+    app_state.sf.next_id().map(|id| id as i64).map_err(|e| {
+        error!("Failed to generate subscription id: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
+}
+
 pub(super) async fn handle_subscription_active(
     app_state: &AppState,
     data: &serde_json::Value,
@@ -48,7 +55,7 @@ pub(super) async fn handle_subscription_active(
         status: status.to_string(),
         previous_billing_date,
     }
-    .execute(app_state)
+    .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
     .await
     .map_err(|e| {
         error!("Failed to upsert subscription: {}", e);
@@ -59,7 +66,7 @@ pub(super) async fn handle_subscription_active(
         owner_id: owner_id.clone(),
         status: status.to_string(),
     }
-    .execute(app_state)
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to update billing account status: {}", e);
@@ -70,7 +77,7 @@ pub(super) async fn handle_subscription_active(
         owner_id: owner_id.clone(),
         webhook_event: "subscription.active".to_string(),
     }
-    .execute(app_state)
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to update checkout flow state: {}", e);
@@ -109,7 +116,7 @@ pub(super) async fn handle_subscription_renewed(
             status: "active".to_string(),
             previous_billing_date,
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
         .await
         .map_err(|e| {
             error!("Failed to update subscription on renewal: {}", e);
@@ -120,7 +127,7 @@ pub(super) async fn handle_subscription_renewed(
             owner_id: owner_id.clone(),
             webhook_event: "subscription.renewed".to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -166,7 +173,7 @@ pub(super) async fn handle_subscription_plan_changed(
             status: "active".to_string(),
             previous_billing_date,
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
         .await
         .map_err(|e| {
             error!("Failed to update subscription on plan change: {}", e);
@@ -177,7 +184,7 @@ pub(super) async fn handle_subscription_plan_changed(
             owner_id: owner_id.clone(),
             webhook_event: "subscription.plan_changed".to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -220,7 +227,7 @@ pub(super) async fn handle_subscription_cancelled(
             status: status.to_string(),
             previous_billing_date,
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
@@ -231,7 +238,7 @@ pub(super) async fn handle_subscription_cancelled(
             owner_id: owner_id.clone(),
             status: status.to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
@@ -243,7 +250,7 @@ pub(super) async fn handle_subscription_cancelled(
             webhook_event: "subscription.cancelled".to_string(),
             reason: status.to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -285,7 +292,7 @@ pub(super) async fn handle_subscription_on_hold(
             status: status.to_string(),
             previous_billing_date,
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
@@ -296,7 +303,7 @@ pub(super) async fn handle_subscription_on_hold(
             owner_id: owner_id.clone(),
             status: status.to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
@@ -308,7 +315,7 @@ pub(super) async fn handle_subscription_on_hold(
             webhook_event: "subscription.on_hold".to_string(),
             reason: status.to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -355,7 +362,7 @@ pub(super) async fn handle_subscription_failed(
             status: status.to_string(),
             previous_billing_date,
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
@@ -366,7 +373,7 @@ pub(super) async fn handle_subscription_failed(
             owner_id: owner_id.clone(),
             status: status.to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
@@ -378,7 +385,7 @@ pub(super) async fn handle_subscription_failed(
             webhook_event: "subscription.failed".to_string(),
             reason: status.to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -420,7 +427,7 @@ pub(super) async fn handle_subscription_expired(
             status: status.to_string(),
             previous_billing_date,
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
@@ -431,7 +438,7 @@ pub(super) async fn handle_subscription_expired(
             owner_id: owner_id.clone(),
             status: status.to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
@@ -443,7 +450,7 @@ pub(super) async fn handle_subscription_expired(
             webhook_event: "subscription.expired".to_string(),
             reason: status.to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);

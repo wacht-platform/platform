@@ -27,11 +27,26 @@ impl Command for UpsertInvoiceCommand {
     type Output = BillingInvoice;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool, state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl UpsertInvoiceCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        invoice_id: i64,
+    ) -> Result<BillingInvoice, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let billing_account_id: Option<i64> = sqlx::query_scalar!(
             "SELECT id FROM billing_accounts WHERE owner_id = $1",
             self.owner_id
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let billing_account_id = billing_account_id
@@ -41,7 +56,7 @@ impl Command for UpsertInvoiceCommand {
             "SELECT id FROM subscriptions WHERE billing_account_id = $1",
             billing_account_id
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let status: InvoiceStatus = self
@@ -53,7 +68,7 @@ impl Command for UpsertInvoiceCommand {
             "SELECT id FROM billing_invoices WHERE provider_payment_id = $1",
             self.provider_payment_id
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let invoice = if let Some(id) = existing_id {
@@ -97,10 +112,9 @@ impl Command for UpsertInvoiceCommand {
                 self.metadata,
                 id
             )
-            .fetch_one(&state.db_pool)
+            .fetch_one(&mut *conn)
             .await?
         } else {
-            let id = state.sf.next_id().unwrap() as i64;
             sqlx::query_as!(
                 BillingInvoice,
                 r#"
@@ -119,7 +133,7 @@ impl Command for UpsertInvoiceCommand {
                     paid_at, period_start, period_end, attempt_count, next_payment_attempt,
                     metadata
                 "#,
-                id,
+                invoice_id,
                 billing_account_id,
                 subscription_id,
                 self.provider_payment_id,
@@ -137,7 +151,7 @@ impl Command for UpsertInvoiceCommand {
                 self.period_end,
                 self.metadata
             )
-            .fetch_one(&state.db_pool)
+            .fetch_one(&mut *conn)
             .await?
         };
 

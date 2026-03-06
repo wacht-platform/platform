@@ -4,9 +4,8 @@ use common::state::AppState;
 use tracing::info;
 
 pub async fn sync_oauth_grant_last_used(app_state: &AppState) -> Result<String> {
-    let synced = SyncOAuthGrantLastUsedBatch { batch_size: 100 }
-        .execute(app_state)
-        .await?;
+    let sync_command = SyncOAuthGrantLastUsedBatch { batch_size: 100 };
+    let synced = Command::execute(sync_command, app_state).await?;
     if synced == 0 {
         return Ok("No dirty oauth grant last_used entries".to_string());
     }

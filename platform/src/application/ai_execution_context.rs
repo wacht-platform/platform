@@ -6,6 +6,7 @@ use commands::{
     EnsurePulseUsageAllowedForDeploymentCommand, UpdateExecutionContextCommand,
     UpdateExecutionContextQuery,
 };
+use common::ReadConsistency;
 use common::error::AppError;
 use dto::json::UpdateExecutionContextRequest;
 use dto::json::deployment::{
@@ -15,7 +16,7 @@ use models::plan_features::PlanFeature;
 use models::{AgentExecutionContext, ExecutionContextStatus};
 use queries::{
     GetDeploymentAiSettingsQuery, GetExecutionContextQuery, ListExecutionContextsQuery,
-    Query as QueryTrait, plan_access::CheckDeploymentFeatureAccessQuery,
+    plan_access::CheckDeploymentFeatureAccessQuery,
 };
 use tracing::{error, info};
 
@@ -94,7 +95,7 @@ async fn ensure_pulse_usage_if_needed(
 ) -> Result<(), AppError> {
     if !has_custom_gemini_key {
         EnsurePulseUsageAllowedForDeploymentCommand::new(deployment_id)
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await?;
     }
     Ok(())
@@ -106,9 +107,11 @@ async fn cancel_running_execution_if_needed(
     has_running_execution: bool,
 ) -> Result<(), AppError> {
     if has_running_execution {
-        SignalAgentExecutionCancellationCommand::new(context_id)
-            .execute(app_state)
-            .await?;
+        Command::execute(
+            SignalAgentExecutionCancellationCommand::new(context_id),
+            app_state,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -119,7 +122,10 @@ pub async fn create_execution_context(
     request: CreateExecutionContextRequest,
 ) -> Result<AgentExecutionContext, AppError> {
     build_create_execution_context_command(deployment_id, request)
-        .execute(app_state)
+        .execute_with(
+            app_state.db_router.writer(),
+            app_state.sf.next_id()? as i64,
+        )
         .await
 }
 
@@ -142,7 +148,9 @@ pub async fn get_execution_contexts(
         query = query.with_context_group_filter(context_group);
     }
 
-    let contexts = query.execute(app_state).await?;
+    let contexts = query
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .await?;
     Ok(paginate_results(contexts, limit as i32, Some(offset as i64)))
 }
 
@@ -153,7 +161,7 @@ pub async fn update_execution_context(
     request: UpdateExecutionContextRequest,
 ) -> Result<AgentExecutionContext, AppError> {
     build_update_execution_context_command(context_id, deployment_id, request)
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 
@@ -167,7 +175,7 @@ pub async fn execute_agent_async(
     use models::{ConversationContent, ConversationMessageType};
 
     let context = GetExecutionContextQuery::new(context_id, deployment_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
     let has_running_execution = matches!(context.status, ExecutionContextStatus::Running);
 
@@ -192,7 +200,7 @@ pub async fn execute_agent_async(
     if cancel.is_none() {
         let has_ai_access =
             CheckDeploymentFeatureAccessQuery::new(deployment_id, PlanFeature::AiAgents)
-                .execute(app_state)
+                .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
                 .await
                 .map_err(|e| {
                     AppError::Internal(format!("Failed to check AI feature access: {}", e))
@@ -205,7 +213,7 @@ pub async fn execute_agent_async(
 
     let has_custom_gemini_key = if cancel.is_none() {
         GetDeploymentAiSettingsQuery::new(deployment_id)
-            .execute(app_state)
+            .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
             .await?
             .and_then(|s| s.gemini_api_key)
             .is_some()
@@ -230,11 +238,9 @@ pub async fn execute_agent_async(
                 return Err(AppError::BadRequest("Message or files required".to_string()));
             }
 
-            let model_files =
-                match UploadFilesToS3Command::new(deployment_id, context_id, new_message.files)
-                    .execute(app_state)
-                    .await
-                {
+            let upload_files_command =
+                UploadFilesToS3Command::new(deployment_id, context_id, new_message.files);
+            let model_files = match Command::execute(upload_files_command, app_state).await {
                     Ok(files) => files,
                     Err(e) => {
                         error!("Failed to upload files: {}", e);
@@ -269,20 +275,19 @@ pub async fn execute_agent_async(
                 },
                 ConversationMessageType::UserMessage,
             )
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await?;
 
             cancel_running_execution_if_needed(app_state, context_id, has_running_execution).await?;
 
-            PublishAgentExecutionCommand::new_message(
+            let publish_command = PublishAgentExecutionCommand::new_message(
                 deployment_id,
                 context_id,
                 None,
                 agent_name.clone(),
                 conversation_id,
-            )
-            .execute(app_state)
-            .await?;
+            );
+            Command::execute(publish_command, app_state).await?;
 
             info!(
                 "Published new_message execution for context {} (conversation_id: {})",
@@ -309,20 +314,19 @@ pub async fn execute_agent_async(
                 },
                 ConversationMessageType::UserMessage,
             )
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await?;
 
             cancel_running_execution_if_needed(app_state, context_id, has_running_execution).await?;
 
-            PublishAgentExecutionCommand::user_input_response(
+            let publish_command = PublishAgentExecutionCommand::user_input_response(
                 deployment_id,
                 context_id,
                 None,
                 agent_name.clone(),
                 conversation_id,
-            )
-            .execute(app_state)
-            .await?;
+            );
+            Command::execute(publish_command, app_state).await?;
 
             info!(
                 "Published user_input_response execution for context {} (conversation_id: {})",
@@ -336,16 +340,15 @@ pub async fn execute_agent_async(
                 return Err(AppError::BadRequest("Execution ID is required".to_string()));
             }
 
-            PublishAgentExecutionCommand::platform_function_result(
+            let publish_command = PublishAgentExecutionCommand::platform_function_result(
                 deployment_id,
                 context_id,
                 None,
                 agent_name.clone(),
                 platform_function_result.execution_id.clone(),
                 platform_function_result.result,
-            )
-            .execute(app_state)
-            .await?;
+            );
+            Command::execute(publish_command, app_state).await?;
 
             info!(
                 "Published platform_function_result execution for context {} (execution_id: {})",
@@ -357,11 +360,10 @@ pub async fn execute_agent_async(
         (None, None, None, Some(_)) => {
             cancel_running_execution_if_needed(app_state, context_id, has_running_execution).await?;
 
-            UpdateExecutionContextQuery::new(context_id, deployment_id)
+            let update_context_command = UpdateExecutionContextQuery::new(context_id, deployment_id)
                 .with_status(ExecutionContextStatus::Failed)
-                .mark_status_as_cancellation()
-                .execute(app_state)
-                .await?;
+                .mark_status_as_cancellation();
+            Command::execute(update_context_command, app_state).await?;
 
             Ok(ExecuteAgentResponse {
                 status: "cancelled".to_string(),

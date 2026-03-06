@@ -7,12 +7,13 @@ use axum::extract::{Query as QueryParams, State};
 use axum::http::{HeaderMap, header, header::COOKIE};
 use axum::response::{IntoResponse, Response};
 use common::state::AppState;
+use common::db_router::ReadConsistency;
 use common::utils::jwt::verify_token;
 use dto::json::{AgentStreamMessageType, StreamEvent};
 use futures::StreamExt;
 use models::ConversationContent;
 use queries::{
-    GetAgentSessionQuery, GetDeploymentWithKeyPairQuery, GetExecutionContextQuery, Query,
+    GetAgentSessionQuery, GetDeploymentWithKeyPairQuery, GetExecutionContextQuery,
 };
 use serde::Deserialize;
 use std::str::FromStr;
@@ -84,8 +85,9 @@ pub async fn agent_sse_stream_handler(
         }
     };
 
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let (deployment_id, public_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
-        .execute(&app_state)
+        .execute_with(reader)
         .await
     {
         Ok(result) => result,
@@ -120,8 +122,9 @@ pub async fn agent_sse_stream_handler(
         }
     };
 
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let agent_session = match GetAgentSessionQuery::new(session_id, deployment_id as i64)
-        .execute(&app_state)
+        .execute_with(reader)
         .await
     {
         Ok(Some(session)) if session.is_active() => session,
@@ -147,8 +150,9 @@ pub async fn agent_sse_stream_handler(
                 .unwrap();
         }
     };
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let execution_context = match GetExecutionContextQuery::new(context_id, deployment_id as i64)
-        .execute(&app_state)
+        .execute_with(reader)
         .await
     {
         Ok(context) => context,

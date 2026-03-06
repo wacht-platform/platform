@@ -68,7 +68,7 @@ impl Command for ProcessDocumentBatchCommand {
 
             // Generate embeddings for this batch
             let embeddings_command = GenerateEmbeddingsCommand::new(chunk_texts);
-            let embeddings = match embeddings_command.execute(app_state).await {
+            let embeddings = match Command::execute(embeddings_command, app_state).await {
                 Ok(embeddings) => embeddings,
                 Err(e) => {
                     error!("Failed to generate embeddings for batch: {}", e);

@@ -221,6 +221,16 @@ impl Command for UpdateBillingAccountStatusCommand {
     type Output = ();
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
+    }
+}
+
+impl UpdateBillingAccountStatusCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let normalized_status = normalize_billing_account_status(&self.status);
 
         sqlx::query!(
@@ -232,7 +242,7 @@ impl Command for UpdateBillingAccountStatusCommand {
             normalized_status,
             self.owner_id
         )
-        .execute(&state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())
@@ -306,6 +316,16 @@ impl Command for MarkPaymentSucceededCommand {
     type Output = ();
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
+    }
+}
+
+impl MarkPaymentSucceededCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             UPDATE billing_accounts
@@ -323,7 +343,7 @@ impl Command for MarkPaymentSucceededCommand {
             self.webhook_event,
             self.owner_id
         )
-        .execute(&state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())
@@ -339,6 +359,16 @@ impl Command for MarkSubscriptionActivatedCommand {
     type Output = ();
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
+    }
+}
+
+impl MarkSubscriptionActivatedCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             UPDATE billing_accounts
@@ -356,7 +386,7 @@ impl Command for MarkSubscriptionActivatedCommand {
             self.webhook_event,
             self.owner_id
         )
-        .execute(&state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())
@@ -373,6 +403,16 @@ impl Command for MarkCheckoutFlowFailedCommand {
     type Output = ();
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
+    }
+}
+
+impl MarkCheckoutFlowFailedCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             UPDATE billing_accounts
@@ -387,7 +427,7 @@ impl Command for MarkCheckoutFlowFailedCommand {
             self.reason,
             self.owner_id
         )
-        .execute(&state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())

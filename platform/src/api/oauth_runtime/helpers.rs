@@ -1,13 +1,12 @@
 use axum::http::{HeaderMap, header::AUTHORIZATION};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::Utc;
-use commands::{Command, CreateOAuthClientGrantCommand};
-use common::{error::AppError, state::AppState, utils::jwt::verify_token};
+use commands::CreateOAuthClientGrantCommand;
+use common::{db_router::ReadConsistency, error::AppError, state::AppState, utils::jwt::verify_token};
 use core::cmp::Ordering;
 use dto::json::oauth_runtime::OAuthTokenRequest;
 use hmac::{Hmac, Mac};
 use models::api_key::OAuthScopeDefinition;
-use queries::Query as QueryTrait;
 use queries::{
     GetRuntimeApiAuthUserIdByAppSlugQuery, GetRuntimeOAuthClientByClientIdQuery,
     ResolveOAuthAppByFqdnQuery, ResolveRuntimeOAuthGrantQuery,
@@ -46,8 +45,9 @@ pub(crate) async fn resolve_oauth_app_from_host(
         .and_then(normalize_fqdn_host)
         .ok_or_else(|| AppError::NotFound("OAuth app not found for host".to_string()))?;
 
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     ResolveOAuthAppByFqdnQuery::new(host.to_string())
-        .execute(app_state)
+        .execute_with(reader)
         .await?
         .ok_or_else(|| AppError::NotFound("OAuth app not found for host".to_string()))
 }
@@ -64,8 +64,9 @@ pub(crate) async fn authenticate_client(
     let client_id = basic_client_id
         .or_else(|| request.client_id.clone())
         .ok_or(AppError::Unauthorized)?;
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let client = GetRuntimeOAuthClientByClientIdQuery::new(oauth_app_id, client_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await?
         .ok_or(AppError::Unauthorized)?;
     if !client.is_active {
@@ -161,10 +162,12 @@ pub(crate) async fn validate_grant_and_entitlement(
     scope_definitions: &[OAuthScopeDefinition],
 ) -> Result<GrantValidationResult, AppError> {
     let grant = if let Some(grant_id) = oauth_grant_id {
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         ResolveRuntimeOAuthGrantQuery::by_grant_id(deployment_id, oauth_client_id, grant_id)
-            .execute(app_state)
+            .execute_with(reader)
             .await?
     } else {
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         ResolveRuntimeOAuthGrantQuery::by_scope_match(
             deployment_id,
             oauth_client_id,
@@ -172,7 +175,7 @@ pub(crate) async fn validate_grant_and_entitlement(
             scopes.clone(),
             resource.clone(),
         )
-        .execute(app_state)
+        .execute_with(reader)
         .await?
     };
 
@@ -190,20 +193,22 @@ pub(crate) async fn validate_grant_and_entitlement(
     let required_permissions =
         required_permissions_for_resource(scope_definitions, &scopes, &resource);
 
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let user_id = GetRuntimeApiAuthUserIdByAppSlugQuery::new(deployment_id, app_slug)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
     let Some(user_id) = user_id else {
         return Ok(GrantValidationResult::MissingOrInsufficient);
     };
 
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let entitled = ValidateRuntimeResourceEntitlementQuery::new(
         deployment_id,
         user_id,
         resource,
         required_permissions,
     )
-    .execute(app_state)
+    .execute_with(reader)
     .await?;
     if entitled {
         Ok(GrantValidationResult::Active)
@@ -221,6 +226,7 @@ pub(crate) async fn ensure_or_create_grant_coverage(
     resource: String,
     user_id: i64,
 ) -> Result<i64, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let resolved = ResolveRuntimeOAuthGrantQuery::by_scope_match(
         deployment_id,
         oauth_client_id,
@@ -228,7 +234,7 @@ pub(crate) async fn ensure_or_create_grant_coverage(
         scopes.clone(),
         Some(resource.clone()),
     )
-    .execute(app_state)
+    .execute_with(reader)
     .await?;
     if let Some(grant_id) = resolved.active_grant_id {
         return Ok(grant_id);
@@ -239,6 +245,7 @@ pub(crate) async fn ensure_or_create_grant_coverage(
         ));
     }
 
+    let writer = app_state.db_router.writer();
     let created = CreateOAuthClientGrantCommand {
         deployment_id,
         api_auth_app_slug: app_slug,
@@ -248,7 +255,13 @@ pub(crate) async fn ensure_or_create_grant_coverage(
         granted_by_user_id: Some(user_id),
         expires_at: None,
     }
-    .execute(app_state)
+    .execute_with(
+        writer,
+        app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+    )
     .await?;
     Ok(created.id)
 }

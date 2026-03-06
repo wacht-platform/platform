@@ -29,10 +29,8 @@ pub(super) async fn send_billing_change_email(app_state: &AppState, owner_id: &s
         return;
     };
 
-    let account = match GetBillingAccountQuery::new(owner_id.to_string())
-        .execute(app_state)
-        .await
-    {
+    let billing_account_query = GetBillingAccountQuery::new(owner_id.to_string());
+    let account = match Query::execute(&billing_account_query, app_state).await {
         Ok(Some(account)) => account,
         Ok(None) => return,
         Err(e) => {
@@ -83,15 +81,14 @@ pub(super) async fn send_billing_change_email(app_state: &AppState, owner_id: &s
     let body_text = final_message.clone();
 
     for email in recipients {
-        if let Err(e) = SendRawEmailCommand::new(
+        let send_email_command = SendRawEmailCommand::new(
             console_deployment_id,
             email.clone(),
             subject.clone(),
             body_html.clone(),
             Some(body_text.clone()),
-        )
-        .execute(app_state)
-        .await
+        );
+        if let Err(e) = Command::execute(send_email_command, app_state).await
         {
             warn!(
                 "Failed to send billing change email to {} for {}: {}",
@@ -119,10 +116,8 @@ pub(super) async fn extract_owner_id(
     }
 
     if !customer_id.is_empty() {
-        if let Ok(Some(owner_id)) = GetBillingAccountByProviderCustomerIdQuery::new(customer_id)
-            .execute(app_state)
-            .await
-        {
+        let owner_query = GetBillingAccountByProviderCustomerIdQuery::new(customer_id);
+        if let Ok(Some(owner_id)) = Query::execute(&owner_query, app_state).await {
             return owner_id;
         }
     }

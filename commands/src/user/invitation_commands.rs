@@ -6,6 +6,7 @@ use common::error::AppError;
 use common::state::AppState;
 use dto::json::InviteUserRequest;
 use models::DeploymentInvitation;
+use sqlx::Connection;
 
 pub struct InviteUserCommand {
     deployment_id: i64,
@@ -19,16 +20,20 @@ impl InviteUserCommand {
             request,
         }
     }
-}
 
-impl Command for InviteUserCommand {
-    type Output = DeploymentInvitation;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        app_state: &AppState,
+        invitation_id: i64,
+    ) -> Result<DeploymentInvitation, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
         let expiry_days = self.request.expiry_days.unwrap_or(7);
         let expiry = now + Duration::days(expiry_days);
-        let invitation_id = app_state.sf.next_id()? as i64;
 
         let token = {
             use rand::Rng;
@@ -55,7 +60,7 @@ impl Command for InviteUserCommand {
             token,
             expiry
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         let reader = app_state.db_router.reader(ReadConsistency::Strong);
@@ -93,16 +98,15 @@ impl Command for InviteUserCommand {
             "action_url": format!("https://{}/sign-up?invite_token={}", deployment_settings.frontend_host, token)
         });
 
-        SendEmailCommand::new(
+        let send_email_command = SendEmailCommand::new(
             self.deployment_id,
             "waitlist_invite_template".to_string(),
             self.request.email_address.clone(),
             variables,
-        )
-        .execute(app_state)
-        .await?;
+        );
+        Command::execute(send_email_command, app_state).await?;
 
-        let invitation = DeploymentInvitation {
+        Ok(DeploymentInvitation {
             id: invitation_id,
             created_at: now,
             updated_at: now,
@@ -112,9 +116,20 @@ impl Command for InviteUserCommand {
             email_address: self.request.email_address,
             token,
             expiry,
-        };
+        })
+    }
+}
 
-        Ok(invitation)
+impl Command for InviteUserCommand {
+    type Output = DeploymentInvitation;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(
+            &app_state.db_pool,
+            app_state,
+            app_state.sf.next_id()? as i64,
+        )
+        .await
     }
 }
 
@@ -130,15 +145,19 @@ impl ApproveWaitlistUserCommand {
             waitlist_user_id,
         }
     }
-}
 
-impl Command for ApproveWaitlistUserCommand {
-    type Output = DeploymentInvitation;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        app_state: &AppState,
+        invitation_id: i64,
+    ) -> Result<DeploymentInvitation, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
-
-        let mut tx = app_state.db_pool.begin().await?;
+        let mut tx = conn.begin().await?;
 
         let waitlist_user = sqlx::query!(
             r#"
@@ -154,14 +173,11 @@ impl Command for ApproveWaitlistUserCommand {
         .await
         .map_err(|_| AppError::NotFound("Waitlist user not found".to_string()))?;
 
-        let invitation_id = app_state.sf.next_id()? as i64;
         let expiry = now + Duration::days(7);
-
         let first_name = waitlist_user.first_name.unwrap_or_default();
         let last_name = waitlist_user.last_name.unwrap_or_default();
         let email_address = waitlist_user.email_address.unwrap_or_default();
 
-        // Generate secure token for waitlist approval - must be done before any await
         let token = {
             use rand::Rng;
             let mut rng = rand::rng();
@@ -218,14 +234,13 @@ impl Command for ApproveWaitlistUserCommand {
             "action_url": format!("https://{}/sign-up?invite_token={}", deployment_settings.frontend_host, token)
         });
 
-        SendEmailCommand::new(
+        let send_email_command = SendEmailCommand::new(
             self.deployment_id,
             "waitlist_invite_template".to_string(),
             email_address.clone(),
             variables,
-        )
-        .execute(app_state)
-        .await?;
+        );
+        Command::execute(send_email_command, app_state).await?;
 
         sqlx::query!(
             "DELETE FROM deployment_waitlist_users WHERE id = $1",
@@ -236,7 +251,7 @@ impl Command for ApproveWaitlistUserCommand {
 
         tx.commit().await?;
 
-        let invitation = DeploymentInvitation {
+        Ok(DeploymentInvitation {
             id: invitation_id,
             created_at: now,
             updated_at: now,
@@ -246,9 +261,20 @@ impl Command for ApproveWaitlistUserCommand {
             email_address: email_address.clone(),
             token,
             expiry,
-        };
+        })
+    }
+}
 
-        Ok(invitation)
+impl Command for ApproveWaitlistUserCommand {
+    type Output = DeploymentInvitation;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(
+            &app_state.db_pool,
+            app_state,
+            app_state.sf.next_id()? as i64,
+        )
+        .await
     }
 }
 
@@ -270,6 +296,16 @@ impl Command for DeleteInvitationCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl DeleteInvitationCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query!(
             r#"
             DELETE FROM deployment_invitations
@@ -278,7 +314,7 @@ impl Command for DeleteInvitationCommand {
             self.invitation_id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         if result.rows_affected() == 0 {

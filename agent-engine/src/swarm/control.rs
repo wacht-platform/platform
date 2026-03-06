@@ -20,10 +20,9 @@ pub async fn spawn_control(
     tool_name: &str,
     request: SpawnControlRequest,
 ) -> Result<Value, AppError> {
-    let child_context =
-        queries::GetExecutionContextQuery::new(request.child_context_id.0, deployment_id)
-            .execute(app_state)
-            .await?;
+    let child_context_query =
+        queries::GetExecutionContextQuery::new(request.child_context_id.0, deployment_id);
+    let child_context = Query::execute(&child_context_query, app_state).await?;
 
     if child_context.parent_context_id != Some(sender_context_id) {
         return Err(AppError::BadRequest(
@@ -39,10 +38,10 @@ pub async fn spawn_control(
         ),
     };
 
-    commands::PublishSpawnControlCommand::new(request.child_context_id.0, deployment_id, action)
-        .with_sender(sender_context_id)
-        .execute(app_state)
-        .await?;
+    let publish_control_command =
+        commands::PublishSpawnControlCommand::new(request.child_context_id.0, deployment_id, action)
+            .with_sender(sender_context_id);
+    Command::execute(publish_control_command, app_state).await?;
 
     response::success(
         tool_name,

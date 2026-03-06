@@ -1,5 +1,5 @@
 use commands::{
-    Command, UploadToCdnCommand,
+    UploadToCdnCommand,
     oauth::{CreateOAuthAppCommand, UpdateOAuthAppCommand, VerifyOAuthAppDomainCommand},
 };
 use common::db_router::ReadConsistency;
@@ -72,7 +72,7 @@ pub async fn create_oauth_app(
         );
         Some(
             UploadToCdnCommand::new(file_path, image_buffer)
-                .execute(app_state)
+                .execute_with(&app_state.s3_client)
                 .await
                 .map_err(|e| AppError::Internal(e.to_string()))?,
         )

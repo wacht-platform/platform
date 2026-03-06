@@ -6,10 +6,9 @@ use commands::{
     billing::{CompleteBillingSyncRunCommand, CreateBillingSyncRunCommand},
     pulse::DeductPulseCreditsCommand,
 };
-use common::{DodoClient, state::AppState};
+use common::{DodoClient, ReadConsistency, state::AppState};
 use models::pulse_transaction::PulseTransactionType;
 use queries::{
-    Query,
     billing::{GetDeploymentProviderSubscriptionQuery, ProviderSubscriptionInfo},
 };
 use redis::AsyncCommands as _;
@@ -88,7 +87,7 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
     info!("[BILLING SYNC] Starting sync for current billing cycles");
 
     let sync_run_id = CreateBillingSyncRunCommand { from_event_id: 0 }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
 
     let dirty_key = format!(
@@ -110,7 +109,7 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
             events_processed: 0,
             deployments_affected: 0,
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
         return Ok("No dirty deployments".to_string());
     }
@@ -161,7 +160,7 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
         events_processed: total_units_synced,
         deployments_affected: dirty.len() as i32,
     }
-    .execute(app_state)
+    .execute_with(app_state.db_router.writer())
     .await?;
 
     info!(
@@ -185,7 +184,7 @@ async fn sync_deployment(
     dodo_client: Option<&DodoClient>,
 ) -> Result<i64> {
     let subscription_info = GetDeploymentProviderSubscriptionQuery::new(*deployment_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
         .await?
         .ok_or_else(|| {
             anyhow::anyhow!(
@@ -340,15 +339,13 @@ async fn sync_deployment(
                 PulseTransactionType::UsageSms
             };
 
-            match (DeductPulseCreditsCommand {
+            let deduct_pulse_command = DeductPulseCreditsCommand {
                 owner_id: subscription_info.owner_id.clone(),
                 amount_pulse_cents: *delta,
                 transaction_type,
                 reference_id: Some(app_state.sf.next_id().unwrap().to_string()),
-            })
-            .execute(app_state)
-            .await
-            {
+            };
+            match Command::execute(deduct_pulse_command, app_state).await {
                 Ok(_) => {
                     info!(
                         "[BILLING SYNC] Deducted {} Pulse cents for {} from deployment {}",
@@ -416,7 +413,7 @@ async fn sync_deployment(
             metrics: metrics_to_sync,
             redis_prefix: current_prefix.clone(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer(), &app_state.redis_client)
         .await?
     } else {
         Vec::new()

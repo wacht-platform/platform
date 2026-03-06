@@ -3,6 +3,7 @@ use common::error::AppError;
 use common::state::AppState;
 use models::notification::NotificationSeverity;
 use models::pulse_transaction::{PulseTransaction, PulseTransactionType};
+use sqlx::Connection;
 use tracing::warn;
 
 const LOW_BALANCE_THRESHOLD_CENTS: i64 = 500;
@@ -128,13 +129,28 @@ impl Command for AddPulseCreditsCommand {
     type Output = PulseTransaction;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool, state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl AddPulseCreditsCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        transaction_id: i64,
+    ) -> Result<PulseTransaction, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
         if self.amount_pulse_cents <= 0 {
             return Err(AppError::BadRequest(
                 "amount_pulse_cents must be greater than zero".to_string(),
             ));
         }
 
-        let mut tx = state.db_pool.begin().await?;
+        let mut conn = acquirer.acquire().await?;
+        let mut tx = conn.begin().await?;
 
         let row = sqlx::query!(
             r#"
@@ -184,7 +200,6 @@ impl Command for AddPulseCreditsCommand {
         .await?;
 
         // 3. Log transaction
-        let transaction_id = state.sf.next_id().unwrap() as i64;
         let transaction = sqlx::query_as!(
             PulseTransaction,
             r#"
@@ -368,6 +383,16 @@ impl Command for EnsurePulseUsageAllowedForDeploymentCommand {
     type Output = ();
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
+    }
+}
+
+impl EnsurePulseUsageAllowedForDeploymentCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!"
@@ -378,7 +403,7 @@ impl Command for EnsurePulseUsageAllowedForDeploymentCommand {
             "#,
             self.deployment_id
         )
-        .fetch_one(&state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         let disabled = row.pulse_usage_disabled;

@@ -21,7 +21,7 @@ pub async fn get_webhook_analytics(
         query = query.with_date_range(start, end);
     }
 
-    query.execute(app_state).await
+    QueryTrait::execute(&query, app_state).await
 }
 
 pub async fn get_webhook_timeseries(
@@ -41,5 +41,5 @@ pub async fn get_webhook_timeseries(
         query = query.with_date_range(start, end);
     }
 
-    query.execute(app_state).await
+    QueryTrait::execute(&query, app_state).await
 }

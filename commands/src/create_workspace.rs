@@ -36,12 +36,16 @@ impl CreateWorkspaceCommand {
             private_metadata,
         }
     }
-}
 
-impl Command for CreateWorkspaceCommand {
-    type Output = Workspace;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        workspace_id: i64,
+    ) -> Result<Workspace, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let default_public_metadata = Value::Object(serde_json::Map::new());
         let default_private_metadata = Value::Object(serde_json::Map::new());
 
@@ -57,7 +61,7 @@ impl Command for CreateWorkspaceCommand {
                 name, description as "description?", image_url as "image_url?", member_count,
                 public_metadata, private_metadata
             "#,
-            app_state.sf.next_id()? as i64,
+            workspace_id,
             self.deployment_id,
             self.organization_id,
             self.name,
@@ -72,7 +76,7 @@ impl Command for CreateWorkspaceCommand {
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(Workspace {
@@ -86,5 +90,14 @@ impl Command for CreateWorkspaceCommand {
             public_metadata: workspace.public_metadata,
             private_metadata: workspace.private_metadata,
         })
+    }
+}
+
+impl Command for CreateWorkspaceCommand {
+    type Output = Workspace;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
     }
 }

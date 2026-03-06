@@ -10,10 +10,9 @@ use commands::{
     email::SendRawEmailCommand,
     pulse::AddPulseCreditsCommand,
 };
-use common::{dodo::DodoClient, state::AppState};
+use common::{db_router::ReadConsistency, dodo::DodoClient, state::AppState};
 use models::pulse_transaction::PulseTransactionType;
 use queries::{
-    Query,
     billing::{GetBillingAccountByProviderCustomerIdQuery, GetBillingAccountQuery},
 };
 use tracing::{error, info, warn};
@@ -98,8 +97,9 @@ async fn send_billing_change_email(app_state: &AppState, owner_id: &str, message
         return;
     };
 
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let account = match GetBillingAccountQuery::new(owner_id.to_string())
-        .execute(app_state)
+        .execute_with(reader)
         .await
     {
         Ok(Some(account)) => account,
@@ -150,15 +150,14 @@ async fn send_billing_change_email(app_state: &AppState, owner_id: &str, message
     let body_text = final_message.clone();
 
     for email in recipients {
-        if let Err(e) = SendRawEmailCommand::new(
+        let send_email_command = SendRawEmailCommand::new(
             console_deployment_id,
             email.clone(),
             subject.clone(),
             body_html.clone(),
             Some(body_text.clone()),
-        )
-        .execute(app_state)
-        .await
+        );
+        if let Err(e) = Command::execute(send_email_command, app_state).await
         {
             warn!(
                 "Failed to send billing change email to {} for {}: {}",
@@ -182,8 +181,9 @@ async fn extract_owner_id(app_state: &AppState, customer_id: &str, data: &serde_
     }
 
     if !customer_id.is_empty() {
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         if let Ok(Some(owner_id)) = GetBillingAccountByProviderCustomerIdQuery::new(customer_id)
-            .execute(app_state)
+            .execute_with(reader)
             .await
         {
             return owner_id;
@@ -209,8 +209,9 @@ async fn handle_payment_succeeded(app_state: &AppState, data: &serde_json::Value
             == Some("pulse_purchase");
 
         if !is_pulse_purchase {
+            let reader = app_state.db_router.reader(ReadConsistency::Strong);
             let status = match GetBillingAccountQuery::new(owner_id.clone())
-                .execute(app_state)
+                .execute_with(reader)
                 .await
             {
                 Ok(Some(account))
@@ -236,7 +237,7 @@ async fn handle_payment_succeeded(app_state: &AppState, data: &serde_json::Value
                 owner_id: owner_id.clone(),
                 status: status.to_string(),
             }
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await
             .map_err(|e| {
                 error!("Failed to update billing account status on payment success: {}", e);
@@ -247,7 +248,7 @@ async fn handle_payment_succeeded(app_state: &AppState, data: &serde_json::Value
                 owner_id: owner_id.clone(),
                 webhook_event: "payment.succeeded".to_string(),
             }
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await
             .map_err(|e| {
                 error!("Failed to update checkout flow state: {}", e);
@@ -275,7 +276,13 @@ async fn handle_payment_succeeded(app_state: &AppState, data: &serde_json::Value
             period_end: None,
             metadata: serde_json::json!({}),
         }
-        .execute(app_state)
+        .execute_with(
+            app_state.db_router.writer(),
+            app_state.sf.next_id().map_err(|e| {
+                error!("Failed to generate billing invoice id: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })? as i64,
+        )
         .await
         .map_err(|e| {
             error!("Failed to upsert invoice: {}", e);
@@ -296,7 +303,13 @@ async fn handle_payment_succeeded(app_state: &AppState, data: &serde_json::Value
                         transaction_type: PulseTransactionType::Purchase,
                         reference_id: Some(payment_id.to_string()),
                     }
-                    .execute(app_state)
+                    .execute_with(
+                        app_state.db_router.writer(),
+                        app_state.sf.next_id().map_err(|e| {
+                            error!("Failed to generate pulse transaction id: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })? as i64,
+                    )
                     .await
                     .map_err(|e| {
                         error!("Failed to add Pulse credits from webhook: {}", e);
@@ -326,7 +339,7 @@ async fn handle_payment_failed(app_state: &AppState, data: &serde_json::Value) -
             owner_id: owner_id.clone(),
             status: "payment_failed".to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!(
@@ -341,7 +354,7 @@ async fn handle_payment_failed(app_state: &AppState, data: &serde_json::Value) -
             webhook_event: "payment.failed".to_string(),
             reason: "payment_failed".to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -379,7 +392,13 @@ async fn upsert_subscription_and_status(
         status: status.to_string(),
         previous_billing_date,
     }
-    .execute(app_state)
+    .execute_with(
+        app_state.db_router.writer(),
+        app_state.sf.next_id().map_err(|e| {
+            error!("Failed to generate subscription id: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })? as i64,
+    )
     .await
     .map_err(|e| {
         error!("Failed to update subscription status: {}", e);
@@ -390,7 +409,7 @@ async fn upsert_subscription_and_status(
         owner_id: owner_id.to_string(),
         status: status.to_string(),
     }
-    .execute(app_state)
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to update billing account status: {}", e);
@@ -402,7 +421,7 @@ async fn upsert_subscription_and_status(
             owner_id: owner_id.to_string(),
             webhook_event: webhook_event.to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -414,7 +433,7 @@ async fn upsert_subscription_and_status(
             webhook_event: webhook_event.to_string(),
             reason: status.to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);

@@ -8,9 +8,9 @@ use commands::{
     },
     pulse::AddPulseCreditsCommand,
 };
-use common::state::AppState;
+use common::{db_router::ReadConsistency, state::AppState};
 use models::pulse_transaction::PulseTransactionType;
-use queries::{Query, billing::GetBillingAccountQuery};
+use queries::billing::GetBillingAccountQuery;
 use tracing::{error, info, warn};
 
 use super::get_customer_id;
@@ -35,7 +35,7 @@ pub(super) async fn handle_payment_succeeded(
 
         if !is_pulse_purchase {
             let status = match GetBillingAccountQuery::new(owner_id.clone())
-                .execute(app_state)
+                .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
                 .await
             {
                 Ok(Some(account))
@@ -61,7 +61,7 @@ pub(super) async fn handle_payment_succeeded(
                 owner_id: owner_id.clone(),
                 status: status.to_string(),
             }
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await
             .map_err(|e| {
                 error!(
@@ -75,7 +75,7 @@ pub(super) async fn handle_payment_succeeded(
                 owner_id: owner_id.clone(),
                 webhook_event: "payment.succeeded".to_string(),
             }
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await
             .map_err(|e| {
                 error!("Failed to update checkout flow state: {}", e);
@@ -103,7 +103,13 @@ pub(super) async fn handle_payment_succeeded(
             period_end: None,
             metadata: serde_json::json!({}),
         }
-        .execute(app_state)
+        .execute_with(
+            app_state.db_router.writer(),
+            app_state.sf.next_id().map_err(|e| {
+                error!("Failed to generate billing invoice id: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })? as i64,
+        )
         .await
         .map_err(|e| {
             error!("Failed to upsert invoice: {}", e);
@@ -118,13 +124,13 @@ pub(super) async fn handle_payment_succeeded(
                 let pulse_to_add = ((amount as f64 * 0.96) - 50.0).floor() as i64;
 
                 if pulse_to_add > 0 {
-                    AddPulseCreditsCommand {
+                    let add_pulse_command = AddPulseCreditsCommand {
                         owner_id: owner_id.clone(),
                         amount_pulse_cents: pulse_to_add,
                         transaction_type: PulseTransactionType::Purchase,
                         reference_id: Some(payment_id.to_string()),
-                    }
-                    .execute(app_state)
+                    };
+                    Command::execute(add_pulse_command, app_state)
                     .await
                     .map_err(|e| {
                         error!("Failed to add Pulse credits from webhook: {}", e);
@@ -157,7 +163,7 @@ pub(super) async fn handle_payment_failed(
             owner_id: owner_id.clone(),
             status: "payment_failed".to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!(
@@ -172,7 +178,7 @@ pub(super) async fn handle_payment_failed(
             webhook_event: "payment.failed".to_string(),
             reason: "payment_failed".to_string(),
         }
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);

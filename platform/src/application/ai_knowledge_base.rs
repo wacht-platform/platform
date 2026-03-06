@@ -4,6 +4,7 @@ use commands::{
     DetachKnowledgeBaseFromAgentCommand, UpdateAiKnowledgeBaseCommand,
     UploadKnowledgeBaseDocumentCommand,
 };
+use common::ReadConsistency;
 use common::error::AppError;
 use dto::{
     json::ai_knowledge_base::{
@@ -16,7 +17,6 @@ use models::{AiKnowledgeBase, AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetail
 use queries::{
     GetAgentKnowledgeBasesQuery, GetAiKnowledgeBaseByIdQuery,
     GetAiKnowledgeBasesQuery as GetKnowledgeBasesQueryCore, GetKnowledgeBaseDocumentsQuery,
-    Query as QueryTrait,
 };
 
 use crate::{
@@ -75,7 +75,9 @@ pub async fn get_ai_knowledge_bases(
         query_builder = query_builder.with_search(search);
     }
 
-    let knowledge_bases = query_builder.execute(app_state).await?;
+    let knowledge_bases = query_builder
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .await?;
     let paginated = paginate_results(knowledge_bases, limit as i32, Some(offset as i64));
 
     Ok(KnowledgeBaseResponse {
@@ -90,14 +92,13 @@ pub async fn create_ai_knowledge_base(
     request: CreateKnowledgeBaseRequest,
 ) -> Result<AiKnowledgeBase, AppError> {
     let configuration = request.configuration.unwrap_or(serde_json::json!({}));
-    CreateAiKnowledgeBaseCommand::new(
+    let create_command = CreateAiKnowledgeBaseCommand::new(
         deployment_id,
         request.name,
         request.description,
         configuration,
-    )
-    .execute(app_state)
-    .await
+    );
+    Command::execute(create_command, app_state).await
 }
 
 pub async fn get_ai_knowledge_base_by_id(
@@ -106,7 +107,7 @@ pub async fn get_ai_knowledge_base_by_id(
     kb_id: i64,
 ) -> Result<AiKnowledgeBaseWithDetails, AppError> {
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
 }
 
@@ -116,7 +117,7 @@ pub async fn get_agent_knowledge_bases(
     agent_id: i64,
 ) -> Result<PaginatedResponse<AiKnowledgeBaseWithDetails>, AppError> {
     let knowledge_bases = GetAgentKnowledgeBasesQuery::new(deployment_id, agent_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
     Ok(PaginatedResponse::from(knowledge_bases))
 }
@@ -128,7 +129,7 @@ pub async fn attach_knowledge_base_to_agent(
     kb_id: i64,
 ) -> Result<(), AppError> {
     AttachKnowledgeBaseToAgentCommand::new(deployment_id, agent_id, kb_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -140,7 +141,7 @@ pub async fn detach_knowledge_base_from_agent(
     kb_id: i64,
 ) -> Result<(), AppError> {
     DetachKnowledgeBaseFromAgentCommand::new(deployment_id, agent_id, kb_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -163,7 +164,7 @@ pub async fn update_ai_knowledge_base(
         command = command.with_configuration(configuration);
     }
 
-    command.execute(app_state).await
+    Command::execute(command, app_state).await
 }
 
 pub async fn delete_ai_knowledge_base(
@@ -171,9 +172,8 @@ pub async fn delete_ai_knowledge_base(
     deployment_id: i64,
     kb_id: i64,
 ) -> Result<(), AppError> {
-    DeleteAiKnowledgeBaseCommand::new(deployment_id, kb_id)
-        .execute(app_state)
-        .await?;
+    let delete_command = DeleteAiKnowledgeBaseCommand::new(deployment_id, kb_id);
+    Command::execute(delete_command, app_state).await?;
     Ok(())
 }
 
@@ -204,20 +204,19 @@ pub async fn upload_knowledge_base_document(
     }
 
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
         .await
         .map_err(|_| knowledge_base_not_found_error())?;
 
-    let document = UploadKnowledgeBaseDocumentCommand::new(
+    let upload_command = UploadKnowledgeBaseDocumentCommand::new(
         kb_id,
         title,
         input.description,
         file_name,
         input.file_content,
         file_type,
-    )
-    .execute(app_state)
-    .await?;
+    );
+    let document = Command::execute(upload_command, app_state).await?;
 
     Ok(document)
 }
@@ -229,14 +228,14 @@ pub async fn get_knowledge_base_documents(
     query: GetDocumentsQuery,
 ) -> Result<PaginatedResponse<AiKnowledgeBaseDocument>, ApiErrorResponse> {
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
         .await
         .map_err(|_| knowledge_base_not_found_error())?;
 
     let limit = query.limit.unwrap_or(20);
     let offset = query.offset.unwrap_or(0);
     let documents = GetKnowledgeBaseDocumentsQuery::new(kb_id, limit + 1, offset)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(paginate_results(documents, limit as i32, Some(offset as i64)))
@@ -248,8 +247,8 @@ pub async fn delete_knowledge_base_document(
     kb_id: i64,
     document_id: i64,
 ) -> Result<(), AppError> {
-    DeleteKnowledgeBaseDocumentCommand::new(deployment_id, kb_id, document_id)
-        .execute(app_state)
-        .await?;
+    let delete_doc_command =
+        DeleteKnowledgeBaseDocumentCommand::new(deployment_id, kb_id, document_id);
+    Command::execute(delete_doc_command, app_state).await?;
     Ok(())
 }

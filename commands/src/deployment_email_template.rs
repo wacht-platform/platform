@@ -53,6 +53,21 @@ impl Command for UpdateDeploymentEmailTemplateCommand {
     type Output = EmailTemplate;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+            .await
+    }
+}
+
+impl UpdateDeploymentEmailTemplateCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        redis: &redis::Client,
+    ) -> Result<EmailTemplate, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let column_name = match self.template_name {
             DeploymentNameParams::OrganizationInviteTemplate => "organization_invite_template",
             DeploymentNameParams::VerificationCodeTemplate => "verification_code_template",
@@ -98,13 +113,13 @@ impl Command for UpdateDeploymentEmailTemplateCommand {
         sqlx::query(&query)
             .bind(template_json)
             .bind(self.deployment_id)
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
 
         // Clear Redis cache for deployment
         use crate::deployment::ClearDeploymentCacheCommand;
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute(app_state)
+            .execute_on_conn(&mut conn, redis)
             .await?;
 
         Ok(template)

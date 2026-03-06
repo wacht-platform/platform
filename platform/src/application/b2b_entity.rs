@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
 use commands::{
-    Command, CreateOrganizationCommand, CreateWorkspaceCommand, DeleteOrganizationCommand,
+    CreateOrganizationCommand, CreateWorkspaceCommand, DeleteOrganizationCommand,
     DeleteWorkspaceCommand, UpdateOrganizationCommand, UpdateWorkspaceCommand, UploadToCdnCommand,
 };
 use common::error::AppError;
@@ -77,7 +77,13 @@ pub async fn create_organization(
         data.public_metadata,
         data.private_metadata,
     )
-    .execute(app_state)
+    .execute_with(
+        app_state.db_router.writer(),
+        app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+    )
     .await
     .map_err(Into::into)
 }
@@ -119,7 +125,13 @@ pub async fn create_workspace_for_organization(
         data.public_metadata,
         data.private_metadata,
     )
-    .execute(app_state)
+    .execute_with(
+        app_state.db_router.writer(),
+        app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+    )
     .await
     .map_err(Into::into)
 }
@@ -159,7 +171,10 @@ pub async fn update_workspace(
         command = command.with_private_metadata(private_metadata);
     }
 
-    command.execute(app_state).await.map_err(Into::into)
+    command
+        .execute_with(app_state.db_router.writer())
+        .await
+        .map_err(Into::into)
 }
 
 pub async fn update_organization(
@@ -192,7 +207,7 @@ pub async fn update_organization(
         data.public_metadata,
         data.private_metadata,
     )
-    .execute(app_state)
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(Into::into)
 }
@@ -203,7 +218,7 @@ pub async fn delete_organization(
     organization_id: i64,
 ) -> Result<(), AppError> {
     DeleteOrganizationCommand::new(deployment_id, organization_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -214,7 +229,7 @@ pub async fn delete_workspace(
     workspace_id: i64,
 ) -> Result<(), AppError> {
     DeleteWorkspaceCommand::new(deployment_id, workspace_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
     Ok(())
 }

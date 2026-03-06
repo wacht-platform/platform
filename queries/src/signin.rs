@@ -75,19 +75,12 @@ impl GetSessionWithActiveContextQuery {
     pub fn new(session_id: i64) -> Self {
         Self { session_id }
     }
-}
 
-#[derive(Debug)]
-pub struct SessionContext {
-    pub user_id: i64,
-    pub active_organization_id: Option<i64>,
-    pub active_workspace_id: Option<i64>,
-}
-
-impl Query for GetSessionWithActiveContextQuery {
-    type Output = SessionContext;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<SessionContext, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT
@@ -102,7 +95,7 @@ impl Query for GetSessionWithActiveContextQuery {
             "#,
         )
         .bind(self.session_id)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let Some(row) = row else {
@@ -126,6 +119,21 @@ impl Query for GetSessionWithActiveContextQuery {
     }
 }
 
+#[derive(Debug)]
+pub struct SessionContext {
+    pub user_id: i64,
+    pub active_organization_id: Option<i64>,
+    pub active_workspace_id: Option<i64>,
+}
+
+impl Query for GetSessionWithActiveContextQuery {
+    type Output = SessionContext;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SessionWithSignIns {
     #[serde(flatten)]
@@ -141,12 +149,12 @@ impl GetSessionWithSignInsQuery {
     pub fn new(session_id: i64) -> Self {
         Self { session_id }
     }
-}
 
-impl Query for GetSessionWithSignInsQuery {
-    type Output = SessionWithSignIns;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<SessionWithSignIns, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let session_row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, active_signin_id
@@ -155,7 +163,7 @@ impl Query for GetSessionWithSignInsQuery {
             "#,
             self.session_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         let session = Session {
@@ -176,7 +184,7 @@ impl Query for GetSessionWithSignInsQuery {
             "#,
             self.session_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let signins: Vec<SignIn> = signin_rows
@@ -203,5 +211,13 @@ impl Query for GetSessionWithSignInsQuery {
             .collect();
 
         Ok(SessionWithSignIns { session, signins })
+    }
+}
+
+impl Query for GetSessionWithSignInsQuery {
+    type Output = SessionWithSignIns;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

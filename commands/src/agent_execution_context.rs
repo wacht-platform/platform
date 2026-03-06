@@ -51,7 +51,21 @@ impl Command for CreateExecutionContextCommand {
     type Output = AgentExecutionContext;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let context_id = app_state.sf.next_id()? as i64;
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl CreateExecutionContextCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        context_id: i64,
+    ) -> Result<AgentExecutionContext, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         sqlx::query!(
@@ -71,9 +85,9 @@ impl Command for CreateExecutionContextCommand {
             "idle",
             self.parent_context_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         Ok(AgentExecutionContext {
             id: context_id,
@@ -233,7 +247,7 @@ impl super::Command for UpdateExecutionContextQuery {
                 );
 
                 // Execute the command to store the cancellation message
-                if let Ok(conversation) = cancel_command.execute(app_state).await {
+                if let Ok(conversation) = Command::execute(cancel_command, app_state).await {
                     // Publish the cancellation message to the stream
                     let subject = format!("agent_execution_stream.context:{}", self.context_id);
                     let mut headers = async_nats::HeaderMap::new();
@@ -254,9 +268,9 @@ impl super::Command for UpdateExecutionContextQuery {
                     ExecutionContextStatus::Failed | ExecutionContextStatus::Interrupted
                 )
             {
-                CancelDescendantExecutionsCommand::new(self.context_id, self.deployment_id)
-                    .execute(app_state)
-                    .await?;
+                let cancel_descendants_command =
+                    CancelDescendantExecutionsCommand::new(self.context_id, self.deployment_id);
+                Command::execute(cancel_descendants_command, app_state).await?;
             }
         }
 
@@ -343,13 +357,12 @@ impl Command for CancelDescendantExecutionsCommand {
                 .await
                 .map_err(AppError::Database)?;
 
-                let _ = PublishSpawnControlCommand::new(
+                let publish_spawn_control_command = PublishSpawnControlCommand::new(
                     child_id,
                     self.deployment_id,
                     SpawnControlAction::Stop,
-                )
-                .execute(app_state)
-                .await;
+                );
+                let _ = Command::execute(publish_spawn_control_command, app_state).await;
                 cancelled_count += 1;
             }
         }
@@ -404,6 +417,16 @@ impl Command for UpdateExecutionContextCommand {
     type Output = AgentExecutionContext;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateExecutionContextCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
         sqlx::query!(
             r#"
@@ -426,14 +449,13 @@ impl Command for UpdateExecutionContextCommand {
             self.context_id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
-        // Fetch and return the updated context
-        use queries::{GetExecutionContextQuery, Query as QueryTrait};
+        use queries::GetExecutionContextQuery;
         GetExecutionContextQuery::new(self.context_id, self.deployment_id)
-            .execute(app_state)
+            .execute_with_executor(&mut *conn)
             .await
     }
 }

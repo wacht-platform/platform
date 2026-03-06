@@ -25,8 +25,7 @@ pub async fn process_document_batch_impl(
 
     let command = ProcessDocumentBatchCommand::new(deployment_id, knowledge_base_id, batch_size);
 
-    command
-        .execute(app_state)
+    Command::execute(command, app_state)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to process document batch: {}", e))
 }

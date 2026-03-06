@@ -286,10 +286,8 @@ impl Command for DeleteAiKnowledgeBaseCommand {
             "{}/knowledge-bases/{}/",
             self.deployment_id, self.knowledge_base_id
         );
-        if let Err(e) = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix)
-            .execute(app_state)
-            .await
-        {
+        let delete_prefix_command = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix);
+        if let Err(e) = Command::execute(delete_prefix_command, app_state).await {
             tracing::warn!(
                 "Failed to clean storage for KB {}: {}",
                 self.knowledge_base_id,
@@ -379,9 +377,9 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
             deployment_id, self.knowledge_base_id, self.file_name
         );
         let file_content_clone = self.file_content.clone();
-        let file_url = WriteToAgentStorageCommand::new(file_path, file_content_clone)
-            .with_content_type(self.file_type.clone())
-            .execute(app_state)
+        let write_file_command = WriteToAgentStorageCommand::new(file_path, file_content_clone)
+            .with_content_type(self.file_type.clone());
+        let file_url = Command::execute(write_file_command, app_state)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -415,7 +413,7 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
             document.id,
         );
 
-        if let Err(e) = dispatch_processing_task.execute(app_state).await {
+        if let Err(e) = Command::execute(dispatch_processing_task, app_state).await {
             tracing::error!("Failed to dispatch document processing task: {}", e);
             // Update document status to failed
             let _ = sqlx::query!(
@@ -472,8 +470,8 @@ impl Command for DeleteKnowledgeBaseDocumentCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let _kb = GetAiKnowledgeBaseByIdQuery::new(self.deployment_id, self.knowledge_base_id)
-            .execute(app_state)
+        let kb_query = GetAiKnowledgeBaseByIdQuery::new(self.deployment_id, self.knowledge_base_id);
+        let _kb = Query::execute(&kb_query, app_state)
             .await
             .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
 
@@ -494,10 +492,8 @@ impl Command for DeleteKnowledgeBaseDocumentCommand {
             "{}/knowledge-bases/{}/{}",
             self.deployment_id, self.knowledge_base_id, doc.file_name
         );
-        if let Err(e) = crate::DeleteFromAgentStorageCommand::new(storage_key)
-            .execute(app_state)
-            .await
-        {
+        let delete_file_command = crate::DeleteFromAgentStorageCommand::new(storage_key);
+        if let Err(e) = Command::execute(delete_file_command, app_state).await {
             tracing::warn!("Failed to delete file from storage: {}", e);
             // Continue with DB delete anyway
         }

@@ -1,6 +1,5 @@
 use axum::http::StatusCode;
 use commands::{
-    Command,
     webhook_app::{
         CreateWebhookAppCommand, DeleteWebhookAppCommand, RotateWebhookSecretCommand,
         UpdateWebhookAppCommand,
@@ -8,6 +7,7 @@ use commands::{
     webhook_event_catalog::{CreateEventCatalogCommand, UpdateEventCatalogCommand},
 };
 use common::error::AppError;
+use common::ReadConsistency;
 use common::state::AppState;
 use dto::json::webhook_requests::{
     AppendEventsToCatalogRequest, ArchiveEventInCatalogRequest, CreateEventCatalogRequest,
@@ -16,7 +16,7 @@ use dto::json::webhook_requests::{
 };
 use models::webhook::WebhookApp;
 use queries::{
-    GetWebhookAppByNameQuery, Query as QueryTrait,
+    GetWebhookAppByNameQuery,
     webhook::{GetWebhookAppsQuery, GetWebhookEventsQuery},
 };
 
@@ -34,7 +34,7 @@ pub async fn list_webhook_apps(
     let apps = GetWebhookAppsQuery::new(deployment_id)
         .with_inactive(include_inactive)
         .with_pagination(Some(limit as i64 + 1), Some(offset as i64))
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(paginate_results(apps, limit as i32, Some(offset as i64)))
@@ -57,7 +57,12 @@ pub async fn create_webhook_app(
         command = command.with_event_catalog_slug(catalog_slug);
     }
 
-    command.execute(app_state).await
+    command
+        .execute_with(
+            app_state.db_router.writer(),
+            format!("slug_{}", app_state.sf.next_id()?),
+        )
+        .await
 }
 
 pub async fn list_event_catalogs(
@@ -66,7 +71,7 @@ pub async fn list_event_catalogs(
 ) -> Result<PaginatedResponse<models::webhook::WebhookEventCatalog>, AppError> {
     let catalogs: Vec<models::webhook::WebhookEventCatalog> =
         commands::webhook_event_catalog::ListEventCatalogsQuery::new(deployment_id)
-            .execute(app_state)
+            .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
             .await?;
 
     Ok(PaginatedResponse::from(catalogs))
@@ -84,7 +89,7 @@ pub async fn create_event_catalog(
         description: request.description,
         events: request.events,
     };
-    command.execute(app_state).await
+    command.execute_with(app_state.db_router.writer()).await
 }
 
 pub async fn get_event_catalog(
@@ -94,7 +99,7 @@ pub async fn get_event_catalog(
 ) -> Result<models::webhook::WebhookEventCatalog, AppError> {
     let catalog: Option<models::webhook::WebhookEventCatalog> =
         commands::webhook_event_catalog::GetEventCatalogQuery::new(deployment_id, slug)
-            .execute(app_state)
+            .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
             .await?;
 
     catalog.ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))
@@ -112,7 +117,7 @@ pub async fn update_event_catalog(
         name: request.name,
         description: request.description,
     };
-    command.execute(app_state).await
+    command.execute_with(app_state.db_router.writer()).await
 }
 
 pub async fn append_events_to_catalog(
@@ -126,7 +131,7 @@ pub async fn append_events_to_catalog(
         slug,
         events: request.events,
     };
-    command.execute(app_state).await
+    command.execute_with(app_state.db_router.writer()).await
 }
 
 pub async fn archive_event_in_catalog(
@@ -141,7 +146,7 @@ pub async fn archive_event_in_catalog(
         event_name: request.event_name,
         is_archived: request.is_archived,
     };
-    command.execute(app_state).await
+    command.execute_with(app_state.db_router.writer()).await
 }
 
 pub async fn update_webhook_app(
@@ -159,7 +164,7 @@ pub async fn update_webhook_app(
         failure_notification_emails: request.failure_notification_emails,
         event_catalog_slug: request.event_catalog_slug,
     };
-    command.execute(app_state).await
+    command.execute_with(app_state.db_router.writer()).await
 }
 
 pub async fn get_webhook_app(
@@ -168,7 +173,7 @@ pub async fn get_webhook_app(
     app_slug: String,
 ) -> Result<WebhookApp, AppError> {
     GetWebhookAppByNameQuery::new(deployment_id, app_slug)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))
 }
@@ -182,7 +187,7 @@ pub async fn delete_webhook_app(
         deployment_id,
         app_slug,
     };
-    command.execute(app_state).await?;
+    command.execute_with(app_state.db_router.writer()).await?;
     Ok(())
 }
 
@@ -195,7 +200,7 @@ pub async fn rotate_webhook_secret(
         deployment_id,
         app_slug,
     };
-    command.execute(app_state).await
+    command.execute_with(app_state.db_router.writer()).await
 }
 
 pub async fn get_webhook_events(
@@ -204,7 +209,7 @@ pub async fn get_webhook_events(
     app_slug: String,
 ) -> Result<GetAvailableEventsResponse, AppError> {
     let model_events = GetWebhookEventsQuery::new(deployment_id, app_slug.clone())
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     let events: Vec<wacht::api::webhooks::WebhookAppEvent> = model_events
@@ -237,7 +242,7 @@ pub async fn get_webhook_catalog(
         deployment_id,
         catalog_slug,
     )
-    .execute(app_state)
+    .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
     .await?
     .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
 

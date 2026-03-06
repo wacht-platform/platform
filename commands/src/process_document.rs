@@ -150,7 +150,7 @@ impl Command for ProcessDocumentCommand {
         let dispatch_task =
             DispatchDocumentBatchTaskCommand::new(self.deployment_id, self.knowledge_base_id, 100);
 
-        if let Err(e) = dispatch_task.execute(app_state).await {
+        if let Err(e) = Command::execute(dispatch_task, app_state).await {
             tracing::error!("Failed to dispatch embedding processing task: {}", e);
             let _ = sqlx::query!(
                 r#"

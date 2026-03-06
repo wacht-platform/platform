@@ -41,12 +41,12 @@ impl GetWebhookAppsQuery {
         self.offset = offset;
         self
     }
-}
 
-impl Query for GetWebhookAppsQuery {
-    type Output = Vec<WebhookApp>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<WebhookApp>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let limit = self.limit.unwrap_or(50);
         let offset = self.offset.unwrap_or(0);
 
@@ -73,7 +73,7 @@ impl Query for GetWebhookAppsQuery {
                 limit + 1,
                 offset
             )
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(&mut *conn)
             .await?
         } else {
             query_as!(
@@ -98,11 +98,19 @@ impl Query for GetWebhookAppsQuery {
                 limit + 1,
                 offset
             )
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(&mut *conn)
             .await?
         };
 
         Ok(apps)
+    }
+}
+
+impl Query for GetWebhookAppsQuery {
+    type Output = Vec<WebhookApp>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -131,12 +139,15 @@ impl GetWebhookEndpointsQuery {
         self.include_inactive = include;
         self
     }
-}
 
-impl Query for GetWebhookEndpointsQuery {
-    type Output = Vec<ModelWebhookEndpoint>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<ModelWebhookEndpoint>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let endpoints = match (&self.app_slug, self.include_inactive) {
             (Some(app_slug), true) => {
                 query_as!(
@@ -155,7 +166,7 @@ impl Query for GetWebhookEndpointsQuery {
                     self.deployment_id,
                     app_slug
                 )
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await?
             }
             (Some(app_slug), false) => {
@@ -174,7 +185,7 @@ impl Query for GetWebhookEndpointsQuery {
                     self.deployment_id,
                     app_slug
                 )
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await?
             }
             (None, true) => {
@@ -192,7 +203,7 @@ impl Query for GetWebhookEndpointsQuery {
                     "#,
                     self.deployment_id
                 )
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await?
             }
             (None, false) => {
@@ -210,12 +221,20 @@ impl Query for GetWebhookEndpointsQuery {
                     "#,
                     self.deployment_id
                 )
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await?
             }
         };
 
         Ok(endpoints)
+    }
+}
+
+impl Query for GetWebhookEndpointsQuery {
+    type Output = Vec<ModelWebhookEndpoint>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -254,12 +273,12 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
         self.offset = offset;
         self
     }
-}
 
-impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
-    type Output = Vec<WebhookEndpoint>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<WebhookEndpoint>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let limit = self.limit.unwrap_or(100) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
@@ -283,7 +302,7 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
                     limit,
                     offset
                 )
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await?
             }
             (Some(app_slug), false) => {
@@ -302,7 +321,7 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
                     self.deployment_id,
                     app_slug
                 )
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await?
             }
             (None, true) => {
@@ -320,7 +339,7 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
                     "#,
                     self.deployment_id
                 )
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await?
             }
             (None, false) => {
@@ -338,12 +357,11 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
                     "#,
                     self.deployment_id
                 )
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await?
             }
         };
 
-        // Fetch subscriptions for all endpoints
         let mut endpoints_with_subs = Vec::new();
         for endpoint in endpoints {
             let subscriptions = query_as!(
@@ -358,7 +376,7 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
                 endpoint.id,
                 endpoint.deployment_id
             )
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(&mut *conn)
             .await?;
 
             let subscription_dtos: Vec<WebhookEndpointSubscriptionDTO> = subscriptions
@@ -394,6 +412,14 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
     }
 }
 
+impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
+    type Output = Vec<WebhookEndpoint>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 // Query for getting webhook app by name
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookAppByNameQuery {
@@ -408,12 +434,12 @@ impl GetWebhookAppByNameQuery {
             app_slug,
         }
     }
-}
 
-impl Query for GetWebhookAppByNameQuery {
-    type Output = Option<WebhookApp>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<WebhookApp>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let app = query_as!(
             WebhookApp,
             r#"
@@ -433,10 +459,18 @@ impl Query for GetWebhookAppByNameQuery {
             self.deployment_id,
             self.app_slug
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(app)
+    }
+}
+
+impl Query for GetWebhookAppByNameQuery {
+    type Output = Option<WebhookApp>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -454,13 +488,15 @@ impl GetWebhookEventsQuery {
             app_slug,
         }
     }
-}
 
-impl Query for GetWebhookEventsQuery {
-    type Output = Vec<models::webhook::WebhookEventDefinition>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // First, check if the app has an event catalog assigned
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<models::webhook::WebhookEventDefinition>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let app = query!(
             r#"
             SELECT event_catalog_slug, created_at as "created_at!"
@@ -470,12 +506,11 @@ impl Query for GetWebhookEventsQuery {
             self.deployment_id,
             self.app_slug
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
 
         if let Some(catalog_slug) = app.event_catalog_slug {
-            // Fetch events from catalog
             let catalog = query!(
                 r#"
                 SELECT events as "events!", created_at as "created_at!"
@@ -485,11 +520,10 @@ impl Query for GetWebhookEventsQuery {
                 self.deployment_id,
                 catalog_slug
             )
-            .fetch_optional(&app_state.db_pool)
+            .fetch_optional(&mut *conn)
             .await?
             .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
 
-            // catalog.events is a JSONB array of WebhookEventDefinition
             let events: Vec<models::webhook::WebhookEventDefinition> =
                 serde_json::from_value(catalog.events).map_err(|e| {
                     AppError::Internal(format!("Invalid catalog events format: {}", e))
@@ -498,8 +532,15 @@ impl Query for GetWebhookEventsQuery {
             return Ok(events);
         }
 
-        // If no catalog is assigned, return empty list (exclusive use of catalogs)
         Ok(Vec::new())
+    }
+}
+
+impl Query for GetWebhookEventsQuery {
+    type Output = Vec<models::webhook::WebhookEventDefinition>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -592,12 +633,15 @@ impl GetPendingWebhookDeliveryQuery {
             delivery_id,
         }
     }
-}
 
-impl Query for GetPendingWebhookDeliveryQuery {
-    type Output = dto::clickhouse::webhook::WebhookLog;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<dto::clickhouse::webhook::WebhookLog, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query_as::<_, PendingDeliveryRow>(
             r#"
             SELECT
@@ -618,11 +662,10 @@ impl Query for GetPendingWebhookDeliveryQuery {
         )
         .bind(self.delivery_id)
         .bind(self.deployment_id)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("Pending delivery not found".to_string()))?;
 
-        // Convert to WebhookLog DTO
         let payload_json = row
             .payload
             .map(|p| serde_json::to_string(&p).unwrap_or_default());
@@ -644,5 +687,13 @@ impl Query for GetPendingWebhookDeliveryQuery {
             timestamp: row.timestamp,
             request_headers: None,
         })
+    }
+}
+
+impl Query for GetPendingWebhookDeliveryQuery {
+    type Output = dto::clickhouse::webhook::WebhookLog;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

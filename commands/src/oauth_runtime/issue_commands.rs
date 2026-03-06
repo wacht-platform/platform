@@ -27,8 +27,33 @@ impl Command for IssueOAuthAuthorizationCode {
     type Output = OAuthAuthorizationCodeIssued;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl IssueOAuthAuthorizationCode {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        code_id: i64,
+    ) -> Result<OAuthAuthorizationCodeIssued, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn, code_id).await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+        code_id: i64,
+    ) -> Result<OAuthAuthorizationCodeIssued, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let code = generate_token("oac", 32);
-        let id = app_state.sf.next_id()? as i64;
         let code_hash = hash_value(&code);
         let expires_at = Utc::now() + Duration::minutes(10);
 
@@ -52,7 +77,7 @@ impl Command for IssueOAuthAuthorizationCode {
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
             "#,
         )
-        .bind(id)
+        .bind(code_id)
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(self.oauth_grant_id)
@@ -65,7 +90,7 @@ impl Command for IssueOAuthAuthorizationCode {
         .bind(&self.resource)
         .bind(&self.granted_resource)
         .bind(expires_at)
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(OAuthAuthorizationCodeIssued {
@@ -83,6 +108,16 @@ impl Command for ConsumeOAuthAuthorizationCode {
     type Output = bool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl ConsumeOAuthAuthorizationCode {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let res = sqlx::query(
             r#"
             UPDATE oauth_authorization_codes
@@ -92,7 +127,7 @@ impl Command for ConsumeOAuthAuthorizationCode {
             "#,
         )
         .bind(self.code_id)
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
         Ok(res.rows_affected() > 0)
     }
@@ -119,12 +154,43 @@ impl Command for IssueOAuthTokenPair {
     type Output = OAuthTokenPairIssued;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(
+            &app_state.db_pool,
+            app_state.sf.next_id()? as i64,
+            app_state.sf.next_id()? as i64,
+        )
+        .await
+    }
+}
+
+impl IssueOAuthTokenPair {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        access_token_id: i64,
+        refresh_token_id: i64,
+    ) -> Result<OAuthTokenPairIssued, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn, access_token_id, refresh_token_id)
+            .await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+        access_token_id: i64,
+        refresh_token_id: i64,
+    ) -> Result<OAuthTokenPairIssued, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let access_token = generate_token("oat", 32);
         let refresh_token = generate_token("ort", 32);
         let access_hash = hash_value(&access_token);
         let refresh_hash = hash_value(&refresh_token);
-        let access_id = app_state.sf.next_id()? as i64;
-        let refresh_id = app_state.sf.next_id()? as i64;
 
         sqlx::query(
             r#"
@@ -144,7 +210,7 @@ impl Command for IssueOAuthTokenPair {
             ) VALUES ($1,$2,$3,$4,$5,$6,'user_oauth',$7,$8,$9,$10,NOW())
             "#,
         )
-        .bind(access_id)
+        .bind(access_token_id)
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(self.oauth_grant_id)
@@ -154,7 +220,7 @@ impl Command for IssueOAuthTokenPair {
         .bind(&self.resource)
         .bind(&self.granted_resource)
         .bind(Utc::now() + Duration::hours(1))
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         sqlx::query(
@@ -174,7 +240,7 @@ impl Command for IssueOAuthTokenPair {
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
             "#,
         )
-        .bind(refresh_id)
+        .bind(refresh_token_id)
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(self.oauth_grant_id)
@@ -184,13 +250,13 @@ impl Command for IssueOAuthTokenPair {
         .bind(&self.resource)
         .bind(&self.granted_resource)
         .bind(Utc::now() + Duration::days(30))
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(OAuthTokenPairIssued {
             access_token,
             refresh_token,
-            refresh_token_id: refresh_id,
+            refresh_token_id,
             access_expires_in: 3600,
         })
     }

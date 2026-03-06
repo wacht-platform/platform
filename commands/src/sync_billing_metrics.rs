@@ -15,36 +15,46 @@ impl Command for SyncBillingMetricsCommand {
     type Output = Vec<(String, i64)>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_pool.begin().await?;
+        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+            .await
+    }
+}
+
+impl SyncBillingMetricsCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        redis_client: &redis::Client,
+    ) -> Result<Vec<(String, i64)>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
 
         for (metric_name, quantity) in &self.metrics {
-            sqlx::query(
-                "INSERT INTO billing_usage_snapshots 
+            sqlx::query!(
+                "INSERT INTO billing_usage_snapshots
                  (deployment_id, billing_account_id, billing_period, metric_name, quantity, cost_cents, created_at, updated_at)
                  VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
                  ON CONFLICT (deployment_id, billing_period, metric_name)
                  DO UPDATE SET quantity = $5, updated_at = NOW()"
+                ,
+                self.deployment_id,
+                self.billing_account_id,
+                self.billing_period,
+                metric_name,
+                *quantity,
+                Option::<rust_decimal::Decimal>::None
             )
-            .bind(self.deployment_id)
-            .bind(self.billing_account_id)
-            .bind(self.billing_period)
-            .bind(metric_name)
-            .bind(*quantity)
-            .bind(None::<rust_decimal::Decimal>)
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await?;
         }
 
-        let mut redis = app_state
-            .redis_client
-            .get_multiplexed_async_connection()
-            .await?;
+        let mut redis = redis_client.get_multiplexed_async_connection().await?;
 
         let lua_script = create_redis_update_script(&self.redis_prefix, &self.metrics);
         let script = redis::Script::new(&lua_script);
         let _: String = script.invoke_async(&mut redis).await?;
-
-        tx.commit().await?;
 
         Ok(self.metrics.clone())
     }

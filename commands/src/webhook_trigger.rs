@@ -68,13 +68,12 @@ impl Command for TriggerWebhookEventCommand {
         let payload_size = self.payload.to_string().len() as i32;
         let app_slug = app_info.app_slug.clone();
 
-        let endpoints = GetSubscribedEndpointsCommand::new(
+        let subscribed_endpoints_command = GetSubscribedEndpointsCommand::new(
             self.deployment_id,
             app_slug.clone(),
             self.event_name.clone(),
-        )
-        .execute(app_state)
-        .await?;
+        );
+        let endpoints = Command::execute(subscribed_endpoints_command, app_state).await?;
 
         let mut delivery_ids = Vec::new();
         let mut filtered_count = 0usize;

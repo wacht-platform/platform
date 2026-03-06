@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use common::error::AppError;
 use common::state::AppState;
-use queries::{GetWebhookEventsQuery, Query};
+use queries::GetWebhookEventsQuery;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct EventSubscriptionData {
@@ -196,7 +196,7 @@ async fn load_event_schema_map(
     app_slug: &str,
 ) -> Result<HashMap<String, (bool, Option<HashSet<String>>)>, AppError> {
     let events = GetWebhookEventsQuery::new(deployment_id, app_slug.to_string())
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
         .await?;
 
     let mut event_map: HashMap<String, (bool, Option<HashSet<String>>)> =

@@ -8,7 +8,7 @@ use common::state::AppState;
 use common::utils::{security::PasswordHasher, validation::UserValidator};
 use dto::json::{CreateUserRequest, UpdateUserRequest};
 use models::{UserDetails, UserWithIdentifiers};
-use queries::{GetDeploymentAuthSettingsQuery, Query};
+use queries::GetDeploymentAuthSettingsQuery;
 
 pub struct CreateUserCommand {
     deployment_id: i64,
@@ -32,7 +32,7 @@ impl Command for CreateUserCommand {
         let user_id = app_state.sf.next_id()? as i64;
 
         let auth_settings = GetDeploymentAuthSettingsQuery::new(self.deployment_id)
-            .execute(app_state)
+            .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
             .await?;
 
         let mut tx = app_state.db_pool.begin().await?;
@@ -266,9 +266,8 @@ impl Command for UpdateUserCommand {
         tx.commit().await?;
 
         use queries::{GetUserDetailsQuery, Query};
-        let user_details = GetUserDetailsQuery::new(self.deployment_id, self.user_id)
-            .execute(app_state)
-            .await?;
+        let details_query = GetUserDetailsQuery::new(self.deployment_id, self.user_id);
+        let user_details = Query::execute(&details_query, app_state).await?;
 
         Ok(user_details)
     }
@@ -295,13 +294,23 @@ impl Command for UpdateUserProfileImageCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateUserProfileImageCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             "UPDATE users SET updated_at = NOW(), profile_picture_url = $1, has_profile_picture = true WHERE deployment_id = $2 AND id = $3",
             self.profile_picture_url,
             self.deployment_id,
             self.user_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())
@@ -338,7 +347,11 @@ impl Command for UpdateUserPasswordCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         if !self.skip_password_check {
             let auth_settings = GetDeploymentAuthSettingsQuery::new(self.deployment_id)
-                .execute(app_state)
+                .execute_with(
+                    app_state
+                        .db_router
+                        .reader(common::db_router::ReadConsistency::Strong),
+                )
                 .await?;
 
             UserValidator::validate_password(
@@ -389,7 +402,18 @@ impl Command for DeleteUserCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_pool.begin().await?;
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl DeleteUserCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        use sqlx::Connection;
+        let mut conn = acquirer.acquire().await?;
+        let mut tx = conn.begin().await?;
 
         let exists = sqlx::query!(
             "SELECT id FROM users WHERE id = $1 AND deployment_id = $2",

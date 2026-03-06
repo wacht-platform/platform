@@ -3,7 +3,7 @@ use common::error::AppError;
 use common::smtp::{SmtpConfig, SmtpService};
 use common::state::AppState;
 use models::{CustomSmtpConfig, EmailProvider};
-use queries::{GetEmailTemplateByNameQuery, Query};
+use queries::GetEmailTemplateByNameQuery;
 
 fn wrap_email_content(content: &str) -> String {
     format!(
@@ -73,7 +73,7 @@ impl Command for SendEmailCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let template = GetEmailTemplateByNameQuery::new(self.deployment_id, self.template_name)
-            .execute(app_state)
+            .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
             .await?;
 
         let deployment = sqlx::query!(

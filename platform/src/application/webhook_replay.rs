@@ -6,7 +6,6 @@ use dto::json::webhook_requests::{
     ReplayTaskCancelResponse, ReplayTaskListQuery, ReplayTaskListResponse,
     ReplayTaskStatusResponse, ReplayWebhookDeliveryRequest, ReplayWebhookDeliveryResponse,
 };
-use queries::Query;
 use redis::{AsyncCommands, Script};
 
 use crate::{
@@ -175,7 +174,11 @@ async fn resolve_webhook_app_slug(
     app_slug: String,
 ) -> Result<String, ApiErrorResponse> {
     let app = queries::GetWebhookAppByNameQuery::new(deployment_id, app_slug)
-        .execute(app_state)
+        .execute_with(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
         .await?
         .ok_or((StatusCode::NOT_FOUND, "Webhook app not found"))?;
     Ok(app.app_slug)
@@ -187,7 +190,11 @@ async fn ensure_webhook_app_exists(
     app_slug: String,
 ) -> Result<(), ApiErrorResponse> {
     let exists = queries::GetWebhookAppByNameQuery::new(deployment_id, app_slug)
-        .execute(app_state)
+        .execute_with(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
         .await?;
     if exists.is_some() {
         Ok(())

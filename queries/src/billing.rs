@@ -27,13 +27,15 @@ impl GetBillingAccountQuery {
             owner_id: format!("org_{}", org_id),
         }
     }
-}
 
-impl Query for GetBillingAccountQuery {
-    type Output = Option<BillingAccountWithSubscription>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        // First get the billing account
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<BillingAccountWithSubscription>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let billing_account = sqlx::query_as::<_, BillingAccount>(
             r#"
             SELECT
@@ -56,15 +58,14 @@ impl Query for GetBillingAccountQuery {
             "#
         )
         .bind(&self.owner_id)
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(account) = billing_account {
-            // Then get the subscription if it exists
             let subscription = sqlx::query_as::<_, Subscription>(
                 r#"
-                SELECT 
-                    s.id, s.billing_account_id, s.provider_customer_id, s.provider_subscription_id, 
+                SELECT
+                    s.id, s.billing_account_id, s.provider_customer_id, s.provider_subscription_id,
                     s.product_id, dp.plan_name, s.status, s.previous_billing_date, s.created_at, s.updated_at
                 FROM subscriptions s
                 LEFT JOIN dodo_products dp ON s.product_id = dp.product_id
@@ -72,7 +73,7 @@ impl Query for GetBillingAccountQuery {
                 "#
             )
             .bind(account.id)
-            .fetch_optional(&state.db_pool)
+            .fetch_optional(&mut *conn)
             .await?;
 
             Ok(Some(BillingAccountWithSubscription {
@@ -82,6 +83,14 @@ impl Query for GetBillingAccountQuery {
         } else {
             Ok(None)
         }
+    }
+}
+
+impl Query for GetBillingAccountQuery {
+    type Output = Option<BillingAccountWithSubscription>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
     }
 }
 
@@ -169,12 +178,15 @@ impl GetDeploymentProviderSubscriptionQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
     }
-}
 
-impl Query for GetDeploymentProviderSubscriptionQuery {
-    type Output = Option<ProviderSubscriptionInfo>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<ProviderSubscriptionInfo>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT s.provider_customer_id, s.provider_subscription_id, s.billing_account_id, ba.owner_id, dp.plan_name, s.previous_billing_date
@@ -188,7 +200,7 @@ impl Query for GetDeploymentProviderSubscriptionQuery {
             "#,
             self.deployment_id
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(row.map(|r| ProviderSubscriptionInfo {
@@ -199,6 +211,14 @@ impl Query for GetDeploymentProviderSubscriptionQuery {
             plan_name: r.plan_name,
             previous_billing_date: r.previous_billing_date,
         }))
+    }
+}
+
+impl Query for GetDeploymentProviderSubscriptionQuery {
+    type Output = Option<ProviderSubscriptionInfo>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
     }
 }
 
@@ -358,20 +378,28 @@ impl GetBillingAccountByProviderCustomerIdQuery {
             provider_customer_id: provider_customer_id.into(),
         }
     }
+
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        let owner_id = sqlx::query_scalar!(
+            "SELECT owner_id FROM billing_accounts WHERE provider_customer_id = $1",
+            &self.provider_customer_id
+        )
+        .fetch_optional(&mut *conn)
+        .await?;
+
+        Ok(owner_id)
+    }
 }
 
 impl Query for GetBillingAccountByProviderCustomerIdQuery {
     type Output = Option<String>;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        let owner_id = sqlx::query_scalar!(
-            "SELECT owner_id FROM billing_accounts WHERE provider_customer_id = $1",
-            &self.provider_customer_id
-        )
-        .fetch_optional(&state.db_pool)
-        .await?;
-
-        Ok(owner_id)
+        self.execute_with(&state.db_pool).await
     }
 }
 

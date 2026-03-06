@@ -9,7 +9,7 @@ use tracing::{error, info, warn};
 pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
     info!("[STORAGE SYNC] Starting storage sync to Dodo");
 
-    let dirty_deployments = GetDirtyStorageDeploymentsQuery.execute(app_state).await?;
+    let dirty_deployments = QueryTrait::execute(&GetDirtyStorageDeploymentsQuery, app_state).await?;
 
     if dirty_deployments.is_empty() {
         info!("[STORAGE SYNC] No dirty deployments to sync");
@@ -33,7 +33,7 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
 
     for (deployment_id, total_bytes) in dirty_deployments {
         let subscription_info = match GetDeploymentProviderSubscriptionQuery::new(deployment_id)
-            .execute(app_state)
+            .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
             .await
         {
             Ok(Some(info)) => info,
@@ -82,9 +82,7 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
                     deployment_id, storage_kb, total_bytes
                 );
 
-                MarkStorageAsCleanCommand { deployment_id }
-                    .execute(app_state)
-                    .await?;
+                Command::execute(MarkStorageAsCleanCommand { deployment_id }, app_state).await?;
 
                 synced_count += 1;
             }

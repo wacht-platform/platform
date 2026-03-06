@@ -80,10 +80,9 @@ impl Command for UploadImagesToS3Command {
             );
 
             // Upload to S3 via agent storage command
-            WriteToAgentStorageCommand::new(key, bytes.clone())
-                .with_content_type(img.mime_type.clone())
-                .execute(app_state)
-                .await?;
+            let write_image_command = WriteToAgentStorageCommand::new(key, bytes.clone())
+                .with_content_type(img.mime_type.clone());
+            Command::execute(write_image_command, app_state).await?;
 
             uploaded.push(ImageData {
                 mime_type: img.mime_type,
@@ -151,10 +150,9 @@ impl Command for UploadFilesToS3Command {
             );
 
             // Upload to S3 via agent storage command
-            WriteToAgentStorageCommand::new(key, bytes.clone())
-                .with_content_type(file.mime_type.clone())
-                .execute(app_state)
-                .await?;
+            let write_file_command = WriteToAgentStorageCommand::new(key, bytes.clone())
+                .with_content_type(file.mime_type.clone());
+            Command::execute(write_file_command, app_state).await?;
 
             uploaded.push(FileData {
                 filename: file.filename,

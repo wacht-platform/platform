@@ -71,16 +71,14 @@ impl CreateAiToolCommand {
 
         Ok(())
     }
-}
 
-impl Command for CreateAiToolCommand {
-    type Output = AiTool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Validate the tool configuration
+    pub async fn execute_with<'a, A>(self, acquirer: A, tool_id: i64) -> Result<AiTool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
         self.validate().await?;
 
-        let tool_id = app_state.sf.next_id()? as i64;
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
         let tool_type_str: String = self.tool_type.into();
         let configuration_json = serde_json::to_value(&self.configuration)
@@ -101,9 +99,9 @@ impl Command for CreateAiToolCommand {
             self.deployment_id,
             configuration_json,
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         let tool_type = AiToolType::from(tool.tool_type);
         let configuration = serde_json::from_value(tool.configuration)
@@ -119,6 +117,15 @@ impl Command for CreateAiToolCommand {
             deployment_id: tool.deployment_id,
             configuration,
         })
+    }
+}
+
+impl Command for CreateAiToolCommand {
+    type Output = AiTool;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
     }
 }
 
@@ -209,18 +216,16 @@ impl UpdateAiToolCommand {
 
         Ok(())
     }
-}
 
-impl Command for UpdateAiToolCommand {
-    type Output = AiTool;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Validate the tool configuration
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiTool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
         self.validate().await?;
 
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
-        // Build dynamic query based on provided fields
         let mut query_parts = vec!["updated_at = $1".to_string()];
         let mut param_count = 2;
 
@@ -275,9 +280,9 @@ impl Command for UpdateAiToolCommand {
         query_builder = query_builder.bind(self.tool_id).bind(self.deployment_id);
 
         let tool = query_builder
-            .fetch_one(&app_state.db_pool)
+            .fetch_one(&mut *conn)
             .await
-            .map_err(|e| AppError::Database(e))?;
+            .map_err(AppError::Database)?;
 
         let tool_type = AiToolType::from(tool.get::<String, _>("tool_type"));
         let configuration = serde_json::from_value(tool.get("configuration"))
@@ -296,6 +301,14 @@ impl Command for UpdateAiToolCommand {
     }
 }
 
+impl Command for UpdateAiToolCommand {
+    type Output = AiTool;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct DeleteAiToolCommand {
     pub deployment_id: i64,
     pub tool_id: i64,
@@ -308,12 +321,12 @@ impl DeleteAiToolCommand {
             tool_id,
         }
     }
-}
 
-impl Command for DeleteAiToolCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let dependent_agents = sqlx::query!(
             r#"
             SELECT a.id, a.name
@@ -326,9 +339,9 @@ impl Command for DeleteAiToolCommand {
             self.deployment_id,
             self.tool_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         if !dependent_agents.is_empty() {
             let agent_names: Vec<String> = dependent_agents
@@ -342,16 +355,23 @@ impl Command for DeleteAiToolCommand {
             )));
         }
 
-        // Delete the tool
         sqlx::query!(
             "DELETE FROM ai_tools WHERE id = $1 AND deployment_id = $2",
             self.tool_id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         Ok(())
+    }
+}
+
+impl Command for DeleteAiToolCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

@@ -26,12 +26,15 @@ impl GetAiKnowledgeBasesQuery {
         self.search = Some(search);
         self
     }
-}
 
-impl Query for GetAiKnowledgeBasesQuery {
-    type Output = Vec<AiKnowledgeBaseWithDetails>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<AiKnowledgeBaseWithDetails>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let base_query = r#"
             SELECT
                 kb.id, kb.created_at, kb.updated_at, kb.name, kb.description,
@@ -47,24 +50,30 @@ impl Query for GetAiKnowledgeBasesQuery {
             WHERE kb.deployment_id = $1"#;
 
         let knowledge_bases = if let Some(search) = &self.search {
-            let query_with_search = format!("{} AND (kb.name ILIKE $2 OR kb.description ILIKE $2) ORDER BY kb.created_at DESC LIMIT $3 OFFSET $4", base_query);
+            let query_with_search = format!(
+                "{} AND (kb.name ILIKE $2 OR kb.description ILIKE $2) ORDER BY kb.created_at DESC LIMIT $3 OFFSET $4",
+                base_query
+            );
             sqlx::query(&query_with_search)
                 .bind(self.deployment_id)
                 .bind(format!("%{}%", search))
                 .bind(self.limit as i64)
                 .bind(self.offset as i64)
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await
         } else {
-            let query_without_search = format!("{} ORDER BY kb.created_at DESC LIMIT $2 OFFSET $3", base_query);
+            let query_without_search = format!(
+                "{} ORDER BY kb.created_at DESC LIMIT $2 OFFSET $3",
+                base_query
+            );
             sqlx::query(&query_without_search)
                 .bind(self.deployment_id)
                 .bind(self.limit as i64)
                 .bind(self.offset as i64)
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await
         }
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         Ok(knowledge_bases
             .into_iter()
@@ -83,6 +92,14 @@ impl Query for GetAiKnowledgeBasesQuery {
     }
 }
 
+impl Query for GetAiKnowledgeBasesQuery {
+    type Output = Vec<AiKnowledgeBaseWithDetails>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetAiKnowledgeBaseByIdQuery {
     pub deployment_id: i64,
     pub knowledge_base_id: i64,
@@ -95,12 +112,15 @@ impl GetAiKnowledgeBaseByIdQuery {
             knowledge_base_id,
         }
     }
-}
 
-impl Query for GetAiKnowledgeBaseByIdQuery {
-    type Output = AiKnowledgeBaseWithDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<AiKnowledgeBaseWithDetails, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let knowledge_base = sqlx::query(
             r#"
             SELECT
@@ -119,9 +139,9 @@ impl Query for GetAiKnowledgeBaseByIdQuery {
         )
         .bind(self.knowledge_base_id)
         .bind(self.deployment_id)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         Ok(AiKnowledgeBaseWithDetails {
             id: knowledge_base.get("id"),
@@ -139,6 +159,14 @@ impl Query for GetAiKnowledgeBaseByIdQuery {
     }
 }
 
+impl Query for GetAiKnowledgeBaseByIdQuery {
+    type Output = AiKnowledgeBaseWithDetails;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetAgentKnowledgeBasesQuery {
     pub deployment_id: i64,
     pub agent_id: i64,
@@ -151,12 +179,15 @@ impl GetAgentKnowledgeBasesQuery {
             agent_id,
         }
     }
-}
 
-impl Query for GetAgentKnowledgeBasesQuery {
-    type Output = Vec<AiKnowledgeBaseWithDetails>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<AiKnowledgeBaseWithDetails>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let knowledge_bases = sqlx::query(
             r#"
             SELECT
@@ -177,7 +208,7 @@ impl Query for GetAgentKnowledgeBasesQuery {
         )
         .bind(self.deployment_id)
         .bind(self.agent_id)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -198,6 +229,14 @@ impl Query for GetAgentKnowledgeBasesQuery {
     }
 }
 
+impl Query for GetAgentKnowledgeBasesQuery {
+    type Output = Vec<AiKnowledgeBaseWithDetails>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetKnowledgeBaseDocumentsQuery {
     pub knowledge_base_id: i64,
     pub limit: usize,
@@ -212,12 +251,15 @@ impl GetKnowledgeBaseDocumentsQuery {
             offset,
         }
     }
-}
 
-impl Query for GetKnowledgeBaseDocumentsQuery {
-    type Output = Vec<AiKnowledgeBaseDocument>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<AiKnowledgeBaseDocument>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let documents = sqlx::query!(
             r#"
             SELECT
@@ -233,9 +275,9 @@ impl Query for GetKnowledgeBaseDocumentsQuery {
             self.limit as i64,
             self.offset as i64
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         Ok(documents
             .into_iter()
@@ -253,6 +295,14 @@ impl Query for GetKnowledgeBaseDocumentsQuery {
                 processing_metadata: row.processing_metadata,
             })
             .collect())
+    }
+}
+
+impl Query for GetKnowledgeBaseDocumentsQuery {
+    type Output = Vec<AiKnowledgeBaseDocument>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

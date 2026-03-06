@@ -139,26 +139,25 @@ async fn execute_relay(
             "Spawned: {} via {}",
             resolved_agent_name, current_agent.name
         );
-        let child_context =
+        let create_child_command =
             CreateChildContextCommand::new(current_agent.deployment_id, current_context_id, title)
                 .with_initial_task(instruction_text.to_string())
-                .with_task_type("spawn_context_execution".to_string())
-                .execute(app_state)
-                .await?;
+                .with_task_type("spawn_context_execution".to_string());
+        let child_context = Command::execute(create_child_command, app_state).await?;
 
         // Child context inherits parent conversation up to this point (without copying rows).
-        let parent_history = queries::GetLLMConversationHistoryQuery::new(current_context_id)
-            .execute(app_state)
+        let history_query = queries::GetLLMConversationHistoryQuery::new(current_context_id);
+        let parent_history = Query::execute(&history_query, app_state)
             .await
             .unwrap_or_default();
         let inherit_until = parent_history.last().map(|c| c.id).unwrap_or(0);
-        UpdateExecutionContextQuery::new(child_context.id, current_agent.deployment_id)
+        let update_context_command =
+            UpdateExecutionContextQuery::new(child_context.id, current_agent.deployment_id)
             .with_external_resource_metadata(serde_json::json!({
                 "inherit_parent_context_id": current_context_id,
                 "inherit_parent_until_conversation_id": inherit_until,
-            }))
-            .execute(app_state)
-            .await?;
+            }));
+        Command::execute(update_context_command, app_state).await?;
 
         (child_context, true)
     };
@@ -188,25 +187,23 @@ async fn execute_relay(
         files: None,
     };
 
-    commands::CreateConversationCommand::new(
+    let create_conversation_command = commands::CreateConversationCommand::new(
         conversation_id,
         target_context_id,
         content,
         models::ConversationMessageType::UserMessage,
-    )
-    .execute(app_state)
-    .await?;
+    );
+    Command::execute(create_conversation_command, app_state).await?;
 
     if request.execute {
-        commands::PublishAgentExecutionCommand::new_message(
+        let publish_command = commands::PublishAgentExecutionCommand::new_message(
             current_agent.deployment_id,
             target_context_id,
             None,
             Some(resolved_agent_name.clone()),
             conversation_id,
-        )
-        .execute(app_state)
-        .await?;
+        );
+        Command::execute(publish_command, app_state).await?;
     }
 
     response::success(

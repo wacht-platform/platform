@@ -11,6 +11,7 @@ use commands::{
     RevokeOAuthRefreshTokenFamily, RevokeOAuthTokensByGrant, SetOAuthRefreshTokenReplacement,
     EnqueueOAuthGrantLastUsed, IssueOAuthAuthorizationCode, api_key_app::EnsureUserApiAuthAppCommand,
 };
+use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::oauth_runtime::{
     OAuthDynamicClientRegistrationRequest, OAuthDynamicClientRegistrationResponse,
@@ -21,7 +22,6 @@ use dto::json::oauth_runtime::{
 };
 use models::api_key::OAuthScopeDefinition;
 use models::error::AppError;
-use queries::Query as QueryTrait;
 use queries::{
     GetRuntimeIntrospectionDataQuery, GetRuntimeOAuthClientByClientIdQuery, RuntimeOAuthAppData,
     RuntimeOAuthClientData, GetRuntimeAuthorizationCodeForExchangeQuery,
@@ -97,7 +97,7 @@ pub async fn oauth_revoke(
             oauth_client_id: client.id,
             token_hash: hash.clone(),
         }
-        .execute(&app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(map_token_app_error)?;
     }
@@ -107,7 +107,7 @@ pub async fn oauth_revoke(
             oauth_client_id: client.id,
             token_hash: hash,
         }
-        .execute(&app_state)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(map_token_app_error)?;
     }
@@ -142,9 +142,10 @@ pub async fn oauth_introspect(
     .await?;
 
     let token_hash = hash_value(token_value);
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let token =
         GetRuntimeIntrospectionDataQuery::new(oauth_app.deployment_id, client.id, token_hash)
-            .execute(&app_state)
+            .execute_with(reader)
             .await
             .map_err(map_token_app_error)?;
 
@@ -307,7 +308,7 @@ pub async fn oauth_consent_submit(
                     .into());
             }
             let app_slug = EnsureUserApiAuthAppCommand::new(claims.deployment_id, request.user_id)
-                .execute(app_state)
+                .execute_with(app_state.db_router.writer())
                 .await?;
 
             let oauth_grant_id = ensure_or_create_grant_coverage(
@@ -333,7 +334,13 @@ pub async fn oauth_consent_submit(
                 resource: claims.resource,
                 granted_resource: Some(selected_resource),
             }
-            .execute(app_state)
+            .execute_with(
+                app_state.db_router.writer(),
+                app_state
+                    .sf
+                    .next_id()
+                    .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+            )
             .await?;
 
             let redirect_uri = build_consent_redirect_uri(
@@ -548,8 +555,9 @@ async fn resolve_registered_client_with_access(
     client_id: &str,
 ) -> Result<(RuntimeOAuthAppData, RuntimeOAuthClientData), ApiErrorResponse> {
     let oauth_app = resolve_oauth_app_from_host(app_state, headers).await?;
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let client = GetRuntimeOAuthClientByClientIdQuery::new(oauth_app.id, client_id.to_string())
-        .execute(app_state)
+        .execute_with(reader)
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth client not found"))?;
 
@@ -687,7 +695,7 @@ async fn handle_authorization_code_grant(
         context.client.id,
         hash_value(code),
     )
-    .execute(app_state)
+    .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
     .await
     .map_err(map_token_app_error)?
     .ok_or_else(invalid_grant_error)?;
@@ -729,7 +737,7 @@ async fn handle_authorization_code_grant(
     let consumed = ConsumeOAuthAuthorizationCode {
         code_id: code_row.id,
     }
-    .execute(app_state)
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(map_token_app_error)?;
     if !consumed {
@@ -739,7 +747,7 @@ async fn handle_authorization_code_grant(
                 oauth_client_id: context.client.id,
                 oauth_grant_id,
             }
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await;
         }
         return Err(invalid_grant_error());
@@ -747,6 +755,16 @@ async fn handle_authorization_code_grant(
 
     let oauth_grant_id = code_row.oauth_grant_id.ok_or_else(invalid_grant_error)?;
     let scope = code_row.scopes.join(" ");
+    let access_token_id = app_state
+        .sf
+        .next_id()
+        .map_err(|e| map_token_app_error(AppError::Internal(e.to_string())))?
+        as i64;
+    let refresh_token_id = app_state
+        .sf
+        .next_id()
+        .map_err(|e| map_token_app_error(AppError::Internal(e.to_string())))?
+        as i64;
     let tokens = IssueOAuthTokenPair {
         deployment_id: context.oauth_app.deployment_id,
         oauth_client_id: context.client.id,
@@ -756,7 +774,11 @@ async fn handle_authorization_code_grant(
         resource: code_row.resource,
         granted_resource: code_row.granted_resource,
     }
-    .execute(app_state)
+    .execute_with(
+        app_state.db_router.writer(),
+        access_token_id,
+        refresh_token_id,
+    )
     .await
     .map_err(map_token_app_error)?;
 
@@ -787,7 +809,7 @@ async fn handle_refresh_token_grant(
         context.client.id,
         hash_value(refresh_token),
     )
-    .execute(app_state)
+    .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
     .await
     .map_err(map_token_app_error)?
     .ok_or_else(invalid_grant_error)?;
@@ -801,7 +823,7 @@ async fn handle_refresh_token_grant(
                 oauth_client_id: context.client.id,
                 root_refresh_token_id: refresh_row.id,
             }
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await
             .map_err(map_token_app_error)?;
             tracing::warn!(
@@ -854,7 +876,7 @@ async fn handle_refresh_token_grant(
     let revoked = RevokeOAuthRefreshTokenById {
         refresh_token_id: refresh_row.id,
     }
-    .execute(app_state)
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(map_token_app_error)?;
     if !revoked {
@@ -862,6 +884,16 @@ async fn handle_refresh_token_grant(
     }
 
     let oauth_grant_id = refresh_row.oauth_grant_id.ok_or_else(invalid_grant_error)?;
+    let access_token_id = app_state
+        .sf
+        .next_id()
+        .map_err(|e| map_token_app_error(AppError::Internal(e.to_string())))?
+        as i64;
+    let refresh_token_id = app_state
+        .sf
+        .next_id()
+        .map_err(|e| map_token_app_error(AppError::Internal(e.to_string())))?
+        as i64;
     let tokens = IssueOAuthTokenPair {
         deployment_id: context.oauth_app.deployment_id,
         oauth_client_id: context.client.id,
@@ -871,7 +903,11 @@ async fn handle_refresh_token_grant(
         resource: refresh_row.resource.clone(),
         granted_resource: refresh_row.granted_resource.clone(),
     }
-    .execute(app_state)
+    .execute_with(
+        app_state.db_router.writer(),
+        access_token_id,
+        refresh_token_id,
+    )
     .await
     .map_err(map_token_app_error)?;
 
@@ -879,7 +915,7 @@ async fn handle_refresh_token_grant(
         old_refresh_token_id: refresh_row.id,
         new_refresh_token_id: tokens.refresh_token_id,
     }
-    .execute(app_state)
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(map_token_app_error)?;
 
@@ -1035,8 +1071,9 @@ async fn authorize_impl(
     };
     let request_token = sign_oauth_consent_request_token(&claims)?;
     let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let deployment_hosts = GetRuntimeDeploymentHostsByIdQuery::new(oauth_app.deployment_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "Deployment not found for OAuth app"))?;
 
@@ -1275,8 +1312,9 @@ async fn get_runtime_oauth_client(
     oauth_app_id: i64,
     client_id: String,
 ) -> Result<RuntimeOAuthClientData, ApiErrorResponse> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetRuntimeOAuthClientByClientIdQuery::new(oauth_app_id, client_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth client not found").into())
 }

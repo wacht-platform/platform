@@ -259,12 +259,11 @@ pub async fn handle_webhook_replay_batch(app_state: &AppState, payload: Value) -
         let mut last_error = String::new();
 
         for attempt in 1..=MAX_ATTEMPTS_PER_DELIVERY {
-            let result = ReplayWebhookDeliveryCommand {
+            let replay_command = ReplayWebhookDeliveryCommand {
                 delivery_id: *delivery_id,
                 deployment_id,
-            }
-            .execute(app_state)
-            .await;
+            };
+            let result = Command::execute(replay_command, app_state).await;
 
             match result {
                 Ok(new_id) => {

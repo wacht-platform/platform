@@ -2,6 +2,7 @@ use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
 use serde::{Deserialize, Serialize};
+use sqlx::Connection;
 
 #[derive(Serialize, Deserialize)]
 pub struct DeleteWorkspaceCommand {
@@ -16,19 +17,14 @@ impl DeleteWorkspaceCommand {
             workspace_id,
         }
     }
-}
 
-impl Command for DeleteWorkspaceCommand {
-    type Output = ();
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        let mut tx = conn.begin().await.map_err(AppError::Database)?;
 
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state
-            .db_pool
-            .begin()
-            .await
-            .map_err(|e| AppError::Database(e))?;
-
-        // First check if workspace exists and belongs to deployment
         let exists = sqlx::query!(
             "SELECT id FROM workspaces WHERE id = $1 AND organization_id IN (SELECT id FROM organizations WHERE deployment_id = $2)",
             self.workspace_id,
@@ -36,38 +32,43 @@ impl Command for DeleteWorkspaceCommand {
         )
         .fetch_optional(&mut *tx)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         if exists.is_none() {
             return Err(AppError::NotFound("Workspace not found".to_string()));
         }
 
-        // Delete workspace memberships for this workspace
         sqlx::query!(
             "DELETE FROM workspace_memberships WHERE workspace_id = $1",
             self.workspace_id
         )
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
-        // Delete workspace roles for this workspace
         sqlx::query!(
             "DELETE FROM workspace_roles WHERE workspace_id = $1",
             self.workspace_id
         )
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
-        // Finally delete the workspace
         sqlx::query!("DELETE FROM workspaces WHERE id = $1", self.workspace_id)
             .execute(&mut *tx)
             .await
-            .map_err(|e| AppError::Database(e))?;
+            .map_err(AppError::Database)?;
 
-        tx.commit().await.map_err(|e| AppError::Database(e))?;
+        tx.commit().await.map_err(AppError::Database)?;
 
         Ok(())
+    }
+}
+
+impl Command for DeleteWorkspaceCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

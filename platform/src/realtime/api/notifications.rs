@@ -4,12 +4,11 @@ use axum::{
     http::{HeaderMap, header::COOKIE},
     response::IntoResponse,
 };
+use common::db_router::ReadConsistency;
 use common::utils::jwt::verify_token;
 use fastwebsockets::{FragmentCollector, Frame, OpCode, WebSocketError, upgrade};
 use futures::StreamExt;
-use queries::{
-    GetDeploymentWithKeyPairQuery, GetSessionWithActiveContextQuery, Query as QueryTrait,
-};
+use queries::{GetDeploymentWithKeyPairQuery, GetSessionWithActiveContextQuery};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{error, info, warn};
@@ -106,10 +105,12 @@ async fn handle_notification_client(
     let mut ws = FragmentCollector::new(fut.await?);
 
     // Get deployment ID and public key from host
-    let (deployment_id, public_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
-        .execute(&app_state)
-        .await
-    {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    let (deployment_id, public_key) =
+        match GetDeploymentWithKeyPairQuery::new(host.clone())
+            .execute_with(reader)
+            .await
+        {
         Ok(result) => result,
         Err(e) => {
             error!("Failed to get deployment for host {}: {}", host, e);
@@ -160,8 +161,9 @@ async fn handle_notification_client(
     };
 
     // Query database to get user_id and active organization/workspace from session
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let session_context = match GetSessionWithActiveContextQuery::new(session_id)
-        .execute(&app_state)
+        .execute_with(reader)
         .await
     {
         Ok(context) => context,

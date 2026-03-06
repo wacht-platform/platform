@@ -2,6 +2,7 @@ use commands::{
     Command, CreateUserCommand, DeleteUserCommand, GenerateImpersonationTokenCommand,
     UpdateUserCommand, UpdateUserPasswordCommand, UpdateUserProfileImageCommand, UploadToCdnCommand,
 };
+use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
 use dto::{
@@ -9,7 +10,7 @@ use dto::{
     query::ActiveUserListQueryParams,
 };
 use models::{UserDetails, UserWithIdentifiers};
-use queries::{DeploymentActiveUserListQuery, GetUserDetailsQuery, Query};
+use queries::{DeploymentActiveUserListQuery, GetUserDetailsQuery};
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 
@@ -27,7 +28,7 @@ pub async fn get_active_user_list(
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .search(params.search.clone())
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
 
     Ok(paginate_results(users, limit, Some(offset)))
@@ -38,8 +39,9 @@ pub async fn get_user_details(
     deployment_id: i64,
     user_id: i64,
 ) -> Result<UserDetails, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetUserDetailsQuery::new(deployment_id, user_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await
 }
 
@@ -49,9 +51,7 @@ pub async fn create_user(
     request: CreateUserRequest,
     profile_image_data: Option<(Vec<u8>, String)>,
 ) -> Result<UserWithIdentifiers, AppError> {
-    let user = CreateUserCommand::new(deployment_id, request)
-        .execute(app_state)
-        .await?;
+    let user = Command::execute(CreateUserCommand::new(deployment_id, request), app_state).await?;
 
     if let Some((image_buffer, file_extension)) = profile_image_data {
         let url = upload_user_profile_image(
@@ -64,7 +64,7 @@ pub async fn create_user(
         .await?;
 
         UpdateUserProfileImageCommand::new(deployment_id, user.id, url)
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await?;
     }
 
@@ -79,17 +79,18 @@ pub async fn update_user(
     profile_image_data: Option<(Vec<u8>, String)>,
     remove_profile_image: bool,
 ) -> Result<UserDetails, AppError> {
-    let user_details = UpdateUserCommand::new(deployment_id, user_id, request)
-        .execute(app_state)
-        .await?;
+    let user_details =
+        Command::execute(UpdateUserCommand::new(deployment_id, user_id, request), app_state)
+            .await?;
 
     if remove_profile_image {
         UpdateUserProfileImageCommand::new(deployment_id, user_id, String::new())
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await?;
 
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         return GetUserDetailsQuery::new(deployment_id, user_id)
-            .execute(app_state)
+            .execute_with(reader)
             .await;
     }
 
@@ -104,11 +105,12 @@ pub async fn update_user(
         .await?;
 
         UpdateUserProfileImageCommand::new(deployment_id, user_id, url)
-            .execute(app_state)
+            .execute_with(app_state.db_router.writer())
             .await?;
 
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         return GetUserDetailsQuery::new(deployment_id, user_id)
-            .execute(app_state)
+            .execute_with(reader)
             .await;
     }
 
@@ -121,14 +123,13 @@ pub async fn update_user_password(
     user_id: i64,
     request: UpdatePasswordRequest,
 ) -> Result<(), AppError> {
-    UpdateUserPasswordCommand::new(
+    let password_command = UpdateUserPasswordCommand::new(
         deployment_id,
         user_id,
         request.new_password,
         request.skip_password_check,
-    )
-    .execute(app_state)
-    .await?;
+    );
+    Command::execute(password_command, app_state).await?;
     Ok(())
 }
 
@@ -138,7 +139,7 @@ pub async fn delete_user(
     user_id: i64,
 ) -> Result<(), AppError> {
     DeleteUserCommand::new(deployment_id, user_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -148,9 +149,11 @@ pub async fn impersonate_user(
     deployment_id: i64,
     user_id: i64,
 ) -> Result<commands::GenerateImpersonationTokenResponse, AppError> {
-    GenerateImpersonationTokenCommand::new(deployment_id, user_id)
-        .execute(app_state)
-        .await
+    Command::execute(
+        GenerateImpersonationTokenCommand::new(deployment_id, user_id),
+        app_state,
+    )
+    .await
 }
 
 async fn upload_user_profile_image(

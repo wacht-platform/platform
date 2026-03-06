@@ -17,9 +17,24 @@ impl Command for AddOrganizationMemberCommand {
     type Output = OrganizationMemberDetails;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl AddOrganizationMemberCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        membership_id: i64,
+    ) -> Result<OrganizationMemberDetails, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         // Check if user exists
         let user_exists = sqlx::query!("SELECT id FROM users WHERE id = $1", self.user_id)
-            .fetch_optional(&app_state.db_pool)
+            .fetch_optional(&mut *conn)
             .await?;
 
         if user_exists.is_none() {
@@ -32,7 +47,7 @@ impl Command for AddOrganizationMemberCommand {
             self.deployment_id,
             self.organization_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if org_exists.is_none() {
@@ -45,7 +60,7 @@ impl Command for AddOrganizationMemberCommand {
             self.organization_id,
             self.user_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if existing_membership.is_some() {
@@ -61,13 +76,13 @@ impl Command for AddOrganizationMemberCommand {
             VALUES ($1, $2, $3, $4, $5)
             RETURNING id, created_at, updated_at
             "#,
-            app_state.sf.next_id()? as i64,
+            membership_id,
             self.organization_id,
             self.user_id,
             chrono::Utc::now(),
             chrono::Utc::now()
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         // Add role associations
@@ -81,7 +96,7 @@ impl Command for AddOrganizationMemberCommand {
                 role_id,
                 self.organization_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
         }
 
@@ -104,7 +119,7 @@ impl Command for AddOrganizationMemberCommand {
             "#,
             membership.id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(OrganizationMemberDetails {
@@ -127,7 +142,7 @@ impl Command for AddOrganizationMemberCommand {
                     member_details.organization_id,
                     member_details.user_id
                 )
-                .fetch_all(&app_state.db_pool)
+                .fetch_all(&mut *conn)
                 .await
                 .unwrap_or_default();
 
@@ -170,12 +185,22 @@ impl Command for UpdateOrganizationMemberCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateOrganizationMemberCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let membership_exists = sqlx::query!(
             "SELECT id FROM organization_memberships WHERE id = $1 AND organization_id = $2",
             self.membership_id,
             self.organization_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if membership_exists.is_none() {
@@ -189,7 +214,7 @@ impl Command for UpdateOrganizationMemberCommand {
                 "DELETE FROM organization_membership_roles WHERE organization_membership_id = $1",
                 self.membership_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
 
             for role_id in role_ids {
@@ -202,7 +227,7 @@ impl Command for UpdateOrganizationMemberCommand {
                 role_id,
                 self.organization_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
             }
         }
@@ -213,7 +238,7 @@ impl Command for UpdateOrganizationMemberCommand {
                 metadata,
                 self.membership_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
         }
 
@@ -232,13 +257,23 @@ impl Command for RemoveOrganizationMemberCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RemoveOrganizationMemberCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         // Check if membership exists
         let membership_exists = sqlx::query!(
             "SELECT id FROM organization_memberships WHERE id = $1 AND organization_id = $2",
             self.membership_id,
             self.organization_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if membership_exists.is_none() {
@@ -257,7 +292,7 @@ impl Command for RemoveOrganizationMemberCommand {
             "#,
             self.membership_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         // Delete workspace membership role associations
@@ -271,7 +306,7 @@ impl Command for RemoveOrganizationMemberCommand {
             "#,
             self.membership_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         // Delete all workspace memberships tied to this organization membership
@@ -279,7 +314,7 @@ impl Command for RemoveOrganizationMemberCommand {
             "DELETE FROM workspace_memberships WHERE organization_membership_id = $1",
             self.membership_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         // Delete role associations
@@ -287,7 +322,7 @@ impl Command for RemoveOrganizationMemberCommand {
             "DELETE FROM organization_membership_roles WHERE organization_membership_id = $1",
             self.membership_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         // Delete membership
@@ -295,7 +330,7 @@ impl Command for RemoveOrganizationMemberCommand {
             "DELETE FROM organization_memberships WHERE id = $1",
             self.membership_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())

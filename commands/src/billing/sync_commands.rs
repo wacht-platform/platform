@@ -12,13 +12,23 @@ impl Command for CreateBillingSyncRunCommand {
     type Output = i64;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
+    }
+}
+
+impl CreateBillingSyncRunCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             "INSERT INTO billing_sync_runs (from_event_id, to_event_id, status)
              VALUES ($1, 0, 'running')
              RETURNING id",
             self.from_event_id
         )
-        .fetch_one(&state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(rec.id)
@@ -35,6 +45,16 @@ impl Command for CompleteBillingSyncRunCommand {
     type Output = ();
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
+    }
+}
+
+impl CompleteBillingSyncRunCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             "UPDATE billing_sync_runs
              SET completed_at = NOW(),
@@ -46,7 +66,7 @@ impl Command for CompleteBillingSyncRunCommand {
             self.events_processed,
             self.deployments_affected
         )
-        .execute(&state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())

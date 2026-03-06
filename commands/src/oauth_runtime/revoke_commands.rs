@@ -10,6 +10,16 @@ impl Command for RevokeOAuthRefreshTokenById {
     type Output = bool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RevokeOAuthRefreshTokenById {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let res = sqlx::query(
             r#"
             UPDATE oauth_refresh_tokens
@@ -19,7 +29,7 @@ impl Command for RevokeOAuthRefreshTokenById {
             "#,
         )
         .bind(self.refresh_token_id)
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
         Ok(res.rows_affected() > 0)
     }
@@ -34,6 +44,16 @@ impl Command for SetOAuthRefreshTokenReplacement {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl SetOAuthRefreshTokenReplacement {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query(
             r#"
             UPDATE oauth_refresh_tokens
@@ -43,7 +63,7 @@ impl Command for SetOAuthRefreshTokenReplacement {
         )
         .bind(self.old_refresh_token_id)
         .bind(self.new_refresh_token_id)
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
         Ok(())
     }
@@ -59,6 +79,16 @@ impl Command for RevokeOAuthAccessTokenByHash {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RevokeOAuthAccessTokenByHash {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query(
             r#"
             UPDATE oauth_access_tokens
@@ -72,7 +102,7 @@ impl Command for RevokeOAuthAccessTokenByHash {
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(self.token_hash)
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
         Ok(())
     }
@@ -88,6 +118,16 @@ impl Command for RevokeOAuthRefreshTokenByHash {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RevokeOAuthRefreshTokenByHash {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query(
             r#"
             UPDATE oauth_refresh_tokens
@@ -101,7 +141,7 @@ impl Command for RevokeOAuthRefreshTokenByHash {
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(self.token_hash)
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
         Ok(())
     }
@@ -117,6 +157,16 @@ impl Command for RevokeOAuthRefreshTokenFamily {
     type Output = u64;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RevokeOAuthRefreshTokenFamily {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<u64, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let res = sqlx::query(
             r#"
             WITH RECURSIVE token_chain AS (
@@ -143,7 +193,7 @@ impl Command for RevokeOAuthRefreshTokenFamily {
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(self.root_refresh_token_id)
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(res.rows_affected())
@@ -160,6 +210,16 @@ impl Command for RevokeOAuthTokensByGrant {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RevokeOAuthTokensByGrant {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query(
             r#"
             UPDATE oauth_access_tokens
@@ -173,7 +233,7 @@ impl Command for RevokeOAuthTokensByGrant {
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(self.oauth_grant_id)
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         sqlx::query(
@@ -189,7 +249,7 @@ impl Command for RevokeOAuthTokensByGrant {
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(self.oauth_grant_id)
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())

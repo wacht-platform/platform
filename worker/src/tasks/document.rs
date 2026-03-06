@@ -25,8 +25,7 @@ pub async fn process_document_impl(
 
     let command = ProcessDocumentCommand::new(deployment_id, knowledge_base_id, document_id);
 
-    command
-        .execute(app_state)
+    Command::execute(command, app_state)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to process document: {}", e))
 }

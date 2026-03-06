@@ -38,12 +38,15 @@ impl GetAiAgentsQuery {
         self.search = search;
         self
     }
-}
 
-impl Query for GetAiAgentsQuery {
-    type Output = Vec<AiAgentWithDetails>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<AiAgentWithDetails>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         if let Some(search) = &self.search {
             let search_pattern = format!("%{}%", search);
             let agents = sqlx::query!(
@@ -64,7 +67,7 @@ impl Query for GetAiAgentsQuery {
                 self.limit as i64,
                 self.offset as i64
             )
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(&mut *conn)
             .await
             .map_err(AppError::Database)?;
 
@@ -110,7 +113,7 @@ impl Query for GetAiAgentsQuery {
                 self.limit as i64,
                 self.offset as i64
             )
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(&mut *conn)
             .await
             .map_err(AppError::Database)?;
 
@@ -143,6 +146,14 @@ impl Query for GetAiAgentsQuery {
     }
 }
 
+impl Query for GetAiAgentsQuery {
+    type Output = Vec<AiAgentWithDetails>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetAiAgentByIdQuery {
     pub deployment_id: i64,
     pub agent_id: i64,
@@ -154,6 +165,51 @@ impl GetAiAgentByIdQuery {
             deployment_id,
             agent_id,
         }
+    }
+
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiAgentWithDetails, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        let agent = sqlx::query!(
+            r#"
+            SELECT
+                a.id, a.created_at, a.updated_at, a.name, a.description,
+                a.configuration, a.deployment_id, a.sub_agents, a.spawn_config,
+                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as "tools_count!",
+                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as "knowledge_bases_count!"
+            FROM ai_agents a
+            WHERE a.id = $1 AND a.deployment_id = $2
+            "#,
+            self.agent_id,
+            self.deployment_id
+        )
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Agent not found".to_string()))?;
+
+        let sub_agents = agent
+            .sub_agents
+            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
+        let spawn_config = agent
+            .spawn_config
+            .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
+
+        Ok(AiAgentWithDetails {
+            id: agent.id,
+            created_at: agent.created_at,
+            updated_at: agent.updated_at,
+            name: agent.name,
+            description: agent.description,
+            configuration: agent.configuration,
+            deployment_id: agent.deployment_id,
+            tools_count: agent.tools_count,
+            knowledge_bases_count: agent.knowledge_bases_count,
+            sub_agents,
+            spawn_config,
+        })
     }
 }
 
@@ -169,16 +225,19 @@ impl GetAiAgentsByIdsQuery {
             agent_ids,
         }
     }
-}
 
-impl Query for GetAiAgentsByIdsQuery {
-    type Output = Vec<AiAgentWithDetails>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<AiAgentWithDetails>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
         if self.agent_ids.is_empty() {
             return Ok(Vec::new());
         }
 
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query(
             r#"
             SELECT
@@ -194,7 +253,7 @@ impl Query for GetAiAgentsByIdsQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.agent_ids)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -228,48 +287,19 @@ impl Query for GetAiAgentsByIdsQuery {
     }
 }
 
+impl Query for GetAiAgentsByIdsQuery {
+    type Output = Vec<AiAgentWithDetails>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 impl Query for GetAiAgentByIdQuery {
     type Output = AiAgentWithDetails;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let agent = sqlx::query!(
-            r#"
-            SELECT
-                a.id, a.created_at, a.updated_at, a.name, a.description,
-                a.configuration, a.deployment_id, a.sub_agents, a.spawn_config,
-                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as "tools_count!",
-                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as "knowledge_bases_count!"
-            FROM ai_agents a
-            WHERE a.id = $1 AND a.deployment_id = $2
-            "#,
-            self.agent_id,
-            self.deployment_id
-        )
-        .fetch_optional(&app_state.db_pool)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or_else(|| AppError::NotFound("Agent not found".to_string()))?;
-
-        let sub_agents = agent
-            .sub_agents
-            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
-        let spawn_config = agent
-            .spawn_config
-            .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
-
-        Ok(AiAgentWithDetails {
-            id: agent.id,
-            created_at: agent.created_at,
-            updated_at: agent.updated_at,
-            name: agent.name,
-            description: agent.description,
-            configuration: agent.configuration,
-            deployment_id: agent.deployment_id,
-            tools_count: agent.tools_count,
-            knowledge_bases_count: agent.knowledge_bases_count,
-            sub_agents,
-            spawn_config,
-        })
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

@@ -48,96 +48,15 @@ impl DeploymentActiveUserListQuery {
     pub fn search(self, search: Option<String>) -> Self {
         Self { search, ..self }
     }
-}
 
-pub struct DeploymentInvitationQuery {
-    deployment_id: i64,
-    offset: i64,
-    sort_key: Option<String>,
-    sort_order: Option<String>,
-    limit: i32,
-    search: Option<String>,
-}
-
-impl DeploymentInvitationQuery {
-    pub fn new(id: i64) -> Self {
-        Self {
-            offset: 0,
-            sort_key: None,
-            sort_order: None,
-            limit: 10,
-            deployment_id: id,
-            search: None,
-        }
-    }
-
-    pub fn offset(self, offset: i64) -> Self {
-        Self { offset, ..self }
-    }
-
-    pub fn limit(self, limit: i32) -> Self {
-        Self { limit, ..self }
-    }
-
-    pub fn sort_key(self, sort_key: Option<String>) -> Self {
-        Self { sort_key, ..self }
-    }
-
-    pub fn sort_order(self, sort_order: Option<String>) -> Self {
-        Self { sort_order, ..self }
-    }
-
-    pub fn search(self, search: Option<String>) -> Self {
-        Self { search, ..self }
-    }
-}
-
-pub struct DeploymentWaitlistQuery {
-    deployment_id: i64,
-    offset: i64,
-    sort_key: Option<String>,
-    sort_order: Option<String>,
-    limit: i32,
-    search: Option<String>,
-}
-
-impl DeploymentWaitlistQuery {
-    pub fn new(id: i64) -> Self {
-        Self {
-            offset: 0,
-            sort_key: None,
-            sort_order: None,
-            limit: 10,
-            deployment_id: id,
-            search: None,
-        }
-    }
-
-    pub fn offset(self, offset: i64) -> Self {
-        Self { offset, ..self }
-    }
-
-    pub fn limit(self, limit: i32) -> Self {
-        Self { limit, ..self }
-    }
-
-    pub fn sort_key(self, sort_key: Option<String>) -> Self {
-        Self { sort_key, ..self }
-    }
-
-    pub fn sort_order(self, sort_order: Option<String>) -> Self {
-        Self { sort_order, ..self }
-    }
-
-    pub fn search(self, search: Option<String>) -> Self {
-        Self { search, ..self }
-    }
-}
-
-impl Query for DeploymentActiveUserListQuery {
-    type Output = Vec<UserWithIdentifiers>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<UserWithIdentifiers>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
         let sort_order = self.sort_order.as_deref().unwrap_or("desc");
 
@@ -221,7 +140,7 @@ impl Query for DeploymentActiveUserListQuery {
         query_builder.push(" LIMIT ");
         query_builder.push_bind(self.limit);
 
-        let rows = query_builder.build().fetch_all(&app_state.db_pool).await?;
+        let rows = query_builder.build().fetch_all(&mut *conn).await?;
 
         let users = rows
             .into_iter()
@@ -242,10 +161,55 @@ impl Query for DeploymentActiveUserListQuery {
     }
 }
 
-impl Query for DeploymentInvitationQuery {
-    type Output = Vec<DeploymentInvitation>;
+pub struct DeploymentInvitationQuery {
+    deployment_id: i64,
+    offset: i64,
+    sort_key: Option<String>,
+    sort_order: Option<String>,
+    limit: i32,
+    search: Option<String>,
+}
 
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl DeploymentInvitationQuery {
+    pub fn new(id: i64) -> Self {
+        Self {
+            offset: 0,
+            sort_key: None,
+            sort_order: None,
+            limit: 10,
+            deployment_id: id,
+            search: None,
+        }
+    }
+
+    pub fn offset(self, offset: i64) -> Self {
+        Self { offset, ..self }
+    }
+
+    pub fn limit(self, limit: i32) -> Self {
+        Self { limit, ..self }
+    }
+
+    pub fn sort_key(self, sort_key: Option<String>) -> Self {
+        Self { sort_key, ..self }
+    }
+
+    pub fn sort_order(self, sort_order: Option<String>) -> Self {
+        Self { sort_order, ..self }
+    }
+
+    pub fn search(self, search: Option<String>) -> Self {
+        Self { search, ..self }
+    }
+
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<DeploymentInvitation>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
         let sort_order = self.sort_order.as_deref().unwrap_or("desc");
 
@@ -295,7 +259,7 @@ impl Query for DeploymentInvitationQuery {
         query_builder.push(" LIMIT ");
         query_builder.push_bind(self.limit);
 
-        let rows = query_builder.build().fetch_all(&app_state.db_pool).await?;
+        let rows = query_builder.build().fetch_all(&mut *conn).await?;
 
         let invitations = rows
             .into_iter()
@@ -313,6 +277,138 @@ impl Query for DeploymentInvitationQuery {
             .collect();
 
         Ok(invitations)
+    }
+}
+
+pub struct DeploymentWaitlistQuery {
+    deployment_id: i64,
+    offset: i64,
+    sort_key: Option<String>,
+    sort_order: Option<String>,
+    limit: i32,
+    search: Option<String>,
+}
+
+impl DeploymentWaitlistQuery {
+    pub fn new(id: i64) -> Self {
+        Self {
+            offset: 0,
+            sort_key: None,
+            sort_order: None,
+            limit: 10,
+            deployment_id: id,
+            search: None,
+        }
+    }
+
+    pub fn offset(self, offset: i64) -> Self {
+        Self { offset, ..self }
+    }
+
+    pub fn limit(self, limit: i32) -> Self {
+        Self { limit, ..self }
+    }
+
+    pub fn sort_key(self, sort_key: Option<String>) -> Self {
+        Self { sort_key, ..self }
+    }
+
+    pub fn sort_order(self, sort_order: Option<String>) -> Self {
+        Self { sort_order, ..self }
+    }
+
+    pub fn search(self, search: Option<String>) -> Self {
+        Self { search, ..self }
+    }
+
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<DeploymentWaitlistUser>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
+        let sort_order = self.sort_order.as_deref().unwrap_or("desc");
+
+        let mut query_builder = sqlx::QueryBuilder::new(
+            r#"
+            SELECT
+                u.id, u.created_at, u.updated_at,
+                u.email_address, u.first_name, u.last_name,
+                u.deployment_id
+            FROM deployment_waitlist_users u
+            WHERE u.deployment_id = "#,
+        );
+
+        query_builder.push_bind(self.deployment_id);
+
+        if let Some(search_term) = &self.search {
+            let trimmed_search = search_term.trim();
+            if !trimmed_search.is_empty() {
+                let search_pattern = format!("%{}%", trimmed_search);
+                query_builder.push(" AND (");
+                query_builder.push("u.first_name ILIKE ");
+                query_builder.push_bind(search_pattern.clone());
+                query_builder.push(" OR u.last_name ILIKE ");
+                query_builder.push_bind(search_pattern.clone());
+                query_builder.push(" OR u.email_address ILIKE ");
+                query_builder.push_bind(search_pattern);
+                query_builder.push(")");
+            }
+        }
+
+        query_builder.push(" ORDER BY ");
+
+        match sort_key {
+            "created_at" => query_builder.push("u.created_at"),
+            "email" => query_builder.push("u.email_address"),
+            _ => query_builder.push("u.created_at"),
+        };
+
+        match sort_order.to_lowercase().as_str() {
+            "asc" => query_builder.push(" ASC"),
+            _ => query_builder.push(" DESC"),
+        };
+
+        query_builder.push(" OFFSET ");
+        query_builder.push_bind(self.offset);
+        query_builder.push(" LIMIT ");
+        query_builder.push_bind(self.limit);
+
+        let rows = query_builder.build().fetch_all(&mut *conn).await?;
+
+        let waitlist_users = rows
+            .into_iter()
+            .map(|row| DeploymentWaitlistUser {
+                id: row.get("id"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+                first_name: row.get("first_name"),
+                last_name: row.get("last_name"),
+                email_address: row.get("email_address"),
+                deployment_id: row.get("deployment_id"),
+            })
+            .collect();
+
+        Ok(waitlist_users)
+    }
+}
+
+impl Query for DeploymentActiveUserListQuery {
+    type Output = Vec<UserWithIdentifiers>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl Query for DeploymentInvitationQuery {
+    type Output = Vec<DeploymentInvitation>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -517,70 +613,7 @@ impl Query for DeploymentWaitlistQuery {
     type Output = Vec<DeploymentWaitlistUser>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
-        let sort_order = self.sort_order.as_deref().unwrap_or("desc");
-
-        let mut query_builder = sqlx::QueryBuilder::new(
-            r#"
-            SELECT
-                u.id, u.created_at, u.updated_at,
-                u.email_address, u.first_name, u.last_name,
-                u.deployment_id
-            FROM deployment_waitlist_users u
-            WHERE u.deployment_id = "#,
-        );
-
-        query_builder.push_bind(self.deployment_id);
-
-        if let Some(search_term) = &self.search {
-            let trimmed_search = search_term.trim();
-            if !trimmed_search.is_empty() {
-                let search_pattern = format!("%{}%", trimmed_search);
-                query_builder.push(" AND (");
-                query_builder.push("u.first_name ILIKE ");
-                query_builder.push_bind(search_pattern.clone());
-                query_builder.push(" OR u.last_name ILIKE ");
-                query_builder.push_bind(search_pattern.clone());
-                query_builder.push(" OR u.email_address ILIKE ");
-                query_builder.push_bind(search_pattern);
-                query_builder.push(")");
-            }
-        }
-
-        query_builder.push(" ORDER BY ");
-
-        match sort_key {
-            "created_at" => query_builder.push("u.created_at"),
-            "email" => query_builder.push("u.email_address"),
-            _ => query_builder.push("u.created_at"),
-        };
-
-        match sort_order.to_lowercase().as_str() {
-            "asc" => query_builder.push(" ASC"),
-            _ => query_builder.push(" DESC"),
-        };
-
-        query_builder.push(" OFFSET ");
-        query_builder.push_bind(self.offset);
-        query_builder.push(" LIMIT ");
-        query_builder.push_bind(self.limit);
-
-        let rows = query_builder.build().fetch_all(&app_state.db_pool).await?;
-
-        let waitlist_users = rows
-            .into_iter()
-            .map(|row| DeploymentWaitlistUser {
-                id: row.get("id"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                first_name: row.get("first_name"),
-                last_name: row.get("last_name"),
-                email_address: row.get("email_address"),
-                deployment_id: row.get("deployment_id"),
-            })
-            .collect();
-
-        Ok(waitlist_users)
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -592,12 +625,15 @@ impl GetUserAuthenticatorQuery {
     pub fn new(user_id: i64) -> Self {
         Self { user_id }
     }
-}
 
-impl Query for GetUserAuthenticatorQuery {
-    type Output = models::UserAuthenticator;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<models::UserAuthenticator, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, user_id, totp_secret, otp_url
@@ -606,7 +642,7 @@ impl Query for GetUserAuthenticatorQuery {
             "#,
             self.user_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(models::UserAuthenticator {
@@ -617,5 +653,13 @@ impl Query for GetUserAuthenticatorQuery {
             totp_secret: row.totp_secret,
             otp_url: row.otp_url,
         })
+    }
+}
+
+impl Query for GetUserAuthenticatorQuery {
+    type Output = models::UserAuthenticator;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

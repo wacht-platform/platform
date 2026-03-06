@@ -16,7 +16,28 @@ impl Command for AddWorkspaceMemberCommand {
     type Output = WorkspaceMemberDetails;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_pool.begin().await?;
+        self.execute_with(
+            &app_state.db_pool,
+            app_state.sf.next_id()? as i64,
+            app_state.sf.next_id()? as i64,
+        )
+        .await
+    }
+}
+
+impl AddWorkspaceMemberCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        workspace_membership_id: i64,
+        implicit_org_membership_id: i64,
+    ) -> Result<WorkspaceMemberDetails, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        use sqlx::Connection;
+        let mut conn = acquirer.acquire().await?;
+        let mut tx = conn.begin().await?;
 
         let workspace = sqlx::query!(
             "SELECT id, organization_id FROM workspaces WHERE id = $1 AND deployment_id = $2",
@@ -64,7 +85,7 @@ impl Command for AddWorkspaceMemberCommand {
                 })?;
 
             // Create organization membership
-            let new_membership_id = app_state.sf.next_id()? as i64;
+            let new_membership_id = implicit_org_membership_id;
             let now = chrono::Utc::now();
 
             sqlx::query!(
@@ -119,7 +140,7 @@ impl Command for AddWorkspaceMemberCommand {
         }
 
         // Create workspace membership
-        let membership_id = app_state.sf.next_id()? as i64;
+        let membership_id = workspace_membership_id;
         let now = chrono::Utc::now();
 
         sqlx::query!(
@@ -185,7 +206,7 @@ impl Command for AddWorkspaceMemberCommand {
             "#,
             membership_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         // Get roles separately
@@ -198,7 +219,7 @@ impl Command for AddWorkspaceMemberCommand {
             "#,
             membership_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let roles = role_rows
@@ -250,6 +271,16 @@ impl Command for UpdateWorkspaceMemberCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateWorkspaceMemberCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let membership = sqlx::query!(
             r#"
             SELECT wm.id, wm.organization_id
@@ -261,7 +292,7 @@ impl Command for UpdateWorkspaceMemberCommand {
             self.workspace_id,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let membership = membership.ok_or(AppError::NotFound(
@@ -273,7 +304,7 @@ impl Command for UpdateWorkspaceMemberCommand {
                 "DELETE FROM workspace_membership_roles WHERE workspace_membership_id = $1",
                 self.membership_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
 
             for role_id in role_ids {
@@ -287,7 +318,7 @@ impl Command for UpdateWorkspaceMemberCommand {
                     self.workspace_id,
                     membership.organization_id
                 )
-                .execute(&app_state.db_pool)
+                .execute(&mut *conn)
                 .await?;
             }
         }
@@ -298,7 +329,7 @@ impl Command for UpdateWorkspaceMemberCommand {
                 metadata,
                 self.membership_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
         }
 
@@ -317,6 +348,16 @@ impl Command for RemoveWorkspaceMemberCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RemoveWorkspaceMemberCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let membership = sqlx::query!(
             r#"
             SELECT wm.id
@@ -328,7 +369,7 @@ impl Command for RemoveWorkspaceMemberCommand {
             self.workspace_id,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if membership.is_none() {
@@ -341,21 +382,21 @@ impl Command for RemoveWorkspaceMemberCommand {
             "UPDATE signins SET active_workspace_membership_id = NULL WHERE active_workspace_membership_id = $1",
             self.membership_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         sqlx::query!(
             "DELETE FROM workspace_membership_roles WHERE workspace_membership_id = $1",
             self.membership_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         sqlx::query!(
             "DELETE FROM workspace_memberships WHERE id = $1",
             self.membership_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())

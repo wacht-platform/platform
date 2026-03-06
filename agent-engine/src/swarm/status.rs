@@ -61,18 +61,16 @@ pub async fn get_child_status(
     )
     .await?;
 
-    let children = queries::GetChildContextsQuery {
+    let child_contexts_query = queries::GetChildContextsQuery {
         parent_context_id,
         deployment_id,
         include_completed: request.include_completed,
-    }
-    .execute(app_state)
-    .await?;
+    };
+    let children = Query::execute(&child_contexts_query, app_state).await?;
 
     let child_context_ids: Vec<i64> = children.iter().map(|child| child.id).collect();
-    let latest_updates = queries::GetLatestStatusUpdatesForContextsQuery::new(child_context_ids)
-        .execute(app_state)
-        .await?;
+    let latest_updates_query = queries::GetLatestStatusUpdatesForContextsQuery::new(child_context_ids);
+    let latest_updates = Query::execute(&latest_updates_query, app_state).await?;
     let latest_update_by_context: HashMap<i64, queries::LatestStatusUpdate> = latest_updates
         .into_iter()
         .map(|update| (update.context_id, update))
@@ -143,11 +141,10 @@ pub async fn completion_summary(
             Some(child_context_id.0),
         )
         .await?;
-        let summary =
+        let summary_query =
             queries::GetChildCompletionSummaryQuery::new(child_context_id.0, deployment_id)
-                .with_parent_context(parent_context_id)
-                .execute(app_state)
-                .await?;
+                .with_parent_context(parent_context_id);
+        let summary = Query::execute(&summary_query, app_state).await?;
 
         return response::success(
             tool_name,
@@ -172,10 +169,9 @@ pub async fn completion_summary(
     )
     .await?;
 
-    let summaries =
-        queries::GetChildrenCompletionSummariesQuery::new(parent_context_id, deployment_id)
-            .execute(app_state)
-            .await?;
+    let summaries_query =
+        queries::GetChildrenCompletionSummariesQuery::new(parent_context_id, deployment_id);
+    let summaries = Query::execute(&summaries_query, app_state).await?;
 
     let count = summaries.len();
     response::success(

@@ -1,5 +1,5 @@
 use commands::{
-    Command, CreateDeploymentJwtTemplateCommand, DeleteDeploymentJwtTemplateCommand,
+    CreateDeploymentJwtTemplateCommand, DeleteDeploymentJwtTemplateCommand,
     RemoveDeploymentSmtpConfigCommand, UpdateDeploymentAuthSettingsCommand,
     UpdateDeploymentDisplaySettingsCommand, UpdateDeploymentEmailTemplateCommand,
     UpdateDeploymentJwtTemplateCommand, UpdateDeploymentRestrictionsCommand,
@@ -135,13 +135,14 @@ pub async fn update_deployment_email_template(
     template_name: DeploymentNameParams,
     template: EmailTemplate,
 ) -> Result<EmailTemplate, AppError> {
+    let writer = app_state.db_router.writer();
     UpdateDeploymentEmailTemplateCommand::new(deployment_id, template_name, template)
-        .execute(app_state)
+        .execute_with(writer, &app_state.redis_client)
         .await
 }
 
 pub async fn verify_smtp_connection(
-    app_state: &AppState,
+    _app_state: &AppState,
     config: SmtpConfigRequest,
 ) -> Result<SmtpVerifyResponse, AppError> {
     VerifySmtpConnectionCommand::new(
@@ -152,7 +153,7 @@ pub async fn verify_smtp_connection(
         config.from_email,
         config.use_tls,
     )
-    .execute(app_state)
+    .execute_with()
     .await?;
 
     Ok(SmtpVerifyResponse {
@@ -174,9 +175,10 @@ pub async fn update_smtp_config(
         config.from_email.clone(),
         config.use_tls,
     )
-    .execute(app_state)
+    .execute_with()
     .await?;
 
+    let writer = app_state.db_router.writer();
     let result = UpdateDeploymentSmtpConfigCommand::new(
         deployment_id,
         config.host,
@@ -186,7 +188,7 @@ pub async fn update_smtp_config(
         config.from_email,
         config.use_tls,
     )
-    .execute(app_state)
+    .execute_with(writer, &app_state.encryption_service)
     .await?;
 
     Ok(SmtpConfigResponse {
@@ -203,8 +205,9 @@ pub async fn remove_smtp_config(
     app_state: &AppState,
     deployment_id: i64,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     RemoveDeploymentSmtpConfigCommand::new(deployment_id)
-        .execute(app_state)
+        .execute_with(writer, &app_state.redis_client)
         .await?;
     Ok(())
 }

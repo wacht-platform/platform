@@ -1,14 +1,15 @@
 use commands::{
-    AttachToolToAgentCommand, Command, CreateAiToolCommand, DeleteAiToolCommand,
+    AttachToolToAgentCommand, CreateAiToolCommand, DeleteAiToolCommand,
     DetachToolFromAgentCommand, UpdateAiToolCommand,
 };
+use common::ReadConsistency;
 use common::error::AppError;
 use dto::{
     json::deployment::{CreateToolRequest, UpdateToolRequest},
     query::deployment::GetToolsQuery,
 };
 use models::{AiTool, AiToolType, AiToolWithDetails};
-use queries::{GetAgentToolsQuery, GetAiToolByIdQuery, GetAiToolsQuery, Query as QueryTrait};
+use queries::{GetAgentToolsQuery, GetAiToolByIdQuery, GetAiToolsQuery};
 
 use crate::{
     api::pagination::paginate_results,
@@ -31,7 +32,7 @@ pub async fn get_ai_tools(
         .with_limit(Some(query_limit + 1))
         .with_offset(offset.map(|o| o as u32))
         .with_search(query.search)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(paginate_results(tools, limit, offset))
@@ -50,7 +51,7 @@ pub async fn create_ai_tool(
         tool_type,
         request.configuration,
     )
-    .execute(app_state)
+    .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
     .await
 }
 
@@ -60,7 +61,7 @@ pub async fn get_ai_tool_by_id(
     tool_id: i64,
 ) -> Result<AiToolWithDetails, AppError> {
     GetAiToolByIdQuery::new(deployment_id, tool_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
 }
 
@@ -70,7 +71,7 @@ pub async fn get_agent_tools(
     agent_id: i64,
 ) -> Result<PaginatedResponse<AiTool>, AppError> {
     let tools = GetAgentToolsQuery::new(deployment_id, agent_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
     Ok(PaginatedResponse::from(tools))
 }
@@ -82,7 +83,7 @@ pub async fn attach_tool_to_agent(
     tool_id: i64,
 ) -> Result<(), AppError> {
     AttachToolToAgentCommand::new(deployment_id, agent_id, tool_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -94,7 +95,7 @@ pub async fn detach_tool_from_agent(
     tool_id: i64,
 ) -> Result<(), AppError> {
     DetachToolFromAgentCommand::new(deployment_id, agent_id, tool_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -120,7 +121,7 @@ pub async fn update_ai_tool(
         command = command.with_configuration(configuration);
     }
 
-    command.execute(app_state).await
+    command.execute_with(app_state.db_router.writer()).await
 }
 
 pub async fn delete_ai_tool(
@@ -129,7 +130,7 @@ pub async fn delete_ai_tool(
     tool_id: i64,
 ) -> Result<(), AppError> {
     DeleteAiToolCommand::new(deployment_id, tool_id)
-        .execute(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
     Ok(())
 }

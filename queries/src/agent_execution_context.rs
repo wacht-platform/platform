@@ -17,12 +17,14 @@ impl GetExecutionContextQuery {
             deployment_id,
         }
     }
-}
 
-impl super::Query for GetExecutionContextQuery {
-    type Output = AgentExecutionContext;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with_executor<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<AgentExecutionContext, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         let context = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, deployment_id,
@@ -35,9 +37,9 @@ impl super::Query for GetExecutionContextQuery {
             self.context_id,
             self.deployment_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(executor)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         let status = ExecutionContextStatus::from_str(&context.status).unwrap_or_default();
 
@@ -64,6 +66,22 @@ impl super::Query for GetExecutionContextQuery {
             parent_context_id: context.parent_context_id,
             completion_summary: context.completion_summary,
         })
+    }
+
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AgentExecutionContext, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        self.execute_with_executor(&mut *conn).await
+    }
+}
+
+impl super::Query for GetExecutionContextQuery {
+    type Output = AgentExecutionContext;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -119,16 +137,18 @@ impl ListExecutionContextsQuery {
         self.title_search = Some(title);
         self
     }
-}
 
-impl super::Query for ListExecutionContextsQuery {
-    type Output = Vec<AgentExecutionContext>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<AgentExecutionContext>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let limit = self.limit.unwrap_or(50) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
-        // Use SQLx query builder for dynamic queries
         let mut query = sqlx::QueryBuilder::new(
             "SELECT id, created_at, updated_at, deployment_id,
              title, context_group, system_instructions, last_activity_at, completed_at,
@@ -168,9 +188,9 @@ impl super::Query for ListExecutionContextsQuery {
 
         let rows = query
             .build()
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(&mut *conn)
             .await
-            .map_err(|e| AppError::Database(e))?;
+            .map_err(AppError::Database)?;
 
         let mut result = Vec::new();
         for row in rows {
@@ -205,6 +225,14 @@ impl super::Query for ListExecutionContextsQuery {
         }
 
         Ok(result)
+    }
+}
+
+impl super::Query for ListExecutionContextsQuery {
+    type Output = Vec<AgentExecutionContext>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

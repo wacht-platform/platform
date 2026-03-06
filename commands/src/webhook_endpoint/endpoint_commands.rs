@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::{query, query_as};
+use sqlx::{Connection, query, query_as};
 
 use crate::Command;
 use common::error::AppError;
@@ -70,12 +70,17 @@ impl CreateWebhookEndpointCommand {
         self.rate_limit_config = rate_limit_config;
         self
     }
-}
 
-impl Command for CreateWebhookEndpointCommand {
-    type Output = WebhookEndpoint;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        app_state: &AppState,
+        endpoint_id: i64,
+    ) -> Result<WebhookEndpoint, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         url::Url::parse(&self.url)
             .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
 
@@ -94,9 +99,8 @@ impl Command for CreateWebhookEndpointCommand {
         let endpoint_max_retries = self.max_retries.unwrap_or(max_allowed_retries);
         validate_endpoint_max_retries(endpoint_max_retries, max_allowed_retries)?;
 
-        let mut tx = app_state.db_pool.begin().await?;
+        let mut tx = conn.begin().await?;
 
-        let endpoint_id = app_state.sf.next_id()? as i64;
         let headers_json = self.headers.unwrap_or_else(|| serde_json::json!({}));
 
         let endpoint = query_as!(
@@ -152,6 +156,19 @@ impl Command for CreateWebhookEndpointCommand {
 
         tx.commit().await?;
         Ok(endpoint)
+    }
+}
+
+impl Command for CreateWebhookEndpointCommand {
+    type Output = WebhookEndpoint;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(
+            &app_state.db_pool,
+            app_state,
+            app_state.sf.next_id()? as i64,
+        )
+        .await
     }
 }
 
@@ -224,12 +241,16 @@ impl UpdateWebhookEndpointCommand {
         self.rate_limit_config = rate_limit_config;
         self
     }
-}
 
-impl Command for UpdateWebhookEndpointCommand {
-    type Output = WebhookEndpoint;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        app_state: &AppState,
+    ) -> Result<WebhookEndpoint, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         if let Some(ref url) = self.url {
             url::Url::parse(url)
                 .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
@@ -243,7 +264,7 @@ impl Command for UpdateWebhookEndpointCommand {
             validate_endpoint_max_retries(max_retries, max_allowed_retries)?;
         }
 
-        let mut tx = app_state.db_pool.begin().await?;
+        let mut tx = conn.begin().await?;
 
         let endpoint = query_as!(
             WebhookEndpoint,
@@ -329,6 +350,14 @@ impl Command for UpdateWebhookEndpointCommand {
     }
 }
 
+impl Command for UpdateWebhookEndpointCommand {
+    type Output = WebhookEndpoint;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state).await
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct UpdateEndpointSubscriptionsCommand {
     pub endpoint_id: i64,
@@ -351,13 +380,17 @@ impl UpdateEndpointSubscriptionsCommand {
         self.filter_rules = filter_rules;
         self
     }
-}
 
-impl Command for UpdateEndpointSubscriptionsCommand {
-    type Output = Vec<String>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_pool.begin().await?;
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        app_state: &AppState,
+    ) -> Result<Vec<String>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        let mut tx = conn.begin().await?;
 
         let app_slug = query!(
             r#"
@@ -421,6 +454,14 @@ impl Command for UpdateEndpointSubscriptionsCommand {
     }
 }
 
+impl Command for UpdateEndpointSubscriptionsCommand {
+    type Output = Vec<String>;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state).await
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct DeleteWebhookEndpointCommand {
     pub endpoint_id: i64,
@@ -434,12 +475,12 @@ impl DeleteWebhookEndpointCommand {
             deployment_id,
         }
     }
-}
 
-impl Command for DeleteWebhookEndpointCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = query!(
             r#"
             DELETE FROM webhook_endpoints e
@@ -448,7 +489,7 @@ impl Command for DeleteWebhookEndpointCommand {
             self.endpoint_id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -456,5 +497,13 @@ impl Command for DeleteWebhookEndpointCommand {
         }
 
         Ok(())
+    }
+}
+
+impl Command for DeleteWebhookEndpointCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

@@ -33,12 +33,16 @@ impl CreateOrganizationCommand {
             private_metadata,
         }
     }
-}
 
-impl Command for CreateOrganizationCommand {
-    type Output = Organization;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        organization_id: i64,
+    ) -> Result<Organization, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let default_public_metadata = Value::Object(serde_json::Map::new());
         let default_private_metadata = Value::Object(serde_json::Map::new());
 
@@ -54,7 +58,7 @@ impl Command for CreateOrganizationCommand {
                 name, description as "description?", image_url as "image_url?", member_count,
                 public_metadata, private_metadata
             "#,
-            app_state.sf.next_id()? as i64,
+            organization_id,
             self.deployment_id,
             self.name,
             self.description.as_deref().unwrap_or(""),
@@ -68,7 +72,7 @@ impl Command for CreateOrganizationCommand {
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(Organization {
@@ -82,5 +86,14 @@ impl Command for CreateOrganizationCommand {
             public_metadata: organization.public_metadata,
             private_metadata: organization.private_metadata,
         })
+    }
+}
+
+impl Command for CreateOrganizationCommand {
+    type Output = Organization;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
     }
 }

@@ -27,12 +27,17 @@ impl TestWebhookEndpointCommand {
             test_payload,
         }
     }
-}
 
-impl Command for TestWebhookEndpointCommand {
-    type Output = TestWebhookResult;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        app_state: &AppState,
+        delivery_id: i64,
+    ) -> Result<TestWebhookResult, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let endpoint = query!(
             r#"
             SELECT e.url, e.headers, e.timeout_seconds, e.app_slug, a.signing_secret
@@ -43,15 +48,12 @@ impl Command for TestWebhookEndpointCommand {
             self.endpoint_id,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
 
         let app_slug = endpoint.app_slug.clone();
-
-        let delivery_id = app_state.sf.next_id()? as i64;
         let now = Utc::now();
-
         let payload_json = serde_json::to_string(&self.test_payload).unwrap_or_default();
         let payload_size = payload_json.len() as i32;
 
@@ -98,7 +100,7 @@ impl Command for TestWebhookEndpointCommand {
             app_slug,
             "test.webhook"
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         query!(
@@ -119,7 +121,7 @@ impl Command for TestWebhookEndpointCommand {
             webhook_timestamp,
             signature
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         let task_message = NatsTaskMessage {
@@ -154,6 +156,15 @@ impl Command for TestWebhookEndpointCommand {
     }
 }
 
+impl Command for TestWebhookEndpointCommand {
+    type Output = TestWebhookResult;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct TestWebhookResult {
     pub success: bool,
@@ -178,12 +189,16 @@ impl ReactivateEndpointCommand {
             deployment_id,
         }
     }
-}
 
-impl Command for ReactivateEndpointCommand {
-    type Output = WebhookEndpoint;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        app_state: &AppState,
+    ) -> Result<WebhookEndpoint, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let endpoint = query_as!(
             WebhookEndpoint,
             r#"
@@ -210,16 +225,24 @@ impl Command for ReactivateEndpointCommand {
             self.endpoint_id,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
 
         ClearEndpointFailuresCommand {
             endpoint_id: self.endpoint_id,
         }
-        .execute(app_state)
+        .execute_with(app_state)
         .await?;
 
         Ok(endpoint)
+    }
+}
+
+impl Command for ReactivateEndpointCommand {
+    type Output = WebhookEndpoint;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state).await
     }
 }

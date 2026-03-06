@@ -844,12 +844,12 @@ impl GetOrganizationMembershipIdsByRoleQuery {
     pub fn new(role_id: i64) -> Self {
         Self { role_id }
     }
-}
 
-impl Query for GetOrganizationMembershipIdsByRoleQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let recs = sqlx::query!(
             r#"
             SELECT organization_membership_id as id
@@ -858,10 +858,18 @@ impl Query for GetOrganizationMembershipIdsByRoleQuery {
             "#,
             self.role_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(recs.into_iter().map(|r| r.id).collect())
+    }
+}
+
+impl Query for GetOrganizationMembershipIdsByRoleQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -873,12 +881,12 @@ impl GetWorkspaceMembershipIdsByRoleQuery {
     pub fn new(role_id: i64) -> Self {
         Self { role_id }
     }
-}
 
-impl Query for GetWorkspaceMembershipIdsByRoleQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let recs = sqlx::query!(
             r#"
             SELECT workspace_membership_id as id
@@ -887,10 +895,18 @@ impl Query for GetWorkspaceMembershipIdsByRoleQuery {
             "#,
             self.role_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(recs.into_iter().map(|r| r.id).collect())
+    }
+}
+
+impl Query for GetWorkspaceMembershipIdsByRoleQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -902,12 +918,12 @@ impl SyncApiKeyOrgRolePermissionsForMembershipsQuery {
     pub fn new(membership_ids: Vec<i64>) -> Self {
         Self { membership_ids }
     }
-}
 
-impl Query for SyncApiKeyOrgRolePermissionsForMembershipsQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let updated = sqlx::query!(
             r#"
             WITH perms AS (
@@ -935,10 +951,18 @@ impl Query for SyncApiKeyOrgRolePermissionsForMembershipsQuery {
             "#,
             &self.membership_ids
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(updated.into_iter().map(|r| r.id).collect())
+    }
+}
+
+impl Query for SyncApiKeyOrgRolePermissionsForMembershipsQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -950,12 +974,12 @@ impl SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
     pub fn new(membership_ids: Vec<i64>) -> Self {
         Self { membership_ids }
     }
-}
 
-impl Query for SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let updated = sqlx::query!(
             r#"
             WITH perms AS (
@@ -985,9 +1009,17 @@ impl Query for SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
             "#,
             &self.membership_ids
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(updated.into_iter().map(|r| r.id).collect())
+    }
+}
+
+impl Query for SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

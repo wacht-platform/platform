@@ -21,7 +21,7 @@ pub async fn trigger_webhook_event(
         command = command.with_filter_context(context);
     }
 
-    let result = command.execute(app_state).await?;
+    let result = Command::execute(command, app_state).await?;
 
     tokio::spawn({
         let redis = app_state.redis_client.clone();

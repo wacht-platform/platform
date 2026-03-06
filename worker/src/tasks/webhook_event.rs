@@ -2,7 +2,6 @@ use chrono::{Datelike, Utc};
 use commands::{Command, webhook_trigger::TriggerWebhookEventCommand};
 use common::{db_router::ReadConsistency, state::AppState};
 use queries::{
-    Query,
     b2b::{GetOrganizationDetailsQuery, GetWorkspaceDetailsQuery},
     signin::GetSessionWithSignInsQuery,
     user::{GetUserAuthenticatorQuery, GetUserDetailsQuery},
@@ -45,8 +44,7 @@ pub async fn trigger_webhook_event(
         enriched_payload,
     );
 
-    trigger_command
-        .execute(app_state)
+    Command::execute(trigger_command, app_state)
         .await
         .map_err(|e| TaskError::Permanent(format!("Failed to trigger webhook event: {}", e)))?;
 
@@ -168,10 +166,11 @@ async fn enrich_session_payload(
     mut payload: Value,
     app_state: &AppState,
 ) -> Result<Value, TaskError> {
-    let query = GetSessionWithSignInsQuery::new(session_id);
-    let session_data = query.execute(app_state).await.map_err(|e| {
-        TaskError::Permanent(format!("Failed to load session {}: {}", session_id, e))
-    })?;
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    let session_data = GetSessionWithSignInsQuery::new(session_id)
+        .execute_with(reader)
+        .await
+        .map_err(|e| TaskError::Permanent(format!("Failed to load session {}: {}", session_id, e)))?;
 
     let session_json = serde_json::to_value(&session_data)
         .map_err(|e| TaskError::Permanent(format!("Failed to serialize session: {}", e)))?;
@@ -190,13 +189,16 @@ async fn enrich_authenticator_payload(
     mut payload: Value,
     app_state: &AppState,
 ) -> Result<Value, TaskError> {
-    let query = GetUserAuthenticatorQuery::new(user_id);
-    let authenticator = query.execute(app_state).await.map_err(|e| {
-        TaskError::Permanent(format!(
-            "Failed to load authenticator for user {}: {}",
-            user_id, e
-        ))
-    })?;
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    let authenticator = GetUserAuthenticatorQuery::new(user_id)
+        .execute_with(reader)
+        .await
+        .map_err(|e| {
+            TaskError::Permanent(format!(
+                "Failed to load authenticator for user {}: {}",
+                user_id, e
+            ))
+        })?;
 
     let auth_json = serde_json::to_value(&authenticator)
         .map_err(|e| TaskError::Permanent(format!("Failed to serialize authenticator: {}", e)))?;

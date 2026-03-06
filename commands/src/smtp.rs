@@ -1,8 +1,19 @@
 use crate::Command;
+use common::EncryptionService;
 use common::error::AppError;
 use common::smtp::{SmtpConfig, SmtpService};
 use common::state::AppState;
 use models::{CustomSmtpConfig, EmailProvider};
+
+pub trait SmtpConfigEncryptor: Send + Sync {
+    fn encrypt(&self, plaintext: &str) -> Result<String, AppError>;
+}
+
+impl SmtpConfigEncryptor for EncryptionService {
+    fn encrypt(&self, plaintext: &str) -> Result<String, AppError> {
+        EncryptionService::encrypt(self, plaintext)
+    }
+}
 
 pub struct VerifySmtpConnectionCommand {
     pub host: String,
@@ -37,6 +48,12 @@ impl Command for VerifySmtpConnectionCommand {
     type Output = ();
 
     async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with().await
+    }
+}
+
+impl VerifySmtpConnectionCommand {
+    pub async fn execute_with(self) -> Result<(), AppError> {
         let config = SmtpConfig {
             host: self.host,
             port: self.port,
@@ -89,7 +106,22 @@ impl Command for UpdateDeploymentSmtpConfigCommand {
     type Output = CustomSmtpConfig;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let encrypted_password = app_state.encryption_service.encrypt(&self.password)?;
+        self.execute_with(&app_state.db_pool, &app_state.encryption_service)
+            .await
+    }
+}
+
+impl UpdateDeploymentSmtpConfigCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        encryptor: &dyn SmtpConfigEncryptor,
+    ) -> Result<CustomSmtpConfig, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        let encrypted_password = encryptor.encrypt(&self.password)?;
 
         let config = CustomSmtpConfig {
             host: self.host.clone(),
@@ -123,7 +155,7 @@ impl Command for UpdateDeploymentSmtpConfigCommand {
             config_json,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         tracing::info!(
@@ -159,6 +191,21 @@ impl Command for RemoveDeploymentSmtpConfigCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+            .await
+    }
+}
+
+impl RemoveDeploymentSmtpConfigCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        redis: &redis::Client,
+    ) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             UPDATE deployments
@@ -170,11 +217,11 @@ impl Command for RemoveDeploymentSmtpConfigCommand {
             EmailProvider::Postmark.to_string(),
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         crate::ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute(app_state)
+            .execute_on_conn(&mut conn, redis)
             .await?;
 
         tracing::info!(

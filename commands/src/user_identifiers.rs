@@ -5,6 +5,7 @@ use common::error::AppError;
 use common::state::AppState;
 use dto::json::{AddEmailRequest, AddPhoneRequest, UpdateEmailRequest, UpdatePhoneRequest};
 use models::{UserEmailAddress, UserPhoneNumber, VerificationStrategy};
+use sqlx::Connection;
 
 pub struct AddUserEmailCommand {
     deployment_id: i64,
@@ -20,14 +21,17 @@ impl AddUserEmailCommand {
             request,
         }
     }
-}
 
-impl Command for AddUserEmailCommand {
-    type Output = UserEmailAddress;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        email_id: i64,
+    ) -> Result<UserEmailAddress, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
-        let email_id = app_state.sf.next_id()? as i64;
         let verified = self.request.verified.unwrap_or(false);
         let is_primary = self.request.is_primary.unwrap_or(false);
 
@@ -36,7 +40,7 @@ impl Command for AddUserEmailCommand {
                 "UPDATE user_email_addresses SET is_primary = false WHERE user_id = $1",
                 self.user_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
         }
 
@@ -59,7 +63,7 @@ impl Command for AddUserEmailCommand {
             if verified { now } else { now },
             "otp"
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         if is_primary {
@@ -68,7 +72,7 @@ impl Command for AddUserEmailCommand {
                 email_id,
                 self.user_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
         }
 
@@ -84,6 +88,15 @@ impl Command for AddUserEmailCommand {
             verified_at: now,
             verification_strategy: VerificationStrategy::Otp,
         })
+    }
+}
+
+impl Command for AddUserEmailCommand {
+    type Output = UserEmailAddress;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
     }
 }
 
@@ -108,12 +121,13 @@ impl UpdateUserEmailCommand {
             request,
         }
     }
-}
 
-impl Command for UpdateUserEmailCommand {
-    type Output = UserEmailAddress;
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<UserEmailAddress, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
 
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         match (&self.request.email, self.request.verified) {
             (Some(email), Some(verified)) => {
                 sqlx::query!(
@@ -128,7 +142,7 @@ impl Command for UpdateUserEmailCommand {
                     self.email_id,
                     self.user_id
                 )
-                .execute(&app_state.db_pool)
+                .execute(&mut *conn)
                 .await?;
             }
             (Some(email), None) => {
@@ -142,7 +156,7 @@ impl Command for UpdateUserEmailCommand {
                     self.email_id,
                     self.user_id
                 )
-                .execute(&app_state.db_pool)
+                .execute(&mut *conn)
                 .await?;
             }
             (None, Some(verified)) => {
@@ -157,7 +171,7 @@ impl Command for UpdateUserEmailCommand {
                     self.email_id,
                     self.user_id
                 )
-                .execute(&app_state.db_pool)
+                .execute(&mut *conn)
                 .await?;
             }
             (None, None) => (),
@@ -173,7 +187,7 @@ impl Command for UpdateUserEmailCommand {
                 self.email_id,
                 self.user_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
         }
 
@@ -187,7 +201,7 @@ impl Command for UpdateUserEmailCommand {
             self.email_id,
             self.user_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(UserEmailAddress {
@@ -199,11 +213,19 @@ impl Command for UpdateUserEmailCommand {
             email: row.email.unwrap_or_default(),
             is_primary: row.is_primary,
             verified: row.verified,
-            verified_at: row.verified_at.unwrap_or_else(|| chrono::Utc::now()),
+            verified_at: row.verified_at.unwrap_or_else(Utc::now),
             verification_strategy: row
                 .verification_strategy
                 .unwrap_or(VerificationStrategy::Otp),
         })
+    }
+}
+
+impl Command for UpdateUserEmailCommand {
+    type Output = UserEmailAddress;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -216,13 +238,13 @@ impl DeleteUserEmailCommand {
     pub fn new(user_id: i64, email_id: i64) -> Self {
         Self { user_id, email_id }
     }
-}
 
-impl Command for DeleteUserEmailCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_pool.begin().await?;
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        let mut tx = conn.begin().await?;
 
         sqlx::query!(
             "DELETE FROM social_connections WHERE user_id = $1 AND user_email_address_id = $2",
@@ -246,6 +268,14 @@ impl Command for DeleteUserEmailCommand {
     }
 }
 
+impl Command for DeleteUserEmailCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct AddUserPhoneCommand {
     deployment_id: i64,
     user_id: i64,
@@ -260,14 +290,17 @@ impl AddUserPhoneCommand {
             request,
         }
     }
-}
 
-impl Command for AddUserPhoneCommand {
-    type Output = UserPhoneNumber;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        phone_id: i64,
+    ) -> Result<UserPhoneNumber, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
-        let phone_id = app_state.sf.next_id()? as i64;
         let verified = self.request.verified.unwrap_or(false);
         let is_primary = self.request.is_primary.unwrap_or(false);
 
@@ -290,7 +323,7 @@ impl Command for AddUserPhoneCommand {
             if verified { Some(now) } else { None },
             self.deployment_id,
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         if is_primary {
@@ -299,7 +332,7 @@ impl Command for AddUserPhoneCommand {
                 phone_id,
                 self.user_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
         }
 
@@ -313,6 +346,15 @@ impl Command for AddUserPhoneCommand {
             verified,
             verified_at: now,
         })
+    }
+}
+
+impl Command for AddUserPhoneCommand {
+    type Output = UserPhoneNumber;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
     }
 }
 
@@ -330,13 +372,13 @@ impl UpdateUserPhoneCommand {
             request,
         }
     }
-}
 
-impl Command for UpdateUserPhoneCommand {
-    type Output = UserPhoneNumber;
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<UserPhoneNumber, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
 
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Handle is_primary first
         if let Some(is_primary) = self.request.is_primary {
             if is_primary {
                 sqlx::query!(
@@ -344,12 +386,11 @@ impl Command for UpdateUserPhoneCommand {
                     self.phone_id,
                     self.user_id
                 )
-                .execute(&app_state.db_pool)
+                .execute(&mut *conn)
                 .await?;
             }
         }
 
-        // Update phone number and/or country code
         match (&self.request.phone_number, &self.request.country_code) {
             (Some(phone_number), Some(country_code)) => {
                 sqlx::query!(
@@ -363,7 +404,7 @@ impl Command for UpdateUserPhoneCommand {
                     self.phone_id,
                     self.user_id
                 )
-                .execute(&app_state.db_pool)
+                .execute(&mut *conn)
                 .await?;
             }
             (Some(phone_number), None) => {
@@ -377,7 +418,7 @@ impl Command for UpdateUserPhoneCommand {
                     self.phone_id,
                     self.user_id
                 )
-                .execute(&app_state.db_pool)
+                .execute(&mut *conn)
                 .await?;
             }
             (None, Some(country_code)) => {
@@ -391,15 +432,12 @@ impl Command for UpdateUserPhoneCommand {
                     self.phone_id,
                     self.user_id
                 )
-                .execute(&app_state.db_pool)
+                .execute(&mut *conn)
                 .await?;
             }
-            (None, None) => {
-                // No phone number or country code update
-            }
+            (None, None) => {}
         }
 
-        // Update verified status
         if let Some(verified) = self.request.verified {
             sqlx::query!(
                 r#"
@@ -412,11 +450,10 @@ impl Command for UpdateUserPhoneCommand {
                 self.phone_id,
                 self.user_id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await?;
         }
 
-        // Fetch and return the updated record
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, user_id,
@@ -427,7 +464,7 @@ impl Command for UpdateUserPhoneCommand {
             self.phone_id,
             self.user_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(UserPhoneNumber {
@@ -438,8 +475,16 @@ impl Command for UpdateUserPhoneCommand {
             phone_number: row.phone_number,
             country_code: row.country_code,
             verified: row.verified,
-            verified_at: row.verified_at.unwrap_or_else(|| chrono::Utc::now()),
+            verified_at: row.verified_at.unwrap_or_else(Utc::now),
         })
+    }
+}
+
+impl Command for UpdateUserPhoneCommand {
+    type Output = UserPhoneNumber;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -452,25 +497,32 @@ impl DeleteUserPhoneCommand {
     pub fn new(user_id: i64, phone_id: i64) -> Self {
         Self { user_id, phone_id }
     }
-}
 
-impl Command for DeleteUserPhoneCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             "DELETE FROM user_phone_numbers WHERE id = $1 AND user_id = $2",
             self.phone_id,
             self.user_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())
     }
 }
 
-// Social Connection Commands
+impl Command for DeleteUserPhoneCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct DeleteUserSocialConnectionCommand {
     user_id: i64,
     connection_id: i64,
@@ -483,20 +535,28 @@ impl DeleteUserSocialConnectionCommand {
             connection_id,
         }
     }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        sqlx::query!(
+            "DELETE FROM social_connections WHERE id = $1 AND user_id = $2",
+            self.connection_id,
+            self.user_id
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        Ok(())
+    }
 }
 
 impl Command for DeleteUserSocialConnectionCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        sqlx::query!(
-            "DELETE FROM social_connections WHERE id = $1 AND user_id = $2",
-            self.connection_id,
-            self.user_id
-        )
-        .execute(&app_state.db_pool)
-        .await?;
-
-        Ok(())
+        self.execute_with(&app_state.db_pool).await
     }
 }

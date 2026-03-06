@@ -62,15 +62,31 @@ impl Command for CreateWebhookAppCommand {
     type Output = WebhookApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_pool.begin().await?;
+        self.execute_with(
+            &app_state.db_pool,
+            format!("slug_{}", app_state.sf.next_id()?),
+        )
+        .await
+    }
+}
 
+impl CreateWebhookAppCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        generated_slug: String,
+    ) -> Result<WebhookApp, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let signing_secret = generate_signing_secret();
 
         // Generate app_slug: always use "slug_" prefix
         let app_slug = if let Some(slug) = self.app_slug {
             slug
         } else {
-            format!("slug_{}", app_state.sf.next_id()?)
+            generated_slug
         };
 
         let app = query_as!(
@@ -98,10 +114,9 @@ impl Command for CreateWebhookAppCommand {
                 .map_err(|e| AppError::Serialization(e.to_string()))?,
             self.event_catalog_slug
         )
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut *conn)
         .await?;
 
-        tx.commit().await?;
         Ok(app)
     }
 }
@@ -121,6 +136,16 @@ impl Command for UpdateWebhookAppCommand {
     type Output = WebhookApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateWebhookAppCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let app: Option<WebhookApp> = query_as!(
             WebhookApp,
             r#"
@@ -154,7 +179,7 @@ impl Command for UpdateWebhookAppCommand {
                 .map_err(|e| AppError::Serialization(e.to_string()))?,
             self.event_catalog_slug
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let app = app.ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
@@ -173,6 +198,16 @@ impl Command for DeleteWebhookAppCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl DeleteWebhookAppCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = query!(
             r#"
             DELETE FROM webhook_apps
@@ -181,7 +216,7 @@ impl Command for DeleteWebhookAppCommand {
             self.deployment_id,
             self.app_slug
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -202,6 +237,16 @@ impl Command for RotateWebhookSecretCommand {
     type Output = WebhookApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RotateWebhookSecretCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let new_secret = generate_signing_secret();
 
         let app: Option<WebhookApp> = query_as!(
@@ -226,7 +271,7 @@ impl Command for RotateWebhookSecretCommand {
             self.app_slug,
             new_secret
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let app = app.ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
