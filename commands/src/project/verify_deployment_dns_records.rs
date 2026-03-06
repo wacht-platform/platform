@@ -20,12 +20,13 @@ impl VerifyDeploymentDnsRecordsCommand {
     pub async fn execute_with(
         self,
         deps: &VerifyDeploymentDnsDeps<'_>,
-        pool: &sqlx::PgPool,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<Deployment, AppError> {
+        let mut conn = acquirer.acquire().await?;
         // Get current deployment with DNS records
         let deployment_row = DeploymentByIdQuery::builder()
             .deployment_id(self.deployment_id)
-            .execute_with(pool)
+            .execute_on_conn(&mut conn)
             .await?;
 
         // Extract domain from backend host for email verification
@@ -101,7 +102,7 @@ impl VerifyDeploymentDnsRecordsCommand {
                 serde_json::to_value(&email_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_with(pool)
+            .execute_on_conn(&mut conn)
             .await?;
 
         let _final_verification_status = match verification_status {

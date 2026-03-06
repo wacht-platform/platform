@@ -104,12 +104,12 @@ impl ListOAuthAppsByDeploymentQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
     }
-}
 
-impl Query for ListOAuthAppsByDeploymentQuery {
-    type Output = Vec<OAuthAppData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<OAuthAppData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT
@@ -132,7 +132,7 @@ impl Query for ListOAuthAppsByDeploymentQuery {
             "#,
             self.deployment_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(rows
@@ -156,6 +156,14 @@ impl Query for ListOAuthAppsByDeploymentQuery {
     }
 }
 
+impl Query for ListOAuthAppsByDeploymentQuery {
+    type Output = Vec<OAuthAppData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetOAuthAppBySlugQuery {
     pub deployment_id: i64,
     pub oauth_app_slug: String,
@@ -168,12 +176,12 @@ impl GetOAuthAppBySlugQuery {
             oauth_app_slug,
         }
     }
-}
 
-impl Query for GetOAuthAppBySlugQuery {
-    type Output = Option<OAuthAppData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<OAuthAppData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -197,7 +205,7 @@ impl Query for GetOAuthAppBySlugQuery {
             self.deployment_id,
             self.oauth_app_slug
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(row.map(|r| OAuthAppData {
@@ -218,6 +226,14 @@ impl Query for GetOAuthAppBySlugQuery {
     }
 }
 
+impl Query for GetOAuthAppBySlugQuery {
+    type Output = Option<OAuthAppData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct ListOAuthClientsByOAuthAppQuery {
     pub deployment_id: i64,
     pub oauth_app_id: i64,
@@ -230,12 +246,15 @@ impl ListOAuthClientsByOAuthAppQuery {
             oauth_app_id,
         }
     }
-}
 
-impl Query for ListOAuthClientsByOAuthAppQuery {
-    type Output = Vec<OAuthClientData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<OAuthClientData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT
@@ -269,7 +288,7 @@ impl Query for ListOAuthClientsByOAuthAppQuery {
             self.deployment_id,
             self.oauth_app_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(rows
@@ -307,6 +326,14 @@ impl Query for ListOAuthClientsByOAuthAppQuery {
     }
 }
 
+impl Query for ListOAuthClientsByOAuthAppQuery {
+    type Output = Vec<OAuthClientData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetOAuthClientByIdQuery {
     pub deployment_id: i64,
     pub oauth_app_id: i64,
@@ -321,12 +348,15 @@ impl GetOAuthClientByIdQuery {
             oauth_client_id,
         }
     }
-}
 
-impl Query for GetOAuthClientByIdQuery {
-    type Output = Option<OAuthClientData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<OAuthClientData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -361,7 +391,7 @@ impl Query for GetOAuthClientByIdQuery {
             self.oauth_app_id,
             self.oauth_client_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(row.map(|r| {
@@ -396,6 +426,14 @@ impl Query for GetOAuthClientByIdQuery {
     }
 }
 
+impl Query for GetOAuthClientByIdQuery {
+    type Output = Option<OAuthClientData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct ListOAuthGrantsByClientQuery {
     pub deployment_id: i64,
     pub oauth_client_id: i64,
@@ -408,12 +446,15 @@ impl ListOAuthGrantsByClientQuery {
             oauth_client_id,
         }
     }
-}
 
-impl Query for ListOAuthGrantsByClientQuery {
-    type Output = Vec<OAuthClientGrantData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<OAuthClientGrantData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT
@@ -438,7 +479,7 @@ impl Query for ListOAuthGrantsByClientQuery {
             self.deployment_id,
             self.oauth_client_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(rows
@@ -459,5 +500,13 @@ impl Query for ListOAuthGrantsByClientQuery {
                 updated_at: r.updated_at,
             })
             .collect())
+    }
+}
+
+impl Query for ListOAuthGrantsByClientQuery {
+    type Output = Vec<OAuthClientGrantData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

@@ -22,6 +22,40 @@ impl Command for CreateOAuthClientGrantCommand {
     type Output = OAuthClientGrantCreated;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl CreateOAuthClientGrantCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        grant_id: i64,
+    ) -> Result<OAuthClientGrantCreated, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn, grant_id).await
+    }
+
+    pub async fn execute_in_tx(
+        self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        grant_id: i64,
+    ) -> Result<OAuthClientGrantCreated, AppError> {
+        self.execute_with_connection(tx.as_mut(), grant_id).await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+        grant_id: i64,
+    ) -> Result<OAuthClientGrantCreated, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let resource = self.resource.trim();
         if resource.is_empty() {
             return Err(AppError::Validation("resource is required".to_string()));
@@ -56,7 +90,7 @@ impl Command for CreateOAuthClientGrantCommand {
             self.deployment_id,
             self.oauth_client_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("OAuth client not found".to_string()))?;
 
@@ -81,7 +115,6 @@ impl Command for CreateOAuthClientGrantCommand {
             )));
         }
 
-        let id = app_state.sf.next_id()? as i64;
         let rec = sqlx::query!(
             r#"
             INSERT INTO oauth_client_grants (
@@ -101,7 +134,7 @@ impl Command for CreateOAuthClientGrantCommand {
             VALUES ($1,$2,$3,$4,$5,$6,'active',NOW(),$7,$8,NOW(),NOW())
             RETURNING id
             "#,
-            id,
+            grant_id,
             self.deployment_id,
             self.api_auth_app_slug,
             self.oauth_client_id,
@@ -110,7 +143,7 @@ impl Command for CreateOAuthClientGrantCommand {
             self.expires_at,
             self.granted_by_user_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(OAuthClientGrantCreated { id: rec.id })
@@ -127,6 +160,30 @@ impl Command for RevokeOAuthClientGrantCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RevokeOAuthClientGrantCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    pub async fn execute_in_tx(
+        self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ) -> Result<(), AppError> {
+        self.execute_with_connection(tx.as_mut()).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<(), AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         sqlx::query!(
             r#"
             UPDATE oauth_client_grants
@@ -143,7 +200,7 @@ impl Command for RevokeOAuthClientGrantCommand {
             self.oauth_client_id,
             self.grant_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())

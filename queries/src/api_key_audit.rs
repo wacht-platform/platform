@@ -1,6 +1,7 @@
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use clickhouse::Row;
+use clickhouse::Client;
 use dto::json::api_key::{
     ApiAuditAnalyticsResponse, ApiAuditBlockedReason, ApiAuditLog, ApiAuditLogsResponse,
     ApiAuditRateLimitBreakdown, ApiAuditRateLimitRule, ApiAuditTimeseriesPoint,
@@ -50,6 +51,12 @@ impl Query for GetApiAuditLogsQuery {
     type Output = ApiAuditLogsResponse;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.clickhouse_service.client).await
+    }
+}
+
+impl GetApiAuditLogsQuery {
+    pub async fn execute_with(&self, client: &Client) -> Result<ApiAuditLogsResponse, AppError> {
         let limit = self.limit.clamp(1, 1000) as usize;
         let (mut where_parts, mut where_binds) = base_where(
             self.deployment_id,
@@ -98,7 +105,7 @@ impl Query for GetApiAuditLogsQuery {
         }
 
         let rows = bind_all(
-            app_state.clickhouse_service.client.query(&query),
+            client.query(&query),
             &where_binds,
         )
         .fetch_all::<ApiAuditLogRow>()
@@ -163,6 +170,12 @@ impl Query for GetApiAuditAnalyticsQuery {
     type Output = ApiAuditAnalyticsResponse;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.clickhouse_service.client).await
+    }
+}
+
+impl GetApiAuditAnalyticsQuery {
+    pub async fn execute_with(&self, client: &Client) -> Result<ApiAuditAnalyticsResponse, AppError> {
         let top_limit = self.top_limit.clamp(1, 50);
         let (mut where_parts, mut where_binds) = base_where(
             self.deployment_id,
@@ -186,7 +199,7 @@ impl Query for GetApiAuditAnalyticsQuery {
         );
 
         let stats = bind_all(
-            app_state.clickhouse_service.client.query(&stats_query),
+            client.query(&stats_query),
             &where_binds,
         )
         .fetch_one::<AuditStatsRow>()
@@ -195,9 +208,7 @@ impl Query for GetApiAuditAnalyticsQuery {
         let keys_used_query = "SELECT countDistinct(key_id) AS count \
              FROM api_audit_logs \
              WHERE deployment_id = ? AND app_slug = ? AND timestamp >= now() - INTERVAL 24 HOUR";
-        let keys_used_24h = app_state
-            .clickhouse_service
-            .client
+        let keys_used_24h = client
             .query(keys_used_query)
             .bind(self.deployment_id)
             .bind(self.app_slug.clone())
@@ -213,7 +224,7 @@ impl Query for GetApiAuditAnalyticsQuery {
                 where_clause, top_limit
             );
             let rows = bind_all(
-                app_state.clickhouse_service.client.query(&query),
+                client.query(&query),
                 &where_binds,
             )
             .fetch_all::<TopKeyRow>()
@@ -239,7 +250,7 @@ impl Query for GetApiAuditAnalyticsQuery {
                 where_clause, top_limit
             );
             let rows = bind_all(
-                app_state.clickhouse_service.client.query(&query),
+                client.query(&query),
                 &where_binds,
             )
             .fetch_all::<TopPathRow>()
@@ -265,7 +276,7 @@ impl Query for GetApiAuditAnalyticsQuery {
                 blocked_where
             );
             let total = bind_all(
-                app_state.clickhouse_service.client.query(&total_query),
+                client.query(&total_query),
                 &where_binds,
             )
             .fetch_one::<CountRow>()
@@ -279,7 +290,7 @@ impl Query for GetApiAuditAnalyticsQuery {
                 blocked_where, top_limit
             );
             let rows = bind_all(
-                app_state.clickhouse_service.client.query(&query),
+                client.query(&query),
                 &where_binds,
             )
             .fetch_all::<BlockedReasonRow>()
@@ -311,7 +322,7 @@ impl Query for GetApiAuditAnalyticsQuery {
                 rl_where
             );
             let total_hits = bind_all(
-                app_state.clickhouse_service.client.query(&total_query),
+                client.query(&total_query),
                 &where_binds,
             )
             .fetch_one::<CountRow>()
@@ -325,7 +336,7 @@ impl Query for GetApiAuditAnalyticsQuery {
                 rl_where, top_limit
             );
             let rows = bind_all(
-                app_state.clickhouse_service.client.query(&query),
+                client.query(&query),
                 &where_binds,
             )
             .fetch_all::<RateLimitRuleRow>()
@@ -393,6 +404,12 @@ impl Query for GetApiAuditTimeseriesQuery {
     type Output = ApiAuditTimeseriesResponse;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.clickhouse_service.client).await
+    }
+}
+
+impl GetApiAuditTimeseriesQuery {
+    pub async fn execute_with(&self, client: &Client) -> Result<ApiAuditTimeseriesResponse, AppError> {
         let interval_fn = match self.interval.as_str() {
             "minute" => "toStartOfMinute",
             "day" => "toStartOfDay",
@@ -425,7 +442,7 @@ impl Query for GetApiAuditTimeseriesQuery {
         );
 
         let rows = bind_all(
-            app_state.clickhouse_service.client.query(&query),
+            client.query(&query),
             &where_binds,
         )
         .fetch_all::<TimeseriesRow>()

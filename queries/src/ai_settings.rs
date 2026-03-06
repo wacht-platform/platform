@@ -22,10 +22,14 @@ impl GetDeploymentAiSettingsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with<'a, A>(
         &self,
-        pool: &sqlx::PgPool,
-    ) -> Result<Option<DeploymentAiSettings>, AppError> {
+        acquirer: A,
+    ) -> Result<Option<DeploymentAiSettings>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query_as::<_, DeploymentAiSettings>(
             r#"
             SELECT id, deployment_id, gemini_api_key, openai_api_key, anthropic_api_key, created_at, updated_at
@@ -34,7 +38,7 @@ impl GetDeploymentAiSettingsQuery {
             "#,
         )
         .bind(self.deployment_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(result)

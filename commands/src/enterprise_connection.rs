@@ -52,9 +52,10 @@ impl Command for CreateEnterpriseConnectionCommand {
 impl CreateEnterpriseConnectionCommand {
     pub async fn execute_with(
         self,
-        pool: &sqlx::PgPool,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         connection_id: i64,
     ) -> Result<EnterpriseConnection, AppError> {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         let connection = sqlx::query_as::<_, EnterpriseConnection>(
@@ -85,7 +86,7 @@ impl CreateEnterpriseConnectionCommand {
         .bind(self.request.idp_certificate)
         .bind(now)
         .bind(now)
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(connection)
@@ -161,8 +162,9 @@ impl Command for UpdateEnterpriseConnectionCommand {
 impl UpdateEnterpriseConnectionCommand {
     pub async fn execute_with(
         self,
-        pool: &sqlx::PgPool,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<EnterpriseConnection, AppError> {
+        let mut conn = acquirer.acquire().await?;
         let connection = sqlx::query_as::<_, EnterpriseConnection>(
             r#"
             UPDATE enterprise_connections
@@ -182,7 +184,7 @@ impl UpdateEnterpriseConnectionCommand {
         .bind(self.request.connection_id)
         .bind(self.request.organization_id)
         .bind(self.deployment_id)
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(connection)
@@ -251,7 +253,18 @@ impl Command for DeleteEnterpriseConnectionCommand {
 }
 
 impl DeleteEnterpriseConnectionCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<(), AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let result = sqlx::query!(
             r#"
             DELETE FROM enterprise_connections
@@ -261,7 +274,7 @@ impl DeleteEnterpriseConnectionCommand {
             self.request.organization_id,
             self.deployment_id
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
         if result.rows_affected() == 0 {

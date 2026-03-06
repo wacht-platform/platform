@@ -26,7 +26,11 @@ impl CheckDeploymentFeatureAccessQuery {
         }
     }
 
-    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<bool, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<bool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         // Get the project's billing_account_id
         let billing_account_id: Option<i64> = sqlx::query_scalar!(
             r#"
@@ -36,7 +40,7 @@ impl CheckDeploymentFeatureAccessQuery {
             "#,
             self.deployment_id
         )
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let billing_account_id = match billing_account_id {
@@ -53,7 +57,7 @@ impl CheckDeploymentFeatureAccessQuery {
             "#,
             billing_account_id
         )
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let product_id = match product_id {
@@ -120,7 +124,11 @@ impl GetDeploymentPlanTierQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<Option<PlanTier>, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<PlanTier>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         // Get the project's billing_account_id
         let billing_account_id: Option<i64> = sqlx::query_scalar!(
             r#"
@@ -130,7 +138,7 @@ impl GetDeploymentPlanTierQuery {
             "#,
             self.deployment_id
         )
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let billing_account_id = match billing_account_id {
@@ -147,7 +155,7 @@ impl GetDeploymentPlanTierQuery {
             "#,
             billing_account_id
         )
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let product_id = match product_id {

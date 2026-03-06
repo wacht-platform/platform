@@ -1,9 +1,9 @@
-use commands::{Command, oauth::RevokeOAuthClientGrantCommand};
+use commands::oauth::RevokeOAuthClientGrantCommand;
+use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::api_key::{ListOAuthGrantsResponse, OAuthGrantResponse};
 use models::error::AppError;
 use queries::{
-    Query as QueryTrait,
     oauth::{ListOAuthGrantsByClientQuery, OAuthClientGrantData},
 };
 
@@ -36,9 +36,10 @@ pub async fn list_oauth_grants(
 ) -> Result<ListOAuthGrantsResponse, AppError> {
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
     get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
 
     let grants = ListOAuthGrantsByClientQuery::new(deployment_id, oauth_client_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await?
         .into_iter()
         .map(map_oauth_grant_response)
@@ -54,6 +55,7 @@ pub async fn revoke_oauth_grant(
     oauth_client_id: i64,
     grant_id: i64,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
     get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
 
@@ -62,7 +64,7 @@ pub async fn revoke_oauth_grant(
         oauth_client_id,
         grant_id,
     }
-    .execute(app_state)
+    .execute_with(writer)
     .await?;
 
     Ok(())

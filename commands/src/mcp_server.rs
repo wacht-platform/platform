@@ -22,9 +22,10 @@ impl CreateMcpServerCommand {
 
     pub async fn execute_with(
         self,
-        pool: &sqlx::PgPool,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         mcp_server_id: i64,
     ) -> Result<McpServer, AppError> {
+        let mut conn = acquirer.acquire().await?;
         if self.name.trim().is_empty() {
             return Err(AppError::BadRequest(
                 "MCP server name is required".to_string(),
@@ -48,7 +49,7 @@ impl CreateMcpServerCommand {
         .bind(self.deployment_id)
         .bind(self.name)
         .bind(config_json)
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -103,7 +104,11 @@ impl UpdateMcpServerCommand {
         self
     }
 
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<McpServer, AppError> {
+    pub async fn execute_with(
+        self,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    ) -> Result<McpServer, AppError> {
+        let mut conn = acquirer.acquire().await?;
         if let Some(name) = &self.name {
             if name.trim().is_empty() {
                 return Err(AppError::BadRequest(
@@ -147,7 +152,10 @@ impl UpdateMcpServerCommand {
         }
         builder = builder.bind(self.mcp_server_id).bind(self.deployment_id);
 
-        let row = builder.fetch_one(pool).await.map_err(AppError::Database)?;
+        let row = builder
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(AppError::Database)?;
 
         let config_value: serde_json::Value = row.get("config");
         let config: McpServerConfig = serde_json::from_value(config_value)
@@ -185,11 +193,15 @@ impl DeleteMcpServerCommand {
         }
     }
 
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub async fn execute_with(
+        self,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    ) -> Result<(), AppError> {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query("DELETE FROM mcp_servers WHERE id = $1 AND deployment_id = $2")
             .bind(self.mcp_server_id)
             .bind(self.deployment_id)
-            .execute(pool)
+            .execute(&mut *conn)
             .await
             .map_err(AppError::Database)?;
 
@@ -220,12 +232,16 @@ impl AttachMcpServerToAgentCommand {
         }
     }
 
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub async fn execute_with(
+        self,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    ) -> Result<(), AppError> {
+        let mut conn = acquirer.acquire().await?;
         let agent_exists =
             sqlx::query("SELECT 1 FROM ai_agents WHERE id = $1 AND deployment_id = $2 LIMIT 1")
                 .bind(self.agent_id)
                 .bind(self.deployment_id)
-                .fetch_optional(pool)
+                .fetch_optional(&mut *conn)
                 .await
                 .map_err(AppError::Database)?
                 .is_some();
@@ -238,7 +254,7 @@ impl AttachMcpServerToAgentCommand {
             sqlx::query("SELECT 1 FROM mcp_servers WHERE id = $1 AND deployment_id = $2 LIMIT 1")
                 .bind(self.mcp_server_id)
                 .bind(self.deployment_id)
-                .fetch_optional(pool)
+                .fetch_optional(&mut *conn)
                 .await
                 .map_err(AppError::Database)?
                 .is_some();
@@ -257,7 +273,7 @@ impl AttachMcpServerToAgentCommand {
         .bind(self.deployment_id)
         .bind(self.agent_id)
         .bind(self.mcp_server_id)
-        .execute(pool)
+        .execute(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -288,7 +304,11 @@ impl DetachMcpServerFromAgentCommand {
         }
     }
 
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub async fn execute_with(
+        self,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    ) -> Result<(), AppError> {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query(
             r#"
             DELETE FROM ai_agent_mcp_servers ams
@@ -308,7 +328,7 @@ impl DetachMcpServerFromAgentCommand {
         .bind(self.agent_id)
         .bind(self.mcp_server_id)
         .bind(self.deployment_id)
-        .execute(pool)
+        .execute(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 

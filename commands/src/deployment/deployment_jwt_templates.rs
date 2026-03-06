@@ -24,17 +24,23 @@ impl CreateDeploymentJwtTemplateCommand {
 }
 
 impl CreateDeploymentJwtTemplateCommand {
-    pub async fn execute_with(
+    pub async fn execute_with<'a, A>(
         self,
-        app_state: &AppState,
-    ) -> Result<DeploymentJwtTemplate, AppError> {
+        acquirer: A,
+        template_id: i64,
+        redis_client: &redis::Client,
+    ) -> Result<DeploymentJwtTemplate, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query!(
             r#"
             INSERT INTO deployment_jwt_templates (id, created_at, updated_at, deployment_id, name, token_lifetime, allowed_clock_skew, custom_signing_key, template)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
             "#,
-            app_state.sf.next_id()? as i64,
+            template_id,
             Utc::now(),
             Utc::now(),
             self.deployment_id,
@@ -45,7 +51,7 @@ impl CreateDeploymentJwtTemplateCommand {
                 .map_err(|e| AppError::Serialization(e.to_string()))?,
             self.template.template,
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         let template = DeploymentJwtTemplate {
@@ -63,7 +69,7 @@ impl CreateDeploymentJwtTemplateCommand {
         };
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with(app_state)
+            .execute_on_conn(&mut conn, redis_client)
             .await?;
 
         Ok(template)
@@ -74,7 +80,12 @@ impl Command for CreateDeploymentJwtTemplateCommand {
     type Output = DeploymentJwtTemplate;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(
+            &app_state.db_pool,
+            app_state.sf.next_id()? as i64,
+            &app_state.redis_client,
+        )
+        .await
     }
 }
 
@@ -95,10 +106,15 @@ impl UpdateDeploymentJwtTemplateCommand {
 }
 
 impl UpdateDeploymentJwtTemplateCommand {
-    pub async fn execute_with(
+    pub async fn execute_with<'a, A>(
         self,
-        app_state: &AppState,
-    ) -> Result<DeploymentJwtTemplate, AppError> {
+        acquirer: A,
+        redis_client: &redis::Client,
+    ) -> Result<DeploymentJwtTemplate, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut query_builder =
             sqlx::QueryBuilder::new("UPDATE deployment_jwt_templates SET updated_at = NOW() ");
 
@@ -140,7 +156,7 @@ impl UpdateDeploymentJwtTemplateCommand {
 
         let result = query_builder
             .build()
-            .fetch_optional(&app_state.db_pool)
+            .fetch_optional(&mut *conn)
             .await?
             .ok_or_else(|| {
                 AppError::NotFound(format!(
@@ -164,7 +180,7 @@ impl UpdateDeploymentJwtTemplateCommand {
 
         let deployment_id: i64 = result.get("deployment_id");
         ClearDeploymentCacheCommand::new(deployment_id)
-            .execute_with(app_state)
+            .execute_on_conn(&mut conn, redis_client)
             .await?;
 
         Ok(template)
@@ -175,7 +191,8 @@ impl Command for UpdateDeploymentJwtTemplateCommand {
     type Output = DeploymentJwtTemplate;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+            .await
     }
 }
 
@@ -191,13 +208,21 @@ impl DeleteDeploymentJwtTemplateCommand {
 }
 
 impl DeleteDeploymentJwtTemplateCommand {
-    pub async fn execute_with(self, app_state: &AppState) -> Result<(), AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        redis_client: &redis::Client,
+    ) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query!(
             "DELETE FROM deployment_jwt_templates WHERE id = $1 AND deployment_id = $2",
             self.id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -208,7 +233,7 @@ impl DeleteDeploymentJwtTemplateCommand {
         }
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with(app_state)
+            .execute_on_conn(&mut conn, redis_client)
             .await?;
 
         Ok(())
@@ -219,6 +244,7 @@ impl Command for DeleteDeploymentJwtTemplateCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+            .await
     }
 }

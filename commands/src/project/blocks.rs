@@ -735,8 +735,11 @@ impl DeploymentB2bBootstrapInsert {
     }
 
     #[allow(dead_code)]
-    pub(super) async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        let mut conn = pool.acquire().await?;
+    pub(super) async fn execute_with<'a, A>(&self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         self.execute_on_conn(&mut conn).await
     }
 
@@ -994,8 +997,11 @@ impl ConsoleAppBootstrapInsert {
     }
 
     #[allow(dead_code)]
-    pub(super) async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
-        let mut conn = pool.acquire().await?;
+    pub(super) async fn execute_with<'a, A>(&self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         self.execute_on_conn(&mut conn).await
     }
 
@@ -2003,9 +2009,18 @@ impl DeploymentByIdQuery {
         self
     }
 
-    pub(super) async fn execute_with(
+    #[allow(dead_code)]
+    pub(super) async fn execute_with<'a, A>(&self, acquirer: A) -> Result<DeploymentByIdRow, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        self.execute_on_conn(&mut conn).await
+    }
+
+    pub(super) async fn execute_on_conn(
         &self,
-        pool: &sqlx::PgPool,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<DeploymentByIdRow, AppError> {
         let deployment_id = self
             .deployment_id
@@ -2024,7 +2039,7 @@ impl DeploymentByIdQuery {
             "#,
             deployment_id
         )
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(DeploymentByIdRow {
@@ -2079,7 +2094,16 @@ impl DeploymentDnsRecordsUpdate {
         self
     }
 
-    pub(super) async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    #[allow(dead_code)]
+    pub(super) async fn execute_with<'a, A>(&self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        self.execute_on_conn(&mut conn).await
+    }
+
+    pub(super) async fn execute_on_conn(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
         let deployment_id = self
             .deployment_id
             .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
@@ -2105,7 +2129,7 @@ impl DeploymentDnsRecordsUpdate {
             chrono::Utc::now(),
             deployment_id
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())

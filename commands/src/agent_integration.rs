@@ -57,9 +57,10 @@ impl Command for CreateAgentIntegrationCommand {
 impl CreateAgentIntegrationCommand {
     pub async fn execute_with(
         self,
-        pool: &sqlx::PgPool,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         id: i64,
     ) -> Result<AgentIntegration, AppError> {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         let integration = sqlx::query!(
@@ -77,7 +78,7 @@ impl CreateAgentIntegrationCommand {
             self.name,
             self.config,
         )
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -190,7 +191,11 @@ impl Command for UpdateAgentIntegrationCommand {
 }
 
 impl UpdateAgentIntegrationCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<AgentIntegration, AppError> {
+    pub async fn execute_with(
+        self,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    ) -> Result<AgentIntegration, AppError> {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         let mut query_parts = vec!["updated_at = $1".to_string()];
@@ -232,7 +237,7 @@ impl UpdateAgentIntegrationCommand {
             .bind(self.deployment_id);
 
         let row = query_builder
-            .fetch_one(pool)
+            .fetch_one(&mut *conn)
             .await
             .map_err(AppError::Database)?;
 
@@ -321,13 +326,17 @@ impl Command for DeleteAgentIntegrationCommand {
 }
 
 impl DeleteAgentIntegrationCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub async fn execute_with(
+        self,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    ) -> Result<(), AppError> {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             "DELETE FROM agent_integrations WHERE id = $1 AND deployment_id = $2",
             self.integration_id,
             self.deployment_id
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 

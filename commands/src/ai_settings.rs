@@ -42,7 +42,18 @@ impl Command for CreateDeploymentAiSettingsCommand {
 }
 
 impl CreateDeploymentAiSettingsCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<DeploymentAiSettings, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<DeploymentAiSettings, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<DeploymentAiSettings, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let result = sqlx::query_as::<_, DeploymentAiSettings>(
             r#"
             INSERT INTO deployment_ai_settings (deployment_id)
@@ -51,7 +62,7 @@ impl CreateDeploymentAiSettingsCommand {
             "#,
         )
         .bind(self.deployment_id)
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(result)
@@ -131,11 +142,26 @@ impl Command for UpdateDeploymentAiSettingsCommand {
 }
 
 impl UpdateDeploymentAiSettingsCommand {
-    pub async fn execute_with(
+    pub async fn execute_with<'a, A>(
         self,
-        pool: &sqlx::PgPool,
+        acquirer: A,
         encryptor: &dyn AiSettingsEncryptor,
-    ) -> Result<DeploymentAiSettings, AppError> {
+    ) -> Result<DeploymentAiSettings, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn, encryptor).await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+        encryptor: &dyn AiSettingsEncryptor,
+    ) -> Result<DeploymentAiSettings, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         // Encrypt API keys before storing
         let encrypted_gemini = self
             .updates
@@ -173,7 +199,7 @@ impl UpdateDeploymentAiSettingsCommand {
         .bind(&encrypted_gemini)
         .bind(&encrypted_openai)
         .bind(&encrypted_anthropic)
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(result)
@@ -245,7 +271,18 @@ impl Command for ClearDeploymentAiKeyCommand {
 }
 
 impl ClearDeploymentAiKeyCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<(), AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let column = match self.key_type {
             AiKeyType::Gemini => "gemini_api_key",
             AiKeyType::OpenAI => "openai_api_key",
@@ -259,7 +296,7 @@ impl ClearDeploymentAiKeyCommand {
 
         sqlx::query(&query)
             .bind(self.deployment_id)
-            .execute(pool)
+            .execute(&mut *conn)
             .await?;
 
         Ok(())

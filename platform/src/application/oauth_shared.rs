@@ -1,8 +1,8 @@
+use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::api_key::{OAuthAppResponse, OAuthClientResponse};
 use models::error::AppError;
 use queries::{
-    Query as QueryTrait,
     oauth::{GetOAuthAppBySlugQuery, GetOAuthClientByIdQuery, OAuthAppData, OAuthClientData},
 };
 
@@ -11,8 +11,9 @@ pub async fn get_oauth_app_by_slug(
     deployment_id: i64,
     oauth_app_slug: String,
 ) -> Result<OAuthAppData, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetOAuthAppBySlugQuery::new(deployment_id, oauth_app_slug)
-        .execute(app_state)
+        .execute_with(reader)
         .await?
         .ok_or_else(|| AppError::NotFound("OAuth app not found".to_string()))
 }
@@ -23,8 +24,9 @@ pub async fn get_oauth_client_by_id(
     oauth_app_id: i64,
     oauth_client_id: i64,
 ) -> Result<OAuthClientData, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetOAuthClientByIdQuery::new(deployment_id, oauth_app_id, oauth_client_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await?
         .ok_or_else(|| AppError::NotFound("OAuth client not found".to_string()))
 }

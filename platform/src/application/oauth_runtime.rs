@@ -20,6 +20,7 @@ use dto::json::oauth_runtime::{
     OAuthConsentSubmitRequest, OAuthProtectedResourceMetadataResponse, OAuthServerMetadataResponse,
 };
 use models::api_key::OAuthScopeDefinition;
+use models::error::AppError;
 use queries::Query as QueryTrait;
 use queries::{
     GetRuntimeIntrospectionDataQuery, GetRuntimeOAuthClientByClientIdQuery, RuntimeOAuthAppData,
@@ -361,6 +362,7 @@ pub async fn oauth_register_client(
     headers: &HeaderMap,
     request: OAuthDynamicClientRegistrationRequest,
 ) -> Result<OAuthDynamicClientRegistrationResponse, ApiErrorResponse> {
+    let writer = app_state.db_router.writer();
     let oauth_app = resolve_oauth_app_from_host(app_state, headers).await?;
     if !oauth_app.allow_dynamic_client_registration {
         return Err((
@@ -402,7 +404,14 @@ pub async fn oauth_register_client(
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
     }
-    .execute(app_state)
+    .execute_with(
+        writer,
+        &app_state.encryption_service,
+        app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+    )
     .await?;
 
     let registration_access_token = generate_registration_access_token();
@@ -413,7 +422,7 @@ pub async fn oauth_register_client(
         client_id: created_client_id,
         registration_access_token_hash: Some(registration_access_token_hash),
     }
-    .execute(app_state)
+    .execute_with(writer)
     .await?;
 
     let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
@@ -442,6 +451,7 @@ pub async fn oauth_update_registered_client(
     params: OAuthRegisterPathParams,
     request: OAuthDynamicClientUpdateRequest,
 ) -> Result<OAuthDynamicClientRegistrationResponse, ApiErrorResponse> {
+    let writer = app_state.db_router.writer();
     let (oauth_app, _) =
         resolve_registered_client_with_access(app_state, headers, &params.client_id).await?;
 
@@ -464,7 +474,7 @@ pub async fn oauth_update_registered_client(
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
     }
-    .execute(app_state)
+    .execute_with(writer)
     .await?
     .ok_or_else(|| (StatusCode::NOT_FOUND, "OAuth client not found"))?;
 
@@ -479,6 +489,7 @@ pub async fn oauth_delete_registered_client(
     headers: &HeaderMap,
     params: OAuthRegisterPathParams,
 ) -> Result<(), ApiErrorResponse> {
+    let writer = app_state.db_router.writer();
     let (oauth_app, _) =
         resolve_registered_client_with_access(app_state, headers, &params.client_id).await?;
 
@@ -486,7 +497,7 @@ pub async fn oauth_delete_registered_client(
         oauth_app_id: oauth_app.id,
         client_id: params.client_id,
     }
-    .execute(app_state)
+    .execute_with(writer)
     .await?;
 
     Ok(())

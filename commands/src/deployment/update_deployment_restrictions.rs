@@ -20,7 +20,15 @@ impl UpdateDeploymentRestrictionsCommand {
 }
 
 impl UpdateDeploymentRestrictionsCommand {
-    pub async fn execute_with(self, app_state: &AppState) -> Result<(), AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        redis_client: &redis::Client,
+    ) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut query_builder =
             sqlx::QueryBuilder::new("UPDATE deployment_restrictions SET updated_at = NOW() ");
 
@@ -82,10 +90,10 @@ impl UpdateDeploymentRestrictionsCommand {
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 
-        query_builder.build().execute(&app_state.db_pool).await?;
+        query_builder.build().execute(&mut *conn).await?;
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with(app_state)
+            .execute_on_conn(&mut conn, redis_client)
             .await?;
 
         Ok(())
@@ -96,6 +104,7 @@ impl Command for UpdateDeploymentRestrictionsCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+            .await
     }
 }

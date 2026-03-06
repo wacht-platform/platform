@@ -58,9 +58,10 @@ impl Command for CreateOrganizationDomainCommand {
 impl CreateOrganizationDomainCommand {
     pub async fn execute_with(
         self,
-        pool: &sqlx::PgPool,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         domain_id: i64,
     ) -> Result<CreateOrganizationDomainResponse, AppError> {
+        let mut conn = acquirer.acquire().await?;
         self.request
             .validate()
             .map_err(|e| AppError::Validation(e.to_string()))?;
@@ -97,7 +98,7 @@ impl CreateOrganizationDomainCommand {
             verification_token,
             Utc::now()
         )
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|e| match e {
             sqlx::Error::Database(ref db_err) if db_err.code().as_deref() == Some("23505") => {
@@ -175,7 +176,18 @@ impl Command for DeleteOrganizationDomainCommand {
 }
 
 impl DeleteOrganizationDomainCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<(), AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let result = sqlx::query!(
             r#"
             DELETE FROM organization_domains
@@ -185,7 +197,7 @@ impl DeleteOrganizationDomainCommand {
             self.request.organization_id,
             self.deployment_id
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -267,9 +279,10 @@ impl Command for VerifyOrganizationDomainCommand {
 impl VerifyOrganizationDomainCommand {
     pub async fn execute_with(
         self,
-        pool: &sqlx::PgPool,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         dns_verification_service: &DnsVerificationService,
     ) -> Result<VerifyOrganizationDomainResponse, AppError> {
+        let mut conn = acquirer.acquire().await?;
         // Fetch the domain
         let domain = sqlx::query_as!(
             OrganizationDomain,
@@ -281,7 +294,7 @@ impl VerifyOrganizationDomainCommand {
             self.request.organization_id,
             self.deployment_id
         )
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         if domain.verified {
@@ -300,7 +313,7 @@ impl VerifyOrganizationDomainCommand {
             "#,
             domain.id
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
         let txt_record_name = format!(
@@ -339,9 +352,9 @@ impl VerifyOrganizationDomainCommand {
                     "#,
                     Utc::now(),
                     domain.id
-                )
-                .execute(pool)
-                .await?;
+        )
+        .execute(&mut *conn)
+        .await?;
 
                 Ok(VerifyOrganizationDomainResponse {
                     verified: true,

@@ -69,9 +69,10 @@ impl Command for GenerateScimTokenCommand {
 impl GenerateScimTokenCommand {
     pub async fn execute_with(
         self,
-        pool: &sqlx::PgPool,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         token_id: i64,
     ) -> Result<GenerateScimTokenResponse, AppError> {
+        let mut conn = acquirer.acquire().await?;
         // Delete any existing token for this connection
         sqlx::query!(
             r#"
@@ -80,7 +81,7 @@ impl GenerateScimTokenCommand {
             "#,
             self.request.connection_id
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
         // Generate new token
@@ -113,7 +114,7 @@ impl GenerateScimTokenCommand {
         .bind(true)
         .bind(now)
         .bind(now)
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(GenerateScimTokenResponse { token, plain_token })
@@ -182,7 +183,18 @@ impl Command for RevokeScimTokenCommand {
 }
 
 impl RevokeScimTokenCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<(), AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let result = sqlx::query!(
             r#"
             DELETE FROM scim_tokens
@@ -194,7 +206,7 @@ impl RevokeScimTokenCommand {
             self.request.organization_id,
             self.deployment_id
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
         if result.rows_affected() == 0 {

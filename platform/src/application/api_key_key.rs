@@ -1,7 +1,7 @@
 use commands::{
-    Command,
     api_key::{CreateApiKeyCommand, RevokeApiKeyCommand, RotateApiKeyCommand},
 };
+use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::api_key::{
     CreateApiKeyRequest, ListApiKeysQuery, ListApiKeysResponse, RevokeApiKeyRequest,
@@ -9,7 +9,7 @@ use dto::json::api_key::{
 };
 use models::api_key::ApiKeyWithSecret;
 use models::error::AppError;
-use queries::{Query as QueryTrait, api_key::GetApiKeysByAppQuery};
+use queries::api_key::GetApiKeysByAppQuery;
 
 use super::api_key_shared::{
     ensure_api_key_exists_for_app, get_api_auth_app_by_slug, resolve_api_key_membership_context,
@@ -22,11 +22,12 @@ pub async fn list_api_keys(
     params: ListApiKeysQuery,
 ) -> Result<ListApiKeysResponse, AppError> {
     let app = get_api_auth_app_by_slug(app_state, deployment_id, app_slug).await?;
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
 
     let include_inactive = params.include_inactive.unwrap_or(false);
     let keys = GetApiKeysByAppQuery::new(app.app_slug.clone(), deployment_id)
         .with_inactive(include_inactive)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
 
     Ok(ListApiKeysResponse { keys })
@@ -38,6 +39,7 @@ pub async fn create_api_key(
     app_slug: String,
     request: CreateApiKeyRequest,
 ) -> Result<ApiKeyWithSecret, AppError> {
+    let writer = app_state.db_router.writer();
     let app = get_api_auth_app_by_slug(app_state, deployment_id, app_slug).await?;
 
     let mut command = CreateApiKeyCommand::new(
@@ -70,7 +72,9 @@ pub async fn create_api_key(
             membership_context.workspace_role_permissions,
         );
 
-    command.execute(app_state).await
+    command
+        .execute_with(writer, app_state.sf.next_id()? as i64)
+        .await
 }
 
 pub async fn revoke_api_key(
@@ -78,6 +82,7 @@ pub async fn revoke_api_key(
     deployment_id: i64,
     request: RevokeApiKeyRequest,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     let key_id = request
         .key_id
         .map(|v| v.get())
@@ -88,7 +93,7 @@ pub async fn revoke_api_key(
         deployment_id,
         reason: request.reason,
     };
-    command.execute(app_state).await?;
+    command.execute_with(writer).await?;
 
     Ok(())
 }
@@ -100,6 +105,7 @@ pub async fn revoke_api_key_for_app(
     key_id: i64,
     request: RevokeApiKeyRequest,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     let app = get_api_auth_app_by_slug(app_state, deployment_id, app_slug).await?;
     ensure_api_key_exists_for_app(app_state, deployment_id, &app.app_slug, key_id).await?;
 
@@ -108,7 +114,7 @@ pub async fn revoke_api_key_for_app(
         deployment_id,
         reason: request.reason,
     };
-    command.execute(app_state).await?;
+    command.execute_with(writer).await?;
 
     Ok(())
 }
@@ -118,11 +124,14 @@ pub async fn rotate_api_key(
     deployment_id: i64,
     request: RotateApiKeyRequest,
 ) -> Result<ApiKeyWithSecret, AppError> {
+    let writer = app_state.db_router.writer();
     let command = RotateApiKeyCommand {
         key_id: request.key_id.get(),
         deployment_id,
     };
-    command.execute(app_state).await
+    command
+        .execute_with(writer, app_state.sf.next_id()? as i64)
+        .await
 }
 
 pub async fn rotate_api_key_for_app(
@@ -131,6 +140,7 @@ pub async fn rotate_api_key_for_app(
     app_slug: String,
     key_id: i64,
 ) -> Result<ApiKeyWithSecret, AppError> {
+    let writer = app_state.db_router.writer();
     let app = get_api_auth_app_by_slug(app_state, deployment_id, app_slug).await?;
     ensure_api_key_exists_for_app(app_state, deployment_id, &app.app_slug, key_id).await?;
 
@@ -138,5 +148,7 @@ pub async fn rotate_api_key_for_app(
         key_id,
         deployment_id,
     };
-    command.execute(app_state).await
+    command
+        .execute_with(writer, app_state.sf.next_id()? as i64)
+        .await
 }

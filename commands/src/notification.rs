@@ -120,9 +120,10 @@ impl Command for CreateNotificationCommand {
 impl CreateNotificationCommand {
     pub async fn execute_with(
         self,
-        pool: &sqlx::PgPool,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         nats_client: &async_nats::Client,
     ) -> Result<Notification, AppError> {
+        let mut conn = acquirer.acquire().await?;
         // Create new notification
         let row: NotificationRow = query_as(
             r#"
@@ -151,7 +152,7 @@ impl CreateNotificationCommand {
         .bind(&self.severity)
         .bind(self.metadata)
         .bind(self.expires_at)
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         // Convert row to strongly typed Notification
@@ -288,7 +289,11 @@ impl MarkNotificationReadCommand {
         MarkNotificationReadCommandBuilder::default()
     }
 
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<bool, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = query!(
             r#"
             UPDATE notifications 
@@ -301,7 +306,7 @@ impl MarkNotificationReadCommand {
             self.notification_id,
             self.user_id
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(result.rows_affected() > 0)
@@ -356,7 +361,11 @@ impl MarkAllNotificationsReadCommand {
         MarkAllNotificationsReadCommandBuilder::default()
     }
 
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<i64, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = query!(
             r#"
             UPDATE notifications 
@@ -372,7 +381,7 @@ impl MarkAllNotificationsReadCommand {
             self.user_id,
             self.deployment_id
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(result.rows_affected() as i64)
@@ -427,7 +436,18 @@ impl ArchiveNotificationCommand {
         ArchiveNotificationCommandBuilder::default()
     }
 
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<bool, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<bool, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let result = query!(
             r#"
             UPDATE notifications 
@@ -440,7 +460,7 @@ impl ArchiveNotificationCommand {
             self.notification_id,
             self.user_id
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(result.rows_affected() > 0)
@@ -495,12 +515,16 @@ impl DeleteNotificationCommand {
         DeleteNotificationCommandBuilder::default()
     }
 
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<bool, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         ArchiveNotificationCommand::builder()
             .notification_id(self.notification_id)
             .user_id(self.user_id)
             .build()?
-            .execute_with(pool)
+            .execute_with_connection(&mut *conn)
             .await
     }
 }
@@ -540,14 +564,18 @@ impl DeleteNotificationCommandBuilder {
 pub struct CleanupExpiredNotificationsCommand;
 
 impl CleanupExpiredNotificationsCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<i64, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = query!(
             r#"
             DELETE FROM notifications 
             WHERE expires_at < NOW()
             "#
         )
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(result.rows_affected() as i64)

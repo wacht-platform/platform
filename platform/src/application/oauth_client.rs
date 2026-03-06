@@ -1,17 +1,17 @@
 use commands::{
-    Command,
     oauth::{
         CreateOAuthClientCommand, DeactivateOAuthClient, RotateOAuthClientSecret,
         UpdateOAuthClientSettings,
     },
 };
+use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::api_key::{
     CreateOAuthClientRequest, ListOAuthClientsResponse, OAuthClientResponse,
     RotateOAuthClientSecretResponse, UpdateOAuthClientRequest,
 };
 use models::error::AppError;
-use queries::{Query as QueryTrait, oauth::ListOAuthClientsByOAuthAppQuery};
+use queries::oauth::ListOAuthClientsByOAuthAppQuery;
 
 use super::oauth_shared::{
     get_oauth_app_by_slug, get_oauth_client_by_id, map_oauth_client_response,
@@ -24,9 +24,10 @@ pub async fn list_oauth_clients(
     oauth_app_slug: String,
 ) -> Result<ListOAuthClientsResponse, AppError> {
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
 
     let clients = ListOAuthClientsByOAuthAppQuery::new(deployment_id, oauth_app.id)
-        .execute(app_state)
+        .execute_with(reader)
         .await?
         .into_iter()
         .map(map_oauth_client_response)
@@ -41,6 +42,7 @@ pub async fn create_oauth_client(
     oauth_app_slug: String,
     request: CreateOAuthClientRequest,
 ) -> Result<OAuthClientResponse, AppError> {
+    let writer = app_state.db_router.writer();
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
 
     let created = CreateOAuthClientCommand {
@@ -62,7 +64,11 @@ pub async fn create_oauth_client(
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
     }
-    .execute(app_state)
+    .execute_with(
+        writer,
+        &app_state.encryption_service,
+        app_state.sf.next_id()? as i64,
+    )
     .await?;
 
     Ok(map_oauth_client_response_with_secret(
@@ -78,6 +84,7 @@ pub async fn update_oauth_client(
     oauth_client_id: i64,
     request: UpdateOAuthClientRequest,
 ) -> Result<OAuthClientResponse, AppError> {
+    let writer = app_state.db_router.writer();
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
     let client = get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
 
@@ -100,7 +107,7 @@ pub async fn update_oauth_client(
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
     }
-    .execute(app_state)
+    .execute_with(writer)
     .await?
     .ok_or_else(|| AppError::NotFound("OAuth client not found or inactive".to_string()))?;
 
@@ -113,6 +120,7 @@ pub async fn deactivate_oauth_client(
     oauth_app_slug: String,
     oauth_client_id: i64,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
     let client = get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
 
@@ -120,7 +128,7 @@ pub async fn deactivate_oauth_client(
         oauth_app_id: oauth_app.id,
         client_id: client.client_id,
     }
-    .execute(app_state)
+    .execute_with(writer)
     .await?;
 
     if !updated {
@@ -138,6 +146,7 @@ pub async fn rotate_oauth_client_secret(
     oauth_app_slug: String,
     oauth_client_id: i64,
 ) -> Result<RotateOAuthClientSecretResponse, AppError> {
+    let writer = app_state.db_router.writer();
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
     let client = get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
 
@@ -145,7 +154,7 @@ pub async fn rotate_oauth_client_secret(
         oauth_app_id: oauth_app.id,
         client_id: client.client_id,
     }
-    .execute(app_state)
+    .execute_with(writer, &app_state.encryption_service)
     .await?
     .ok_or_else(|| AppError::NotFound("OAuth client not found or inactive".to_string()))?;
 

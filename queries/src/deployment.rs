@@ -518,10 +518,14 @@ impl GetDeploymentSocialConnectionsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with<'a, A>(
         &self,
-        pool: &sqlx::PgPool,
-    ) -> Result<Vec<DeploymentSocialConnection>, AppError> {
+        acquirer: A,
+    ) -> Result<Vec<DeploymentSocialConnection>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = query!(
             r#"
             SELECT
@@ -537,7 +541,7 @@ impl GetDeploymentSocialConnectionsQuery {
             "#,
             self.deployment_id,
         )
-        .fetch_all(pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(row

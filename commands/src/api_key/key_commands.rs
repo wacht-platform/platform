@@ -111,10 +111,33 @@ impl Command for CreateApiKeyCommand {
     type Output = ApiKeyWithSecret;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let (full_key, key_hash, key_suffix) = self.generate_api_key();
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
 
-        // Generate Snowflake ID
-        let key_id = app_state.sf.next_id()? as i64;
+impl CreateApiKeyCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        key_id: i64,
+    ) -> Result<ApiKeyWithSecret, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn, key_id).await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+        key_id: i64,
+    ) -> Result<ApiKeyWithSecret, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
+        let (full_key, key_hash, key_suffix) = self.generate_api_key();
 
         let rec = sqlx::query!(
             r#"
@@ -156,7 +179,7 @@ impl Command for CreateApiKeyCommand {
             serde_json::to_value(&self.org_role_permissions)?,
             serde_json::to_value(&self.workspace_role_permissions)?,
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         let key = ApiKey {
@@ -220,6 +243,23 @@ impl Command for RevokeApiKeyCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RevokeApiKeyCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<(), AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let result = sqlx::query!(
             r#"
             UPDATE api_keys
@@ -234,7 +274,7 @@ impl Command for RevokeApiKeyCommand {
             self.deployment_id,
             self.reason
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -256,6 +296,32 @@ impl Command for RotateApiKeyCommand {
     type Output = ApiKeyWithSecret;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl RotateApiKeyCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        new_key_id: i64,
+    ) -> Result<ApiKeyWithSecret, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn, new_key_id).await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+        new_key_id: i64,
+    ) -> Result<ApiKeyWithSecret, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         // Get the existing key
         let rec = sqlx::query!(
             r#"
@@ -274,7 +340,7 @@ impl Command for RotateApiKeyCommand {
             self.key_id,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("API key not found or inactive".to_string()))?;
 
@@ -331,7 +397,7 @@ impl Command for RotateApiKeyCommand {
             self.deployment_id,
             existing_key.app_slug.clone()
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("API key app not found or inactive".to_string()))?;
 
@@ -361,7 +427,7 @@ impl Command for RotateApiKeyCommand {
                 user_id,
                 organization_id
             )
-            .fetch_optional(&app_state.db_pool)
+            .fetch_optional(&mut *conn)
             .await?;
 
             org_membership_id = org_membership.map(|r| r.id);
@@ -386,7 +452,7 @@ impl Command for RotateApiKeyCommand {
                 user_id,
                 workspace_id
             )
-            .fetch_optional(&app_state.db_pool)
+            .fetch_optional(&mut *conn)
             .await?;
 
             workspace_membership_id = workspace_membership.map(|r| r.id);
@@ -420,7 +486,7 @@ impl Command for RotateApiKeyCommand {
                 "#,
                 org_membership_id
             )
-            .fetch_optional(&app_state.db_pool)
+            .fetch_optional(&mut *conn)
             .await?
             .ok_or_else(|| AppError::NotFound("Organization membership not found".to_string()))?;
 
@@ -452,7 +518,7 @@ impl Command for RotateApiKeyCommand {
                 "#,
                 workspace_membership_id
             )
-            .fetch_optional(&app_state.db_pool)
+            .fetch_optional(&mut *conn)
             .await?
             .ok_or_else(|| AppError::NotFound("Workspace membership not found".to_string()))?;
 
@@ -488,7 +554,7 @@ impl Command for RotateApiKeyCommand {
             "#,
             self.key_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         // Create a new key with the same settings
@@ -510,6 +576,8 @@ impl Command for RotateApiKeyCommand {
             workspace_role_permissions,
         };
 
-        create_command.execute(app_state).await
+        create_command
+            .execute_with_connection(&mut *conn, new_key_id)
+            .await
     }
 }

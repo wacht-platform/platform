@@ -1,7 +1,7 @@
 use commands::{
-    Command,
     api_key_app::{CreateApiAuthAppCommand, DeleteApiAuthAppCommand, UpdateApiAuthAppCommand},
 };
+use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::api_key::{
     CreateApiAuthAppRequest, ListApiAuthAppsQuery, ListApiAuthAppsResponse, UpdateApiAuthAppRequest,
@@ -9,7 +9,7 @@ use dto::json::api_key::{
 use models::api_key::ApiAuthApp;
 use models::error::AppError;
 use models::plan_features::PlanTier;
-use queries::{Query as QueryTrait, api_key::GetApiAuthAppsQuery, plan_access::GetDeploymentPlanTierQuery};
+use queries::{api_key::GetApiAuthAppsQuery, plan_access::GetDeploymentPlanTierQuery};
 
 use super::api_key_shared::get_api_auth_app_by_slug;
 
@@ -19,10 +19,11 @@ pub async fn list_api_auth_apps(
     params: ListApiAuthAppsQuery,
 ) -> Result<ListApiAuthAppsResponse, AppError> {
     let include_inactive = params.include_inactive.unwrap_or(false);
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
 
     let apps = GetApiAuthAppsQuery::new(deployment_id)
         .with_inactive(include_inactive)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
 
     Ok(ListApiAuthAppsResponse {
@@ -44,8 +45,9 @@ pub async fn create_api_auth_app(
     deployment_id: i64,
     request: CreateApiAuthAppRequest,
 ) -> Result<ApiAuthApp, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let plan_tier = GetDeploymentPlanTierQuery::new(deployment_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
 
     if !matches!(plan_tier, Some(PlanTier::Growth)) {
@@ -80,7 +82,7 @@ pub async fn create_api_auth_app(
     command = command.with_permissions(request.permissions.unwrap_or_default());
     command = command.with_resources(request.resources.unwrap_or_default());
 
-    let created = command.execute(app_state).await?;
+    let created = command.execute_with(app_state.db_router.writer()).await?;
     get_api_auth_app_by_slug(app_state, deployment_id, created.app_slug).await
 }
 
@@ -113,7 +115,7 @@ pub async fn update_api_auth_app(
         resources: request.resources.clone(),
     };
 
-    let updated = command.execute(app_state).await?;
+    let updated = command.execute_with(app_state.db_router.writer()).await?;
     get_api_auth_app_by_slug(app_state, deployment_id, updated.app_slug).await
 }
 
@@ -128,7 +130,7 @@ pub async fn delete_api_auth_app(
         app_slug: app.app_slug.clone(),
         deployment_id,
     };
-    command.execute(app_state).await?;
+    command.execute_with(app_state.db_router.writer()).await?;
 
     Ok(())
 }

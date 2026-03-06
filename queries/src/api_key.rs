@@ -8,16 +8,36 @@ async fn resolve_rate_limits(
     deployment_id: i64,
     scheme_slug: &Option<String>,
 ) -> Result<Vec<RateLimit>, AppError> {
+    resolve_rate_limits_with(&app_state.db_pool, deployment_id, scheme_slug).await
+}
+
+async fn resolve_rate_limits_on_conn(
+    conn: &mut sqlx::PgConnection,
+    deployment_id: i64,
+    scheme_slug: &Option<String>,
+) -> Result<Vec<RateLimit>, AppError> {
     let slug = match scheme_slug {
         Some(slug) => slug,
         None => return Ok(vec![]),
     };
 
     let scheme = GetRateLimitSchemeQuery::new(deployment_id, slug.clone())
-        .execute(app_state)
+        .execute_on_conn(conn)
         .await?;
 
     Ok(scheme.map(|s| s.rules).unwrap_or_default())
+}
+
+async fn resolve_rate_limits_with<'a, A>(
+    acquirer: A,
+    deployment_id: i64,
+    scheme_slug: &Option<String>,
+) -> Result<Vec<RateLimit>, AppError>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+{
+    let mut conn = acquirer.acquire().await?;
+    resolve_rate_limits_on_conn(&mut conn, deployment_id, scheme_slug).await
 }
 
 pub struct GetApiAuthAppsQuery {
@@ -37,12 +57,12 @@ impl GetApiAuthAppsQuery {
         self.include_inactive = include;
         self
     }
-}
 
-impl Query for GetApiAuthAppsQuery {
-    type Output = Vec<ApiAuthApp>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<ApiAuthApp>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let recs = sqlx::query!(
             r#"SELECT deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, is_active,
                rate_limit_scheme_slug, permissions as "permissions: serde_json::Value", resources as "resources: serde_json::Value",
@@ -55,13 +75,13 @@ impl Query for GetApiAuthAppsQuery {
             self.deployment_id,
             self.include_inactive
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let mut apps = Vec::with_capacity(recs.len());
         for rec in recs {
             let rate_limits =
-                resolve_rate_limits(app_state, rec.deployment_id, &rec.rate_limit_scheme_slug)
+                resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
                     .await?;
             apps.push(ApiAuthApp {
                 deployment_id: rec.deployment_id,
@@ -87,6 +107,14 @@ impl Query for GetApiAuthAppsQuery {
     }
 }
 
+impl Query for GetApiAuthAppsQuery {
+    type Output = Vec<ApiAuthApp>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetApiAuthAppBySlugQuery {
     pub deployment_id: i64,
     pub app_slug: String,
@@ -99,12 +127,15 @@ impl GetApiAuthAppBySlugQuery {
             app_slug,
         }
     }
-}
 
-impl Query for GetApiAuthAppBySlugQuery {
-    type Output = Option<ApiAuthApp>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<ApiAuthApp>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             r#"SELECT deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, is_active,
                rate_limit_scheme_slug, permissions as "permissions: serde_json::Value", resources as "resources: serde_json::Value",
@@ -113,12 +144,12 @@ impl Query for GetApiAuthAppBySlugQuery {
             self.deployment_id,
             self.app_slug
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(rec) = rec {
             let rate_limits =
-                resolve_rate_limits(app_state, rec.deployment_id, &rec.rate_limit_scheme_slug)
+                resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
                     .await?;
             Ok(Some(ApiAuthApp {
                 deployment_id: rec.deployment_id,
@@ -141,6 +172,14 @@ impl Query for GetApiAuthAppBySlugQuery {
         } else {
             Ok(None)
         }
+    }
+}
+
+impl Query for GetApiAuthAppBySlugQuery {
+    type Output = Option<ApiAuthApp>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -220,12 +259,12 @@ impl GetApiKeysByAppQuery {
         self.include_inactive = include;
         self
     }
-}
 
-impl Query for GetApiKeysByAppQuery {
-    type Output = Vec<ApiKey>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<ApiKey>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         if self.include_inactive {
             let recs = sqlx::query!(
                 r#"SELECT id, deployment_id, app_slug, name, key_prefix, key_suffix, key_hash,
@@ -242,13 +281,13 @@ impl Query for GetApiKeysByAppQuery {
                 self.app_slug,
                 self.deployment_id
             )
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(&mut *conn)
             .await?;
 
             let mut keys = Vec::with_capacity(recs.len());
             for rec in recs {
                 let rate_limits =
-                    resolve_rate_limits(app_state, rec.deployment_id, &rec.rate_limit_scheme_slug)
+                    resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
                         .await?;
                 keys.push(ApiKey {
                     id: rec.id,
@@ -314,13 +353,13 @@ impl Query for GetApiKeysByAppQuery {
             self.app_slug,
             self.deployment_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let mut keys = Vec::with_capacity(recs.len());
         for rec in recs {
             let rate_limits =
-                resolve_rate_limits(app_state, rec.deployment_id, &rec.rate_limit_scheme_slug)
+                resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
                     .await?;
             keys.push(ApiKey {
                 id: rec.id,
@@ -369,6 +408,14 @@ impl Query for GetApiKeysByAppQuery {
         }
 
         Ok(keys)
+    }
+}
+
+impl Query for GetApiKeysByAppQuery {
+    type Output = Vec<ApiKey>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -595,12 +642,15 @@ impl GetOrganizationMembershipPermissionsQuery {
     pub fn new(membership_id: i64) -> Self {
         Self { membership_id }
     }
-}
 
-impl Query for GetOrganizationMembershipPermissionsQuery {
-    type Output = Option<OrganizationMembershipPermissions>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<OrganizationMembershipPermissions>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             r#"
             SELECT
@@ -618,7 +668,7 @@ impl Query for GetOrganizationMembershipPermissionsQuery {
             "#,
             self.membership_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(rec.map(|r| OrganizationMembershipPermissions {
@@ -631,6 +681,14 @@ impl Query for GetOrganizationMembershipPermissionsQuery {
     }
 }
 
+impl Query for GetOrganizationMembershipPermissionsQuery {
+    type Output = Option<OrganizationMembershipPermissions>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetWorkspaceMembershipPermissionsQuery {
     pub membership_id: i64,
 }
@@ -639,12 +697,15 @@ impl GetWorkspaceMembershipPermissionsQuery {
     pub fn new(membership_id: i64) -> Self {
         Self { membership_id }
     }
-}
 
-impl Query for GetWorkspaceMembershipPermissionsQuery {
-    type Output = Option<WorkspaceMembershipPermissions>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<WorkspaceMembershipPermissions>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             r#"
             SELECT
@@ -663,7 +724,7 @@ impl Query for GetWorkspaceMembershipPermissionsQuery {
             "#,
             self.membership_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(rec.map(|r| WorkspaceMembershipPermissions {
@@ -674,6 +735,14 @@ impl Query for GetWorkspaceMembershipPermissionsQuery {
             )
             .unwrap_or_default(),
         }))
+    }
+}
+
+impl Query for GetWorkspaceMembershipPermissionsQuery {
+    type Output = Option<WorkspaceMembershipPermissions>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -689,12 +758,12 @@ impl GetOrganizationMembershipIdByUserAndOrganizationQuery {
             organization_id,
         }
     }
-}
 
-impl Query for GetOrganizationMembershipIdByUserAndOrganizationQuery {
-    type Output = Option<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<i64>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             r#"
             SELECT id
@@ -707,10 +776,18 @@ impl Query for GetOrganizationMembershipIdByUserAndOrganizationQuery {
             self.user_id,
             self.organization_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(rec.map(|r| r.id))
+    }
+}
+
+impl Query for GetOrganizationMembershipIdByUserAndOrganizationQuery {
+    type Output = Option<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -726,12 +803,12 @@ impl GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
             workspace_id,
         }
     }
-}
 
-impl Query for GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
-    type Output = Option<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<i64>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             r#"
             SELECT id
@@ -744,10 +821,18 @@ impl Query for GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
             self.user_id,
             self.workspace_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(rec.map(|r| r.id))
+    }
+}
+
+impl Query for GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
+    type Output = Option<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

@@ -4,7 +4,7 @@ use common::state::AppState;
 use models::api_key::ApiAuthApp;
 
 async fn ensure_user_exists(
-    app_state: &AppState,
+    conn: &mut sqlx::PgConnection,
     deployment_id: i64,
     user_id: i64,
 ) -> Result<(), AppError> {
@@ -20,7 +20,7 @@ async fn ensure_user_exists(
         user_id,
         deployment_id
     )
-    .fetch_optional(&app_state.db_pool)
+    .fetch_optional(&mut *conn)
     .await?;
 
     if user.is_none() {
@@ -33,7 +33,7 @@ async fn ensure_user_exists(
 }
 
 async fn ensure_organization_exists(
-    app_state: &AppState,
+    conn: &mut sqlx::PgConnection,
     deployment_id: i64,
     organization_id: i64,
 ) -> Result<(), AppError> {
@@ -49,7 +49,7 @@ async fn ensure_organization_exists(
         organization_id,
         deployment_id
     )
-    .fetch_optional(&app_state.db_pool)
+    .fetch_optional(&mut *conn)
     .await?;
 
     if organization.is_none() {
@@ -62,7 +62,7 @@ async fn ensure_organization_exists(
 }
 
 async fn resolve_workspace_organization(
-    app_state: &AppState,
+    conn: &mut sqlx::PgConnection,
     deployment_id: i64,
     workspace_id: i64,
 ) -> Result<i64, AppError> {
@@ -78,7 +78,7 @@ async fn resolve_workspace_organization(
         workspace_id,
         deployment_id
     )
-    .fetch_optional(&app_state.db_pool)
+    .fetch_optional(&mut *conn)
     .await?;
 
     workspace.map(|w| w.organization_id).ok_or_else(|| {
@@ -87,7 +87,7 @@ async fn resolve_workspace_organization(
 }
 
 async fn ensure_user_in_organization(
-    app_state: &AppState,
+    conn: &mut sqlx::PgConnection,
     user_id: i64,
     organization_id: i64,
 ) -> Result<(), AppError> {
@@ -103,7 +103,7 @@ async fn ensure_user_in_organization(
         user_id,
         organization_id
     )
-    .fetch_optional(&app_state.db_pool)
+    .fetch_optional(&mut *conn)
     .await?;
 
     if membership.is_none() {
@@ -116,7 +116,7 @@ async fn ensure_user_in_organization(
 }
 
 async fn ensure_user_in_workspace(
-    app_state: &AppState,
+    conn: &mut sqlx::PgConnection,
     user_id: i64,
     workspace_id: i64,
 ) -> Result<(), AppError> {
@@ -132,7 +132,7 @@ async fn ensure_user_in_workspace(
         user_id,
         workspace_id
     )
-    .fetch_optional(&app_state.db_pool)
+    .fetch_optional(&mut *conn)
     .await?;
 
     if membership.is_none() {
@@ -212,11 +212,28 @@ impl Command for CreateApiAuthAppCommand {
     type Output = ApiAuthApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl CreateApiAuthAppCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<ApiAuthApp, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<ApiAuthApp, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let mut organization_id = self.organization_id;
 
         if let Some(workspace_id) = self.workspace_id {
             let workspace_org_id =
-                resolve_workspace_organization(app_state, self.deployment_id, workspace_id).await?;
+                resolve_workspace_organization(&mut *conn, self.deployment_id, workspace_id).await?;
             if let Some(explicit_org_id) = organization_id {
                 if explicit_org_id != workspace_org_id {
                     return Err(AppError::Validation(
@@ -228,16 +245,16 @@ impl Command for CreateApiAuthAppCommand {
         }
 
         if let Some(org_id) = organization_id {
-            ensure_organization_exists(app_state, self.deployment_id, org_id).await?;
+            ensure_organization_exists(&mut *conn, self.deployment_id, org_id).await?;
         }
 
         if let Some(user_id) = self.user_id {
-            ensure_user_exists(app_state, self.deployment_id, user_id).await?;
+            ensure_user_exists(&mut *conn, self.deployment_id, user_id).await?;
             if let Some(org_id) = organization_id {
-                ensure_user_in_organization(app_state, user_id, org_id).await?;
+                ensure_user_in_organization(&mut *conn, user_id, org_id).await?;
             }
             if let Some(workspace_id) = self.workspace_id {
-                ensure_user_in_workspace(app_state, user_id, workspace_id).await?;
+                ensure_user_in_workspace(&mut *conn, user_id, workspace_id).await?;
             }
         } else if organization_id.is_some() || self.workspace_id.is_some() {
             return Err(AppError::Validation(
@@ -265,7 +282,7 @@ impl Command for CreateApiAuthAppCommand {
             serde_json::to_value(&self.permissions)?,
             serde_json::to_value(&self.resources)?
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(ApiAuthApp {
@@ -307,6 +324,23 @@ impl Command for UpdateApiAuthAppCommand {
     type Output = ApiAuthApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateApiAuthAppCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<ApiAuthApp, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<ApiAuthApp, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let current = sqlx::query!(
             r#"
             SELECT user_id, organization_id, workspace_id
@@ -316,7 +350,7 @@ impl Command for UpdateApiAuthAppCommand {
             self.app_slug,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("API auth app not found".to_string()))?;
 
@@ -325,7 +359,7 @@ impl Command for UpdateApiAuthAppCommand {
 
         if let Some(workspace_id) = next_workspace_id {
             let workspace_org_id =
-                resolve_workspace_organization(app_state, self.deployment_id, workspace_id).await?;
+                resolve_workspace_organization(&mut *conn, self.deployment_id, workspace_id).await?;
             if let Some(explicit_org_id) = next_organization_id {
                 if explicit_org_id != workspace_org_id {
                     return Err(AppError::Validation(
@@ -337,15 +371,15 @@ impl Command for UpdateApiAuthAppCommand {
         }
 
         if let Some(org_id) = next_organization_id {
-            ensure_organization_exists(app_state, self.deployment_id, org_id).await?;
+            ensure_organization_exists(&mut *conn, self.deployment_id, org_id).await?;
         }
 
         if let Some(user_id) = current.user_id {
             if let Some(org_id) = next_organization_id {
-                ensure_user_in_organization(app_state, user_id, org_id).await?;
+                ensure_user_in_organization(&mut *conn, user_id, org_id).await?;
             }
             if let Some(workspace_id) = next_workspace_id {
-                ensure_user_in_workspace(app_state, user_id, workspace_id).await?;
+                ensure_user_in_workspace(&mut *conn, user_id, workspace_id).await?;
             }
         } else if next_organization_id.is_some() || next_workspace_id.is_some() {
             return Err(AppError::Validation(
@@ -384,7 +418,7 @@ impl Command for UpdateApiAuthAppCommand {
             self.permissions.map(|v| serde_json::to_value(v)).transpose()?,
             self.resources.map(|v| serde_json::to_value(v)).transpose()?
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         sqlx::query!(
@@ -399,7 +433,7 @@ impl Command for UpdateApiAuthAppCommand {
             rec.deployment_id,
             rec.app_slug
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(ApiAuthApp {
@@ -432,6 +466,23 @@ impl Command for DeleteApiAuthAppCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl DeleteApiAuthAppCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<(), AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let result = sqlx::query!(
             r#"
             UPDATE api_auth_apps
@@ -441,7 +492,7 @@ impl Command for DeleteApiAuthAppCommand {
             self.app_slug,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -470,6 +521,23 @@ impl Command for EnsureUserApiAuthAppCommand {
     type Output = String;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl EnsureUserApiAuthAppCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<String, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<String, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         if self.user_id <= 0 {
             return Err(AppError::BadRequest(
                 "user_id must be a positive integer".to_string(),
@@ -490,7 +558,7 @@ impl Command for EnsureUserApiAuthAppCommand {
             self.deployment_id,
             expected_slug
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(row) = existing {
@@ -504,7 +572,7 @@ impl Command for EnsureUserApiAuthAppCommand {
             format!("OAuth identity for user {}", self.user_id),
             "sk_live".to_string(),
         )
-        .execute(app_state)
+        .execute_with_connection(&mut *conn)
         .await;
 
         match create_result {

@@ -41,10 +41,14 @@ impl GetAgentIntegrationsQuery {
         self
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with<'a, A>(
         &self,
-        pool: &sqlx::PgPool,
-    ) -> StdResult<Vec<AgentIntegration>, AppError> {
+        acquirer: A,
+    ) -> StdResult<Vec<AgentIntegration>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let limit = self.limit.unwrap_or(50) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
@@ -61,7 +65,7 @@ impl GetAgentIntegrationsQuery {
             limit,
             offset,
         )
-        .fetch_all(pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -157,10 +161,14 @@ impl GetAgentIntegrationByIdQuery {
         }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with<'a, A>(
         &self,
-        pool: &sqlx::PgPool,
-    ) -> StdResult<AgentIntegration, AppError> {
+        acquirer: A,
+    ) -> StdResult<AgentIntegration, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, deployment_id, agent_id, integration_type, name, config
@@ -171,7 +179,7 @@ impl GetAgentIntegrationByIdQuery {
             self.deployment_id,
             self.agent_id,
         )
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Integration not found".to_string()))?;

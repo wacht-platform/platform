@@ -6,7 +6,6 @@ use dto::json::api_key::{
 };
 use models::error::AppError;
 use queries::{
-    Query as QueryTrait,
     api_key_audit::{
         GetApiAuditAnalyticsQuery as GetApiAuditAnalyticsDataQuery,
         GetApiAuditLogsQuery as GetApiAuditLogsDataQuery,
@@ -46,6 +45,7 @@ pub async fn get_api_audit_logs(
     params: ListApiAuditLogsQuery,
 ) -> Result<ApiAuditLogsResponse, AppError> {
     get_api_auth_app_by_slug(app_state, deployment_id, app_slug.clone()).await?;
+    let clickhouse_client = &app_state.clickhouse_service.client;
 
     let mut cursor_ts = params.cursor_ts;
     let mut cursor_id = params.cursor_id.clone();
@@ -68,7 +68,7 @@ pub async fn get_api_audit_logs(
         start_date: params.start_date,
         end_date: params.end_date,
     }
-    .execute(app_state)
+    .execute_with(clickhouse_client)
     .await
 }
 
@@ -79,6 +79,7 @@ pub async fn get_api_audit_analytics(
     params: GetApiAuditAnalyticsQuery,
 ) -> Result<ApiAuditAnalyticsResponse, AppError> {
     get_api_auth_app_by_slug(app_state, deployment_id, app_slug.clone()).await?;
+    let clickhouse_client = &app_state.clickhouse_service.client;
 
     GetApiAuditAnalyticsDataQuery {
         deployment_id,
@@ -92,7 +93,7 @@ pub async fn get_api_audit_analytics(
         include_rate_limits: params.include_rate_limits.unwrap_or(false),
         top_limit: params.top_limit.unwrap_or(10),
     }
-    .execute(app_state)
+    .execute_with(clickhouse_client)
     .await
 }
 
@@ -103,6 +104,7 @@ pub async fn get_api_audit_timeseries(
     params: GetApiAuditTimeseriesQuery,
 ) -> Result<ApiAuditTimeseriesResponse, AppError> {
     get_api_auth_app_by_slug(app_state, deployment_id, app_slug.clone()).await?;
+    let clickhouse_client = &app_state.clickhouse_service.client;
 
     let interval = params.interval.unwrap_or_else(|| "hour".to_string());
     let normalized_interval = match interval.as_str() {
@@ -118,6 +120,6 @@ pub async fn get_api_audit_timeseries(
         interval: normalized_interval,
         key_id: params.key_id.map(|v| v.get()),
     }
-    .execute(app_state)
+    .execute_with(clickhouse_client)
     .await
 }

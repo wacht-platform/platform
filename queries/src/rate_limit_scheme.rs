@@ -54,9 +54,20 @@ impl ListRateLimitSchemesQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with<'a, A>(
         &self,
-        pool: &sqlx::PgPool,
+        acquirer: A,
+    ) -> Result<Vec<RateLimitSchemeData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        self.execute_on_conn(&mut conn).await
+    }
+
+    pub async fn execute_on_conn(
+        &self,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<Vec<RateLimitSchemeData>, AppError> {
         let rows = sqlx::query_as::<_, RateLimitSchemeRow>(
             r#"
@@ -75,7 +86,7 @@ impl ListRateLimitSchemesQuery {
             "#,
         )
         .bind(self.deployment_id)
-        .fetch_all(pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(rows.into_iter().map(Into::into).collect())
@@ -103,9 +114,20 @@ impl GetRateLimitSchemeQuery {
         }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with<'a, A>(
         &self,
-        pool: &sqlx::PgPool,
+        acquirer: A,
+    ) -> Result<Option<RateLimitSchemeData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        self.execute_on_conn(&mut conn).await
+    }
+
+    pub async fn execute_on_conn(
+        &self,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<Option<RateLimitSchemeData>, AppError> {
         let rec = sqlx::query_as::<_, RateLimitSchemeRow>(
             r#"
@@ -125,7 +147,7 @@ impl GetRateLimitSchemeQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.slug)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(rec.map(Into::into))

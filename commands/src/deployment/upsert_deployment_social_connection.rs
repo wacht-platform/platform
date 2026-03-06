@@ -35,10 +35,16 @@ impl UpsertDeploymentSocialConnectionCommand {
 }
 
 impl UpsertDeploymentSocialConnectionCommand {
-    pub async fn execute_with(
+    pub async fn execute_with<'a, A>(
         self,
-        app_state: &AppState,
-    ) -> Result<DeploymentSocialConnection, AppError> {
+        acquirer: A,
+        social_connection_id: i64,
+        redis_client: &redis::Client,
+    ) -> Result<DeploymentSocialConnection, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let provider = self.connection.provider;
         let enabled = self.connection.enabled;
         let mut credentials = self.connection.credentials;
@@ -51,7 +57,7 @@ impl UpsertDeploymentSocialConnectionCommand {
             "#,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
 
@@ -91,7 +97,7 @@ impl UpsertDeploymentSocialConnectionCommand {
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (deployment_id, provider) DO UPDATE SET updated_at = NOW(), enabled = EXCLUDED.enabled, credentials = EXCLUDED.credentials RETURNING *
             "#,
-            app_state.sf.next_id()? as i64,
+            social_connection_id,
             Utc::now(),
             Utc::now(),
             self.deployment_id,
@@ -100,7 +106,7 @@ impl UpsertDeploymentSocialConnectionCommand {
             serde_json::to_value(credentials)
                 .map_err(|e| AppError::Serialization(e.to_string()))?,
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         let parsed_provider = result
@@ -125,7 +131,7 @@ impl UpsertDeploymentSocialConnectionCommand {
         };
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with(app_state)
+            .execute_on_conn(&mut conn, redis_client)
             .await?;
 
         Ok(connection)
@@ -136,7 +142,12 @@ impl Command for UpsertDeploymentSocialConnectionCommand {
     type Output = DeploymentSocialConnection;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(
+            &app_state.db_pool,
+            app_state.sf.next_id()? as i64,
+            &app_state.redis_client,
+        )
+        .await
     }
 }
 

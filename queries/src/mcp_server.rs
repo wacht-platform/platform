@@ -27,7 +27,11 @@ impl GetMcpServersQuery {
         self
     }
 
-    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> StdResult<Vec<McpServer>, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<Vec<McpServer>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let limit = self.limit.unwrap_or(50) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
@@ -43,7 +47,7 @@ impl GetMcpServersQuery {
         .bind(self.deployment_id)
         .bind(limit)
         .bind(offset)
-        .fetch_all(pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -89,7 +93,11 @@ impl GetMcpServerByIdQuery {
         }
     }
 
-    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> StdResult<McpServer, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<McpServer, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT id, created_at, updated_at, deployment_id, name, config
@@ -99,7 +107,7 @@ impl GetMcpServerByIdQuery {
         )
         .bind(self.mcp_server_id)
         .bind(self.deployment_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("MCP server not found".to_string()))?;
@@ -140,7 +148,11 @@ impl GetAgentMcpServersQuery {
         }
     }
 
-    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> StdResult<Vec<McpServer>, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<Vec<McpServer>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query(
             r#"
             SELECT m.id, m.created_at, m.updated_at, m.deployment_id, m.name, m.config
@@ -152,7 +164,7 @@ impl GetAgentMcpServersQuery {
         )
         .bind(self.deployment_id)
         .bind(self.agent_id)
-        .fetch_all(pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 

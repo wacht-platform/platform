@@ -57,14 +57,22 @@ fn active_permissions_from_catalog(entries: &[DeploymentPermissionCatalogEntry])
 }
 
 impl UpdateDeploymentB2bSettingsCommand {
-    pub async fn execute_with(self, app_state: &AppState) -> Result<(), AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        redis_client: &redis::Client,
+    ) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let existing_catalogs = sqlx::query_as::<_, (Option<Value>, Option<Value>)>(
             "SELECT workspace_permission_catalog, organization_permission_catalog
              FROM deployment_b2b_settings
              WHERE deployment_id = $1",
         )
         .bind(self.deployment_id)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let (existing_workspace_catalog, existing_organization_catalog) = existing_catalogs
@@ -251,7 +259,7 @@ impl UpdateDeploymentB2bSettingsCommand {
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 
-        let result = query_builder.build().execute(&app_state.db_pool).await?;
+        let result = query_builder.build().execute(&mut *conn).await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound(format!(
@@ -261,7 +269,7 @@ impl UpdateDeploymentB2bSettingsCommand {
         }
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with(app_state)
+            .execute_on_conn(&mut conn, redis_client)
             .await?;
 
         Ok(())
@@ -272,6 +280,7 @@ impl Command for UpdateDeploymentB2bSettingsCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+            .await
     }
 }

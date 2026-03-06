@@ -37,9 +37,10 @@ impl Command for CreateSegmentCommand {
 impl CreateSegmentCommand {
     pub async fn execute_with(
         self,
-        pool: &sqlx::PgPool,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         id: i64,
     ) -> Result<Segment, AppError> {
+        let mut conn = acquirer.acquire().await?;
         let segment = sqlx::query_as::<_, Segment>(
             r#"
             INSERT INTO segments (id, deployment_id, name, type)
@@ -51,7 +52,7 @@ impl CreateSegmentCommand {
         .bind(self.deployment_id)
         .bind(self.name)
         .bind(self.r#type)
-        .fetch_one(pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -119,13 +120,17 @@ impl Command for UpdateSegmentCommand {
 }
 
 impl UpdateSegmentCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<Segment, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Segment, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let existing = sqlx::query(
             "SELECT id FROM segments WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
         )
         .bind(self.id)
         .bind(self.deployment_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -146,7 +151,7 @@ impl UpdateSegmentCommand {
 
         let segment = query_builder
             .build_query_as::<Segment>()
-            .fetch_one(pool)
+            .fetch_one(&mut *conn)
             .await
             .map_err(AppError::Database)?;
 
@@ -210,13 +215,17 @@ impl Command for DeleteSegmentCommand {
 }
 
 impl DeleteSegmentCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<serde_json::Value, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query(
             "UPDATE segments SET deleted_at = NOW() WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
         )
         .bind(self.id)
         .bind(self.deployment_id)
-        .execute(pool)
+        .execute(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -227,19 +236,19 @@ impl DeleteSegmentCommand {
         // Clean up associations
         sqlx::query("DELETE FROM organization_segments WHERE segment_id = $1")
             .bind(self.id)
-            .execute(pool)
+            .execute(&mut *conn)
             .await
             .map_err(AppError::Database)?;
 
         sqlx::query("DELETE FROM workspace_segments WHERE segment_id = $1")
             .bind(self.id)
-            .execute(pool)
+            .execute(&mut *conn)
             .await
             .map_err(AppError::Database)?;
 
         sqlx::query("DELETE FROM user_segments WHERE segment_id = $1")
             .bind(self.id)
-            .execute(pool)
+            .execute(&mut *conn)
             .await
             .map_err(AppError::Database)?;
 
@@ -299,13 +308,17 @@ impl Command for AssignSegmentCommand {
 }
 
 impl AssignSegmentCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<serde_json::Value, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let segment_row = sqlx::query(
             "SELECT type FROM segments WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
         )
         .bind(self.segment_id)
         .bind(self.deployment_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -321,7 +334,7 @@ impl AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.deployment_id)
-                .fetch_optional(pool)
+                .fetch_optional(&mut *conn)
                 .await
                 .map_err(AppError::Database)?;
 
@@ -334,7 +347,7 @@ impl AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.segment_id)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await
                 .map_err(AppError::Database)?;
             }
@@ -344,7 +357,7 @@ impl AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.deployment_id)
-                .fetch_optional(pool)
+                .fetch_optional(&mut *conn)
                 .await
                 .map_err(AppError::Database)?;
 
@@ -357,7 +370,7 @@ impl AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.segment_id)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await
                 .map_err(AppError::Database)?;
             }
@@ -367,7 +380,7 @@ impl AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.deployment_id)
-                .fetch_optional(pool)
+                .fetch_optional(&mut *conn)
                 .await
                 .map_err(AppError::Database)?;
 
@@ -380,7 +393,7 @@ impl AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.segment_id)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await
                 .map_err(AppError::Database)?;
             }
@@ -451,13 +464,17 @@ impl Command for RemoveSegmentCommand {
 }
 
 impl RemoveSegmentCommand {
-    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<serde_json::Value, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let segment_row = sqlx::query(
             "SELECT type FROM segments WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
         )
         .bind(self.segment_id)
         .bind(self.deployment_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -473,7 +490,7 @@ impl RemoveSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.segment_id)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await
                 .map_err(AppError::Database)?;
             }
@@ -483,7 +500,7 @@ impl RemoveSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.segment_id)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await
                 .map_err(AppError::Database)?;
             }
@@ -491,7 +508,7 @@ impl RemoveSegmentCommand {
                 sqlx::query("DELETE FROM user_segments WHERE user_id = $1 AND segment_id = $2")
                     .bind(self.entity_id)
                     .bind(self.segment_id)
-                    .execute(pool)
+                    .execute(&mut *conn)
                     .await
                     .map_err(AppError::Database)?;
             }

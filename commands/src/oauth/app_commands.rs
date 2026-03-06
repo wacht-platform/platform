@@ -20,6 +20,39 @@ impl Command for CreateOAuthAppCommand {
     type Output = OAuthAppData;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(
+            &app_state.db_pool,
+            &app_state.cloudflare_service,
+            app_state.sf.next_id()? as i64,
+        )
+        .await
+    }
+}
+
+impl CreateOAuthAppCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        cloudflare_service: &common::CloudflareService,
+        oauth_app_id: i64,
+    ) -> Result<OAuthAppData, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn, cloudflare_service, oauth_app_id)
+            .await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+        cloudflare_service: &common::CloudflareService,
+        oauth_app_id: i64,
+    ) -> Result<OAuthAppData, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let deployment = sqlx::query!(
             r#"
             SELECT mode
@@ -29,7 +62,7 @@ impl Command for CreateOAuthAppCommand {
             "#,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
 
@@ -38,8 +71,7 @@ impl Command for CreateOAuthAppCommand {
         let cloudflare_custom_hostname_id: Option<String> =
             if deployment.mode.eq_ignore_ascii_case("production") {
                 Some(
-                    app_state
-                        .cloudflare_service
+                    cloudflare_service
                         .create_custom_hostname(&fqdn, "oauth.wacht.services")
                         .await?
                         .id,
@@ -48,7 +80,6 @@ impl Command for CreateOAuthAppCommand {
                 None
             };
 
-        let id = app_state.sf.next_id()? as i64;
         let supported_scopes = normalize_supported_scopes(self.supported_scopes);
         let scope_definitions =
             normalize_scope_definitions(&supported_scopes, self.scope_definitions)?;
@@ -83,7 +114,7 @@ impl Command for CreateOAuthAppCommand {
                 created_at,
                 updated_at
             "#,
-            id,
+            oauth_app_id,
             self.deployment_id,
             self.slug,
             self.name,
@@ -94,17 +125,14 @@ impl Command for CreateOAuthAppCommand {
             serde_json::to_value(&scope_definitions)?,
             self.allow_dynamic_client_registration
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await;
 
         let row = match row_result {
             Ok(row) => row,
             Err(e) => {
                 if let Some(custom_hostname_id) = cloudflare_custom_hostname_id {
-                    let _ = app_state
-                        .cloudflare_service
-                        .delete_custom_hostname(&custom_hostname_id)
-                        .await;
+                    let _ = cloudflare_service.delete_custom_hostname(&custom_hostname_id).await;
                 }
                 return Err(e.into());
             }
@@ -154,6 +182,32 @@ impl Command for VerifyOAuthAppDomainCommand {
     type Output = VerifyOAuthAppDomainResult;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, &app_state.cloudflare_service)
+            .await
+    }
+}
+
+impl VerifyOAuthAppDomainCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        cloudflare_service: &common::CloudflareService,
+    ) -> Result<VerifyOAuthAppDomainResult, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn, cloudflare_service).await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+        cloudflare_service: &common::CloudflareService,
+    ) -> Result<VerifyOAuthAppDomainResult, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let oauth_app = sqlx::query!(
             r#"
             SELECT fqdn
@@ -164,12 +218,11 @@ impl Command for VerifyOAuthAppDomainCommand {
             self.deployment_id,
             self.oauth_app_slug
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("OAuth app not found".to_string()))?;
 
-        let verified = app_state
-            .cloudflare_service
+        let verified = cloudflare_service
             .check_custom_hostname_status(&oauth_app.fqdn)
             .await?;
 
@@ -185,6 +238,26 @@ impl Command for UpdateOAuthAppCommand {
     type Output = OAuthAppData;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateOAuthAppCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+    ) -> Result<OAuthAppData, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<OAuthAppData, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let current = sqlx::query!(
             r#"
             SELECT
@@ -197,7 +270,7 @@ impl Command for UpdateOAuthAppCommand {
             self.deployment_id,
             self.oauth_app_slug
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("OAuth app not found".to_string()))?;
 
@@ -245,7 +318,7 @@ impl Command for UpdateOAuthAppCommand {
             self.allow_dynamic_client_registration,
             self.is_active
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(OAuthAppData {

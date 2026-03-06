@@ -1,5 +1,5 @@
 use crate::Command;
-use common::error::AppError;
+use common::{EncryptionService, error::AppError};
 use common::state::AppState;
 use models::api_key::JwksDocument;
 use queries::oauth::OAuthClientData;
@@ -28,6 +28,16 @@ pub struct CreateOAuthClientCommand {
 pub struct OAuthClientWithSecret {
     pub client: OAuthClientData,
     pub client_secret: Option<String>,
+}
+
+pub trait OAuthClientSecretEncryptor: Send + Sync {
+    fn encrypt(&self, plaintext: &str) -> Result<String, AppError>;
+}
+
+impl OAuthClientSecretEncryptor for EncryptionService {
+    fn encrypt(&self, plaintext: &str) -> Result<String, AppError> {
+        EncryptionService::encrypt(self, plaintext)
+    }
 }
 
 impl CreateOAuthClientCommand {
@@ -124,7 +134,7 @@ impl CreateOAuthClientCommand {
 
     fn generate_client_secret_hash_and_encrypted(
         &self,
-        app_state: &AppState,
+        encryptor: &dyn OAuthClientSecretEncryptor,
     ) -> Result<(Option<String>, Option<String>, Option<String>), AppError> {
         if self.client_auth_method == "none" || self.client_auth_method == "private_key_jwt" {
             return Ok((None, None, None));
@@ -139,7 +149,7 @@ impl CreateOAuthClientCommand {
         let mut hasher = Sha256::new();
         hasher.update(secret.as_bytes());
         let hash = format!("{:x}", hasher.finalize());
-        let encrypted = app_state.encryption_service.encrypt(&secret)?;
+        let encrypted = encryptor.encrypt(&secret)?;
         Ok((Some(secret), Some(hash), Some(encrypted)))
     }
 }
@@ -200,12 +210,54 @@ impl Command for CreateOAuthClientCommand {
     type Output = OAuthClientWithSecret;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(
+            &app_state.db_pool,
+            &app_state.encryption_service,
+            app_state.sf.next_id()? as i64,
+        )
+        .await
+    }
+}
+
+impl CreateOAuthClientCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        encryptor: &dyn OAuthClientSecretEncryptor,
+        client_record_id: i64,
+    ) -> Result<OAuthClientWithSecret, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn, encryptor, client_record_id)
+            .await
+    }
+
+    pub async fn execute_in_tx(
+        self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        encryptor: &dyn OAuthClientSecretEncryptor,
+        client_record_id: i64,
+    ) -> Result<OAuthClientWithSecret, AppError> {
+        self.execute_with_connection(tx.as_mut(), encryptor, client_record_id)
+            .await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+        encryptor: &dyn OAuthClientSecretEncryptor,
+        client_record_id: i64,
+    ) -> Result<OAuthClientWithSecret, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         self.validate()?;
 
-        let id = app_state.sf.next_id()? as i64;
         let client_id = Self::generate_client_id();
         let (client_secret, client_secret_hash, client_secret_encrypted) =
-            self.generate_client_secret_hash_and_encrypted(app_state)?;
+            self.generate_client_secret_hash_and_encrypted(encryptor)?;
         let public_key_pem = self
             .public_key_pem
             .as_deref()
@@ -351,7 +403,7 @@ impl Command for CreateOAuthClientCommand {
                 created_at,
                 updated_at
             "#,
-            id,
+            client_record_id,
             self.deployment_id,
             self.oauth_app_id,
             client_id,
@@ -372,7 +424,7 @@ impl Command for CreateOAuthClientCommand {
             software_id,
             software_version
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         let jwks = row.jwks.map(|j| j.0);
@@ -422,6 +474,30 @@ impl Command for SetOAuthClientRegistrationAccessToken {
     type Output = bool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl SetOAuthClientRegistrationAccessToken {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    pub async fn execute_in_tx(
+        self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ) -> Result<bool, AppError> {
+        self.execute_with_connection(tx.as_mut()).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<bool, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let res = sqlx::query!(
             r#"
             UPDATE oauth_clients
@@ -435,7 +511,7 @@ impl Command for SetOAuthClientRegistrationAccessToken {
             self.client_id,
             self.registration_access_token_hash
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(res.rows_affected() > 0)
@@ -451,6 +527,30 @@ impl Command for DeactivateOAuthClient {
     type Output = bool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl DeactivateOAuthClient {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    pub async fn execute_in_tx(
+        self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ) -> Result<bool, AppError> {
+        self.execute_with_connection(tx.as_mut()).await
+    }
+
+    async fn execute_with_connection<C>(self, mut conn: C) -> Result<bool, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let res = sqlx::query!(
             r#"
             UPDATE oauth_clients
@@ -465,7 +565,7 @@ impl Command for DeactivateOAuthClient {
             self.oauth_app_id,
             self.client_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(res.rows_affected() > 0)
@@ -496,6 +596,36 @@ impl Command for UpdateOAuthClientSettings {
     type Output = Option<OAuthClientData>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateOAuthClientSettings {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+    ) -> Result<Option<OAuthClientData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn).await
+    }
+
+    pub async fn execute_in_tx(
+        self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    ) -> Result<Option<OAuthClientData>, AppError> {
+        self.execute_with_connection(tx.as_mut()).await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+    ) -> Result<Option<OAuthClientData>, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         if let Some(grant_types) = &self.grant_types {
             validate_oauth_client_grant_types(grant_types)?;
         }
@@ -533,7 +663,7 @@ impl Command for UpdateOAuthClientSettings {
             self.oauth_app_id,
             self.client_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let Some(current) = current else {
@@ -800,7 +930,7 @@ impl Command for UpdateOAuthClientSettings {
             software_id,
             software_version
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(row.map(|r| {
@@ -889,7 +1019,7 @@ pub struct RotateOAuthClientSecret {
 
 impl RotateOAuthClientSecret {
     fn generate_client_secret_hash_and_encrypted(
-        app_state: &AppState,
+        encryptor: &dyn OAuthClientSecretEncryptor,
     ) -> Result<(String, String, String), AppError> {
         use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         use rand::RngCore;
@@ -900,7 +1030,7 @@ impl RotateOAuthClientSecret {
         let mut hasher = Sha256::new();
         hasher.update(secret.as_bytes());
         let hash = format!("{:x}", hasher.finalize());
-        let encrypted = app_state.encryption_service.encrypt(&secret)?;
+        let encrypted = encryptor.encrypt(&secret)?;
         Ok((secret, hash, encrypted))
     }
 }
@@ -909,6 +1039,40 @@ impl Command for RotateOAuthClientSecret {
     type Output = Option<String>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, &app_state.encryption_service)
+            .await
+    }
+}
+
+impl RotateOAuthClientSecret {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        encryptor: &dyn OAuthClientSecretEncryptor,
+    ) -> Result<Option<String>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let conn = acquirer.acquire().await?;
+        self.execute_with_connection(conn, encryptor).await
+    }
+
+    pub async fn execute_in_tx(
+        self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        encryptor: &dyn OAuthClientSecretEncryptor,
+    ) -> Result<Option<String>, AppError> {
+        self.execute_with_connection(tx.as_mut(), encryptor).await
+    }
+
+    async fn execute_with_connection<C>(
+        self,
+        mut conn: C,
+        encryptor: &dyn OAuthClientSecretEncryptor,
+    ) -> Result<Option<String>, AppError>
+    where
+        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+    {
         let client = sqlx::query!(
             r#"
             SELECT client_auth_method
@@ -920,7 +1084,7 @@ impl Command for RotateOAuthClientSecret {
             self.oauth_app_id,
             self.client_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         let Some(client) = client else {
@@ -934,7 +1098,7 @@ impl Command for RotateOAuthClientSecret {
         }
 
         let (client_secret, client_secret_hash, client_secret_encrypted) =
-            Self::generate_client_secret_hash_and_encrypted(app_state)?;
+            Self::generate_client_secret_hash_and_encrypted(encryptor)?;
         sqlx::query!(
             r#"
             UPDATE oauth_clients
@@ -951,7 +1115,7 @@ impl Command for RotateOAuthClientSecret {
             client_secret_hash,
             client_secret_encrypted
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(Some(client_secret))

@@ -55,7 +55,15 @@ fn build_partial_json<T: serde::Serialize>(data: Option<&T>) -> Option<Value> {
 }
 
 impl UpdateDeploymentAuthSettingsCommand {
-    pub async fn execute_with(self, app_state: &AppState) -> Result<(), AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        redis_client: &redis::Client,
+    ) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         if enables_phone_auth(&self.updates) {
             let deployment = sqlx::query!(
                 r#"
@@ -69,7 +77,7 @@ impl UpdateDeploymentAuthSettingsCommand {
                 "#,
                 self.deployment_id
             )
-            .fetch_optional(&app_state.db_pool)
+            .fetch_optional(&mut *conn)
             .await?
             .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
 
@@ -246,10 +254,10 @@ impl UpdateDeploymentAuthSettingsCommand {
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 
-        query_builder.build().execute(&app_state.db_pool).await?;
+        query_builder.build().execute(&mut *conn).await?;
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with(app_state)
+            .execute_on_conn(&mut conn, redis_client)
             .await?;
 
         Ok(())
@@ -260,6 +268,7 @@ impl Command for UpdateDeploymentAuthSettingsCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+            .await
     }
 }

@@ -1,4 +1,4 @@
-use commands::{Command, oauth::UpdateOAuthAppCommand};
+use commands::oauth::UpdateOAuthAppCommand;
 use common::state::AppState;
 use dto::json::api_key::{OAuthAppResponse, SetOAuthScopeMappingRequest, UpdateOAuthScopeRequest};
 use models::api_key::OAuthScopeDefinition;
@@ -23,6 +23,7 @@ async fn persist_scope_updates(
     supported_scopes: Vec<String>,
     scope_definitions: Vec<OAuthScopeDefinition>,
 ) -> Result<OAuthAppResponse, AppError> {
+    let writer = app_state.db_router.writer();
     let updated = UpdateOAuthAppCommand {
         deployment_id,
         oauth_app_slug,
@@ -33,7 +34,7 @@ async fn persist_scope_updates(
         allow_dynamic_client_registration: None,
         is_active: None,
     }
-    .execute(app_state)
+    .execute_with(writer)
     .await?;
 
     Ok(map_oauth_app_response(updated))
