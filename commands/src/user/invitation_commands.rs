@@ -1,11 +1,11 @@
 use chrono::{Duration, Utc};
 
 use crate::{Command, SendEmailCommand};
+use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::InviteUserRequest;
 use models::DeploymentInvitation;
-use queries::Query;
 
 pub struct InviteUserCommand {
     deployment_id: i64,
@@ -58,9 +58,10 @@ impl Command for InviteUserCommand {
         .execute(&app_state.db_pool)
         .await?;
 
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         let deployment_settings =
             queries::deployment::GetDeploymentWithSettingsQuery::new(self.deployment_id)
-                .execute(app_state)
+                .execute_with(reader)
                 .await
                 .map_err(|e| {
                     AppError::Internal(format!("Failed to fetch deployment settings: {}", e))
@@ -189,9 +190,10 @@ impl Command for ApproveWaitlistUserCommand {
         .execute(&mut *tx)
         .await?;
 
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         let deployment_settings =
             queries::deployment::GetDeploymentWithSettingsQuery::new(self.deployment_id)
-                .execute(app_state)
+                .execute_with(reader)
                 .await
                 .map_err(|e| {
                     AppError::Internal(format!("Failed to fetch deployment settings: {}", e))

@@ -1,4 +1,5 @@
-use commands::{Command, UpdateDeploymentB2bSettingsCommand};
+use commands::UpdateDeploymentB2bSettingsCommand;
+use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
 use dto::{json::deployment_settings::DeploymentB2bSettingsUpdates, query::OrganizationListQueryParams};
@@ -9,7 +10,7 @@ use models::{
 };
 use queries::{
     DeploymentOrganizationListQuery, DeploymentWorkspaceListQuery, GetOrganizationDetailsQuery,
-    GetOrganizationMembersQuery, GetWorkspaceDetailsQuery, GetWorkspaceMembersQuery, Query,
+    GetOrganizationMembersQuery, GetWorkspaceDetailsQuery, GetWorkspaceMembersQuery,
 };
 use queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery};
 
@@ -31,8 +32,9 @@ pub async fn get_deployment_workspace_roles(
     app_state: &AppState,
     deployment_id: i64,
 ) -> Result<PaginatedResponse<DeploymentWorkspaceRole>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let roles = GetDeploymentWorkspaceRolesQuery::new(deployment_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
     Ok(PaginatedResponse::from(roles))
 }
@@ -41,8 +43,9 @@ pub async fn get_deployment_org_roles(
     app_state: &AppState,
     deployment_id: i64,
 ) -> Result<PaginatedResponse<DeploymentOrganizationRole>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let roles = GetDeploymentOrganizationRolesQuery::new(deployment_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
     Ok(PaginatedResponse::from(roles))
 }
@@ -52,8 +55,9 @@ pub async fn update_deployment_b2b_settings(
     deployment_id: i64,
     settings: DeploymentB2bSettingsUpdates,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     UpdateDeploymentB2bSettingsCommand::new(deployment_id, settings)
-        .execute(app_state)
+        .execute_with(writer, &app_state.redis_client)
         .await?;
     Ok(())
 }
@@ -63,6 +67,7 @@ pub async fn get_organization_list(
     deployment_id: i64,
     query_params: OrganizationListQueryParams,
 ) -> Result<PaginatedResponse<Organization>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let limit = query_params.limit.unwrap_or(10);
     let offset = query_params.offset.unwrap_or(0);
 
@@ -72,7 +77,7 @@ pub async fn get_organization_list(
         .sort_key(query_params.sort_key)
         .sort_order(query_params.sort_order)
         .search(query_params.search)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
 
     Ok(paginate_results(organizations, limit, Some(offset)))
@@ -83,6 +88,7 @@ pub async fn get_workspace_list(
     deployment_id: i64,
     query_params: OrganizationListQueryParams,
 ) -> Result<PaginatedResponse<WorkspaceWithOrganizationName>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let limit = query_params.limit.unwrap_or(10);
     let offset = query_params.offset.unwrap_or(0);
 
@@ -92,7 +98,7 @@ pub async fn get_workspace_list(
         .sort_key(query_params.sort_key)
         .sort_order(query_params.sort_order)
         .search(query_params.search)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
 
     Ok(paginate_results(workspaces, limit, Some(offset)))
@@ -103,8 +109,9 @@ pub async fn get_organization_details(
     deployment_id: i64,
     organization_id: i64,
 ) -> Result<OrganizationDetails, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetOrganizationDetailsQuery::new(deployment_id, organization_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await
 }
 
@@ -113,8 +120,9 @@ pub async fn get_workspace_details(
     deployment_id: i64,
     workspace_id: i64,
 ) -> Result<WorkspaceDetails, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetWorkspaceDetailsQuery::new(deployment_id, workspace_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await
 }
 
@@ -127,13 +135,14 @@ pub async fn get_organization_members(
     sort_key: Option<String>,
     sort_order: Option<String>,
 ) -> Result<PaginatedResponse<OrganizationMemberDetails>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let (members, has_more) = GetOrganizationMembersQuery::new(organization_id)
         .offset(offset)
         .limit(limit)
         .search(search)
         .sort_key(sort_key)
         .sort_order(sort_order)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
 
     Ok(paginated_with_has_more(members, has_more, limit, offset))
@@ -148,13 +157,14 @@ pub async fn get_workspace_members(
     sort_key: Option<String>,
     sort_order: Option<String>,
 ) -> Result<PaginatedResponse<WorkspaceMemberDetails>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let (members, has_more) = GetWorkspaceMembersQuery::new(workspace_id)
         .offset(offset)
         .limit(limit)
         .search(search)
         .sort_key(sort_key)
         .sort_order(sort_order)
-        .execute(app_state)
+        .execute_with(reader)
         .await?;
 
     Ok(paginated_with_has_more(members, has_more, limit, offset))

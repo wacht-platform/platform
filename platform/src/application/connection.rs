@@ -1,4 +1,5 @@
-use commands::{Command, UpsertDeploymentSocialConnectionCommand};
+use commands::UpsertDeploymentSocialConnectionCommand;
+use common::db_router::ReadConsistency;
 use dto::json::DeploymentSocialConnectionUpsert;
 use models::DeploymentSocialConnection;
 use queries::deployment::GetDeploymentSocialConnectionsQuery;
@@ -9,10 +10,11 @@ pub async fn get_deployment_social_connections(
     app_state: &AppState,
     deployment_id: i64,
 ) -> Result<Vec<DeploymentSocialConnection>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentSocialConnectionsQuery::builder()
         .deployment_id(deployment_id)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with(reader)
         .await
 }
 
@@ -21,10 +23,15 @@ pub async fn upsert_deployment_social_connection(
     deployment_id: i64,
     payload: DeploymentSocialConnectionUpsert,
 ) -> Result<DeploymentSocialConnection, AppError> {
+    let writer = app_state.db_router.writer();
     UpsertDeploymentSocialConnectionCommand::builder()
         .deployment_id(deployment_id)
         .connection(payload)
         .build()?
-        .execute(app_state)
+        .execute_with(
+            writer,
+            app_state.sf.next_id()? as i64,
+            &app_state.redis_client,
+        )
         .await
 }

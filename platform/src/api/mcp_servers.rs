@@ -16,10 +16,10 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time::timeout;
 
-use common::state::AppState;
+use common::{db_router::ReadConsistency, state::AppState};
 
 use models::{McpAuthConfig, McpServer, McpServerConfig};
-use queries::{GetDeploymentWithSettingsQuery, Query as QueryTrait};
+use queries::GetDeploymentWithSettingsQuery;
 
 const MCP_OAUTH_CALLBACK_URL: &str =
     "https://agentlink.wacht.services/service/mcp/consent/callback";
@@ -683,8 +683,9 @@ async fn mcp_oauth_client_name(
     app_state: &AppState,
     deployment_id: i64,
 ) -> Result<String, common::error::AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let app_name = GetDeploymentWithSettingsQuery::new(deployment_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await?
         .ui_settings
         .and_then(|ui| {

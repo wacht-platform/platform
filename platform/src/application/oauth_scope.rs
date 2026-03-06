@@ -1,9 +1,10 @@
 use commands::oauth::UpdateOAuthAppCommand;
+use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::api_key::{OAuthAppResponse, SetOAuthScopeMappingRequest, UpdateOAuthScopeRequest};
 use models::api_key::OAuthScopeDefinition;
 use models::error::AppError;
-use queries::{GetDeploymentWithSettingsQuery, Query as QueryTrait};
+use queries::GetDeploymentWithSettingsQuery;
 
 use super::oauth_shared::{get_oauth_app_by_slug, map_oauth_app_response};
 
@@ -140,8 +141,9 @@ pub async fn set_oauth_scope_mapping(
     }
 
     if organization_permission.is_some() || workspace_permission.is_some() {
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         let deployment = GetDeploymentWithSettingsQuery::new(deployment_id)
-            .execute(app_state)
+            .execute_with(reader)
             .await?;
 
         if let Some(permission) = organization_permission.as_deref() {

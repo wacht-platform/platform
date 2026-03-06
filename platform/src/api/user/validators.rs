@@ -1,15 +1,17 @@
 use axum::http::StatusCode;
 
+use common::db_router::ReadConsistency;
 use common::state::AppState;
 use dto::json::{CreateUserRequest, UpdateUserRequest};
-use queries::{GetDeploymentAuthSettingsQuery, Query};
+use queries::GetDeploymentAuthSettingsQuery;
 
 async fn get_deployment_auth_settings(
     app_state: &AppState,
     deployment_id: i64,
 ) -> Result<models::DeploymentAuthSettings, (StatusCode, String)> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentAuthSettingsQuery::new(deployment_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await
         .map_err(|e| {
             (

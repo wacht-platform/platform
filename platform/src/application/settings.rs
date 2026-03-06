@@ -5,6 +5,7 @@ use commands::{
     UpdateDeploymentJwtTemplateCommand, UpdateDeploymentRestrictionsCommand,
     UpdateDeploymentSmtpConfigCommand, VerifySmtpConnectionCommand,
 };
+use common::db_router::ReadConsistency;
 use common::error::AppError;
 use dto::{
     json::{
@@ -16,7 +17,7 @@ use dto::{
 };
 use models::{DeploymentJwtTemplate, DeploymentWithSettings, EmailTemplate};
 use queries::{
-    GetDeploymentEmailTemplateQuery, Query,
+    GetDeploymentEmailTemplateQuery,
     deployment::{GetDeploymentJwtTemplatesQuery, GetDeploymentWithSettingsQuery},
 };
 
@@ -26,8 +27,9 @@ pub async fn get_deployment_with_settings(
     app_state: &AppState,
     deployment_id: i64,
 ) -> Result<DeploymentWithSettings, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentWithSettingsQuery::new(deployment_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await
 }
 
@@ -36,8 +38,9 @@ pub async fn update_deployment_display_settings(
     deployment_id: i64,
     updates: DeploymentDisplaySettingsUpdates,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)
-        .execute(app_state)
+        .execute_with(writer, &app_state.redis_client)
         .await?;
     Ok(())
 }
@@ -47,8 +50,9 @@ pub async fn update_deployment_auth_settings(
     deployment_id: i64,
     updates: DeploymentAuthSettingsUpdates,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     UpdateDeploymentAuthSettingsCommand::new(deployment_id, updates)
-        .execute(app_state)
+        .execute_with(writer, &app_state.redis_client)
         .await?;
     Ok(())
 }
@@ -58,8 +62,9 @@ pub async fn update_deployment_restrictions(
     deployment_id: i64,
     updates: DeploymentRestrictionsUpdates,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     UpdateDeploymentRestrictionsCommand::new(deployment_id, updates)
-        .execute(app_state)
+        .execute_with(writer, &app_state.redis_client)
         .await?;
     Ok(())
 }
@@ -68,8 +73,9 @@ pub async fn get_deployment_jwt_templates(
     app_state: &AppState,
     deployment_id: i64,
 ) -> Result<Vec<DeploymentJwtTemplate>, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentJwtTemplatesQuery::new(deployment_id)
-        .execute(app_state)
+        .execute_with(reader)
         .await
 }
 
@@ -78,8 +84,13 @@ pub async fn create_deployment_jwt_template(
     deployment_id: i64,
     template: NewDeploymentJwtTemplate,
 ) -> Result<DeploymentJwtTemplate, AppError> {
+    let writer = app_state.db_router.writer();
     CreateDeploymentJwtTemplateCommand::new(deployment_id, template)
-        .execute(app_state)
+        .execute_with(
+            writer,
+            app_state.sf.next_id()? as i64,
+            &app_state.redis_client,
+        )
         .await
 }
 
@@ -89,8 +100,9 @@ pub async fn update_deployment_jwt_template(
     template_id: i64,
     updates: PartialDeploymentJwtTemplate,
 ) -> Result<DeploymentJwtTemplate, AppError> {
+    let writer = app_state.db_router.writer();
     UpdateDeploymentJwtTemplateCommand::new(deployment_id, template_id, updates)
-        .execute(app_state)
+        .execute_with(writer, &app_state.redis_client)
         .await
 }
 
@@ -99,8 +111,9 @@ pub async fn delete_deployment_jwt_template(
     deployment_id: i64,
     template_id: i64,
 ) -> Result<(), AppError> {
+    let writer = app_state.db_router.writer();
     DeleteDeploymentJwtTemplateCommand::new(deployment_id, template_id)
-        .execute(app_state)
+        .execute_with(writer, &app_state.redis_client)
         .await?;
     Ok(())
 }
@@ -110,8 +123,9 @@ pub async fn get_deployment_email_template(
     deployment_id: i64,
     template_name: DeploymentNameParams,
 ) -> Result<EmailTemplate, AppError> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentEmailTemplateQuery::new(deployment_id, template_name)
-        .execute(app_state)
+        .execute_with(reader)
         .await
 }
 

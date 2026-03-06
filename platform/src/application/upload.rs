@@ -1,4 +1,4 @@
-use commands::{Command, UpdateDeploymentDisplaySettingsCommand, UploadToCdnCommand};
+use commands::{UpdateDeploymentDisplaySettingsCommand, UploadToCdnCommand};
 use common::error::AppError;
 use dto::json::{DeploymentDisplaySettingsUpdates, UploadResult};
 
@@ -81,6 +81,7 @@ pub async fn upload_image(
     image_buffer: Vec<u8>,
     file_extension: &str,
 ) -> Result<UploadResult, AppError> {
+    let writer = app_state.db_router.writer();
     let (file_path, updates) = build_upload_target(deployment_id, image_type, file_extension)?;
 
     let url = UploadToCdnCommand::new(file_path, image_buffer)
@@ -88,7 +89,7 @@ pub async fn upload_image(
         .await?;
 
     UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)
-        .execute(app_state)
+        .execute_with(writer, &app_state.redis_client)
         .await?;
 
     Ok(UploadResult { url })

@@ -15,22 +15,33 @@ impl GetDeploymentWorkspaceRolesQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
     }
-}
 
-impl Query for GetDeploymentWorkspaceRolesQuery {
-    type Output = Vec<DeploymentWorkspaceRole>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<DeploymentWorkspaceRole>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = query_as!(
             DeploymentWorkspaceRole,
             r#"
             SELECT * FROM workspace_roles WHERE deployment_id = $1"#,
             self.deployment_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(rows)
+    }
+}
+
+impl Query for GetDeploymentWorkspaceRolesQuery {
+    type Output = Vec<DeploymentWorkspaceRole>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -42,21 +53,32 @@ impl GetDeploymentOrganizationRolesQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
     }
+
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<DeploymentOrganizationRole>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        let rows = query_as!(
+            DeploymentOrganizationRole,
+            r#"SELECT * FROM organization_roles WHERE deployment_id = $1"#,
+            self.deployment_id
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+
+        Ok(rows)
+    }
 }
 
 impl Query for GetDeploymentOrganizationRolesQuery {
     type Output = Vec<DeploymentOrganizationRole>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let rows = query_as!(
-            DeploymentOrganizationRole,
-            r#"SELECT * FROM organization_roles WHERE deployment_id = $1"#,
-            self.deployment_id
-        )
-        .fetch_all(&app_state.db_pool)
-        .await?;
-
-        Ok(rows)
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -105,12 +127,12 @@ impl DeploymentOrganizationListQuery {
         self.search = search;
         self
     }
-}
 
-impl Query for DeploymentOrganizationListQuery {
-    type Output = Vec<Organization>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<Organization>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
@@ -134,7 +156,6 @@ impl Query for DeploymentOrganizationListQuery {
         let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
         let sort_order = self.sort_order.as_deref().unwrap_or("desc");
 
-        // Sanitize sort key to prevent SQL injection (though unlikely with current usage)
         let valid_sort_keys = ["created_at", "name", "member_count", "updated_at"];
         let safe_sort_key = if valid_sort_keys.contains(&sort_key) {
             sort_key
@@ -155,7 +176,7 @@ impl Query for DeploymentOrganizationListQuery {
         qb.push(" LIMIT ");
         qb.push_bind(self.limit);
 
-        let rows = qb.build().fetch_all(&app_state.db_pool).await?;
+        let rows = qb.build().fetch_all(&mut *conn).await?;
 
         Ok(rows
             .into_iter()
@@ -171,6 +192,14 @@ impl Query for DeploymentOrganizationListQuery {
                 private_metadata: row.get("private_metadata"),
             })
             .collect())
+    }
+}
+
+impl Query for DeploymentOrganizationListQuery {
+    type Output = Vec<Organization>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -219,12 +248,15 @@ impl DeploymentWorkspaceListQuery {
         self.search = search;
         self
     }
-}
 
-impl Query for DeploymentWorkspaceListQuery {
-    type Output = Vec<WorkspaceWithOrganizationName>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<WorkspaceWithOrganizationName>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
@@ -253,7 +285,6 @@ impl Query for DeploymentWorkspaceListQuery {
         let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
         let sort_order = self.sort_order.as_deref().unwrap_or("desc");
 
-        // Sanitize sort key
         let valid_sort_keys = [
             "created_at",
             "name",
@@ -273,7 +304,6 @@ impl Query for DeploymentWorkspaceListQuery {
             "DESC"
         };
 
-        // Handle sorting by organization name which is on joined table 'o'
         if safe_sort_key == "organization_name" {
             qb.push(format!(" ORDER BY o.name {}", safe_sort_order));
         } else {
@@ -285,7 +315,7 @@ impl Query for DeploymentWorkspaceListQuery {
         qb.push(" LIMIT ");
         qb.push_bind(self.limit);
 
-        let rows = qb.build().fetch_all(&app_state.db_pool).await?;
+        let rows = qb.build().fetch_all(&mut *conn).await?;
 
         Ok(rows
             .into_iter()
@@ -303,6 +333,14 @@ impl Query for DeploymentWorkspaceListQuery {
     }
 }
 
+impl Query for DeploymentWorkspaceListQuery {
+    type Output = Vec<WorkspaceWithOrganizationName>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetOrganizationDetailsQuery {
     deployment_id: i64,
     organization_id: i64,
@@ -315,13 +353,12 @@ impl GetOrganizationDetailsQuery {
             organization_id,
         }
     }
-}
 
-impl Query for GetOrganizationDetailsQuery {
-    type Output = OrganizationDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Get organization basic info
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<OrganizationDetails, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let org_row = sqlx::query!(
             r#"
             SELECT
@@ -334,10 +371,9 @@ impl Query for GetOrganizationDetailsQuery {
             self.deployment_id,
             self.organization_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
-        // Get organization roles with permissions (both deployment-level and organization-specific)
         let role_rows = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, name, permissions, organization_id
@@ -348,7 +384,7 @@ impl Query for GetOrganizationDetailsQuery {
             self.deployment_id,
             self.organization_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let roles: Vec<OrganizationRole> = role_rows
@@ -363,7 +399,6 @@ impl Query for GetOrganizationDetailsQuery {
             })
             .collect();
 
-        // Get organization workspaces
         let workspace_rows = sqlx::query!(
             r#"
             SELECT
@@ -376,7 +411,7 @@ impl Query for GetOrganizationDetailsQuery {
             "#,
             self.organization_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let workspaces: Vec<Workspace> = workspace_rows
@@ -405,7 +440,7 @@ impl Query for GetOrganizationDetailsQuery {
             "#,
             self.organization_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(OrganizationDetails {
@@ -425,6 +460,14 @@ impl Query for GetOrganizationDetailsQuery {
     }
 }
 
+impl Query for GetOrganizationDetailsQuery {
+    type Output = OrganizationDetails;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetWorkspaceDetailsQuery {
     deployment_id: i64,
     workspace_id: i64,
@@ -437,13 +480,12 @@ impl GetWorkspaceDetailsQuery {
             workspace_id,
         }
     }
-}
 
-impl Query for GetWorkspaceDetailsQuery {
-    type Output = WorkspaceDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Get workspace basic info with organization name
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<WorkspaceDetails, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let workspace_row = sqlx::query!(
             r#"
             SELECT
@@ -458,10 +500,9 @@ impl Query for GetWorkspaceDetailsQuery {
             self.deployment_id,
             self.workspace_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
-        // Get workspace roles with permissions (both deployment-level and workspace-specific)
         let role_rows = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, name, permissions, workspace_id
@@ -472,7 +513,7 @@ impl Query for GetWorkspaceDetailsQuery {
             self.deployment_id,
             self.workspace_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let roles: Vec<WorkspaceRole> = role_rows
@@ -498,7 +539,7 @@ impl Query for GetWorkspaceDetailsQuery {
             "#,
             self.workspace_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(WorkspaceDetails {
@@ -516,6 +557,14 @@ impl Query for GetWorkspaceDetailsQuery {
             roles,
             segments,
         })
+    }
+}
+
+impl Query for GetWorkspaceDetailsQuery {
+    type Output = WorkspaceDetails;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -564,12 +613,15 @@ impl GetOrganizationMembersQuery {
         self.sort_order = sort_order;
         self
     }
-}
 
-impl Query for GetOrganizationMembersQuery {
-    type Output = (Vec<OrganizationMemberDetails>, bool);
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<(Vec<OrganizationMemberDetails>, bool), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
@@ -674,7 +726,7 @@ impl Query for GetOrganizationMembersQuery {
         qb.push(" OFFSET ");
         qb.push_bind(self.offset);
 
-        let member_rows = qb.build().fetch_all(&app_state.db_pool).await?;
+        let member_rows = qb.build().fetch_all(&mut *conn).await?;
 
         let has_more = member_rows.len() > self.limit as usize;
         let members: Vec<OrganizationMemberDetails> = member_rows
@@ -710,6 +762,14 @@ impl Query for GetOrganizationMembersQuery {
             .collect();
 
         Ok((members, has_more))
+    }
+}
+
+impl Query for GetOrganizationMembersQuery {
+    type Output = (Vec<OrganizationMemberDetails>, bool);
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -758,12 +818,15 @@ impl GetWorkspaceMembersQuery {
         self.sort_order = sort_order;
         self
     }
-}
 
-impl Query for GetWorkspaceMembersQuery {
-    type Output = (Vec<WorkspaceMemberDetails>, bool);
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<(Vec<WorkspaceMemberDetails>, bool), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
@@ -847,7 +910,6 @@ impl Query for GetWorkspaceMembersQuery {
 
         qb.push(" GROUP BY wm.id, wm.created_at, wm.updated_at, wm.workspace_id, wm.user_id, wm.public_metadata, u.first_name, u.last_name, u.username, u.created_at, e.email_address, p.phone_number");
 
-        // Sorting
         let sort_column = match self.sort_key.as_deref() {
             Some("first_name") => "u.first_name",
             Some("last_name") => "u.last_name",
@@ -869,7 +931,7 @@ impl Query for GetWorkspaceMembersQuery {
         qb.push(" OFFSET ");
         qb.push_bind(self.offset);
 
-        let member_rows = qb.build().fetch_all(&app_state.db_pool).await?;
+        let member_rows = qb.build().fetch_all(&mut *conn).await?;
 
         let has_more = member_rows.len() > self.limit as usize;
         let members: Vec<WorkspaceMemberDetails> = member_rows
@@ -905,5 +967,13 @@ impl Query for GetWorkspaceMembersQuery {
             .collect();
 
         Ok((members, has_more))
+    }
+}
+
+impl Query for GetWorkspaceMembersQuery {
+    type Output = (Vec<WorkspaceMemberDetails>, bool);
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

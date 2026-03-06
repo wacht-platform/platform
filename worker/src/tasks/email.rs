@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{self, Datelike, Utc};
 use commands::{Command, email::SendEmailCommand};
-use common::state::AppState;
+use common::{db_router::ReadConsistency, state::AppState};
 use models::{DeploymentInvitation, DeploymentWithSettings, EmailProvider, SignIn, UserDetails};
 use queries::{
     Query, deployment::GetDeploymentWithSettingsQuery, invitation::GetDeploymentInvitationQuery,
@@ -109,10 +109,7 @@ pub async fn send_verification_email_impl(
     user_agent: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let app_logo_url = deployment_settings
         .ui_settings
@@ -159,10 +156,7 @@ pub async fn send_password_reset_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch user details: {}", e))?;
 
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let app_logo_url = deployment_settings
         .ui_settings
@@ -208,10 +202,7 @@ pub async fn send_magic_link_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch user details: {}", e))?;
 
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let app_logo_url = deployment_settings
         .ui_settings
@@ -255,10 +246,7 @@ pub async fn send_signin_notification_email_impl(
         .await
         .map_err(|e| format!("Failed to fetch user details: {}", e))?;
 
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let signin_details = fetch_signin_details(&app_state, signin_id).await.ok();
 
@@ -305,10 +293,7 @@ pub async fn send_email_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch user details: {}", e))?;
 
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let app_logo_url = deployment_settings
         .ui_settings
@@ -352,10 +337,7 @@ pub async fn send_password_change_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch user details: {}", e))?;
 
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let app_logo_url = deployment_settings
         .ui_settings
@@ -397,10 +379,7 @@ pub async fn send_password_remove_notification_impl(
         .await
         .map_err(|e| format!("Failed to fetch user details: {}", e))?;
 
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let app_logo_url = deployment_settings
         .ui_settings
@@ -438,10 +417,7 @@ pub async fn send_waitlist_signup_email_impl(
     _last_name: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let app_name = get_app_name_with_fallback(&deployment_settings);
     let app_logo_url = deployment_settings
@@ -484,10 +460,7 @@ pub async fn send_organization_membership_invite_impl(
     app_state: &AppState,
 ) -> Result<String, String> {
     // Fetch deployment settings
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let app_name = get_app_name_with_fallback(&deployment_settings);
     let app_logo_url = deployment_settings
@@ -550,10 +523,7 @@ pub async fn send_deployment_invite_impl(
         .await
         .map_err(|e| format!("Failed to fetch inviter user details: {}", e))?;
 
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let workspace_name = if let Some(ws_id) = workspace_id {
         fetch_workspace_name(&app_state, ws_id)
@@ -621,10 +591,7 @@ pub async fn send_waitlist_approval_impl(
         .await
         .map_err(|e| format!("Failed to fetch invitation: {}", e))?;
 
-    let deployment_settings = GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))?;
+    let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
     let app_logo_url = deployment_settings
         .ui_settings
@@ -670,6 +637,17 @@ async fn fetch_signin_details(app_state: &AppState, signin_id: u64) -> Result<Si
         .execute(app_state)
         .await
         .map_err(|e| format!("Failed to fetch signin details: {}", e))
+}
+
+async fn fetch_deployment_settings(
+    app_state: &AppState,
+    deployment_id: u64,
+) -> Result<DeploymentWithSettings, String> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    GetDeploymentWithSettingsQuery::new(deployment_id as i64)
+        .execute_with(reader)
+        .await
+        .map_err(|e| format!("Failed to fetch deployment settings: {}", e))
 }
 
 async fn fetch_deployment_invitation(
