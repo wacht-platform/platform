@@ -2,6 +2,8 @@ use crate::{Command, DispatchDocumentBatchTaskCommand};
 use chrono::Utc;
 use common::error::AppError;
 use common::state::AppState;
+use sqlx::Connection;
+use std::future::Future;
 
 pub struct ProcessDocumentCommand {
     pub deployment_id: i64,
@@ -17,12 +19,20 @@ impl ProcessDocumentCommand {
             document_id,
         }
     }
-}
 
-impl Command for ProcessDocumentCommand {
-    type Output = String;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A, DispatchFn, DispatchFut>(
+        self,
+        acquirer: A,
+        storage_client: &aws_sdk_s3::Client,
+        text_processing_service: &common::TextProcessingService,
+        dispatch_batch: DispatchFn,
+    ) -> Result<String, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        DispatchFn: Fn(i64, i64, usize) -> DispatchFut,
+        DispatchFut: Future<Output = Result<(), AppError>>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         let document = sqlx::query!(
@@ -34,21 +44,14 @@ impl Command for ProcessDocumentCommand {
             self.document_id,
             self.knowledge_base_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
-
-        let file_key = document.file_url.clone();
-
-        let storage_client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+        .map_err(AppError::Database)?;
 
         let response = storage_client
             .get_object()
             .bucket("wacht-agents")
-            .key(&file_key)
+            .key(&document.file_url)
             .send()
             .await
             .map_err(|e| {
@@ -63,14 +66,9 @@ impl Command for ProcessDocumentCommand {
             .into_bytes()
             .to_vec();
 
-        let text = app_state
-            .text_processing_service
-            .extract_text_from_file(&file_content, &document.file_type)?;
-
-        let cleaned_text = app_state.text_processing_service.clean_text(&text);
-        let chunks = app_state
-            .text_processing_service
-            .chunk_text(&cleaned_text, 2000, 200)?;
+        let text = text_processing_service.extract_text_from_file(&file_content, &document.file_type)?;
+        let cleaned_text = text_processing_service.clean_text(&text);
+        let chunks = text_processing_service.chunk_text(&cleaned_text, 2000, 200)?;
 
         if chunks.is_empty() {
             let _ = sqlx::query!(
@@ -91,17 +89,13 @@ impl Command for ProcessDocumentCommand {
                 now,
                 document.id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await;
 
             return Ok("No chunks created from document".to_string());
         }
 
-        let mut tx = app_state
-            .db_pool
-            .begin()
-            .await
-            .map_err(|e| AppError::Database(e))?;
+        let mut tx = conn.begin().await.map_err(AppError::Database)?;
 
         for (chunk_index, chunk) in chunks.iter().enumerate() {
             sqlx::query!(
@@ -120,10 +114,10 @@ impl Command for ProcessDocumentCommand {
             )
             .execute(&mut *tx)
             .await
-            .map_err(|e| AppError::Database(e))?;
+            .map_err(AppError::Database)?;
         }
 
-        tx.commit().await.map_err(|e| AppError::Database(e))?;
+        tx.commit().await.map_err(AppError::Database)?;
 
         let _ = sqlx::query!(
             r#"
@@ -144,13 +138,10 @@ impl Command for ProcessDocumentCommand {
             now,
             document.id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await;
 
-        let dispatch_task =
-            DispatchDocumentBatchTaskCommand::new(self.deployment_id, self.knowledge_base_id, 100);
-
-        if let Err(e) = Command::execute(dispatch_task, app_state).await {
+        if let Err(e) = dispatch_batch(self.deployment_id, self.knowledge_base_id, 100).await {
             tracing::error!("Failed to dispatch embedding processing task: {}", e);
             let _ = sqlx::query!(
                 r#"
@@ -166,7 +157,7 @@ impl Command for ProcessDocumentCommand {
                 now,
                 document.id
             )
-            .execute(&app_state.db_pool)
+            .execute(&mut *conn)
             .await;
         }
 
@@ -175,5 +166,30 @@ impl Command for ProcessDocumentCommand {
             document.title,
             chunks.len()
         ))
+    }
+}
+
+impl Command for ProcessDocumentCommand {
+    type Output = String;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let storage_client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+        self.execute_with(
+            &app_state.db_pool,
+            storage_client,
+            &app_state.text_processing_service,
+            |deployment_id, knowledge_base_id, batch_size| async move {
+                let dispatch_task = DispatchDocumentBatchTaskCommand::new(
+                    deployment_id,
+                    knowledge_base_id,
+                    batch_size,
+                );
+                Command::execute(dispatch_task, app_state).await
+            },
+        )
+        .await
     }
 }

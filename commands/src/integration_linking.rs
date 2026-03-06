@@ -44,6 +44,34 @@ impl CreateIntegrationLinkCodeCommand {
             integration_type,
         }
     }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A, id: i64) -> Result<LinkCodeResponse, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        let code = base62_encode(id as u64);
+        let expires_at = Utc::now() + Duration::minutes(10);
+
+        sqlx::query!(
+            r#"
+            INSERT INTO integration_link_codes (id, deployment_id, context_group, agent_id, integration_type, code, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "#,
+            id,
+            self.deployment_id,
+            self.context_group,
+            self.agent_id,
+            self.integration_type,
+            code,
+            expires_at,
+        )
+        .execute(&mut *conn)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(LinkCodeResponse { code, expires_at })
+    }
 }
 
 #[derive(Serialize)]
@@ -61,28 +89,7 @@ impl Command for CreateIntegrationLinkCodeCommand {
             .next_id()
             .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
             as i64;
-        // Use Base62-encoded Snowflake ID for guaranteed uniqueness
-        let code = base62_encode(id as u64);
-        let expires_at = Utc::now() + Duration::minutes(10);
-
-        sqlx::query!(
-            r#"
-            INSERT INTO integration_link_codes (id, deployment_id, context_group, agent_id, integration_type, code, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            "#,
-            id,
-            self.deployment_id,
-            self.context_group,
-            self.agent_id,
-            self.integration_type,
-            code,
-            expires_at,
-        )
-        .execute(&app_state.db_pool)
-        .await
-        .map_err(AppError::Database)?;
-
-        Ok(LinkCodeResponse { code, expires_at })
+        self.execute_with(&app_state.db_pool, id).await
     }
 }
 
@@ -108,20 +115,16 @@ impl ValidateLinkCodeCommand {
             connection_metadata,
         }
     }
-}
 
-#[derive(Serialize)]
-pub struct ValidateLinkCodeResponse {
-    pub context_group: String,
-    pub deployment_id: i64,
-    pub connection_id: i64,
-}
-
-impl Command for ValidateLinkCodeCommand {
-    type Output = ValidateLinkCodeResponse;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Find the code
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        connection_id: i64,
+    ) -> Result<ValidateLinkCodeResponse, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let link_code = sqlx::query_as!(
             IntegrationLinkCode,
             r#"
@@ -131,29 +134,20 @@ impl Command for ValidateLinkCodeCommand {
             "#,
             self.code,
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::BadRequest("Invalid or expired code".to_string()))?;
 
-        // Mark code as used
         sqlx::query!(
             "UPDATE integration_link_codes SET used_at = NOW() WHERE id = $1",
             link_code.id,
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
-        // Use context_group directly from link code
         let context_group = link_code.context_group.clone();
-
-        // Create the active integration connection
-        let connection_id = app_state
-            .sf
-            .next_id()
-            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
-            as i64;
         sqlx::query!(
             r#"
             INSERT INTO active_agent_integrations (id, deployment_id, context_group, integration_id, external_id, connection_metadata)
@@ -168,7 +162,7 @@ impl Command for ValidateLinkCodeCommand {
             self.external_id,
             self.connection_metadata,
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -177,6 +171,26 @@ impl Command for ValidateLinkCodeCommand {
             deployment_id: link_code.deployment_id,
             connection_id,
         })
+    }
+}
+
+#[derive(Serialize)]
+pub struct ValidateLinkCodeResponse {
+    pub context_group: String,
+    pub deployment_id: i64,
+    pub connection_id: i64,
+}
+
+impl Command for ValidateLinkCodeCommand {
+    type Output = ValidateLinkCodeResponse;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let connection_id = app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
+            as i64;
+        self.execute_with(&app_state.db_pool, connection_id).await
     }
 }
 
@@ -193,12 +207,15 @@ impl GetActiveIntegrationCommand {
             external_id,
         }
     }
-}
 
-impl Command for GetActiveIntegrationCommand {
-    type Output = Option<ActiveAgentIntegration>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+    ) -> Result<Option<ActiveAgentIntegration>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query_as!(
             ActiveAgentIntegration,
             r#"
@@ -209,10 +226,18 @@ impl Command for GetActiveIntegrationCommand {
             self.integration_id,
             self.external_id,
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
         Ok(result)
+    }
+}
+
+impl Command for GetActiveIntegrationCommand {
+    type Output = Option<ActiveAgentIntegration>;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

@@ -59,6 +59,13 @@ impl DeleteProjectCommand {
 
         Ok(())
     }
+
+    pub async fn execute_with(self, writer: &sqlx::PgPool) -> Result<(), AppError> {
+        let mut tx = writer.begin().await?;
+        self.execute_in_tx(&mut tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
 }
 
 impl DeleteProjectCommandBuilder {
@@ -80,9 +87,6 @@ impl Command for DeleteProjectCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_router.writer().begin().await?;
-        self.execute_in_tx(&mut tx).await?;
-        tx.commit().await?;
-        Ok(())
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

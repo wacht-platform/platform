@@ -1,4 +1,5 @@
 use chrono::{Duration, Utc};
+use std::future::Future;
 
 use crate::{Command, SendEmailCommand};
 use common::db_router::ReadConsistency;
@@ -21,14 +22,17 @@ impl InviteUserCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with<'a, A, SendEmailFn, SendEmailFut>(
         self,
         acquirer: A,
-        app_state: &AppState,
+        reader: &sqlx::PgPool,
+        send_email: SendEmailFn,
         invitation_id: i64,
     ) -> Result<DeploymentInvitation, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        SendEmailFn: FnOnce(i64, String, serde_json::Value) -> SendEmailFut,
+        SendEmailFut: Future<Output = Result<(), AppError>>,
     {
         let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
@@ -63,7 +67,6 @@ impl InviteUserCommand {
         .execute(&mut *conn)
         .await?;
 
-        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         let deployment_settings =
             queries::deployment::GetDeploymentWithSettingsQuery::new(self.deployment_id)
                 .execute_with(reader)
@@ -98,13 +101,12 @@ impl InviteUserCommand {
             "action_url": format!("https://{}/sign-up?invite_token={}", deployment_settings.frontend_host, token)
         });
 
-        let send_email_command = SendEmailCommand::new(
+        send_email(
             self.deployment_id,
-            "waitlist_invite_template".to_string(),
             self.request.email_address.clone(),
             variables,
-        );
-        Command::execute(send_email_command, app_state).await?;
+        )
+        .await?;
 
         Ok(DeploymentInvitation {
             id: invitation_id,
@@ -124,9 +126,19 @@ impl Command for InviteUserCommand {
     type Output = DeploymentInvitation;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         self.execute_with(
             &app_state.db_pool,
-            app_state,
+            reader,
+            |deployment_id, to_email, variables| async move {
+                let send_email_command = SendEmailCommand::new(
+                    deployment_id,
+                    "waitlist_invite_template".to_string(),
+                    to_email,
+                    variables,
+                );
+                Command::execute(send_email_command, app_state).await
+            },
             app_state.sf.next_id()? as i64,
         )
         .await
@@ -146,14 +158,17 @@ impl ApproveWaitlistUserCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with<'a, A, SendEmailFn, SendEmailFut>(
         self,
         acquirer: A,
-        app_state: &AppState,
+        reader: &sqlx::PgPool,
+        send_email: SendEmailFn,
         invitation_id: i64,
     ) -> Result<DeploymentInvitation, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        SendEmailFn: FnOnce(i64, String, serde_json::Value) -> SendEmailFut,
+        SendEmailFut: Future<Output = Result<(), AppError>>,
     {
         let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
@@ -206,7 +221,6 @@ impl ApproveWaitlistUserCommand {
         .execute(&mut *tx)
         .await?;
 
-        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         let deployment_settings =
             queries::deployment::GetDeploymentWithSettingsQuery::new(self.deployment_id)
                 .execute_with(reader)
@@ -234,13 +248,7 @@ impl ApproveWaitlistUserCommand {
             "action_url": format!("https://{}/sign-up?invite_token={}", deployment_settings.frontend_host, token)
         });
 
-        let send_email_command = SendEmailCommand::new(
-            self.deployment_id,
-            "waitlist_invite_template".to_string(),
-            email_address.clone(),
-            variables,
-        );
-        Command::execute(send_email_command, app_state).await?;
+        send_email(self.deployment_id, email_address.clone(), variables).await?;
 
         sqlx::query!(
             "DELETE FROM deployment_waitlist_users WHERE id = $1",
@@ -269,9 +277,19 @@ impl Command for ApproveWaitlistUserCommand {
     type Output = DeploymentInvitation;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let reader = app_state.db_router.reader(ReadConsistency::Strong);
         self.execute_with(
             &app_state.db_pool,
-            app_state,
+            reader,
+            |deployment_id, to_email, variables| async move {
+                let send_email_command = SendEmailCommand::new(
+                    deployment_id,
+                    "waitlist_invite_template".to_string(),
+                    to_email,
+                    variables,
+                );
+                Command::execute(send_email_command, app_state).await
+            },
             app_state.sf.next_id()? as i64,
         )
         .await

@@ -16,8 +16,13 @@ impl Command for EnqueueOAuthGrantLastUsed {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut redis_conn = app_state
-            .redis_client
+        self.execute_with(&app_state.redis_client).await
+    }
+}
+
+impl EnqueueOAuthGrantLastUsed {
+    pub async fn execute_with(self, redis_client: &redis::Client) -> Result<(), AppError> {
+        let mut redis_conn = redis_client
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to connect redis: {}", e)))?;
@@ -48,10 +53,23 @@ impl Command for SyncOAuthGrantLastUsedBatch {
     type Output = usize;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.redis_client, &app_state.db_pool)
+            .await
+    }
+}
+
+impl SyncOAuthGrantLastUsedBatch {
+    pub async fn execute_with<'a, A>(
+        self,
+        redis_client: &redis::Client,
+        acquirer: A,
+    ) -> Result<usize, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
         let batch_size = self.batch_size.max(1);
 
-        let mut redis_conn = app_state
-            .redis_client
+        let mut redis_conn = redis_client
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to connect redis: {}", e)))?;
@@ -100,6 +118,7 @@ impl Command for SyncOAuthGrantLastUsedBatch {
         }
 
         let synced = grant_ids.len();
+        let mut conn = acquirer.acquire().await?;
 
         sqlx::query(
             r#"
@@ -124,7 +143,7 @@ impl Command for SyncOAuthGrantLastUsedBatch {
         .bind(&client_ids)
         .bind(&grant_ids)
         .bind(&used_ats)
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(synced)

@@ -3,6 +3,7 @@ use chrono::Utc;
 use common::error::AppError;
 use common::state::AppState;
 use pgvector::HalfVector;
+use std::future::Future;
 use tracing::{error, info};
 
 pub struct ProcessDocumentBatchCommand {
@@ -25,12 +26,31 @@ impl Command for ProcessDocumentBatchCommand {
     type Output = String;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, |texts| async move {
+            let embeddings_command = GenerateEmbeddingsCommand::new(texts);
+            Command::execute(embeddings_command, app_state).await
+        })
+        .await
+    }
+}
+
+impl ProcessDocumentBatchCommand {
+    pub async fn execute_with<'a, A, GenerateEmbeddingsFn, GenerateEmbeddingsFut>(
+        self,
+        acquirer: A,
+        generate_embeddings: GenerateEmbeddingsFn,
+    ) -> Result<String, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        GenerateEmbeddingsFn: Fn(Vec<String>) -> GenerateEmbeddingsFut + Copy,
+        GenerateEmbeddingsFut: Future<Output = Result<Vec<Vec<f32>>, AppError>>,
+    {
+        let mut conn = acquirer.acquire().await?;
         info!(
             "Processing embeddings for up to {} chunks in knowledge base {} (deployment {})",
             self.batch_size, self.knowledge_base_id, self.deployment_id
         );
 
-        // Get chunks that don't have embeddings yet
         let pending_chunks = sqlx::query!(
             r#"
             SELECT document_id, chunk_index, content 
@@ -45,7 +65,7 @@ impl Command for ProcessDocumentBatchCommand {
             self.deployment_id,
             self.batch_size as i64
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| AppError::Database(e))?;
 
@@ -66,9 +86,7 @@ impl Command for ProcessDocumentBatchCommand {
                 .map(|chunk| chunk.content.clone())
                 .collect();
 
-            // Generate embeddings for this batch
-            let embeddings_command = GenerateEmbeddingsCommand::new(chunk_texts);
-            let embeddings = match Command::execute(embeddings_command, app_state).await {
+            let embeddings = match generate_embeddings(chunk_texts).await {
                 Ok(embeddings) => embeddings,
                 Err(e) => {
                     error!("Failed to generate embeddings for batch: {}", e);
@@ -87,7 +105,7 @@ impl Command for ProcessDocumentBatchCommand {
                 .bind(Utc::now())
                 .bind(chunk.document_id)
                 .bind(chunk.chunk_index)
-                .execute(&app_state.db_pool)
+                .execute(&mut *conn)
                 .await {
                     Ok(_) => {
                         total_processed += 1;
@@ -108,7 +126,7 @@ impl Command for ProcessDocumentBatchCommand {
                 "SELECT COUNT(*) as count FROM knowledge_base_document_chunks WHERE document_id = $1 AND embedding IS NULL",
                 document_id
             )
-            .fetch_one(&app_state.db_pool)
+            .fetch_one(&mut *conn)
             .await
             .map_err(|e| AppError::Database(e))?;
 
@@ -128,7 +146,7 @@ impl Command for ProcessDocumentBatchCommand {
                     Utc::now(),
                     document_id
                 )
-                .execute(&app_state.db_pool)
+                .execute(&mut *conn)
                 .await
                 {
                     error!(

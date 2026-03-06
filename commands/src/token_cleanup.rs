@@ -10,6 +10,16 @@ impl Command for CleanupRotatingTokenCommand {
     type Output = bool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl CleanupRotatingTokenCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let res = sqlx::query!(
             r#"
             DELETE FROM rotating_tokens
@@ -19,7 +29,7 @@ impl Command for CleanupRotatingTokenCommand {
             "#,
             self.rotating_token_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(res.rows_affected() > 0)
@@ -34,6 +44,16 @@ impl Command for CleanupOrphanSessionCommand {
     type Output = bool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl CleanupOrphanSessionCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let res = sqlx::query!(
             r#"
             DELETE FROM sessions s
@@ -49,7 +69,7 @@ impl Command for CleanupOrphanSessionCommand {
             "#,
             self.session_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(res.rows_affected() > 0)

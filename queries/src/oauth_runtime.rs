@@ -255,12 +255,12 @@ impl ResolveApiAuthAppSlugByApiKeyHashQuery {
             key_hash,
         }
     }
-}
 
-impl Query for ResolveApiAuthAppSlugByApiKeyHashQuery {
-    type Output = Option<String>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT app_slug
@@ -275,10 +275,18 @@ impl Query for ResolveApiAuthAppSlugByApiKeyHashQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.key_hash)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(row.map(|r| r.get("app_slug")))
+    }
+}
+
+impl Query for ResolveApiAuthAppSlugByApiKeyHashQuery {
+    type Output = Option<String>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -294,12 +302,12 @@ impl GetRuntimeApiAuthAppSlugByUserIdQuery {
             user_id,
         }
     }
-}
 
-impl Query for GetRuntimeApiAuthAppSlugByUserIdQuery {
-    type Output = Option<String>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT app_slug
@@ -313,10 +321,18 @@ impl Query for GetRuntimeApiAuthAppSlugByUserIdQuery {
         )
         .bind(self.deployment_id)
         .bind(self.user_id)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(row.map(|r| r.get("app_slug")))
+    }
+}
+
+impl Query for GetRuntimeApiAuthAppSlugByUserIdQuery {
+    type Output = Option<String>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -428,12 +444,15 @@ impl ListActiveRuntimeOAuthGrantsQuery {
             app_slug,
         }
     }
-}
 
-impl Query for ListActiveRuntimeOAuthGrantsQuery {
-    type Output = Vec<RuntimeOAuthGrantData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<RuntimeOAuthGrantData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query(
             r#"
             SELECT scopes, resource, granted_resource
@@ -448,7 +467,7 @@ impl Query for ListActiveRuntimeOAuthGrantsQuery {
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(&self.app_slug)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(rows
@@ -459,6 +478,14 @@ impl Query for ListActiveRuntimeOAuthGrantsQuery {
                 granted_resource: r.get("granted_resource"),
             })
             .collect())
+    }
+}
+
+impl Query for ListActiveRuntimeOAuthGrantsQuery {
+    type Output = Vec<RuntimeOAuthGrantData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -907,12 +934,15 @@ impl GetRuntimeAccessTokenByHashQuery {
             token_hash,
         }
     }
-}
 
-impl Query for GetRuntimeAccessTokenByHashQuery {
-    type Output = Option<RuntimeAccessTokenData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<RuntimeAccessTokenData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT
@@ -935,7 +965,7 @@ impl Query for GetRuntimeAccessTokenByHashQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.token_hash)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(row.map(|r| RuntimeAccessTokenData {
@@ -949,6 +979,14 @@ impl Query for GetRuntimeAccessTokenByHashQuery {
             expires_at: r.get("expires_at"),
             revoked_at: r.get("revoked_at"),
         }))
+    }
+}
+
+impl Query for GetRuntimeAccessTokenByHashQuery {
+    type Output = Option<RuntimeAccessTokenData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -1189,12 +1227,15 @@ impl GetGatewayOAuthAccessTokenByHashQuery {
     pub fn new(token_hash: String) -> Self {
         Self { token_hash }
     }
-}
 
-impl Query for GetGatewayOAuthAccessTokenByHashQuery {
-    type Output = Option<GatewayOAuthAccessTokenData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<GatewayOAuthAccessTokenData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             WITH token_row AS (
@@ -1372,7 +1413,7 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
             "#,
             self.token_hash
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(row.map(|r| GatewayOAuthAccessTokenData {
@@ -1392,5 +1433,13 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
             scope_definitions: serde_json::from_value(r.scope_definitions).unwrap_or_default(),
             active: r.active,
         }))
+    }
+}
+
+impl Query for GetGatewayOAuthAccessTokenByHashQuery {
+    type Output = Option<GatewayOAuthAccessTokenData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

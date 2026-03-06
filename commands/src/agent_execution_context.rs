@@ -493,7 +493,20 @@ impl Command for PostStatusUpdateCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let id = app_state.sf.next_id()? as i64;
+        self.execute_with(&app_state.db_pool, id).await
+    }
+}
 
+impl PostStatusUpdateCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        id: i64,
+    ) -> Result<AgentStatusUpdate, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             "INSERT INTO agent_status_updates (id, context_id, status_update, metadata, created_at)
              VALUES ($1, $2, $3, $4, NOW())
@@ -503,7 +516,7 @@ impl Command for PostStatusUpdateCommand {
             self.status_update,
             self.metadata
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|e| AppError::Database(e))?;
 
@@ -512,7 +525,7 @@ impl Command for PostStatusUpdateCommand {
             "UPDATE agent_execution_contexts SET last_activity_at = NOW() WHERE id = $1",
             self.context_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await
         .map_err(|e| AppError::Database(e))?;
 
@@ -562,6 +575,20 @@ impl Command for CreateChildContextCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let context_id = app_state.sf.next_id()? as i64;
+        self.execute_with(&app_state.db_pool, context_id).await
+    }
+}
+
+impl CreateChildContextCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        context_id: i64,
+    ) -> Result<AgentExecutionContext, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         sqlx::query!(
@@ -581,9 +608,9 @@ impl Command for CreateChildContextCommand {
             "idle",
             self.parent_context_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         Ok(AgentExecutionContext {
             id: context_id,
@@ -736,6 +763,16 @@ impl Command for StoreCompletionSummaryEnhancedCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl StoreCompletionSummaryEnhancedCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let status = self.summary.status.clone();
         let summary_json = serde_json::to_value(self.summary)
             .map_err(|e| AppError::Internal(format!("Failed to serialize summary: {}", e)))?;
@@ -763,9 +800,9 @@ impl Command for StoreCompletionSummaryEnhancedCommand {
             self.context_id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         tracing::info!(
             context_id = self.context_id,

@@ -24,6 +24,12 @@ impl Command for DispatchDocumentProcessingTaskCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.nats_client).await
+    }
+}
+
+impl DispatchDocumentProcessingTaskCommand {
+    pub async fn execute_with(self, nats_client: &async_nats::Client) -> Result<(), AppError> {
         let task_message = NatsTaskMessage {
             task_type: "document.process".to_string(),
             task_id: format!(
@@ -37,8 +43,7 @@ impl Command for DispatchDocumentProcessingTaskCommand {
             }),
         };
 
-        app_state
-            .nats_client
+        nats_client
             .publish(
                 "worker.tasks.document.process",
                 serde_json::to_vec(&task_message)
@@ -77,6 +82,12 @@ impl Command for DispatchDocumentBatchTaskCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.nats_client).await
+    }
+}
+
+impl DispatchDocumentBatchTaskCommand {
+    pub async fn execute_with(self, nats_client: &async_nats::Client) -> Result<(), AppError> {
         let task_message = NatsTaskMessage {
             task_type: "embedding.process_batch".to_string(),
             task_id: format!(
@@ -90,8 +101,7 @@ impl Command for DispatchDocumentBatchTaskCommand {
             }),
         };
 
-        app_state
-            .nats_client
+        nats_client
             .publish(
                 "worker.tasks.embedding.process_batch",
                 serde_json::to_vec(&task_message)

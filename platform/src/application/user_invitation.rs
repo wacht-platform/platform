@@ -1,4 +1,5 @@
 use commands::{ApproveWaitlistUserCommand, DeleteInvitationCommand, InviteUserCommand};
+use commands::{Command, SendEmailCommand};
 use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
@@ -56,7 +57,16 @@ pub async fn invite_user(
     InviteUserCommand::new(deployment_id, request)
         .execute_with(
             app_state.db_router.writer(),
-            app_state,
+            app_state.db_router.reader(ReadConsistency::Strong),
+            |deployment_id, to_email, variables| async move {
+                let send_email_command = SendEmailCommand::new(
+                    deployment_id,
+                    "waitlist_invite_template".to_string(),
+                    to_email,
+                    variables,
+                );
+                Command::execute(send_email_command, app_state).await
+            },
             app_state.sf.next_id()? as i64,
         )
         .await
@@ -82,7 +92,16 @@ pub async fn approve_waitlist_user(
     ApproveWaitlistUserCommand::new(deployment_id, waitlist_user_id)
         .execute_with(
             app_state.db_router.writer(),
-            app_state,
+            app_state.db_router.reader(ReadConsistency::Strong),
+            |deployment_id, to_email, variables| async move {
+                let send_email_command = SendEmailCommand::new(
+                    deployment_id,
+                    "waitlist_invite_template".to_string(),
+                    to_email,
+                    variables,
+                );
+                Command::execute(send_email_command, app_state).await
+            },
             app_state.sf.next_id()? as i64,
         )
         .await

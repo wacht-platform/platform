@@ -28,14 +28,17 @@ impl CreateAiKnowledgeBaseCommand {
             configuration,
         }
     }
-}
 
-impl Command for CreateAiKnowledgeBaseCommand {
-    type Output = AiKnowledgeBase;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        knowledge_base_id: i64,
+    ) -> Result<AiKnowledgeBase, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
         validate_knowledge_base_name(&self.name)?;
-        let knowledge_base_id = app_state.sf.next_id()? as i64;
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         let knowledge_base = sqlx::query!(
@@ -52,9 +55,9 @@ impl Command for CreateAiKnowledgeBaseCommand {
             self.deployment_id,
             self.configuration,
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         Ok(AiKnowledgeBase {
             id: knowledge_base.id,
@@ -65,6 +68,15 @@ impl Command for CreateAiKnowledgeBaseCommand {
             deployment_id: knowledge_base.deployment_id,
             configuration: knowledge_base.configuration,
         })
+    }
+}
+
+impl Command for CreateAiKnowledgeBaseCommand {
+    type Output = AiKnowledgeBase;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let knowledge_base_id = app_state.sf.next_id()? as i64;
+        self.execute_with(&app_state.db_pool, knowledge_base_id).await
     }
 }
 

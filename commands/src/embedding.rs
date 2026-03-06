@@ -75,21 +75,15 @@ impl GenerateEmbeddingCommand {
         self.task_type = Some(task_type);
         self
     }
-}
 
-impl Command for GenerateEmbeddingCommand {
-    type Output = Vec<f32>;
-
-    async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap();
-
-        let model = std::env::var("GEMINI_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
-
-        let client = reqwest::Client::new();
-
+    pub async fn execute_with(
+        self,
+        client: &reqwest::Client,
+        api_key: &str,
+        model: &str,
+    ) -> Result<Vec<f32>, AppError> {
         let request = EmbedContentRequest {
-            model: model.clone(),
+            model: model.to_string(),
             content: Content {
                 parts: vec![Part { text: self.text }],
             },
@@ -127,6 +121,19 @@ impl Command for GenerateEmbeddingCommand {
     }
 }
 
+impl Command for GenerateEmbeddingCommand {
+    type Output = Vec<f32>;
+
+    async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
+        let api_key = std::env::var("GEMINI_API_KEY")
+            .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
+        let model = std::env::var("GEMINI_EMBEDDING_MODEL")
+            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
+        let client = reqwest::Client::new();
+        self.execute_with(&client, &api_key, &model).await
+    }
+}
+
 #[derive(Clone)]
 pub struct GenerateEmbeddingsCommand {
     pub texts: Vec<String>,
@@ -145,22 +152,16 @@ impl GenerateEmbeddingsCommand {
         self.task_type = Some(task_type);
         self
     }
-}
 
-impl Command for GenerateEmbeddingsCommand {
-    type Output = Vec<Vec<f32>>;
-
-    async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(
+        self,
+        client: &reqwest::Client,
+        api_key: &str,
+        model: &str,
+    ) -> Result<Vec<Vec<f32>>, AppError> {
         if self.texts.is_empty() {
             return Ok(vec![]);
         }
-
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap();
-
-        let model = std::env::var("GEMINI_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
-
-        let client = reqwest::Client::new();
 
         const BATCH_SIZE: usize = 100;
         let mut all_embeddings = Vec::new();
@@ -169,7 +170,7 @@ impl Command for GenerateEmbeddingsCommand {
             let requests: Vec<EmbedContentRequestItem> = chunk
                 .iter()
                 .map(|text| EmbedContentRequestItem {
-                    model: model.clone(),
+                    model: model.to_string(),
                     content: Content {
                         parts: vec![Part { text: text.clone() }],
                     },
@@ -182,7 +183,6 @@ impl Command for GenerateEmbeddingsCommand {
                 .collect();
 
             let batch_request = BatchEmbedContentsRequest { requests };
-
             let url = format!(
                 "https://generativelanguage.googleapis.com/v1/{}:batchEmbedContents",
                 model
@@ -190,7 +190,7 @@ impl Command for GenerateEmbeddingsCommand {
 
             let response = client
                 .post(&url)
-                .header("x-goog-api-key", api_key.clone())
+                .header("x-goog-api-key", api_key)
                 .header("Content-Type", "application/json")
                 .json(&batch_request)
                 .send()
@@ -219,11 +219,23 @@ impl Command for GenerateEmbeddingsCommand {
                     AppError::Internal(format!("Failed to parse batch embedding response: {}", e))
                 })?;
 
-            // Add this chunk's embeddings to the result
             all_embeddings.extend(batch_response.embeddings.into_iter().map(|e| e.values));
         }
 
         Ok(all_embeddings)
+    }
+}
+
+impl Command for GenerateEmbeddingsCommand {
+    type Output = Vec<Vec<f32>>;
+
+    async fn execute(self, _app_state: &AppState) -> Result<Self::Output, AppError> {
+        let api_key = std::env::var("GEMINI_API_KEY")
+            .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
+        let model = std::env::var("GEMINI_EMBEDDING_MODEL")
+            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
+        let client = reqwest::Client::new();
+        self.execute_with(&client, &api_key, &model).await
     }
 }
 
@@ -242,16 +254,16 @@ impl SearchKnowledgeBaseEmbeddingsCommand {
             limit,
         }
     }
-}
 
-impl Command for SearchKnowledgeBaseEmbeddingsCommand {
-    type Output = Vec<DocumentChunkSearchResult>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+    ) -> Result<Vec<DocumentChunkSearchResult>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let query_embedding = HalfVector::from_f32_slice(&self.query_embedding);
-        // Set minimum similarity threshold - cosine distance of 1.1-1.2 means ~40-45% similarity
-        // Cosine distance ranges from 0 (identical) to 2 (opposite)
-        // Distance 1.0 = 50% similarity, 1.2 = 40% similarity
         let max_distance = 1.2_f64;
 
         let rows = sqlx::query(
@@ -276,7 +288,7 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
         .bind(&self.knowledge_base_ids)
         .bind(self.limit as i64)
         .bind(max_distance)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
@@ -296,5 +308,13 @@ impl Command for SearchKnowledgeBaseEmbeddingsCommand {
         }
 
         Ok(results)
+    }
+}
+
+impl Command for SearchKnowledgeBaseEmbeddingsCommand {
+    type Output = Vec<DocumentChunkSearchResult>;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

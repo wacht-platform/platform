@@ -30,6 +30,16 @@ impl Command for WriteToAgentStorageCommand {
     type Output = String;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+        self.execute_with(client).await
+    }
+}
+
+impl WriteToAgentStorageCommand {
+    pub async fn execute_with(self, client: &aws_sdk_s3::Client) -> Result<String, AppError> {
         info!("[AgentStorage] Starting file upload to agent storage");
         debug!(
             "[AgentStorage] Upload details - key: {}, content_type: {:?}, body_size: {} bytes",
@@ -37,11 +47,6 @@ impl Command for WriteToAgentStorageCommand {
             self.content_type,
             self.body.len()
         );
-
-        let client = app_state
-            .agent_storage_client
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
 
         info!("[AgentStorage] Agent storage client is configured");
 
@@ -122,7 +127,12 @@ impl Command for DeleteFromAgentStorageCommand {
             .agent_storage_client
             .as_ref()
             .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+        self.execute_with(client).await
+    }
+}
 
+impl DeleteFromAgentStorageCommand {
+    pub async fn execute_with(self, client: &aws_sdk_s3::Client) -> Result<(), AppError> {
         client
             .delete_object()
             .bucket("wacht-agents")
@@ -153,7 +163,12 @@ impl Command for DeletePrefixFromAgentStorageCommand {
             .agent_storage_client
             .as_ref()
             .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+        self.execute_with(client).await
+    }
+}
 
+impl DeletePrefixFromAgentStorageCommand {
+    pub async fn execute_with(self, client: &aws_sdk_s3::Client) -> Result<(), AppError> {
         let list_result = client
             .list_objects_v2()
             .bucket("wacht-agents")

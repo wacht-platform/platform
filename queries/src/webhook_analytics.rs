@@ -45,20 +45,17 @@ impl GetWebhookAnalyticsQuery {
         self.end_date = Some(end);
         self
     }
-}
 
-impl Query for GetWebhookAnalyticsQuery {
-    type Output = WebhookAnalyticsResult;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(
+        &self,
+        clickhouse_service: &common::ClickHouseService,
+    ) -> Result<WebhookAnalyticsResult, AppError> {
         let start_date = self
             .start_date
             .unwrap_or_else(|| Utc::now() - chrono::Duration::days(30));
         let end_date = self.end_date.unwrap_or_else(|| Utc::now());
 
-        // Get delivery statistics
-        let stats = app_state
-            .clickhouse_service
+        let stats = clickhouse_service
             .get_webhook_delivery_stats(
                 self.deployment_id,
                 self.app_slug.clone(),
@@ -68,9 +65,7 @@ impl Query for GetWebhookAnalyticsQuery {
             )
             .await?;
 
-        // Get event distribution (top 10 events)
-        let event_distribution = app_state
-            .clickhouse_service
+        let event_distribution = clickhouse_service
             .get_webhook_event_distribution(
                 self.deployment_id,
                 self.app_slug.clone(),
@@ -88,11 +83,8 @@ impl Query for GetWebhookAnalyticsQuery {
             })
             .collect();
 
-        // Get endpoint performance
         let endpoint_perf_data = if let Some(endpoint_id) = self.endpoint_id {
-            // Get specific endpoint performance
-            let perf = app_state
-                .clickhouse_service
+            let perf = clickhouse_service
                 .get_webhook_endpoint_performance(
                     self.deployment_id,
                     endpoint_id,
@@ -110,9 +102,7 @@ impl Query for GetWebhookAnalyticsQuery {
                 success_rate: perf.success_rate,
             }]
         } else if let Some(ref app_slug) = self.app_slug {
-            // Get all endpoints for the app
-            let perf_data = app_state
-                .clickhouse_service
+            let perf_data = clickhouse_service
                 .get_app_endpoints_performance(
                     self.deployment_id,
                     app_slug.clone(),
@@ -136,9 +126,7 @@ impl Query for GetWebhookAnalyticsQuery {
             Vec::new()
         };
 
-        // Get failure reasons
-        let service_failure_reasons = app_state
-            .clickhouse_service
+        let service_failure_reasons = clickhouse_service
             .get_webhook_failure_reasons(
                 self.deployment_id,
                 self.app_slug.clone(),
@@ -180,6 +168,14 @@ impl Query for GetWebhookAnalyticsQuery {
     }
 }
 
+impl Query for GetWebhookAnalyticsQuery {
+    type Output = WebhookAnalyticsResult;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.clickhouse_service).await
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookTimeseriesQuery {
     pub deployment_id: i64,
@@ -217,19 +213,17 @@ impl GetWebhookTimeseriesQuery {
         self.end_date = Some(end);
         self
     }
-}
 
-impl Query for GetWebhookTimeseriesQuery {
-    type Output = WebhookTimeseriesResult;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(
+        &self,
+        clickhouse_service: &common::ClickHouseService,
+    ) -> Result<WebhookTimeseriesResult, AppError> {
         let start_date = self
             .start_date
             .unwrap_or_else(|| Utc::now() - chrono::Duration::days(7));
         let end_date = self.end_date.unwrap_or_else(|| Utc::now());
 
-        let timeseries_data = app_state
-            .clickhouse_service
+        let timeseries_data = clickhouse_service
             .get_webhook_timeseries(
                 self.deployment_id,
                 self.app_slug.clone(),
@@ -258,5 +252,13 @@ impl Query for GetWebhookTimeseriesQuery {
             data,
             interval: format!("{:?}", self.interval).to_lowercase(),
         })
+    }
+}
+
+impl Query for GetWebhookTimeseriesQuery {
+    type Output = WebhookTimeseriesResult;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.clickhouse_service).await
     }
 }

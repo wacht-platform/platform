@@ -15,13 +15,15 @@ pub struct HybridSearchKnowledgeBaseQuery {
     pub text_weight: f64,
 }
 
-impl Query for HybridSearchKnowledgeBaseQuery {
-    type Output = Vec<HybridSearchKbResult>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let pool = &app_state.db_pool;
-
-        // Convert Vec<f32> to pgvector format string
+impl HybridSearchKnowledgeBaseQuery {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<HybridSearchKbResult>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let embedding_str = format!(
             "[{}]",
             self.query_embedding
@@ -44,7 +46,7 @@ impl Query for HybridSearchKnowledgeBaseQuery {
         let results = sqlx::query_as::<_, HybridSearchKbResult>(
             r#"
             WITH vector_search AS (
-                SELECT 
+                SELECT
                     kbc.document_id,
                     kbc.knowledge_base_id,
                     kbc.chunk_index,
@@ -57,10 +59,10 @@ impl Query for HybridSearchKnowledgeBaseQuery {
                 WHERE kbc.knowledge_base_id = ANY($3)
                     AND kbc.deployment_id = $4
                 ORDER BY vector_distance ASC
-                LIMIT ($5 * 2)  -- Double the limit to account for potential overlap
+                LIMIT ($5 * 2)
             ),
             text_search AS (
-                SELECT 
+                SELECT
                     kbc.document_id,
                     kbc.knowledge_base_id,
                     kbc.chunk_index,
@@ -74,24 +76,21 @@ impl Query for HybridSearchKnowledgeBaseQuery {
                     AND kbc.deployment_id = $4
                     AND kbc.search_vector @@ plainto_tsquery('english', $1)
                 ORDER BY text_rank DESC
-                LIMIT ($5 * 2)  -- Double the limit to account for potential overlap
+                LIMIT ($5 * 2)
             ),
             combined AS (
-                SELECT 
+                SELECT
                     COALESCE(v.document_id, t.document_id) as document_id,
                     COALESCE(v.knowledge_base_id, t.knowledge_base_id) as knowledge_base_id,
                     COALESCE(v.chunk_index, t.chunk_index) as chunk_index,
                     COALESCE(v.content, t.content) as content,
                     COALESCE(v.document_title, t.document_title) as document_title,
                     COALESCE(v.document_description, t.document_description) as document_description,
-                    -- Keep original naming but with correct default for distance
-                    COALESCE(v.vector_distance, 2.0) as vector_similarity,  -- This is actually distance
+                    COALESCE(v.vector_distance, 2.0) as vector_similarity,
                     COALESCE(t.text_rank, 0.0) as text_rank,
-                    -- Normalize vector distance to similarity score (0-1, higher is better)
-                    -- Distance ranges from 0 to 2, so similarity = 1 - (distance/2)
                     ((1.0 - COALESCE(v.vector_distance, 2.0)/2.0) * $6 + COALESCE(t.text_rank, 0.0) * $7) as combined_score
                 FROM vector_search v
-                FULL OUTER JOIN text_search t 
+                FULL OUTER JOIN text_search t
                     ON v.document_id = t.document_id AND v.chunk_index = t.chunk_index
             )
             SELECT * FROM combined
@@ -106,7 +105,7 @@ impl Query for HybridSearchKnowledgeBaseQuery {
         .bind(self.max_results)
         .bind(self.vector_weight)
         .bind(self.text_weight)
-        .fetch_all(pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| {
             tracing::error!("Hybrid search query failed: {}", e);
@@ -133,6 +132,14 @@ impl Query for HybridSearchKnowledgeBaseQuery {
     }
 }
 
+impl Query for HybridSearchKnowledgeBaseQuery {
+    type Output = Vec<HybridSearchKbResult>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 /// Query for hybrid search in memories
 pub struct HybridSearchMemoriesQuery {
     pub query_text: String,
@@ -144,13 +151,15 @@ pub struct HybridSearchMemoriesQuery {
     pub text_weight: f64,
 }
 
-impl Query for HybridSearchMemoriesQuery {
-    type Output = Vec<HybridSearchMemoryResult>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let pool = &app_state.db_pool;
-
-        // Convert Vec<f32> to pgvector format string
+impl HybridSearchMemoriesQuery {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<HybridSearchMemoryResult>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let embedding_str = format!(
             "[{}]",
             self.query_embedding
@@ -162,7 +171,7 @@ impl Query for HybridSearchMemoriesQuery {
 
         let results = sqlx::query_as::<_, HybridSearchMemoryResult>(
             r#"
-            SELECT 
+            SELECT
                 id,
                 content,
                 memory_type,
@@ -172,14 +181,14 @@ impl Query for HybridSearchMemoriesQuery {
                 combined_score,
                 created_at
             FROM hybrid_search_memories(
-                $1::TEXT,                    -- query text
-                $2::vector(3072),            -- query embedding
-                $3::BIGINT,                  -- agent_id
-                $4::BIGINT,                  -- context_id
-                $5::INT,                     -- max_results
-                $6::FLOAT,                   -- min_relevance
-                $7::FLOAT,                   -- vector_weight
-                $8::FLOAT                    -- text_weight
+                $1::TEXT,
+                $2::vector(3072),
+                $3::BIGINT,
+                $4::BIGINT,
+                $5::INT,
+                $6::FLOAT,
+                $7::FLOAT,
+                $8::FLOAT
             )
             "#,
         )
@@ -188,10 +197,10 @@ impl Query for HybridSearchMemoriesQuery {
         .bind(self.agent_id)
         .bind(self.context_id)
         .bind(self.max_results)
-        .bind(0.0_f64) // min_relevance disabled - pass 0.0 to return all results
+        .bind(0.0_f64)
         .bind(self.vector_weight)
         .bind(self.text_weight)
-        .fetch_all(pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| {
             tracing::error!("Hybrid memory search query failed: {}", e);
@@ -199,6 +208,14 @@ impl Query for HybridSearchMemoriesQuery {
         })?;
 
         Ok(results)
+    }
+}
+
+impl Query for HybridSearchMemoriesQuery {
+    type Output = Vec<HybridSearchMemoryResult>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -210,15 +227,18 @@ pub struct FullTextSearchKnowledgeBaseQuery {
     pub max_results: i32,
 }
 
-impl Query for FullTextSearchKnowledgeBaseQuery {
-    type Output = Vec<FullTextSearchResult>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let pool = &app_state.db_pool;
-
+impl FullTextSearchKnowledgeBaseQuery {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<FullTextSearchResult>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let results = sqlx::query_as::<_, FullTextSearchResult>(
             r#"
-            SELECT 
+            SELECT
                 kbc.document_id,
                 kbc.knowledge_base_id,
                 kbc.chunk_index,
@@ -239,7 +259,7 @@ impl Query for FullTextSearchKnowledgeBaseQuery {
         .bind(&self.knowledge_base_ids)
         .bind(self.deployment_id)
         .bind(self.max_results)
-        .fetch_all(pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|e| {
             tracing::error!("Full-text search query failed: {}", e);
@@ -247,5 +267,13 @@ impl Query for FullTextSearchKnowledgeBaseQuery {
         })?;
 
         Ok(results)
+    }
+}
+
+impl Query for FullTextSearchKnowledgeBaseQuery {
+    type Output = Vec<FullTextSearchResult>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

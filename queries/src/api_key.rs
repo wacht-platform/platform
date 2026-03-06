@@ -3,14 +3,6 @@ use common::error::AppError;
 use common::state::AppState;
 use models::api_key::{ApiAuthApp, ApiKey, ApiKeyWithIdentifers, RateLimit};
 
-async fn resolve_rate_limits(
-    app_state: &AppState,
-    deployment_id: i64,
-    scheme_slug: &Option<String>,
-) -> Result<Vec<RateLimit>, AppError> {
-    resolve_rate_limits_with(&app_state.db_pool, deployment_id, scheme_slug).await
-}
-
 async fn resolve_rate_limits_on_conn(
     conn: &mut sqlx::PgConnection,
     deployment_id: i64,
@@ -26,18 +18,6 @@ async fn resolve_rate_limits_on_conn(
         .await?;
 
     Ok(scheme.map(|s| s.rules).unwrap_or_default())
-}
-
-async fn resolve_rate_limits_with<'a, A>(
-    acquirer: A,
-    deployment_id: i64,
-    scheme_slug: &Option<String>,
-) -> Result<Vec<RateLimit>, AppError>
-where
-    A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-{
-    let mut conn = acquirer.acquire().await?;
-    resolve_rate_limits_on_conn(&mut conn, deployment_id, scheme_slug).await
 }
 
 pub struct GetApiAuthAppsQuery {
@@ -195,12 +175,15 @@ impl GetApiAuthAppByNameQuery {
             name,
         }
     }
-}
 
-impl Query for GetApiAuthAppByNameQuery {
-    type Output = Option<ApiAuthApp>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<ApiAuthApp>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             r#"SELECT deployment_id, user_id, organization_id, workspace_id, app_slug, name, key_prefix, description, is_active,
                rate_limit_scheme_slug, permissions as "permissions: serde_json::Value", resources as "resources: serde_json::Value",
@@ -209,12 +192,12 @@ impl Query for GetApiAuthAppByNameQuery {
             self.deployment_id,
             self.name
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(rec) = rec {
             let rate_limits =
-                resolve_rate_limits(app_state, rec.deployment_id, &rec.rate_limit_scheme_slug)
+                resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
                     .await?;
             Ok(Some(ApiAuthApp {
                 deployment_id: rec.deployment_id,
@@ -237,6 +220,14 @@ impl Query for GetApiAuthAppByNameQuery {
         } else {
             Ok(None)
         }
+    }
+}
+
+impl Query for GetApiAuthAppByNameQuery {
+    type Output = Option<ApiAuthApp>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -427,12 +418,12 @@ impl GetApiKeyByHashQuery {
     pub fn new(key_hash: String) -> Self {
         Self { key_hash }
     }
-}
 
-impl Query for GetApiKeyByHashQuery {
-    type Output = Option<ApiKey>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<ApiKey>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             r#"SELECT k.id, k.app_slug,
                    k.deployment_id, k.name, k.key_prefix,
@@ -452,12 +443,12 @@ impl Query for GetApiKeyByHashQuery {
                "#,
             self.key_hash
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(rec) = rec {
             let rate_limits =
-                resolve_rate_limits(app_state, rec.deployment_id, &rec.rate_limit_scheme_slug)
+                resolve_rate_limits_on_conn(&mut conn, rec.deployment_id, &rec.rate_limit_scheme_slug)
                     .await?;
             Ok(Some(ApiKey {
                 id: rec.id,
@@ -509,6 +500,14 @@ impl Query for GetApiKeyByHashQuery {
     }
 }
 
+impl Query for GetApiKeyByHashQuery {
+    type Output = Option<ApiKey>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetApiKeyIdentifiersByHashQuery {
     pub key_hash: String,
 }
@@ -517,12 +516,15 @@ impl GetApiKeyIdentifiersByHashQuery {
     pub fn new(key_hash: String) -> Self {
         Self { key_hash }
     }
-}
 
-impl Query for GetApiKeyIdentifiersByHashQuery {
-    type Output = Option<ApiKeyWithIdentifers>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<ApiKeyWithIdentifers>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             r#"SELECT k.id as id, k.app_slug as app_slug,
             k.permissions as "permissions: serde_json::Value",
@@ -538,7 +540,7 @@ impl Query for GetApiKeyIdentifiersByHashQuery {
             WHERE k.key_hash = $1 AND k.is_active = true"#,
             self.key_hash
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(rec.map(|rec| ApiKeyWithIdentifers {
@@ -570,6 +572,14 @@ impl Query for GetApiKeyIdentifiersByHashQuery {
     }
 }
 
+impl Query for GetApiKeyIdentifiersByHashQuery {
+    type Output = Option<ApiKeyWithIdentifers>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct SyncApiKeyRateLimitsForSchemeQuery {
     pub deployment_id: i64,
     pub scheme_slug: String,
@@ -586,12 +596,12 @@ impl SyncApiKeyRateLimitsForSchemeQuery {
             batch_size,
         }
     }
-}
 
-impl Query for SyncApiKeyRateLimitsForSchemeQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let updated = sqlx::query!(
             r#"
             WITH target AS (
@@ -614,10 +624,18 @@ impl Query for SyncApiKeyRateLimitsForSchemeQuery {
             self.last_id,
             self.batch_size,
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(updated.into_iter().map(|r| r.id).collect())
+    }
+}
+
+impl Query for SyncApiKeyRateLimitsForSchemeQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

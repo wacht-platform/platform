@@ -24,19 +24,15 @@ impl GenerateImpersonationTokenCommand {
             user_id,
         }
     }
-}
 
-#[derive(Debug, serde::Serialize)]
-pub struct GenerateImpersonationTokenResponse {
-    pub token: String,
-    pub redirect_url: String,
-}
-
-impl Command for GenerateImpersonationTokenCommand {
-    type Output = GenerateImpersonationTokenResponse;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Get deployment keypair
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+    ) -> Result<GenerateImpersonationTokenResponse, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let keypair = sqlx::query!(
             r#"
             SELECT private_key, public_key, frontend_host
@@ -46,11 +42,10 @@ impl Command for GenerateImpersonationTokenCommand {
             "#,
             self.deployment_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to get deployment keypair: {}", e)))?;
 
-        // Verify user exists and is not disabled
         let user = sqlx::query!(
             r#"
             SELECT id, disabled
@@ -60,7 +55,7 @@ impl Command for GenerateImpersonationTokenCommand {
             self.user_id,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to fetch user: {}", e)))?
         .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
@@ -71,12 +66,8 @@ impl Command for GenerateImpersonationTokenCommand {
             ));
         }
 
-        let private_key_pem = keypair.private_key;
-
-        // Create JWT payload
         let mut payload = JwtPayload::new();
         payload.set_subject(&self.user_id.to_string());
-
         payload.set_issuer(&format!("https://{}", keypair.frontend_host));
 
         let now = std::time::SystemTime::now();
@@ -98,9 +89,8 @@ impl Command for GenerateImpersonationTokenCommand {
             .set_claim("type", Some(serde_json::json!("impersonation")))
             .map_err(|e| AppError::Internal(format!("Failed to set type claim: {}", e)))?;
 
-        // Sign the token
         let signer = ES256
-            .signer_from_pem(&private_key_pem)
+            .signer_from_pem(&keypair.private_key)
             .map_err(|e| AppError::Internal(format!("Failed to create signer: {}", e)))?;
 
         let mut header = JwsHeader::new();
@@ -109,12 +99,9 @@ impl Command for GenerateImpersonationTokenCommand {
         let token = jwt::encode_with_signer(&payload, &header, &signer)
             .map_err(|e| AppError::Internal(format!("Failed to encode JWT: {}", e)))?;
 
-        // Generate redirect URL
-        let frontend_host = keypair.frontend_host;
-
         let redirect_url = format!(
             "https://{}/sign-in?impersonation_token={}",
-            frontend_host,
+            keypair.frontend_host,
             urlencoding::encode(&token)
         );
 
@@ -122,5 +109,19 @@ impl Command for GenerateImpersonationTokenCommand {
             token,
             redirect_url,
         })
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GenerateImpersonationTokenResponse {
+    pub token: String,
+    pub redirect_url: String,
+}
+
+impl Command for GenerateImpersonationTokenCommand {
+    type Output = GenerateImpersonationTokenResponse;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

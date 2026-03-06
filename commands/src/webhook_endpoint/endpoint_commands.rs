@@ -3,6 +3,7 @@ use serde_json::Value;
 use sqlx::{Connection, query, query_as};
 
 use crate::Command;
+use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
 use common::utils::ssrf::validate_webhook_url;
@@ -74,7 +75,7 @@ impl CreateWebhookEndpointCommand {
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
-        app_state: &AppState,
+        reader: &sqlx::PgPool,
         endpoint_id: i64,
     ) -> Result<WebhookEndpoint, AppError>
     where
@@ -87,13 +88,8 @@ impl CreateWebhookEndpointCommand {
         validate_webhook_url(&self.url)
             .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
 
-        validate_event_subscriptions(
-            app_state,
-            self.deployment_id,
-            &self.app_slug,
-            &self.subscriptions,
-        )
-        .await?;
+        validate_event_subscriptions(reader, self.deployment_id, &self.app_slug, &self.subscriptions)
+            .await?;
 
         let max_allowed_retries = max_attempts_for_retry_window(MAX_ENDPOINT_RETRY_WINDOW_SECONDS);
         let endpoint_max_retries = self.max_retries.unwrap_or(max_allowed_retries);
@@ -165,7 +161,7 @@ impl Command for CreateWebhookEndpointCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         self.execute_with(
             &app_state.db_pool,
-            app_state,
+            app_state.db_router.reader(ReadConsistency::Strong),
             app_state.sf.next_id()? as i64,
         )
         .await
@@ -245,7 +241,7 @@ impl UpdateWebhookEndpointCommand {
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
-        app_state: &AppState,
+        reader: &sqlx::PgPool,
     ) -> Result<WebhookEndpoint, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
@@ -311,7 +307,7 @@ impl UpdateWebhookEndpointCommand {
 
         if let Some(subscriptions) = self.subscriptions {
             validate_event_subscriptions(
-                app_state,
+                reader,
                 self.deployment_id,
                 &endpoint.app_slug,
                 &subscriptions,
@@ -354,7 +350,11 @@ impl Command for UpdateWebhookEndpointCommand {
     type Output = WebhookEndpoint;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state).await
+        self.execute_with(
+            &app_state.db_pool,
+            app_state.db_router.reader(ReadConsistency::Strong),
+        )
+        .await
     }
 }
 
@@ -384,13 +384,12 @@ impl UpdateEndpointSubscriptionsCommand {
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
-        app_state: &AppState,
+        reader: &sqlx::PgPool,
     ) -> Result<Vec<String>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
-        let mut tx = conn.begin().await?;
 
         let app_slug = query!(
             r#"
@@ -401,7 +400,7 @@ impl UpdateEndpointSubscriptionsCommand {
             self.endpoint_id,
             self.deployment_id
         )
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?
         .app_slug;
@@ -416,12 +415,14 @@ impl UpdateEndpointSubscriptionsCommand {
             .collect::<Vec<_>>();
 
         validate_event_subscriptions(
-            app_state,
+            reader,
             self.deployment_id,
             &app_slug,
             &subscriptions_for_validation,
         )
         .await?;
+
+        let mut tx = conn.begin().await?;
 
         query!(
             r#"
@@ -458,7 +459,11 @@ impl Command for UpdateEndpointSubscriptionsCommand {
     type Output = Vec<String>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state).await
+        self.execute_with(
+            &app_state.db_pool,
+            app_state.db_router.reader(ReadConsistency::Strong),
+        )
+        .await
     }
 }
 

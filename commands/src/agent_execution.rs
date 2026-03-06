@@ -55,6 +55,24 @@ impl Command for UploadImagesToS3Command {
     type Output = Option<Vec<ImageData>>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+        self.execute_with(client, || Ok(app_state.sf.next_id()? as i64))
+            .await
+    }
+}
+
+impl UploadImagesToS3Command {
+    pub async fn execute_with<IdFn>(
+        self,
+        storage_client: &aws_sdk_s3::Client,
+        id_gen: IdFn,
+    ) -> Result<Option<Vec<ImageData>>, AppError>
+    where
+        IdFn: Fn() -> Result<i64, AppError> + Copy,
+    {
         use base64::{Engine, engine::general_purpose::STANDARD};
 
         let Some(imgs) = self.images else {
@@ -71,7 +89,7 @@ impl Command for UploadImagesToS3Command {
 
             // Get file extension from mime type
             let file_extension = img.mime_type.split('/').next_back().unwrap_or("png");
-            let filename = format!("{}.{}", app_state.sf.next_id()?, file_extension);
+            let filename = format!("{}.{}", id_gen()?, file_extension);
 
             // S3 key: {deployment}/persistent/{context}/uploads/{filename}
             let key = format!(
@@ -82,7 +100,7 @@ impl Command for UploadImagesToS3Command {
             // Upload to S3 via agent storage command
             let write_image_command = WriteToAgentStorageCommand::new(key, bytes.clone())
                 .with_content_type(img.mime_type.clone());
-            Command::execute(write_image_command, app_state).await?;
+            write_image_command.execute_with(storage_client).await?;
 
             uploaded.push(ImageData {
                 mime_type: img.mime_type,
@@ -125,6 +143,24 @@ impl Command for UploadFilesToS3Command {
     type Output = Option<Vec<FileData>>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+        self.execute_with(client, || Ok(app_state.sf.next_id()? as i64))
+            .await
+    }
+}
+
+impl UploadFilesToS3Command {
+    pub async fn execute_with<IdFn>(
+        self,
+        storage_client: &aws_sdk_s3::Client,
+        id_gen: IdFn,
+    ) -> Result<Option<Vec<FileData>>, AppError>
+    where
+        IdFn: Fn() -> Result<i64, AppError> + Copy,
+    {
         use base64::{Engine, engine::general_purpose::STANDARD};
 
         let Some(files) = self.files else {
@@ -141,7 +177,7 @@ impl Command for UploadFilesToS3Command {
 
             // Generate unique filename with original name preserved
             let safe_filename = sanitize_upload_filename(&file.filename)?;
-            let filename = format!("{}_{}", app_state.sf.next_id()?, safe_filename);
+            let filename = format!("{}_{}", id_gen()?, safe_filename);
 
             // S3 key: {deployment}/persistent/{context}/uploads/{filename}
             let key = format!(
@@ -152,7 +188,7 @@ impl Command for UploadFilesToS3Command {
             // Upload to S3 via agent storage command
             let write_file_command = WriteToAgentStorageCommand::new(key, bytes.clone())
                 .with_content_type(file.mime_type.clone());
-            Command::execute(write_file_command, app_state).await?;
+            write_file_command.execute_with(storage_client).await?;
 
             uploaded.push(FileData {
                 filename: file.filename,
@@ -190,14 +226,23 @@ impl Command for SignalAgentExecutionCancellationCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let kv = match app_state
-            .nats_jetstream
-            .get_key_value(AGENT_EXECUTION_KV_BUCKET)
-            .await
-        {
+        self.execute_with(
+            &app_state.nats_jetstream,
+            app_state.sf.next_id()? as i64,
+        )
+        .await
+    }
+}
+
+impl SignalAgentExecutionCancellationCommand {
+    pub async fn execute_with(
+        self,
+        jetstream: &async_nats::jetstream::Context,
+        marker_id: i64,
+    ) -> Result<(), AppError> {
+        let kv = match jetstream.get_key_value(AGENT_EXECUTION_KV_BUCKET).await {
             Ok(store) => store,
-            Err(_) => match app_state
-                .nats_jetstream
+            Err(_) => match jetstream
                 .create_key_value(async_nats::jetstream::kv::Config {
                     bucket: AGENT_EXECUTION_KV_BUCKET.to_string(),
                     ..Default::default()
@@ -205,20 +250,21 @@ impl Command for SignalAgentExecutionCancellationCommand {
                 .await
             {
                 Ok(store) => store,
-                Err(create_error) => app_state
-                    .nats_jetstream
-                    .get_key_value(AGENT_EXECUTION_KV_BUCKET)
-                    .await
-                    .map_err(|get_error| {
-                        AppError::Internal(format!(
-                            "Failed to initialize cancellation KV bucket: create error={}, get error={}",
-                            create_error, get_error
-                        ))
-                    })?,
+                Err(create_error) => {
+                    jetstream
+                        .get_key_value(AGENT_EXECUTION_KV_BUCKET)
+                        .await
+                        .map_err(|get_error| {
+                            AppError::Internal(format!(
+                                "Failed to initialize cancellation KV bucket: create error={}, get error={}",
+                                create_error, get_error
+                            ))
+                        })?
+                }
             },
         };
 
-        let marker = format!("cancel:{}", app_state.sf.next_id()?);
+        let marker = format!("cancel:{}", marker_id);
         kv.put(self.context_id.to_string(), marker.into())
             .await
             .map_err(|error| {
@@ -304,8 +350,19 @@ impl Command for PublishAgentExecutionCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl PublishAgentExecutionCommand {
+    pub async fn execute_with(
+        self,
+        jetstream: &async_nats::jetstream::Context,
+        task_id: i64,
+    ) -> Result<(), AppError> {
         let task = NatsTaskMessage {
-            task_id: format!("exec_{}", app_state.sf.next_id()?),
+            task_id: format!("exec_{}", task_id),
             task_type: "agent.execution_request".to_string(),
             payload: serde_json::to_value(&self.request).map_err(|e| {
                 AppError::Internal(format!("Failed to serialize execution request: {}", e))
@@ -315,8 +372,7 @@ impl Command for PublishAgentExecutionCommand {
         let payload = serde_json::to_vec(&task)
             .map_err(|e| AppError::Internal(format!("Failed to serialize task message: {}", e)))?;
 
-        app_state
-            .nats_jetstream
+        jetstream
             .publish("worker.tasks.agent.execution_request", payload.into())
             .await
             .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;

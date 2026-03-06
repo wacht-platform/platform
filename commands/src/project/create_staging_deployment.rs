@@ -230,6 +230,17 @@ impl CreateStagingDeploymentCommand {
             custom_smtp_config: None,
         })
     }
+
+    pub async fn execute_with(
+        self,
+        writer: &sqlx::PgPool,
+        ids: &dyn IdGenerator,
+    ) -> Result<Deployment, AppError> {
+        let mut tx = writer.begin().await?;
+        let result = self.execute_in_tx(ids, &mut tx).await?;
+        tx.commit().await?;
+        Ok(result)
+    }
 }
 
 impl CreateStagingDeploymentCommandBuilder {
@@ -259,10 +270,7 @@ impl Command for CreateStagingDeploymentCommand {
     type Output = Deployment;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_router.writer().begin().await?;
         let ids = AppStateIdGenerator::new(app_state);
-        let result = self.execute_in_tx(&ids, &mut tx).await?;
-        tx.commit().await?;
-        Ok(result)
+        self.execute_with(app_state.db_router.writer(), &ids).await
     }
 }

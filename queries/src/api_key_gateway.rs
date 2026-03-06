@@ -32,12 +32,15 @@ impl GetApiKeyGatewayDataQuery {
     pub fn new(key_hash: String) -> Self {
         Self { key_hash }
     }
-}
 
-impl Query for GetApiKeyGatewayDataQuery {
-    type Output = Option<ApiKeyGatewayData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<ApiKeyGatewayData>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             r#"
             SELECT
@@ -68,7 +71,7 @@ impl Query for GetApiKeyGatewayDataQuery {
             "#,
             self.key_hash
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(rec.map(|r| ApiKeyGatewayData {
@@ -102,5 +105,13 @@ impl Query for GetApiKeyGatewayDataQuery {
             organization_membership_id: r.organization_membership_id,
             workspace_membership_id: r.workspace_membership_id,
         }))
+    }
+}
+
+impl Query for GetApiKeyGatewayDataQuery {
+    type Output = Option<ApiKeyGatewayData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

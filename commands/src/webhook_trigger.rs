@@ -35,19 +35,18 @@ impl TriggerWebhookEventCommand {
         self.filter_context = Some(context);
         self
     }
-}
 
-#[derive(Debug, Serialize)]
-pub struct TriggerWebhookEventResult {
-    pub delivery_ids: Vec<i64>,
-    pub filtered_count: usize,
-    pub delivered_count: usize,
-}
-
-impl Command for TriggerWebhookEventCommand {
-    type Output = TriggerWebhookEventResult;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<IdFn>(
+        self,
+        pool: &sqlx::PgPool,
+        redis_client: &redis::Client,
+        clickhouse_service: &common::ClickHouseService,
+        nats_client: &async_nats::Client,
+        id_gen: IdFn,
+    ) -> Result<TriggerWebhookEventResult, AppError>
+    where
+        IdFn: Fn() -> Result<i64, AppError> + Copy,
+    {
         let app_info = query!(
             r#"
             SELECT app_slug, name
@@ -57,7 +56,7 @@ impl Command for TriggerWebhookEventCommand {
             self.deployment_id,
             self.app_slug
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await?;
 
         let app_info = match app_info {
@@ -68,12 +67,13 @@ impl Command for TriggerWebhookEventCommand {
         let payload_size = self.payload.to_string().len() as i32;
         let app_slug = app_info.app_slug.clone();
 
-        let subscribed_endpoints_command = GetSubscribedEndpointsCommand::new(
+        let endpoints = GetSubscribedEndpointsCommand::new(
             self.deployment_id,
             app_slug.clone(),
             self.event_name.clone(),
-        );
-        let endpoints = Command::execute(subscribed_endpoints_command, app_state).await?;
+        )
+        .execute_with(pool, redis_client)
+        .await?;
 
         let mut delivery_ids = Vec::new();
         let mut filtered_count = 0usize;
@@ -86,12 +86,9 @@ impl Command for TriggerWebhookEventCommand {
                 }
             }
 
-            // Generate Snowflake ID for delivery (used as webhook_id)
-            let delivery_id = app_state.sf.next_id()? as i64;
+            let delivery_id = id_gen()?;
             let webhook_id = format!("msg_{}", delivery_id);
             let webhook_timestamp = Utc::now().timestamp();
-
-            // Generate Standard Webhooks signature
             let signature = generate_webhook_signature(
                 &endpoint.signing_secret,
                 &webhook_id,
@@ -99,7 +96,6 @@ impl Command for TriggerWebhookEventCommand {
                 &self.payload,
             );
 
-            // Queue for delivery with payload stored directly in database
             let delivery = query!(
                 r#"
                 INSERT INTO active_webhook_deliveries
@@ -120,12 +116,11 @@ impl Command for TriggerWebhookEventCommand {
                 signature,
                 endpoint.max_retries
             )
-            .fetch_one(&app_state.db_pool)
+            .fetch_one(pool)
             .await?;
 
             delivery_ids.push(delivery.id);
 
-            // Log pending delivery to Tinybird
             let payload_json = serde_json::to_string(&self.payload).unwrap_or_default();
             let ch_log = WebhookLog {
                 deployment_id: self.deployment_id,
@@ -146,15 +141,10 @@ impl Command for TriggerWebhookEventCommand {
                 timestamp: Utc::now(),
             };
 
-            if let Err(e) = app_state
-                .clickhouse_service
-                .insert_webhook_log(&ch_log)
-                .await
-            {
+            if let Err(e) = clickhouse_service.insert_webhook_log(&ch_log).await {
                 tracing::warn!("Failed to log pending delivery to Tinybird: {}", e);
             }
 
-            // Publish to NATS for async delivery via worker
             let task_message = NatsTaskMessage {
                 task_type: "webhook.deliver".to_string(),
                 task_id: format!("webhook-{}-{}", delivery.id, self.deployment_id),
@@ -164,14 +154,11 @@ impl Command for TriggerWebhookEventCommand {
                 }),
             };
 
-            app_state
-                .nats_client
+            nats_client
                 .publish(
                     "worker.tasks.webhook.deliver",
                     serde_json::to_vec(&task_message)
-                        .map_err(|e| {
-                            AppError::Internal(format!("Failed to serialize task: {}", e))
-                        })?
+                        .map_err(|e| AppError::Internal(format!("Failed to serialize task: {}", e)))?
                         .into(),
                 )
                 .await
@@ -186,23 +173,51 @@ impl Command for TriggerWebhookEventCommand {
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct TriggerWebhookEventResult {
+    pub delivery_ids: Vec<i64>,
+    pub filtered_count: usize,
+    pub delivered_count: usize,
+}
+
+impl Command for TriggerWebhookEventCommand {
+    type Output = TriggerWebhookEventResult;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(
+            &app_state.db_pool,
+            &app_state.redis_client,
+            &app_state.clickhouse_service,
+            &app_state.nats_client,
+            || Ok(app_state.sf.next_id()? as i64),
+        )
+        .await
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ReplayWebhookDeliveryCommand {
     pub delivery_id: i64,
     pub deployment_id: i64,
 }
 
-impl Command for ReplayWebhookDeliveryCommand {
-    type Output = i64; // New delivery ID
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl ReplayWebhookDeliveryCommand {
+    pub async fn execute_with<IdFn>(
+        self,
+        pool: &sqlx::PgPool,
+        clickhouse_service: &common::ClickHouseService,
+        nats_client: &async_nats::Client,
+        id_gen: IdFn,
+    ) -> Result<i64, AppError>
+    where
+        IdFn: Fn() -> Result<i64, AppError> + Copy,
+    {
         tracing::info!(
             "Starting replay for delivery_id: {}, deployment_id: {}",
             self.delivery_id,
             self.deployment_id
         );
 
-        // Check if delivery is still active - we don't allow replaying active deliveries
         let is_active = query!(
             r#"
             SELECT 1 as exists
@@ -213,7 +228,7 @@ impl Command for ReplayWebhookDeliveryCommand {
             self.delivery_id,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await?;
 
         if is_active.is_some() {
@@ -222,9 +237,7 @@ impl Command for ReplayWebhookDeliveryCommand {
             ));
         }
 
-        // Replay source is read from ClickHouse history, not active queue.
-        let replay_source = app_state
-            .clickhouse_service
+        let replay_source = clickhouse_service
             .get_webhook_replay_source(self.deployment_id, self.delivery_id)
             .await?;
 
@@ -238,7 +251,6 @@ impl Command for ReplayWebhookDeliveryCommand {
         let event_name = replay_source.event_name;
         let app_slug = replay_source.app_slug;
 
-        // Get endpoint details to generate new signature
         tracing::info!("Looking up endpoint with id: {} for replay", endpoint_id);
         let endpoint = query!(
             r#"
@@ -249,7 +261,7 @@ impl Command for ReplayWebhookDeliveryCommand {
             "#,
             endpoint_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await?;
 
         let endpoint = endpoint.ok_or_else(|| {
@@ -262,19 +274,15 @@ impl Command for ReplayWebhookDeliveryCommand {
             )
         })?;
 
-        // Verify deployment_id matches
         if endpoint.deployment_id != self.deployment_id {
             tracing::error!(
                 "Deployment mismatch: endpoint belongs to deployment {}, but replay requested for deployment {}",
                 endpoint.deployment_id,
                 self.deployment_id
             );
-            return Err(AppError::BadRequest(format!(
-                "Endpoint belongs to different deployment"
-            )));
+            return Err(AppError::BadRequest("Endpoint belongs to different deployment".to_string()));
         }
 
-        // Verify endpoint is active before replaying
         let endpoint_active = query!(
             r#"
             SELECT is_active
@@ -283,7 +291,7 @@ impl Command for ReplayWebhookDeliveryCommand {
             "#,
             endpoint_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
 
@@ -294,7 +302,6 @@ impl Command for ReplayWebhookDeliveryCommand {
             ));
         }
 
-        // Snapshot current filter rules so worker can evaluate consistently.
         let current_subscription = query!(
             r#"
             SELECT filter_rules
@@ -306,7 +313,7 @@ impl Command for ReplayWebhookDeliveryCommand {
             app_slug.clone(),
             event_name.clone()
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await?
         .ok_or_else(|| {
             AppError::BadRequest(
@@ -315,12 +322,9 @@ impl Command for ReplayWebhookDeliveryCommand {
             )
         })?;
 
-        // Generate Snowflake ID for new delivery
-        let new_delivery_id = app_state.sf.next_id()? as i64;
+        let new_delivery_id = id_gen()?;
         let webhook_id = format!("msg_{}", new_delivery_id);
         let webhook_timestamp = Utc::now().timestamp();
-
-        // Generate new signature with webhook_id and timestamp
         let signature = Some(generate_webhook_signature(
             &endpoint.signing_secret,
             &webhook_id,
@@ -339,7 +343,6 @@ impl Command for ReplayWebhookDeliveryCommand {
             "Replay queued with snapshot of current subscription filter rules",
         );
 
-        // Create new delivery with payload stored directly in database
         let new_delivery = query!(
             r#"
             INSERT INTO active_webhook_deliveries
@@ -360,10 +363,9 @@ impl Command for ReplayWebhookDeliveryCommand {
             signature,
             max_attempts
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?;
 
-        // Publish for immediate delivery via NATS
         let task_message = NatsTaskMessage {
             task_type: "webhook.deliver".to_string(),
             task_id: format!("webhook-replay-{}", new_delivery.id),
@@ -373,8 +375,7 @@ impl Command for ReplayWebhookDeliveryCommand {
             }),
         };
 
-        app_state
-            .nats_client
+        nats_client
             .publish(
                 "worker.tasks.webhook.deliver",
                 serde_json::to_vec(&task_message)?.into(),
@@ -383,5 +384,19 @@ impl Command for ReplayWebhookDeliveryCommand {
             .map_err(|e| AppError::Internal(format!("Failed to publish replay to NATS: {}", e)))?;
 
         Ok(new_delivery.id)
+    }
+}
+
+impl Command for ReplayWebhookDeliveryCommand {
+    type Output = i64; // New delivery ID
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(
+            &app_state.db_pool,
+            &app_state.clickhouse_service,
+            &app_state.nats_client,
+            || Ok(app_state.sf.next_id()? as i64),
+        )
+        .await
     }
 }

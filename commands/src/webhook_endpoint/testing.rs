@@ -5,6 +5,7 @@ use sqlx::{query, query_as};
 
 use crate::Command;
 use crate::webhook_delivery::ClearEndpointFailuresCommand;
+use common::capabilities::HasRedis;
 use common::error::AppError;
 use common::state::AppState;
 use common::utils::webhook::generate_webhook_signature;
@@ -31,7 +32,8 @@ impl TestWebhookEndpointCommand {
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
-        app_state: &AppState,
+        clickhouse_service: &common::ClickHouseService,
+        nats_client: &async_nats::Client,
         delivery_id: i64,
     ) -> Result<TestWebhookResult, AppError>
     where
@@ -76,7 +78,7 @@ impl TestWebhookEndpointCommand {
             timestamp: now,
         };
 
-        if let Err(e) = app_state.clickhouse_service.insert_webhook_log(&log).await {
+        if let Err(e) = clickhouse_service.insert_webhook_log(&log).await {
             tracing::warn!("Failed to log test event to Tinybird: {}", e);
         }
 
@@ -133,8 +135,7 @@ impl TestWebhookEndpointCommand {
             }),
         };
 
-        app_state
-            .nats_client
+        nats_client
             .publish(
                 "worker.tasks.webhook.deliver",
                 serde_json::to_vec(&task_message)?.into(),
@@ -160,8 +161,13 @@ impl Command for TestWebhookEndpointCommand {
     type Output = TestWebhookResult;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state, app_state.sf.next_id()? as i64)
-            .await
+        self.execute_with(
+            &app_state.db_pool,
+            &app_state.clickhouse_service,
+            &app_state.nats_client,
+            app_state.sf.next_id()? as i64,
+        )
+        .await
     }
 }
 
@@ -190,13 +196,14 @@ impl ReactivateEndpointCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with<'a, A, C>(
         self,
         acquirer: A,
-        app_state: &AppState,
+        redis_deps: &C,
     ) -> Result<WebhookEndpoint, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        C: HasRedis + ?Sized,
     {
         let mut conn = acquirer.acquire().await?;
         let endpoint = query_as!(
@@ -232,7 +239,7 @@ impl ReactivateEndpointCommand {
         ClearEndpointFailuresCommand {
             endpoint_id: self.endpoint_id,
         }
-        .execute_with(app_state)
+        .execute_with(redis_deps)
         .await?;
 
         Ok(endpoint)

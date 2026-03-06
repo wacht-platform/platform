@@ -14,10 +14,12 @@ pub struct GetMRUMemoriesQuery {
     pub limit: i64,
 }
 
-impl Query for GetMRUMemoriesQuery {
-    type Output = Vec<MemoryRecord>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl GetMRUMemoriesQuery {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let records = sqlx::query_as::<_, MemoryRecord>(
             r#"
             SELECT
@@ -36,11 +38,19 @@ impl Query for GetMRUMemoriesQuery {
         )
         .bind(self.context_id)
         .bind(self.limit)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
         Ok(records)
+    }
+}
+
+impl Query for GetMRUMemoriesQuery {
+    type Output = Vec<MemoryRecord>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

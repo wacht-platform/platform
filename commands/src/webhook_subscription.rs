@@ -33,24 +33,22 @@ impl GetSubscribedEndpointsCommand {
             event_name,
         }
     }
-}
 
-impl Command for GetSubscribedEndpointsCommand {
-    type Output = Vec<EndpointWithRules>;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Create cache key
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        redis_client: &redis::Client,
+    ) -> Result<Vec<EndpointWithRules>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let cache_key = format!(
             "webhook:subs:{}:{}:{}",
             self.deployment_id, self.app_slug, self.event_name
         );
 
-        // Try to get from Redis cache first
-        if let Ok(mut redis_conn) = app_state
-            .redis_client
-            .get_multiplexed_async_connection()
-            .await
-        {
+        if let Ok(mut redis_conn) = redis_client.get_multiplexed_async_connection().await {
             if let Ok(cached) = redis_conn.get::<_, String>(&cache_key).await {
                 if let Ok(endpoints) = serde_json::from_str::<Vec<EndpointWithRules>>(&cached) {
                     return Ok(endpoints);
@@ -58,7 +56,6 @@ impl Command for GetSubscribedEndpointsCommand {
             }
         }
 
-        // Cache miss - query from database
         let endpoints = query!(
             r#"
             SELECT
@@ -82,10 +79,9 @@ impl Command for GetSubscribedEndpointsCommand {
             self.event_name,
             self.deployment_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
-        // Map to our struct
         let endpoints: Vec<EndpointWithRules> = endpoints
             .into_iter()
             .map(|row| EndpointWithRules {
@@ -99,19 +95,22 @@ impl Command for GetSubscribedEndpointsCommand {
             })
             .collect();
 
-        // Cache for 5 minutes (300 seconds)
-        // Ignore cache errors - not critical
         if let Ok(json) = serde_json::to_string(&endpoints) {
-            if let Ok(mut redis_conn) = app_state
-                .redis_client
-                .get_multiplexed_async_connection()
-                .await
-            {
+            if let Ok(mut redis_conn) = redis_client.get_multiplexed_async_connection().await {
                 let _: Result<(), _> = redis_conn.set_ex(&cache_key, json, 300).await;
             }
         }
 
         Ok(endpoints)
+    }
+}
+
+impl Command for GetSubscribedEndpointsCommand {
+    type Output = Vec<EndpointWithRules>;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+            .await
     }
 }
 
@@ -123,15 +122,9 @@ pub struct InvalidateEndpointCacheCommand {
     pub event_names: Vec<String>,
 }
 
-impl Command for InvalidateEndpointCacheCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        if let Ok(mut redis_conn) = app_state
-            .redis_client
-            .get_multiplexed_async_connection()
-            .await
-        {
+impl InvalidateEndpointCacheCommand {
+    pub async fn execute_with(self, redis_client: &redis::Client) -> Result<(), AppError> {
+        if let Ok(mut redis_conn) = redis_client.get_multiplexed_async_connection().await {
             for event_name in self.event_names {
                 let cache_key = format!(
                     "webhook:subs:{}:{}:{}",
@@ -141,6 +134,14 @@ impl Command for InvalidateEndpointCacheCommand {
             }
         }
         Ok(())
+    }
+}
+
+impl Command for InvalidateEndpointCacheCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.redis_client).await
     }
 }
 

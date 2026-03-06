@@ -102,7 +102,7 @@ pub async fn create_webhook_endpoint(
     command
         .execute_with(
             app_state.db_router.writer(),
-            app_state,
+            app_state.db_router.reader(ReadConsistency::Strong),
             app_state.sf.next_id()? as i64,
         )
         .await
@@ -127,7 +127,10 @@ pub async fn update_webhook_endpoint(
         .with_rate_limit_config(rate_limit_config);
 
     command
-        .execute_with(app_state.db_router.writer(), app_state)
+        .execute_with(
+            app_state.db_router.writer(),
+            app_state.db_router.reader(ReadConsistency::Strong),
+        )
         .await
 }
 
@@ -198,7 +201,8 @@ pub async fn test_webhook_endpoint(
     let result = TestWebhookEndpointCommand::new(endpoint_id, deployment_id, test_payload)
         .execute_with(
             app_state.db_router.writer(),
-            app_state,
+            &app_state.clickhouse_service,
+            &app_state.nats_client,
             app_state.sf.next_id()? as i64,
         )
         .await?;

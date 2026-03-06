@@ -412,6 +412,17 @@ impl CreateProductionDeploymentCommand {
                 }),
         })
     }
+
+    pub async fn execute_with(
+        self,
+        writer: &sqlx::PgPool,
+        deps: &ProductionDeploymentDeps<'_>,
+    ) -> Result<Deployment, AppError> {
+        let mut tx = writer.begin().await?;
+        let result = self.execute_in_tx(deps, &mut tx).await?;
+        tx.commit().await?;
+        Ok(result)
+    }
 }
 
 impl CreateProductionDeploymentCommandBuilder {
@@ -449,15 +460,12 @@ impl Command for CreateProductionDeploymentCommand {
     type Output = Deployment;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_router.writer().begin().await?;
         let ids = AppStateIdGenerator::new(app_state);
         let deps = ProductionDeploymentDeps {
             ids: &ids,
             cloudflare_service: &app_state.cloudflare_service,
             postmark_service: &app_state.postmark_service,
         };
-        let result = self.execute_in_tx(&deps, &mut tx).await?;
-        tx.commit().await?;
-        Ok(result)
+        self.execute_with(app_state.db_router.writer(), &deps).await
     }
 }
