@@ -328,12 +328,12 @@ impl GetUserDetailsQuery {
             user_id,
         }
     }
-}
 
-impl Query for GetUserDetailsQuery {
-    type Output = UserDetails;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<UserDetails, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let user_row = sqlx::query!(
             r#"
             SELECT
@@ -355,7 +355,7 @@ impl Query for GetUserDetailsQuery {
             self.deployment_id,
             self.user_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         let email_rows = sqlx::query!(
@@ -369,7 +369,7 @@ impl Query for GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let email_addresses = email_rows
@@ -401,7 +401,7 @@ impl Query for GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let phone_numbers = phone_rows
@@ -428,7 +428,7 @@ impl Query for GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let social_connections = social_rows
@@ -458,7 +458,7 @@ impl Query for GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let user_details = UserDetails {
@@ -502,6 +502,14 @@ impl Query for GetUserDetailsQuery {
         };
 
         Ok(user_details)
+    }
+}
+
+impl Query for GetUserDetailsQuery {
+    type Output = UserDetails;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

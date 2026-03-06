@@ -1,6 +1,6 @@
 use chrono::{Datelike, Utc};
 use commands::{Command, webhook_trigger::TriggerWebhookEventCommand};
-use common::state::AppState;
+use common::{db_router::ReadConsistency, state::AppState};
 use queries::{
     Query,
     b2b::{GetOrganizationDetailsQuery, GetWorkspaceDetailsQuery},
@@ -93,9 +93,9 @@ async fn enrich_user_payload(
     deployment_id: i64,
     app_state: &AppState,
 ) -> Result<Value, TaskError> {
-    let query = GetUserDetailsQuery::new(deployment_id, user_id);
-    let user_details = query
-        .execute(app_state)
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    let user_details = GetUserDetailsQuery::new(deployment_id, user_id)
+        .execute_with(reader)
         .await
         .map_err(|e| TaskError::Permanent(format!("Failed to load user {}: {}", user_id, e)))?;
 
@@ -117,8 +117,11 @@ async fn enrich_organization_payload(
     deployment_id: i64,
     app_state: &AppState,
 ) -> Result<Value, TaskError> {
-    let query = GetOrganizationDetailsQuery::new(deployment_id, org_id);
-    let org_details = query.execute(app_state).await.map_err(|e| {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    let org_details = GetOrganizationDetailsQuery::new(deployment_id, org_id)
+        .execute_with(reader)
+        .await
+        .map_err(|e| {
         TaskError::Permanent(format!("Failed to load organization {}: {}", org_id, e))
     })?;
 
@@ -140,8 +143,11 @@ async fn enrich_workspace_payload(
     deployment_id: i64,
     app_state: &AppState,
 ) -> Result<Value, TaskError> {
-    let query = GetWorkspaceDetailsQuery::new(deployment_id, workspace_id);
-    let workspace_details = query.execute(app_state).await.map_err(|e| {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    let workspace_details = GetWorkspaceDetailsQuery::new(deployment_id, workspace_id)
+        .execute_with(reader)
+        .await
+        .map_err(|e| {
         TaskError::Permanent(format!("Failed to load workspace {}: {}", workspace_id, e))
     })?;
 

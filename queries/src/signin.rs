@@ -15,12 +15,12 @@ impl GetSignInQuery {
     pub fn new(signin_id: i64) -> Self {
         Self { signin_id }
     }
-}
 
-impl Query for GetSignInQuery {
-    type Output = SignIn;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<SignIn, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, session_id, user_id,
@@ -32,7 +32,7 @@ impl Query for GetSignInQuery {
             "#,
             self.signin_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         let signin = SignIn {
@@ -56,6 +56,14 @@ impl Query for GetSignInQuery {
         };
 
         Ok(signin)
+    }
+}
+
+impl Query for GetSignInQuery {
+    type Output = SignIn;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

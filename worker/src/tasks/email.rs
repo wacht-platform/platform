@@ -4,7 +4,7 @@ use commands::{Command, email::SendEmailCommand};
 use common::{db_router::ReadConsistency, state::AppState};
 use models::{DeploymentInvitation, DeploymentWithSettings, EmailProvider, SignIn, UserDetails};
 use queries::{
-    Query, deployment::GetDeploymentWithSettingsQuery, invitation::GetDeploymentInvitationQuery,
+    deployment::GetDeploymentWithSettingsQuery, invitation::GetDeploymentInvitationQuery,
     signin::GetSignInQuery, user::GetUserDetailsQuery, workspace::GetWorkspaceNameQuery,
 };
 use serde::{Deserialize, Serialize};
@@ -151,10 +151,7 @@ pub async fn send_password_reset_email_impl(
     user_agent: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-    let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch user details: {}", e))?;
+    let user_details = fetch_user_details(app_state, deployment_id, user_id).await?;
 
     let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
@@ -197,10 +194,7 @@ pub async fn send_magic_link_email_impl(
     magic_link: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-    let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch user details: {}", e))?;
+    let user_details = fetch_user_details(app_state, deployment_id, user_id).await?;
 
     let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
@@ -241,10 +235,7 @@ pub async fn send_signin_notification_email_impl(
     signin_id: u64,
     app_state: &AppState,
 ) -> Result<String, String> {
-    let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch user details: {}", e))?;
+    let user_details = fetch_user_details(app_state, deployment_id, user_id).await?;
 
     let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
@@ -288,10 +279,7 @@ pub async fn send_email_change_notification_impl(
     new_email: &str,
     app_state: &AppState,
 ) -> Result<String, String> {
-    let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch user details: {}", e))?;
+    let user_details = fetch_user_details(app_state, deployment_id, user_id).await?;
 
     let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
@@ -332,10 +320,7 @@ pub async fn send_password_change_notification_impl(
     user_id: u64,
     app_state: &AppState,
 ) -> Result<String, String> {
-    let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch user details: {}", e))?;
+    let user_details = fetch_user_details(app_state, deployment_id, user_id).await?;
 
     let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
@@ -374,10 +359,7 @@ pub async fn send_password_remove_notification_impl(
     user_id: u64,
     app_state: &AppState,
 ) -> Result<String, String> {
-    let user_details = GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
-        .execute(&app_state)
-        .await
-        .map_err(|e| format!("Failed to fetch user details: {}", e))?;
+    let user_details = fetch_user_details(app_state, deployment_id, user_id).await?;
 
     let deployment_settings = fetch_deployment_settings(app_state, deployment_id).await?;
 
@@ -518,8 +500,9 @@ pub async fn send_deployment_invite_impl(
     workspace_id: Option<u64>,
     app_state: &AppState,
 ) -> Result<String, String> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let inviter_details = GetUserDetailsQuery::new(deployment_id as i64, inviter_user_id as i64)
-        .execute(&app_state)
+        .execute_with(reader)
         .await
         .map_err(|e| format!("Failed to fetch inviter user details: {}", e))?;
 
@@ -633,8 +616,9 @@ pub async fn send_waitlist_approval_impl(
 }
 
 async fn fetch_signin_details(app_state: &AppState, signin_id: u64) -> Result<SignIn, String> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetSignInQuery::new(signin_id as i64)
-        .execute(app_state)
+        .execute_with(reader)
         .await
         .map_err(|e| format!("Failed to fetch signin details: {}", e))
 }
@@ -654,17 +638,31 @@ async fn fetch_deployment_invitation(
     app_state: &AppState,
     deployment_invitation_id: u64,
 ) -> Result<DeploymentInvitation, String> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentInvitationQuery::new(deployment_invitation_id as i64)
-        .execute(app_state)
+        .execute_with(reader)
         .await
         .map_err(|e| format!("Failed to fetch deployment invitation: {}", e))
 }
 
 async fn fetch_workspace_name(app_state: &AppState, workspace_id: u64) -> Result<String, String> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetWorkspaceNameQuery::new(workspace_id as i64)
-        .execute(app_state)
+        .execute_with(reader)
         .await
         .map_err(|e| format!("Failed to fetch workspace name: {}", e))
+}
+
+async fn fetch_user_details(
+    app_state: &AppState,
+    deployment_id: u64,
+    user_id: u64,
+) -> Result<UserDetails, String> {
+    let reader = app_state.db_router.reader(ReadConsistency::Strong);
+    GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
+        .execute_with(reader)
+        .await
+        .map_err(|e| format!("Failed to fetch user details: {}", e))
 }
 
 fn create_verification_variables(

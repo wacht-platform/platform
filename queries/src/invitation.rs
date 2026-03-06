@@ -12,12 +12,12 @@ impl GetDeploymentInvitationQuery {
     pub fn new(invitation_id: i64) -> Self {
         Self { invitation_id }
     }
-}
 
-impl Query for GetDeploymentInvitationQuery {
-    type Output = DeploymentInvitation;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<DeploymentInvitation, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, deployment_id, first_name, last_name, email_address, token, expiry
@@ -26,7 +26,7 @@ impl Query for GetDeploymentInvitationQuery {
             "#,
             self.invitation_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         let invitation = DeploymentInvitation {
@@ -42,5 +42,13 @@ impl Query for GetDeploymentInvitationQuery {
         };
 
         Ok(invitation)
+    }
+}
+
+impl Query for GetDeploymentInvitationQuery {
+    type Output = DeploymentInvitation;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
