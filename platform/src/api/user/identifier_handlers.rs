@@ -1,11 +1,9 @@
-use crate::{application::response::ApiResult, middleware::RequireDeployment};
+use crate::{
+    application::{response::ApiResult, user_identifier as user_identifier_use_cases},
+    middleware::RequireDeployment,
+};
 use common::state::AppState;
 
-use commands::{
-    AddUserEmailCommand, AddUserPhoneCommand, Command, DeleteUserEmailCommand,
-    DeleteUserPhoneCommand, DeleteUserSocialConnectionCommand, UpdateUserEmailCommand,
-    UpdateUserPhoneCommand,
-};
 use dto::json::{AddEmailRequest, AddPhoneRequest, UpdateEmailRequest, UpdatePhoneRequest};
 use models::{UserEmailAddress, UserPhoneNumber};
 
@@ -22,9 +20,9 @@ pub async fn add_user_email(
     Path(params): Path<UserParams>,
     Json(request): Json<AddEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    let email = AddUserEmailCommand::new(deployment_id, params.user_id, request)
-        .execute(&app_state)
-        .await?;
+    let email =
+        user_identifier_use_cases::add_user_email(&app_state, deployment_id, params.user_id, request)
+            .await?;
     Ok(email.into())
 }
 
@@ -34,10 +32,14 @@ pub async fn update_user_email(
     Path(params): Path<UserEmailParams>,
     Json(request): Json<UpdateEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    let email =
-        UpdateUserEmailCommand::new(deployment_id, params.user_id, params.email_id, request)
-            .execute(&app_state)
-            .await?;
+    let email = user_identifier_use_cases::update_user_email(
+        &app_state,
+        deployment_id,
+        params.user_id,
+        params.email_id,
+        request,
+    )
+    .await?;
     Ok(email.into())
 }
 
@@ -46,10 +48,8 @@ pub async fn delete_user_email(
     RequireDeployment(_): RequireDeployment,
     Path(params): Path<UserEmailParams>,
 ) -> ApiResult<()> {
-    DeleteUserEmailCommand::new(params.user_id, params.email_id)
-        .execute(&app_state)
+    user_identifier_use_cases::delete_user_email(&app_state, params.user_id, params.email_id)
         .await?;
-
     Ok(().into())
 }
 
@@ -59,9 +59,9 @@ pub async fn add_user_phone(
     Path(params): Path<UserParams>,
     Json(request): Json<AddPhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    let phone = AddUserPhoneCommand::new(deployment_id, params.user_id, request)
-        .execute(&app_state)
-        .await?;
+    let phone =
+        user_identifier_use_cases::add_user_phone(&app_state, deployment_id, params.user_id, request)
+            .await?;
     Ok(phone.into())
 }
 
@@ -71,9 +71,9 @@ pub async fn update_user_phone(
     Path(params): Path<UserPhoneParams>,
     Json(request): Json<UpdatePhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    let phone = UpdateUserPhoneCommand::new(params.user_id, params.phone_id, request)
-        .execute(&app_state)
-        .await?;
+    let phone =
+        user_identifier_use_cases::update_user_phone(&app_state, params.user_id, params.phone_id, request)
+            .await?;
     Ok(phone.into())
 }
 
@@ -82,8 +82,7 @@ pub async fn delete_user_phone(
     RequireDeployment(_): RequireDeployment,
     Path(params): Path<UserPhoneParams>,
 ) -> ApiResult<()> {
-    DeleteUserPhoneCommand::new(params.user_id, params.phone_id)
-        .execute(&app_state)
+    user_identifier_use_cases::delete_user_phone(&app_state, params.user_id, params.phone_id)
         .await?;
     Ok(().into())
 }
@@ -93,8 +92,11 @@ pub async fn delete_user_social_connection(
     RequireDeployment(_): RequireDeployment,
     Path(params): Path<UserSocialParams>,
 ) -> ApiResult<()> {
-    DeleteUserSocialConnectionCommand::new(params.user_id, params.connection_id)
-        .execute(&app_state)
-        .await?;
+    user_identifier_use_cases::delete_user_social_connection(
+        &app_state,
+        params.user_id,
+        params.connection_id,
+    )
+    .await?;
     Ok(().into())
 }

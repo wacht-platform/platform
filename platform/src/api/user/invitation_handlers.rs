@@ -1,14 +1,14 @@
 use crate::{
-    api::pagination::paginate_results,
-    application::response::{ApiResult, PaginatedResponse},
+    application::{
+        response::{ApiResult, PaginatedResponse},
+        user_invitation as user_invitation_use_cases,
+    },
     middleware::RequireDeployment,
 };
 use common::state::AppState;
 
-use commands::{ApproveWaitlistUserCommand, Command, DeleteInvitationCommand, InviteUserCommand};
 use dto::{json::InviteUserRequest, query::InvitationsWaitlistQueryParams};
 use models::{DeploymentInvitation, DeploymentWaitlistUser};
-use queries::{DeploymentInvitationQuery, DeploymentWaitlistQuery, Query};
 
 use axum::{
     Json,
@@ -22,19 +22,10 @@ pub async fn get_invited_user_list(
     RequireDeployment(deployment_id): RequireDeployment,
     QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentInvitation>> {
-    let limit = params.limit.unwrap_or(10) as i32;
-    let offset = params.offset.unwrap_or(0);
+    let invitations =
+        user_invitation_use_cases::get_invited_user_list(&app_state, deployment_id, params).await?;
 
-    let invitations = DeploymentInvitationQuery::new(deployment_id)
-        .limit(limit + 1)
-        .offset(offset)
-        .sort_key(params.sort_key.as_ref().map(ToString::to_string))
-        .sort_order(params.sort_order.as_ref().map(ToString::to_string))
-        .search(params.search.clone())
-        .execute(&app_state)
-        .await?;
-
-    Ok(paginate_results(invitations, limit, Some(offset)).into())
+    Ok(invitations.into())
 }
 
 pub async fn get_user_waitlist(
@@ -42,19 +33,10 @@ pub async fn get_user_waitlist(
     RequireDeployment(deployment_id): RequireDeployment,
     QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentWaitlistUser>> {
-    let limit = params.limit.unwrap_or(10) as i32;
-    let offset = params.offset.unwrap_or(0);
-
-    let waitlist = DeploymentWaitlistQuery::new(deployment_id)
-        .limit(limit + 1)
-        .offset(offset)
-        .sort_key(params.sort_key.as_ref().map(ToString::to_string))
-        .sort_order(params.sort_order.as_ref().map(ToString::to_string))
-        .search(params.search.clone())
-        .execute(&app_state)
+    let waitlist = user_invitation_use_cases::get_user_waitlist(&app_state, deployment_id, params)
         .await?;
 
-    Ok(paginate_results(waitlist, limit, Some(offset)).into())
+    Ok(waitlist.into())
 }
 
 pub async fn invite_user(
@@ -62,9 +44,7 @@ pub async fn invite_user(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<InviteUserRequest>,
 ) -> ApiResult<DeploymentInvitation> {
-    let invitation = InviteUserCommand::new(deployment_id, request)
-        .execute(&app_state)
-        .await?;
+    let invitation = user_invitation_use_cases::invite_user(&app_state, deployment_id, request).await?;
     Ok(invitation.into())
 }
 
@@ -73,8 +53,7 @@ pub async fn delete_invitation(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<InvitationParams>,
 ) -> ApiResult<()> {
-    DeleteInvitationCommand::new(deployment_id, params.invitation_id)
-        .execute(&app_state)
+    user_invitation_use_cases::delete_invitation(&app_state, deployment_id, params.invitation_id)
         .await?;
     Ok(().into())
 }
@@ -84,8 +63,11 @@ pub async fn approve_waitlist_user(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WaitlistUserParams>,
 ) -> ApiResult<DeploymentInvitation> {
-    let invitation = ApproveWaitlistUserCommand::new(deployment_id, params.waitlist_user_id)
-        .execute(&app_state)
-        .await?;
+    let invitation = user_invitation_use_cases::approve_waitlist_user(
+        &app_state,
+        deployment_id,
+        params.waitlist_user_id,
+    )
+    .await?;
     Ok(invitation.into())
 }

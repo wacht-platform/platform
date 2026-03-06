@@ -9,7 +9,19 @@ pub struct GetAgentIntegrationsQuery {
     offset: Option<u32>,
 }
 
+#[derive(Default)]
+pub struct GetAgentIntegrationsQueryBuilder {
+    deployment_id: Option<i64>,
+    agent_id: Option<i64>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+}
+
 impl GetAgentIntegrationsQuery {
+    pub fn builder() -> GetAgentIntegrationsQueryBuilder {
+        GetAgentIntegrationsQueryBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, agent_id: i64) -> Self {
         Self {
             deployment_id,
@@ -28,19 +40,11 @@ impl GetAgentIntegrationsQuery {
         self.offset = offset;
         self
     }
-}
 
-fn parse_integration_type(s: &str) -> IntegrationType {
-    match IntegrationType::from_str(s) {
-        Ok(kind) => kind,
-        Err(_) => IntegrationType::Teams,
-    }
-}
-
-impl Query for GetAgentIntegrationsQuery {
-    type Output = Vec<AgentIntegration>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+    pub async fn execute_with(
+        &self,
+        pool: &sqlx::PgPool,
+    ) -> StdResult<Vec<AgentIntegration>, AppError> {
         let limit = self.limit.unwrap_or(50) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
@@ -57,7 +61,7 @@ impl Query for GetAgentIntegrationsQuery {
             limit,
             offset,
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(pool)
         .await
         .map_err(AppError::Database)?;
 
@@ -77,13 +81,74 @@ impl Query for GetAgentIntegrationsQuery {
     }
 }
 
+impl GetAgentIntegrationsQueryBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn agent_id(mut self, agent_id: i64) -> Self {
+        self.agent_id = Some(agent_id);
+        self
+    }
+
+    pub fn limit(mut self, limit: Option<u32>) -> Self {
+        self.limit = limit;
+        self
+    }
+
+    pub fn offset(mut self, offset: Option<u32>) -> Self {
+        self.offset = offset;
+        self
+    }
+
+    pub fn build(self) -> StdResult<GetAgentIntegrationsQuery, AppError> {
+        Ok(GetAgentIntegrationsQuery {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            agent_id: self
+                .agent_id
+                .ok_or_else(|| AppError::Validation("agent_id is required".into()))?,
+            limit: self.limit,
+            offset: self.offset,
+        })
+    }
+}
+
+fn parse_integration_type(s: &str) -> IntegrationType {
+    match IntegrationType::from_str(s) {
+        Ok(kind) => kind,
+        Err(_) => IntegrationType::Teams,
+    }
+}
+
+impl Query for GetAgentIntegrationsQuery {
+    type Output = Vec<AgentIntegration>;
+
+    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetAgentIntegrationByIdQuery {
     deployment_id: i64,
     agent_id: i64,
     integration_id: i64,
 }
 
+#[derive(Default)]
+pub struct GetAgentIntegrationByIdQueryBuilder {
+    deployment_id: Option<i64>,
+    agent_id: Option<i64>,
+    integration_id: Option<i64>,
+}
+
 impl GetAgentIntegrationByIdQuery {
+    pub fn builder() -> GetAgentIntegrationByIdQueryBuilder {
+        GetAgentIntegrationByIdQueryBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, agent_id: i64, integration_id: i64) -> Self {
         Self {
             deployment_id,
@@ -91,12 +156,11 @@ impl GetAgentIntegrationByIdQuery {
             integration_id,
         }
     }
-}
 
-impl Query for GetAgentIntegrationByIdQuery {
-    type Output = AgentIntegration;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+    pub async fn execute_with(
+        &self,
+        pool: &sqlx::PgPool,
+    ) -> StdResult<AgentIntegration, AppError> {
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, deployment_id, agent_id, integration_type, name, config
@@ -107,7 +171,7 @@ impl Query for GetAgentIntegrationByIdQuery {
             self.deployment_id,
             self.agent_id,
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Integration not found".to_string()))?;
@@ -122,6 +186,45 @@ impl Query for GetAgentIntegrationByIdQuery {
             name: row.name,
             config: row.config,
         })
+    }
+}
+
+impl GetAgentIntegrationByIdQueryBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn agent_id(mut self, agent_id: i64) -> Self {
+        self.agent_id = Some(agent_id);
+        self
+    }
+
+    pub fn integration_id(mut self, integration_id: i64) -> Self {
+        self.integration_id = Some(integration_id);
+        self
+    }
+
+    pub fn build(self) -> StdResult<GetAgentIntegrationByIdQuery, AppError> {
+        Ok(GetAgentIntegrationByIdQuery {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            agent_id: self
+                .agent_id
+                .ok_or_else(|| AppError::Validation("agent_id is required".into()))?,
+            integration_id: self
+                .integration_id
+                .ok_or_else(|| AppError::Validation("integration_id is required".into()))?,
+        })
+    }
+}
+
+impl Query for GetAgentIntegrationByIdQuery {
+    type Output = AgentIntegration;
+
+    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

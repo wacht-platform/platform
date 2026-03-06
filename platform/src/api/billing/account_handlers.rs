@@ -1,26 +1,18 @@
-use axum::{extract::State, http::StatusCode, response::Json};
+use axum::{extract::State, response::Json};
 
-use crate::application::response::ApiResult;
+use crate::application::{billing as billing_use_cases, response::ApiResult};
 
-use commands::{Command, billing::UpdateBillingAccountCommand};
-use common::dodo::DodoClient;
 use common::state::AppState;
-use queries::{Query as QueryTrait, billing::GetBillingAccountQuery};
-use tracing::error;
 use wacht::middleware::RequireAuth;
 
-use super::helpers::get_billing_account_or_404;
-use super::types::{
-    PortalResponse, UpdateBillingAccountRequest, enforce_checkout_cooldown, owner_id_from_auth,
-};
+use super::types::{PortalResponse, UpdateBillingAccountRequest, owner_id_from_auth};
 
 pub async fn get_billing_account(
     State(state): State<AppState>,
     RequireAuth(auth): RequireAuth,
 ) -> ApiResult<Option<models::billing::BillingAccountWithSubscription>> {
-    let account = GetBillingAccountQuery::new(owner_id_from_auth(&auth))
-        .execute(&state)
-        .await?;
+    let owner_id = owner_id_from_auth(&auth);
+    let account = billing_use_cases::get_billing_account(&state, &owner_id).await?;
 
     Ok(account.into())
 }
@@ -32,14 +24,10 @@ pub async fn update_billing_account(
 ) -> ApiResult<()> {
     let owner_id = owner_id_from_auth(&auth);
 
-    let existing = get_billing_account_or_404(&state, &owner_id).await?;
-
-    if let Err(err) = enforce_checkout_cooldown(&existing) {
-        return Err(err.into());
-    }
-
-    UpdateBillingAccountCommand {
-        id: existing.billing_account.id,
+    billing_use_cases::update_billing_account(
+        &state,
+        &owner_id,
+        billing_use_cases::UpdateBillingAccountInput {
         legal_name: req.legal_name,
         billing_email: req.billing_email,
         billing_phone: req.billing_phone,
@@ -50,8 +38,8 @@ pub async fn update_billing_account(
         state: req.state,
         postal_code: req.postal_code,
         country: req.country,
-    }
-    .execute(&state)
+        },
+    )
     .await?;
 
     Ok(().into())
@@ -62,30 +50,9 @@ pub async fn get_portal_url(
     RequireAuth(auth): RequireAuth,
 ) -> ApiResult<PortalResponse> {
     let owner_id = owner_id_from_auth(&auth);
-    let account = get_billing_account_or_404(&state, &owner_id).await?;
+    let portal_url = billing_use_cases::get_portal_url(&state, &owner_id).await?;
 
-    let provider_customer_id = account
-        .billing_account
-        .provider_customer_id
-        .ok_or((StatusCode::NOT_FOUND, "Payment provider customer not found"))?;
-
-    let dodo = DodoClient::new().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let portal = dodo
-        .create_portal_session(&provider_customer_id)
-        .await
-        .map_err(|e| {
-            error!("Failed to create portal session: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to create portal session",
-            )
-        })?;
-
-    Ok(PortalResponse {
-        portal_url: portal.url,
-    }
-    .into())
+    Ok(PortalResponse { portal_url }.into())
 }
 
 pub async fn list_invoices(
@@ -93,11 +60,7 @@ pub async fn list_invoices(
     RequireAuth(auth): RequireAuth,
 ) -> ApiResult<serde_json::Value> {
     let owner_id = owner_id_from_auth(&auth);
-    let account = get_billing_account_or_404(&state, &owner_id).await?;
+    let invoices = billing_use_cases::list_invoices(&state, &owner_id).await?;
 
-    let invoices = queries::billing::ListBillingInvoicesQuery::new(account.billing_account.id)
-        .execute(&state)
-        .await?;
-
-    Ok(serde_json::json!({ "items": invoices }).into())
+    Ok(invoices.into())
 }

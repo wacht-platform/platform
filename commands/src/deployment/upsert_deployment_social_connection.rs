@@ -11,11 +11,21 @@ use models::{DeploymentSocialConnection, OauthCredentials, SocialConnectionProvi
 use super::ClearDeploymentCacheCommand;
 
 pub struct UpsertDeploymentSocialConnectionCommand {
-    pub deployment_id: i64,
-    pub connection: DeploymentSocialConnectionUpsert,
+    deployment_id: i64,
+    connection: DeploymentSocialConnectionUpsert,
+}
+
+#[derive(Default)]
+pub struct UpsertDeploymentSocialConnectionCommandBuilder {
+    deployment_id: Option<i64>,
+    connection: Option<DeploymentSocialConnectionUpsert>,
 }
 
 impl UpsertDeploymentSocialConnectionCommand {
+    pub fn builder() -> UpsertDeploymentSocialConnectionCommandBuilder {
+        UpsertDeploymentSocialConnectionCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, connection: DeploymentSocialConnectionUpsert) -> Self {
         Self {
             deployment_id,
@@ -127,5 +137,28 @@ impl Command for UpsertDeploymentSocialConnectionCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         self.execute_with(app_state).await
+    }
+}
+
+impl UpsertDeploymentSocialConnectionCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn connection(mut self, connection: DeploymentSocialConnectionUpsert) -> Self {
+        self.connection = Some(connection);
+        self
+    }
+
+    pub fn build(self) -> Result<UpsertDeploymentSocialConnectionCommand, AppError> {
+        Ok(UpsertDeploymentSocialConnectionCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            connection: self
+                .connection
+                .ok_or_else(|| AppError::Validation("connection is required".to_string()))?,
+        })
     }
 }

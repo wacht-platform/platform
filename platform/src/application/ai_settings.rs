@@ -4,8 +4,7 @@ use common::error::AppError;
 use models::plan_features::PlanFeature;
 use models::{DeploymentAiSettingsResponse, UpdateDeploymentAiSettingsRequest};
 use queries::{
-    GetDeploymentAiSettingsQuery, Query as QueryTrait,
-    plan_access::CheckDeploymentFeatureAccessQuery,
+    GetDeploymentAiSettingsQuery, plan_access::CheckDeploymentFeatureAccessQuery,
 };
 
 use crate::application::AppState;
@@ -35,8 +34,11 @@ pub async fn update_ai_settings(
     deployment_id: i64,
     updates: UpdateDeploymentAiSettingsRequest,
 ) -> Result<DeploymentAiSettingsResponse, AppError> {
-    let has_ai_access = CheckDeploymentFeatureAccessQuery::new(deployment_id, PlanFeature::AiAgents)
-        .execute(app_state)
+    let has_ai_access = CheckDeploymentFeatureAccessQuery::builder()
+        .deployment_id(deployment_id)
+        .feature(PlanFeature::AiAgents)
+        .build()?
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
         .map_err(|e| AppError::Internal(format!("Failed to check AI feature access: {}", e)))?;
 

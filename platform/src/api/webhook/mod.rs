@@ -3,7 +3,6 @@ mod apps;
 mod deliveries;
 mod dispatch;
 mod endpoints;
-mod helpers;
 mod replay;
 
 pub use analytics::{get_webhook_analytics, get_webhook_timeseries};

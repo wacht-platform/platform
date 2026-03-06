@@ -1,16 +1,46 @@
+use common::state::AppState;
 use dto::json::api_key::{OAuthAppResponse, OAuthClientResponse};
+use models::error::AppError;
+use queries::{
+    Query as QueryTrait,
+    oauth::{GetOAuthAppBySlugQuery, GetOAuthClientByIdQuery, OAuthAppData, OAuthClientData},
+};
 
-pub(crate) fn map_oauth_client_response(c: queries::oauth::OAuthClientData) -> OAuthClientResponse {
+pub async fn get_oauth_app_by_slug(
+    app_state: &AppState,
+    deployment_id: i64,
+    oauth_app_slug: String,
+) -> Result<OAuthAppData, AppError> {
+    GetOAuthAppBySlugQuery::new(deployment_id, oauth_app_slug)
+        .execute(app_state)
+        .await?
+        .ok_or_else(|| AppError::NotFound("OAuth app not found".to_string()))
+}
+
+pub async fn get_oauth_client_by_id(
+    app_state: &AppState,
+    deployment_id: i64,
+    oauth_app_id: i64,
+    oauth_client_id: i64,
+) -> Result<OAuthClientData, AppError> {
+    GetOAuthClientByIdQuery::new(deployment_id, oauth_app_id, oauth_client_id)
+        .execute(app_state)
+        .await?
+        .ok_or_else(|| AppError::NotFound("OAuth client not found".to_string()))
+}
+
+pub fn map_oauth_client_response(c: OAuthClientData) -> OAuthClientResponse {
     map_oauth_client_response_with_secret(c, None)
 }
 
-pub(crate) fn map_oauth_client_response_with_secret(
-    c: queries::oauth::OAuthClientData,
+pub fn map_oauth_client_response_with_secret(
+    c: OAuthClientData,
     client_secret: Option<String>,
 ) -> OAuthClientResponse {
     let grant_types = c.grant_types_vec();
     let redirect_uris = c.redirect_uris_vec();
     let contacts = c.contacts_vec();
+
     OAuthClientResponse {
         id: c.id,
         oauth_app_id: c.oauth_app_id,
@@ -37,9 +67,10 @@ pub(crate) fn map_oauth_client_response_with_secret(
     }
 }
 
-pub(crate) fn map_oauth_app_response(a: queries::oauth::OAuthAppData) -> OAuthAppResponse {
+pub fn map_oauth_app_response(a: OAuthAppData) -> OAuthAppResponse {
     let supported_scopes = a.supported_scopes_vec();
     let scope_definitions = a.scope_definitions_vec();
+
     OAuthAppResponse {
         id: a.id,
         slug: a.slug,

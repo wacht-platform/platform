@@ -7,9 +7,22 @@ use sqlx::Row;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateSegmentCommand {
-    pub deployment_id: i64,
-    pub name: String,
-    pub r#type: String,
+    deployment_id: i64,
+    name: String,
+    r#type: String,
+}
+
+#[derive(Default)]
+pub struct CreateSegmentCommandBuilder {
+    deployment_id: Option<i64>,
+    name: Option<String>,
+    r#type: Option<String>,
+}
+
+impl CreateSegmentCommand {
+    pub fn builder() -> CreateSegmentCommandBuilder {
+        CreateSegmentCommandBuilder::default()
+    }
 }
 
 impl Command for CreateSegmentCommand {
@@ -17,6 +30,16 @@ impl Command for CreateSegmentCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let id = app_state.sf.next_id()? as i64;
+        self.execute_with(&app_state.db_pool, id).await
+    }
+}
+
+impl CreateSegmentCommand {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        id: i64,
+    ) -> Result<Segment, AppError> {
         let segment = sqlx::query_as::<_, Segment>(
             r#"
             INSERT INTO segments (id, deployment_id, name, type)
@@ -28,7 +51,7 @@ impl Command for CreateSegmentCommand {
         .bind(self.deployment_id)
         .bind(self.name)
         .bind(self.r#type)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await
         .map_err(AppError::Database)?;
 
@@ -36,23 +59,73 @@ impl Command for CreateSegmentCommand {
     }
 }
 
+impl CreateSegmentCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    pub fn segment_type(mut self, segment_type: String) -> Self {
+        self.r#type = Some(segment_type);
+        self
+    }
+
+    pub fn build(self) -> Result<CreateSegmentCommand, AppError> {
+        Ok(CreateSegmentCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            name: self
+                .name
+                .ok_or_else(|| AppError::Validation("name is required".into()))?,
+            r#type: self
+                .r#type
+                .ok_or_else(|| AppError::Validation("type is required".into()))?,
+        })
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct UpdateSegmentCommand {
-    pub id: i64,
-    pub deployment_id: i64,
-    pub name: Option<String>,
+    id: i64,
+    deployment_id: i64,
+    name: Option<String>,
+}
+
+#[derive(Default)]
+pub struct UpdateSegmentCommandBuilder {
+    id: Option<i64>,
+    deployment_id: Option<i64>,
+    name: Option<String>,
+}
+
+impl UpdateSegmentCommand {
+    pub fn builder() -> UpdateSegmentCommandBuilder {
+        UpdateSegmentCommandBuilder::default()
+    }
 }
 
 impl Command for UpdateSegmentCommand {
     type Output = Segment;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateSegmentCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<Segment, AppError> {
         let existing = sqlx::query(
             "SELECT id FROM segments WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
         )
         .bind(self.id)
         .bind(self.deployment_id)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await
         .map_err(AppError::Database)?;
 
@@ -73,7 +146,7 @@ impl Command for UpdateSegmentCommand {
 
         let segment = query_builder
             .build_query_as::<Segment>()
-            .fetch_one(&app_state.db_pool)
+            .fetch_one(pool)
             .await
             .map_err(AppError::Database)?;
 
@@ -81,22 +154,69 @@ impl Command for UpdateSegmentCommand {
     }
 }
 
+impl UpdateSegmentCommandBuilder {
+    pub fn id(mut self, id: i64) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
+    }
+
+    pub fn build(self) -> Result<UpdateSegmentCommand, AppError> {
+        Ok(UpdateSegmentCommand {
+            id: self
+                .id
+                .ok_or_else(|| AppError::Validation("id is required".into()))?,
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            name: self.name,
+        })
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct DeleteSegmentCommand {
-    pub id: i64,
-    pub deployment_id: i64,
+    id: i64,
+    deployment_id: i64,
+}
+
+#[derive(Default)]
+pub struct DeleteSegmentCommandBuilder {
+    id: Option<i64>,
+    deployment_id: Option<i64>,
+}
+
+impl DeleteSegmentCommand {
+    pub fn builder() -> DeleteSegmentCommandBuilder {
+        DeleteSegmentCommandBuilder::default()
+    }
 }
 
 impl Command for DeleteSegmentCommand {
     type Output = serde_json::Value;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl DeleteSegmentCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<serde_json::Value, AppError> {
         let result = sqlx::query(
             "UPDATE segments SET deleted_at = NOW() WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
         )
         .bind(self.id)
         .bind(self.deployment_id)
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await
         .map_err(AppError::Database)?;
 
@@ -107,19 +227,19 @@ impl Command for DeleteSegmentCommand {
         // Clean up associations
         sqlx::query("DELETE FROM organization_segments WHERE segment_id = $1")
             .bind(self.id)
-            .execute(&app_state.db_pool)
+            .execute(pool)
             .await
             .map_err(AppError::Database)?;
 
         sqlx::query("DELETE FROM workspace_segments WHERE segment_id = $1")
             .bind(self.id)
-            .execute(&app_state.db_pool)
+            .execute(pool)
             .await
             .map_err(AppError::Database)?;
 
         sqlx::query("DELETE FROM user_segments WHERE segment_id = $1")
             .bind(self.id)
-            .execute(&app_state.db_pool)
+            .execute(pool)
             .await
             .map_err(AppError::Database)?;
 
@@ -127,23 +247,65 @@ impl Command for DeleteSegmentCommand {
     }
 }
 
+impl DeleteSegmentCommandBuilder {
+    pub fn id(mut self, id: i64) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn build(self) -> Result<DeleteSegmentCommand, AppError> {
+        Ok(DeleteSegmentCommand {
+            id: self
+                .id
+                .ok_or_else(|| AppError::Validation("id is required".into()))?,
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+        })
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct AssignSegmentCommand {
-    pub segment_id: i64,
-    pub deployment_id: i64,
-    pub entity_id: i64,
+    segment_id: i64,
+    deployment_id: i64,
+    entity_id: i64,
+}
+
+#[derive(Default)]
+pub struct AssignSegmentCommandBuilder {
+    segment_id: Option<i64>,
+    deployment_id: Option<i64>,
+    entity_id: Option<i64>,
+}
+
+impl AssignSegmentCommand {
+    pub fn builder() -> AssignSegmentCommandBuilder {
+        AssignSegmentCommandBuilder::default()
+    }
 }
 
 impl Command for AssignSegmentCommand {
     type Output = serde_json::Value;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl AssignSegmentCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<serde_json::Value, AppError> {
         let segment_row = sqlx::query(
             "SELECT type FROM segments WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
         )
         .bind(self.segment_id)
         .bind(self.deployment_id)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await
         .map_err(AppError::Database)?;
 
@@ -159,7 +321,7 @@ impl Command for AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.deployment_id)
-                .fetch_optional(&app_state.db_pool)
+                .fetch_optional(pool)
                 .await
                 .map_err(AppError::Database)?;
 
@@ -172,7 +334,7 @@ impl Command for AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.segment_id)
-                .execute(&app_state.db_pool)
+                .execute(pool)
                 .await
                 .map_err(AppError::Database)?;
             }
@@ -182,7 +344,7 @@ impl Command for AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.deployment_id)
-                .fetch_optional(&app_state.db_pool)
+                .fetch_optional(pool)
                 .await
                 .map_err(AppError::Database)?;
 
@@ -195,7 +357,7 @@ impl Command for AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.segment_id)
-                .execute(&app_state.db_pool)
+                .execute(pool)
                 .await
                 .map_err(AppError::Database)?;
             }
@@ -205,7 +367,7 @@ impl Command for AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.deployment_id)
-                .fetch_optional(&app_state.db_pool)
+                .fetch_optional(pool)
                 .await
                 .map_err(AppError::Database)?;
 
@@ -218,7 +380,7 @@ impl Command for AssignSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.segment_id)
-                .execute(&app_state.db_pool)
+                .execute(pool)
                 .await
                 .map_err(AppError::Database)?;
             }
@@ -229,23 +391,73 @@ impl Command for AssignSegmentCommand {
     }
 }
 
+impl AssignSegmentCommandBuilder {
+    pub fn segment_id(mut self, segment_id: i64) -> Self {
+        self.segment_id = Some(segment_id);
+        self
+    }
+
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn entity_id(mut self, entity_id: i64) -> Self {
+        self.entity_id = Some(entity_id);
+        self
+    }
+
+    pub fn build(self) -> Result<AssignSegmentCommand, AppError> {
+        Ok(AssignSegmentCommand {
+            segment_id: self
+                .segment_id
+                .ok_or_else(|| AppError::Validation("segment_id is required".into()))?,
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            entity_id: self
+                .entity_id
+                .ok_or_else(|| AppError::Validation("entity_id is required".into()))?,
+        })
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct RemoveSegmentCommand {
-    pub segment_id: i64,
-    pub deployment_id: i64,
-    pub entity_id: i64,
+    segment_id: i64,
+    deployment_id: i64,
+    entity_id: i64,
+}
+
+#[derive(Default)]
+pub struct RemoveSegmentCommandBuilder {
+    segment_id: Option<i64>,
+    deployment_id: Option<i64>,
+    entity_id: Option<i64>,
+}
+
+impl RemoveSegmentCommand {
+    pub fn builder() -> RemoveSegmentCommandBuilder {
+        RemoveSegmentCommandBuilder::default()
+    }
 }
 
 impl Command for RemoveSegmentCommand {
     type Output = serde_json::Value;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl RemoveSegmentCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<serde_json::Value, AppError> {
         let segment_row = sqlx::query(
             "SELECT type FROM segments WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
         )
         .bind(self.segment_id)
         .bind(self.deployment_id)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await
         .map_err(AppError::Database)?;
 
@@ -261,7 +473,7 @@ impl Command for RemoveSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.segment_id)
-                .execute(&app_state.db_pool)
+                .execute(pool)
                 .await
                 .map_err(AppError::Database)?;
             }
@@ -271,7 +483,7 @@ impl Command for RemoveSegmentCommand {
                 )
                 .bind(self.entity_id)
                 .bind(self.segment_id)
-                .execute(&app_state.db_pool)
+                .execute(pool)
                 .await
                 .map_err(AppError::Database)?;
             }
@@ -279,7 +491,7 @@ impl Command for RemoveSegmentCommand {
                 sqlx::query("DELETE FROM user_segments WHERE user_id = $1 AND segment_id = $2")
                     .bind(self.entity_id)
                     .bind(self.segment_id)
-                    .execute(&app_state.db_pool)
+                    .execute(pool)
                     .await
                     .map_err(AppError::Database)?;
             }
@@ -287,5 +499,36 @@ impl Command for RemoveSegmentCommand {
         }
 
         Ok(serde_json::json!({ "success": true }))
+    }
+}
+
+impl RemoveSegmentCommandBuilder {
+    pub fn segment_id(mut self, segment_id: i64) -> Self {
+        self.segment_id = Some(segment_id);
+        self
+    }
+
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn entity_id(mut self, entity_id: i64) -> Self {
+        self.entity_id = Some(entity_id);
+        self
+    }
+
+    pub fn build(self) -> Result<RemoveSegmentCommand, AppError> {
+        Ok(RemoveSegmentCommand {
+            segment_id: self
+                .segment_id
+                .ok_or_else(|| AppError::Validation("segment_id is required".into()))?,
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            entity_id: self
+                .entity_id
+                .ok_or_else(|| AppError::Validation("entity_id is required".into()))?,
+        })
     }
 }

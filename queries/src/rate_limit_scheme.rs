@@ -53,12 +53,11 @@ impl ListRateLimitSchemesQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
     }
-}
 
-impl Query for ListRateLimitSchemesQuery {
-    type Output = Vec<RateLimitSchemeData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(
+        &self,
+        pool: &sqlx::PgPool,
+    ) -> Result<Vec<RateLimitSchemeData>, AppError> {
         let rows = sqlx::query_as::<_, RateLimitSchemeRow>(
             r#"
             SELECT
@@ -76,10 +75,18 @@ impl Query for ListRateLimitSchemesQuery {
             "#,
         )
         .bind(self.deployment_id)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(pool)
         .await?;
 
         Ok(rows.into_iter().map(Into::into).collect())
+    }
+}
+
+impl Query for ListRateLimitSchemesQuery {
+    type Output = Vec<RateLimitSchemeData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -95,12 +102,11 @@ impl GetRateLimitSchemeQuery {
             slug,
         }
     }
-}
 
-impl Query for GetRateLimitSchemeQuery {
-    type Output = Option<RateLimitSchemeData>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(
+        &self,
+        pool: &sqlx::PgPool,
+    ) -> Result<Option<RateLimitSchemeData>, AppError> {
         let rec = sqlx::query_as::<_, RateLimitSchemeRow>(
             r#"
             SELECT
@@ -119,9 +125,17 @@ impl Query for GetRateLimitSchemeQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.slug)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await?;
 
         Ok(rec.map(Into::into))
+    }
+}
+
+impl Query for GetRateLimitSchemeQuery {
+    type Output = Option<RateLimitSchemeData>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

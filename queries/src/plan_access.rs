@@ -4,23 +4,29 @@ use common::state::AppState;
 use models::plan_features::{PlanFeature, PlanTier};
 
 pub struct CheckDeploymentFeatureAccessQuery {
-    pub deployment_id: i64,
-    pub feature: PlanFeature,
+    deployment_id: i64,
+    feature: PlanFeature,
+}
+
+#[derive(Default)]
+pub struct CheckDeploymentFeatureAccessQueryBuilder {
+    deployment_id: Option<i64>,
+    feature: Option<PlanFeature>,
 }
 
 impl CheckDeploymentFeatureAccessQuery {
+    pub fn builder() -> CheckDeploymentFeatureAccessQueryBuilder {
+        CheckDeploymentFeatureAccessQueryBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, feature: PlanFeature) -> Self {
         Self {
             deployment_id,
             feature,
         }
     }
-}
 
-impl Query for CheckDeploymentFeatureAccessQuery {
-    type Output = bool;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<bool, AppError> {
         // Get the project's billing_account_id
         let billing_account_id: Option<i64> = sqlx::query_scalar!(
             r#"
@@ -30,7 +36,7 @@ impl Query for CheckDeploymentFeatureAccessQuery {
             "#,
             self.deployment_id
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(pool)
         .await?;
 
         let billing_account_id = match billing_account_id {
@@ -47,7 +53,7 @@ impl Query for CheckDeploymentFeatureAccessQuery {
             "#,
             billing_account_id
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(pool)
         .await?;
 
         let product_id = match product_id {
@@ -65,20 +71,56 @@ impl Query for CheckDeploymentFeatureAccessQuery {
     }
 }
 
-pub struct GetDeploymentPlanTierQuery {
-    pub deployment_id: i64,
-}
+impl Query for CheckDeploymentFeatureAccessQuery {
+    type Output = bool;
 
-impl GetDeploymentPlanTierQuery {
-    pub fn new(deployment_id: i64) -> Self {
-        Self { deployment_id }
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
     }
 }
 
-impl Query for GetDeploymentPlanTierQuery {
-    type Output = Option<PlanTier>;
+impl CheckDeploymentFeatureAccessQueryBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
 
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub fn feature(mut self, feature: PlanFeature) -> Self {
+        self.feature = Some(feature);
+        self
+    }
+
+    pub fn build(self) -> Result<CheckDeploymentFeatureAccessQuery, AppError> {
+        Ok(CheckDeploymentFeatureAccessQuery {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            feature: self
+                .feature
+                .ok_or_else(|| AppError::Validation("feature is required".into()))?,
+        })
+    }
+}
+
+pub struct GetDeploymentPlanTierQuery {
+    deployment_id: i64,
+}
+
+#[derive(Default)]
+pub struct GetDeploymentPlanTierQueryBuilder {
+    deployment_id: Option<i64>,
+}
+
+impl GetDeploymentPlanTierQuery {
+    pub fn builder() -> GetDeploymentPlanTierQueryBuilder {
+        GetDeploymentPlanTierQueryBuilder::default()
+    }
+
+    pub fn new(deployment_id: i64) -> Self {
+        Self { deployment_id }
+    }
+
+    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<Option<PlanTier>, AppError> {
         // Get the project's billing_account_id
         let billing_account_id: Option<i64> = sqlx::query_scalar!(
             r#"
@@ -88,7 +130,7 @@ impl Query for GetDeploymentPlanTierQuery {
             "#,
             self.deployment_id
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(pool)
         .await?;
 
         let billing_account_id = match billing_account_id {
@@ -105,7 +147,7 @@ impl Query for GetDeploymentPlanTierQuery {
             "#,
             billing_account_id
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(pool)
         .await?;
 
         let product_id = match product_id {
@@ -114,5 +156,28 @@ impl Query for GetDeploymentPlanTierQuery {
         };
 
         Ok(PlanTier::from_product_id(&product_id))
+    }
+}
+
+impl Query for GetDeploymentPlanTierQuery {
+    type Output = Option<PlanTier>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
+    }
+}
+
+impl GetDeploymentPlanTierQueryBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn build(self) -> Result<GetDeploymentPlanTierQuery, AppError> {
+        Ok(GetDeploymentPlanTierQuery {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+        })
     }
 }

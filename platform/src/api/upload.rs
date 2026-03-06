@@ -1,10 +1,12 @@
 use crate::api::multipart::MultipartPayload;
-use crate::{application::response::ApiResult, middleware::RequireDeployment};
+use crate::{
+    application::{response::ApiResult, upload as upload_use_cases},
+    middleware::RequireDeployment,
+};
 use common::state::AppState;
 use serde::Deserialize;
 
-use commands::{Command, UpdateDeploymentDisplaySettingsCommand, UploadToCdnCommand};
-use dto::json::{DeploymentDisplaySettingsUpdates, UploadResult};
+use dto::json::UploadResult;
 
 use axum::{
     extract::{Multipart, Path, State},
@@ -27,8 +29,6 @@ pub async fn upload_image(
 ) -> ApiResult<UploadResult> {
     let mut image_buffer: Vec<u8> = Vec::new();
     let mut file_extension = String::from("png");
-
-    let mut updates = DeploymentDisplaySettingsUpdates::default();
     let payload = MultipartPayload::parse(multipart).await?;
 
     for field in payload.fields() {
@@ -52,69 +52,23 @@ pub async fn upload_image(
             .into());
     }
 
-    let file_path = match params.image_type.as_str() {
-        "logo" => {
-            updates.logo_image_url = Some(format!(
-                "https://cdn.wacht.services/deployments/{}/logo.{}",
-                deployment_id, file_extension
-            ));
-            format!("deployments/{}/logo.{}", deployment_id, file_extension)
+    let result = match upload_use_cases::upload_image(
+        &app_state,
+        deployment_id,
+        &params.image_type,
+        image_buffer,
+        &file_extension,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(common::error::AppError::Validation(msg)) => {
+            return Err((StatusCode::BAD_REQUEST, msg).into());
         }
-        "favicon" => {
-            updates.favicon_image_url = Some(format!(
-                "https://cdn.wacht.services/deployments/{}/favicon.{}",
-                deployment_id, file_extension
-            ));
-            format!("deployments/{}/favicon.{}", deployment_id, file_extension)
-        }
-        "user-profile" => {
-            updates.default_user_profile_image_url = Some(format!(
-                "https://cdn.wacht.services/deployments/{}/user-profile.{}",
-                deployment_id, file_extension
-            ));
-            format!(
-                "deployments/{}/user-profile.{}",
-                deployment_id, file_extension
-            )
-        }
-        "org-profile" => {
-            updates.default_organization_profile_image_url = Some(format!(
-                "https://cdn.wacht.services/deployments/{}/org-profile.{}",
-                deployment_id, file_extension
-            ));
-            format!(
-                "deployments/{}/org-profile.{}",
-                deployment_id, file_extension
-            )
-        }
-        "workspace-profile" => {
-            updates.default_workspace_profile_image_url = Some(format!(
-                "https://cdn.wacht.services/deployments/{}/workspace-profile.{}",
-                deployment_id, file_extension
-            ));
-            format!(
-                "deployments/{}/workspace-profile.{}",
-                deployment_id, file_extension
-            )
-        }
-        _ => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "Invalid image type. Allowed types: logo, favicon, user-profile, org-profile, workspace-profile"
-                    .to_string(),
-            )
-                .into());
+        Err(e) => {
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into());
         }
     };
 
-    let url = UploadToCdnCommand::new(file_path, image_buffer)
-        .execute(&app_state)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)
-        .execute(&app_state)
-        .await?;
-
-    Ok(UploadResult { url }.into())
+    Ok(result.into())
 }

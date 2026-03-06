@@ -26,12 +26,8 @@ impl GetMcpServersQuery {
         self.offset = offset;
         self
     }
-}
 
-impl Query for GetMcpServersQuery {
-    type Output = Vec<McpServer>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> StdResult<Vec<McpServer>, AppError> {
         let limit = self.limit.unwrap_or(50) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
@@ -47,7 +43,7 @@ impl Query for GetMcpServersQuery {
         .bind(self.deployment_id)
         .bind(limit)
         .bind(offset)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(pool)
         .await
         .map_err(AppError::Database)?;
 
@@ -72,6 +68,14 @@ impl Query for GetMcpServersQuery {
     }
 }
 
+impl Query for GetMcpServersQuery {
+    type Output = Vec<McpServer>;
+
+    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetMcpServerByIdQuery {
     deployment_id: i64,
     mcp_server_id: i64,
@@ -84,12 +88,8 @@ impl GetMcpServerByIdQuery {
             mcp_server_id,
         }
     }
-}
 
-impl Query for GetMcpServerByIdQuery {
-    type Output = McpServer;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> StdResult<McpServer, AppError> {
         let row = sqlx::query(
             r#"
             SELECT id, created_at, updated_at, deployment_id, name, config
@@ -99,7 +99,7 @@ impl Query for GetMcpServerByIdQuery {
         )
         .bind(self.mcp_server_id)
         .bind(self.deployment_id)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(pool)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("MCP server not found".to_string()))?;
@@ -119,6 +119,14 @@ impl Query for GetMcpServerByIdQuery {
     }
 }
 
+impl Query for GetMcpServerByIdQuery {
+    type Output = McpServer;
+
+    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct GetAgentMcpServersQuery {
     deployment_id: i64,
     agent_id: i64,
@@ -130,6 +138,42 @@ impl GetAgentMcpServersQuery {
             deployment_id,
             agent_id,
         }
+    }
+
+    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> StdResult<Vec<McpServer>, AppError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT m.id, m.created_at, m.updated_at, m.deployment_id, m.name, m.config
+            FROM mcp_servers m
+            JOIN ai_agent_mcp_servers ams ON ams.mcp_server_id = m.id
+            WHERE m.deployment_id = $1 AND ams.agent_id = $2 AND ams.deployment_id = $1
+            ORDER BY m.created_at DESC
+            "#,
+        )
+        .bind(self.deployment_id)
+        .bind(self.agent_id)
+        .fetch_all(pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        rows.into_iter()
+            .map(|row| {
+                let config_value: serde_json::Value = row.get("config");
+                let config: McpServerConfig =
+                    serde_json::from_value(config_value).map_err(|e| {
+                        AppError::Internal(format!("Failed to decode MCP config: {}", e))
+                    })?;
+
+                Ok(McpServer {
+                    id: row.get("id"),
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                    deployment_id: row.get("deployment_id"),
+                    name: row.get("name"),
+                    config,
+                })
+            })
+            .collect()
     }
 }
 
@@ -242,38 +286,6 @@ impl Query for GetAgentMcpServersQuery {
     type Output = Vec<McpServer>;
 
     async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        let rows = sqlx::query(
-            r#"
-            SELECT m.id, m.created_at, m.updated_at, m.deployment_id, m.name, m.config
-            FROM mcp_servers m
-            JOIN ai_agent_mcp_servers ams ON ams.mcp_server_id = m.id
-            WHERE m.deployment_id = $1 AND ams.agent_id = $2 AND ams.deployment_id = $1
-            ORDER BY m.created_at DESC
-            "#,
-        )
-        .bind(self.deployment_id)
-        .bind(self.agent_id)
-        .fetch_all(&app_state.db_pool)
-        .await
-        .map_err(AppError::Database)?;
-
-        rows.into_iter()
-            .map(|row| {
-                let config_value: serde_json::Value = row.get("config");
-                let config: McpServerConfig =
-                    serde_json::from_value(config_value).map_err(|e| {
-                        AppError::Internal(format!("Failed to decode MCP config: {}", e))
-                    })?;
-
-                Ok(McpServer {
-                    id: row.get("id"),
-                    created_at: row.get("created_at"),
-                    updated_at: row.get("updated_at"),
-                    deployment_id: row.get("deployment_id"),
-                    name: row.get("name"),
-                    config,
-                })
-            })
-            .collect()
+        self.execute_with(&app_state.db_pool).await
     }
 }

@@ -19,8 +19,13 @@ impl Command for UploadToCdnCommand {
     type Output = String;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .s3_client
+        self.execute_with(&app_state.s3_client).await
+    }
+}
+
+impl UploadToCdnCommand {
+    pub async fn execute_with(self, s3_client: &aws_sdk_s3::Client) -> Result<String, AppError> {
+        s3_client
             .put_object()
             .bucket(std::env::var("R2_CDN_BUCKET").expect("R2_CDN_BUCKET must be set"))
             .key(&self.file_path)
@@ -61,8 +66,13 @@ impl Command for UploadToKnowledgeBaseBucketCommand {
     type Output = String;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        app_state
-            .s3_client
+        self.execute_with(&app_state.s3_client).await
+    }
+}
+
+impl UploadToKnowledgeBaseBucketCommand {
+    pub async fn execute_with(self, s3_client: &aws_sdk_s3::Client) -> Result<String, AppError> {
+        s3_client
             .put_object()
             .bucket("wacht-knowledge-base")
             .key(&self.file_path)

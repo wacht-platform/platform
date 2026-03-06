@@ -1,16 +1,12 @@
 use crate::{
-    application::response::{ApiResult, PaginatedResponse},
+    application::{
+        response::{ApiResult, PaginatedResponse},
+        settings as settings_use_cases,
+    },
     middleware::RequireDeployment,
 };
 use common::state::AppState;
 
-use commands::{
-    Command, CreateDeploymentJwtTemplateCommand, DeleteDeploymentJwtTemplateCommand,
-    RemoveDeploymentSmtpConfigCommand, UpdateDeploymentAuthSettingsCommand,
-    UpdateDeploymentDisplaySettingsCommand, UpdateDeploymentEmailTemplateCommand,
-    UpdateDeploymentJwtTemplateCommand, UpdateDeploymentRestrictionsCommand,
-    UpdateDeploymentSmtpConfigCommand, VerifySmtpConnectionCommand,
-};
 use dto::{
     json::{
         DeploymentAuthSettingsUpdates, DeploymentDisplaySettingsUpdates,
@@ -20,10 +16,6 @@ use dto::{
     params::deployment::DeploymentNameParams,
 };
 use models::{DeploymentJwtTemplate, DeploymentWithSettings, EmailTemplate};
-use queries::{
-    GetDeploymentEmailTemplateQuery, Query,
-    deployment::{GetDeploymentJwtTemplatesQuery, GetDeploymentWithSettingsQuery},
-};
 
 use axum::{
     Json,
@@ -50,9 +42,7 @@ pub async fn get_deployment_with_settings(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<DeploymentWithSettings> {
-    let deployment = GetDeploymentWithSettingsQuery::new(deployment_id)
-        .execute(&app_state)
-        .await?;
+    let deployment = settings_use_cases::get_deployment_with_settings(&app_state, deployment_id).await?;
     Ok(deployment.into())
 }
 
@@ -61,9 +51,7 @@ pub async fn update_deployment_display_settings(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentDisplaySettingsUpdates>,
 ) -> ApiResult<()> {
-    UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)
-        .execute(&app_state)
-        .await?;
+    settings_use_cases::update_deployment_display_settings(&app_state, deployment_id, updates).await?;
     Ok(().into())
 }
 
@@ -72,9 +60,7 @@ pub async fn update_deployment_auth_settings(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentAuthSettingsUpdates>,
 ) -> ApiResult<()> {
-    UpdateDeploymentAuthSettingsCommand::new(deployment_id, updates)
-        .execute(&app_state)
-        .await?;
+    settings_use_cases::update_deployment_auth_settings(&app_state, deployment_id, updates).await?;
     Ok(().into())
 }
 
@@ -83,9 +69,7 @@ pub async fn update_deployment_restrictions(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentRestrictionsUpdates>,
 ) -> ApiResult<()> {
-    UpdateDeploymentRestrictionsCommand::new(deployment_id, updates)
-        .execute(&app_state)
-        .await?;
+    settings_use_cases::update_deployment_restrictions(&app_state, deployment_id, updates).await?;
     Ok(().into())
 }
 
@@ -93,9 +77,7 @@ pub async fn get_deployment_jwt_templates(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<PaginatedResponse<DeploymentJwtTemplate>> {
-    let templates = GetDeploymentJwtTemplatesQuery::new(deployment_id)
-        .execute(&app_state)
-        .await?;
+    let templates = settings_use_cases::get_deployment_jwt_templates(&app_state, deployment_id).await?;
 
     Ok(PaginatedResponse::from(templates).into())
 }
@@ -105,9 +87,9 @@ pub async fn create_deployment_jwt_template(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(template): Json<NewDeploymentJwtTemplate>,
 ) -> ApiResult<DeploymentJwtTemplate> {
-    let jwt_template = CreateDeploymentJwtTemplateCommand::new(deployment_id, template)
-        .execute(&app_state)
-        .await?;
+    let jwt_template =
+        settings_use_cases::create_deployment_jwt_template(&app_state, deployment_id, template)
+            .await?;
     Ok(jwt_template.into())
 }
 
@@ -117,9 +99,13 @@ pub async fn update_deployment_jwt_template(
     Path(params): Path<JWTTemplateParams>,
     Json(updates): Json<PartialDeploymentJwtTemplate>,
 ) -> ApiResult<DeploymentJwtTemplate> {
-    let jwt_template = UpdateDeploymentJwtTemplateCommand::new(deployment_id, params.id, updates)
-        .execute(&app_state)
-        .await?;
+    let jwt_template = settings_use_cases::update_deployment_jwt_template(
+        &app_state,
+        deployment_id,
+        params.id,
+        updates,
+    )
+    .await?;
     Ok(jwt_template.into())
 }
 
@@ -128,9 +114,7 @@ pub async fn delete_deployment_jwt_template(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<JWTTemplateParams>,
 ) -> ApiResult<()> {
-    DeleteDeploymentJwtTemplateCommand::new(deployment_id, params.id)
-        .execute(&app_state)
-        .await?;
+    settings_use_cases::delete_deployment_jwt_template(&app_state, deployment_id, params.id).await?;
     Ok(().into())
 }
 
@@ -139,9 +123,12 @@ pub async fn get_deployment_email_template(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<EmailTemplateParams>,
 ) -> ApiResult<EmailTemplate> {
-    let template = GetDeploymentEmailTemplateQuery::new(deployment_id, params.template_name)
-        .execute(&app_state)
-        .await?;
+    let template = settings_use_cases::get_deployment_email_template(
+        &app_state,
+        deployment_id,
+        params.template_name,
+    )
+    .await?;
     Ok(template.into())
 }
 
@@ -151,10 +138,13 @@ pub async fn update_deployment_email_template(
     Path(params): Path<EmailTemplateParams>,
     Json(template): Json<EmailTemplate>,
 ) -> ApiResult<EmailTemplate> {
-    let updated =
-        UpdateDeploymentEmailTemplateCommand::new(deployment_id, params.template_name, template)
-            .execute(&app_state)
-            .await?;
+    let updated = settings_use_cases::update_deployment_email_template(
+        &app_state,
+        deployment_id,
+        params.template_name,
+        template,
+    )
+    .await?;
     Ok(updated.into())
 }
 
@@ -163,21 +153,8 @@ pub async fn verify_smtp_connection(
     RequireDeployment(_deployment_id): RequireDeployment,
     Json(config): Json<SmtpConfigRequest>,
 ) -> ApiResult<SmtpVerifyResponse> {
-    VerifySmtpConnectionCommand::new(
-        config.host,
-        config.port,
-        config.username,
-        config.password,
-        config.from_email,
-        config.use_tls,
-    )
-    .execute(&app_state)
-    .await?;
-    Ok(SmtpVerifyResponse {
-        success: true,
-        message: Some("SMTP connection verified successfully".to_string()),
-    }
-    .into())
+    let response = settings_use_cases::verify_smtp_connection(&app_state, config).await?;
+    Ok(response.into())
 }
 
 pub async fn update_smtp_config(
@@ -185,46 +162,14 @@ pub async fn update_smtp_config(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(config): Json<SmtpConfigRequest>,
 ) -> ApiResult<SmtpConfigResponse> {
-    VerifySmtpConnectionCommand::new(
-        config.host.clone(),
-        config.port,
-        config.username.clone(),
-        config.password.clone(),
-        config.from_email.clone(),
-        config.use_tls,
-    )
-    .execute(&app_state)
-    .await?;
-
-    let result = UpdateDeploymentSmtpConfigCommand::new(
-        deployment_id,
-        config.host,
-        config.port,
-        config.username,
-        config.password,
-        config.from_email,
-        config.use_tls,
-    )
-    .execute(&app_state)
-    .await?;
-
-    Ok(SmtpConfigResponse {
-        host: result.host,
-        port: result.port,
-        username: result.username,
-        from_email: result.from_email,
-        use_tls: result.use_tls,
-        verified: result.verified,
-    }
-    .into())
+    let response = settings_use_cases::update_smtp_config(&app_state, deployment_id, config).await?;
+    Ok(response.into())
 }
 
 pub async fn remove_smtp_config(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<()> {
-    RemoveDeploymentSmtpConfigCommand::new(deployment_id)
-        .execute(&app_state)
-        .await?;
+    settings_use_cases::remove_smtp_config(&app_state, deployment_id).await?;
     Ok(().into())
 }

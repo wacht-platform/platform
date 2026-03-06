@@ -18,16 +18,16 @@ use sha2::{Digest, Sha256};
 
 use super::types::{ClientAssertionClaims, GrantValidationResult, OAuthConsentRequestTokenClaims};
 
-pub(super) fn oauth_consent_handoff_redis_key(handoff_id: &str) -> String {
+pub(crate) fn oauth_consent_handoff_redis_key(handoff_id: &str) -> String {
     format!("oauth:consent:handoff:{handoff_id}")
 }
 
-pub(super) fn oauth_consent_backend_base_url(backend_host: &str) -> String {
+pub(crate) fn oauth_consent_backend_base_url(backend_host: &str) -> String {
     let host = backend_host.trim();
     format!("https://{host}")
 }
 
-pub(super) fn derive_shared_secret(purpose: &str) -> Result<String, AppError> {
+pub(crate) fn derive_shared_secret(purpose: &str) -> Result<String, AppError> {
     let encryption_key = std::env::var("ENCRYPTION_KEY").map_err(|_| {
         AppError::Internal("ENCRYPTION_KEY is required for oauth consent flow".to_string())
     })?;
@@ -38,7 +38,7 @@ pub(super) fn derive_shared_secret(purpose: &str) -> Result<String, AppError> {
     Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finalize()))
 }
 
-pub(super) async fn resolve_oauth_app_from_host(
+pub(crate) async fn resolve_oauth_app_from_host(
     app_state: &AppState,
     headers: &HeaderMap,
 ) -> Result<queries::RuntimeOAuthAppData, AppError> {
@@ -52,7 +52,7 @@ pub(super) async fn resolve_oauth_app_from_host(
         .ok_or_else(|| AppError::NotFound("OAuth app not found for host".to_string()))
 }
 
-pub(super) async fn authenticate_client(
+pub(crate) async fn authenticate_client(
     app_state: &AppState,
     headers: &HeaderMap,
     issuer: &str,
@@ -150,7 +150,7 @@ pub(super) async fn authenticate_client(
     }
 }
 
-pub(super) async fn validate_grant_and_entitlement(
+pub(crate) async fn validate_grant_and_entitlement(
     app_state: &AppState,
     deployment_id: i64,
     oauth_client_id: i64,
@@ -212,7 +212,7 @@ pub(super) async fn validate_grant_and_entitlement(
     }
 }
 
-pub(super) async fn ensure_or_create_grant_coverage(
+pub(crate) async fn ensure_or_create_grant_coverage(
     app_state: &AppState,
     deployment_id: i64,
     oauth_client_id: i64,
@@ -409,7 +409,7 @@ pub(super) fn extract_basic_credentials(
     Ok((Some(client_id), Some(secret)))
 }
 
-pub(super) fn verify_pkce(
+pub(crate) fn verify_pkce(
     code_challenge: Option<&str>,
     code_challenge_method: Option<&str>,
     code_verifier: Option<&str>,
@@ -436,11 +436,11 @@ pub(super) fn verify_pkce(
     Ok(())
 }
 
-pub(super) fn is_valid_resource_indicator(resource: &str) -> bool {
+pub(crate) fn is_valid_resource_indicator(resource: &str) -> bool {
     url::Url::parse(resource).is_ok_and(|uri| !uri.scheme().is_empty())
 }
 
-pub(super) fn is_valid_granted_resource_indicator(resource: &str) -> bool {
+pub(crate) fn is_valid_granted_resource_indicator(resource: &str) -> bool {
     if resource.starts_with("urn:wacht:organization:") {
         return resource
             .trim_start_matches("urn:wacht:organization:")
@@ -507,7 +507,7 @@ pub(super) fn required_permissions_for_resource(
     permissions
 }
 
-pub(super) fn parse_scope_string(scope: Option<&str>) -> Vec<String> {
+pub(crate) fn parse_scope_string(scope: Option<&str>) -> Vec<String> {
     scope
         .unwrap_or_default()
         .split(' ')
@@ -517,13 +517,13 @@ pub(super) fn parse_scope_string(scope: Option<&str>) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn hash_value(value: &str) -> String {
+pub(crate) fn hash_value(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.as_bytes());
     format!("{:x}", hasher.finalize())
 }
 
-pub(super) fn resolve_issuer_from_oauth_app(
+pub(crate) fn resolve_issuer_from_oauth_app(
     oauth_app: &queries::RuntimeOAuthAppData,
 ) -> Result<String, AppError> {
     let fqdn = oauth_app.fqdn.trim();
@@ -573,7 +573,7 @@ pub(super) fn normalize_fqdn_host(host: &str) -> Option<&str> {
     }
 }
 
-pub(super) fn ensure_registration_access_token(
+pub(crate) fn ensure_registration_access_token(
     headers: &HeaderMap,
     expected_hash: Option<&str>,
 ) -> Result<(), AppError> {
@@ -607,7 +607,7 @@ pub(super) fn ensure_registration_access_token(
     Ok(())
 }
 
-pub(super) fn generate_registration_access_token() -> String {
+pub(crate) fn generate_registration_access_token() -> String {
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
     format!(
@@ -616,7 +616,7 @@ pub(super) fn generate_registration_access_token() -> String {
     )
 }
 
-pub(super) fn generate_prefixed_token(prefix: &str, bytes_len: usize) -> String {
+pub(crate) fn generate_prefixed_token(prefix: &str, bytes_len: usize) -> String {
     let mut bytes = vec![0u8; bytes_len];
     rand::rng().fill_bytes(&mut bytes);
     format!(
@@ -626,7 +626,7 @@ pub(super) fn generate_prefixed_token(prefix: &str, bytes_len: usize) -> String 
     )
 }
 
-pub(super) fn client_secret_expires_at_for_method(client_auth_method: &str) -> Option<i64> {
+pub(crate) fn client_secret_expires_at_for_method(client_auth_method: &str) -> Option<i64> {
     match client_auth_method {
         "none" | "private_key_jwt" => None,
         _ => Some(0),
@@ -637,7 +637,7 @@ pub(super) fn oauth_consent_request_secret() -> Result<String, AppError> {
     derive_shared_secret("oauth-consent-request-v1")
 }
 
-pub(super) fn sign_oauth_consent_request_token(
+pub(crate) fn sign_oauth_consent_request_token(
     claims: &OAuthConsentRequestTokenClaims,
 ) -> Result<String, AppError> {
     let payload_json =
@@ -647,7 +647,7 @@ pub(super) fn sign_oauth_consent_request_token(
     Ok(format!("ocrt.{}.{}", payload, signature))
 }
 
-pub(super) fn verify_oauth_consent_request_token(
+pub(crate) fn verify_oauth_consent_request_token(
     token: &str,
 ) -> Result<OAuthConsentRequestTokenClaims, AppError> {
     let parts: Vec<&str> = token.split('.').collect();
@@ -692,7 +692,7 @@ pub(super) fn sign_payload(payload: &[u8]) -> Result<String, AppError> {
     Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature))
 }
 
-pub(super) fn append_oauth_redirect_params(
+pub(crate) fn append_oauth_redirect_params(
     redirect_uri: String,
     params: &[(&str, String)],
     state: Option<String>,

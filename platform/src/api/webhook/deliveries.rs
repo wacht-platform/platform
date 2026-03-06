@@ -1,23 +1,18 @@
 use std::collections::HashMap;
 
-use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
-};
+use axum::extract::{Path, Query, State};
 use common::state::AppState;
 use dto::{
     clickhouse::webhook::WebhookDeliveryListResponse,
     json::webhook_requests::{GetAppWebhookDeliveriesQuery, WebhookDeliveryDetails},
 };
 use models::webhook_analytics::WebhookAnalyticsResult;
-use queries::{
-    Query as QueryTrait, webhook_analytics::GetWebhookAnalyticsQuery,
-};
 
-use crate::api::pagination::paginate_results;
-use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::application::{
+    response::{ApiResult, PaginatedResponse},
+    webhook_deliveries as webhook_deliveries_use_cases,
+};
 use crate::middleware::RequireDeployment;
-use super::helpers::ensure_webhook_app_exists;
 
 pub async fn get_webhook_delivery_details(
     State(app_state): State<AppState>,
@@ -25,53 +20,16 @@ pub async fn get_webhook_delivery_details(
     Path(delivery_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> ApiResult<WebhookDeliveryDetails> {
-    let delivery_id = delivery_id
-        .parse::<i64>()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid delivery ID"))?;
+    let delivery = webhook_deliveries_use_cases::get_webhook_delivery_details(
+        &app_state,
+        deployment_id,
+        delivery_id,
+        params,
+    )
+    .await
+    .map_err(webhook_deliveries_use_cases::map_error_to_api)?;
 
-    // Check if status=pending to look in PostgreSQL instead of ClickHouse
-    let status = params.get("status").map(|s| s.as_str());
-
-    let delivery = if status == Some("pending") {
-        // Check PostgreSQL for active/pending deliveries
-        queries::webhook::GetPendingWebhookDeliveryQuery::new(deployment_id, delivery_id)
-            .execute(&app_state)
-            .await?
-    } else {
-        // Check ClickHouse for completed deliveries
-        app_state
-            .clickhouse_service
-            .get_webhook_delivery_details(deployment_id, delivery_id)
-            .await?
-    };
-
-    // Parse payload from storage JSON string to structured JSON response
-    let payload = delivery
-        .payload
-        .clone()
-        .and_then(|p| serde_json::from_str(&p).ok());
-
-    // Convert WebhookDelivery to WebhookDeliveryDetails
-    let delivery_details = WebhookDeliveryDetails {
-        delivery_id: delivery.delivery_id,
-        deployment_id: delivery.deployment_id,
-        app_slug: delivery.app_slug,
-        endpoint_id: delivery.endpoint_id,
-        event_name: delivery.event_name,
-        status: delivery.status,
-        http_status_code: delivery.http_status_code,
-        response_time_ms: delivery.response_time_ms,
-        attempt_number: delivery.attempt_number,
-        max_attempts: delivery.max_attempts,
-        payload,
-        response_body: delivery.response_body,
-        response_headers: delivery
-            .response_headers
-            .and_then(|h| serde_json::from_str(&h).ok()),
-        timestamp: delivery.timestamp,
-    };
-
-    Ok(delivery_details.into())
+    Ok(delivery.into())
 }
 
 pub async fn get_webhook_delivery_details_for_app(
@@ -80,15 +38,17 @@ pub async fn get_webhook_delivery_details_for_app(
     Path((app_slug, delivery_id)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
 ) -> ApiResult<WebhookDeliveryDetails> {
-    ensure_webhook_app_exists(&app_state, deployment_id, app_slug).await?;
-
-    get_webhook_delivery_details(
-        State(app_state),
-        RequireDeployment(deployment_id),
-        Path(delivery_id),
-        Query(params),
+    let delivery = webhook_deliveries_use_cases::get_webhook_delivery_details_for_app(
+        &app_state,
+        deployment_id,
+        app_slug,
+        delivery_id,
+        params,
     )
     .await
+    .map_err(webhook_deliveries_use_cases::map_error_to_api)?;
+
+    Ok(delivery.into())
 }
 
 pub async fn get_webhook_stats(
@@ -96,11 +56,10 @@ pub async fn get_webhook_stats(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
 ) -> ApiResult<WebhookAnalyticsResult> {
-    let query = GetWebhookAnalyticsQuery::new(deployment_id).with_app_slug(app_slug);
+    let stats =
+        webhook_deliveries_use_cases::get_webhook_stats(&app_state, deployment_id, app_slug).await?;
 
-    let result = query.execute(&app_state).await?;
-
-    Ok(result.into())
+    Ok(stats.into())
 }
 
 pub async fn get_app_webhook_deliveries(
@@ -109,24 +68,13 @@ pub async fn get_app_webhook_deliveries(
     Path(app_slug): Path<String>,
     Query(params): Query<GetAppWebhookDeliveriesQuery>,
 ) -> ApiResult<PaginatedResponse<WebhookDeliveryListResponse>> {
-    let limit = params.limit.unwrap_or(100);
-    let offset = params.offset.unwrap_or(0);
+    let deliveries = webhook_deliveries_use_cases::get_app_webhook_deliveries(
+        &app_state,
+        deployment_id,
+        app_slug,
+        params,
+    )
+    .await?;
 
-    // Fetch one extra to determine if there are more
-    let delivery_rows = app_state
-        .clickhouse_service
-        .get_webhook_deliveries(
-            deployment_id,
-            Some(app_slug.clone()),
-            params.status.as_deref(),
-            params.event_name.as_deref(),
-            (limit + 1) as usize,
-            offset as usize,
-        )
-        .await?;
-
-    let deliveries: Vec<WebhookDeliveryListResponse> =
-        delivery_rows.into_iter().map(|row| row.into()).collect();
-
-    Ok(paginate_results(deliveries, limit, Some(offset as i64)).into())
+    Ok(deliveries.into())
 }

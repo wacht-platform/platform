@@ -2,7 +2,7 @@ use crate::Command;
 use common::error::AppError;
 use common::state::AppState;
 use models::api_key::RateLimit;
-use queries::{Query, rate_limit_scheme::RateLimitSchemeData};
+use queries::rate_limit_scheme::RateLimitSchemeData;
 use sqlx::Row;
 
 fn validate_rules(rules: &[RateLimit]) -> Result<(), AppError> {
@@ -31,6 +31,17 @@ impl Command for CreateRateLimitSchemeCommand {
     type Output = RateLimitSchemeData;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
+    }
+}
+
+impl CreateRateLimitSchemeCommand {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        scheme_id: i64,
+    ) -> Result<RateLimitSchemeData, AppError> {
         if self.slug.trim().is_empty() {
             return Err(AppError::Validation("Scheme slug is required".to_string()));
         }
@@ -43,7 +54,7 @@ impl Command for CreateRateLimitSchemeCommand {
             self.deployment_id,
             self.slug.clone(),
         )
-        .execute(app_state)
+        .execute_with(pool)
         .await?;
         if existing.is_some() {
             return Err(AppError::Conflict(format!(
@@ -52,7 +63,6 @@ impl Command for CreateRateLimitSchemeCommand {
             )));
         }
 
-        let id = app_state.sf.next_id()? as i64;
         let rules_json = serde_json::to_value(&self.rules)
             .map_err(|e| AppError::Serialization(e.to_string()))?;
 
@@ -62,17 +72,17 @@ impl Command for CreateRateLimitSchemeCommand {
             VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
-        .bind(id)
+        .bind(scheme_id)
         .bind(self.deployment_id)
         .bind(&self.slug)
         .bind(&self.name)
         .bind(self.description)
         .bind(rules_json)
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         queries::rate_limit_scheme::GetRateLimitSchemeQuery::new(self.deployment_id, self.slug)
-            .execute(app_state)
+            .execute_with(pool)
             .await?
             .ok_or_else(|| AppError::Internal("Failed to fetch created scheme".to_string()))
     }
@@ -90,6 +100,12 @@ impl Command for UpdateRateLimitSchemeCommand {
     type Output = RateLimitSchemeData;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl UpdateRateLimitSchemeCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<RateLimitSchemeData, AppError> {
         if let Some(name) = &self.name
             && name.trim().is_empty()
         {
@@ -105,7 +121,7 @@ impl Command for UpdateRateLimitSchemeCommand {
             self.deployment_id,
             self.slug.clone(),
         )
-        .execute(app_state)
+        .execute_with(pool)
         .await?
         .ok_or_else(|| AppError::NotFound("Rate limit scheme not found".to_string()))?;
 
@@ -128,11 +144,11 @@ impl Command for UpdateRateLimitSchemeCommand {
         .bind(self.name)
         .bind(self.description)
         .bind(rules_json)
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         queries::rate_limit_scheme::GetRateLimitSchemeQuery::new(self.deployment_id, self.slug)
-            .execute(app_state)
+            .execute_with(pool)
             .await?
             .ok_or_else(|| AppError::Internal("Failed to fetch updated scheme".to_string()))
     }
@@ -147,11 +163,17 @@ impl Command for DeleteRateLimitSchemeCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl DeleteRateLimitSchemeCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         let scheme = queries::rate_limit_scheme::GetRateLimitSchemeQuery::new(
             self.deployment_id,
             self.slug.clone(),
         )
-        .execute(app_state)
+        .execute_with(pool)
         .await?;
         if scheme.is_none() {
             return Err(AppError::NotFound(
@@ -170,7 +192,7 @@ impl Command for DeleteRateLimitSchemeCommand {
         )
         .bind(self.deployment_id)
         .bind(&self.slug)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?
         .try_get("count")?;
 
@@ -191,7 +213,7 @@ impl Command for DeleteRateLimitSchemeCommand {
         )
         .bind(self.deployment_id)
         .bind(&self.slug)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?
         .try_get("count")?;
 
@@ -210,7 +232,7 @@ impl Command for DeleteRateLimitSchemeCommand {
         )
         .bind(self.deployment_id)
         .bind(&self.slug)
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         Ok(())

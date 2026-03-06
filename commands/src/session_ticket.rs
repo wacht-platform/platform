@@ -37,18 +37,35 @@ pub struct SessionTicketPayload {
 }
 
 pub struct GenerateSessionTicketCommand {
-    pub deployment_id: i64,
-    pub ticket_type: SessionTicketType,
-    pub user_id: Option<String>,
-    pub agent_ids: Option<Vec<String>>,
-    pub agent_session_identifier: Option<AgentSessionIdentifier>,
-    pub webhook_app_slug: Option<String>,
-    pub api_auth_app_slug: Option<String>,
-    pub context_group: Option<String>,
-    pub expires_in: Option<u64>,
+    deployment_id: i64,
+    ticket_type: SessionTicketType,
+    user_id: Option<String>,
+    agent_ids: Option<Vec<String>>,
+    agent_session_identifier: Option<AgentSessionIdentifier>,
+    webhook_app_slug: Option<String>,
+    api_auth_app_slug: Option<String>,
+    context_group: Option<String>,
+    expires_in: Option<u64>,
+}
+
+#[derive(Default)]
+pub struct GenerateSessionTicketCommandBuilder {
+    deployment_id: Option<i64>,
+    ticket_type: Option<SessionTicketType>,
+    user_id: Option<String>,
+    agent_ids: Option<Vec<String>>,
+    agent_session_identifier: Option<AgentSessionIdentifier>,
+    webhook_app_slug: Option<String>,
+    api_auth_app_slug: Option<String>,
+    context_group: Option<String>,
+    expires_in: Option<u64>,
 }
 
 impl GenerateSessionTicketCommand {
+    pub fn builder() -> GenerateSessionTicketCommandBuilder {
+        GenerateSessionTicketCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, ticket_type: SessionTicketType) -> Self {
         Self {
             deployment_id,
@@ -109,6 +126,21 @@ impl crate::Command for GenerateSessionTicketCommand {
     type Output = GenerateSessionTicketResponse;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let ticket_id = app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate ticket ID: {}", e)))?
+            as i64;
+        self.execute_with(&app_state.redis_client, ticket_id).await
+    }
+}
+
+impl GenerateSessionTicketCommand {
+    pub async fn execute_with(
+        self,
+        redis_client: &redis::Client,
+        ticket_id: i64,
+    ) -> Result<GenerateSessionTicketResponse, AppError> {
         // Validate inputs based on ticket type
         match self.ticket_type {
             SessionTicketType::Impersonation => {
@@ -157,10 +189,6 @@ impl crate::Command for GenerateSessionTicketCommand {
         }
 
         // Generate ticket ID using Snowflake
-        let ticket_id = app_state
-            .sf
-            .next_id()
-            .map_err(|e| AppError::Internal(format!("Failed to generate ticket ID: {}", e)))?;
         let ticket = ticket_id.to_string();
 
         // Calculate expiration
@@ -186,8 +214,7 @@ impl crate::Command for GenerateSessionTicketCommand {
 
         let redis_key = format!("session:ticket:{}", ticket);
 
-        let mut conn = app_state
-            .redis_client
+        let mut conn = redis_client
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to connect to Redis: {}", e)))?;
@@ -197,5 +224,70 @@ impl crate::Command for GenerateSessionTicketCommand {
             .map_err(|e| AppError::Internal(format!("Failed to store ticket in Redis: {}", e)))?;
 
         Ok(GenerateSessionTicketResponse { ticket, expires_at })
+    }
+}
+
+impl GenerateSessionTicketCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn ticket_type(mut self, ticket_type: SessionTicketType) -> Self {
+        self.ticket_type = Some(ticket_type);
+        self
+    }
+
+    pub fn user_id(mut self, user_id: String) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn agent_ids(mut self, agent_ids: Vec<String>) -> Self {
+        self.agent_ids = Some(agent_ids);
+        self
+    }
+
+    pub fn agent_session_identifier(mut self, identifier: AgentSessionIdentifier) -> Self {
+        self.agent_session_identifier = Some(identifier);
+        self
+    }
+
+    pub fn webhook_app_slug(mut self, webhook_app_slug: String) -> Self {
+        self.webhook_app_slug = Some(webhook_app_slug);
+        self
+    }
+
+    pub fn api_auth_app_slug(mut self, api_auth_app_slug: String) -> Self {
+        self.api_auth_app_slug = Some(api_auth_app_slug);
+        self
+    }
+
+    pub fn context_group(mut self, context_group: String) -> Self {
+        self.context_group = Some(context_group);
+        self
+    }
+
+    pub fn expires_in(mut self, expires_in: u64) -> Self {
+        self.expires_in = Some(expires_in);
+        self
+    }
+
+    pub fn build(self) -> Result<GenerateSessionTicketCommand, AppError> {
+        Ok(GenerateSessionTicketCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+            ticket_type: self
+                .ticket_type
+                .ok_or_else(|| AppError::Validation("ticket_type is required".to_string()))?,
+            user_id: self.user_id,
+            agent_ids: self.agent_ids,
+            agent_session_identifier: self.agent_session_identifier,
+            webhook_app_slug: self.webhook_app_slug,
+            api_auth_app_slug: self.api_auth_app_slug,
+            context_group: self.context_group,
+            expires_in: self.expires_in,
+        })
     }
 }

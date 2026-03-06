@@ -1,6 +1,5 @@
 mod app_handlers;
 mod audit_handlers;
-mod helpers;
 mod key_handlers;
 mod rate_limit_handlers;
 

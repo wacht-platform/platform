@@ -26,19 +26,37 @@ pub struct NotificationMessage {
 
 #[derive(Debug, Clone)]
 pub struct CreateNotificationCommand {
-    pub deployment_id: i64,
-    pub user_id: Option<i64>,
-    pub organization_id: Option<i64>,
-    pub workspace_id: Option<i64>,
-    pub title: String,
-    pub body: String,
-    pub ctas: Option<JsonValue>,
-    pub severity: NotificationSeverity,
-    pub metadata: Option<JsonValue>,
-    pub expires_at: Option<DateTime<Utc>>,
+    deployment_id: i64,
+    user_id: Option<i64>,
+    organization_id: Option<i64>,
+    workspace_id: Option<i64>,
+    title: String,
+    body: String,
+    ctas: Option<JsonValue>,
+    severity: NotificationSeverity,
+    metadata: Option<JsonValue>,
+    expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Default)]
+pub struct CreateNotificationCommandBuilder {
+    deployment_id: Option<i64>,
+    user_id: Option<i64>,
+    organization_id: Option<i64>,
+    workspace_id: Option<i64>,
+    title: Option<String>,
+    body: Option<String>,
+    ctas: Option<JsonValue>,
+    severity: Option<NotificationSeverity>,
+    metadata: Option<JsonValue>,
+    expires_at: Option<DateTime<Utc>>,
 }
 
 impl CreateNotificationCommand {
+    pub fn builder() -> CreateNotificationCommandBuilder {
+        CreateNotificationCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, title: String, body: String) -> Self {
         Self {
             deployment_id,
@@ -94,6 +112,17 @@ impl Command for CreateNotificationCommand {
     type Output = Notification;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer(), &app_state.nats_client)
+            .await
+    }
+}
+
+impl CreateNotificationCommand {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        nats_client: &async_nats::Client,
+    ) -> Result<Notification, AppError> {
         // Create new notification
         let row: NotificationRow = query_as(
             r#"
@@ -122,7 +151,7 @@ impl Command for CreateNotificationCommand {
         .bind(&self.severity)
         .bind(self.metadata)
         .bind(self.expires_at)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?;
 
         // Convert row to strongly typed Notification
@@ -153,7 +182,7 @@ impl Command for CreateNotificationCommand {
             };
 
             if let Ok(payload) = serde_json::to_vec(&message) {
-                if let Err(e) = app_state.nats_client.publish(subject, payload.into()).await {
+                if let Err(e) = nats_client.publish(subject, payload.into()).await {
                     warn!("Failed to publish notification to NATS: {}", e);
                     // Don't fail the command, just log the error
                 }
@@ -164,16 +193,102 @@ impl Command for CreateNotificationCommand {
     }
 }
 
-#[derive(Debug)]
-pub struct MarkNotificationReadCommand {
-    pub notification_id: i64,
-    pub user_id: i64,
+impl CreateNotificationCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn user_id(mut self, user_id: i64) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn organization_id(mut self, organization_id: i64) -> Self {
+        self.organization_id = Some(organization_id);
+        self
+    }
+
+    pub fn workspace_id(mut self, workspace_id: i64) -> Self {
+        self.workspace_id = Some(workspace_id);
+        self
+    }
+
+    pub fn title(mut self, title: String) -> Self {
+        self.title = Some(title);
+        self
+    }
+
+    pub fn body(mut self, body: String) -> Self {
+        self.body = Some(body);
+        self
+    }
+
+    pub fn ctas(mut self, ctas: JsonValue) -> Self {
+        self.ctas = Some(ctas);
+        self
+    }
+
+    pub fn severity(mut self, severity: NotificationSeverity) -> Self {
+        self.severity = Some(severity);
+        self
+    }
+
+    pub fn metadata(mut self, metadata: JsonValue) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+
+    pub fn expires_at(mut self, expires_at: DateTime<Utc>) -> Self {
+        self.expires_at = Some(expires_at);
+        self
+    }
+
+    pub fn expiry_hours(mut self, hours: i64) -> Self {
+        self.expires_at = Some(Utc::now() + chrono::Duration::hours(hours));
+        self
+    }
+
+    pub fn build(self) -> Result<CreateNotificationCommand, AppError> {
+        Ok(CreateNotificationCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            user_id: self.user_id,
+            organization_id: self.organization_id,
+            workspace_id: self.workspace_id,
+            title: self
+                .title
+                .ok_or_else(|| AppError::Validation("title is required".into()))?,
+            body: self
+                .body
+                .ok_or_else(|| AppError::Validation("body is required".into()))?,
+            ctas: self.ctas,
+            severity: self.severity.unwrap_or(NotificationSeverity::Info),
+            metadata: self.metadata,
+            expires_at: self.expires_at,
+        })
+    }
 }
 
-impl Command for MarkNotificationReadCommand {
-    type Output = bool;
+#[derive(Debug)]
+pub struct MarkNotificationReadCommand {
+    notification_id: i64,
+    user_id: i64,
+}
 
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+#[derive(Default)]
+pub struct MarkNotificationReadCommandBuilder {
+    notification_id: Option<i64>,
+    user_id: Option<i64>,
+}
+
+impl MarkNotificationReadCommand {
+    pub fn builder() -> MarkNotificationReadCommandBuilder {
+        MarkNotificationReadCommandBuilder::default()
+    }
+
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<bool, AppError> {
         let result = query!(
             r#"
             UPDATE notifications 
@@ -186,23 +301,62 @@ impl Command for MarkNotificationReadCommand {
             self.notification_id,
             self.user_id
         )
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         Ok(result.rows_affected() > 0)
     }
 }
 
-#[derive(Debug)]
-pub struct MarkAllNotificationsReadCommand {
-    pub user_id: i64,
-    pub deployment_id: i64,
-}
-
-impl Command for MarkAllNotificationsReadCommand {
-    type Output = i64;
+impl Command for MarkNotificationReadCommand {
+    type Output = bool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl MarkNotificationReadCommandBuilder {
+    pub fn notification_id(mut self, notification_id: i64) -> Self {
+        self.notification_id = Some(notification_id);
+        self
+    }
+
+    pub fn user_id(mut self, user_id: i64) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn build(self) -> Result<MarkNotificationReadCommand, AppError> {
+        Ok(MarkNotificationReadCommand {
+            notification_id: self
+                .notification_id
+                .ok_or_else(|| AppError::Validation("notification_id is required".into()))?,
+            user_id: self
+                .user_id
+                .ok_or_else(|| AppError::Validation("user_id is required".into()))?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct MarkAllNotificationsReadCommand {
+    user_id: i64,
+    deployment_id: i64,
+}
+
+#[derive(Default)]
+pub struct MarkAllNotificationsReadCommandBuilder {
+    user_id: Option<i64>,
+    deployment_id: Option<i64>,
+}
+
+impl MarkAllNotificationsReadCommand {
+    pub fn builder() -> MarkAllNotificationsReadCommandBuilder {
+        MarkAllNotificationsReadCommandBuilder::default()
+    }
+
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<i64, AppError> {
         let result = query!(
             r#"
             UPDATE notifications 
@@ -218,23 +372,62 @@ impl Command for MarkAllNotificationsReadCommand {
             self.user_id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         Ok(result.rows_affected() as i64)
     }
 }
 
-#[derive(Debug)]
-pub struct ArchiveNotificationCommand {
-    pub notification_id: i64,
-    pub user_id: i64,
-}
-
-impl Command for ArchiveNotificationCommand {
-    type Output = bool;
+impl Command for MarkAllNotificationsReadCommand {
+    type Output = i64;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl MarkAllNotificationsReadCommandBuilder {
+    pub fn user_id(mut self, user_id: i64) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn build(self) -> Result<MarkAllNotificationsReadCommand, AppError> {
+        Ok(MarkAllNotificationsReadCommand {
+            user_id: self
+                .user_id
+                .ok_or_else(|| AppError::Validation("user_id is required".into()))?,
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct ArchiveNotificationCommand {
+    notification_id: i64,
+    user_id: i64,
+}
+
+#[derive(Default)]
+pub struct ArchiveNotificationCommandBuilder {
+    notification_id: Option<i64>,
+    user_id: Option<i64>,
+}
+
+impl ArchiveNotificationCommand {
+    pub fn builder() -> ArchiveNotificationCommandBuilder {
+        ArchiveNotificationCommandBuilder::default()
+    }
+
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<bool, AppError> {
         let result = query!(
             r#"
             UPDATE notifications 
@@ -247,49 +440,124 @@ impl Command for ArchiveNotificationCommand {
             self.notification_id,
             self.user_id
         )
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         Ok(result.rows_affected() > 0)
     }
 }
 
+impl Command for ArchiveNotificationCommand {
+    type Output = bool;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl ArchiveNotificationCommandBuilder {
+    pub fn notification_id(mut self, notification_id: i64) -> Self {
+        self.notification_id = Some(notification_id);
+        self
+    }
+
+    pub fn user_id(mut self, user_id: i64) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn build(self) -> Result<ArchiveNotificationCommand, AppError> {
+        Ok(ArchiveNotificationCommand {
+            notification_id: self
+                .notification_id
+                .ok_or_else(|| AppError::Validation("notification_id is required".into()))?,
+            user_id: self
+                .user_id
+                .ok_or_else(|| AppError::Validation("user_id is required".into()))?,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct DeleteNotificationCommand {
-    pub notification_id: i64,
-    pub user_id: i64,
+    notification_id: i64,
+    user_id: i64,
+}
+
+#[derive(Default)]
+pub struct DeleteNotificationCommandBuilder {
+    notification_id: Option<i64>,
+    user_id: Option<i64>,
+}
+
+impl DeleteNotificationCommand {
+    pub fn builder() -> DeleteNotificationCommandBuilder {
+        DeleteNotificationCommandBuilder::default()
+    }
+
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<bool, AppError> {
+        ArchiveNotificationCommand::builder()
+            .notification_id(self.notification_id)
+            .user_id(self.user_id)
+            .build()?
+            .execute_with(pool)
+            .await
+    }
 }
 
 impl Command for DeleteNotificationCommand {
     type Output = bool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Use archive as soft delete
-        ArchiveNotificationCommand {
-            notification_id: self.notification_id,
-            user_id: self.user_id,
-        }
-        .execute(app_state)
-        .await
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl DeleteNotificationCommandBuilder {
+    pub fn notification_id(mut self, notification_id: i64) -> Self {
+        self.notification_id = Some(notification_id);
+        self
+    }
+
+    pub fn user_id(mut self, user_id: i64) -> Self {
+        self.user_id = Some(user_id);
+        self
+    }
+
+    pub fn build(self) -> Result<DeleteNotificationCommand, AppError> {
+        Ok(DeleteNotificationCommand {
+            notification_id: self
+                .notification_id
+                .ok_or_else(|| AppError::Validation("notification_id is required".into()))?,
+            user_id: self
+                .user_id
+                .ok_or_else(|| AppError::Validation("user_id is required".into()))?,
+        })
     }
 }
 
 #[derive(Debug)]
 pub struct CleanupExpiredNotificationsCommand;
 
-impl Command for CleanupExpiredNotificationsCommand {
-    type Output = i64;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl CleanupExpiredNotificationsCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<i64, AppError> {
         let result = query!(
             r#"
             DELETE FROM notifications 
             WHERE expires_at < NOW()
             "#
         )
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await?;
 
         Ok(result.rows_affected() as i64)
+    }
+}
+
+impl Command for CleanupExpiredNotificationsCommand {
+    type Output = i64;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -1,5 +1,5 @@
 use commands::session_ticket::{AgentSessionIdentifier, SessionTicketType};
-use commands::{Command, GenerateSessionTicketCommand};
+use commands::GenerateSessionTicketCommand;
 use dto::json::session_ticket::{AgentSessionIdentifierDto, CreateSessionTicketRequest};
 
 use crate::application::{AppError, AppState};
@@ -68,24 +68,24 @@ fn require_non_empty_agent_ids(value: Option<Vec<String>>) -> Result<Vec<String>
 }
 
 fn apply_ticket_type_fields(
-    mut command: GenerateSessionTicketCommand,
+    mut command: commands::session_ticket::GenerateSessionTicketCommandBuilder,
     ticket_type: &SessionTicketType,
     request: &mut CreateSessionTicketRequest,
-) -> Result<GenerateSessionTicketCommand, AppError> {
+) -> Result<commands::session_ticket::GenerateSessionTicketCommandBuilder, AppError> {
     match ticket_type {
         SessionTicketType::Impersonation => {
             let user_id = request
                 .user_id
                 .take()
                 .ok_or_else(|| bad_request("user_id is required for impersonation tickets"))?;
-            command = command.with_user_id(user_id);
+            command = command.user_id(user_id);
         }
         SessionTicketType::AgentAccess => {
             let agent_ids = require_non_empty_agent_ids(request.agent_ids.take())?;
-            command = command.with_agent_ids(agent_ids);
+            command = command.agent_ids(agent_ids);
 
             if let Some(identifier) = request.agent_session_identifier.take() {
-                command = command.with_agent_session_identifier(map_agent_session_identifier(identifier));
+                command = command.agent_session_identifier(map_agent_session_identifier(identifier));
             }
         }
         SessionTicketType::WebhookAppAccess => {
@@ -94,7 +94,7 @@ fn apply_ticket_type_fields(
                 "webhook_app_slug is required for webhook_app_access tickets",
                 "webhook_app_slug cannot be empty for webhook_app_access tickets",
             )?;
-            command = command.with_webhook_app_slug(webhook_app_slug);
+            command = command.webhook_app_slug(webhook_app_slug);
         }
         SessionTicketType::ApiAuthAccess => {
             let api_auth_app_slug = require_non_empty_string(
@@ -102,7 +102,7 @@ fn apply_ticket_type_fields(
                 "api_auth_app_slug is required for api_auth_access tickets",
                 "api_auth_app_slug cannot be empty for api_auth_access tickets",
             )?;
-            command = command.with_api_auth_app_slug(api_auth_app_slug);
+            command = command.api_auth_app_slug(api_auth_app_slug);
         }
     }
 
@@ -119,16 +119,26 @@ pub async fn create_session_ticket(
     let command_deployment_id =
         command_deployment_id(&ticket_type, deployment_id, console_deployment_id);
 
-    let command = GenerateSessionTicketCommand::new(command_deployment_id, ticket_type.clone());
+    let command = GenerateSessionTicketCommand::builder()
+        .deployment_id(command_deployment_id)
+        .ticket_type(ticket_type.clone());
     let mut command = apply_ticket_type_fields(command, &ticket_type, &mut request)?;
 
     if let Some(context_group) = request.context_group.take() {
-        command = command.with_context_group(context_group);
+        command = command.context_group(context_group);
     }
 
     if let Some(expires_in) = request.expires_in.take() {
-        command = command.with_expires_in(expires_in);
+        command = command.expires_in(expires_in);
     }
 
-    command.execute(app_state).await
+    let ticket_id = app_state
+        .sf
+        .next_id()
+        .map_err(|e| AppError::Internal(format!("Failed to generate ticket ID: {}", e)))?
+        as i64;
+    command
+        .build()?
+        .execute_with(&app_state.redis_client, ticket_id)
+        .await
 }

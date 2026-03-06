@@ -504,16 +504,24 @@ pub struct GetDeploymentSocialConnectionsQuery {
     deployment_id: i64,
 }
 
+#[derive(Default)]
+pub struct GetDeploymentSocialConnectionsQueryBuilder {
+    deployment_id: Option<i64>,
+}
+
 impl GetDeploymentSocialConnectionsQuery {
+    pub fn builder() -> GetDeploymentSocialConnectionsQueryBuilder {
+        GetDeploymentSocialConnectionsQueryBuilder::default()
+    }
+
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
     }
-}
 
-impl Query for GetDeploymentSocialConnectionsQuery {
-    type Output = Vec<DeploymentSocialConnection>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(
+        &self,
+        pool: &sqlx::PgPool,
+    ) -> Result<Vec<DeploymentSocialConnection>, AppError> {
         let row = query!(
             r#"
             SELECT
@@ -529,7 +537,7 @@ impl Query for GetDeploymentSocialConnectionsQuery {
             "#,
             self.deployment_id,
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(pool)
         .await?;
 
         Ok(row
@@ -546,6 +554,29 @@ impl Query for GetDeploymentSocialConnectionsQuery {
                     .map(|v| serde_json::from_value(v).unwrap_or_default()),
             })
             .collect())
+    }
+}
+
+impl GetDeploymentSocialConnectionsQueryBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn build(self) -> Result<GetDeploymentSocialConnectionsQuery, AppError> {
+        Ok(GetDeploymentSocialConnectionsQuery {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
+        })
+    }
+}
+
+impl Query for GetDeploymentSocialConnectionsQuery {
+    type Output = Vec<DeploymentSocialConnection>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 

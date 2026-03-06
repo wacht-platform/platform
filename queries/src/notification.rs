@@ -3,23 +3,29 @@ use common::error::AppError;
 use common::state::AppState;
 
 pub struct GetOrganizationNotificationRecipientUserIdsQuery {
-    pub deployment_id: i64,
-    pub organization_id: i64,
+    deployment_id: i64,
+    organization_id: i64,
+}
+
+#[derive(Default)]
+pub struct GetOrganizationNotificationRecipientUserIdsQueryBuilder {
+    deployment_id: Option<i64>,
+    organization_id: Option<i64>,
 }
 
 impl GetOrganizationNotificationRecipientUserIdsQuery {
+    pub fn builder() -> GetOrganizationNotificationRecipientUserIdsQueryBuilder {
+        GetOrganizationNotificationRecipientUserIdsQueryBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, organization_id: i64) -> Self {
         Self {
             deployment_id,
             organization_id,
         }
     }
-}
 
-impl Query for GetOrganizationNotificationRecipientUserIdsQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<Vec<i64>, AppError> {
         let rows = sqlx::query!(
             r#"
             SELECT om.user_id
@@ -32,31 +38,68 @@ impl Query for GetOrganizationNotificationRecipientUserIdsQuery {
             self.deployment_id,
             self.organization_id
         )
-        .fetch_all(&state.db_pool)
+        .fetch_all(pool)
         .await?;
 
         Ok(rows.into_iter().map(|r| r.user_id).collect())
     }
 }
 
+impl Query for GetOrganizationNotificationRecipientUserIdsQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
+    }
+}
+
+impl GetOrganizationNotificationRecipientUserIdsQueryBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn organization_id(mut self, organization_id: i64) -> Self {
+        self.organization_id = Some(organization_id);
+        self
+    }
+
+    pub fn build(self) -> Result<GetOrganizationNotificationRecipientUserIdsQuery, AppError> {
+        Ok(GetOrganizationNotificationRecipientUserIdsQuery {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            organization_id: self
+                .organization_id
+                .ok_or_else(|| AppError::Validation("organization_id is required".into()))?,
+        })
+    }
+}
+
 pub struct GetWorkspaceNotificationRecipientUserIdsQuery {
-    pub deployment_id: i64,
-    pub workspace_id: i64,
+    deployment_id: i64,
+    workspace_id: i64,
+}
+
+#[derive(Default)]
+pub struct GetWorkspaceNotificationRecipientUserIdsQueryBuilder {
+    deployment_id: Option<i64>,
+    workspace_id: Option<i64>,
 }
 
 impl GetWorkspaceNotificationRecipientUserIdsQuery {
+    pub fn builder() -> GetWorkspaceNotificationRecipientUserIdsQueryBuilder {
+        GetWorkspaceNotificationRecipientUserIdsQueryBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, workspace_id: i64) -> Self {
         Self {
             deployment_id,
             workspace_id,
         }
     }
-}
 
-impl Query for GetWorkspaceNotificationRecipientUserIdsQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<Vec<i64>, AppError> {
         let rows = sqlx::query!(
             r#"
             SELECT wm.user_id
@@ -69,9 +112,40 @@ impl Query for GetWorkspaceNotificationRecipientUserIdsQuery {
             self.deployment_id,
             self.workspace_id
         )
-        .fetch_all(&state.db_pool)
+        .fetch_all(pool)
         .await?;
 
         Ok(rows.into_iter().map(|r| r.user_id).collect())
+    }
+}
+
+impl Query for GetWorkspaceNotificationRecipientUserIdsQuery {
+    type Output = Vec<i64>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&state.db_pool).await
+    }
+}
+
+impl GetWorkspaceNotificationRecipientUserIdsQueryBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn workspace_id(mut self, workspace_id: i64) -> Self {
+        self.workspace_id = Some(workspace_id);
+        self
+    }
+
+    pub fn build(self) -> Result<GetWorkspaceNotificationRecipientUserIdsQuery, AppError> {
+        Ok(GetWorkspaceNotificationRecipientUserIdsQuery {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            workspace_id: self
+                .workspace_id
+                .ok_or_else(|| AppError::Validation("workspace_id is required".into()))?,
+        })
     }
 }

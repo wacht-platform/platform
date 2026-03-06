@@ -1,10 +1,9 @@
 use axum::http::StatusCode;
-use commands::{Command, notification::CreateNotificationCommand};
+use commands::notification::CreateNotificationCommand;
 use dto::json::FlexibleI64;
 use models::notification::{Notification, NotificationSeverity};
 use queries::{
     GetOrganizationNotificationRecipientUserIdsQuery, GetWorkspaceNotificationRecipientUserIdsQuery,
-    Query as QueryTrait,
 };
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -59,8 +58,11 @@ async fn add_organization_recipients(
         return Ok(().into());
     };
 
-    let user_ids = GetOrganizationNotificationRecipientUserIdsQuery::new(deployment_id, org_id)
-        .execute(state)
+    let user_ids = GetOrganizationNotificationRecipientUserIdsQuery::builder()
+        .deployment_id(deployment_id)
+        .organization_id(org_id)
+        .build()?
+        .execute_with(state.db_router.reader(common::db_router::ReadConsistency::Eventual))
         .await?;
     recipients.extend(user_ids);
 
@@ -77,8 +79,11 @@ async fn add_workspace_recipients(
         return Ok(().into());
     };
 
-    let user_ids = GetWorkspaceNotificationRecipientUserIdsQuery::new(deployment_id, ws_id)
-        .execute(state)
+    let user_ids = GetWorkspaceNotificationRecipientUserIdsQuery::builder()
+        .deployment_id(deployment_id)
+        .workspace_id(ws_id)
+        .build()?
+        .execute_with(state.db_router.reader(common::db_router::ReadConsistency::Eventual))
         .await?;
     recipients.extend(user_ids);
 
@@ -104,31 +109,31 @@ fn resolve_notification_ctas(
 }
 
 fn apply_optional_notification_fields(
-    mut command: CreateNotificationCommand,
+    mut command: commands::notification::CreateNotificationCommandBuilder,
     organization_id: Option<i64>,
     workspace_id: Option<i64>,
     ctas: &Option<JsonValue>,
     metadata: &Option<JsonValue>,
     expires_hours: Option<i64>,
-) -> CreateNotificationCommand {
+) -> commands::notification::CreateNotificationCommandBuilder {
     if let Some(org_id) = organization_id {
-        command = command.with_organization(org_id);
+        command = command.organization_id(org_id);
     }
 
     if let Some(ws_id) = workspace_id {
-        command = command.with_workspace(ws_id);
+        command = command.workspace_id(ws_id);
     }
 
     if let Some(ctas) = ctas.clone() {
-        command = command.with_ctas(ctas);
+        command = command.ctas(ctas);
     }
 
     if let Some(metadata) = metadata.clone() {
-        command = command.with_metadata(metadata);
+        command = command.metadata(metadata);
     }
 
     if let Some(hours) = expires_hours {
-        command = command.with_expiry_hours(hours);
+        command = command.expiry_hours(hours);
     }
 
     command
@@ -178,9 +183,12 @@ pub async fn create_notification(
 
     let mut created = Vec::with_capacity(recipients.len());
     for uid in recipients {
-        let command = CreateNotificationCommand::new(deployment_id, title.clone(), body.clone())
-            .with_user(uid)
-            .with_severity(severity.clone());
+        let command = CreateNotificationCommand::builder()
+            .deployment_id(deployment_id)
+            .title(title.clone())
+            .body(body.clone())
+            .user_id(uid)
+            .severity(severity.clone());
         let command = apply_optional_notification_fields(
             command,
             organization_id,
@@ -190,7 +198,12 @@ pub async fn create_notification(
             expires_hours,
         );
 
-        created.push(command.execute(state).await?);
+        created.push(
+            command
+                .build()?
+                .execute_with(state.db_router.writer(), &state.nats_client)
+                .await?,
+        );
     }
 
     Ok(created.into())

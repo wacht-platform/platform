@@ -19,19 +19,18 @@ impl CreateMcpServerCommand {
             config,
         }
     }
-}
 
-impl Command for CreateMcpServerCommand {
-    type Output = McpServer;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        mcp_server_id: i64,
+    ) -> Result<McpServer, AppError> {
         if self.name.trim().is_empty() {
             return Err(AppError::BadRequest(
                 "MCP server name is required".to_string(),
             ));
         }
 
-        let id = app_state.sf.next_id()? as i64;
         let now = Utc::now();
         let config_json = serde_json::to_value(&self.config)
             .map_err(|e| AppError::Serialization(e.to_string()))?;
@@ -43,13 +42,13 @@ impl Command for CreateMcpServerCommand {
             RETURNING id, created_at, updated_at, deployment_id, name, config
             "#,
         )
-        .bind(id)
+        .bind(mcp_server_id)
         .bind(now)
         .bind(now)
         .bind(self.deployment_id)
         .bind(self.name)
         .bind(config_json)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await
         .map_err(AppError::Database)?;
 
@@ -65,6 +64,15 @@ impl Command for CreateMcpServerCommand {
             name: row.get("name"),
             config,
         })
+    }
+}
+
+impl Command for CreateMcpServerCommand {
+    type Output = McpServer;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+            .await
     }
 }
 
@@ -94,12 +102,8 @@ impl UpdateMcpServerCommand {
         self.config = Some(config);
         self
     }
-}
 
-impl Command for UpdateMcpServerCommand {
-    type Output = McpServer;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<McpServer, AppError> {
         if let Some(name) = &self.name {
             if name.trim().is_empty() {
                 return Err(AppError::BadRequest(
@@ -143,10 +147,7 @@ impl Command for UpdateMcpServerCommand {
         }
         builder = builder.bind(self.mcp_server_id).bind(self.deployment_id);
 
-        let row = builder
-            .fetch_one(&app_state.db_pool)
-            .await
-            .map_err(AppError::Database)?;
+        let row = builder.fetch_one(pool).await.map_err(AppError::Database)?;
 
         let config_value: serde_json::Value = row.get("config");
         let config: McpServerConfig = serde_json::from_value(config_value)
@@ -163,6 +164,14 @@ impl Command for UpdateMcpServerCommand {
     }
 }
 
+impl Command for UpdateMcpServerCommand {
+    type Output = McpServer;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
 pub struct DeleteMcpServerCommand {
     pub deployment_id: i64,
     pub mcp_server_id: i64,
@@ -175,20 +184,24 @@ impl DeleteMcpServerCommand {
             mcp_server_id,
         }
     }
+
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
+        sqlx::query("DELETE FROM mcp_servers WHERE id = $1 AND deployment_id = $2")
+            .bind(self.mcp_server_id)
+            .bind(self.deployment_id)
+            .execute(pool)
+            .await
+            .map_err(AppError::Database)?;
+
+        Ok(())
+    }
 }
 
 impl Command for DeleteMcpServerCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        sqlx::query("DELETE FROM mcp_servers WHERE id = $1 AND deployment_id = $2")
-            .bind(self.mcp_server_id)
-            .bind(self.deployment_id)
-            .execute(&app_state.db_pool)
-            .await
-            .map_err(AppError::Database)?;
-
-        Ok(())
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -206,17 +219,13 @@ impl AttachMcpServerToAgentCommand {
             mcp_server_id,
         }
     }
-}
 
-impl Command for AttachMcpServerToAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         let agent_exists =
             sqlx::query("SELECT 1 FROM ai_agents WHERE id = $1 AND deployment_id = $2 LIMIT 1")
                 .bind(self.agent_id)
                 .bind(self.deployment_id)
-                .fetch_optional(&app_state.db_pool)
+                .fetch_optional(pool)
                 .await
                 .map_err(AppError::Database)?
                 .is_some();
@@ -229,7 +238,7 @@ impl Command for AttachMcpServerToAgentCommand {
             sqlx::query("SELECT 1 FROM mcp_servers WHERE id = $1 AND deployment_id = $2 LIMIT 1")
                 .bind(self.mcp_server_id)
                 .bind(self.deployment_id)
-                .fetch_optional(&app_state.db_pool)
+                .fetch_optional(pool)
                 .await
                 .map_err(AppError::Database)?
                 .is_some();
@@ -248,11 +257,19 @@ impl Command for AttachMcpServerToAgentCommand {
         .bind(self.deployment_id)
         .bind(self.agent_id)
         .bind(self.mcp_server_id)
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await
         .map_err(AppError::Database)?;
 
         Ok(())
+    }
+}
+
+impl Command for AttachMcpServerToAgentCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }
 
@@ -270,12 +287,8 @@ impl DetachMcpServerFromAgentCommand {
             mcp_server_id,
         }
     }
-}
 
-impl Command for DetachMcpServerFromAgentCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         sqlx::query(
             r#"
             DELETE FROM ai_agent_mcp_servers ams
@@ -295,10 +308,18 @@ impl Command for DetachMcpServerFromAgentCommand {
         .bind(self.agent_id)
         .bind(self.mcp_server_id)
         .bind(self.deployment_id)
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await
         .map_err(AppError::Database)?;
 
         Ok(())
+    }
+}
+
+impl Command for DetachMcpServerFromAgentCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
     }
 }

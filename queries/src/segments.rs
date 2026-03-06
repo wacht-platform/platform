@@ -17,6 +17,12 @@ impl Query for GetSegmentsQuery {
     type Output = Vec<Segment>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl GetSegmentsQuery {
+    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<Vec<Segment>, AppError> {
         let limit = self.limit.unwrap_or(20).max(1).min(101);
         let offset = self.offset.unwrap_or(0).max(0);
 
@@ -55,7 +61,7 @@ impl Query for GetSegmentsQuery {
 
         let segments = query_builder
             .build_query_as::<Segment>()
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(pool)
             .await
             .map_err(AppError::Database)?;
 
@@ -90,6 +96,12 @@ impl Query for GetSegmentDataQuery {
     type Output = Vec<AnalyzedEntity>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.db_pool).await
+    }
+}
+
+impl GetSegmentDataQuery {
+    pub async fn execute_with(&self, pool: &sqlx::PgPool) -> Result<Vec<AnalyzedEntity>, AppError> {
         let (table, select_clause) = match self.target_type.as_str() {
             "organization" => (
                 "organizations",
@@ -226,7 +238,7 @@ impl Query for GetSegmentDataQuery {
 
         let entities = query_builder
             .build_query_as::<AnalyzedEntity>()
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(pool)
             .await
             .map_err(AppError::Database)?;
 

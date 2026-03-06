@@ -7,14 +7,27 @@ use sqlx::Row;
 use std::str::FromStr;
 
 pub struct CreateAgentIntegrationCommand {
-    pub deployment_id: i64,
-    pub agent_id: i64,
-    pub integration_type: IntegrationType,
-    pub name: String,
-    pub config: serde_json::Value,
+    deployment_id: i64,
+    agent_id: i64,
+    integration_type: IntegrationType,
+    name: String,
+    config: serde_json::Value,
+}
+
+#[derive(Default)]
+pub struct CreateAgentIntegrationCommandBuilder {
+    deployment_id: Option<i64>,
+    agent_id: Option<i64>,
+    integration_type: Option<IntegrationType>,
+    name: Option<String>,
+    config: Option<serde_json::Value>,
 }
 
 impl CreateAgentIntegrationCommand {
+    pub fn builder() -> CreateAgentIntegrationCommandBuilder {
+        CreateAgentIntegrationCommandBuilder::default()
+    }
+
     pub fn new(
         deployment_id: i64,
         agent_id: i64,
@@ -37,6 +50,16 @@ impl Command for CreateAgentIntegrationCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let id = app_state.sf.next_id()? as i64;
+        self.execute_with(app_state.db_router.writer(), id).await
+    }
+}
+
+impl CreateAgentIntegrationCommand {
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        id: i64,
+    ) -> Result<AgentIntegration, AppError> {
         let now = Utc::now();
 
         let integration = sqlx::query!(
@@ -54,7 +77,7 @@ impl Command for CreateAgentIntegrationCommand {
             self.name,
             self.config,
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await
         .map_err(AppError::Database)?;
 
@@ -71,14 +94,73 @@ impl Command for CreateAgentIntegrationCommand {
     }
 }
 
+impl CreateAgentIntegrationCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn agent_id(mut self, agent_id: i64) -> Self {
+        self.agent_id = Some(agent_id);
+        self
+    }
+
+    pub fn integration_type(mut self, integration_type: IntegrationType) -> Self {
+        self.integration_type = Some(integration_type);
+        self
+    }
+
+    pub fn name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    pub fn config(mut self, config: serde_json::Value) -> Self {
+        self.config = Some(config);
+        self
+    }
+
+    pub fn build(self) -> Result<CreateAgentIntegrationCommand, AppError> {
+        Ok(CreateAgentIntegrationCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            agent_id: self
+                .agent_id
+                .ok_or_else(|| AppError::Validation("agent_id is required".into()))?,
+            integration_type: self
+                .integration_type
+                .ok_or_else(|| AppError::Validation("integration_type is required".into()))?,
+            name: self
+                .name
+                .ok_or_else(|| AppError::Validation("name is required".into()))?,
+            config: self
+                .config
+                .ok_or_else(|| AppError::Validation("config is required".into()))?,
+        })
+    }
+}
+
 pub struct UpdateAgentIntegrationCommand {
-    pub deployment_id: i64,
-    pub integration_id: i64,
-    pub name: Option<String>,
-    pub config: Option<serde_json::Value>,
+    deployment_id: i64,
+    integration_id: i64,
+    name: Option<String>,
+    config: Option<serde_json::Value>,
+}
+
+#[derive(Default)]
+pub struct UpdateAgentIntegrationCommandBuilder {
+    deployment_id: Option<i64>,
+    integration_id: Option<i64>,
+    name: Option<String>,
+    config: Option<serde_json::Value>,
 }
 
 impl UpdateAgentIntegrationCommand {
+    pub fn builder() -> UpdateAgentIntegrationCommandBuilder {
+        UpdateAgentIntegrationCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, integration_id: i64) -> Self {
         Self {
             deployment_id,
@@ -103,6 +185,12 @@ impl Command for UpdateAgentIntegrationCommand {
     type Output = AgentIntegration;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl UpdateAgentIntegrationCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<AgentIntegration, AppError> {
         let now = Utc::now();
 
         let mut query_parts = vec!["updated_at = $1".to_string()];
@@ -144,7 +232,7 @@ impl Command for UpdateAgentIntegrationCommand {
             .bind(self.deployment_id);
 
         let row = query_builder
-            .fetch_one(&app_state.db_pool)
+            .fetch_one(pool)
             .await
             .map_err(AppError::Database)?;
 
@@ -165,12 +253,57 @@ impl Command for UpdateAgentIntegrationCommand {
     }
 }
 
+impl UpdateAgentIntegrationCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn integration_id(mut self, integration_id: i64) -> Self {
+        self.integration_id = Some(integration_id);
+        self
+    }
+
+    pub fn name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
+    }
+
+    pub fn config(mut self, config: Option<serde_json::Value>) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub fn build(self) -> Result<UpdateAgentIntegrationCommand, AppError> {
+        Ok(UpdateAgentIntegrationCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            integration_id: self
+                .integration_id
+                .ok_or_else(|| AppError::Validation("integration_id is required".into()))?,
+            name: self.name,
+            config: self.config,
+        })
+    }
+}
+
 pub struct DeleteAgentIntegrationCommand {
-    pub deployment_id: i64,
-    pub integration_id: i64,
+    deployment_id: i64,
+    integration_id: i64,
+}
+
+#[derive(Default)]
+pub struct DeleteAgentIntegrationCommandBuilder {
+    deployment_id: Option<i64>,
+    integration_id: Option<i64>,
 }
 
 impl DeleteAgentIntegrationCommand {
+    pub fn builder() -> DeleteAgentIntegrationCommandBuilder {
+        DeleteAgentIntegrationCommandBuilder::default()
+    }
+
     pub fn new(deployment_id: i64, integration_id: i64) -> Self {
         Self {
             deployment_id,
@@ -183,15 +316,44 @@ impl Command for DeleteAgentIntegrationCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl DeleteAgentIntegrationCommand {
+    pub async fn execute_with(self, pool: &sqlx::PgPool) -> Result<(), AppError> {
         sqlx::query!(
             "DELETE FROM agent_integrations WHERE id = $1 AND deployment_id = $2",
             self.integration_id,
             self.deployment_id
         )
-        .execute(&app_state.db_pool)
+        .execute(pool)
         .await
         .map_err(AppError::Database)?;
 
         Ok(())
+    }
+}
+
+impl DeleteAgentIntegrationCommandBuilder {
+    pub fn deployment_id(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub fn integration_id(mut self, integration_id: i64) -> Self {
+        self.integration_id = Some(integration_id);
+        self
+    }
+
+    pub fn build(self) -> Result<DeleteAgentIntegrationCommand, AppError> {
+        Ok(DeleteAgentIntegrationCommand {
+            deployment_id: self
+                .deployment_id
+                .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,
+            integration_id: self
+                .integration_id
+                .ok_or_else(|| AppError::Validation("integration_id is required".into()))?,
+        })
     }
 }

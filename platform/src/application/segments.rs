@@ -1,15 +1,11 @@
 use commands::{
-    Command,
     segments::{
         AssignSegmentCommand, CreateSegmentCommand, DeleteSegmentCommand, RemoveSegmentCommand,
         UpdateSegmentCommand,
     },
 };
 use models::{AnalyzedEntity, Segment};
-use queries::{
-    Query as QueryTrait,
-    segments::{GetSegmentDataQuery, GetSegmentsQuery},
-};
+use queries::segments::{GetSegmentDataQuery, GetSegmentsQuery};
 
 use crate::application::{AppError, AppState};
 
@@ -27,14 +23,14 @@ pub async fn get_segment_data(
     app_state: &AppState,
     query: GetSegmentDataQuery,
 ) -> Result<Vec<AnalyzedEntity>, AppError> {
-    query.execute(app_state).await
+    query.execute_with(app_state.db_router.writer()).await
 }
 
 pub async fn list_segments(
     app_state: &AppState,
     query: GetSegmentsQuery,
 ) -> Result<Vec<Segment>, AppError> {
-    query.execute(app_state).await
+    query.execute_with(app_state.db_router.writer()).await
 }
 
 pub async fn create_segment(
@@ -43,13 +39,14 @@ pub async fn create_segment(
     name: String,
     segment_type: String,
 ) -> Result<Segment, AppError> {
-    CreateSegmentCommand {
-        deployment_id,
-        name,
-        r#type: segment_type,
-    }
-    .execute(app_state)
-    .await
+    let segment_id = app_state.sf.next_id()? as i64;
+    CreateSegmentCommand::builder()
+        .deployment_id(deployment_id)
+        .name(name)
+        .segment_type(segment_type)
+        .build()?
+        .execute_with(app_state.db_router.writer(), segment_id)
+        .await
 }
 
 pub async fn update_segment(
@@ -58,13 +55,13 @@ pub async fn update_segment(
     deployment_id: i64,
     name: Option<String>,
 ) -> Result<Segment, AppError> {
-    UpdateSegmentCommand {
-        id,
-        deployment_id,
-        name,
-    }
-    .execute(app_state)
-    .await
+    UpdateSegmentCommand::builder()
+        .id(id)
+        .deployment_id(deployment_id)
+        .name(name)
+        .build()?
+        .execute_with(app_state.db_router.writer())
+        .await
 }
 
 pub async fn delete_segment(
@@ -72,7 +69,12 @@ pub async fn delete_segment(
     id: i64,
     deployment_id: i64,
 ) -> Result<serde_json::Value, AppError> {
-    DeleteSegmentCommand { id, deployment_id }.execute(app_state).await
+    DeleteSegmentCommand::builder()
+        .id(id)
+        .deployment_id(deployment_id)
+        .build()?
+        .execute_with(app_state.db_router.writer())
+        .await
 }
 
 pub async fn assign_segment(
@@ -81,13 +83,13 @@ pub async fn assign_segment(
     deployment_id: i64,
     entity_id: i64,
 ) -> Result<serde_json::Value, AppError> {
-    AssignSegmentCommand {
-        segment_id,
-        deployment_id,
-        entity_id,
-    }
-    .execute(app_state)
-    .await
+    AssignSegmentCommand::builder()
+        .segment_id(segment_id)
+        .deployment_id(deployment_id)
+        .entity_id(entity_id)
+        .build()?
+        .execute_with(app_state.db_router.writer())
+        .await
 }
 
 pub async fn remove_segment(
@@ -96,11 +98,11 @@ pub async fn remove_segment(
     deployment_id: i64,
     entity_id: i64,
 ) -> Result<serde_json::Value, AppError> {
-    RemoveSegmentCommand {
-        segment_id,
-        deployment_id,
-        entity_id,
-    }
-    .execute(app_state)
-    .await
+    RemoveSegmentCommand::builder()
+        .segment_id(segment_id)
+        .deployment_id(deployment_id)
+        .entity_id(entity_id)
+        .build()?
+        .execute_with(app_state.db_router.writer())
+        .await
 }

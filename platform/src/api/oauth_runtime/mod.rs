@@ -1,8 +1,8 @@
 mod authorize_handlers;
-mod helpers;
+pub(crate) mod helpers;
 mod management_handlers;
-mod token_handlers;
-mod types;
+pub(crate) mod token_handlers;
+pub(crate) mod types;
 
 pub use authorize_handlers::{
     oauth_authorize_get, oauth_consent_submit, oauth_protected_resource_metadata,

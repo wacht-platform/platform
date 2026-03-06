@@ -4,60 +4,18 @@ use axum::http::StatusCode;
 use models::api_key::OAuthScopeDefinition;
 
 use crate::api::multipart::MultipartPayload;
-use crate::application::response::ApiResult;
+use crate::application::{oauth_app as oauth_app_use_cases, response::ApiResult};
 use crate::middleware::RequireDeployment;
-use commands::{
-    Command, UploadToCdnCommand,
-    oauth::{CreateOAuthAppCommand, UpdateOAuthAppCommand, VerifyOAuthAppDomainCommand},
-};
 use common::state::AppState;
 use dto::json::api_key::{
     ListOAuthAppsResponse, OAuthAppResponse, UpdateOAuthAppRequest, VerifyOAuthAppDomainResponse,
 };
-use queries::{Query as QueryTrait, oauth::ListOAuthAppsByDeploymentQuery};
 
-use super::mappers::map_oauth_app_response;
 use super::types::OAuthAppPathParams;
 
-pub(crate) async fn verify_oauth_app_domain(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-    Path(params): Path<OAuthAppPathParams>,
-) -> ApiResult<VerifyOAuthAppDomainResponse> {
-    let result = VerifyOAuthAppDomainCommand {
-        deployment_id,
-        oauth_app_slug: params.oauth_app_slug,
-    }
-    .execute(&app_state)
-    .await?;
-
-    Ok(VerifyOAuthAppDomainResponse {
-        domain: result.domain,
-        cname_target: result.cname_target,
-        verified: result.verified,
-    }
-    .into())
-}
-
-pub async fn list_oauth_apps(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
-) -> ApiResult<ListOAuthAppsResponse> {
-    let apps = ListOAuthAppsByDeploymentQuery::new(deployment_id)
-        .execute(&app_state)
-        .await?
-        .into_iter()
-        .map(map_oauth_app_response)
-        .collect();
-
-    Ok(ListOAuthAppsResponse { apps }.into())
-}
-
-pub async fn create_oauth_app(
-    State(app_state): State<AppState>,
-    RequireDeployment(deployment_id): RequireDeployment,
+async fn parse_create_oauth_app_input(
     multipart: Multipart,
-) -> ApiResult<OAuthAppResponse> {
+) -> Result<oauth_app_use_cases::CreateOAuthAppInput, crate::application::response::ApiErrorResponse> {
     let mut slug: Option<String> = None;
     let mut name: Option<String> = None;
     let mut description: Option<String> = None;
@@ -66,22 +24,14 @@ pub async fn create_oauth_app(
     let mut scope_definitions: Option<Vec<OAuthScopeDefinition>> = None;
     let mut allow_dynamic_client_registration = false;
     let mut logo_image_data: Option<(Vec<u8>, String)> = None;
-    let payload = MultipartPayload::parse(multipart).await?;
 
+    let payload = MultipartPayload::parse(multipart).await?;
     for field in payload.fields() {
         match field.name.as_str() {
-            "slug" => {
-                slug = field.optional_text_trimmed()?;
-            }
-            "name" => {
-                name = field.optional_text_trimmed()?;
-            }
-            "description" => {
-                description = field.optional_text_trimmed()?;
-            }
-            "fqdn" | "domain" => {
-                fqdn = field.optional_text_trimmed()?;
-            }
+            "slug" => slug = field.optional_text_trimmed()?,
+            "name" => name = field.optional_text_trimmed()?,
+            "description" => description = field.optional_text_trimmed()?,
+            "fqdn" | "domain" => fqdn = field.optional_text_trimmed()?,
             "supported_scopes" => {
                 let value = field.text()?;
                 supported_scopes = value
@@ -118,39 +68,51 @@ pub async fn create_oauth_app(
         }
     }
 
-    let slug = slug.ok_or_else(|| (StatusCode::BAD_REQUEST, "slug is required"))?;
-    let name = name.ok_or_else(|| (StatusCode::BAD_REQUEST, "name is required"))?;
+    let slug = slug.ok_or((StatusCode::BAD_REQUEST, "slug is required"))?;
+    let name = name.ok_or((StatusCode::BAD_REQUEST, "name is required"))?;
 
-    let logo_url = if let Some((image_buffer, file_extension)) = logo_image_data {
-        let file_path = format!(
-            "deployments/{}/oauth-apps/{}/logo.{}",
-            deployment_id, slug, file_extension
-        );
-        Some(
-            UploadToCdnCommand::new(file_path, image_buffer)
-                .execute(&app_state)
-                .await
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
-        )
-    } else {
-        None
-    };
-
-    let created = CreateOAuthAppCommand {
-        deployment_id,
+    Ok(oauth_app_use_cases::CreateOAuthAppInput {
         slug,
         name,
         description,
-        logo_url,
         fqdn,
         supported_scopes,
         scope_definitions,
         allow_dynamic_client_registration,
-    }
-    .execute(&app_state)
-    .await?;
+        logo_image_data,
+    })
+}
 
-    Ok(map_oauth_app_response(created).into())
+pub(crate) async fn verify_oauth_app_domain(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    Path(params): Path<OAuthAppPathParams>,
+) -> ApiResult<VerifyOAuthAppDomainResponse> {
+    let result = oauth_app_use_cases::verify_oauth_app_domain(
+        &app_state,
+        deployment_id,
+        params.oauth_app_slug,
+    )
+    .await?;
+    Ok(result.into())
+}
+
+pub async fn list_oauth_apps(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+) -> ApiResult<ListOAuthAppsResponse> {
+    let apps = oauth_app_use_cases::list_oauth_apps(&app_state, deployment_id).await?;
+    Ok(apps.into())
+}
+
+pub async fn create_oauth_app(
+    State(app_state): State<AppState>,
+    RequireDeployment(deployment_id): RequireDeployment,
+    multipart: Multipart,
+) -> ApiResult<OAuthAppResponse> {
+    let input = parse_create_oauth_app_input(multipart).await?;
+    let app = oauth_app_use_cases::create_oauth_app(&app_state, deployment_id, input).await?;
+    Ok(app.into())
 }
 
 pub(crate) async fn update_oauth_app(
@@ -159,18 +121,12 @@ pub(crate) async fn update_oauth_app(
     Path(params): Path<OAuthAppPathParams>,
     Json(request): Json<UpdateOAuthAppRequest>,
 ) -> ApiResult<OAuthAppResponse> {
-    let updated = UpdateOAuthAppCommand {
+    let app = oauth_app_use_cases::update_oauth_app(
+        &app_state,
         deployment_id,
-        oauth_app_slug: params.oauth_app_slug,
-        name: request.name,
-        description: request.description,
-        supported_scopes: request.supported_scopes,
-        scope_definitions: request.scope_definitions,
-        allow_dynamic_client_registration: request.allow_dynamic_client_registration,
-        is_active: request.is_active,
-    }
-    .execute(&app_state)
+        params.oauth_app_slug,
+        request,
+    )
     .await?;
-
-    Ok(map_oauth_app_response(updated).into())
+    Ok(app.into())
 }

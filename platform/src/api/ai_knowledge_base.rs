@@ -6,18 +6,12 @@ use axum::{
 use serde::Deserialize;
 
 use crate::api::multipart::MultipartPayload;
-use crate::api::pagination::paginate_results;
 use crate::application::{
+    ai_knowledge_base as ai_knowledge_base_use_cases,
     response::{ApiResult, PaginatedResponse},
 };
 use common::state::AppState;
 
-use commands::{
-    AttachKnowledgeBaseToAgentCommand, Command, CreateAiKnowledgeBaseCommand,
-    DeleteAiKnowledgeBaseCommand, DeleteKnowledgeBaseDocumentCommand,
-    DetachKnowledgeBaseFromAgentCommand, UpdateAiKnowledgeBaseCommand,
-    UploadKnowledgeBaseDocumentCommand,
-};
 use dto::{
     json::ai_knowledge_base::{
         CreateKnowledgeBaseRequest, GetDocumentsQuery, KnowledgeBaseResponse,
@@ -26,19 +20,12 @@ use dto::{
     query::deployment::GetKnowledgeBasesQuery,
 };
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetails};
-use queries::{
-    GetAgentKnowledgeBasesQuery, GetAiKnowledgeBaseByIdQuery,
-    GetAiKnowledgeBasesQuery as GetKnowledgeBasesQueryCore, GetKnowledgeBaseDocumentsQuery,
-    Query as QueryTrait,
-};
 
-// Unified parameter extraction for knowledge base routes
 #[derive(Deserialize)]
 pub struct KnowledgeBaseParams {
     pub kb_id: i64,
 }
 
-// For document-specific routes that need both kb_id and document_id
 #[derive(Deserialize)]
 pub struct DocumentParams {
     pub kb_id: i64,
@@ -56,56 +43,15 @@ pub struct AgentKnowledgeBaseParams {
     pub kb_id: i64,
 }
 
-fn sanitize_upload_filename(name: &str) -> Option<String> {
-    let mut out = String::with_capacity(name.len());
-    let mut prev_underscore = false;
-
-    for ch in name.chars() {
-        let is_allowed = ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-';
-        if is_allowed {
-            out.push(ch);
-            prev_underscore = false;
-        } else if !prev_underscore {
-            out.push('_');
-            prev_underscore = true;
-        }
-    }
-
-    let trimmed = out.trim_matches('_');
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-fn knowledge_base_not_found_error() -> crate::application::response::ApiErrorResponse {
-    (StatusCode::NOT_FOUND, "Knowledge base not found".to_string()).into()
-}
-
 pub async fn get_ai_knowledge_bases(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<GetKnowledgeBasesQuery>,
 ) -> ApiResult<KnowledgeBaseResponse> {
-    let limit = query.limit.unwrap_or(20);
-    let offset = query.offset.unwrap_or(0);
-
-    let mut query_builder = GetKnowledgeBasesQueryCore::new(deployment_id, limit + 1, offset);
-
-    if let Some(search) = query.search {
-        query_builder = query_builder.with_search(search);
-    }
-
-    let knowledge_bases = query_builder.execute(&app_state).await?;
-
-    let paginated = paginate_results(knowledge_bases, limit as i32, Some(offset as i64));
-
-    Ok(KnowledgeBaseResponse {
-        data: paginated.data,
-        has_more: paginated.has_more,
-    }
-    .into())
+    let response =
+        ai_knowledge_base_use_cases::get_ai_knowledge_bases(&app_state, deployment_id, query)
+            .await?;
+    Ok(response.into())
 }
 
 pub async fn create_ai_knowledge_base(
@@ -113,16 +59,9 @@ pub async fn create_ai_knowledge_base(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateKnowledgeBaseRequest>,
 ) -> ApiResult<AiKnowledgeBase> {
-    let configuration = request.configuration.unwrap_or(serde_json::json!({}));
-
-    let knowledge_base = CreateAiKnowledgeBaseCommand::new(
-        deployment_id,
-        request.name,
-        request.description,
-        configuration,
-    )
-    .execute(&app_state)
-    .await?;
+    let knowledge_base =
+        ai_knowledge_base_use_cases::create_ai_knowledge_base(&app_state, deployment_id, request)
+            .await?;
     Ok(knowledge_base.into())
 }
 
@@ -131,9 +70,12 @@ pub async fn get_ai_knowledge_base_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
 ) -> ApiResult<AiKnowledgeBaseWithDetails> {
-    let knowledge_base = GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
-        .execute(&app_state)
-        .await?;
+    let knowledge_base = ai_knowledge_base_use_cases::get_ai_knowledge_base_by_id(
+        &app_state,
+        deployment_id,
+        params.kb_id,
+    )
+    .await?;
     Ok(knowledge_base.into())
 }
 
@@ -142,10 +84,13 @@ pub async fn get_agent_knowledge_bases(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<PaginatedResponse<AiKnowledgeBaseWithDetails>> {
-    let knowledge_bases = GetAgentKnowledgeBasesQuery::new(deployment_id, params.agent_id)
-        .execute(&app_state)
-        .await?;
-    Ok(PaginatedResponse::from(knowledge_bases).into())
+    let knowledge_bases = ai_knowledge_base_use_cases::get_agent_knowledge_bases(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+    )
+    .await?;
+    Ok(knowledge_bases.into())
 }
 
 pub async fn attach_knowledge_base_to_agent(
@@ -153,9 +98,13 @@ pub async fn attach_knowledge_base_to_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentKnowledgeBaseParams>,
 ) -> ApiResult<()> {
-    AttachKnowledgeBaseToAgentCommand::new(deployment_id, params.agent_id, params.kb_id)
-        .execute(&app_state)
-        .await?;
+    ai_knowledge_base_use_cases::attach_knowledge_base_to_agent(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        params.kb_id,
+    )
+    .await?;
     Ok(().into())
 }
 
@@ -164,9 +113,13 @@ pub async fn detach_knowledge_base_from_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentKnowledgeBaseParams>,
 ) -> ApiResult<()> {
-    DetachKnowledgeBaseFromAgentCommand::new(deployment_id, params.agent_id, params.kb_id)
-        .execute(&app_state)
-        .await?;
+    ai_knowledge_base_use_cases::detach_knowledge_base_from_agent(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        params.kb_id,
+    )
+    .await?;
     Ok(().into())
 }
 
@@ -176,21 +129,13 @@ pub async fn update_ai_knowledge_base(
     Path(params): Path<KnowledgeBaseParams>,
     Json(request): Json<UpdateKnowledgeBaseRequest>,
 ) -> ApiResult<AiKnowledgeBase> {
-    let mut command = UpdateAiKnowledgeBaseCommand::new(deployment_id, params.kb_id);
-
-    if let Some(name) = request.name {
-        command = command.with_name(name);
-    }
-
-    if let Some(description) = request.description {
-        command = command.with_description(Some(description));
-    }
-
-    if let Some(configuration) = request.configuration {
-        command = command.with_configuration(configuration);
-    }
-
-    let knowledge_base = command.execute(&app_state).await?;
+    let knowledge_base = ai_knowledge_base_use_cases::update_ai_knowledge_base(
+        &app_state,
+        deployment_id,
+        params.kb_id,
+        request,
+    )
+    .await?;
     Ok(knowledge_base.into())
 }
 
@@ -199,8 +144,7 @@ pub async fn delete_ai_knowledge_base(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
 ) -> ApiResult<()> {
-    DeleteAiKnowledgeBaseCommand::new(deployment_id, params.kb_id)
-        .execute(&app_state)
+    ai_knowledge_base_use_cases::delete_ai_knowledge_base(&app_state, deployment_id, params.kb_id)
         .await?;
     Ok(().into())
 }
@@ -237,37 +181,21 @@ pub async fn upload_knowledge_base_document(
     }
 
     let file_name = file_name.ok_or((StatusCode::BAD_REQUEST, "File is required".to_string()))?;
-    let file_name = sanitize_upload_filename(&file_name)
-        .ok_or((StatusCode::BAD_REQUEST, "Invalid filename".to_string()))?;
-    let file_type = file_type.unwrap_or("application/octet-stream".to_string());
 
-    let title = title.unwrap_or_else(|| {
-        file_name
-            .split('.')
-            .next()
-            .unwrap_or(&file_name)
-            .to_string()
-    });
-
-    if file_content.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "File content is empty".to_string()).into());
-    }
-
-    GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
-        .execute(&app_state)
-        .await
-        .map_err(|_| knowledge_base_not_found_error())?;
-
-    let document = UploadKnowledgeBaseDocumentCommand::new(
+    let document = ai_knowledge_base_use_cases::upload_knowledge_base_document(
+        &app_state,
+        deployment_id,
         params.kb_id,
-        title,
-        description,
-        file_name,
-        file_content,
-        file_type,
+        ai_knowledge_base_use_cases::UploadKnowledgeBaseDocumentInput {
+            title,
+            description,
+            file_content,
+            file_name,
+            file_type,
+        },
     )
-    .execute(&app_state)
     .await?;
+
     Ok(document.into())
 }
 
@@ -277,19 +205,14 @@ pub async fn get_knowledge_base_documents(
     Path(params): Path<KnowledgeBaseParams>,
     Query(query): Query<GetDocumentsQuery>,
 ) -> ApiResult<PaginatedResponse<AiKnowledgeBaseDocument>> {
-    GetAiKnowledgeBaseByIdQuery::new(deployment_id, params.kb_id)
-        .execute(&app_state)
-        .await
-        .map_err(|_| knowledge_base_not_found_error())?;
-
-    let limit = query.limit.unwrap_or(20);
-    let offset = query.offset.unwrap_or(0);
-
-    let documents = GetKnowledgeBaseDocumentsQuery::new(params.kb_id, limit + 1, offset)
-        .execute(&app_state)
-        .await?;
-
-    Ok(paginate_results(documents, limit as i32, Some(offset as i64)).into())
+    let documents = ai_knowledge_base_use_cases::get_knowledge_base_documents(
+        &app_state,
+        deployment_id,
+        params.kb_id,
+        query,
+    )
+    .await?;
+    Ok(documents.into())
 }
 
 pub async fn delete_knowledge_base_document(
@@ -297,8 +220,12 @@ pub async fn delete_knowledge_base_document(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<DocumentParams>,
 ) -> ApiResult<()> {
-    DeleteKnowledgeBaseDocumentCommand::new(deployment_id, params.kb_id, params.document_id)
-        .execute(&app_state)
-        .await?;
+    ai_knowledge_base_use_cases::delete_knowledge_base_document(
+        &app_state,
+        deployment_id,
+        params.kb_id,
+        params.document_id,
+    )
+    .await?;
     Ok(().into())
 }

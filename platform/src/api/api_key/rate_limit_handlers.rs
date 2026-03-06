@@ -1,34 +1,19 @@
 use axum::extract::{Json, Path, State};
 use axum::http::StatusCode;
 
-use crate::application::response::ApiResult;
+use crate::application::{api_key_rate_limit as api_key_rate_limit_use_cases, response::ApiResult};
 use crate::middleware::RequireDeployment;
-use commands::{
-    Command,
-    rate_limit_scheme::{
-        CreateRateLimitSchemeCommand, DeleteRateLimitSchemeCommand, UpdateRateLimitSchemeCommand,
-    },
-};
 use common::state::AppState;
 use dto::json::api_key::*;
-use queries::{
-    Query as QueryTrait,
-    rate_limit_scheme::{GetRateLimitSchemeQuery, ListRateLimitSchemesQuery, RateLimitSchemeData},
-};
+use queries::rate_limit_scheme::RateLimitSchemeData;
 
 pub async fn list_rate_limit_schemes(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<ListRateLimitSchemesResponse<RateLimitSchemeData>> {
-    let schemes = ListRateLimitSchemesQuery::new(deployment_id)
-        .execute(&app_state)
-        .await?;
-
-    Ok(ListRateLimitSchemesResponse {
-        total: schemes.len(),
-        schemes,
-    }
-    .into())
+    let schemes =
+        api_key_rate_limit_use_cases::list_rate_limit_schemes(&app_state, deployment_id).await?;
+    Ok(schemes.into())
 }
 
 pub async fn get_rate_limit_scheme(
@@ -36,11 +21,8 @@ pub async fn get_rate_limit_scheme(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(slug): Path<String>,
 ) -> ApiResult<RateLimitSchemeData> {
-    let scheme = GetRateLimitSchemeQuery::new(deployment_id, slug)
-        .execute(&app_state)
-        .await?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Rate limit scheme not found"))?;
-
+    let scheme =
+        api_key_rate_limit_use_cases::get_rate_limit_scheme(&app_state, deployment_id, slug).await?;
     Ok(scheme.into())
 }
 
@@ -49,16 +31,9 @@ pub async fn create_rate_limit_scheme(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateRateLimitSchemeRequest>,
 ) -> ApiResult<RateLimitSchemeData> {
-    let scheme = CreateRateLimitSchemeCommand {
-        deployment_id,
-        slug: request.slug,
-        name: request.name,
-        description: request.description,
-        rules: request.rules,
-    }
-    .execute(&app_state)
-    .await?;
-
+    let scheme =
+        api_key_rate_limit_use_cases::create_rate_limit_scheme(&app_state, deployment_id, request)
+            .await?;
     Ok(scheme.into())
 }
 
@@ -68,14 +43,12 @@ pub async fn update_rate_limit_scheme(
     Path(slug): Path<String>,
     Json(request): Json<UpdateRateLimitSchemeRequest>,
 ) -> ApiResult<RateLimitSchemeData> {
-    let scheme = UpdateRateLimitSchemeCommand {
+    let scheme = api_key_rate_limit_use_cases::update_rate_limit_scheme(
+        &app_state,
         deployment_id,
         slug,
-        name: request.name,
-        description: request.description,
-        rules: request.rules,
-    }
-    .execute(&app_state)
+        request,
+    )
     .await?;
 
     Ok(scheme.into())
@@ -86,12 +59,6 @@ pub async fn delete_rate_limit_scheme(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(slug): Path<String>,
 ) -> ApiResult<()> {
-    DeleteRateLimitSchemeCommand {
-        deployment_id,
-        slug,
-    }
-    .execute(&app_state)
-    .await?;
-
+    api_key_rate_limit_use_cases::delete_rate_limit_scheme(&app_state, deployment_id, slug).await?;
     Ok((StatusCode::NO_CONTENT, ()).into())
 }

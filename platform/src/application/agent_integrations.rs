@@ -1,10 +1,10 @@
 use commands::{
-    Command, CreateAgentIntegrationCommand, DeleteAgentIntegrationCommand,
-    UpdateAgentIntegrationCommand,
+    CreateAgentIntegrationCommand, DeleteAgentIntegrationCommand, UpdateAgentIntegrationCommand,
 };
+use common::db_router::ReadConsistency;
 use common::error::AppError;
 use models::{AgentIntegration, IntegrationType};
-use queries::{GetAgentIntegrationByIdQuery, GetAgentIntegrationsQuery, Query as QueryTrait};
+use queries::{GetAgentIntegrationByIdQuery, GetAgentIntegrationsQuery};
 use std::str::FromStr;
 
 use crate::application::AppState;
@@ -62,10 +62,13 @@ pub async fn list_agent_integrations(
     limit: i64,
     offset: Option<i64>,
 ) -> Result<Vec<AgentIntegration>, AppError> {
-    let integrations = GetAgentIntegrationsQuery::new(deployment_id, agent_id)
-        .with_limit(Some(limit as u32 + 1))
-        .with_offset(offset.map(|o| o as u32))
-        .execute(app_state)
+    let integrations = GetAgentIntegrationsQuery::builder()
+        .deployment_id(deployment_id)
+        .agent_id(agent_id)
+        .limit(Some(limit as u32 + 1))
+        .offset(offset.map(|o| o as u32))
+        .build()?
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(integrations
@@ -82,15 +85,16 @@ pub async fn create_agent_integration(
     name: String,
     config: serde_json::Value,
 ) -> Result<AgentIntegration, AppError> {
-    CreateAgentIntegrationCommand::new(
-        deployment_id,
-        agent_id,
-        integration_type,
-        name,
-        config,
-    )
-    .execute(app_state)
-    .await
+    let integration_id = app_state.sf.next_id()? as i64;
+    CreateAgentIntegrationCommand::builder()
+        .deployment_id(deployment_id)
+        .agent_id(agent_id)
+        .integration_type(integration_type)
+        .name(name)
+        .config(config)
+        .build()?
+        .execute_with(app_state.db_router.writer(), integration_id)
+        .await
 }
 
 pub async fn get_agent_integration_by_id(
@@ -99,8 +103,12 @@ pub async fn get_agent_integration_by_id(
     agent_id: i64,
     integration_id: i64,
 ) -> Result<AgentIntegration, AppError> {
-    GetAgentIntegrationByIdQuery::new(deployment_id, agent_id, integration_id)
-        .execute(app_state)
+    GetAgentIntegrationByIdQuery::builder()
+        .deployment_id(deployment_id)
+        .agent_id(agent_id)
+        .integration_id(integration_id)
+        .build()?
+        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
 }
 
@@ -112,21 +120,23 @@ pub async fn update_agent_integration(
     config: Option<serde_json::Value>,
     existing_integration_type: Option<IntegrationType>,
 ) -> Result<AgentIntegration, AppError> {
-    let mut command = UpdateAgentIntegrationCommand::new(deployment_id, integration_id);
-
-    if let Some(name) = name {
-        command = command.with_name(name);
-    }
+    let mut builder = UpdateAgentIntegrationCommand::builder()
+        .deployment_id(deployment_id)
+        .integration_id(integration_id)
+        .name(name);
 
     if let Some(config) = config {
         let integration_type = existing_integration_type.ok_or_else(|| {
             AppError::BadRequest("Missing existing integration type for config update".to_string())
         })?;
         let normalized_config = normalize_integration_config(integration_type, config)?;
-        command = command.with_config(normalized_config);
+        builder = builder.config(Some(normalized_config));
     }
 
-    command.execute(app_state).await
+    builder
+        .build()?
+        .execute_with(app_state.db_router.writer())
+        .await
 }
 
 pub async fn delete_agent_integration(
@@ -134,7 +144,10 @@ pub async fn delete_agent_integration(
     deployment_id: i64,
     integration_id: i64,
 ) -> Result<(), AppError> {
-    DeleteAgentIntegrationCommand::new(deployment_id, integration_id)
-        .execute(app_state)
+    DeleteAgentIntegrationCommand::builder()
+        .deployment_id(deployment_id)
+        .integration_id(integration_id)
+        .build()?
+        .execute_with(app_state.db_router.writer())
         .await
 }

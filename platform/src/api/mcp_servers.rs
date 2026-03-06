@@ -1,5 +1,7 @@
-use crate::api::pagination::paginate_results;
-use crate::application::response::{ApiResult, PaginatedResponse};
+use crate::application::{
+    mcp_servers as mcp_server_use_cases,
+    response::{ApiResult, PaginatedResponse},
+};
 use crate::middleware::RequireDeployment;
 use axum::extract::{Json, Path, Query, State};
 use common::utils::ssrf::validate_webhook_url;
@@ -16,15 +18,8 @@ use tokio::time::timeout;
 
 use common::state::AppState;
 
-use commands::{
-    AttachMcpServerToAgentCommand, Command, CreateMcpServerCommand, DeleteMcpServerCommand,
-    DetachMcpServerFromAgentCommand, UpdateMcpServerCommand,
-};
 use models::{McpAuthConfig, McpServer, McpServerConfig};
-use queries::{
-    GetAgentMcpServersQuery, GetDeploymentWithSettingsQuery, GetMcpServerByIdQuery,
-    GetMcpServersQuery, Query as QueryTrait,
-};
+use queries::{GetDeploymentWithSettingsQuery, Query as QueryTrait};
 
 const MCP_OAUTH_CALLBACK_URL: &str =
     "https://agentlink.wacht.services/service/mcp/consent/callback";
@@ -1012,15 +1007,14 @@ pub async fn get_mcp_servers(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<GetMcpServersQueryParams>,
 ) -> ApiResult<PaginatedResponse<McpServer>> {
-    let limit = query.limit.unwrap_or(50);
-    let offset = query.offset;
-    let servers = GetMcpServersQuery::new(deployment_id)
-        .with_limit(Some(limit as u32 + 1))
-        .with_offset(offset.map(|o| o as u32))
-        .execute(&app_state)
-        .await?;
-
-    Ok(paginate_results(servers, limit as i32, offset).into())
+    let servers = mcp_server_use_cases::get_mcp_servers(
+        &app_state,
+        deployment_id,
+        query.limit,
+        query.offset,
+    )
+    .await?;
+    Ok(servers.into())
 }
 
 pub async fn create_mcp_server(
@@ -1096,9 +1090,9 @@ pub async fn create_mcp_server(
 
     validate_mcp_runtime_if_required(&config).await?;
 
-    let server = CreateMcpServerCommand::new(deployment_id, request.name, config)
-        .execute(&app_state)
-        .await?;
+    let server =
+        mcp_server_use_cases::create_mcp_server(&app_state, deployment_id, request.name, config)
+            .await?;
 
     Ok(McpServerCreateResponse {
         server,
@@ -1112,9 +1106,9 @@ pub async fn get_mcp_server_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<McpServerParams>,
 ) -> ApiResult<McpServer> {
-    let server = GetMcpServerByIdQuery::new(deployment_id, params.mcp_server_id)
-        .execute(&app_state)
-        .await?;
+    let server =
+        mcp_server_use_cases::get_mcp_server_by_id(&app_state, deployment_id, params.mcp_server_id)
+            .await?;
     Ok(server.into())
 }
 
@@ -1124,19 +1118,26 @@ pub async fn update_mcp_server(
     Path(params): Path<McpServerParams>,
     Json(request): Json<UpdateMcpServerRequest>,
 ) -> ApiResult<McpServer> {
-    let mut command = UpdateMcpServerCommand::new(deployment_id, params.mcp_server_id);
+    let UpdateMcpServerRequest {
+        name,
+        config: mut config_to_update,
+    } = request;
 
-    if let Some(name) = request.name {
-        command = command.with_name(name);
-    }
-    if let Some(config) = request.config {
+    if let Some(config) = config_to_update.take() {
         let mut config = config;
         prepare_mcp_server_config(&app_state, deployment_id, &mut config).await?;
         validate_mcp_runtime_if_required(&config).await?;
-        command = command.with_config(config);
+        config_to_update = Some(config);
     }
 
-    let server = command.execute(&app_state).await?;
+    let server = mcp_server_use_cases::update_mcp_server(
+        &app_state,
+        deployment_id,
+        params.mcp_server_id,
+        name,
+        config_to_update,
+    )
+    .await?;
     Ok(server.into())
 }
 
@@ -1145,8 +1146,7 @@ pub async fn delete_mcp_server(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<McpServerParams>,
 ) -> ApiResult<()> {
-    DeleteMcpServerCommand::new(deployment_id, params.mcp_server_id)
-        .execute(&app_state)
+    mcp_server_use_cases::delete_mcp_server(&app_state, deployment_id, params.mcp_server_id)
         .await?;
     Ok(().into())
 }
@@ -1156,10 +1156,10 @@ pub async fn get_agent_mcp_servers(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<PaginatedResponse<McpServer>> {
-    let servers = GetAgentMcpServersQuery::new(deployment_id, params.agent_id)
-        .execute(&app_state)
-        .await?;
-    Ok(PaginatedResponse::from(servers).into())
+    let servers =
+        mcp_server_use_cases::get_agent_mcp_servers(&app_state, deployment_id, params.agent_id)
+            .await?;
+    Ok(servers.into())
 }
 
 pub async fn attach_mcp_server_to_agent(
@@ -1167,9 +1167,13 @@ pub async fn attach_mcp_server_to_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentMcpServerParams>,
 ) -> ApiResult<()> {
-    AttachMcpServerToAgentCommand::new(deployment_id, params.agent_id, params.mcp_server_id)
-        .execute(&app_state)
-        .await?;
+    mcp_server_use_cases::attach_mcp_server_to_agent(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        params.mcp_server_id,
+    )
+    .await?;
     Ok(().into())
 }
 
@@ -1178,8 +1182,12 @@ pub async fn detach_mcp_server_from_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentMcpServerParams>,
 ) -> ApiResult<()> {
-    DetachMcpServerFromAgentCommand::new(deployment_id, params.agent_id, params.mcp_server_id)
-        .execute(&app_state)
-        .await?;
+    mcp_server_use_cases::detach_mcp_server_from_agent(
+        &app_state,
+        deployment_id,
+        params.agent_id,
+        params.mcp_server_id,
+    )
+    .await?;
     Ok(().into())
 }
