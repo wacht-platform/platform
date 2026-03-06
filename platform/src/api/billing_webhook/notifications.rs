@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 
-use commands::{Command, email::SendRawEmailCommand};
+use commands::email::SendRawEmailCommand;
 use common::state::AppState;
 use queries::{
-    Query,
     billing::{GetBillingAccountByProviderCustomerIdQuery, GetBillingAccountQuery},
 };
 use tracing::warn;
@@ -29,8 +28,10 @@ pub(super) async fn send_billing_change_email(app_state: &AppState, owner_id: &s
         return;
     };
 
-    let billing_account_query = GetBillingAccountQuery::new(owner_id.to_string());
-    let account = match Query::execute(&billing_account_query, app_state).await {
+    let account = match GetBillingAccountQuery::new(owner_id.to_string())
+        .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
+        .await
+    {
         Ok(Some(account)) => account,
         Ok(None) => return,
         Err(e) => {
@@ -88,7 +89,9 @@ pub(super) async fn send_billing_change_email(app_state: &AppState, owner_id: &s
             body_html.clone(),
             Some(body_text.clone()),
         );
-        if let Err(e) = Command::execute(send_email_command, app_state).await
+        if let Err(e) = send_email_command
+            .execute_with_deps(app_state)
+            .await
         {
             warn!(
                 "Failed to send billing change email to {} for {}: {}",
@@ -117,7 +120,10 @@ pub(super) async fn extract_owner_id(
 
     if !customer_id.is_empty() {
         let owner_query = GetBillingAccountByProviderCustomerIdQuery::new(customer_id);
-        if let Ok(Some(owner_id)) = Query::execute(&owner_query, app_state).await {
+        if let Ok(Some(owner_id)) = owner_query
+            .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
+            .await
+        {
             return owner_id;
         }
     }

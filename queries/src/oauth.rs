@@ -160,7 +160,7 @@ impl Query for ListOAuthAppsByDeploymentQuery {
     type Output = Vec<OAuthAppData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -230,7 +230,7 @@ impl Query for GetOAuthAppBySlugQuery {
     type Output = Option<OAuthAppData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -330,7 +330,7 @@ impl Query for ListOAuthClientsByOAuthAppQuery {
     type Output = Vec<OAuthClientData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -430,7 +430,7 @@ impl Query for GetOAuthClientByIdQuery {
     type Output = Option<OAuthClientData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -507,6 +507,6 @@ impl Query for ListOAuthGrantsByClientQuery {
     type Output = Vec<OAuthClientGrantData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

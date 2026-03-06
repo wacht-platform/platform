@@ -150,7 +150,7 @@ impl Query for GetAiAgentsQuery {
     type Output = Vec<AiAgentWithDetails>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -291,7 +291,7 @@ impl Query for GetAiAgentsByIdsQuery {
     type Output = Vec<AiAgentWithDetails>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -299,7 +299,7 @@ impl Query for GetAiAgentByIdQuery {
     type Output = AiAgentWithDetails;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -315,12 +315,12 @@ impl GetAiAgentByNameQuery {
             agent_name,
         }
     }
-}
 
-impl Query for GetAiAgentByNameQuery {
-    type Output = AiAgent;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiAgent, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let agent = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, name, description, configuration, deployment_id, sub_agents, spawn_config
@@ -330,7 +330,7 @@ impl Query for GetAiAgentByNameQuery {
             self.agent_name,
             self.deployment_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(|e| AppError::Database(e))?;
 
@@ -355,6 +355,14 @@ impl Query for GetAiAgentByNameQuery {
     }
 }
 
+impl Query for GetAiAgentByNameQuery {
+    type Output = AiAgent;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
 pub struct GetAiAgentByNameWithFeatures {
     pub deployment_id: i64,
     pub agent_name: String,
@@ -367,12 +375,12 @@ impl GetAiAgentByNameWithFeatures {
             agent_name,
         }
     }
-}
 
-impl Query for GetAiAgentByNameWithFeatures {
-    type Output = AiAgentWithFeatures;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiAgentWithFeatures, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -450,7 +458,7 @@ impl Query for GetAiAgentByNameWithFeatures {
             self.agent_name,
             self.deployment_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -487,6 +495,14 @@ impl Query for GetAiAgentByNameWithFeatures {
     }
 }
 
+impl Query for GetAiAgentByNameWithFeatures {
+    type Output = AiAgentWithFeatures;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
 pub struct GetAiAgentByIdWithFeatures {
     pub agent_id: i64,
 }
@@ -495,12 +511,12 @@ impl GetAiAgentByIdWithFeatures {
     pub fn new(agent_id: i64) -> Self {
         Self { agent_id }
     }
-}
 
-impl Query for GetAiAgentByIdWithFeatures {
-    type Output = AiAgentWithFeatures;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiAgentWithFeatures, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -575,7 +591,7 @@ impl Query for GetAiAgentByIdWithFeatures {
             "#,
             self.agent_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -609,5 +625,13 @@ impl Query for GetAiAgentByIdWithFeatures {
             sub_agents,
             spawn_config,
         })
+    }
+}
+
+impl Query for GetAiAgentByIdWithFeatures {
+    type Output = AiAgentWithFeatures;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

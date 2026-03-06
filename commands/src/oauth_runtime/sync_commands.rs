@@ -53,7 +53,7 @@ impl Command for SyncOAuthGrantLastUsedBatch {
     type Output = usize;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.redis_client, &app_state.db_pool)
+        self.execute_with(&app_state.redis_client, app_state.db_router.writer())
             .await
     }
 }

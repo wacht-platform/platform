@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::{self, Datelike, Utc};
-use commands::{Command, email::SendEmailCommand};
+use commands::email::SendEmailCommand;
 use common::{db_router::ReadConsistency, state::AppState};
 use models::{DeploymentInvitation, DeploymentWithSettings, EmailProvider, SignIn, UserDetails};
 use queries::{
@@ -130,9 +130,7 @@ pub async fn send_verification_email_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send verification email: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {
@@ -175,9 +173,7 @@ pub async fn send_password_reset_email_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send password reset email: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {
@@ -216,9 +212,7 @@ pub async fn send_magic_link_email_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send magic link email: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {
@@ -259,9 +253,7 @@ pub async fn send_signin_notification_email_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send signin notification email: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {
@@ -302,9 +294,7 @@ pub async fn send_email_change_notification_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send email change notification: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {
@@ -338,9 +328,7 @@ pub async fn send_password_change_notification_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send password change notification: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {
@@ -377,9 +365,7 @@ pub async fn send_password_remove_notification_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send password remove notification: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {
@@ -421,9 +407,7 @@ pub async fn send_waitlist_signup_email_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send waitlist signup email: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {
@@ -477,9 +461,7 @@ pub async fn send_organization_membership_invite_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send organization invite email: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {
@@ -552,9 +534,7 @@ pub async fn send_deployment_invite_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send workspace invite email: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {
@@ -603,9 +583,7 @@ pub async fn send_waitlist_approval_impl(
         variables,
     );
 
-    command
-        .execute(&app_state)
-        .await
+    command.execute_with_deps(app_state).await
         .map_err(|e| format!("Failed to send waitlist invite email: {}", e))?;
 
     if should_count_email_usage(&deployment_settings) {

@@ -33,7 +33,7 @@ impl Command for CreateWorkspaceRoleCommand {
     type Output = WorkspaceRole;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
             .await
     }
 }
@@ -123,7 +123,7 @@ impl Command for UpdateWorkspaceRoleCommand {
     type Output = WorkspaceRole;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -218,7 +218,7 @@ impl Command for DeleteWorkspaceRoleCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

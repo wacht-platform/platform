@@ -93,7 +93,7 @@ impl Command for CreateOrganizationCommand {
     type Output = Organization;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
             .await
     }
 }

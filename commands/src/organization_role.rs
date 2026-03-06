@@ -33,7 +33,7 @@ impl Command for CreateOrganizationRoleCommand {
     type Output = OrganizationRole;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
             .await
     }
 }
@@ -136,7 +136,7 @@ impl Command for UpdateOrganizationRoleCommand {
     type Output = OrganizationRole;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -233,7 +233,7 @@ impl Command for DeleteOrganizationRoleCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

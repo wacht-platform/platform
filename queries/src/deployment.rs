@@ -44,7 +44,7 @@ impl Query for GetDeploymentIdByBackendHostQuery {
     type Output = i64;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -88,7 +88,7 @@ impl Query for GetDeploymentWithKeyPairQuery {
     type Output = (i64, String); // (deployment_id, public_key)
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -519,7 +519,7 @@ impl Query for GetDeploymentWithSettingsQuery {
     type Output = DeploymentWithSettings;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -603,7 +603,7 @@ impl Query for GetDeploymentSocialConnectionsQuery {
     type Output = Vec<DeploymentSocialConnection>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -669,7 +669,7 @@ impl Query for GetDeploymentJwtTemplatesQuery {
     type Output = Vec<DeploymentJwtTemplate>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -846,7 +846,7 @@ impl Query for GetDeploymentEmailTemplateQuery {
     type Output = EmailTemplate;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -911,7 +911,7 @@ impl Query for GetEmailTemplateByNameQuery {
     type Output = EmailTemplate;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -1013,7 +1013,7 @@ impl Query for GetDeploymentAuthSettingsQuery {
     type Output = models::DeploymentAuthSettings;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -1068,7 +1068,7 @@ impl Query for GetDeploymentWithProjectQuery {
     type Output = Option<DeploymentWithProject>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -1108,6 +1108,6 @@ impl Query for GetDeploymentChargebeeSubscriptionIdQuery {
     type Output = Option<String>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

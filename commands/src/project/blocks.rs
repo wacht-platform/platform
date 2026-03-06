@@ -15,13 +15,6 @@ impl DeploymentAuthSettingsInsert {
         DeploymentAuthSettingsInsertBuilder::default()
     }
 
-    pub(super) async fn execute_in_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        self.execute_with(tx.as_mut()).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -125,13 +118,6 @@ impl DeploymentUiSettingsInsert {
         DeploymentUiSettingsInsertBuilder::default()
     }
 
-    pub(super) async fn execute_in_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        self.execute_with(tx.as_mut()).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -232,13 +218,6 @@ impl DeploymentRestrictionsInsert {
         DeploymentRestrictionsInsertBuilder::default()
     }
 
-    pub(super) async fn execute_in_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        self.execute_with(tx.as_mut()).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -329,13 +308,6 @@ impl DeploymentSmsTemplatesInsert {
         DeploymentSmsTemplatesInsertBuilder::default()
     }
 
-    pub(super) async fn execute_in_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        self.execute_with(tx.as_mut()).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -409,13 +381,6 @@ pub(super) struct DeploymentEmailTemplatesInsertBuilder {
 impl DeploymentEmailTemplatesInsert {
     pub(super) fn builder() -> DeploymentEmailTemplatesInsertBuilder {
         DeploymentEmailTemplatesInsertBuilder::default()
-    }
-
-    pub(super) async fn execute_in_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        self.execute_with(tx.as_mut()).await
     }
 
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
@@ -521,13 +486,6 @@ impl DeploymentAiSettingsInsert {
         DeploymentAiSettingsInsertBuilder::default()
     }
 
-    pub(super) async fn execute_in_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        self.execute_with(tx.as_mut()).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -596,13 +554,6 @@ pub(super) struct DeploymentKeyPairsInsertBuilder {
 impl DeploymentKeyPairsInsert {
     pub(super) fn builder() -> DeploymentKeyPairsInsertBuilder {
         DeploymentKeyPairsInsertBuilder::default()
-    }
-
-    pub(super) async fn execute_in_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        self.execute_with(tx.as_mut()).await
     }
 
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
@@ -727,23 +678,16 @@ impl DeploymentB2bBootstrapInsert {
         DeploymentB2bBootstrapInsertBuilder::default()
     }
 
-    pub(super) async fn execute_in_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        self.execute_on_conn(tx.as_mut()).await
-    }
-
     #[allow(dead_code)]
     pub(super) async fn execute_with<'a, A>(&self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
-        self.execute_on_conn(&mut conn).await
+        self.execute_with_deps(&mut conn).await
     }
 
-    pub(super) async fn execute_on_conn(
+    pub(super) async fn execute_with_deps(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<(), AppError> {
@@ -989,23 +933,16 @@ impl ConsoleAppBootstrapInsert {
         ConsoleAppBootstrapInsertBuilder::default()
     }
 
-    pub(super) async fn execute_in_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        self.execute_on_conn(tx.as_mut()).await
-    }
-
     #[allow(dead_code)]
     pub(super) async fn execute_with<'a, A>(&self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
-        self.execute_on_conn(&mut conn).await
+        self.execute_with_deps(&mut conn).await
     }
 
-    pub(super) async fn execute_on_conn(
+    pub(super) async fn execute_with_deps(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<(), AppError> {
@@ -1161,13 +1098,6 @@ impl DeploymentSocialConnectionsBulkInsert {
         }))
     }
 
-    pub(super) async fn execute_in_tx(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        self.execute_with(tx.as_mut()).await
-    }
-
     pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -1221,9 +1151,9 @@ impl BillingAccountForOwnerLockQuery {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<Option<BillingAccountLockResult>, AppError> {
         let owner_id = self
             .owner_id
@@ -1234,7 +1164,7 @@ impl BillingAccountForOwnerLockQuery {
             "SELECT id, status, COALESCE(pulse_usage_disabled, false) AS \"pulse_usage_disabled!\" FROM billing_accounts WHERE owner_id = $1 FOR UPDATE",
             owner_id
         )
-        .fetch_optional(tx.as_mut())
+        .fetch_optional(conn)
         .await?;
 
         Ok(row.map(|r| BillingAccountLockResult {
@@ -1260,9 +1190,9 @@ impl ProjectsCountByBillingAccountQuery {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<i64, AppError> {
         let billing_account_id = self
             .billing_account_id
@@ -1277,7 +1207,7 @@ impl ProjectsCountByBillingAccountQuery {
             "#,
             billing_account_id
         )
-        .fetch_one(tx.as_mut())
+        .fetch_one(conn)
         .await?;
 
         Ok(row.count)
@@ -1326,9 +1256,9 @@ impl ProjectInsert {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<ProjectInsertedRow, AppError> {
         let id = self
             .id
@@ -1360,7 +1290,7 @@ impl ProjectInsert {
             now,
             now,
         )
-        .fetch_one(tx.as_mut())
+        .fetch_one(conn)
         .await?;
 
         Ok(ProjectInsertedRow {
@@ -1432,9 +1362,9 @@ impl StagingDeploymentInsert {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<StagingDeploymentInsertedRow, AppError> {
         let id = self
             .id
@@ -1486,7 +1416,7 @@ impl StagingDeploymentInsert {
             now,
             now,
         )
-        .fetch_one(tx.as_mut())
+        .fetch_one(conn)
         .await?;
 
         Ok(StagingDeploymentInsertedRow {
@@ -1525,9 +1455,9 @@ impl ProjectWithBillingForStagingQuery {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<Option<ProjectWithBillingForStagingRow>, AppError> {
         let project_id = self
             .project_id
@@ -1542,7 +1472,7 @@ impl ProjectWithBillingForStagingQuery {
             "#,
             project_id
         )
-        .fetch_optional(tx.as_mut())
+        .fetch_optional(conn)
         .await?;
 
         Ok(row.map(|r| ProjectWithBillingForStagingRow {
@@ -1568,9 +1498,9 @@ impl StagingDeploymentCountByProjectQuery {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<i64, AppError> {
         let project_id = self
             .project_id
@@ -1580,7 +1510,7 @@ impl StagingDeploymentCountByProjectQuery {
             "SELECT COUNT(*) as count FROM deployments WHERE project_id = $1 AND mode = 'staging' AND deleted_at IS NULL",
             project_id
         )
-        .fetch_one(tx.as_mut())
+        .fetch_one(conn)
         .await?;
 
         Ok(row.count.unwrap_or(0))
@@ -1607,9 +1537,9 @@ impl ProjectForProductionQuery {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<Option<ProjectForProductionRow>, AppError> {
         let project_id = self
             .project_id
@@ -1617,7 +1547,7 @@ impl ProjectForProductionQuery {
 
         let row = ProjectWithBillingForStagingQuery::builder()
             .project_id(project_id)
-            .execute_in_tx(tx)
+            .execute_with(conn)
             .await?;
 
         Ok(row.map(|r| ProjectForProductionRow {
@@ -1642,9 +1572,9 @@ impl ExistingProductionDeploymentQuery {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<Option<i64>, AppError> {
         let project_id = self
             .project_id
@@ -1654,7 +1584,7 @@ impl ExistingProductionDeploymentQuery {
             "SELECT id FROM deployments WHERE project_id = $1 AND mode = 'production' AND deleted_at IS NULL",
             project_id
         )
-        .fetch_optional(tx.as_mut())
+        .fetch_optional(conn)
         .await?;
 
         Ok(row.map(|r| r.id))
@@ -1680,9 +1610,9 @@ impl ExistingDomainDeploymentQuery {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<Option<ExistingDomainDeploymentRow>, AppError> {
         let custom_domain = self
             .custom_domain
@@ -1695,7 +1625,7 @@ impl ExistingDomainDeploymentQuery {
             format!("accounts.{}", custom_domain),
             custom_domain
         )
-        .fetch_optional(tx.as_mut())
+        .fetch_optional(conn)
         .await?;
 
         Ok(row.map(|r| ExistingDomainDeploymentRow { id: r.id }))
@@ -1780,9 +1710,9 @@ impl ProductionDeploymentInsert {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<ProductionDeploymentInsertedRow, AppError> {
         let id = self.id.ok_or_else(|| {
             AppError::Validation("production deployment id is required".to_string())
@@ -1851,7 +1781,7 @@ impl ProductionDeploymentInsert {
             now,
             now,
         )
-        .fetch_one(tx.as_mut())
+        .fetch_one(conn)
         .await?;
 
         Ok(ProductionDeploymentInsertedRow {
@@ -1895,9 +1825,9 @@ impl DeploymentEmailVerificationUpdate {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<(), AppError> {
         let deployment_id = self
             .deployment_id
@@ -1917,7 +1847,7 @@ impl DeploymentEmailVerificationUpdate {
             chrono::Utc::now(),
             deployment_id
         )
-        .execute(tx.as_mut())
+        .execute(conn)
         .await?;
 
         Ok(())
@@ -1948,9 +1878,9 @@ impl DeploymentDomainVerificationUpdate {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<(), AppError> {
         let deployment_id = self
             .deployment_id
@@ -1970,7 +1900,7 @@ impl DeploymentDomainVerificationUpdate {
             chrono::Utc::now(),
             deployment_id
         )
-        .execute(tx.as_mut())
+        .execute(conn)
         .await?;
 
         Ok(())
@@ -2015,10 +1945,10 @@ impl DeploymentByIdQuery {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
-        self.execute_on_conn(&mut conn).await
+        self.execute_with_deps(&mut conn).await
     }
 
-    pub(super) async fn execute_on_conn(
+    pub(super) async fn execute_with_deps(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<DeploymentByIdRow, AppError> {
@@ -2100,10 +2030,10 @@ impl DeploymentDnsRecordsUpdate {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
-        self.execute_on_conn(&mut conn).await
+        self.execute_with_deps(&mut conn).await
     }
 
-    pub(super) async fn execute_on_conn(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_deps(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
         let deployment_id = self
             .deployment_id
             .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
@@ -2151,9 +2081,9 @@ impl ActiveDeploymentIdsByProjectQuery {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<Vec<i64>, AppError> {
         let project_id = self
             .project_id
@@ -2166,7 +2096,7 @@ impl ActiveDeploymentIdsByProjectQuery {
             "#,
             project_id
         )
-        .fetch_all(tx.as_mut())
+        .fetch_all(conn)
         .await?;
 
         Ok(rows.into_iter().map(|r| r.id).collect())
@@ -2188,9 +2118,9 @@ impl DeleteDeploymentSocialConnectionsByIds {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
@@ -2208,7 +2138,7 @@ impl DeleteDeploymentSocialConnectionsByIds {
             "#,
             deployment_ids
         )
-        .execute(tx.as_mut())
+        .execute(conn)
         .await?;
 
         Ok(())
@@ -2230,9 +2160,9 @@ impl DeleteDeploymentAuthSettingsByIds {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
@@ -2250,7 +2180,7 @@ impl DeleteDeploymentAuthSettingsByIds {
             "#,
             deployment_ids
         )
-        .execute(tx.as_mut())
+        .execute(conn)
         .await?;
 
         Ok(())
@@ -2272,9 +2202,9 @@ impl DeleteDeploymentUiSettingsByIds {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
@@ -2292,7 +2222,7 @@ impl DeleteDeploymentUiSettingsByIds {
             "#,
             deployment_ids
         )
-        .execute(tx.as_mut())
+        .execute(conn)
         .await?;
 
         Ok(())
@@ -2314,9 +2244,9 @@ impl DeleteDeploymentB2bSettingsByIds {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
@@ -2334,7 +2264,7 @@ impl DeleteDeploymentB2bSettingsByIds {
             "#,
             deployment_ids
         )
-        .execute(tx.as_mut())
+        .execute(conn)
         .await?;
 
         Ok(())
@@ -2356,9 +2286,9 @@ impl DeleteDeploymentsByProject {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<(), AppError> {
         let project_id = self
             .project_id
@@ -2371,7 +2301,7 @@ impl DeleteDeploymentsByProject {
             "#,
             project_id
         )
-        .execute(tx.as_mut())
+        .execute(conn)
         .await?;
 
         Ok(())
@@ -2393,9 +2323,9 @@ impl DeleteProjectById {
         self
     }
 
-    pub(super) async fn execute_in_tx(
+    pub(super) async fn execute_with(
         &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        conn: &mut sqlx::PgConnection,
     ) -> Result<(), AppError> {
         let project_id = self
             .project_id
@@ -2408,7 +2338,7 @@ impl DeleteProjectById {
             "#,
             project_id
         )
-        .execute(tx.as_mut())
+        .execute(conn)
         .await?;
 
         Ok(())

@@ -63,7 +63,7 @@ impl Query for GetSignInQuery {
     type Output = SignIn;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -130,7 +130,7 @@ impl Query for GetSessionWithActiveContextQuery {
     type Output = SessionContext;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -218,6 +218,6 @@ impl Query for GetSessionWithSignInsQuery {
     type Output = SessionWithSignIns;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

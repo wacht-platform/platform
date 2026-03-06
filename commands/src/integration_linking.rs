@@ -89,7 +89,7 @@ impl Command for CreateIntegrationLinkCodeCommand {
             .next_id()
             .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
             as i64;
-        self.execute_with(&app_state.db_pool, id).await
+        self.execute_with(app_state.db_router.writer(), id).await
     }
 }
 
@@ -190,7 +190,7 @@ impl Command for ValidateLinkCodeCommand {
             .next_id()
             .map_err(|e| AppError::Internal(format!("Failed to generate ID: {}", e)))?
             as i64;
-        self.execute_with(&app_state.db_pool, connection_id).await
+        self.execute_with(app_state.db_router.writer(), connection_id).await
     }
 }
 
@@ -238,6 +238,6 @@ impl Command for GetActiveIntegrationCommand {
     type Output = Option<ActiveAgentIntegration>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

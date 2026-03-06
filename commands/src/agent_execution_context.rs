@@ -1,6 +1,6 @@
 use crate::Command;
 use chrono::{DateTime, Utc};
-use common::error::AppError;
+use common::{HasDbRouter, HasIdGenerator, HasNatsJetStream, error::AppError};
 use common::state::AppState;
 use models::{
     AgentExecutionContext, AgentExecutionState, AgentStatusUpdate, ExecutionContextStatus,
@@ -51,7 +51,7 @@ impl Command for CreateExecutionContextCommand {
     type Output = AgentExecutionContext;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
             .await
     }
 }
@@ -164,13 +164,13 @@ impl UpdateExecutionContextQuery {
         self.external_resource_metadata = Some(metadata);
         self
     }
-}
 
-impl super::Command for UpdateExecutionContextQuery {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasDbRouter + HasNatsJetStream + HasIdGenerator,
+    {
         let now = Utc::now();
+        let cancellation_message_id = deps.id_generator().next_id()? as i64;
 
         if let Some(ref system_instructions) = self.system_instructions {
             sqlx::query!(
@@ -180,7 +180,7 @@ impl super::Command for UpdateExecutionContextQuery {
                 self.context_id,
                 self.deployment_id
             )
-            .execute(&app_state.db_pool)
+            .execute(deps.writer_pool())
             .await
             .map_err(|e| AppError::Database(e))?;
         }
@@ -193,7 +193,7 @@ impl super::Command for UpdateExecutionContextQuery {
                 self.context_id,
                 self.deployment_id
             )
-            .execute(&app_state.db_pool)
+            .execute(deps.writer_pool())
             .await
             .map_err(|e| AppError::Database(e))?;
         }
@@ -207,7 +207,7 @@ impl super::Command for UpdateExecutionContextQuery {
                 self.context_id,
                 self.deployment_id
             )
-            .execute(&app_state.db_pool)
+            .execute(deps.writer_pool())
             .await
             .map_err(|e| AppError::Database(e))?;
         }
@@ -220,7 +220,7 @@ impl super::Command for UpdateExecutionContextQuery {
                 self.context_id,
                 self.deployment_id
             )
-            .execute(&app_state.db_pool)
+            .execute(deps.writer_pool())
             .await
             .map_err(|e| AppError::Database(e))?;
 
@@ -234,7 +234,7 @@ impl super::Command for UpdateExecutionContextQuery {
                 use models::{ConversationContent, ConversationMessageType};
 
                 let cancel_command = CreateConversationCommand::new(
-                    app_state.sf.next_id()? as i64,
+                    cancellation_message_id,
                     self.context_id,
                     ConversationContent::SystemDecision {
                         step: "execution_cancelled".to_string(),
@@ -246,16 +246,14 @@ impl super::Command for UpdateExecutionContextQuery {
                     ConversationMessageType::SystemDecision,
                 );
 
-                // Execute the command to store the cancellation message
-                if let Ok(conversation) = Command::execute(cancel_command, app_state).await {
-                    // Publish the cancellation message to the stream
+                if let Ok(conversation) = cancel_command.execute_with(deps.writer_pool()).await {
                     let subject = format!("agent_execution_stream.context:{}", self.context_id);
                     let mut headers = async_nats::HeaderMap::new();
                     headers.insert("message_type", "conversation_message");
 
                     if let Ok(payload) = serde_json::to_vec(&conversation) {
-                        let _ = app_state
-                            .nats_jetstream
+                        let _ = deps
+                            .nats_jetstream()
                             .publish_with_headers(subject, headers, payload.into())
                             .await;
                     }
@@ -270,7 +268,7 @@ impl super::Command for UpdateExecutionContextQuery {
             {
                 let cancel_descendants_command =
                     CancelDescendantExecutionsCommand::new(self.context_id, self.deployment_id);
-                Command::execute(cancel_descendants_command, app_state).await?;
+                cancel_descendants_command.execute_with_deps(deps).await?;
             }
         }
 
@@ -282,12 +280,20 @@ impl super::Command for UpdateExecutionContextQuery {
                 self.context_id,
                 self.deployment_id
             )
-            .execute(&app_state.db_pool)
+            .execute(deps.writer_pool())
             .await
             .map_err(|e| AppError::Database(e))?;
         }
 
         Ok(())
+    }
+}
+
+impl super::Command for UpdateExecutionContextQuery {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with_deps(app_state).await
     }
 }
 
@@ -305,12 +311,11 @@ impl CancelDescendantExecutionsCommand {
             deployment_id,
         }
     }
-}
 
-impl Command for CancelDescendantExecutionsCommand {
-    type Output = usize;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<usize, AppError>
+    where
+        D: HasDbRouter + HasNatsJetStream,
+    {
         let mut cancelled_count = 0usize;
         let mut queue = VecDeque::from([self.parent_context_id]);
         let cancelled_summary = serde_json::json!({
@@ -330,7 +335,7 @@ impl Command for CancelDescendantExecutionsCommand {
                 current_parent_id,
                 self.deployment_id
             )
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(deps.writer_pool())
             .await
             .map_err(AppError::Database)?;
 
@@ -353,7 +358,7 @@ impl Command for CancelDescendantExecutionsCommand {
                     child_id,
                     self.deployment_id
                 )
-                .execute(&app_state.db_pool)
+                .execute(deps.writer_pool())
                 .await
                 .map_err(AppError::Database)?;
 
@@ -362,12 +367,22 @@ impl Command for CancelDescendantExecutionsCommand {
                     self.deployment_id,
                     SpawnControlAction::Stop,
                 );
-                let _ = Command::execute(publish_spawn_control_command, app_state).await;
+                let _ = publish_spawn_control_command
+                    .execute_with(deps.nats_jetstream())
+                    .await;
                 cancelled_count += 1;
             }
         }
 
         Ok(cancelled_count)
+    }
+}
+
+impl Command for CancelDescendantExecutionsCommand {
+    type Output = usize;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with_deps(app_state).await
     }
 }
 
@@ -417,7 +432,8 @@ impl Command for UpdateExecutionContextCommand {
     type Output = AgentExecutionContext;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        let mut conn = app_state.db_router.writer().acquire().await?;
+        self.execute_with_deps(&mut conn).await
     }
 }
 
@@ -427,6 +443,13 @@ impl UpdateExecutionContextCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        self.execute_with_deps(&mut conn).await
+    }
+
+    async fn execute_with_deps(
+        self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<AgentExecutionContext, AppError> {
         let now = Utc::now();
         sqlx::query!(
             r#"
@@ -455,7 +478,7 @@ impl UpdateExecutionContextCommand {
 
         use queries::GetExecutionContextQuery;
         GetExecutionContextQuery::new(self.context_id, self.deployment_id)
-            .execute_with_executor(&mut *conn)
+            .execute_with_deps(&mut *conn)
             .await
     }
 }
@@ -493,7 +516,7 @@ impl Command for PostStatusUpdateCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let id = app_state.sf.next_id()? as i64;
-        self.execute_with(&app_state.db_pool, id).await
+        self.execute_with(app_state.db_router.writer(), id).await
     }
 }
 
@@ -575,7 +598,7 @@ impl Command for CreateChildContextCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let context_id = app_state.sf.next_id()? as i64;
-        self.execute_with(&app_state.db_pool, context_id).await
+        self.execute_with(app_state.db_router.writer(), context_id).await
     }
 }
 
@@ -671,12 +694,11 @@ impl PublishSpawnControlCommand {
     fn subject(&self) -> String {
         format!("agent_spawn_control.context:{}", self.child_context_id)
     }
-}
 
-impl Command for PublishSpawnControlCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with(
+        self,
+        nats_jetstream: &async_nats::jetstream::Context,
+    ) -> Result<(), AppError> {
         let (action_type, action_value) = match &self.action {
             SpawnControlAction::Stop => ("stop".to_string(), serde_json::Value::Null),
             SpawnControlAction::Restart => ("restart".to_string(), serde_json::Value::Null),
@@ -698,8 +720,7 @@ impl Command for PublishSpawnControlCommand {
             AppError::Internal(format!("Failed to serialize control message: {}", e))
         })?;
 
-        app_state
-            .nats_jetstream
+        nats_jetstream
             .publish(self.subject(), payload_bytes.into())
             .await
             .map_err(|e| AppError::Internal(format!("Failed to publish spawn control: {}", e)))?;
@@ -711,6 +732,14 @@ impl Command for PublishSpawnControlCommand {
         );
 
         Ok(())
+    }
+}
+
+impl Command for PublishSpawnControlCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(&app_state.nats_jetstream).await
     }
 }
 
@@ -763,7 +792,7 @@ impl Command for StoreCompletionSummaryEnhancedCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

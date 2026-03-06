@@ -53,7 +53,7 @@ impl Query for GetOrganizationNotificationRecipientUserIdsQuery {
     type Output = Vec<i64>;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool).await
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -131,7 +131,7 @@ impl Query for GetWorkspaceNotificationRecipientUserIdsQuery {
     type Output = Vec<i64>;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool).await
+        self.execute_with(state.db_router.writer()).await
     }
 }
 

@@ -9,8 +9,8 @@ use tracing::{debug, warn};
 use wacht::middleware::auth::AuthContext;
 
 use super::deployment_context::DeploymentContext;
-use common::state::AppState;
-use queries::{Query, deployment::GetDeploymentWithProjectQuery};
+use common::{db_router::ReadConsistency, state::AppState};
+use queries::deployment::GetDeploymentWithProjectQuery;
 
 /// Path extractor that captures deployment_id and any additional path params
 #[derive(Debug, Deserialize)]
@@ -49,7 +49,7 @@ pub async fn deployment_access_middleware(
         .clone();
 
     let deployment_with_project = GetDeploymentWithProjectQuery::new(params.deployment_id)
-        .execute(&app_state)
+        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
         .await
         .map_err(|e| {
             warn!("Failed to get deployment: {}", e);

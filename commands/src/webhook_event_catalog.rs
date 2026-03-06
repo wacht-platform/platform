@@ -20,7 +20,7 @@ impl Command for CreateEventCatalogCommand {
     type Output = WebhookEventCatalog;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -71,7 +71,7 @@ impl Command for UpdateEventCatalogCommand {
     type Output = WebhookEventCatalog;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -121,7 +121,7 @@ impl Command for AppendEventsToCatalogCommand {
     type Output = WebhookEventCatalog;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -212,7 +212,7 @@ impl Command for ArchiveEventInCatalogCommand {
     type Output = WebhookEventCatalog;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -311,13 +311,6 @@ impl GetEventCatalogQuery {
         }
     }
 
-    pub async fn execute(
-        self,
-        app_state: &AppState,
-    ) -> Result<Option<WebhookEventCatalog>, AppError> {
-        self.execute_with(&app_state.db_pool).await
-    }
-
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
@@ -357,10 +350,6 @@ pub struct ListEventCatalogsQuery {
 impl ListEventCatalogsQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
-    }
-
-    pub async fn execute(self, app_state: &AppState) -> Result<Vec<WebhookEventCatalog>, AppError> {
-        self.execute_with(&app_state.db_pool).await
     }
 
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Vec<WebhookEventCatalog>, AppError>

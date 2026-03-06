@@ -1,7 +1,5 @@
 use super::{parse_params, ToolExecutor};
-use commands::Command;
 use common::error::AppError;
-use queries::Query;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -26,9 +24,15 @@ impl ToolExecutor {
         let category = dto::json::agent_memory::MemoryCategory::from_str(category_str)
             .unwrap_or(dto::json::agent_memory::MemoryCategory::Working);
 
+        let gemini_api_key = std::env::var("GEMINI_API_KEY")
+            .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
+        let gemini_model = std::env::var("GEMINI_EMBEDDING_MODEL")
+            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
+        let gemini_client = reqwest::Client::new();
+
         let embeddings = commands::GenerateEmbeddingsCommand::new(vec![params.content.clone()])
             .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-            .execute(self.app_state())
+            .execute_with(&gemini_client, &gemini_api_key, &gemini_model)
             .await?;
 
         if embeddings.is_empty() {
@@ -45,7 +49,7 @@ impl ToolExecutor {
             threshold: 0.70,
             limit: 5,
         }
-        .execute(self.app_state())
+        .execute_with(self.app_state().db_router.writer())
         .await?;
 
         let exact_dupe = similar.iter().find(|m| m.similarity > 0.95);
@@ -110,7 +114,7 @@ impl ToolExecutor {
 
             for id in &consolidated_ids {
                 if let Ok(mem) = (queries::GetMemoryByIdQuery { memory_id: *id })
-                    .execute(self.app_state())
+                    .execute_with(self.app_state().db_router.writer())
                     .await
                 {
                     _total_access_count += mem.access_count;
@@ -124,7 +128,7 @@ impl ToolExecutor {
             let new_embeddings =
                 commands::GenerateEmbeddingsCommand::new(vec![final_content.clone()])
                     .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-                    .execute(self.app_state())
+                    .execute_with(&gemini_client, &gemini_api_key, &gemini_model)
                     .await?;
             new_embeddings
                 .first()
@@ -144,13 +148,15 @@ impl ToolExecutor {
             agent_id: Some(self.agent().id),
             initial_importance: importance,
         };
-        let memory = create_cmd.execute(self.app_state()).await?;
+        let memory = create_cmd
+            .execute_with(self.app_state().db_router.writer())
+            .await?;
 
         if !consolidated_ids.is_empty() {
             commands::DeleteMemoriesCommand {
                 memory_ids: consolidated_ids.clone(),
             }
-            .execute(self.app_state())
+            .execute_with(self.app_state().db_router.writer())
             .await
             .ok();
         }

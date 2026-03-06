@@ -13,7 +13,6 @@ use dashmap::DashMap;
 use futures::StreamExt;
 use moka::future::Cache;
 use queries::{
-    Query as QueryTrait,
     api_key_gateway::{ApiKeyGatewayData, GetApiKeyGatewayDataQuery},
 };
 use std::{sync::Arc, time::Duration};
@@ -145,7 +144,7 @@ impl RateLimiter {
             .api_key_cache
             .try_get_with(key_hash, async move {
                 match GetApiKeyGatewayDataQuery::new(key_hash_clone)
-                    .execute(&app_state_clone)
+                    .execute_with(app_state_clone.db_router.writer())
                     .await
                 {
                     Ok(Some(data)) => Ok(Arc::new(CachedApiKeyData {
@@ -187,7 +186,7 @@ impl RateLimiter {
             .rate_limit_scheme_cache
             .try_get_with(cache_key, async move {
                 match GetRateLimitSchemeQuery::new(deployment_id, slug_clone)
-                    .execute(&app_state_clone)
+                    .execute_with(app_state_clone.db_router.writer())
                     .await
                 {
                     Ok(Some(scheme)) => Ok(Arc::new(CachedRateLimitSchemeData {

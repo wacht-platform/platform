@@ -1,6 +1,6 @@
 use super::core::AgentExecutor;
 
-use commands::{Command, CreateConversationCommand, UpdateExecutionContextQuery};
+use commands::{CreateConversationCommand, UpdateExecutionContextQuery};
 use common::error::AppError;
 use dto::json::StreamEvent;
 use models::{
@@ -38,7 +38,7 @@ impl AgentExecutor {
             content,
             message_type,
         );
-        command.execute(&self.ctx.app_state).await
+        command.execute_with(self.ctx.app_state.db_router.writer()).await
     }
 
     pub(super) async fn store_user_message(
@@ -83,7 +83,9 @@ impl AgentExecutor {
             },
             ConversationMessageType::UserMessage,
         );
-        let conversation = command.execute(&self.ctx.app_state).await?;
+        let conversation = command
+            .execute_with(self.ctx.app_state.db_router.writer())
+            .await?;
 
         let _ = self
             .channel
@@ -395,7 +397,7 @@ impl AgentExecutor {
         UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
             .with_execution_state(execution_state)
             .with_status(ExecutionContextStatus::WaitingForInput)
-            .execute(&self.ctx.app_state)
+            .execute_with_deps(&self.ctx.app_state)
             .await?;
 
         Ok(())

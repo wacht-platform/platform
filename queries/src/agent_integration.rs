@@ -131,7 +131,7 @@ impl Query for GetAgentIntegrationsQuery {
     type Output = Vec<AgentIntegration>;
 
     async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -232,7 +232,7 @@ impl Query for GetAgentIntegrationByIdQuery {
     type Output = AgentIntegration;
 
     async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -250,12 +250,12 @@ impl GetActiveIntegrationsForContextQuery {
             context_group,
         }
     }
-}
 
-impl Query for GetActiveIntegrationsForContextQuery {
-    type Output = Vec<AgentIntegration>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<Vec<AgentIntegration>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await.map_err(AppError::Database)?;
         let rows = sqlx::query!(
             r#"
             SELECT i.id, i.created_at, i.updated_at, i.deployment_id, i.agent_id, i.integration_type, i.name, i.config
@@ -269,7 +269,7 @@ impl Query for GetActiveIntegrationsForContextQuery {
             self.deployment_id,
             self.agent_id,
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -289,6 +289,14 @@ impl Query for GetActiveIntegrationsForContextQuery {
     }
 }
 
+impl Query for GetActiveIntegrationsForContextQuery {
+    type Output = Vec<AgentIntegration>;
+
+    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
 pub struct GetClickUpTokenQuery {
     deployment_id: i64,
     context_group: String,
@@ -301,12 +309,12 @@ impl GetClickUpTokenQuery {
             context_group,
         }
     }
-}
 
-impl Query for GetClickUpTokenQuery {
-    type Output = String;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<String, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await.map_err(AppError::Database)?;
         let row: Option<(Option<serde_json::Value>,)> = sqlx::query_as(
             r#"
             SELECT aai.connection_metadata
@@ -320,7 +328,7 @@ impl Query for GetClickUpTokenQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.context_group)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -339,5 +347,13 @@ impl Query for GetClickUpTokenQuery {
             })?;
 
         Ok(access_token.to_string())
+    }
+}
+
+impl Query for GetClickUpTokenQuery {
+    type Output = String;
+
+    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -1,5 +1,5 @@
-use commands::{Command, GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use crate::filesystem::knowledge_base_mount_name;
+use commands::{GenerateEmbeddingCommand, SearchKnowledgeBaseEmbeddingsCommand};
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::agent_executor::{
@@ -8,7 +8,7 @@ use dto::json::agent_executor::{
 use dto::json::{ContextFilters, ContextSearchResult, ContextSource, SearchMode};
 use models::AiAgentWithFeatures;
 use queries::{
-    FullTextSearchKnowledgeBaseQuery, GetDocumentChunksQuery, HybridSearchKnowledgeBaseQuery, Query,
+    FullTextSearchKnowledgeBaseQuery, GetDocumentChunksQuery, HybridSearchKnowledgeBaseQuery,
 };
 use serde_json::json;
 use std::collections::HashSet;
@@ -197,7 +197,10 @@ impl ContextOrchestrator {
                     query_builder = query_builder.with_keywords(keyword_terms.clone());
                 }
 
-                if let Ok(chunks) = query_builder.execute(self.app_state()).await {
+                if let Ok(chunks) = query_builder
+                    .execute_with(self.app_state().db_router.writer())
+                    .await
+                {
                     for chunk in chunks {
                         let chunk_key = format!(
                             "{}_{}_{}",
@@ -318,9 +321,15 @@ impl ContextOrchestrator {
     }
 
     async fn generate_embedding(&self, query: &str) -> Result<Vec<f32>, AppError> {
+        let gemini_api_key = std::env::var("GEMINI_API_KEY")
+            .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
+        let gemini_model = std::env::var("GEMINI_EMBEDDING_MODEL")
+            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
+        let gemini_client = reqwest::Client::new();
+
         GenerateEmbeddingCommand::new(query.to_string())
             .with_task_type("RETRIEVAL_QUERY".to_string())
-            .execute(self.app_state())
+            .execute_with(&gemini_client, &gemini_api_key, &gemini_model)
             .await
     }
 
@@ -336,7 +345,7 @@ impl ContextOrchestrator {
             deployment_id: self.agent().deployment_id,
             max_results: max_results as i32,
         }
-        .execute(self.app_state())
+        .execute_with(self.app_state().db_router.writer())
         .await?;
 
         Ok(results
@@ -372,7 +381,7 @@ impl ContextOrchestrator {
             query_embedding.to_vec(),
             max_results as u64,
         )
-        .execute(self.app_state())
+        .execute_with(self.app_state().db_router.writer())
         .await?;
 
         Ok(results
@@ -421,7 +430,7 @@ impl ContextOrchestrator {
             deployment_id: self.agent().deployment_id,
             max_results: max_results as i32,
         }
-        .execute(self.app_state())
+        .execute_with(self.app_state().db_router.writer())
         .await?;
 
         Ok(results

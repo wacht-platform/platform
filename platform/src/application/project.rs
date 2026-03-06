@@ -1,6 +1,5 @@
 use commands::{
-    AppStateIdGenerator, CreateProductionDeploymentCommand, CreateProjectWithStagingDeploymentCommand,
-    ProductionDeploymentDeps,
+    CreateProductionDeploymentCommand, CreateProjectWithStagingDeploymentCommand,
     CreateStagingDeploymentCommand, DeleteProjectCommand, VerifyDeploymentDnsDeps,
     VerifyDeploymentDnsRecordsCommand,
 };
@@ -30,7 +29,7 @@ pub async fn get_projects(
 ) -> Result<Vec<ProjectWithDeployments>, AppError> {
     GetProjectsWithDeploymentQuery::for_user_or_organization(input.user_id, input.organization_id)
         .with_consistency(ReadConsistency::Eventual)
-        .execute_with(app_state)
+        .execute_with(&app_state.db_router)
         .await
 }
 
@@ -59,11 +58,7 @@ pub async fn create_project_with_staging(
         .auth_methods(input.auth_methods)
         .owner_id(input.owner_id)
         .build()?;
-    let mut tx = app_state.db_router.writer().begin().await?;
-    let ids = AppStateIdGenerator::new(app_state);
-    let project = command.execute_in_tx(&ids, &mut tx).await?;
-    tx.commit().await?;
-    Ok(project)
+    command.execute_with_deps(app_state).await
 }
 
 pub struct CreateStagingDeploymentInput {
@@ -88,11 +83,7 @@ pub async fn create_staging_deployment(
         .project_id(input.project_id)
         .auth_methods(input.auth_methods)
         .build()?;
-    let mut tx = app_state.db_router.writer().begin().await?;
-    let ids = AppStateIdGenerator::new(app_state);
-    let deployment = command.execute_in_tx(&ids, &mut tx).await?;
-    tx.commit().await?;
-    Ok(deployment)
+    command.execute_with_deps(app_state).await
 }
 
 pub struct CreateProductionDeploymentInput {
@@ -120,16 +111,7 @@ pub async fn create_production_deployment(
         .custom_domain(input.custom_domain)
         .auth_methods(input.auth_methods)
         .build()?;
-    let mut tx = app_state.db_router.writer().begin().await?;
-    let ids = AppStateIdGenerator::new(app_state);
-    let deps = ProductionDeploymentDeps {
-        ids: &ids,
-        cloudflare_service: &app_state.cloudflare_service,
-        postmark_service: &app_state.postmark_service,
-    };
-    let deployment = command.execute_in_tx(&deps, &mut tx).await?;
-    tx.commit().await?;
-    Ok(deployment)
+    command.execute_with_deps(app_state).await
 }
 
 pub struct VerifyDeploymentDnsRecordsInput {
@@ -170,9 +152,6 @@ impl DeleteProjectInput {
 pub async fn delete_project(app_state: &AppState, input: DeleteProjectInput) -> Result<(), AppError> {
     let command = DeleteProjectCommand::builder()
         .id(input.project_id)
-        .build()?;
-    let mut tx = app_state.db_router.writer().begin().await?;
-    command.execute_in_tx(&mut tx).await?;
-    tx.commit().await?;
+        .build()?;    command.execute_with(app_state.db_router.writer()).await?;
     Ok(())
 }

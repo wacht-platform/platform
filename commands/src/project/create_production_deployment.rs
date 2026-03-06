@@ -25,35 +25,6 @@ impl CreateProductionDeploymentCommand {
         }
     }
 
-    fn create_b2b_settings(&self, deployment_id: i64) -> DeploymentB2bSettingsWithRoles {
-        build_b2b_settings(deployment_id)
-    }
-
-    fn create_auth_settings(&self, deployment_id: i64) -> DeploymentAuthSettings {
-        build_auth_settings(&self.auth_methods, deployment_id)
-    }
-
-    fn create_ui_settings(
-        &self,
-        deployment_id: i64,
-        frontend_host: String,
-        app_name: String,
-    ) -> DeploymentUISettings {
-        build_ui_settings(deployment_id, &frontend_host, app_name)
-    }
-
-    fn create_restrictions(&self, deployment_id: i64) -> DeploymentRestrictions {
-        build_restrictions(deployment_id)
-    }
-
-    fn create_sms_templates(&self, deployment_id: i64) -> DeploymentSmsTemplate {
-        build_sms_templates(deployment_id)
-    }
-
-    fn create_email_templates(&self, deployment_id: i64) -> DeploymentEmailTemplate {
-        build_email_templates(deployment_id)
-    }
-
     async fn cleanup_external_resources_on_failure(
         &self,
         deps: &ProductionDeploymentDeps<'_>,
@@ -109,7 +80,7 @@ impl CreateProductionDeploymentCommand {
         }
     }
 
-    pub async fn execute_in_tx(
+    pub async fn run_with_tx(
         self,
         deps: &ProductionDeploymentDeps<'_>,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -136,7 +107,7 @@ impl CreateProductionDeploymentCommand {
 
         let project = ProjectForProductionQuery::builder()
             .project_id(self.project_id)
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?
             .ok_or_else(|| {
                 AppError::NotFound(format!("Project with id {} not found", self.project_id))
@@ -151,7 +122,7 @@ impl CreateProductionDeploymentCommand {
 
         if ExistingProductionDeploymentQuery::builder()
             .project_id(self.project_id)
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?
             .is_some()
         {
@@ -162,7 +133,7 @@ impl CreateProductionDeploymentCommand {
 
         if let Some(existing) = ExistingDomainDeploymentQuery::builder()
             .custom_domain(&self.custom_domain)
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?
         {
             return Err(AppError::BadRequest(format!(
@@ -200,26 +171,26 @@ impl CreateProductionDeploymentCommand {
                 serde_json::to_value(&empty_email_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
-        let auth_settings = self.create_auth_settings(deployment_row.id);
+        let auth_settings = build_auth_settings(&self.auth_methods, deployment_row.id);
         DeploymentAuthSettingsInsert::builder()
             .id(deps.ids.next_id()?)
             .auth_settings(auth_settings)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
-        let ui_settings = self.create_ui_settings(
+        let ui_settings = build_ui_settings(
             deployment_row.id,
-            frontend_host.clone(),
+            &frontend_host,
             project.name.clone(),
         );
-        let b2b_settings = self.create_b2b_settings(deployment_row.id);
-        let restrictions = self.create_restrictions(deployment_row.id);
-        let email_templates = self.create_email_templates(deployment_row.id);
-        let sms_templates = self.create_sms_templates(deployment_row.id);
+        let b2b_settings = build_b2b_settings(deployment_row.id);
+        let restrictions = build_restrictions(deployment_row.id);
+        let email_templates = build_email_templates(deployment_row.id);
+        let sms_templates = build_sms_templates(deployment_row.id);
         DeploymentKeyPairsInsert::builder()
             .id(deps.ids.next_id()?)
             .deployment_id(deployment_row.id)
@@ -228,7 +199,7 @@ impl CreateProductionDeploymentCommand {
             .saml_public_key(saml_public_key)
             .saml_private_key(saml_private_key)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         let waitlist_url = format!("{}/waitlist", frontend_host);
@@ -238,7 +209,7 @@ impl CreateProductionDeploymentCommand {
             .waitlist_page_url(waitlist_url)
             .support_page_url("")
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         DeploymentB2bBootstrapInsert::builder()
@@ -249,35 +220,35 @@ impl CreateProductionDeploymentCommand {
             .org_member_role_id(deps.ids.next_id()?)
             .b2b_settings(b2b_settings)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with_deps(tx.as_mut())
             .await?;
 
         DeploymentRestrictionsInsert::builder()
             .id(deps.ids.next_id()?)
             .restrictions(restrictions)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         DeploymentEmailTemplatesInsert::builder()
             .id(deps.ids.next_id()?)
             .email_templates(email_templates)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         DeploymentSmsTemplatesInsert::builder()
             .id(deps.ids.next_id()?)
             .sms_templates(sms_templates)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         DeploymentAiSettingsInsert::builder()
             .id(deps.ids.next_id()?)
             .deployment_id(deployment_row.id)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         let postmark_domain = deps
@@ -295,7 +266,7 @@ impl CreateProductionDeploymentCommand {
                 serde_json::to_value(&email_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         let frontend_hostname = format!("accounts.{}", self.custom_domain);
@@ -369,7 +340,7 @@ impl CreateProductionDeploymentCommand {
                 serde_json::to_value(&updated_domain_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         let console_id = console_deployment_id()?;
@@ -379,7 +350,7 @@ impl CreateProductionDeploymentCommand {
             .target_deployment_id(deployment_row.id)
             .event_catalog_slug(DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with_deps(tx.as_mut())
             .await?;
 
         tracing::info!(
@@ -419,7 +390,27 @@ impl CreateProductionDeploymentCommand {
         deps: &ProductionDeploymentDeps<'_>,
     ) -> Result<Deployment, AppError> {
         let mut tx = writer.begin().await?;
-        let result = self.execute_in_tx(deps, &mut tx).await?;
+        let result = self.run_with_tx(deps, &mut tx).await?;
+        tx.commit().await?;
+        Ok(result)
+    }
+
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Deployment, AppError>
+    where
+        D: common::HasDbRouter
+            + common::HasIdGenerator
+            + common::HasCloudflareService
+            + common::HasPostmarkService
+            + Sync,
+    {
+        let mut tx = deps.db_router().writer().begin().await?;
+        let ids = DepsIdGeneratorAdapter::new(deps);
+        let production_deps = ProductionDeploymentDeps {
+            ids: &ids,
+            cloudflare_service: deps.cloudflare_service(),
+            postmark_service: deps.postmark_service(),
+        };
+        let result = self.run_with_tx(&production_deps, &mut tx).await?;
         tx.commit().await?;
         Ok(result)
     }
@@ -460,12 +451,6 @@ impl Command for CreateProductionDeploymentCommand {
     type Output = Deployment;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let ids = AppStateIdGenerator::new(app_state);
-        let deps = ProductionDeploymentDeps {
-            ids: &ids,
-            cloudflare_service: &app_state.cloudflare_service,
-            postmark_service: &app_state.postmark_service,
-        };
-        self.execute_with(app_state.db_router.writer(), &deps).await
+        self.execute_with_deps(app_state).await
     }
 }

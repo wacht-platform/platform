@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use sqlx::{query, query_as};
 
-use common::error::AppError;
+use common::{HasClickHouseService, HasDbRouter, error::AppError};
 use common::state::AppState;
 use dto::json::webhook_requests::{
     WebhookEndpoint, WebhookEndpointSubscription as WebhookEndpointSubscriptionDTO,
@@ -110,7 +110,7 @@ impl Query for GetWebhookAppsQuery {
     type Output = Vec<WebhookApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -234,7 +234,7 @@ impl Query for GetWebhookEndpointsQuery {
     type Output = Vec<ModelWebhookEndpoint>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -416,7 +416,7 @@ impl Query for GetWebhookEndpointsWithSubscriptionsQuery {
     type Output = Vec<WebhookEndpoint>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -470,7 +470,7 @@ impl Query for GetWebhookAppByNameQuery {
     type Output = Option<WebhookApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -540,7 +540,7 @@ impl Query for GetWebhookEventsQuery {
     type Output = Vec<models::webhook::WebhookEventDefinition>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -558,28 +558,25 @@ impl GetWebhookStatsQuery {
             app_slug,
         }
     }
-}
 
-impl Query for GetWebhookStatsQuery {
-    type Output = dto::json::WebhookStats;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with_deps<D>(&self, deps: &D) -> Result<dto::json::WebhookStats, AppError>
+    where
+        D: HasDbRouter + HasClickHouseService,
+    {
         use dto::json::WebhookStats;
 
-        // Get active endpoints count from PostgreSQL
         let active_endpoints = query!(
             "SELECT COUNT(*) as count FROM webhook_endpoints WHERE deployment_id = $1 AND app_slug = $2 AND is_active = true",
             self.deployment_id,
             &self.app_slug
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(deps.writer_pool())
         .await?
         .count
         .unwrap_or(0);
 
-        // Get delivery stats from ClickHouse
-        let delivery_stats = app_state
-            .clickhouse_service
+        let delivery_stats = deps
+            .clickhouse_service()
             .get_webhook_delivery_stats(
                 self.deployment_id,
                 Some(self.app_slug.clone()),
@@ -589,7 +586,6 @@ impl Query for GetWebhookStatsQuery {
             )
             .await?;
 
-        // Calculate stats from ClickHouse data
         let total = delivery_stats.total_deliveries;
         let success = delivery_stats.successful_deliveries;
         let success_rate = if total > 0 {
@@ -598,9 +594,8 @@ impl Query for GetWebhookStatsQuery {
             0.0
         };
 
-        // Get failed deliveries in last 24 hours
-        let recent_stats = app_state
-            .clickhouse_service
+        let recent_stats = deps
+            .clickhouse_service()
             .get_webhook_delivery_stats(
                 self.deployment_id,
                 Some(self.app_slug.clone()),
@@ -618,6 +613,14 @@ impl Query for GetWebhookStatsQuery {
             active_endpoints,
             failed_deliveries_24h: failed_24h,
         })
+    }
+}
+
+impl Query for GetWebhookStatsQuery {
+    type Output = dto::json::WebhookStats;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with_deps(app_state).await
     }
 }
 
@@ -694,6 +697,6 @@ impl Query for GetPendingWebhookDeliveryQuery {
     type Output = dto::clickhouse::webhook::WebhookLog;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

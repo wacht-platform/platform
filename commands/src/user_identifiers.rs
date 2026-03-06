@@ -95,7 +95,7 @@ impl Command for AddUserEmailCommand {
     type Output = UserEmailAddress;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
             .await
     }
 }
@@ -225,7 +225,7 @@ impl Command for UpdateUserEmailCommand {
     type Output = UserEmailAddress;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -272,7 +272,7 @@ impl Command for DeleteUserEmailCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -353,7 +353,7 @@ impl Command for AddUserPhoneCommand {
     type Output = UserPhoneNumber;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
             .await
     }
 }
@@ -484,7 +484,7 @@ impl Command for UpdateUserPhoneCommand {
     type Output = UserPhoneNumber;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -519,7 +519,7 @@ impl Command for DeleteUserPhoneCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -557,6 +557,6 @@ impl Command for DeleteUserSocialConnectionCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

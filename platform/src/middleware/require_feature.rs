@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use models::plan_features::PlanFeature;
-use queries::{Query, plan_access::CheckDeploymentFeatureAccessQuery};
+use queries::plan_access::CheckDeploymentFeatureAccessQuery;
 
 /// Middleware function to check feature access
 /// Use this to protect routes that require specific plan features
@@ -38,7 +38,7 @@ pub async fn require_feature(
 
             // Check if deployment has access to the feature
             let has_access = CheckDeploymentFeatureAccessQuery::new(deployment_id, feature)
-                .execute(&state)
+                .execute_with(state.db_router.writer())
                 .await
                 .unwrap_or(false);
 
@@ -66,7 +66,7 @@ pub async fn check_feature_access(
     state: &common::state::AppState,
 ) -> Result<(), (StatusCode, String)> {
     let has_access = CheckDeploymentFeatureAccessQuery::new(deployment_id, feature)
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await
         .map_err(|e| {
             (

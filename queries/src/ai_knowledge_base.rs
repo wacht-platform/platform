@@ -96,7 +96,7 @@ impl Query for GetAiKnowledgeBasesQuery {
     type Output = Vec<AiKnowledgeBaseWithDetails>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -163,7 +163,7 @@ impl Query for GetAiKnowledgeBaseByIdQuery {
     type Output = AiKnowledgeBaseWithDetails;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -233,7 +233,7 @@ impl Query for GetAgentKnowledgeBasesQuery {
     type Output = Vec<AiKnowledgeBaseWithDetails>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -302,7 +302,7 @@ impl Query for GetKnowledgeBaseDocumentsQuery {
     type Output = Vec<AiKnowledgeBaseDocument>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -348,7 +348,7 @@ impl Query for GetAiKnowledgeBasesByIdsQuery {
         }
 
         let knowledge_bases = query_builder
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(app_state.db_router.writer())
             .await
             .map_err(|e| AppError::Database(e))?;
 
@@ -398,20 +398,12 @@ impl GetDocumentChunksQuery {
         self.limit = Some(limit);
         self
     }
-}
 
-#[derive(Debug)]
-pub struct DocumentChunk {
-    pub content: String,
-    pub chunk_index: i32,
-    pub knowledge_base_id: i64,
-    pub deployment_id: i64,
-}
-
-impl Query for GetDocumentChunksQuery {
-    type Output = Vec<DocumentChunk>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<DocumentChunk>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut query_str = String::from(
             "SELECT content, chunk_index, knowledge_base_id, deployment_id
              FROM knowledge_base_document_chunks
@@ -453,9 +445,9 @@ impl Query for GetDocumentChunksQuery {
         query = query.bind(self.limit.unwrap_or(10) as i64);
 
         let rows = query
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(&mut *conn)
             .await
-            .map_err(|e| AppError::Database(e))?;
+            .map_err(AppError::Database)?;
 
         let mut chunks = Vec::new();
         for row in rows {
@@ -468,5 +460,21 @@ impl Query for GetDocumentChunksQuery {
         }
 
         Ok(chunks)
+    }
+}
+
+#[derive(Debug)]
+pub struct DocumentChunk {
+    pub content: String,
+    pub chunk_index: i32,
+    pub knowledge_base_id: i64,
+    pub deployment_id: i64,
+}
+
+impl Query for GetDocumentChunksQuery {
+    type Output = Vec<DocumentChunk>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

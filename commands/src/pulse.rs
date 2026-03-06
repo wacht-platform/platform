@@ -68,7 +68,8 @@ async fn find_notification_deployment_id(
 }
 
 async fn create_pulse_threshold_notifications(
-    state: &AppState,
+    writer: &sqlx::PgPool,
+    nats_client: &async_nats::Client,
     owner_id: &str,
     deployment_id: i64,
     transition: &PulseTransition,
@@ -85,7 +86,7 @@ async fn create_pulse_threshold_notifications(
         )
         .with_user(user_id)
         .with_severity(NotificationSeverity::Warning)
-        .execute(state)
+        .execute_with(writer, nats_client)
         .await?;
     }
 
@@ -98,7 +99,7 @@ async fn create_pulse_threshold_notifications(
         )
         .with_user(user_id)
         .with_severity(NotificationSeverity::Warning)
-        .execute(state)
+        .execute_with(writer, nats_client)
         .await?;
     }
 
@@ -111,7 +112,7 @@ async fn create_pulse_threshold_notifications(
         )
         .with_user(user_id)
         .with_severity(NotificationSeverity::Error)
-        .execute(state)
+        .execute_with(writer, nats_client)
         .await?;
     }
 
@@ -129,7 +130,7 @@ impl Command for AddPulseCreditsCommand {
     type Output = PulseTransaction;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool, state.sf.next_id()? as i64)
+        self.execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
             .await
     }
 }
@@ -237,17 +238,20 @@ pub struct DeductPulseCreditsCommand {
     pub reference_id: Option<String>,
 }
 
-impl Command for DeductPulseCreditsCommand {
-    type Output = PulseTransaction;
-
-    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+impl DeductPulseCreditsCommand {
+    pub async fn execute_with(
+        self,
+        writer: &sqlx::PgPool,
+        nats_client: &async_nats::Client,
+        transaction_id: i64,
+    ) -> Result<PulseTransaction, AppError> {
         if self.amount_pulse_cents <= 0 {
             return Err(AppError::BadRequest(
                 "amount_pulse_cents must be greater than zero".to_string(),
             ));
         }
 
-        let mut tx = state.db_pool.begin().await?;
+        let mut tx = writer.begin().await?;
 
         let row = sqlx::query!(
             r#"
@@ -324,7 +328,6 @@ impl Command for DeductPulseCreditsCommand {
                 None
             };
 
-        let transaction_id = state.sf.next_id().unwrap() as i64;
         let transaction = sqlx::query_as!(
             PulseTransaction,
             r#"
@@ -357,7 +360,8 @@ impl Command for DeductPulseCreditsCommand {
             notify_transition.notify_below_zero = should_mark_below_zero;
             notify_transition.notify_disabled = should_mark_disabled;
             create_pulse_threshold_notifications(
-                state,
+                writer,
+                nats_client,
                 &self.owner_id,
                 deployment_id,
                 &notify_transition,
@@ -366,6 +370,19 @@ impl Command for DeductPulseCreditsCommand {
         }
 
         Ok(transaction)
+    }
+}
+
+impl Command for DeductPulseCreditsCommand {
+    type Output = PulseTransaction;
+
+    async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(
+            state.db_router.writer(),
+            &state.nats_client,
+            state.sf.next_id()? as i64,
+        )
+        .await
     }
 }
 
@@ -383,7 +400,7 @@ impl Command for EnsurePulseUsageAllowedForDeploymentCommand {
     type Output = ();
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool).await
+        self.execute_with(state.db_router.writer()).await
     }
 }
 

@@ -1,5 +1,5 @@
 use commands::{ApproveWaitlistUserCommand, DeleteInvitationCommand, InviteUserCommand};
-use commands::{Command, SendEmailCommand};
+use commands::SendEmailCommand;
 use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
@@ -65,7 +65,9 @@ pub async fn invite_user(
                     to_email,
                     variables,
                 );
-                Command::execute(send_email_command, app_state).await
+                send_email_command
+                    .execute_with_deps(app_state)
+                    .await
             },
             app_state.sf.next_id()? as i64,
         )
@@ -100,7 +102,9 @@ pub async fn approve_waitlist_user(
                     to_email,
                     variables,
                 );
-                Command::execute(send_email_command, app_state).await
+                send_email_command
+                    .execute_with_deps(app_state)
+                    .await
             },
             app_state.sf.next_id()? as i64,
         )

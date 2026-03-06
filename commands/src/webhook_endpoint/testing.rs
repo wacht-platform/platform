@@ -162,7 +162,7 @@ impl Command for TestWebhookEndpointCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         self.execute_with(
-            &app_state.db_pool,
+            app_state.db_router.writer(),
             &app_state.clickhouse_service,
             &app_state.nats_client,
             app_state.sf.next_id()? as i64,
@@ -250,6 +250,6 @@ impl Command for ReactivateEndpointCommand {
     type Output = WebhookEndpoint;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state).await
+        self.execute_with(app_state.db_router.writer(), app_state).await
     }
 }

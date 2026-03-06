@@ -50,7 +50,7 @@ impl Query for GetMRUMemoriesQuery {
     type Output = Vec<MemoryRecord>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -64,12 +64,15 @@ impl GetRecentConversationsQuery {
     pub fn new(context_id: i64, limit: i64) -> Self {
         Self { context_id, limit }
     }
-}
 
-impl Query for GetRecentConversationsQuery {
-    type Output = Vec<ConversationRecord>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<ConversationRecord>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let records = sqlx::query_as::<_, ConversationRecord>(
             r#"
             SELECT
@@ -84,11 +87,19 @@ impl Query for GetRecentConversationsQuery {
         )
         .bind(self.context_id)
         .bind(self.limit)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
         Ok(records)
+    }
+}
+
+impl Query for GetRecentConversationsQuery {
+    type Output = Vec<ConversationRecord>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -101,12 +112,12 @@ impl GetConversationByIdQuery {
     pub fn new(conversation_id: i64) -> Self {
         Self { conversation_id }
     }
-}
 
-impl Query for GetConversationByIdQuery {
-    type Output = ConversationRecord;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<ConversationRecord, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let record = sqlx::query_as::<_, ConversationRecord>(
             r#"
             SELECT
@@ -117,7 +128,7 @@ impl Query for GetConversationByIdQuery {
             "#,
         )
         .bind(self.conversation_id)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(AppError::from)?
         .ok_or_else(|| {
@@ -125,6 +136,14 @@ impl Query for GetConversationByIdQuery {
         })?;
 
         Ok(record)
+    }
+}
+
+impl Query for GetConversationByIdQuery {
+    type Output = ConversationRecord;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -137,12 +156,15 @@ impl GetLLMConversationHistoryQuery {
     pub fn new(context_id: i64) -> Self {
         Self { context_id }
     }
-}
 
-impl Query for GetLLMConversationHistoryQuery {
-    type Output = Vec<ConversationRecord>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<ConversationRecord>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let records = sqlx::query_as::<_, ConversationRecord>(
             r#"
             WITH last_summary AS (
@@ -183,22 +205,29 @@ impl Query for GetLLMConversationHistoryQuery {
                 SELECT id, context_id, timestamp, content, message_type,
                        token_count, created_at, updated_at
                 FROM execution_summaries
-                WHERE execution_count <= 20  -- Max 20 executions
-                  AND running_tokens <= 40000  -- Token limit for summaries only
+                WHERE execution_count <= 20
+                  AND running_tokens <= 40000
             )
-            -- Combine both: all recent unsummarized + limited summaries
             SELECT * FROM recent_unsummarized
             UNION ALL
             SELECT * FROM limited_summaries
-            ORDER BY id ASC  -- Return in chronological order for LLM
+            ORDER BY id ASC
             "#,
         )
         .bind(self.context_id)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
         Ok(records)
+    }
+}
+
+impl Query for GetLLMConversationHistoryQuery {
+    type Output = Vec<ConversationRecord>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -223,6 +252,16 @@ impl Query for SearchMemoriesWithDecayQuery {
     type Output = Vec<MemoryWithScore>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl SearchMemoriesWithDecayQuery {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryWithScore>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let embedding = HalfVector::from_f32_slice(&self.query_embedding);
 
         // Convert categories to strings for SQL
@@ -259,7 +298,7 @@ impl Query for SearchMemoriesWithDecayQuery {
             self.agent_id,
             category_strings.as_deref()
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
@@ -319,6 +358,16 @@ impl Query for FindSimilarMemoriesQuery {
     type Output = Vec<SimilarMemory>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl FindSimilarMemoriesQuery {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<SimilarMemory>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let embedding = HalfVector::from_f32_slice(&self.embedding);
 
         let results = sqlx::query!(
@@ -335,7 +384,7 @@ impl Query for FindSimilarMemoriesQuery {
             self.threshold,
             self.limit
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
@@ -360,6 +409,16 @@ impl Query for GetMemoryByIdQuery {
     type Output = MemoryRecord;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl GetMemoryByIdQuery {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<MemoryRecord, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         sqlx::query_as::<_, MemoryRecord>(
             r#"
             SELECT
@@ -375,7 +434,7 @@ impl Query for GetMemoryByIdQuery {
             "#,
         )
         .bind(self.memory_id)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(AppError::from)
     }
@@ -391,6 +450,19 @@ impl Query for SearchConversationsQuery {
     type Output = Vec<ConversationRecord>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl SearchConversationsQuery {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<ConversationRecord>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let results = sqlx::query_as::<_, ConversationRecord>(
             r#"
             SELECT
@@ -405,7 +477,7 @@ impl Query for SearchConversationsQuery {
         )
         .bind(self.context_id)
         .bind(self.limit)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
@@ -419,6 +491,16 @@ impl Query for GetAllMemoryBoundariesQuery {
     type Output = Vec<MemoryBoundaries>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl GetAllMemoryBoundariesQuery {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryBoundaries>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query(
             r#"
             SELECT
@@ -432,7 +514,7 @@ impl Query for GetAllMemoryBoundariesQuery {
             FROM memory_boundaries
             "#,
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
@@ -469,6 +551,16 @@ impl Query for GetSessionMemoriesQuery {
     type Output = Vec<MemoryRecord>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl GetSessionMemoriesQuery {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let category_strings: Option<Vec<String>> = self
             .categories
             .as_ref()
@@ -494,7 +586,7 @@ impl Query for GetSessionMemoriesQuery {
         .bind(self.context_id)
         .bind(category_strings.as_deref())
         .bind(self.limit)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
@@ -512,6 +604,16 @@ impl Query for GetAgentMemoriesQuery {
     type Output = Vec<MemoryRecord>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl GetAgentMemoriesQuery {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let category_strings: Option<Vec<String>> = self
             .categories
             .as_ref()
@@ -538,7 +640,7 @@ impl Query for GetAgentMemoriesQuery {
         .bind(self.agent_id)
         .bind(category_strings.as_deref())
         .bind(self.limit)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
@@ -557,6 +659,16 @@ impl Query for GetAgentImportantMemoriesQuery {
     type Output = Vec<MemoryRecord>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl GetAgentImportantMemoriesQuery {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let category_strings: Option<Vec<String>> = self
             .categories
             .as_ref()
@@ -584,7 +696,7 @@ impl Query for GetAgentImportantMemoriesQuery {
         .bind(self.min_importance)
         .bind(category_strings.as_deref())
         .bind(self.limit)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::from)?;
 
@@ -596,6 +708,16 @@ impl Query for GetMemoryBoundariesQuery {
     type Output = MemoryBoundaries;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl GetMemoryBoundariesQuery {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<MemoryBoundaries, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT
@@ -611,7 +733,7 @@ impl Query for GetMemoryBoundariesQuery {
             "#,
         )
         .bind(self.context_id)
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(&mut *conn)
         .await
         .map_err(AppError::from)?;
 

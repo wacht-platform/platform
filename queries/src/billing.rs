@@ -90,7 +90,7 @@ impl Query for GetBillingAccountQuery {
     type Output = Option<BillingAccountWithSubscription>;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool).await
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -104,16 +104,19 @@ impl GetSubscriptionByProviderIdQuery {
             provider_subscription_id,
         }
     }
-}
 
-impl Query for GetSubscriptionByProviderIdQuery {
-    type Output = Option<BillingAccountWithSubscription>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Option<BillingAccountWithSubscription>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let subscription = sqlx::query_as::<_, Subscription>(
             r#"
-            SELECT 
-                s.id, s.billing_account_id, s.provider_customer_id, s.provider_subscription_id, 
+            SELECT
+                s.id, s.billing_account_id, s.provider_customer_id, s.provider_subscription_id,
                 s.product_id, dp.plan_name, s.status, s.previous_billing_date, s.created_at, s.updated_at
             FROM subscriptions s
             LEFT JOIN dodo_products dp ON s.product_id = dp.product_id
@@ -121,7 +124,7 @@ impl Query for GetSubscriptionByProviderIdQuery {
             "#
         )
         .bind(&self.provider_subscription_id)
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(sub) = subscription {
@@ -147,7 +150,7 @@ impl Query for GetSubscriptionByProviderIdQuery {
                 "#
             )
             .bind(sub.billing_account_id)
-            .fetch_one(&state.db_pool)
+            .fetch_one(&mut *conn)
             .await?;
 
             Ok(Some(BillingAccountWithSubscription {
@@ -157,6 +160,14 @@ impl Query for GetSubscriptionByProviderIdQuery {
         } else {
             Ok(None)
         }
+    }
+}
+
+impl Query for GetSubscriptionByProviderIdQuery {
+    type Output = Option<BillingAccountWithSubscription>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -218,7 +229,7 @@ impl Query for GetDeploymentProviderSubscriptionQuery {
     type Output = Option<ProviderSubscriptionInfo>;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool).await
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -241,12 +252,12 @@ impl GetDeploymentUsageQuery {
             billing_period,
         }
     }
-}
 
-impl Query for GetDeploymentUsageQuery {
-    type Output = Vec<UsageSnapshot>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<UsageSnapshot>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT metric_name, quantity, cost_cents
@@ -257,7 +268,7 @@ impl Query for GetDeploymentUsageQuery {
             self.deployment_id,
             self.billing_period
         )
-        .fetch_all(&state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let snapshots = rows
@@ -273,6 +284,14 @@ impl Query for GetDeploymentUsageQuery {
     }
 }
 
+impl Query for GetDeploymentUsageQuery {
+    type Output = Vec<UsageSnapshot>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(state.db_router.writer()).await
+    }
+}
+
 pub struct GetBillingAccountUsageQuery {
     pub billing_account_id: i64,
     pub billing_period: DateTime<Utc>,
@@ -285,12 +304,12 @@ impl GetBillingAccountUsageQuery {
             billing_period,
         }
     }
-}
 
-impl Query for GetBillingAccountUsageQuery {
-    type Output = Vec<UsageSnapshot>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<UsageSnapshot>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT metric_name, SUM(quantity) as quantity, SUM(cost_cents) as cost_cents
@@ -302,7 +321,7 @@ impl Query for GetBillingAccountUsageQuery {
             self.billing_account_id,
             self.billing_period
         )
-        .fetch_all(&state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let snapshots = rows
@@ -315,6 +334,14 @@ impl Query for GetBillingAccountUsageQuery {
             .collect();
 
         Ok(snapshots)
+    }
+}
+
+impl Query for GetBillingAccountUsageQuery {
+    type Output = Vec<UsageSnapshot>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -339,12 +366,12 @@ impl GetDodoProductQuery {
             plan_name: plan_name.into(),
         }
     }
-}
 
-impl Query for GetDodoProductQuery {
-    type Output = Option<DodoProduct>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<DodoProduct>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT id, plan_name, product_id, display_name, description, base_price_cents, is_active
@@ -353,7 +380,7 @@ impl Query for GetDodoProductQuery {
             "#,
             &self.plan_name
         )
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(row.map(|r| DodoProduct {
@@ -365,6 +392,14 @@ impl Query for GetDodoProductQuery {
             base_price_cents: r.base_price_cents,
             is_active: r.is_active,
         }))
+    }
+}
+
+impl Query for GetDodoProductQuery {
+    type Output = Option<DodoProduct>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -399,16 +434,18 @@ impl Query for GetBillingAccountByProviderCustomerIdQuery {
     type Output = Option<String>;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool).await
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
 pub struct GetAllDodoProductsQuery;
 
-impl Query for GetAllDodoProductsQuery {
-    type Output = Vec<DodoProduct>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+impl GetAllDodoProductsQuery {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<DodoProduct>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT id, plan_name, product_id, display_name, description, base_price_cents, is_active
@@ -417,7 +454,7 @@ impl Query for GetAllDodoProductsQuery {
             ORDER BY base_price_cents ASC
             "#
         )
-        .fetch_all(&state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(rows
@@ -435,6 +472,14 @@ impl Query for GetAllDodoProductsQuery {
     }
 }
 
+impl Query for GetAllDodoProductsQuery {
+    type Output = Vec<DodoProduct>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(state.db_router.writer()).await
+    }
+}
+
 pub struct GetOwnerIdByDeploymentIdQuery {
     pub deployment_id: i64,
 }
@@ -443,12 +488,12 @@ impl GetOwnerIdByDeploymentIdQuery {
     pub fn new(deployment_id: i64) -> Self {
         Self { deployment_id }
     }
-}
 
-impl Query for GetOwnerIdByDeploymentIdQuery {
-    type Output = Option<String>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT p.owner_id
@@ -458,11 +503,19 @@ impl Query for GetOwnerIdByDeploymentIdQuery {
             "#,
         )
         .bind(self.deployment_id)
-        .fetch_optional(&state.db_pool)
+        .fetch_optional(&mut *conn)
         .await?;
 
         use sqlx::Row;
         Ok(row.and_then(|r| r.get("owner_id")))
+    }
+}
+
+impl Query for GetOwnerIdByDeploymentIdQuery {
+    type Output = Option<String>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -474,12 +527,15 @@ impl ListPulseTransactionsQuery {
     pub fn new(billing_account_id: i64) -> Self {
         Self { billing_account_id }
     }
-}
 
-impl Query for ListPulseTransactionsQuery {
-    type Output = Vec<models::pulse_transaction::PulseTransaction>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<models::pulse_transaction::PulseTransaction>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query_as::<_, models::pulse_transaction::PulseTransaction>(
             r#"
             SELECT id, billing_account_id, amount_pulse_cents, transaction_type, reference_id, created_at
@@ -489,10 +545,18 @@ impl Query for ListPulseTransactionsQuery {
             "#
         )
         .bind(self.billing_account_id)
-        .fetch_all(&state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         Ok(rows)
+    }
+}
+
+impl Query for ListPulseTransactionsQuery {
+    type Output = Vec<models::pulse_transaction::PulseTransaction>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -504,15 +568,18 @@ impl ListBillingInvoicesQuery {
     pub fn new(billing_account_id: i64) -> Self {
         Self { billing_account_id }
     }
-}
 
-impl Query for ListBillingInvoicesQuery {
-    type Output = Vec<models::billing_invoice::BillingInvoice>;
-
-    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<models::billing_invoice::BillingInvoice>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query(
             r#"
-            SELECT 
+            SELECT
                 id, created_at, updated_at, billing_account_id, subscription_id,
                 provider_payment_id, provider_customer_id, amount_due_cents,
                 amount_paid_cents, currency, status,
@@ -525,7 +592,7 @@ impl Query for ListBillingInvoicesQuery {
             "#,
         )
         .bind(self.billing_account_id)
-        .fetch_all(&state.db_pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let mut results = Vec::new();
@@ -557,5 +624,13 @@ impl Query for ListBillingInvoicesQuery {
         }
 
         Ok(results)
+    }
+}
+
+impl Query for ListBillingInvoicesQuery {
+    type Output = Vec<models::billing_invoice::BillingInvoice>;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(state.db_router.writer()).await
     }
 }

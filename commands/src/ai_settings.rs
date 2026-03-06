@@ -1,5 +1,5 @@
 use crate::Command;
-use common::{EncryptionService, error::AppError};
+use common::{EncryptionService, HasDbRouter, HasEncryptionService, error::AppError};
 use common::state::AppState;
 use models::{DeploymentAiSettings, UpdateDeploymentAiSettingsRequest};
 
@@ -37,7 +37,7 @@ impl Command for CreateDeploymentAiSettingsCommand {
     type Output = DeploymentAiSettings;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -47,10 +47,10 @@ impl CreateDeploymentAiSettingsCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn).await
+        self.execute_with_deps(conn).await
     }
 
-    async fn execute_with_connection<C>(self, mut conn: C) -> Result<DeploymentAiSettings, AppError>
+    async fn execute_with_deps<C>(self, mut conn: C) -> Result<DeploymentAiSettings, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {
@@ -136,12 +136,19 @@ impl Command for UpdateDeploymentAiSettingsCommand {
     type Output = DeploymentAiSettings;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, &app_state.encryption_service)
-            .await
+        self.execute_with_deps(app_state).await
     }
 }
 
 impl UpdateDeploymentAiSettingsCommand {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<DeploymentAiSettings, AppError>
+    where
+        D: HasDbRouter + HasEncryptionService,
+    {
+        self.execute_with(deps.db_router().writer(), deps.encryption_service())
+            .await
+    }
+
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
@@ -151,10 +158,10 @@ impl UpdateDeploymentAiSettingsCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn, encryptor).await
+        self.apply_with_conn(conn, encryptor).await
     }
 
-    async fn execute_with_connection<C>(
+    async fn apply_with_conn<C>(
         self,
         mut conn: C,
         encryptor: &dyn AiSettingsEncryptor,
@@ -266,7 +273,7 @@ impl Command for ClearDeploymentAiKeyCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -276,10 +283,10 @@ impl ClearDeploymentAiKeyCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn).await
+        self.execute_with_deps(conn).await
     }
 
-    async fn execute_with_connection<C>(self, mut conn: C) -> Result<(), AppError>
+    async fn execute_with_deps<C>(self, mut conn: C) -> Result<(), AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {

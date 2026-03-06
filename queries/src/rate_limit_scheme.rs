@@ -62,13 +62,10 @@ impl ListRateLimitSchemesQuery {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
-        self.execute_on_conn(&mut conn).await
+        self.execute_with_deps(&mut conn).await
     }
 
-    pub async fn execute_on_conn(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<Vec<RateLimitSchemeData>, AppError> {
+    pub(crate) async fn execute_with_deps(&self, conn: &mut sqlx::PgConnection) -> Result<Vec<RateLimitSchemeData>, AppError> {
         let rows = sqlx::query_as::<_, RateLimitSchemeRow>(
             r#"
             SELECT
@@ -97,7 +94,7 @@ impl Query for ListRateLimitSchemesQuery {
     type Output = Vec<RateLimitSchemeData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -122,13 +119,10 @@ impl GetRateLimitSchemeQuery {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
-        self.execute_on_conn(&mut conn).await
+        self.execute_with_deps(&mut conn).await
     }
 
-    pub async fn execute_on_conn(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<Option<RateLimitSchemeData>, AppError> {
+    pub(crate) async fn execute_with_deps(&self, conn: &mut sqlx::PgConnection) -> Result<Option<RateLimitSchemeData>, AppError> {
         let rec = sqlx::query_as::<_, RateLimitSchemeRow>(
             r#"
             SELECT
@@ -158,6 +152,6 @@ impl Query for GetRateLimitSchemeQuery {
     type Output = Option<RateLimitSchemeData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -400,7 +400,7 @@ impl Query for DeploymentActiveUserListQuery {
     type Output = Vec<UserWithIdentifiers>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -408,7 +408,7 @@ impl Query for DeploymentInvitationQuery {
     type Output = Vec<DeploymentInvitation>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -605,7 +605,7 @@ impl Query for GetUserDetailsQuery {
     type Output = UserDetails;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -613,7 +613,7 @@ impl Query for DeploymentWaitlistQuery {
     type Output = Vec<DeploymentWaitlistUser>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -660,6 +660,6 @@ impl Query for GetUserAuthenticatorQuery {
     type Output = models::UserAuthenticator;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

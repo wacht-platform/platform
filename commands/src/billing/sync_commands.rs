@@ -12,7 +12,7 @@ impl Command for CreateBillingSyncRunCommand {
     type Output = i64;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool).await
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -45,7 +45,7 @@ impl Command for CompleteBillingSyncRunCommand {
     type Output = ();
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool).await
+        self.execute_with(state.db_router.writer()).await
     }
 }
 
@@ -103,7 +103,7 @@ impl Command for UpsertUsageSnapshotCommand {
             self.quantity,
             self.cost_cents
         )
-        .execute(&state.db_pool)
+        .execute(state.db_router.writer())
         .await?;
 
         Ok(())

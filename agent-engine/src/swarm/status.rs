@@ -1,6 +1,5 @@
 use common::error::AppError;
 use common::state::AppState;
-use queries::Query;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -66,11 +65,23 @@ pub async fn get_child_status(
         deployment_id,
         include_completed: request.include_completed,
     };
-    let children = Query::execute(&child_contexts_query, app_state).await?;
+    let children = child_contexts_query
+        .execute_with(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?;
 
     let child_context_ids: Vec<i64> = children.iter().map(|child| child.id).collect();
     let latest_updates_query = queries::GetLatestStatusUpdatesForContextsQuery::new(child_context_ids);
-    let latest_updates = Query::execute(&latest_updates_query, app_state).await?;
+    let latest_updates = latest_updates_query
+        .execute_with(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?;
     let latest_update_by_context: HashMap<i64, queries::LatestStatusUpdate> = latest_updates
         .into_iter()
         .map(|update| (update.context_id, update))
@@ -144,7 +155,13 @@ pub async fn completion_summary(
         let summary_query =
             queries::GetChildCompletionSummaryQuery::new(child_context_id.0, deployment_id)
                 .with_parent_context(parent_context_id);
-        let summary = Query::execute(&summary_query, app_state).await?;
+        let summary = summary_query
+            .execute_with(
+                app_state
+                    .db_router
+                    .reader(common::db_router::ReadConsistency::Strong),
+            )
+            .await?;
 
         return response::success(
             tool_name,
@@ -171,7 +188,13 @@ pub async fn completion_summary(
 
     let summaries_query =
         queries::GetChildrenCompletionSummariesQuery::new(parent_context_id, deployment_id);
-    let summaries = Query::execute(&summaries_query, app_state).await?;
+    let summaries = summaries_query
+        .execute_with(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?;
 
     let count = summaries.len();
     response::success(

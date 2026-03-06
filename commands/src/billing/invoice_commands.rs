@@ -27,7 +27,7 @@ impl Command for UpsertInvoiceCommand {
     type Output = BillingInvoice;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool, state.sf.next_id()? as i64)
+        self.execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
             .await
     }
 }

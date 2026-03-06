@@ -441,10 +441,10 @@ impl ArchiveNotificationCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn).await
+        self.execute_with_deps(conn).await
     }
 
-    async fn execute_with_connection<C>(self, mut conn: C) -> Result<bool, AppError>
+    async fn execute_with_deps<C>(self, mut conn: C) -> Result<bool, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {
@@ -524,7 +524,7 @@ impl DeleteNotificationCommand {
             .notification_id(self.notification_id)
             .user_id(self.user_id)
             .build()?
-            .execute_with_connection(&mut *conn)
+            .execute_with_deps(&mut *conn)
             .await
     }
 }

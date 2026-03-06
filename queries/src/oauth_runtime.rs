@@ -195,7 +195,7 @@ impl Query for ResolveOAuthAppByFqdnQuery {
     type Output = Option<RuntimeOAuthAppData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -239,7 +239,7 @@ impl Query for GetRuntimeDeploymentHostsByIdQuery {
     type Output = Option<RuntimeDeploymentHostsData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -286,7 +286,7 @@ impl Query for ResolveApiAuthAppSlugByApiKeyHashQuery {
     type Output = Option<String>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -332,7 +332,7 @@ impl Query for GetRuntimeApiAuthAppSlugByUserIdQuery {
     type Output = Option<String>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -426,7 +426,7 @@ impl Query for GetRuntimeOAuthClientByClientIdQuery {
     type Output = Option<RuntimeOAuthClientData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -485,7 +485,7 @@ impl Query for ListActiveRuntimeOAuthGrantsQuery {
     type Output = Vec<RuntimeOAuthGrantData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -556,7 +556,7 @@ impl Query for GetRuntimeAuthorizationCodeForExchangeQuery {
     type Output = Option<RuntimeAuthorizationCodeData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -627,7 +627,7 @@ impl Query for GetRuntimeRefreshTokenForExchangeQuery {
     type Output = Option<RuntimeRefreshTokenData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -738,7 +738,7 @@ impl Query for ResolveRuntimeOAuthGrantQuery {
     type Output = RuntimeOAuthGrantResolution;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -783,7 +783,7 @@ impl Query for GetRuntimeApiAuthUserIdByAppSlugQuery {
     type Output = Option<i64>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -918,7 +918,7 @@ impl Query for ValidateRuntimeResourceEntitlementQuery {
     type Output = bool;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -986,7 +986,7 @@ impl Query for GetRuntimeAccessTokenByHashQuery {
     type Output = Option<RuntimeAccessTokenData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -1215,7 +1215,7 @@ impl Query for GetRuntimeIntrospectionDataQuery {
     type Output = Option<RuntimeIntrospectionData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -1440,6 +1440,6 @@ impl Query for GetGatewayOAuthAccessTokenByHashQuery {
     type Output = Option<GatewayOAuthAccessTokenData>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

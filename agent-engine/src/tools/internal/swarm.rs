@@ -1,5 +1,4 @@
 use super::{parse_params, ToolExecutor};
-use commands::Command;
 use common::error::AppError;
 use futures::TryStreamExt;
 use models::{AiTool, InternalToolType};
@@ -148,7 +147,7 @@ impl ToolExecutor {
             status_update: params.status,
             metadata: params.metadata,
         }
-        .execute(self.app_state())
+        .execute_with(self.app_state().db_router.writer(), self.app_state().sf.next_id()? as i64)
         .await?;
 
         Ok(serde_json::json!({
@@ -198,7 +197,7 @@ impl ToolExecutor {
             content,
             models::ConversationMessageType::UserMessage,
         )
-        .execute(self.app_state())
+        .execute_with(self.app_state().db_router.writer())
         .await?;
 
         let mailbox_message = SwarmMailboxMessage {

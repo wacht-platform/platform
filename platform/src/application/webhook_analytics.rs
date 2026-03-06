@@ -2,7 +2,6 @@ use common::error::AppError;
 use common::state::AppState;
 use dto::json::webhook_requests::{WebhookAnalyticsQuery, WebhookTimeseriesQuery};
 use models::webhook_analytics::{WebhookAnalyticsResult, WebhookTimeseriesResult};
-use queries::Query as QueryTrait;
 use queries::webhook_analytics::{GetWebhookAnalyticsQuery, GetWebhookTimeseriesQuery};
 
 pub async fn get_webhook_analytics(
@@ -21,7 +20,7 @@ pub async fn get_webhook_analytics(
         query = query.with_date_range(start, end);
     }
 
-    QueryTrait::execute(&query, app_state).await
+    query.execute_with(&app_state.clickhouse_service).await
 }
 
 pub async fn get_webhook_timeseries(
@@ -41,5 +40,5 @@ pub async fn get_webhook_timeseries(
         query = query.with_date_range(start, end);
     }
 
-    QueryTrait::execute(&query, app_state).await
+    query.execute_with(&app_state.clickhouse_service).await
 }

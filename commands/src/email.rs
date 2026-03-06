@@ -1,5 +1,8 @@
 use crate::Command;
-use common::error::AppError;
+use common::{
+    HasDbRouter, HasEncryptionService, HasPostmarkService, HasTemplateRenderer,
+    db_router::ReadConsistency, error::AppError,
+};
 use common::smtp::{SmtpConfig, SmtpService};
 use common::state::AppState;
 use models::{CustomSmtpConfig, EmailProvider};
@@ -40,40 +43,13 @@ impl SendEmailCommand {
             variables,
         }
     }
-}
 
-pub struct SendRawEmailCommand {
-    deployment_id: i64,
-    to_email: String,
-    subject: String,
-    body_html: String,
-    body_text: Option<String>,
-}
-
-impl SendRawEmailCommand {
-    pub fn new(
-        deployment_id: i64,
-        to_email: String,
-        subject: String,
-        body_html: String,
-        body_text: Option<String>,
-    ) -> Self {
-        Self {
-            deployment_id,
-            to_email,
-            subject,
-            body_html,
-            body_text,
-        }
-    }
-}
-
-impl Command for SendEmailCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasDbRouter + HasEncryptionService + HasPostmarkService + HasTemplateRenderer,
+    {
         let template = GetEmailTemplateByNameQuery::new(self.deployment_id, self.template_name)
-            .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
+            .execute_with(deps.reader_pool(ReadConsistency::Strong))
             .await?;
 
         let deployment = sqlx::query!(
@@ -83,29 +59,20 @@ impl Command for SendEmailCommand {
             "#,
             self.deployment_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(deps.writer_pool())
         .await?;
 
         let display_settings = sqlx::query!(
             "SELECT app_name from deployment_ui_settings where deployment_id = $1",
             self.deployment_id,
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(deps.writer_pool())
         .await?;
 
-        let subject = app_state
-            .handlebars
-            .render_template(&template.template_subject, &self.variables)
-            .map_err(|e| AppError::BadRequest(format!("Failed to render subject: {}", e)))?;
+        let subject = deps.render_template(&template.template_subject, &self.variables)?;
+        let body_content = deps.render_template(&template.template_data, &self.variables)?;
 
-        let body_content = app_state
-            .handlebars
-            .render_template(&template.template_data, &self.variables)
-            .map_err(|e| AppError::BadRequest(format!("Failed to render body: {}", e)))?;
-
-        // Wrap the content with HTML boilerplate
         let body_html = wrap_email_content(&body_content);
-
         let body_text =
             html2text::from_read(body_html.as_bytes(), 80).unwrap_or_else(|_| body_html.clone());
 
@@ -123,10 +90,8 @@ impl Command for SendEmailCommand {
         if email_provider == EmailProvider::CustomSmtp {
             if let Some(config) = &smtp_config {
                 if config.verified {
-                    let decrypted_password = app_state
-                        .encryption_service
-                        .decrypt(&config.password)
-                        .map_err(|e| {
+                    let decrypted_password =
+                        deps.encryption_service().decrypt(&config.password).map_err(|e| {
                             tracing::error!("Failed to decrypt SMTP password: {}", e);
                             e
                         })?;
@@ -172,8 +137,8 @@ impl Command for SendEmailCommand {
             }
         }
 
-        match app_state
-            .postmark_service
+        match deps
+            .postmark_service()
             .send_email(
                 &from_email,
                 &self.to_email,
@@ -206,10 +171,35 @@ impl Command for SendEmailCommand {
     }
 }
 
-impl Command for SendRawEmailCommand {
-    type Output = ();
+pub struct SendRawEmailCommand {
+    deployment_id: i64,
+    to_email: String,
+    subject: String,
+    body_html: String,
+    body_text: Option<String>,
+}
 
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+impl SendRawEmailCommand {
+    pub fn new(
+        deployment_id: i64,
+        to_email: String,
+        subject: String,
+        body_html: String,
+        body_text: Option<String>,
+    ) -> Self {
+        Self {
+            deployment_id,
+            to_email,
+            subject,
+            body_html,
+            body_text,
+        }
+    }
+
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasDbRouter + HasEncryptionService + HasPostmarkService,
+    {
         let deployment = sqlx::query!(
             r#"
             SELECT mail_from_host, email_provider, custom_smtp_config
@@ -217,14 +207,14 @@ impl Command for SendRawEmailCommand {
             "#,
             self.deployment_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(deps.writer_pool())
         .await?;
 
         let display_settings = sqlx::query!(
             "SELECT app_name from deployment_ui_settings where deployment_id = $1",
             self.deployment_id,
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(deps.writer_pool())
         .await?;
 
         let from_email = format!(
@@ -241,10 +231,8 @@ impl Command for SendRawEmailCommand {
         if email_provider == EmailProvider::CustomSmtp {
             if let Some(config) = &smtp_config {
                 if config.verified {
-                    let decrypted_password = app_state
-                        .encryption_service
-                        .decrypt(&config.password)
-                        .map_err(|e| {
+                    let decrypted_password =
+                        deps.encryption_service().decrypt(&config.password).map_err(|e| {
                             tracing::error!("Failed to decrypt SMTP password: {}", e);
                             e
                         })?;
@@ -290,8 +278,8 @@ impl Command for SendRawEmailCommand {
             }
         }
 
-        match app_state
-            .postmark_service
+        match deps
+            .postmark_service()
             .send_email(
                 &from_email,
                 &self.to_email,
@@ -321,5 +309,21 @@ impl Command for SendRawEmailCommand {
         }
 
         Ok(())
+    }
+}
+
+impl Command for SendEmailCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with_deps(app_state).await
+    }
+}
+
+impl Command for SendRawEmailCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with_deps(app_state).await
     }
 }

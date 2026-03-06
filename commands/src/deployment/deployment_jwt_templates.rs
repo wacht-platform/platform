@@ -69,7 +69,7 @@ impl CreateDeploymentJwtTemplateCommand {
         };
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_on_conn(&mut conn, redis_client)
+            .execute_with_deps(&mut conn, redis_client)
             .await?;
 
         Ok(template)
@@ -81,7 +81,7 @@ impl Command for CreateDeploymentJwtTemplateCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         self.execute_with(
-            &app_state.db_pool,
+            app_state.db_router.writer(),
             app_state.sf.next_id()? as i64,
             &app_state.redis_client,
         )
@@ -180,7 +180,7 @@ impl UpdateDeploymentJwtTemplateCommand {
 
         let deployment_id: i64 = result.get("deployment_id");
         ClearDeploymentCacheCommand::new(deployment_id)
-            .execute_on_conn(&mut conn, redis_client)
+            .execute_with_deps(&mut conn, redis_client)
             .await?;
 
         Ok(template)
@@ -191,7 +191,7 @@ impl Command for UpdateDeploymentJwtTemplateCommand {
     type Output = DeploymentJwtTemplate;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
             .await
     }
 }
@@ -233,7 +233,7 @@ impl DeleteDeploymentJwtTemplateCommand {
         }
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_on_conn(&mut conn, redis_client)
+            .execute_with_deps(&mut conn, redis_client)
             .await?;
 
         Ok(())
@@ -244,7 +244,7 @@ impl Command for DeleteDeploymentJwtTemplateCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
             .await
     }
 }

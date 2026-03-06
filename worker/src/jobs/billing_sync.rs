@@ -2,7 +2,6 @@ use anyhow::Result;
 use chrono::Datelike;
 use commands::SyncBillingMetricsCommand;
 use commands::{
-    Command,
     billing::{CompleteBillingSyncRunCommand, CreateBillingSyncRunCommand},
     pulse::DeductPulseCreditsCommand,
 };
@@ -345,7 +344,14 @@ async fn sync_deployment(
                 transaction_type,
                 reference_id: Some(app_state.sf.next_id().unwrap().to_string()),
             };
-            match Command::execute(deduct_pulse_command, app_state).await {
+            match deduct_pulse_command
+                .execute_with(
+                    app_state.db_router.writer(),
+                    &app_state.nats_client,
+                    app_state.sf.next_id()? as i64,
+                )
+                .await
+            {
                 Ok(_) => {
                     info!(
                         "[BILLING SYNC] Deducted {} Pulse cents for {} from deployment {}",

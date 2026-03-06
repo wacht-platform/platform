@@ -1,5 +1,5 @@
 use commands::{
-    Command, CreateUserCommand, DeleteUserCommand, GenerateImpersonationTokenCommand,
+    CreateUserCommand, DeleteUserCommand, GenerateImpersonationTokenCommand,
     UpdateUserCommand, UpdateUserPasswordCommand, UpdateUserProfileImageCommand, UploadToCdnCommand,
 };
 use common::db_router::ReadConsistency;
@@ -51,7 +51,9 @@ pub async fn create_user(
     request: CreateUserRequest,
     profile_image_data: Option<(Vec<u8>, String)>,
 ) -> Result<UserWithIdentifiers, AppError> {
-    let user = Command::execute(CreateUserCommand::new(deployment_id, request), app_state).await?;
+    let user = CreateUserCommand::new(deployment_id, request)
+        .execute_with_deps(app_state)
+        .await?;
 
     if let Some((image_buffer, file_extension)) = profile_image_data {
         let url = upload_user_profile_image(
@@ -79,9 +81,9 @@ pub async fn update_user(
     profile_image_data: Option<(Vec<u8>, String)>,
     remove_profile_image: bool,
 ) -> Result<UserDetails, AppError> {
-    let user_details =
-        Command::execute(UpdateUserCommand::new(deployment_id, user_id, request), app_state)
-            .await?;
+    let user_details = UpdateUserCommand::new(deployment_id, user_id, request)
+        .execute_with_deps(app_state)
+        .await?;
 
     if remove_profile_image {
         UpdateUserProfileImageCommand::new(deployment_id, user_id, String::new())
@@ -129,7 +131,9 @@ pub async fn update_user_password(
         request.new_password,
         request.skip_password_check,
     );
-    Command::execute(password_command, app_state).await?;
+    password_command
+        .execute_with_deps(app_state)
+        .await?;
     Ok(())
 }
 
@@ -149,11 +153,9 @@ pub async fn impersonate_user(
     deployment_id: i64,
     user_id: i64,
 ) -> Result<commands::GenerateImpersonationTokenResponse, AppError> {
-    Command::execute(
-        GenerateImpersonationTokenCommand::new(deployment_id, user_id),
-        app_state,
-    )
-    .await
+    GenerateImpersonationTokenCommand::new(deployment_id, user_id)
+        .execute_with(app_state.db_router.writer())
+        .await
 }
 
 async fn upload_user_profile_image(

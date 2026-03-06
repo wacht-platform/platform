@@ -178,7 +178,7 @@ impl Command for ProcessDocumentCommand {
             .as_ref()
             .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
         self.execute_with(
-            &app_state.db_pool,
+            app_state.db_router.writer(),
             storage_client,
             &app_state.text_processing_service,
             |deployment_id, knowledge_base_id, batch_size| async move {
@@ -187,7 +187,7 @@ impl Command for ProcessDocumentCommand {
                     knowledge_base_id,
                     batch_size,
                 );
-                Command::execute(dispatch_task, app_state).await
+                dispatch_task.execute_with(&app_state.nats_client).await
             },
         )
         .await

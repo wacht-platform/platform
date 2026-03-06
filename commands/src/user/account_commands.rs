@@ -1,14 +1,15 @@
 use chrono::Utc;
 use serde_json::json;
+use sqlx::Connection;
 use sqlx::Execute;
 
 use crate::Command;
-use common::error::AppError;
+use common::{HasDbRouter, HasIdGenerator, error::AppError};
 use common::state::AppState;
 use common::utils::{security::PasswordHasher, validation::UserValidator};
 use dto::json::{CreateUserRequest, UpdateUserRequest};
 use models::{UserDetails, UserWithIdentifiers};
-use queries::GetDeploymentAuthSettingsQuery;
+use queries::{GetDeploymentAuthSettingsQuery, GetUserDetailsQuery};
 
 pub struct CreateUserCommand {
     deployment_id: i64,
@@ -22,20 +23,33 @@ impl CreateUserCommand {
             request,
         }
     }
-}
 
-impl Command for CreateUserCommand {
-    type Output = UserWithIdentifiers;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<UserWithIdentifiers, AppError>
+    where
+        D: HasDbRouter + HasIdGenerator,
+    {
         let now = Utc::now();
-        let user_id = app_state.sf.next_id()? as i64;
+        let ids = (
+            deps.id_generator().next_id()? as i64,
+            self.request
+                .email_address
+                .as_ref()
+                .map(|_| deps.id_generator().next_id().map(|id| id as i64))
+                .transpose()?,
+            self.request
+                .phone_number
+                .as_ref()
+                .map(|_| deps.id_generator().next_id().map(|id| id as i64))
+                .transpose()?,
+        );
+        let user_id = ids.0;
 
         let auth_settings = GetDeploymentAuthSettingsQuery::new(self.deployment_id)
-            .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
+            .execute_with(deps.db_router().reader(common::db_router::ReadConsistency::Strong))
             .await?;
 
-        let mut tx = app_state.db_pool.begin().await?;
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let mut tx = conn.begin().await?;
 
         UserValidator::validate_user_creation(
             &self.request.first_name,
@@ -95,7 +109,9 @@ impl Command for CreateUserCommand {
         let mut primary_phone_number = None;
 
         if let Some(email) = &self.request.email_address {
-            let email_id = app_state.sf.next_id()? as i64;
+            let email_id = ids.1.ok_or_else(|| {
+                AppError::Internal("Missing email ID for user email insert".to_string())
+            })?;
 
             sqlx::query!(
                 r#"
@@ -131,7 +147,9 @@ impl Command for CreateUserCommand {
         }
 
         if let Some(phone) = &self.request.phone_number {
-            let phone_id = app_state.sf.next_id()? as i64;
+            let phone_id = ids.2.ok_or_else(|| {
+                AppError::Internal("Missing phone ID for user phone insert".to_string())
+            })?;
 
             sqlx::query!(
                 r#"
@@ -183,6 +201,14 @@ impl Command for CreateUserCommand {
     }
 }
 
+impl Command for CreateUserCommand {
+    type Output = UserWithIdentifiers;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with_deps(app_state).await
+    }
+}
+
 pub struct UpdateUserCommand {
     deployment_id: i64,
     user_id: i64,
@@ -197,13 +223,13 @@ impl UpdateUserCommand {
             request,
         }
     }
-}
 
-impl Command for UpdateUserCommand {
-    type Output = UserDetails;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let mut tx = app_state.db_pool.begin().await?;
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<UserDetails, AppError>
+    where
+        D: HasDbRouter,
+    {
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let mut tx = conn.begin().await?;
 
         // Build a single dynamic UPDATE query
         let mut query_builder = sqlx::QueryBuilder::new("UPDATE users SET updated_at = NOW()");
@@ -265,11 +291,23 @@ impl Command for UpdateUserCommand {
 
         tx.commit().await?;
 
-        use queries::{GetUserDetailsQuery, Query};
         let details_query = GetUserDetailsQuery::new(self.deployment_id, self.user_id);
-        let user_details = Query::execute(&details_query, app_state).await?;
+        let user_details = details_query
+            .execute_with(
+                deps.db_router()
+                    .reader(common::db_router::ReadConsistency::Strong),
+            )
+            .await?;
 
         Ok(user_details)
+    }
+}
+
+impl Command for UpdateUserCommand {
+    type Output = UserDetails;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with_deps(app_state).await
     }
 }
 
@@ -294,7 +332,7 @@ impl Command for UpdateUserProfileImageCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -339,17 +377,15 @@ impl UpdateUserPasswordCommand {
             skip_password_check,
         }
     }
-}
 
-impl Command for UpdateUserPasswordCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasDbRouter,
+    {
         if !self.skip_password_check {
             let auth_settings = GetDeploymentAuthSettingsQuery::new(self.deployment_id)
                 .execute_with(
-                    app_state
-                        .db_router
+                    deps.db_router()
                         .reader(common::db_router::ReadConsistency::Strong),
                 )
                 .await?;
@@ -367,20 +403,26 @@ impl Command for UpdateUserPasswordCommand {
             })?;
         }
 
-        // Hash the new password
         let hashed_password = PasswordHasher::hash_password(&self.new_password)?;
-
-        // Update the password
+        let mut conn = deps.db_router().writer().acquire().await?;
         sqlx::query!(
             "UPDATE users SET updated_at = NOW(), password = $1 WHERE deployment_id = $2 AND id = $3",
             hashed_password,
             self.deployment_id,
             self.user_id
         )
-        .execute(&app_state.db_pool)
+        .execute(&mut *conn)
         .await?;
 
         Ok(())
+    }
+}
+
+impl Command for UpdateUserPasswordCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with_deps(app_state).await
     }
 }
 
@@ -402,7 +444,7 @@ impl Command for DeleteUserCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

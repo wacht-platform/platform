@@ -15,8 +15,21 @@ impl Command for CreateSubscriptionCommand {
     type Output = Subscription;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        let id = state.sf.next_id().unwrap() as i64;
+        self.execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
+            .await
+    }
+}
 
+impl CreateSubscriptionCommand {
+    pub async fn execute_with<'a, A>(
+        self,
+        acquirer: A,
+        subscription_id: i64,
+    ) -> Result<Subscription, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let subscription = sqlx::query_as::<_, Subscription>(
             r#"
             INSERT INTO subscriptions (
@@ -31,12 +44,12 @@ impl Command for CreateSubscriptionCommand {
             RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
             "#
         )
-        .bind(id)
+        .bind(subscription_id)
         .bind(self.billing_account_id)
         .bind(&self.provider_customer_id)
         .bind(&self.provider_subscription_id)
         .bind(&self.status)
-        .fetch_one(&state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(subscription)
@@ -52,6 +65,16 @@ impl Command for UpdateSubscriptionStatusCommand {
     type Output = Subscription;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(state.db_router.writer()).await
+    }
+}
+
+impl UpdateSubscriptionStatusCommand {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Subscription, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let subscription = sqlx::query_as::<_, Subscription>(
             r#"
             UPDATE subscriptions 
@@ -62,7 +85,7 @@ impl Command for UpdateSubscriptionStatusCommand {
         )
         .bind(&self.status)
         .bind(self.subscription_id)
-        .fetch_one(&state.db_pool)
+        .fetch_one(&mut *conn)
         .await?;
 
         Ok(subscription)
@@ -82,7 +105,7 @@ impl Command for UpsertSubscriptionCommand {
     type Output = Subscription;
 
     async fn execute(self, state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&state.db_pool, state.sf.next_id()? as i64)
+        self.execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
             .await
     }
 }

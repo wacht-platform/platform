@@ -1,12 +1,10 @@
 use crate::{AgentExecutor, ResumeContext};
-use commands::Command;
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::StreamEvent;
 use futures::StreamExt;
 use models::AiAgentWithFeatures;
 use models::ExecutionContextStatus;
-use queries::Query;
 use serde_json::Value;
 use tracing::{error, warn};
 
@@ -42,7 +40,7 @@ impl AgentHandler {
         let kv = self.get_key_value_store().await?;
 
         let deployment_ai_settings = queries::GetDeploymentAiSettingsQuery::new(deployment_id)
-            .execute(&self.app_state)
+            .execute_with(self.app_state.db_router.writer())
             .await
             .ok()
             .flatten();
@@ -112,7 +110,7 @@ impl AgentHandler {
         if let Err(error) = &execution_result {
             let _ = commands::UpdateExecutionContextQuery::new(context.id, deployment_id)
                 .with_status(models::ExecutionContextStatus::Failed)
-                .execute(&self.app_state)
+                .execute_with_deps(&self.app_state)
                 .await;
 
             let _ = commands::StoreCompletionSummaryEnhancedCommand::new(
@@ -125,7 +123,7 @@ impl AgentHandler {
                     metrics: None,
                 },
             )
-            .execute(&self.app_state)
+            .execute_with(self.app_state.db_router.writer())
             .await;
         }
 
@@ -421,7 +419,7 @@ async fn publish_stream_event(
         subject
     );
 
-    use commands::{Command, TriggerWebhookEventCommand};
+    use commands::TriggerWebhookEventCommand;
 
     let webhook_payload = serde_json::json!({
         "context_id": context_key,
@@ -442,7 +440,16 @@ async fn publish_stream_event(
         webhook_payload,
     );
 
-    if let Err(e) = Command::execute(trigger_command, app_state).await {
+    if let Err(e) = trigger_command
+        .execute_with(
+            app_state.db_router.writer(),
+            &app_state.redis_client,
+            &app_state.clickhouse_service,
+            &app_state.nats_client,
+            || Ok(app_state.sf.next_id()? as i64),
+        )
+        .await
+    {
         tracing::warn!(
             deployment_id = deployment_id,
             webhook_event = %message_type.webhook_event_name(),
@@ -491,7 +498,9 @@ async fn mark_context_failed_due_to_parent_abort(
 ) -> Result<(), AppError> {
     let fail_context_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
         .with_status(ExecutionContextStatus::Failed);
-    Command::execute(fail_context_cmd, app_state).await?;
+    fail_context_cmd
+        .execute_with_deps(app_state)
+        .await?;
 
     let summary_cmd = commands::StoreCompletionSummaryEnhancedCommand::new(
         context_id,
@@ -506,7 +515,9 @@ async fn mark_context_failed_due_to_parent_abort(
             metrics: None,
         },
     );
-    Command::execute(summary_cmd, app_state).await?;
+    summary_cmd
+        .execute_with(app_state.db_router.writer())
+        .await?;
 
     Ok(())
 }
@@ -518,7 +529,7 @@ async fn mark_context_cancelled(app_state: &AppState, context_id: i64, deploymen
     let cancel_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
         .with_status(ExecutionContextStatus::Failed)
         .mark_status_as_cancellation();
-    let _ = Command::execute(cancel_cmd, app_state).await;
+    let _ = cancel_cmd.execute_with_deps(app_state).await;
 
     let summary_cmd = commands::StoreCompletionSummaryEnhancedCommand::new(
         context_id,
@@ -530,7 +541,7 @@ async fn mark_context_cancelled(app_state: &AppState, context_id: i64, deploymen
             metrics: None,
         },
     );
-    let _ = Command::execute(summary_cmd, app_state).await;
+    let _ = summary_cmd.execute_with(app_state.db_router.writer()).await;
 }
 
 async fn subscribe_spawn_control(
@@ -589,11 +600,13 @@ async fn apply_spawn_control_params(
     deployment_id: i64,
     params: Value,
 ) -> Result<(), AppError> {
-    let context = Query::execute(
-        &queries::GetExecutionContextQuery::new(context_id, deployment_id),
-        app_state,
-    )
-    .await?;
+    let context = queries::GetExecutionContextQuery::new(context_id, deployment_id)
+        .execute_with(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?;
 
     let mut metadata = context
         .external_resource_metadata
@@ -611,14 +624,18 @@ async fn apply_spawn_control_params(
 
     let update_context_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
         .with_external_resource_metadata(metadata);
-    Command::execute(update_context_cmd, app_state).await?;
+    update_context_cmd
+        .execute_with_deps(app_state)
+        .await?;
 
     let status_cmd = commands::PostStatusUpdateCommand::new(
         context_id,
         deployment_id,
         "Parent updated execution parameters".to_string(),
     );
-    Command::execute(status_cmd, app_state).await?;
+    status_cmd
+        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+        .await?;
 
     Ok(())
 }
@@ -633,6 +650,8 @@ async fn record_spawn_control_restart(
         deployment_id,
         "Parent requested execution restart".to_string(),
     );
-    Command::execute(status_cmd, app_state).await?;
+    status_cmd
+        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+        .await?;
     Ok(())
 }

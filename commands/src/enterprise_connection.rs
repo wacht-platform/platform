@@ -44,7 +44,7 @@ impl Command for CreateEnterpriseConnectionCommand {
     type Output = EnterpriseConnection;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
             .await
     }
 }
@@ -155,7 +155,7 @@ impl Command for UpdateEnterpriseConnectionCommand {
     type Output = EnterpriseConnection;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -248,7 +248,7 @@ impl Command for DeleteEnterpriseConnectionCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -258,10 +258,10 @@ impl DeleteEnterpriseConnectionCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn).await
+        self.execute_with_deps(conn).await
     }
 
-    async fn execute_with_connection<C>(self, mut conn: C) -> Result<(), AppError>
+    async fn execute_with_deps<C>(self, mut conn: C) -> Result<(), AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {

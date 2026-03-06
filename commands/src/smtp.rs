@@ -1,6 +1,6 @@
 use crate::Command;
 use common::EncryptionService;
-use common::error::AppError;
+use common::{HasDbRouter, HasEncryptionService, HasRedis, error::AppError};
 use common::smtp::{SmtpConfig, SmtpService};
 use common::state::AppState;
 use models::{CustomSmtpConfig, EmailProvider};
@@ -106,12 +106,19 @@ impl Command for UpdateDeploymentSmtpConfigCommand {
     type Output = CustomSmtpConfig;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, &app_state.encryption_service)
-            .await
+        self.execute_with_deps(app_state).await
     }
 }
 
 impl UpdateDeploymentSmtpConfigCommand {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<CustomSmtpConfig, AppError>
+    where
+        D: HasDbRouter + HasEncryptionService,
+    {
+        self.execute_with(deps.db_router().writer(), deps.encryption_service())
+            .await
+    }
+
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
@@ -191,12 +198,19 @@ impl Command for RemoveDeploymentSmtpConfigCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, &app_state.redis_client)
-            .await
+        self.execute_with_deps(app_state).await
     }
 }
 
 impl RemoveDeploymentSmtpConfigCommand {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasDbRouter + HasRedis,
+    {
+        self.execute_with(deps.db_router().writer(), deps.redis_client())
+            .await
+    }
+
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
@@ -221,7 +235,7 @@ impl RemoveDeploymentSmtpConfigCommand {
         .await?;
 
         crate::ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_on_conn(&mut conn, redis)
+            .execute_with_deps(&mut conn, redis)
             .await?;
 
         tracing::info!(

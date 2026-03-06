@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use sqlx::{Executor, Postgres, Transaction, query};
+use sqlx::{Executor, Postgres, query};
 
 use crate::Command;
-use common::{capabilities::HasDbRouter, error::AppError, state::AppState};
+use common::{error::AppError, state::AppState};
 
 #[derive(Debug)]
 pub struct GetActiveDeliveryCommand {
@@ -11,7 +11,7 @@ pub struct GetActiveDeliveryCommand {
 }
 
 impl GetActiveDeliveryCommand {
-    async fn execute_with_db<'e, E>(
+    async fn execute_with_deps<'e, E>(
         self,
         executor: E,
     ) -> Result<Option<ActiveDeliveryInfo>, AppError>
@@ -72,18 +72,15 @@ impl GetActiveDeliveryCommand {
         }))
     }
 
-    pub async fn execute_with<C>(self, deps: &C) -> Result<Option<ActiveDeliveryInfo>, AppError>
-    where
-        C: HasDbRouter + ?Sized,
-    {
-        self.execute_with_db(deps.writer_pool()).await
-    }
-
-    pub async fn execute_in_tx(
+    pub async fn execute_with<'a, A>(
         self,
-        tx: &mut Transaction<'_, Postgres>,
-    ) -> Result<Option<ActiveDeliveryInfo>, AppError> {
-        self.execute_with_db(tx.as_mut()).await
+        acquirer: A,
+    ) -> Result<Option<ActiveDeliveryInfo>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
+        self.execute_with_deps(&mut *conn).await
     }
 }
 
@@ -91,7 +88,7 @@ impl Command for GetActiveDeliveryCommand {
     type Output = Option<ActiveDeliveryInfo>;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -124,7 +121,7 @@ pub struct DeleteActiveDeliveryCommand {
 }
 
 impl DeleteActiveDeliveryCommand {
-    async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    async fn execute_with_deps<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -138,15 +135,12 @@ impl DeleteActiveDeliveryCommand {
         Ok(())
     }
 
-    pub async fn execute_with<C>(self, deps: &C) -> Result<(), AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
-        C: HasDbRouter + ?Sized,
+        A: sqlx::Acquire<'a, Database = Postgres>,
     {
-        self.execute_with_db(deps.writer_pool()).await
-    }
-
-    pub async fn execute_in_tx(self, tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
-        self.execute_with_db(tx.as_mut()).await
+        let mut conn = acquirer.acquire().await?;
+        self.execute_with_deps(&mut *conn).await
     }
 }
 
@@ -154,7 +148,7 @@ impl Command for DeleteActiveDeliveryCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -166,7 +160,7 @@ pub struct UpdateDeliveryAttemptsCommand {
 }
 
 impl UpdateDeliveryAttemptsCommand {
-    async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    async fn execute_with_deps<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -186,15 +180,12 @@ impl UpdateDeliveryAttemptsCommand {
         Ok(())
     }
 
-    pub async fn execute_with<C>(self, deps: &C) -> Result<(), AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
-        C: HasDbRouter + ?Sized,
+        A: sqlx::Acquire<'a, Database = Postgres>,
     {
-        self.execute_with_db(deps.writer_pool()).await
-    }
-
-    pub async fn execute_in_tx(self, tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
-        self.execute_with_db(tx.as_mut()).await
+        let mut conn = acquirer.acquire().await?;
+        self.execute_with_deps(&mut *conn).await
     }
 }
 
@@ -202,7 +193,7 @@ impl Command for UpdateDeliveryAttemptsCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -225,7 +216,7 @@ pub struct DeactivateEndpointCommand {
 }
 
 impl DeactivateEndpointCommand {
-    async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    async fn execute_with_deps<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -244,15 +235,12 @@ impl DeactivateEndpointCommand {
         Ok(())
     }
 
-    pub async fn execute_with<C>(self, deps: &C) -> Result<(), AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
-        C: HasDbRouter + ?Sized,
+        A: sqlx::Acquire<'a, Database = Postgres>,
     {
-        self.execute_with_db(deps.writer_pool()).await
-    }
-
-    pub async fn execute_in_tx(self, tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
-        self.execute_with_db(tx.as_mut()).await
+        let mut conn = acquirer.acquire().await?;
+        self.execute_with_deps(&mut *conn).await
     }
 }
 
@@ -260,6 +248,6 @@ impl Command for DeactivateEndpointCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

@@ -76,7 +76,7 @@ impl Query for GetMcpServersQuery {
     type Output = Vec<McpServer>;
 
     async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -131,7 +131,7 @@ impl Query for GetMcpServerByIdQuery {
     type Output = McpServer;
 
     async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -226,12 +226,12 @@ impl GetActiveAgentMcpServerIdsForContextQuery {
             context_group,
         }
     }
-}
 
-impl Query for GetActiveAgentMcpServerIdsForContextQuery {
-    type Output = Vec<i64>;
-
-    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<Vec<i64>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await.map_err(AppError::Database)?;
         let rows = sqlx::query(
             r#"
             SELECT mcp_server_id
@@ -244,7 +244,7 @@ impl Query for GetActiveAgentMcpServerIdsForContextQuery {
         .bind(self.deployment_id)
         .bind(self.agent_id)
         .bind(&self.context_group)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -255,10 +255,23 @@ impl Query for GetActiveAgentMcpServerIdsForContextQuery {
     }
 }
 
-impl Query for GetActiveAgentMcpServerConnectionMetadataQuery {
-    type Output = Option<McpConnectionMetadata>;
+impl Query for GetActiveAgentMcpServerIdsForContextQuery {
+    type Output = Vec<i64>;
 
     async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
+impl GetActiveAgentMcpServerConnectionMetadataQuery {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> StdResult<Option<McpConnectionMetadata>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await.map_err(AppError::Database)?;
         let row = sqlx::query(
             r#"
             SELECT connection_metadata
@@ -274,7 +287,7 @@ impl Query for GetActiveAgentMcpServerConnectionMetadataQuery {
         .bind(self.agent_id)
         .bind(&self.context_group)
         .bind(self.mcp_server_id)
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -294,10 +307,18 @@ impl Query for GetActiveAgentMcpServerConnectionMetadataQuery {
     }
 }
 
+impl Query for GetActiveAgentMcpServerConnectionMetadataQuery {
+    type Output = Option<McpConnectionMetadata>;
+
+    async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
 impl Query for GetAgentMcpServersQuery {
     type Output = Vec<McpServer>;
 
     async fn execute(&self, app_state: &AppState) -> StdResult<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

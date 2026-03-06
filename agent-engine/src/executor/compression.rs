@@ -4,7 +4,7 @@ use super::core::AgentExecutor;
 use crate::template::{render_template_with_prompt, AgentTemplates};
 
 use commands::{
-    Command, CreateConversationCommand, CreateMemoryCommand, GenerateEmbeddingsCommand,
+    CreateConversationCommand, CreateMemoryCommand, GenerateEmbeddingsCommand,
 };
 use common::error::AppError;
 use dto::json::agent_memory::MemoryCategory;
@@ -215,7 +215,9 @@ impl AgentExecutor {
                 },
                 ConversationMessageType::ExecutionSummary,
             );
-            command.execute(&self.ctx.app_state).await?;
+            command
+                .execute_with(self.ctx.app_state.db_router.writer())
+                .await?;
         }
 
         Ok(token_count)
@@ -228,9 +230,17 @@ impl AgentExecutor {
             .map(String::from)
             .collect();
 
+        let gemini_api_key = match std::env::var("GEMINI_API_KEY") {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        let gemini_model = std::env::var("GEMINI_EMBEDDING_MODEL")
+            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
+        let gemini_client = reqwest::Client::new();
+
         let embeddings = match GenerateEmbeddingsCommand::new(memory_contents.clone())
             .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-            .execute(&self.ctx.app_state)
+            .execute_with(&gemini_client, &gemini_api_key, &gemini_model)
             .await
         {
             Ok(e) => e,
@@ -267,7 +277,9 @@ impl AgentExecutor {
                     agent_id: Some(self.ctx.agent.id),
                     initial_importance: importance,
                 };
-                let _ = create_cmd.execute(&self.ctx.app_state).await;
+                let _ = create_cmd
+                    .execute_with(self.ctx.app_state.db_router.writer())
+                    .await;
             }
         }
     }

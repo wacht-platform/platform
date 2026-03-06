@@ -3,7 +3,7 @@ use crate::gemini::GeminiClient;
 use crate::template::{render_template_with_prompt, AgentTemplates};
 
 use commands::{
-    Command, CompletionStatus, CompletionSummary, StoreCompletionSummaryEnhancedCommand,
+    CompletionStatus, CompletionSummary, StoreCompletionSummaryEnhancedCommand,
     UpdateExecutionContextQuery,
 };
 use common::error::AppError;
@@ -16,7 +16,6 @@ use models::{
     ActionExecutionStatus, ActionResult, ActionResultStatus, AgentExecutionState, AiTool,
     ConversationContent, ConversationMessageType, ExecutionContextStatus, UserInputRequestState,
 };
-use queries::Query;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
@@ -80,7 +79,7 @@ impl AgentExecutor {
 
         UpdateExecutionContextQuery::new(context_id, deployment_id)
             .with_status(ExecutionContextStatus::Running)
-            .execute(&app_state)
+            .execute_with_deps(&app_state)
             .await?;
 
         self.repl().await
@@ -108,7 +107,7 @@ impl AgentExecutor {
 
     async fn run_inner(&mut self, request: ConverseRequest) -> Result<(), AppError> {
         let conversation = queries::GetConversationByIdQuery::new(request.conversation_id)
-            .execute(&self.ctx.app_state)
+            .execute_with(self.ctx.app_state.db_router.writer())
             .await?;
 
         let user_message = match &conversation.content {
@@ -124,7 +123,7 @@ impl AgentExecutor {
 
         UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
             .with_status(ExecutionContextStatus::Running)
-            .execute(&self.ctx.app_state)
+            .execute_with_deps(&self.ctx.app_state)
             .await?;
 
         let _ = self
@@ -431,7 +430,7 @@ impl AgentExecutor {
                         self.ctx.agent.deployment_id,
                     )
                     .with_execution_state(self.build_execution_state_snapshot(None))
-                    .execute(&self.ctx.app_state)
+                    .execute_with_deps(&self.ctx.app_state)
                     .await?;
 
                     if any_pending {
@@ -441,7 +440,7 @@ impl AgentExecutor {
                         )
                         .with_execution_state(self.build_execution_state_snapshot(None))
                         .with_status(ExecutionContextStatus::WaitingForInput)
-                        .execute(&self.ctx.app_state)
+                        .execute_with_deps(&self.ctx.app_state)
                         .await?;
                     }
 
@@ -544,7 +543,7 @@ impl AgentExecutor {
                             metrics: None,
                         },
                     )
-                    .execute(&self.ctx.app_state)
+                    .execute_with(self.ctx.app_state.db_router.writer())
                     .await?;
                 } else {
                     UpdateExecutionContextQuery::new(
@@ -552,7 +551,7 @@ impl AgentExecutor {
                         self.ctx.agent.deployment_id,
                     )
                     .with_status(ExecutionContextStatus::Idle)
-                    .execute(&self.ctx.app_state)
+                    .execute_with_deps(&self.ctx.app_state)
                     .await?;
                 }
                 Ok(false)
@@ -795,7 +794,7 @@ impl AgentExecutor {
                     self.ctx.agent.deployment_id,
                     sub_agent_ids.clone(),
                 )
-                .execute(&self.ctx.app_state)
+                .execute_with(self.ctx.app_state.db_router.writer())
                 .await
                 .map(|agents| {
                     agents
@@ -1486,12 +1485,12 @@ impl AgentExecutor {
                     metrics: None,
                 },
             )
-            .execute(&self.ctx.app_state)
+            .execute_with(self.ctx.app_state.db_router.writer())
             .await?;
         } else {
             UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
                 .with_status(ExecutionContextStatus::Idle)
-                .execute(&self.ctx.app_state)
+                .execute_with_deps(&self.ctx.app_state)
                 .await?;
         }
 

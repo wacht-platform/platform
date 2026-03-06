@@ -32,6 +32,6 @@ impl Query for GetSmsPricingQuery {
     type Output = Option<Decimal>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

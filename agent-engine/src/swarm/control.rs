@@ -1,7 +1,5 @@
-use commands::Command;
 use common::error::AppError;
 use common::state::AppState;
-use queries::Query;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -22,7 +20,13 @@ pub async fn spawn_control(
 ) -> Result<Value, AppError> {
     let child_context_query =
         queries::GetExecutionContextQuery::new(request.child_context_id.0, deployment_id);
-    let child_context = Query::execute(&child_context_query, app_state).await?;
+    let child_context = child_context_query
+        .execute_with(
+            app_state
+                .db_router
+                .reader(common::db_router::ReadConsistency::Strong),
+        )
+        .await?;
 
     if child_context.parent_context_id != Some(sender_context_id) {
         return Err(AppError::BadRequest(
@@ -41,7 +45,9 @@ pub async fn spawn_control(
     let publish_control_command =
         commands::PublishSpawnControlCommand::new(request.child_context_id.0, deployment_id, action)
             .with_sender(sender_context_id);
-    Command::execute(publish_control_command, app_state).await?;
+    publish_control_command
+        .execute_with(&app_state.nats_jetstream)
+        .await?;
 
     response::success(
         tool_name,

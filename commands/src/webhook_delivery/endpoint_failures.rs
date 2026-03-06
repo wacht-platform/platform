@@ -35,7 +35,7 @@ impl Command for CheckEndpointFailuresCommand {
     type Output = EndpointFailureInfo;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(&app_state.redis_client).await
     }
 }
 
@@ -84,7 +84,7 @@ impl Command for IncrementEndpointFailuresCommand {
     type Output = i64;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(&app_state.redis_client).await
     }
 }
 
@@ -120,7 +120,7 @@ impl Command for ClearEndpointFailuresCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(&app_state.redis_client).await
     }
 }
 

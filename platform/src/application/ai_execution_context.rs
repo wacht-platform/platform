@@ -2,7 +2,7 @@ use commands::agent_execution::{
     PublishAgentExecutionCommand, SignalAgentExecutionCancellationCommand, UploadFilesToS3Command,
 };
 use commands::{
-    Command, CreateConversationCommand, CreateExecutionContextCommand,
+    CreateConversationCommand, CreateExecutionContextCommand,
     EnsurePulseUsageAllowedForDeploymentCommand, UpdateExecutionContextCommand,
     UpdateExecutionContextQuery,
 };
@@ -107,11 +107,9 @@ async fn cancel_running_execution_if_needed(
     has_running_execution: bool,
 ) -> Result<(), AppError> {
     if has_running_execution {
-        Command::execute(
-            SignalAgentExecutionCancellationCommand::new(context_id),
-            app_state,
-        )
-        .await?;
+        SignalAgentExecutionCancellationCommand::new(context_id)
+            .execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
+            .await?;
     }
     Ok(())
 }
@@ -240,7 +238,14 @@ pub async fn execute_agent_async(
 
             let upload_files_command =
                 UploadFilesToS3Command::new(deployment_id, context_id, new_message.files);
-            let model_files = match Command::execute(upload_files_command, app_state).await {
+            let storage_client = app_state
+                .agent_storage_client
+                .as_ref()
+                .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+            let model_files = match upload_files_command
+                .execute_with(storage_client, || Ok(app_state.sf.next_id()? as i64))
+                .await
+            {
                     Ok(files) => files,
                     Err(e) => {
                         error!("Failed to upload files: {}", e);
@@ -287,7 +292,9 @@ pub async fn execute_agent_async(
                 agent_name.clone(),
                 conversation_id,
             );
-            Command::execute(publish_command, app_state).await?;
+            publish_command
+                .execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
+                .await?;
 
             info!(
                 "Published new_message execution for context {} (conversation_id: {})",
@@ -326,7 +333,9 @@ pub async fn execute_agent_async(
                 agent_name.clone(),
                 conversation_id,
             );
-            Command::execute(publish_command, app_state).await?;
+            publish_command
+                .execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
+                .await?;
 
             info!(
                 "Published user_input_response execution for context {} (conversation_id: {})",
@@ -348,7 +357,9 @@ pub async fn execute_agent_async(
                 platform_function_result.execution_id.clone(),
                 platform_function_result.result,
             );
-            Command::execute(publish_command, app_state).await?;
+            publish_command
+                .execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
+                .await?;
 
             info!(
                 "Published platform_function_result execution for context {} (execution_id: {})",
@@ -363,7 +374,9 @@ pub async fn execute_agent_async(
             let update_context_command = UpdateExecutionContextQuery::new(context_id, deployment_id)
                 .with_status(ExecutionContextStatus::Failed)
                 .mark_status_as_cancellation();
-            Command::execute(update_context_command, app_state).await?;
+            update_context_command
+                .execute_with_deps(app_state)
+                .await?;
 
             Ok(ExecuteAgentResponse {
                 status: "cancelled".to_string(),

@@ -21,7 +21,7 @@ impl Command for CreateOAuthAppCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         self.execute_with(
-            &app_state.db_pool,
+            app_state.db_router.writer(),
             &app_state.cloudflare_service,
             app_state.sf.next_id()? as i64,
         )
@@ -40,11 +40,11 @@ impl CreateOAuthAppCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn, cloudflare_service, oauth_app_id)
+        self.execute_with_deps(conn, cloudflare_service, oauth_app_id)
             .await
     }
 
-    async fn execute_with_connection<C>(
+    async fn execute_with_deps<C>(
         self,
         mut conn: C,
         cloudflare_service: &common::CloudflareService,
@@ -182,7 +182,7 @@ impl Command for VerifyOAuthAppDomainCommand {
     type Output = VerifyOAuthAppDomainResult;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, &app_state.cloudflare_service)
+        self.execute_with(app_state.db_router.writer(), &app_state.cloudflare_service)
             .await
     }
 }
@@ -197,10 +197,10 @@ impl VerifyOAuthAppDomainCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn, cloudflare_service).await
+        self.execute_with_deps(conn, cloudflare_service).await
     }
 
-    async fn execute_with_connection<C>(
+    async fn execute_with_deps<C>(
         self,
         mut conn: C,
         cloudflare_service: &common::CloudflareService,
@@ -238,7 +238,7 @@ impl Command for UpdateOAuthAppCommand {
     type Output = OAuthAppData;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -251,10 +251,10 @@ impl UpdateOAuthAppCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn).await
+        self.execute_with_deps(conn).await
     }
 
-    async fn execute_with_connection<C>(self, mut conn: C) -> Result<OAuthAppData, AppError>
+    async fn execute_with_deps<C>(self, mut conn: C) -> Result<OAuthAppData, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {

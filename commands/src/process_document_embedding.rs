@@ -26,9 +26,16 @@ impl Command for ProcessDocumentBatchCommand {
     type Output = String;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, |texts| async move {
+        self.execute_with(app_state.db_router.writer(), |texts| async move {
+            let api_key = std::env::var("GEMINI_API_KEY")
+                .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
+            let model = std::env::var("GEMINI_EMBEDDING_MODEL")
+                .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
+            let client = reqwest::Client::new();
             let embeddings_command = GenerateEmbeddingsCommand::new(texts);
-            Command::execute(embeddings_command, app_state).await
+            embeddings_command
+                .execute_with(&client, &api_key, &model)
+                .await
         })
         .await
     }

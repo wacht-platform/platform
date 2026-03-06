@@ -9,7 +9,7 @@ use dto::{
     json::webhook_requests::{GetAppWebhookDeliveriesQuery, WebhookDeliveryDetails},
 };
 use models::webhook_analytics::WebhookAnalyticsResult;
-use queries::{Query as QueryTrait, webhook_analytics::GetWebhookAnalyticsQuery};
+use queries::webhook_analytics::GetWebhookAnalyticsQuery;
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
 
@@ -95,7 +95,7 @@ pub async fn get_webhook_stats(
     app_slug: String,
 ) -> Result<WebhookAnalyticsResult, AppError> {
     let query = GetWebhookAnalyticsQuery::new(deployment_id).with_app_slug(app_slug);
-    QueryTrait::execute(&query, app_state).await
+    query.execute_with(&app_state.clickhouse_service).await
 }
 
 pub async fn get_app_webhook_deliveries(

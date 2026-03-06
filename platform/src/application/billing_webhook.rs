@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use axum::http::{HeaderMap, StatusCode};
 use commands::{
-    Command,
     billing::{
         MarkCheckoutFlowFailedCommand, MarkPaymentSucceededCommand, MarkSubscriptionActivatedCommand,
         UpdateBillingAccountStatusCommand, UpsertInvoiceCommand, UpsertSubscriptionCommand,
@@ -157,7 +156,9 @@ async fn send_billing_change_email(app_state: &AppState, owner_id: &str, message
             body_html.clone(),
             Some(body_text.clone()),
         );
-        if let Err(e) = Command::execute(send_email_command, app_state).await
+        if let Err(e) = send_email_command
+            .execute_with_deps(app_state)
+            .await
         {
             warn!(
                 "Failed to send billing change email to {} for {}: {}",

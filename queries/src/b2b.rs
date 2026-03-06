@@ -41,7 +41,7 @@ impl Query for GetDeploymentWorkspaceRolesQuery {
     type Output = Vec<DeploymentWorkspaceRole>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -78,7 +78,7 @@ impl Query for GetDeploymentOrganizationRolesQuery {
     type Output = Vec<DeploymentOrganizationRole>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -199,7 +199,7 @@ impl Query for DeploymentOrganizationListQuery {
     type Output = Vec<Organization>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -337,7 +337,7 @@ impl Query for DeploymentWorkspaceListQuery {
     type Output = Vec<WorkspaceWithOrganizationName>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -464,7 +464,7 @@ impl Query for GetOrganizationDetailsQuery {
     type Output = OrganizationDetails;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -564,7 +564,7 @@ impl Query for GetWorkspaceDetailsQuery {
     type Output = WorkspaceDetails;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -769,7 +769,7 @@ impl Query for GetOrganizationMembersQuery {
     type Output = (Vec<OrganizationMemberDetails>, bool);
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -974,6 +974,6 @@ impl Query for GetWorkspaceMembersQuery {
     type Output = (Vec<WorkspaceMemberDetails>, bool);
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

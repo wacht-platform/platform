@@ -50,7 +50,7 @@ pub async fn update_ai_settings(
         .deployment_id(deployment_id)
         .updates(updates)
         .build()?
-        .execute_with(app_state.db_router.writer(), &app_state.encryption_service)
+        .execute_with_deps(app_state)
         .await?;
 
     Ok(DeploymentAiSettingsResponse::from(settings))

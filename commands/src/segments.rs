@@ -30,7 +30,7 @@ impl Command for CreateSegmentCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let id = app_state.sf.next_id()? as i64;
-        self.execute_with(&app_state.db_pool, id).await
+        self.execute_with(app_state.db_router.writer(), id).await
     }
 }
 
@@ -115,7 +115,7 @@ impl Command for UpdateSegmentCommand {
     type Output = Segment;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -210,7 +210,7 @@ impl Command for DeleteSegmentCommand {
     type Output = serde_json::Value;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -303,7 +303,7 @@ impl Command for AssignSegmentCommand {
     type Output = serde_json::Value;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -459,7 +459,7 @@ impl Command for RemoveSegmentCommand {
     type Output = serde_json::Value;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

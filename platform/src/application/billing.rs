@@ -1,6 +1,5 @@
 use chrono::{Duration, Utc};
 use commands::{
-    Command,
     billing::{
         CreateBillingAccountCommand, MarkCheckoutSessionCreatedCommand, SetProviderCustomerIdCommand,
         UpdateBillingAccountCommand, UpdateBillingAccountStatusCommand, UpsertSubscriptionCommand,
@@ -15,7 +14,6 @@ use common::{
 };
 use models::billing::BillingAccountWithSubscription;
 use queries::{
-    Query as QueryTrait,
     billing::{DodoProduct, GetBillingAccountQuery, GetDodoProductQuery},
 };
 use tracing::error;
@@ -110,21 +108,21 @@ async fn get_billing_account_or_404(
     owner_id: &str,
 ) -> Result<BillingAccountWithSubscription, AppError> {
     GetBillingAccountQuery::new(owner_id.to_string())
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await?
         .ok_or_else(|| AppError::NotFound("Billing account not found".to_string()))
 }
 
 async fn get_plan_product_or_404(state: &AppState, plan_name: &str) -> Result<DodoProduct, AppError> {
     GetDodoProductQuery::new(plan_name)
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await?
         .ok_or_else(|| AppError::NotFound("Plan not found".to_string()))
 }
 
 async fn get_pulse_product_or_500(state: &AppState) -> Result<DodoProduct, AppError> {
     GetDodoProductQuery::new("pulse_credits")
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await?
         .ok_or_else(|| AppError::Internal("Pulse product configuration missing".to_string()))
 }
@@ -138,7 +136,7 @@ async fn mark_checkout_session_created(
         owner_id: owner_id.to_string(),
         checkout_session_id: checkout_session_id.to_string(),
     }
-    .execute(state)
+    .execute_with(state.db_router.writer())
     .await?;
     Ok(())
 }
@@ -148,7 +146,7 @@ pub async fn get_billing_account(
     owner_id: &str,
 ) -> Result<Option<models::billing::BillingAccountWithSubscription>, AppError> {
     GetBillingAccountQuery::new(owner_id.to_string())
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await
 }
 
@@ -173,7 +171,7 @@ pub async fn update_billing_account(
         postal_code: req.postal_code,
         country: req.country,
     }
-    .execute(state)
+    .execute_with(state.db_router.writer())
     .await?;
 
     Ok(())
@@ -200,7 +198,7 @@ pub async fn get_portal_url(state: &AppState, owner_id: &str) -> Result<String, 
 pub async fn list_invoices(state: &AppState, owner_id: &str) -> Result<serde_json::Value, AppError> {
     let account = get_billing_account_or_404(state, owner_id).await?;
     let invoices = queries::billing::ListBillingInvoicesQuery::new(account.billing_account.id)
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await?;
     Ok(serde_json::json!({ "items": invoices }))
 }
@@ -224,7 +222,7 @@ pub async fn get_current_usage(
             account_with_sub.billing_account.id,
             billing_period_timestamp,
         )
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await?;
 
     Ok((snapshots, billing_period_timestamp.to_rfc3339()))
@@ -236,7 +234,7 @@ pub async fn list_pulse_transactions(
 ) -> Result<Vec<models::pulse_transaction::PulseTransaction>, AppError> {
     let account = get_billing_account_or_404(state, owner_id).await?;
     queries::billing::ListPulseTransactionsQuery::new(account.billing_account.id)
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await
 }
 
@@ -249,7 +247,7 @@ pub async fn create_checkout(
     let is_starter_plan = req.plan_name.eq_ignore_ascii_case("starter");
 
     let existing = GetBillingAccountQuery::new(owner_id.to_string())
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await?;
 
     if let Some(account) = existing.clone() {
@@ -279,7 +277,7 @@ pub async fn create_checkout(
             postal_code: None,
             country: None,
         }
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await?;
 
         if let Some(ref cid) = account.billing_account.provider_customer_id {
@@ -312,7 +310,7 @@ pub async fn create_checkout(
                 owner_id: owner_id.to_string(),
                 provider_customer_id: customer.customer_id.clone(),
             }
-            .execute(state)
+            .execute_with(state.db_router.writer())
             .await?;
 
             customer.customer_id
@@ -332,7 +330,7 @@ pub async fn create_checkout(
             postal_code: None,
             country: None,
         }
-        .execute(state)
+        .execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
         .await?;
 
         let customer = dodo
@@ -351,7 +349,7 @@ pub async fn create_checkout(
             owner_id: owner_id.to_string(),
             provider_customer_id: customer.customer_id.clone(),
         }
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await?;
 
         customer.customer_id
@@ -359,7 +357,7 @@ pub async fn create_checkout(
 
     if is_starter_plan {
         let starter_product_id = GetDodoProductQuery::new("starter")
-            .execute(state)
+            .execute_with(state.db_router.writer())
             .await?
             .map(|p| p.product_id)
             .unwrap_or_else(|| STARTER_PRODUCT_ID_FALLBACK.to_string());
@@ -372,14 +370,14 @@ pub async fn create_checkout(
             status: "active".to_string(),
             previous_billing_date: Some(Utc::now()),
         }
-        .execute(state)
+        .execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
         .await?;
 
         UpdateBillingAccountStatusCommand {
             owner_id: owner_id.to_string(),
             status: "active".to_string(),
         }
-        .execute(state)
+        .execute_with(state.db_router.writer())
         .await?;
 
         return Ok(CheckoutOutcome {

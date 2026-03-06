@@ -10,7 +10,7 @@ use chrono::Utc;
 use common::tinybird::insert_api_audit_log_async;
 use dto::clickhouse::{ApiKeyVerificationEvent, RateLimitState};
 use models::api_key::{OAuthScopeDefinition, RateLimit, RateLimitMode};
-use queries::{GetGatewayOAuthAccessTokenByHashQuery, Query as QueryTrait};
+use queries::GetGatewayOAuthAccessTokenByHashQuery;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -614,7 +614,10 @@ async fn check_authz_oauth_access_token(
     let token_hash = format!("{:x}", hasher.finalize());
 
     let token_query = GetGatewayOAuthAccessTokenByHashQuery::new(token_hash.clone());
-    let token_data = match QueryTrait::execute(&token_query, app_state).await {
+    let token_data = match token_query
+        .execute_with(app_state.db_router.writer())
+        .await
+    {
         Ok(Some(data)) => data,
         Ok(None) => return error_response(StatusCode::UNAUTHORIZED, request_id, "invalid_token"),
         Err(_) => {

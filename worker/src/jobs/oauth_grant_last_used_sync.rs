@@ -1,11 +1,13 @@
 use anyhow::Result;
-use commands::{Command, SyncOAuthGrantLastUsedBatch};
+use commands::SyncOAuthGrantLastUsedBatch;
 use common::state::AppState;
 use tracing::info;
 
 pub async fn sync_oauth_grant_last_used(app_state: &AppState) -> Result<String> {
     let sync_command = SyncOAuthGrantLastUsedBatch { batch_size: 100 };
-    let synced = Command::execute(sync_command, app_state).await?;
+    let synced = sync_command
+        .execute_with(&app_state.redis_client, app_state.db_router.writer())
+        .await?;
     if synced == 0 {
         return Ok("No dirty oauth grant last_used entries".to_string());
     }

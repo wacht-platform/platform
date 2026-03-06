@@ -4,7 +4,7 @@ use common::{
     capabilities::HasDbRouter, db_router::ReadConsistency, error::AppError, state::AppState,
 };
 use models::{Deployment, ProjectWithDeployments};
-use sqlx::{Executor, Postgres, Row, Transaction, query};
+use sqlx::{Executor, Postgres, Row, query};
 
 use super::Query;
 
@@ -109,7 +109,7 @@ impl GetProjectsWithDeploymentQuery {
         }
     }
 
-    async fn execute_with_executor<'e, E>(
+    async fn execute_with_deps<'e, E>(
         &self,
         executor: E,
     ) -> Result<Vec<ProjectWithDeployments>, AppError>
@@ -191,21 +191,15 @@ impl GetProjectsWithDeploymentQuery {
     where
         C: HasDbRouter + ?Sized,
     {
-        self.execute_with_executor(deps.reader_pool(self.consistency))
+        self.execute_with_deps(deps.reader_pool(self.consistency))
             .await
     }
 
-    pub async fn execute_in_tx(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-    ) -> Result<Vec<ProjectWithDeployments>, AppError> {
-        self.execute_with_executor(tx.as_mut()).await
-    }
 }
 impl Query for GetProjectsWithDeploymentQuery {
     type Output = Vec<ProjectWithDeployments>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(app_state).await
+        self.execute_with(&app_state.db_router).await
     }
 }

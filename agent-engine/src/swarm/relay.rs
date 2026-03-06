@@ -1,7 +1,6 @@
-use commands::{Command, CreateChildContextCommand, UpdateExecutionContextQuery};
+use commands::{CreateChildContextCommand, UpdateExecutionContextQuery};
 use common::error::AppError;
 use models::AgentExecutionContext;
-use queries::Query;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -143,11 +142,18 @@ async fn execute_relay(
             CreateChildContextCommand::new(current_agent.deployment_id, current_context_id, title)
                 .with_initial_task(instruction_text.to_string())
                 .with_task_type("spawn_context_execution".to_string());
-        let child_context = Command::execute(create_child_command, app_state).await?;
+        let child_context = create_child_command
+            .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+            .await?;
 
         // Child context inherits parent conversation up to this point (without copying rows).
         let history_query = queries::GetLLMConversationHistoryQuery::new(current_context_id);
-        let parent_history = Query::execute(&history_query, app_state)
+        let parent_history = history_query
+            .execute_with(
+                app_state
+                    .db_router
+                    .reader(common::db_router::ReadConsistency::Strong),
+            )
             .await
             .unwrap_or_default();
         let inherit_until = parent_history.last().map(|c| c.id).unwrap_or(0);
@@ -157,7 +163,9 @@ async fn execute_relay(
                 "inherit_parent_context_id": current_context_id,
                 "inherit_parent_until_conversation_id": inherit_until,
             }));
-        Command::execute(update_context_command, app_state).await?;
+        update_context_command
+            .execute_with_deps(app_state)
+            .await?;
 
         (child_context, true)
     };
@@ -193,7 +201,9 @@ async fn execute_relay(
         content,
         models::ConversationMessageType::UserMessage,
     );
-    Command::execute(create_conversation_command, app_state).await?;
+    create_conversation_command
+        .execute_with(app_state.db_router.writer())
+        .await?;
 
     if request.execute {
         let publish_command = commands::PublishAgentExecutionCommand::new_message(
@@ -203,7 +213,9 @@ async fn execute_relay(
             Some(resolved_agent_name.clone()),
             conversation_id,
         );
-        Command::execute(publish_command, app_state).await?;
+        publish_command
+            .execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
+            .await?;
     }
 
     response::success(
@@ -283,7 +295,12 @@ async fn resolve_execution_agent_name(
 
     let candidates =
         queries::GetAiAgentsByIdsQuery::new(current_agent.deployment_id, sub_agent_ids)
-            .execute(&execution_context.app_state)
+            .execute_with(
+                execution_context
+                    .app_state
+                    .db_router
+                    .reader(common::db_router::ReadConsistency::Strong),
+            )
             .await?;
 
     candidates

@@ -22,36 +22,7 @@ impl CreateStagingDeploymentCommand {
         }
     }
 
-    fn create_auth_settings(&self, deployment_id: i64) -> DeploymentAuthSettings {
-        build_auth_settings(&self.auth_methods, deployment_id)
-    }
-
-    fn create_b2b_settings(&self, deployment_id: i64) -> DeploymentB2bSettingsWithRoles {
-        build_b2b_settings(deployment_id)
-    }
-
-    fn create_ui_settings(
-        &self,
-        deployment_id: i64,
-        frontend_host: String,
-        app_name: String,
-    ) -> DeploymentUISettings {
-        build_ui_settings(deployment_id, &frontend_host, app_name)
-    }
-
-    fn create_restrictions(&self, deployment_id: i64) -> DeploymentRestrictions {
-        build_restrictions(deployment_id)
-    }
-
-    fn create_sms_templates(&self, deployment_id: i64) -> DeploymentSmsTemplate {
-        build_sms_templates(deployment_id)
-    }
-
-    fn create_email_templates(&self, deployment_id: i64) -> DeploymentEmailTemplate {
-        build_email_templates(deployment_id)
-    }
-
-    pub async fn execute_in_tx(
+    pub async fn run_with_tx(
         self,
         ids: &dyn IdGenerator,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -64,7 +35,7 @@ impl CreateStagingDeploymentCommand {
 
         let project = ProjectWithBillingForStagingQuery::builder()
             .project_id(self.project_id)
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?
             .ok_or_else(|| {
                 AppError::NotFound(format!("Project with id {} not found", self.project_id))
@@ -85,7 +56,7 @@ impl CreateStagingDeploymentCommand {
 
         let staging_count = StagingDeploymentCountByProjectQuery::builder()
             .project_id(self.project_id)
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         if staging_count >= 3 {
@@ -109,20 +80,20 @@ impl CreateStagingDeploymentCommand {
             .frontend_host(frontend_host)
             .publishable_key(publishable_key)
             .mail_from_host("staging.wacht.services")
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
-        let auth_settings = self.create_auth_settings(deployment_row.id);
+        let auth_settings = build_auth_settings(&self.auth_methods, deployment_row.id);
         DeploymentAuthSettingsInsert::builder()
             .id(ids.next_id()?)
             .auth_settings(auth_settings)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
-        let ui_settings = self.create_ui_settings(
+        let ui_settings = build_ui_settings(
             deployment_row.id,
-            deployment_row.frontend_host.clone(),
+            &deployment_row.frontend_host,
             project.name.clone(),
         );
         let waitlist_url = format!("https://{}/waitlist", deployment_row.frontend_host);
@@ -132,10 +103,10 @@ impl CreateStagingDeploymentCommand {
             .waitlist_page_url(waitlist_url)
             .support_page_url("")
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
-        let b2b_settings = self.create_b2b_settings(deployment_row.id);
+        let b2b_settings = build_b2b_settings(deployment_row.id);
 
         DeploymentB2bBootstrapInsert::builder()
             .settings_row_id(ids.next_id()?)
@@ -145,32 +116,32 @@ impl CreateStagingDeploymentCommand {
             .org_member_role_id(ids.next_id()?)
             .b2b_settings(b2b_settings)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with_deps(tx.as_mut())
             .await?;
 
-        let restrictions = self.create_restrictions(deployment_row.id);
+        let restrictions = build_restrictions(deployment_row.id);
 
         DeploymentRestrictionsInsert::builder()
             .id(ids.next_id()?)
             .restrictions(restrictions)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
-        let sms_templates = self.create_sms_templates(deployment_row.id);
+        let sms_templates = build_sms_templates(deployment_row.id);
 
         DeploymentSmsTemplatesInsert::builder()
             .id(ids.next_id()?)
             .sms_templates(sms_templates)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         DeploymentAiSettingsInsert::builder()
             .id(ids.next_id()?)
             .deployment_id(deployment_row.id)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         DeploymentKeyPairsInsert::builder()
@@ -181,16 +152,16 @@ impl CreateStagingDeploymentCommand {
             .saml_public_key(saml_public_key)
             .saml_private_key(saml_private_key)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
-        let email_templates = self.create_email_templates(deployment_row.id);
+        let email_templates = build_email_templates(deployment_row.id);
 
         DeploymentEmailTemplatesInsert::builder()
             .id(ids.next_id()?)
             .email_templates(email_templates)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with(tx.as_mut())
             .await?;
 
         if let Some(social_connections_insert) =
@@ -200,7 +171,7 @@ impl CreateStagingDeploymentCommand {
                 || ids.next_id(),
             )?
         {
-            social_connections_insert.execute_in_tx(tx).await?;
+            social_connections_insert.execute_with(tx.as_mut()).await?;
         }
 
         let console_id = console_deployment_id()?;
@@ -210,7 +181,7 @@ impl CreateStagingDeploymentCommand {
             .target_deployment_id(deployment_row.id)
             .event_catalog_slug(DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG)
             .build()?
-            .execute_in_tx(tx)
+            .execute_with_deps(tx.as_mut())
             .await?;
 
         Ok(Deployment {
@@ -237,7 +208,18 @@ impl CreateStagingDeploymentCommand {
         ids: &dyn IdGenerator,
     ) -> Result<Deployment, AppError> {
         let mut tx = writer.begin().await?;
-        let result = self.execute_in_tx(ids, &mut tx).await?;
+        let result = self.run_with_tx(ids, &mut tx).await?;
+        tx.commit().await?;
+        Ok(result)
+    }
+
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Deployment, AppError>
+    where
+        D: common::HasDbRouter + common::HasIdGenerator + Sync,
+    {
+        let mut tx = deps.db_router().writer().begin().await?;
+        let ids = DepsIdGeneratorAdapter::new(deps);
+        let result = self.run_with_tx(&ids, &mut tx).await?;
         tx.commit().await?;
         Ok(result)
     }
@@ -270,7 +252,6 @@ impl Command for CreateStagingDeploymentCommand {
     type Output = Deployment;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let ids = AppStateIdGenerator::new(app_state);
-        self.execute_with(app_state.db_router.writer(), &ids).await
+        self.execute_with_deps(app_state).await
     }
 }

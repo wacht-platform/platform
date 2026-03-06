@@ -1,13 +1,13 @@
 use super::core::AgentExecutor;
 
-use commands::{Command, GenerateEmbeddingsCommand, UpdateMemoryAccessCommand};
+use commands::{GenerateEmbeddingsCommand, UpdateMemoryAccessCommand};
 use common::error::AppError;
 use dto::json::agent_executor::MemoryLoadingDirective;
 use dto::json::agent_executor::MemoryScope;
 use models::{ImmediateContext, MemoryRecord};
 use queries::{
     GetAgentMemoriesQuery, GetLLMConversationHistoryQuery, GetMRUMemoriesQuery,
-    GetSessionMemoriesQuery, Query, SearchMemoriesWithDecayQuery,
+    GetSessionMemoriesQuery, SearchMemoriesWithDecayQuery,
 };
 use serde_json::Value;
 
@@ -64,9 +64,14 @@ impl AgentExecutor {
         );
 
         let embedding = if !directive.focus.is_empty() {
+            let gemini_api_key = std::env::var("GEMINI_API_KEY")
+                .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
+            let gemini_model = std::env::var("GEMINI_EMBEDDING_MODEL")
+                .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
+            let gemini_client = reqwest::Client::new();
             match GenerateEmbeddingsCommand::new(vec![directive.focus.clone()])
                 .with_task_type("RETRIEVAL_QUERY".to_string())
-                .execute(&self.ctx.app_state)
+                .execute_with(&gemini_client, &gemini_api_key, &gemini_model)
                 .await
             {
                 Ok(embeddings) if !embeddings.is_empty() => Some(embeddings[0].clone()),
@@ -113,7 +118,7 @@ impl AgentExecutor {
             context_id: self.ctx.context_id,
             limit: limit as i64,
         }
-        .execute(&self.ctx.app_state)
+        .execute_with(self.ctx.app_state.db_router.writer())
         .await
     }
 
@@ -131,7 +136,10 @@ impl AgentExecutor {
             let command = UpdateMemoryAccessCommand {
                 memory_id: *memory_id,
             };
-            if let Err(e) = command.execute(&self.ctx.app_state).await {
+            if let Err(e) = command
+                .execute_with(self.ctx.app_state.db_router.writer())
+                .await
+            {
                 tracing::warn!("Failed to reinforce memory {}: {}", memory_id, e);
             }
         }
@@ -153,7 +161,7 @@ impl AgentExecutor {
                 agent_id: None,
                 categories: Some(directive.categories.clone()),
             }
-            .execute(&self.ctx.app_state)
+            .execute_with(self.ctx.app_state.db_router.writer())
             .await?;
 
             Ok(results.into_iter().map(|r| r.memory).collect())
@@ -163,7 +171,7 @@ impl AgentExecutor {
                 categories: Some(directive.categories.clone()),
                 limit,
             }
-            .execute(&self.ctx.app_state)
+            .execute_with(self.ctx.app_state.db_router.writer())
             .await
         }
     }
@@ -182,7 +190,7 @@ impl AgentExecutor {
                 agent_id: Some(self.ctx.agent.id),
                 categories: Some(directive.categories.clone()),
             }
-            .execute(&self.ctx.app_state)
+            .execute_with(self.ctx.app_state.db_router.writer())
             .await?;
 
             Ok(results.into_iter().map(|r| r.memory).collect())
@@ -192,7 +200,7 @@ impl AgentExecutor {
                 categories: Some(directive.categories.clone()),
                 limit,
             }
-            .execute(&self.ctx.app_state)
+            .execute_with(self.ctx.app_state.db_router.writer())
             .await
         }
     }
@@ -211,7 +219,7 @@ impl AgentExecutor {
                 agent_id: Some(self.ctx.agent.id),
                 categories: Some(directive.categories.clone()),
             }
-            .execute(&self.ctx.app_state)
+            .execute_with(self.ctx.app_state.db_router.writer())
             .await?;
 
             Ok(results.into_iter().map(|r| r.memory).collect())
@@ -241,7 +249,7 @@ impl AgentExecutor {
         let records = GetLLMConversationHistoryQuery {
             context_id: self.ctx.context_id,
         }
-        .execute(&self.ctx.app_state)
+        .execute_with(self.ctx.app_state.db_router.writer())
         .await?;
 
         let context = self.ctx.get_context().await?;
@@ -262,7 +270,7 @@ impl AgentExecutor {
         }
 
         let parent_records = GetLLMConversationHistoryQuery::new(parent_context_id)
-            .execute(&self.ctx.app_state)
+            .execute_with(self.ctx.app_state.db_router.writer())
             .await?;
 
         let mut merged: Vec<models::ConversationRecord> = parent_records

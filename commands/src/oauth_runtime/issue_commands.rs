@@ -27,7 +27,7 @@ impl Command for IssueOAuthAuthorizationCode {
     type Output = OAuthAuthorizationCodeIssued;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
+        self.execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
             .await
     }
 }
@@ -42,10 +42,10 @@ impl IssueOAuthAuthorizationCode {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn, code_id).await
+        self.execute_with_deps(conn, code_id).await
     }
 
-    async fn execute_with_connection<C>(
+    async fn execute_with_deps<C>(
         self,
         mut conn: C,
         code_id: i64,
@@ -108,7 +108,7 @@ impl Command for ConsumeOAuthAuthorizationCode {
     type Output = bool;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -155,7 +155,7 @@ impl Command for IssueOAuthTokenPair {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         self.execute_with(
-            &app_state.db_pool,
+            app_state.db_router.writer(),
             app_state.sf.next_id()? as i64,
             app_state.sf.next_id()? as i64,
         )
@@ -174,11 +174,11 @@ impl IssueOAuthTokenPair {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn, access_token_id, refresh_token_id)
+        self.execute_with_deps(conn, access_token_id, refresh_token_id)
             .await
     }
 
-    async fn execute_with_connection<C>(
+    async fn execute_with_deps<C>(
         self,
         mut conn: C,
         access_token_id: i64,

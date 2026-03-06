@@ -1,15 +1,15 @@
 use anyhow::Result;
-use commands::{Command, MarkStorageAsCleanCommand};
+use commands::MarkStorageAsCleanCommand;
 use common::{DodoClient, state::AppState};
-use queries::{
-    GetDeploymentProviderSubscriptionQuery, GetDirtyStorageDeploymentsQuery, Query as QueryTrait,
-};
+use queries::{GetDeploymentProviderSubscriptionQuery, GetDirtyStorageDeploymentsQuery};
 use tracing::{error, info, warn};
 
 pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
     info!("[STORAGE SYNC] Starting storage sync to Dodo");
 
-    let dirty_deployments = QueryTrait::execute(&GetDirtyStorageDeploymentsQuery, app_state).await?;
+    let dirty_deployments = GetDirtyStorageDeploymentsQuery
+        .execute_with(app_state.db_router.writer())
+        .await?;
 
     if dirty_deployments.is_empty() {
         info!("[STORAGE SYNC] No dirty deployments to sync");
@@ -82,7 +82,9 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
                     deployment_id, storage_kb, total_bytes
                 );
 
-                Command::execute(MarkStorageAsCleanCommand { deployment_id }, app_state).await?;
+                MarkStorageAsCleanCommand { deployment_id }
+                    .execute_with(app_state.db_router.writer())
+                    .await?;
 
                 synced_count += 1;
             }

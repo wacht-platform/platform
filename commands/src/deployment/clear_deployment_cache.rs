@@ -23,10 +23,10 @@ impl ClearDeploymentCacheCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
-        self.execute_on_conn(&mut conn, redis_client).await
+        self.execute_with_deps(&mut conn, redis_client).await
     }
 
-    pub async fn execute_on_conn(
+    pub(crate) async fn execute_with_deps(
         self,
         conn: &mut sqlx::PgConnection,
         redis_client: &redis::Client,
@@ -51,7 +51,7 @@ impl Command for ClearDeploymentCacheCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
             .await
     }
 }

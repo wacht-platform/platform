@@ -16,7 +16,7 @@ pub async fn process_document_impl(
     document_id: i64,
     app_state: &AppState,
 ) -> Result<String> {
-    use commands::{Command, ProcessDocumentCommand};
+    use commands::ProcessDocumentCommand;
 
     info!(
         "Processing document {} in knowledge base {} for deployment {}",
@@ -25,7 +25,22 @@ pub async fn process_document_impl(
 
     let command = ProcessDocumentCommand::new(deployment_id, knowledge_base_id, document_id);
 
-    Command::execute(command, app_state)
+    let storage_client = app_state
+        .agent_storage_client
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Agent storage client not configured"))?;
+
+    command
+        .execute_with(
+            app_state.db_router.writer(),
+            storage_client,
+            &app_state.text_processing_service,
+            |dep_id, kb_id, batch_size| async move {
+                commands::DispatchDocumentBatchTaskCommand::new(dep_id, kb_id, batch_size)
+                    .execute_with(&app_state.nats_client)
+                    .await
+            },
+        )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to process document: {}", e))
 }

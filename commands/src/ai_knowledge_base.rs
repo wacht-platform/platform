@@ -2,7 +2,7 @@ use crate::{Command, DispatchDocumentProcessingTaskCommand, WriteToAgentStorageC
 use common::error::AppError;
 use common::state::AppState;
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument};
-use queries::{GetAiKnowledgeBaseByIdQuery, Query};
+use queries::GetAiKnowledgeBaseByIdQuery;
 
 use chrono::Utc;
 use sqlx::Row;
@@ -76,7 +76,7 @@ impl Command for CreateAiKnowledgeBaseCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let knowledge_base_id = app_state.sf.next_id()? as i64;
-        self.execute_with(&app_state.db_pool, knowledge_base_id).await
+        self.execute_with(app_state.db_router.writer(), knowledge_base_id).await
     }
 }
 
@@ -113,19 +113,17 @@ impl UpdateAiKnowledgeBaseCommand {
         self.configuration = Some(configuration);
         self
     }
-}
 
-impl Command for UpdateAiKnowledgeBaseCommand {
-    type Output = AiKnowledgeBase;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiKnowledgeBase, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
         if let Some(ref name) = self.name {
             validate_knowledge_base_name(name)?;
         }
-
+        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
-        // Build dynamic query based on provided fields
         let mut query_parts = vec!["updated_at = $1".to_string()];
         let mut param_count = 2;
 
@@ -137,7 +135,6 @@ impl Command for UpdateAiKnowledgeBaseCommand {
             query_parts.push(format!("description = ${}", param_count));
             param_count += 1;
         }
-
         if self.configuration.is_some() {
             query_parts.push(format!("configuration = ${}", param_count));
             param_count += 1;
@@ -155,16 +152,13 @@ impl Command for UpdateAiKnowledgeBaseCommand {
             param_count + 1
         );
 
-        let mut query_builder = sqlx::query(&query);
-        query_builder = query_builder.bind(now);
-
+        let mut query_builder = sqlx::query(&query).bind(now);
         if let Some(name) = self.name {
             query_builder = query_builder.bind(name);
         }
         if let Some(description) = self.description {
             query_builder = query_builder.bind(description);
         }
-
         if let Some(configuration) = self.configuration {
             query_builder = query_builder.bind(configuration);
         }
@@ -174,9 +168,9 @@ impl Command for UpdateAiKnowledgeBaseCommand {
             .bind(self.deployment_id);
 
         let knowledge_base = query_builder
-            .fetch_one(&app_state.db_pool)
+            .fetch_one(&mut *conn)
             .await
-            .map_err(|e| AppError::Database(e))?;
+            .map_err(AppError::Database)?;
 
         Ok(AiKnowledgeBase {
             id: knowledge_base.get("id"),
@@ -187,6 +181,14 @@ impl Command for UpdateAiKnowledgeBaseCommand {
             deployment_id: knowledge_base.get("deployment_id"),
             configuration: knowledge_base.get("configuration"),
         })
+    }
+}
+
+impl Command for UpdateAiKnowledgeBaseCommand {
+    type Output = AiKnowledgeBase;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -231,13 +233,12 @@ impl DeleteAiKnowledgeBaseCommand {
             knowledge_base_id,
         }
     }
-}
 
-impl Command for DeleteAiKnowledgeBaseCommand {
-    type Output = ();
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Check if any tools depend on this knowledge base
+    pub async fn execute_with(
+        self,
+        writer: &sqlx::PgPool,
+        storage_client: &aws_sdk_s3::Client,
+    ) -> Result<(), AppError> {
         let dependent_tools = sqlx::query!(
             r#"
             SELECT t.id, t.name
@@ -249,16 +250,12 @@ impl Command for DeleteAiKnowledgeBaseCommand {
             self.deployment_id,
             self.knowledge_base_id.to_string()
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(writer)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         if !dependent_tools.is_empty() {
-            let tool_names: Vec<String> = dependent_tools
-                .iter()
-                .map(|tool| tool.name.clone())
-                .collect();
-
+            let tool_names: Vec<String> = dependent_tools.iter().map(|tool| tool.name.clone()).collect();
             return Err(AppError::BadRequest(format!(
                 "Cannot delete knowledge base. The following tools depend on it: {}. Please delete or update these tools first.",
                 tool_names.join(", ")
@@ -277,50 +274,41 @@ impl Command for DeleteAiKnowledgeBaseCommand {
             self.deployment_id,
             self.knowledge_base_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(writer)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         if !dependent_agents.is_empty() {
-            let agent_names: Vec<String> = dependent_agents
-                .iter()
-                .map(|agent| agent.name.clone())
-                .collect();
-
+            let agent_names: Vec<String> = dependent_agents.iter().map(|agent| agent.name.clone()).collect();
             return Err(AppError::BadRequest(format!(
                 "Cannot delete knowledge base. The following agents depend on it: {}. Please remove this knowledge base from these agents first.",
                 agent_names.join(", ")
             )));
         }
 
-        // Delete storage files first (before DB)
         let storage_prefix = format!(
             "{}/knowledge-bases/{}/",
             self.deployment_id, self.knowledge_base_id
         );
-        let delete_prefix_command = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix);
-        if let Err(e) = Command::execute(delete_prefix_command, app_state).await {
+        if let Err(e) = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix)
+            .execute_with(storage_client)
+            .await
+        {
             tracing::warn!(
                 "Failed to clean storage for KB {}: {}",
                 self.knowledge_base_id,
                 e
             );
-            // Continue with DB delete anyway - storage can be cleaned up later
         }
 
-        let mut tx = app_state
-            .db_pool
-            .begin()
-            .await
-            .map_err(|e| AppError::Database(e))?;
-
+        let mut tx = writer.begin().await.map_err(AppError::Database)?;
         sqlx::query!(
             "DELETE FROM ai_knowledge_base_documents WHERE knowledge_base_id = $1",
             self.knowledge_base_id
         )
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         sqlx::query!(
             "DELETE FROM ai_knowledge_bases WHERE id = $1 AND deployment_id = $2",
@@ -329,11 +317,22 @@ impl Command for DeleteAiKnowledgeBaseCommand {
         )
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
-        tx.commit().await.map_err(|e| AppError::Database(e))?;
-
+        tx.commit().await.map_err(AppError::Database)?;
         Ok(())
+    }
+}
+
+impl Command for DeleteAiKnowledgeBaseCommand {
+    type Output = ();
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let storage_client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+        self.execute_with(app_state.db_router.writer(), storage_client).await
     }
 }
 
@@ -364,34 +363,32 @@ impl UploadKnowledgeBaseDocumentCommand {
             file_type,
         }
     }
-}
 
-impl Command for UploadKnowledgeBaseDocumentCommand {
-    type Output = AiKnowledgeBaseDocument;
-
-    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let document_id = app_state.sf.next_id()? as i64;
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        storage_client: &aws_sdk_s3::Client,
+        nats_client: &async_nats::Client,
+        document_id: i64,
+    ) -> Result<AiKnowledgeBaseDocument, AppError> {
         let now = Utc::now();
         let file_size = self.file_content.len() as i64;
 
-        // Get deployment_id for path structure
         let kb_query = sqlx::query!(
             "SELECT deployment_id FROM ai_knowledge_bases WHERE id = $1",
             self.knowledge_base_id
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await?;
         let deployment_id = kb_query.deployment_id;
 
-        // Upload file to agent storage with path: {deployment}/knowledge-bases/{kb_id}/{filename}
         let file_path = format!(
             "{}/knowledge-bases/{}/{}",
             deployment_id, self.knowledge_base_id, self.file_name
         );
-        let file_content_clone = self.file_content.clone();
-        let write_file_command = WriteToAgentStorageCommand::new(file_path, file_content_clone)
-            .with_content_type(self.file_type.clone());
-        let file_url = Command::execute(write_file_command, app_state)
+        let file_url = WriteToAgentStorageCommand::new(file_path, self.file_content.clone())
+            .with_content_type(self.file_type.clone())
+            .execute_with(storage_client)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -414,20 +411,18 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
             self.knowledge_base_id,
             serde_json::json!({"status": "processing"})
         )
-        .fetch_one(&app_state.db_pool)
+        .fetch_one(pool)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
-        // Dispatch document processing to NATS worker
         let dispatch_processing_task = DispatchDocumentProcessingTaskCommand::new(
             deployment_id,
             self.knowledge_base_id,
             document.id,
         );
 
-        if let Err(e) = Command::execute(dispatch_processing_task, app_state).await {
+        if let Err(e) = dispatch_processing_task.execute_with(nats_client).await {
             tracing::error!("Failed to dispatch document processing task: {}", e);
-            // Update document status to failed
             let _ = sqlx::query!(
                 r#"
                 UPDATE ai_knowledge_base_documents 
@@ -442,7 +437,7 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
                 chrono::Utc::now(),
                 document.id
             )
-            .execute(&app_state.db_pool)
+            .execute(pool)
             .await;
         }
 
@@ -462,6 +457,25 @@ impl Command for UploadKnowledgeBaseDocumentCommand {
     }
 }
 
+impl Command for UploadKnowledgeBaseDocumentCommand {
+    type Output = AiKnowledgeBaseDocument;
+
+    async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        let document_id = app_state.sf.next_id()? as i64;
+        let storage_client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+        self.execute_with(
+            app_state.db_router.writer(),
+            storage_client,
+            &app_state.nats_client,
+            document_id,
+        )
+        .await
+    }
+}
+
 pub struct DeleteKnowledgeBaseDocumentCommand {
     pub deployment_id: i64,
     pub knowledge_base_id: i64,
@@ -476,50 +490,59 @@ impl DeleteKnowledgeBaseDocumentCommand {
             document_id,
         }
     }
+
+    pub async fn execute_with(
+        self,
+        pool: &sqlx::PgPool,
+        storage_client: &aws_sdk_s3::Client,
+    ) -> Result<(), AppError> {
+        let _kb = GetAiKnowledgeBaseByIdQuery::new(self.deployment_id, self.knowledge_base_id)
+            .execute_with(pool)
+            .await
+            .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
+
+        let doc = sqlx::query!(
+            "SELECT file_name FROM ai_knowledge_base_documents WHERE id = $1 AND knowledge_base_id = $2",
+            self.document_id,
+            self.knowledge_base_id
+        )
+        .fetch_optional(pool)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::NotFound("Document not found".to_string()))?;
+
+        let storage_key = format!(
+            "{}/knowledge-bases/{}/{}",
+            self.deployment_id, self.knowledge_base_id, doc.file_name
+        );
+        if let Err(e) = crate::DeleteFromAgentStorageCommand::new(storage_key)
+            .execute_with(storage_client)
+            .await
+        {
+            tracing::warn!("Failed to delete file from storage: {}", e);
+        }
+
+        sqlx::query!(
+            "DELETE FROM ai_knowledge_base_documents WHERE id = $1 AND knowledge_base_id = $2",
+            self.document_id,
+            self.knowledge_base_id
+        )
+        .execute(pool)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(())
+    }
 }
 
 impl Command for DeleteKnowledgeBaseDocumentCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let kb_query = GetAiKnowledgeBaseByIdQuery::new(self.deployment_id, self.knowledge_base_id);
-        let _kb = Query::execute(&kb_query, app_state)
-            .await
-            .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
-
-        // Get document info for storage cleanup
-        let doc = sqlx::query!(
-            "SELECT file_name FROM ai_knowledge_base_documents WHERE id = $1 AND knowledge_base_id = $2",
-            self.document_id,
-            self.knowledge_base_id
-        )
-        .fetch_optional(&app_state.db_pool)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-        let doc = doc.ok_or(AppError::NotFound("Document not found".to_string()))?;
-
-        // Delete storage file first (before DB)
-        let storage_key = format!(
-            "{}/knowledge-bases/{}/{}",
-            self.deployment_id, self.knowledge_base_id, doc.file_name
-        );
-        let delete_file_command = crate::DeleteFromAgentStorageCommand::new(storage_key);
-        if let Err(e) = Command::execute(delete_file_command, app_state).await {
-            tracing::warn!("Failed to delete file from storage: {}", e);
-            // Continue with DB delete anyway
-        }
-
-        // Delete the document from DB
-        sqlx::query!(
-            "DELETE FROM ai_knowledge_base_documents WHERE id = $1 AND knowledge_base_id = $2",
-            self.document_id,
-            self.knowledge_base_id
-        )
-        .execute(&app_state.db_pool)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-        Ok(())
+        let storage_client = app_state
+            .agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
+        self.execute_with(app_state.db_router.writer(), storage_client).await
     }
 }

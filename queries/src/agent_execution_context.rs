@@ -18,7 +18,7 @@ impl GetExecutionContextQuery {
         }
     }
 
-    pub async fn execute_with_executor<'e, E>(
+    pub async fn execute_with_deps<'e, E>(
         &self,
         executor: E,
     ) -> Result<AgentExecutionContext, AppError>
@@ -73,7 +73,7 @@ impl GetExecutionContextQuery {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
-        self.execute_with_executor(&mut *conn).await
+        self.execute_with_deps(&mut *conn).await
     }
 }
 
@@ -81,7 +81,7 @@ impl super::Query for GetExecutionContextQuery {
     type Output = AgentExecutionContext;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -232,7 +232,7 @@ impl super::Query for ListExecutionContextsQuery {
     type Output = Vec<AgentExecutionContext>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -256,13 +256,15 @@ impl GetChildContextsQuery {
         self.include_completed = true;
         self
     }
-}
 
-impl super::Query for GetChildContextsQuery {
-    type Output = Vec<AgentExecutionContext>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        // Use QueryBuilder for dynamic WHERE clause
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<AgentExecutionContext>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let mut query = sqlx::QueryBuilder::new(
             r#"
             SELECT id, created_at, updated_at, deployment_id,
@@ -284,9 +286,9 @@ impl super::Query for GetChildContextsQuery {
 
         let rows = query
             .build()
-            .fetch_all(&app_state.db_pool)
+            .fetch_all(&mut *conn)
             .await
-            .map_err(|e| AppError::Database(e))?;
+            .map_err(AppError::Database)?;
 
         let mut result = Vec::new();
         for row in rows {
@@ -322,6 +324,14 @@ impl super::Query for GetChildContextsQuery {
     }
 }
 
+impl super::Query for GetChildContextsQuery {
+    type Output = Vec<AgentExecutionContext>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
+    }
+}
+
 /// Get status update timeline for a context
 pub struct GetStatusUpdatesQuery {
     pub context_id: i64,
@@ -353,7 +363,7 @@ impl super::Query for GetStatusUpdatesQuery {
             self.context_id,
             limit
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(app_state.db_router.writer())
         .await
         .map_err(|e| AppError::Database(e))?;
 
@@ -388,16 +398,18 @@ impl GetLatestStatusUpdatesForContextsQuery {
     pub fn new(context_ids: Vec<i64>) -> Self {
         Self { context_ids }
     }
-}
 
-impl super::Query for GetLatestStatusUpdatesForContextsQuery {
-    type Output = Vec<LatestStatusUpdate>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<LatestStatusUpdate>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
         if self.context_ids.is_empty() {
             return Ok(Vec::new());
         }
-
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query(
             r#"
             SELECT DISTINCT ON (context_id) context_id, status_update, created_at
@@ -407,7 +419,7 @@ impl super::Query for GetLatestStatusUpdatesForContextsQuery {
             "#,
         )
         .bind(&self.context_ids)
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
         .map_err(AppError::Database)?;
 
@@ -422,6 +434,14 @@ impl super::Query for GetLatestStatusUpdatesForContextsQuery {
         }
 
         Ok(result)
+    }
+}
+
+impl super::Query for GetLatestStatusUpdatesForContextsQuery {
+    type Output = Vec<LatestStatusUpdate>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -451,7 +471,7 @@ impl super::Query for GetParentContextQuery {
             self.context_id,
             self.deployment_id
         )
-        .fetch_optional(&app_state.db_pool)
+        .fetch_optional(app_state.db_router.writer())
         .await?;
 
         if let Some(parent_id) = parent_id_opt {
@@ -467,7 +487,7 @@ impl super::Query for GetParentContextQuery {
                 parent_id,
                 self.deployment_id
             )
-            .fetch_one(&app_state.db_pool)
+            .fetch_one(app_state.db_router.writer())
             .await?;
 
             let status = ExecutionContextStatus::from_str(&ctx.status).unwrap_or_default();
@@ -520,12 +540,12 @@ impl GetChildCompletionSummaryQuery {
         self.parent_context_id = Some(parent_context_id);
         self
     }
-}
 
-impl super::Query for GetChildCompletionSummaryQuery {
-    type Output = Option<serde_json::Value>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<serde_json::Value>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let completion_summary = if let Some(parent_context_id) = self.parent_context_id {
             let row = sqlx::query!(
                 r#"
@@ -537,9 +557,9 @@ impl super::Query for GetChildCompletionSummaryQuery {
                 self.deployment_id,
                 parent_context_id
             )
-            .fetch_optional(&app_state.db_pool)
+            .fetch_optional(&mut *conn)
             .await
-            .map_err(|e| AppError::Database(e))?;
+            .map_err(AppError::Database)?;
             row.and_then(|r| r.completion_summary)
         } else {
             let row = sqlx::query!(
@@ -551,13 +571,21 @@ impl super::Query for GetChildCompletionSummaryQuery {
                 self.child_context_id,
                 self.deployment_id
             )
-            .fetch_optional(&app_state.db_pool)
+            .fetch_optional(&mut *conn)
             .await
-            .map_err(|e| AppError::Database(e))?;
+            .map_err(AppError::Database)?;
             row.and_then(|r| r.completion_summary)
         };
 
         Ok(completion_summary)
+    }
+}
+
+impl super::Query for GetChildCompletionSummaryQuery {
+    type Output = Option<serde_json::Value>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -574,12 +602,15 @@ impl GetChildrenCompletionSummariesQuery {
             deployment_id,
         }
     }
-}
 
-impl super::Query for GetChildrenCompletionSummariesQuery {
-    type Output = Vec<ChildCompletionSummary>;
-
-    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+    pub async fn execute_with<'a, A>(
+        &self,
+        acquirer: A,
+    ) -> Result<Vec<ChildCompletionSummary>, AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT id, title, status, completion_summary, completed_at
@@ -591,9 +622,9 @@ impl super::Query for GetChildrenCompletionSummariesQuery {
             self.parent_context_id,
             self.deployment_id
         )
-        .fetch_all(&app_state.db_pool)
+        .fetch_all(&mut *conn)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         let mut result = Vec::new();
         for row in rows {
@@ -607,6 +638,14 @@ impl super::Query for GetChildrenCompletionSummariesQuery {
         }
 
         Ok(result)
+    }
+}
+
+impl super::Query for GetChildrenCompletionSummariesQuery {
+    type Output = Vec<ChildCompletionSummary>;
+
+    async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

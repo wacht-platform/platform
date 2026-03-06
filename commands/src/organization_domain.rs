@@ -1,7 +1,7 @@
 use crate::Command;
 use chrono::Utc;
 use common::DnsVerificationService;
-use common::error::AppError;
+use common::{HasDbRouter, HasDnsVerificationService, HasIdGenerator, error::AppError};
 use common::state::AppState;
 use models::DnsRecord;
 use models::organization_domain::OrganizationDomain;
@@ -50,12 +50,19 @@ impl Command for CreateOrganizationDomainCommand {
     type Output = CreateOrganizationDomainResponse;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, app_state.sf.next_id()? as i64)
-            .await
+        self.execute_with_deps(app_state).await
     }
 }
 
 impl CreateOrganizationDomainCommand {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<CreateOrganizationDomainResponse, AppError>
+    where
+        D: HasDbRouter + HasIdGenerator,
+    {
+        let domain_id = deps.id_generator().next_id()? as i64;
+        self.execute_with(deps.db_router().writer(), domain_id).await
+    }
+
     pub async fn execute_with(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
@@ -171,7 +178,7 @@ impl Command for DeleteOrganizationDomainCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -181,10 +188,10 @@ impl DeleteOrganizationDomainCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_connection(conn).await
+        self.execute_with_deps(conn).await
     }
 
-    async fn execute_with_connection<C>(self, mut conn: C) -> Result<(), AppError>
+    async fn execute_with_deps<C>(self, mut conn: C) -> Result<(), AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {
@@ -271,12 +278,19 @@ impl Command for VerifyOrganizationDomainCommand {
     type Output = VerifyOrganizationDomainResponse;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, &app_state.dns_verification_service)
-            .await
+        self.execute_with_deps(app_state).await
     }
 }
 
 impl VerifyOrganizationDomainCommand {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<VerifyOrganizationDomainResponse, AppError>
+    where
+        D: HasDbRouter + HasDnsVerificationService,
+    {
+        self.execute_with(deps.db_router().writer(), deps.dns_verification_service())
+            .await
+    }
+
     pub async fn execute_with(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,

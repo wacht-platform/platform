@@ -1,8 +1,8 @@
 use agent_engine::{AgentHandler, ExecutionRequest};
-use commands::{Command, TriggerWebhookEventCommand};
+use commands::TriggerWebhookEventCommand;
 use common::state::AppState;
 use dto::json::{AgentExecutionRequest, AgentExecutionType, AgentStreamMessageType};
-use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures, Query};
+use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures};
 use redis::Script;
 use tokio::sync::oneshot;
 use tokio::time::{Duration, interval, sleep};
@@ -124,7 +124,16 @@ async fn trigger_execution_webhook(
         payload,
     );
 
-    if let Err(error) = Command::execute(trigger_command, app_state).await {
+    if let Err(error) = trigger_command
+        .execute_with(
+            app_state.db_router.writer(),
+            &app_state.redis_client,
+            &app_state.clickhouse_service,
+            &app_state.nats_client,
+            || Ok(app_state.sf.next_id()? as i64),
+        )
+        .await
+    {
         tracing::error!("Failed to trigger {} webhook: {}", error_context, error);
     }
 }
@@ -137,10 +146,10 @@ async fn publish_conversation_webhook(
     message_type: &str,
     error_context: &str,
 ) {
-    use queries::Query;
-
     let conversation_query = queries::GetConversationByIdQuery::new(conversation_id);
-    if let Ok(conversation) = Query::execute(&conversation_query, app_state).await
+    if let Ok(conversation) = conversation_query
+        .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
+        .await
     {
         let payload = serde_json::json!({
             "context_id": context_id,
@@ -189,7 +198,12 @@ pub async fn process_agent_execution(
     let agent = match &execution_envelope.agent_resolution {
         AgentResolutionStrategy::AgentId(agent_id) => {
             let by_id_query = GetAiAgentByIdWithFeatures::new(*agent_id);
-            Query::execute(&by_id_query, app_state)
+            by_id_query
+                .execute_with(
+                    app_state
+                        .db_router
+                        .reader(common::db_router::ReadConsistency::Strong),
+                )
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to get agent by ID {}: {}", agent_id, e))?
         }
@@ -198,7 +212,12 @@ pub async fn process_agent_execution(
                 execution_envelope.deployment_id,
                 agent_name.clone(),
             );
-            Query::execute(&by_name_query, app_state)
+            by_name_query
+                .execute_with(
+                    app_state
+                        .db_router
+                        .reader(common::db_router::ReadConsistency::Strong),
+                )
                 .await
                 .map_err(|_| anyhow::anyhow!("Agent '{}' not found", agent_name))?
         }

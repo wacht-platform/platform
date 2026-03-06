@@ -1,5 +1,4 @@
 use anyhow::Result;
-use commands::Command;
 use commands::webhook_trigger::ReplayWebhookDeliveryCommand;
 use common::error::AppError;
 use common::state::AppState;
@@ -263,7 +262,14 @@ pub async fn handle_webhook_replay_batch(app_state: &AppState, payload: Value) -
                 delivery_id: *delivery_id,
                 deployment_id,
             };
-            let result = Command::execute(replay_command, app_state).await;
+            let result = replay_command
+                .execute_with(
+                    app_state.db_router.writer(),
+                    &app_state.clickhouse_service,
+                    &app_state.nats_client,
+                    || Ok(app_state.sf.next_id()? as i64),
+                )
+                .await;
 
             match result {
                 Ok(new_id) => {

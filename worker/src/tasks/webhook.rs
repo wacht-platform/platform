@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{SecondsFormat, Utc};
 use commands::{
-    Command, SendEmailCommand,
+    SendEmailCommand,
     webhook_delivery::{
         ClearEndpointFailuresCommand, DeactivateEndpointCommand, DeleteActiveDeliveryCommand,
         GetActiveDeliveryCommand, IncrementEndpointFailuresCommand, UpdateDeliveryAttemptsCommand,
@@ -81,7 +81,7 @@ pub async fn process_webhook_delivery(
     app_state: &AppState,
 ) -> Result<DeliveryResult> {
     let command = GetActiveDeliveryCommand { delivery_id };
-    let delivery = match command.execute_with(app_state).await? {
+    let delivery = match command.execute_with(app_state.db_router.writer()).await? {
         Some(d) => d,
         None => {
             warn!("Webhook delivery {} not found", delivery_id);
@@ -147,7 +147,7 @@ pub async fn process_webhook_delivery(
             }
 
             DeleteActiveDeliveryCommand { delivery_id }
-                .execute_with(app_state)
+                .execute_with(app_state.db_router.writer())
                 .await?;
             return Ok(DeliveryResult::Success);
         }
@@ -281,13 +281,13 @@ pub async fn process_webhook_delivery(
                 }
 
                 DeleteActiveDeliveryCommand { delivery_id }
-                    .execute_with(app_state)
+                    .execute_with(app_state.db_router.writer())
                     .await?;
 
                 DeactivateEndpointCommand {
                     endpoint_id: delivery.endpoint_id,
                 }
-                .execute_with(app_state)
+                .execute_with(app_state.db_router.writer())
                 .await?;
 
                 info!(
@@ -342,7 +342,7 @@ pub async fn process_webhook_delivery(
                 }
 
                 DeleteActiveDeliveryCommand { delivery_id }
-                    .execute_with(app_state)
+                    .execute_with(app_state.db_router.writer())
                     .await?;
 
                 Ok(DeliveryResult::Success)
@@ -497,7 +497,7 @@ async fn handle_delivery_failure(
             new_attempts,
             next_retry_at: next_retry,
         }
-        .execute_with(app_state)
+        .execute_with(app_state.db_router.writer())
         .await?;
 
         return Ok(DeliveryResult::RetryAfter(std::time::Duration::from_secs(
@@ -510,12 +510,12 @@ async fn handle_delivery_failure(
         );
 
         DeleteActiveDeliveryCommand { delivery_id }
-            .execute_with(app_state)
+            .execute_with(app_state.db_router.writer())
             .await?;
 
         if new_attempts >= max_attempts {
             let failure_count = IncrementEndpointFailuresCommand { endpoint_id }
-                .execute_with(app_state)
+                .execute_with(&app_state.redis_client)
                 .await?;
 
             const DEACTIVATION_THRESHOLD: i64 = 10;
@@ -526,11 +526,11 @@ async fn handle_delivery_failure(
                 );
 
                 DeactivateEndpointCommand { endpoint_id }
-                    .execute_with(app_state)
+                    .execute_with(app_state.db_router.writer())
                     .await?;
 
                 ClearEndpointFailuresCommand { endpoint_id }
-                    .execute_with(app_state)
+                    .execute_with(&app_state.redis_client)
                     .await?;
 
                 if let Ok(log_id) = app_state.sf.next_id() {
@@ -680,7 +680,9 @@ async fn send_webhook_failure_notification(
             recipient_email.clone(),
             variables,
         );
-        if let Err(e) = Command::execute(send_email_command, app_state).await
+        if let Err(e) = send_email_command
+            .execute_with_deps(app_state)
+            .await
         {
             error!(
                 deployment_id,
@@ -778,9 +780,15 @@ pub async fn process_webhook_retry(
         delivery_id,
         deployment_id,
     };
-    let new_delivery_id = Command::execute(replay_command, app_state)
+    let new_delivery_id = replay_command
+        .execute_with(
+            app_state.db_router.writer(),
+            &app_state.clickhouse_service,
+            &app_state.nats_client,
+            || Ok(app_state.sf.next_id()? as i64),
+        )
         .await
-    .map_err(|e| anyhow::anyhow!("Failed to replay webhook delivery: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to replay webhook delivery: {}", e))?;
 
     Ok(format!(
         "Webhook delivery {} retried as new delivery {}",

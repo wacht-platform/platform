@@ -14,7 +14,7 @@ async fn resolve_rate_limits_on_conn(
     };
 
     let scheme = GetRateLimitSchemeQuery::new(deployment_id, slug.clone())
-        .execute_on_conn(conn)
+        .execute_with_deps(conn)
         .await?;
 
     Ok(scheme.map(|s| s.rules).unwrap_or_default())
@@ -91,7 +91,7 @@ impl Query for GetApiAuthAppsQuery {
     type Output = Vec<ApiAuthApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -159,7 +159,7 @@ impl Query for GetApiAuthAppBySlugQuery {
     type Output = Option<ApiAuthApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -227,7 +227,7 @@ impl Query for GetApiAuthAppByNameQuery {
     type Output = Option<ApiAuthApp>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -406,7 +406,7 @@ impl Query for GetApiKeysByAppQuery {
     type Output = Vec<ApiKey>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -504,7 +504,7 @@ impl Query for GetApiKeyByHashQuery {
     type Output = Option<ApiKey>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -576,7 +576,7 @@ impl Query for GetApiKeyIdentifiersByHashQuery {
     type Output = Option<ApiKeyWithIdentifers>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -635,7 +635,7 @@ impl Query for SyncApiKeyRateLimitsForSchemeQuery {
     type Output = Vec<i64>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -703,7 +703,7 @@ impl Query for GetOrganizationMembershipPermissionsQuery {
     type Output = Option<OrganizationMembershipPermissions>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -760,7 +760,7 @@ impl Query for GetWorkspaceMembershipPermissionsQuery {
     type Output = Option<WorkspaceMembershipPermissions>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -805,7 +805,7 @@ impl Query for GetOrganizationMembershipIdByUserAndOrganizationQuery {
     type Output = Option<i64>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -850,7 +850,7 @@ impl Query for GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
     type Output = Option<i64>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -887,7 +887,7 @@ impl Query for GetOrganizationMembershipIdsByRoleQuery {
     type Output = Vec<i64>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -924,7 +924,7 @@ impl Query for GetWorkspaceMembershipIdsByRoleQuery {
     type Output = Vec<i64>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -980,7 +980,7 @@ impl Query for SyncApiKeyOrgRolePermissionsForMembershipsQuery {
     type Output = Vec<i64>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -1038,6 +1038,6 @@ impl Query for SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
     type Output = Vec<i64>;
 
     async fn execute(&self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }

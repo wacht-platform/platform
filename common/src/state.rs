@@ -7,7 +7,7 @@ use aws_sdk_s3::Client as S3Client;
 use async_nats::jetstream::Context as NatsJetStream;
 use async_nats::{Client as NatsClient, jetstream};
 use redis::Client as RedisClient;
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::postgres::PgPoolOptions;
 use std::env::var as env;
 use std::error::Error;
 use wacht::{WachtClient, WachtConfig};
@@ -19,7 +19,6 @@ use crate::{
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db_pool: PgPool,
     pub db_router: DbRouter,
     pub s3_client: S3Client,
     pub agent_storage_client: Option<S3Client>,
@@ -162,7 +161,6 @@ impl AppState {
             .and_then(|config| WachtClient::new(config).ok());
 
         Ok(Self {
-            db_pool: writer_pool,
             db_router,
             s3_client,
             agent_storage_client,

@@ -128,7 +128,7 @@ impl Command for InviteUserCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let reader = app_state.db_router.reader(ReadConsistency::Strong);
         self.execute_with(
-            &app_state.db_pool,
+            app_state.db_router.writer(),
             reader,
             |deployment_id, to_email, variables| async move {
                 let send_email_command = SendEmailCommand::new(
@@ -137,7 +137,9 @@ impl Command for InviteUserCommand {
                     to_email,
                     variables,
                 );
-                Command::execute(send_email_command, app_state).await
+                send_email_command
+                    .execute_with_deps(app_state)
+                    .await
             },
             app_state.sf.next_id()? as i64,
         )
@@ -279,7 +281,7 @@ impl Command for ApproveWaitlistUserCommand {
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         let reader = app_state.db_router.reader(ReadConsistency::Strong);
         self.execute_with(
-            &app_state.db_pool,
+            app_state.db_router.writer(),
             reader,
             |deployment_id, to_email, variables| async move {
                 let send_email_command = SendEmailCommand::new(
@@ -288,7 +290,9 @@ impl Command for ApproveWaitlistUserCommand {
                     to_email,
                     variables,
                 );
-                Command::execute(send_email_command, app_state).await
+                send_email_command
+                    .execute_with_deps(app_state)
+                    .await
             },
             app_state.sf.next_id()? as i64,
         )
@@ -314,7 +318,7 @@ impl Command for DeleteInvitationCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

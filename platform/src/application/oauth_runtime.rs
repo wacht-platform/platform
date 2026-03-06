@@ -4,7 +4,7 @@ use axum::{
     response::Redirect,
 };
 use commands::{
-    Command, CreateOAuthClientCommand, DeactivateOAuthClient, RevokeOAuthAccessTokenByHash,
+    CreateOAuthClientCommand, DeactivateOAuthClient, RevokeOAuthAccessTokenByHash,
     RevokeOAuthRefreshTokenByHash, SetOAuthClientRegistrationAccessToken,
     UpdateOAuthClientSettings,
     ConsumeOAuthAuthorizationCode, IssueOAuthTokenPair, RevokeOAuthRefreshTokenById,
@@ -58,7 +58,7 @@ fn enqueue_grant_last_used(app_state: AppState, deployment_id: i64, oauth_client
             oauth_client_id,
             grant_id,
         }
-        .execute(&app_state)
+        .execute_with(&app_state.redis_client)
         .await;
     });
 }

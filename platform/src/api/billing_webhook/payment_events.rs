@@ -1,7 +1,6 @@
 use super::notifications::{extract_owner_id, send_billing_change_email};
 use axum::http::StatusCode;
 use commands::{
-    Command,
     billing::{
         MarkCheckoutFlowFailedCommand, MarkPaymentSucceededCommand,
         UpdateBillingAccountStatusCommand, UpsertInvoiceCommand,
@@ -130,12 +129,19 @@ pub(super) async fn handle_payment_succeeded(
                         transaction_type: PulseTransactionType::Purchase,
                         reference_id: Some(payment_id.to_string()),
                     };
-                    Command::execute(add_pulse_command, app_state)
-                    .await
-                    .map_err(|e| {
-                        error!("Failed to add Pulse credits from webhook: {}", e);
-                        StatusCode::INTERNAL_SERVER_ERROR
-                    })?;
+                    add_pulse_command
+                        .execute_with(
+                            app_state.db_router.writer(),
+                            app_state.sf.next_id().map_err(|e| {
+                                error!("Failed to generate pulse transaction id: {}", e);
+                                StatusCode::INTERNAL_SERVER_ERROR
+                            })? as i64,
+                        )
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to add Pulse credits from webhook: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?;
                 } else {
                     warn!(
                         "Pulse purchase amount {} too low to add credits for owner {}",

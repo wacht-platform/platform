@@ -63,7 +63,7 @@ impl Command for CreateWebhookAppCommand {
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
         self.execute_with(
-            &app_state.db_pool,
+            app_state.db_router.writer(),
             format!("slug_{}", app_state.sf.next_id()?),
         )
         .await
@@ -136,7 +136,7 @@ impl Command for UpdateWebhookAppCommand {
     type Output = WebhookApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -198,7 +198,7 @@ impl Command for DeleteWebhookAppCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 
@@ -237,7 +237,7 @@ impl Command for RotateWebhookSecretCommand {
     type Output = WebhookApp;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool).await
+        self.execute_with(app_state.db_router.writer()).await
     }
 }
 

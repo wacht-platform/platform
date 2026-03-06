@@ -257,7 +257,7 @@ impl UpdateDeploymentAuthSettingsCommand {
         query_builder.build().execute(&mut *conn).await?;
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_on_conn(&mut conn, redis_client)
+            .execute_with_deps(&mut conn, redis_client)
             .await?;
 
         Ok(())
@@ -268,7 +268,7 @@ impl Command for UpdateDeploymentAuthSettingsCommand {
     type Output = ();
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        self.execute_with(&app_state.db_pool, &app_state.redis_client)
+        self.execute_with(app_state.db_router.writer(), &app_state.redis_client)
             .await
     }
 }

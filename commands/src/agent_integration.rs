@@ -1,6 +1,6 @@
 use crate::Command;
 use chrono::Utc;
-use common::error::AppError;
+use common::{HasDbRouter, HasIdGenerator, error::AppError};
 use common::state::AppState;
 use models::{AgentIntegration, IntegrationType};
 use sqlx::Row;
@@ -49,12 +49,19 @@ impl Command for CreateAgentIntegrationCommand {
     type Output = AgentIntegration;
 
     async fn execute(self, app_state: &AppState) -> Result<Self::Output, AppError> {
-        let id = app_state.sf.next_id()? as i64;
-        self.execute_with(app_state.db_router.writer(), id).await
+        self.execute_with_deps(app_state).await
     }
 }
 
 impl CreateAgentIntegrationCommand {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<AgentIntegration, AppError>
+    where
+        D: HasDbRouter + HasIdGenerator,
+    {
+        let id = deps.id_generator().next_id()? as i64;
+        self.execute_with(deps.db_router().writer(), id).await
+    }
+
     pub async fn execute_with(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
