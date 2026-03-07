@@ -127,20 +127,8 @@ impl UpdateDeploymentAiSettingsCommand {
     where
         D: HasDbRouter + HasEncryptionService,
     {
-        self.execute_with(deps.db_router().writer(), deps.encryption_service())
-            .await
-    }
-
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        encryptor: &dyn AiSettingsEncryptor,
-    ) -> Result<DeploymentAiSettings, AppError>
-    where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let conn = acquirer.acquire().await?;
-        self.apply_with_conn(conn, encryptor).await
+        let conn = deps.db_router().writer().acquire().await?;
+        self.apply_with_conn(conn, deps.encryption_service()).await
     }
 
     async fn apply_with_conn<C>(

@@ -85,7 +85,9 @@ pub async fn create_ai_agent(
     request: CreateAgentRequest,
 ) -> Result<AiAgent, AppError> {
     let configuration = request.configuration.unwrap_or(serde_json::json!({}));
+    let agent_id = app_state.sf.next_id()? as i64;
     let mut command = CreateAiAgentCommand::new(
+        agent_id,
         deployment_id,
         request.name,
         request.description,
@@ -105,9 +107,7 @@ pub async fn create_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command
-        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
-        .await
+    command.execute_with(app_state.db_router.writer()).await
 }
 
 pub async fn get_ai_agent_by_id(

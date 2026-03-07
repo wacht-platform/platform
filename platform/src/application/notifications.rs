@@ -209,7 +209,7 @@ pub async fn create_notification(
         created.push(
             command
                 .build()?
-                .execute_with(state.db_router.writer(), &state.nats_client)
+                .execute_with_deps(state)
                 .await?,
         );
     }

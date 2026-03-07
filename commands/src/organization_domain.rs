@@ -21,12 +21,14 @@ pub struct CreateOrganizationDomainResponse {
 }
 
 pub struct CreateOrganizationDomainCommand {
+    domain_id: Option<i64>,
     deployment_id: i64,
     request: CreateOrganizationDomainRequest,
 }
 
 #[derive(Default)]
 pub struct CreateOrganizationDomainCommandBuilder {
+    domain_id: Option<i64>,
     deployment_id: Option<i64>,
     request: Option<CreateOrganizationDomainRequest>,
 }
@@ -38,9 +40,15 @@ impl CreateOrganizationDomainCommand {
 
     pub fn new(deployment_id: i64, request: CreateOrganizationDomainRequest) -> Self {
         Self {
+            domain_id: None,
             deployment_id,
             request,
         }
+    }
+
+    pub fn with_domain_id(mut self, domain_id: i64) -> Self {
+        self.domain_id = Some(domain_id);
+        self
     }
 }
 
@@ -52,12 +60,14 @@ impl CreateOrganizationDomainCommand {
     where
         D: HasDbRouter + HasIdGenerator,
     {
-        let domain_id = deps.id_generator().next_id()? as i64;
-        self.execute_with(deps.db_router().writer(), domain_id)
+        let domain_id = self
+            .domain_id
+            .unwrap_or(deps.id_generator().next_id()? as i64);
+        self.run_with_domain_id(deps.db_router().writer(), domain_id)
             .await
     }
 
-    pub async fn execute_with(
+    async fn run_with_domain_id(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         domain_id: i64,
@@ -113,9 +123,24 @@ impl CreateOrganizationDomainCommand {
             verification_token,
         })
     }
+
+    pub async fn execute_with(
+        self,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    ) -> Result<CreateOrganizationDomainResponse, AppError> {
+        let domain_id = self
+            .domain_id
+            .ok_or_else(|| AppError::Validation("domain_id is required".to_string()))?;
+        self.run_with_domain_id(acquirer, domain_id).await
+    }
 }
 
 impl CreateOrganizationDomainCommandBuilder {
+    pub fn domain_id(mut self, domain_id: i64) -> Self {
+        self.domain_id = Some(domain_id);
+        self
+    }
+
     pub fn deployment_id(mut self, deployment_id: i64) -> Self {
         self.deployment_id = Some(deployment_id);
         self
@@ -128,6 +153,7 @@ impl CreateOrganizationDomainCommandBuilder {
 
     pub fn build(self) -> Result<CreateOrganizationDomainCommand, AppError> {
         Ok(CreateOrganizationDomainCommand {
+            domain_id: self.domain_id,
             deployment_id: self
                 .deployment_id
                 .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,
@@ -268,11 +294,11 @@ impl VerifyOrganizationDomainCommand {
     where
         D: HasDbRouter + HasDnsVerificationService,
     {
-        self.execute_with(deps.db_router().writer(), deps.dns_verification_service())
+        self.run_with_deps(deps.db_router().writer(), deps.dns_verification_service())
             .await
     }
 
-    pub async fn execute_with(
+    async fn run_with_deps(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         dns_verification_service: &DnsVerificationService,

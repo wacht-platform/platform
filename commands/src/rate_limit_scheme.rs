@@ -56,6 +56,7 @@ async fn get_scheme_by_slug(
 }
 
 pub struct CreateRateLimitSchemeCommand {
+    pub id: i64,
     pub deployment_id: i64,
     pub slug: String,
     pub name: String,
@@ -64,10 +65,33 @@ pub struct CreateRateLimitSchemeCommand {
 }
 
 impl CreateRateLimitSchemeCommand {
+    pub fn new(
+        id: i64,
+        deployment_id: i64,
+        slug: String,
+        name: String,
+        rules: Vec<RateLimit>,
+    ) -> Self {
+        Self {
+            id,
+            deployment_id,
+            slug,
+            name,
+            description: None,
+            rules,
+        }
+    }
+
+    pub fn with_description(mut self, description: Option<String>) -> Self {
+        self.description = description;
+        self
+    }
+}
+
+impl CreateRateLimitSchemeCommand {
     pub async fn execute_with(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        scheme_id: i64,
     ) -> Result<RateLimitSchemeData, AppError> {
         let mut conn = acquirer.acquire().await?;
         if self.slug.trim().is_empty() {
@@ -95,7 +119,7 @@ impl CreateRateLimitSchemeCommand {
             VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
-        .bind(scheme_id)
+        .bind(self.id)
         .bind(self.deployment_id)
         .bind(&self.slug)
         .bind(&self.name)
@@ -116,6 +140,33 @@ pub struct UpdateRateLimitSchemeCommand {
     pub name: Option<String>,
     pub description: Option<String>,
     pub rules: Option<Vec<RateLimit>>,
+}
+
+impl UpdateRateLimitSchemeCommand {
+    pub fn new(deployment_id: i64, slug: String) -> Self {
+        Self {
+            deployment_id,
+            slug,
+            name: None,
+            description: None,
+            rules: None,
+        }
+    }
+
+    pub fn with_name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
+    }
+
+    pub fn with_description(mut self, description: Option<String>) -> Self {
+        self.description = description;
+        self
+    }
+
+    pub fn with_rules(mut self, rules: Option<Vec<RateLimit>>) -> Self {
+        self.rules = rules;
+        self
+    }
 }
 
 impl UpdateRateLimitSchemeCommand {
@@ -170,6 +221,12 @@ impl UpdateRateLimitSchemeCommand {
 pub struct DeleteRateLimitSchemeCommand {
     pub deployment_id: i64,
     pub slug: String,
+}
+
+impl DeleteRateLimitSchemeCommand {
+    pub fn new(deployment_id: i64, slug: String) -> Self {
+        Self { deployment_id, slug }
+    }
 }
 
 impl DeleteRateLimitSchemeCommand {

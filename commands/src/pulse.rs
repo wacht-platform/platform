@@ -1,5 +1,5 @@
 use crate::notification::CreateNotificationCommand;
-use common::error::AppError;
+use common::{HasDbRouter, HasIdGenerator, HasNatsClient, error::AppError};
 use models::notification::NotificationSeverity;
 use models::pulse_transaction::{PulseTransaction, PulseTransactionType};
 use sqlx::Connection;
@@ -66,13 +66,15 @@ async fn find_notification_deployment_id(
     Ok(row.map(|r| r.id))
 }
 
-async fn create_pulse_threshold_notifications(
-    writer: &sqlx::PgPool,
-    nats_client: &async_nats::Client,
+async fn create_pulse_threshold_notifications<D>(
+    deps: &D,
     owner_id: &str,
     deployment_id: i64,
     transition: &PulseTransition,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    D: HasDbRouter + HasNatsClient,
+{
     let Some(user_id) = parse_user_id_from_owner_id(owner_id) else {
         return Ok(());
     };
@@ -85,7 +87,7 @@ async fn create_pulse_threshold_notifications(
         )
         .with_user(user_id)
         .with_severity(NotificationSeverity::Warning)
-        .execute_with(writer, nats_client)
+        .execute_with_deps(deps)
         .await?;
     }
 
@@ -98,7 +100,7 @@ async fn create_pulse_threshold_notifications(
         )
         .with_user(user_id)
         .with_severity(NotificationSeverity::Warning)
-        .execute_with(writer, nats_client)
+        .execute_with_deps(deps)
         .await?;
     }
 
@@ -111,7 +113,7 @@ async fn create_pulse_threshold_notifications(
         )
         .with_user(user_id)
         .with_severity(NotificationSeverity::Error)
-        .execute_with(writer, nats_client)
+        .execute_with_deps(deps)
         .await?;
     }
 
@@ -119,6 +121,7 @@ async fn create_pulse_threshold_notifications(
 }
 
 pub struct AddPulseCreditsCommand {
+    pub transaction_id: Option<i64>,
     pub owner_id: String,
     pub amount_pulse_cents: i64,
     pub transaction_type: PulseTransactionType,
@@ -126,11 +129,31 @@ pub struct AddPulseCreditsCommand {
 }
 
 impl AddPulseCreditsCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        transaction_id: i64,
-    ) -> Result<PulseTransaction, AppError>
+    pub fn new(
+        owner_id: String,
+        amount_pulse_cents: i64,
+        transaction_type: PulseTransactionType,
+    ) -> Self {
+        Self {
+            transaction_id: None,
+            owner_id,
+            amount_pulse_cents,
+            transaction_type,
+            reference_id: None,
+        }
+    }
+
+    pub fn with_reference_id(mut self, reference_id: Option<String>) -> Self {
+        self.reference_id = reference_id;
+        self
+    }
+
+    pub fn with_transaction_id(mut self, transaction_id: i64) -> Self {
+        self.transaction_id = Some(transaction_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<PulseTransaction, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -139,6 +162,9 @@ impl AddPulseCreditsCommand {
                 "amount_pulse_cents must be greater than zero".to_string(),
             ));
         }
+        let transaction_id = self
+            .transaction_id
+            .ok_or_else(|| AppError::Validation("transaction_id is required".to_string()))?;
 
         let mut conn = acquirer.acquire().await?;
         let mut tx = conn.begin().await?;
@@ -222,6 +248,7 @@ impl AddPulseCreditsCommand {
 }
 
 pub struct DeductPulseCreditsCommand {
+    pub transaction_id: Option<i64>,
     pub owner_id: String,
     pub amount_pulse_cents: i64,
     pub transaction_type: PulseTransactionType,
@@ -229,19 +256,28 @@ pub struct DeductPulseCreditsCommand {
 }
 
 impl DeductPulseCreditsCommand {
-    pub async fn execute_with(
+    pub fn with_transaction_id(mut self, transaction_id: i64) -> Self {
+        self.transaction_id = Some(transaction_id);
+        self
+    }
+
+    pub async fn execute_with_deps<D>(
         self,
-        writer: &sqlx::PgPool,
-        nats_client: &async_nats::Client,
-        transaction_id: i64,
-    ) -> Result<PulseTransaction, AppError> {
+        deps: &D,
+    ) -> Result<PulseTransaction, AppError>
+    where
+        D: HasDbRouter + HasNatsClient + HasIdGenerator,
+    {
+        let transaction_id = self
+            .transaction_id
+            .unwrap_or(deps.id_generator().next_id()? as i64);
         if self.amount_pulse_cents <= 0 {
             return Err(AppError::BadRequest(
                 "amount_pulse_cents must be greater than zero".to_string(),
             ));
         }
 
-        let mut tx = writer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
 
         let row = sqlx::query!(
             r#"
@@ -350,8 +386,7 @@ impl DeductPulseCreditsCommand {
             notify_transition.notify_below_zero = should_mark_below_zero;
             notify_transition.notify_disabled = should_mark_disabled;
             create_pulse_threshold_notifications(
-                writer,
-                nats_client,
+                deps,
                 &self.owner_id,
                 deployment_id,
                 &notify_transition,

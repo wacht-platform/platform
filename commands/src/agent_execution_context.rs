@@ -6,6 +6,7 @@ use models::{
 use std::collections::VecDeque;
 
 pub struct CreateExecutionContextCommand {
+    pub context_id: i64,
     pub deployment_id: i64,
     pub title: Option<String>,
     pub system_instructions: Option<String>,
@@ -14,8 +15,9 @@ pub struct CreateExecutionContextCommand {
 }
 
 impl CreateExecutionContextCommand {
-    pub fn new(deployment_id: i64) -> Self {
+    pub fn new(context_id: i64, deployment_id: i64) -> Self {
         Self {
+            context_id,
             deployment_id,
             title: None,
             system_instructions: None,
@@ -46,11 +48,7 @@ impl CreateExecutionContextCommand {
 }
 
 impl CreateExecutionContextCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        context_id: i64,
-    ) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -63,7 +61,7 @@ impl CreateExecutionContextCommand {
             (id, created_at, updated_at, deployment_id, title, system_instructions, context_group, last_activity_at, status, parent_context_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             "#,
-            context_id,
+            self.context_id,
             now,
             now,
             self.deployment_id,
@@ -79,7 +77,7 @@ impl CreateExecutionContextCommand {
         .map_err(AppError::Database)?;
 
         Ok(AgentExecutionContext {
-            id: context_id,
+            id: self.context_id,
             created_at: now,
             updated_at: now,
             deployment_id: self.deployment_id,
@@ -349,7 +347,7 @@ impl CancelDescendantExecutionsCommand {
                     SpawnControlAction::Stop,
                 );
                 let _ = publish_spawn_control_command
-                    .execute_with(deps.nats_jetstream())
+                    .execute_with_deps(deps.nats_jetstream())
                     .await;
                 cancelled_count += 1;
             }
@@ -453,6 +451,7 @@ impl UpdateExecutionContextCommand {
 
 /// Post a status update to an agent's execution timeline
 pub struct PostStatusUpdateCommand {
+    pub status_update_id: Option<i64>,
     pub context_id: i64,
     pub deployment_id: i64,
     pub status_update: String,
@@ -462,6 +461,7 @@ pub struct PostStatusUpdateCommand {
 impl PostStatusUpdateCommand {
     pub fn new(context_id: i64, deployment_id: i64, status_update: String) -> Self {
         Self {
+            status_update_id: None,
             context_id,
             deployment_id,
             status_update,
@@ -473,18 +473,22 @@ impl PostStatusUpdateCommand {
         self.metadata = Some(metadata);
         self
     }
+
+    pub fn with_status_update_id(mut self, status_update_id: i64) -> Self {
+        self.status_update_id = Some(status_update_id);
+        self
+    }
 }
 
 impl PostStatusUpdateCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        id: i64,
-    ) -> Result<AgentStatusUpdate, AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AgentStatusUpdate, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        let id = self
+            .status_update_id
+            .ok_or_else(|| AppError::Validation("status_update_id is required".to_string()))?;
         let row = sqlx::query!(
             "INSERT INTO agent_status_updates (id, context_id, status_update, metadata, created_at)
              VALUES ($1, $2, $3, $4, NOW())
@@ -519,6 +523,7 @@ impl PostStatusUpdateCommand {
 
 /// Create a child execution context (spawned by a parent agent)
 pub struct CreateChildContextCommand {
+    pub context_id: Option<i64>,
     pub deployment_id: i64,
     pub parent_context_id: i64,
     pub title: String,
@@ -529,6 +534,7 @@ pub struct CreateChildContextCommand {
 impl CreateChildContextCommand {
     pub fn new(deployment_id: i64, parent_context_id: i64, title: String) -> Self {
         Self {
+            context_id: None,
             deployment_id,
             parent_context_id,
             title,
@@ -546,18 +552,22 @@ impl CreateChildContextCommand {
         self.task_type = task_type;
         self
     }
+
+    pub fn with_context_id(mut self, context_id: i64) -> Self {
+        self.context_id = Some(context_id);
+        self
+    }
 }
 
 impl CreateChildContextCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        context_id: i64,
-    ) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        let context_id = self
+            .context_id
+            .ok_or_else(|| AppError::Validation("context_id is required".to_string()))?;
         let now = Utc::now();
 
         sqlx::query!(
@@ -641,7 +651,7 @@ impl PublishSpawnControlCommand {
         format!("agent_spawn_control.context:{}", self.child_context_id)
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_deps(
         self,
         nats_jetstream: &async_nats::jetstream::Context,
     ) -> Result<(), AppError> {

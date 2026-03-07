@@ -4,14 +4,16 @@ use models::{McpServer, McpServerConfig};
 use sqlx::Row;
 
 pub struct CreateMcpServerCommand {
+    pub id: i64,
     pub deployment_id: i64,
     pub name: String,
     pub config: McpServerConfig,
 }
 
 impl CreateMcpServerCommand {
-    pub fn new(deployment_id: i64, name: String, config: McpServerConfig) -> Self {
+    pub fn new(id: i64, deployment_id: i64, name: String, config: McpServerConfig) -> Self {
         Self {
+            id,
             deployment_id,
             name,
             config,
@@ -21,7 +23,6 @@ impl CreateMcpServerCommand {
     pub async fn execute_with(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        mcp_server_id: i64,
     ) -> Result<McpServer, AppError> {
         let mut conn = acquirer.acquire().await?;
         if self.name.trim().is_empty() {
@@ -41,7 +42,7 @@ impl CreateMcpServerCommand {
             RETURNING id, created_at, updated_at, deployment_id, name, config
             "#,
         )
-        .bind(mcp_server_id)
+        .bind(self.id)
         .bind(now)
         .bind(now)
         .bind(self.deployment_id)

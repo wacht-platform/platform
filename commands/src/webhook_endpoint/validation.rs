@@ -2,6 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+use common::ReadConsistency;
 use common::error::AppError;
 use queries::GetWebhookEventsQuery;
 
@@ -190,10 +191,11 @@ fn validate_filter_rules(
 }
 
 async fn load_event_schema_map(
-    reader: &sqlx::PgPool,
+    db_router: &common::DbRouter,
     deployment_id: i64,
     app_slug: &str,
 ) -> Result<HashMap<String, (bool, Option<HashSet<String>>)>, AppError> {
+    let reader = db_router.reader(ReadConsistency::Strong);
     let events = GetWebhookEventsQuery::new(deployment_id, app_slug.to_string())
         .execute_with(reader)
         .await?;
@@ -214,7 +216,7 @@ async fn load_event_schema_map(
 }
 
 pub(super) async fn validate_event_subscriptions(
-    reader: &sqlx::PgPool,
+    db_router: &common::DbRouter,
     deployment_id: i64,
     app_slug: &str,
     subscriptions: &[EventSubscriptionData],
@@ -225,7 +227,7 @@ pub(super) async fn validate_event_subscriptions(
         ));
     }
 
-    let event_map = load_event_schema_map(reader, deployment_id, app_slug).await?;
+    let event_map = load_event_schema_map(db_router, deployment_id, app_slug).await?;
 
     for sub in subscriptions {
         let event_name = sub.event_name.trim();

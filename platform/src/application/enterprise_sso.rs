@@ -63,10 +63,11 @@ pub async fn create_domain(
 ) -> Result<CreateOrganizationDomainResponse, AppError> {
     let domain_id = app_state.sf.next_id()? as i64;
     CreateOrganizationDomainCommand::builder()
+        .domain_id(domain_id)
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(app_state.db_router.writer(), domain_id)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 
@@ -92,10 +93,7 @@ pub async fn verify_domain(
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(
-            app_state.db_router.writer(),
-            &app_state.dns_verification_service,
-        )
+        .execute_with_deps(app_state)
         .await
 }
 
@@ -120,10 +118,11 @@ pub async fn create_connection(
 ) -> Result<EnterpriseConnection, AppError> {
     let connection_id = app_state.sf.next_id()? as i64;
     CreateEnterpriseConnectionCommand::builder()
+        .connection_id(connection_id)
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(app_state.db_router.writer(), connection_id)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 
@@ -175,10 +174,11 @@ pub async fn generate_scim_token(
 ) -> Result<GenerateScimTokenResponse, AppError> {
     let token_id = app_state.sf.next_id()? as i64;
     GenerateScimTokenCommand::builder()
+        .token_id(token_id)
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(app_state.db_router.writer(), token_id)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 

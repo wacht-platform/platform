@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use common::error::AppError;
 
 pub struct CreateOAuthClientGrantCommand {
+    pub grant_id: Option<i64>,
     pub deployment_id: i64,
     pub api_auth_app_slug: String,
     pub oauth_client_id: i64,
@@ -17,15 +18,19 @@ pub struct OAuthClientGrantCreated {
 }
 
 impl CreateOAuthClientGrantCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        grant_id: i64,
-    ) -> Result<OAuthClientGrantCreated, AppError>
+    pub fn with_grant_id(mut self, grant_id: i64) -> Self {
+        self.grant_id = Some(grant_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OAuthClientGrantCreated, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
+        let grant_id = self
+            .grant_id
+            .ok_or_else(|| AppError::Validation("grant_id is required".to_string()))?;
         self.execute_with_deps(conn, grant_id).await
     }
 

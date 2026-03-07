@@ -17,12 +17,11 @@ impl VerifyDeploymentDnsRecordsCommand {
         Self { deployment_id }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_deps(
         self,
         deps: &VerifyDeploymentDnsDeps<'_>,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<Deployment, AppError> {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.db_router.writer().acquire().await?;
         // Get current deployment with DNS records
         let deployment_row = DeploymentByIdQuery::builder()
             .deployment_id(self.deployment_id)

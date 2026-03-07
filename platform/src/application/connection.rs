@@ -23,15 +23,11 @@ pub async fn upsert_deployment_social_connection(
     deployment_id: i64,
     payload: DeploymentSocialConnectionUpsert,
 ) -> Result<DeploymentSocialConnection, AppError> {
-    let writer = app_state.db_router.writer();
     UpsertDeploymentSocialConnectionCommand::builder()
+        .social_connection_id(app_state.sf.next_id()? as i64)
         .deployment_id(deployment_id)
         .connection(payload)
         .build()?
-        .execute_with(
-            writer,
-            app_state.sf.next_id()? as i64,
-            &app_state.redis_client,
-        )
+        .execute_with_deps(app_state)
         .await
 }

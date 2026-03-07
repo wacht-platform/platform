@@ -44,14 +44,15 @@ pub async fn create_rate_limit_scheme(
     request: CreateRateLimitSchemeRequest,
 ) -> Result<RateLimitSchemeData, AppError> {
     let writer = app_state.db_router.writer();
-    let scheme = CreateRateLimitSchemeCommand {
+    let scheme = CreateRateLimitSchemeCommand::new(
+        app_state.sf.next_id()? as i64,
         deployment_id,
-        slug: request.slug,
-        name: request.name,
-        description: request.description,
-        rules: request.rules,
-    }
-    .execute_with(writer, app_state.sf.next_id()? as i64)
+        request.slug,
+        request.name,
+        request.rules,
+    )
+    .with_description(request.description)
+    .execute_with(writer)
     .await?;
 
     Ok(scheme)
@@ -64,13 +65,10 @@ pub async fn update_rate_limit_scheme(
     request: UpdateRateLimitSchemeRequest,
 ) -> Result<RateLimitSchemeData, AppError> {
     let writer = app_state.db_router.writer();
-    let scheme = UpdateRateLimitSchemeCommand {
-        deployment_id,
-        slug,
-        name: request.name,
-        description: request.description,
-        rules: request.rules,
-    }
+    let scheme = UpdateRateLimitSchemeCommand::new(deployment_id, slug)
+        .with_name(request.name)
+        .with_description(request.description)
+        .with_rules(request.rules)
     .execute_with(writer)
     .await?;
 
@@ -83,12 +81,9 @@ pub async fn delete_rate_limit_scheme(
     slug: String,
 ) -> Result<(), AppError> {
     let writer = app_state.db_router.writer();
-    DeleteRateLimitSchemeCommand {
-        deployment_id,
-        slug,
-    }
-    .execute_with(writer)
-    .await?;
+    DeleteRateLimitSchemeCommand::new(deployment_id, slug)
+        .execute_with(writer)
+        .await?;
 
     Ok(())
 }

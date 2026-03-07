@@ -47,25 +47,23 @@ pub(super) async fn handle_subscription_active(
         return Ok(());
     }
 
-    UpsertSubscriptionCommand {
-        owner_id: owner_id.clone(),
-        provider_customer_id: customer_id.to_string(),
-        provider_subscription_id: subscription_id.to_string(),
-        product_id,
-        status: status.to_string(),
-        previous_billing_date,
-    }
-    .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
+    UpsertSubscriptionCommand::new(
+            next_subscription_id(app_state)?,
+            owner_id.clone(),
+            customer_id.to_string(),
+            subscription_id.to_string(),
+            status.to_string(),
+        )
+        .with_product_id(product_id)
+        .with_previous_billing_date(previous_billing_date)
+        .execute_with(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to upsert subscription: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    UpdateBillingAccountStatusCommand {
-        owner_id: owner_id.clone(),
-        status: status.to_string(),
-    }
+    UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
     .execute_with(app_state.db_router.writer())
     .await
     .map_err(|e| {
@@ -73,11 +71,8 @@ pub(super) async fn handle_subscription_active(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    MarkSubscriptionActivatedCommand {
-        owner_id: owner_id.clone(),
-        webhook_event: "subscription.active".to_string(),
-    }
-    .execute_with(app_state.db_router.writer())
+    MarkSubscriptionActivatedCommand::new(owner_id.clone(), "subscription.active".to_string())
+        .execute_with(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to update checkout flow state: {}", e);
@@ -108,25 +103,23 @@ pub(super) async fn handle_subscription_renewed(
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
     if !owner_id.is_empty() {
-        UpsertSubscriptionCommand {
-            owner_id: owner_id.clone(),
-            provider_customer_id: customer_id.to_string(),
-            provider_subscription_id: subscription_id.to_string(),
-            product_id,
-            status: "active".to_string(),
-            previous_billing_date,
-        }
-        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
+        UpsertSubscriptionCommand::new(
+            next_subscription_id(app_state)?,
+            owner_id.clone(),
+            customer_id.to_string(),
+            subscription_id.to_string(),
+            "active".to_string(),
+        )
+        .with_product_id(product_id)
+        .with_previous_billing_date(previous_billing_date)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription on renewal: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        MarkSubscriptionActivatedCommand {
-            owner_id: owner_id.clone(),
-            webhook_event: "subscription.renewed".to_string(),
-        }
+        MarkSubscriptionActivatedCommand::new(owner_id.clone(), "subscription.renewed".to_string())
         .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
@@ -165,25 +158,23 @@ pub(super) async fn handle_subscription_plan_changed(
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
     if !owner_id.is_empty() {
-        UpsertSubscriptionCommand {
-            owner_id: owner_id.clone(),
-            provider_customer_id: customer_id.to_string(),
-            provider_subscription_id: subscription_id.to_string(),
-            product_id: Some(new_product_id.to_string()),
-            status: "active".to_string(),
-            previous_billing_date,
-        }
-        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
+        UpsertSubscriptionCommand::new(
+            next_subscription_id(app_state)?,
+            owner_id.clone(),
+            customer_id.to_string(),
+            subscription_id.to_string(),
+            "active".to_string(),
+        )
+        .with_product_id(Some(new_product_id.to_string()))
+        .with_previous_billing_date(previous_billing_date)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription on plan change: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        MarkSubscriptionActivatedCommand {
-            owner_id: owner_id.clone(),
-            webhook_event: "subscription.plan_changed".to_string(),
-        }
+        MarkSubscriptionActivatedCommand::new(owner_id.clone(), "subscription.plan_changed".to_string())
         .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
@@ -219,37 +210,31 @@ pub(super) async fn handle_subscription_cancelled(
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
     if !owner_id.is_empty() {
-        UpsertSubscriptionCommand {
-            owner_id: owner_id.clone(),
-            provider_customer_id: customer_id.to_string(),
-            provider_subscription_id: subscription_id.to_string(),
-            product_id,
-            status: status.to_string(),
-            previous_billing_date,
-        }
-        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
+        UpsertSubscriptionCommand::new(
+            next_subscription_id(app_state)?,
+            owner_id.clone(),
+            customer_id.to_string(),
+            subscription_id.to_string(),
+            status.to_string(),
+        )
+        .with_product_id(product_id)
+        .with_previous_billing_date(previous_billing_date)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        UpdateBillingAccountStatusCommand {
-            owner_id: owner_id.clone(),
-            status: status.to_string(),
-        }
-        .execute_with(app_state.db_router.writer())
+        UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
+    .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        MarkCheckoutFlowFailedCommand {
-            owner_id: owner_id.clone(),
-            webhook_event: "subscription.cancelled".to_string(),
-            reason: status.to_string(),
-        }
+        MarkCheckoutFlowFailedCommand::new(owner_id.clone(), "subscription.cancelled".to_string(), status.to_string())
         .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
@@ -284,37 +269,31 @@ pub(super) async fn handle_subscription_on_hold(
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
     if !owner_id.is_empty() {
-        UpsertSubscriptionCommand {
-            owner_id: owner_id.clone(),
-            provider_customer_id: customer_id.to_string(),
-            provider_subscription_id: subscription_id.to_string(),
-            product_id,
-            status: status.to_string(),
-            previous_billing_date,
-        }
-        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
+        UpsertSubscriptionCommand::new(
+            next_subscription_id(app_state)?,
+            owner_id.clone(),
+            customer_id.to_string(),
+            subscription_id.to_string(),
+            status.to_string(),
+        )
+        .with_product_id(product_id)
+        .with_previous_billing_date(previous_billing_date)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        UpdateBillingAccountStatusCommand {
-            owner_id: owner_id.clone(),
-            status: status.to_string(),
-        }
-        .execute_with(app_state.db_router.writer())
+        UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
+    .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        MarkCheckoutFlowFailedCommand {
-            owner_id: owner_id.clone(),
-            webhook_event: "subscription.on_hold".to_string(),
-            reason: status.to_string(),
-        }
+        MarkCheckoutFlowFailedCommand::new(owner_id.clone(), "subscription.on_hold".to_string(), status.to_string())
         .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
@@ -354,37 +333,31 @@ pub(super) async fn handle_subscription_failed(
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
     if !owner_id.is_empty() {
-        UpsertSubscriptionCommand {
-            owner_id: owner_id.clone(),
-            provider_customer_id: customer_id.to_string(),
-            provider_subscription_id: subscription_id.to_string(),
-            product_id,
-            status: status.to_string(),
-            previous_billing_date,
-        }
-        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
+        UpsertSubscriptionCommand::new(
+            next_subscription_id(app_state)?,
+            owner_id.clone(),
+            customer_id.to_string(),
+            subscription_id.to_string(),
+            status.to_string(),
+        )
+        .with_product_id(product_id)
+        .with_previous_billing_date(previous_billing_date)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        UpdateBillingAccountStatusCommand {
-            owner_id: owner_id.clone(),
-            status: status.to_string(),
-        }
-        .execute_with(app_state.db_router.writer())
+        UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
+    .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        MarkCheckoutFlowFailedCommand {
-            owner_id: owner_id.clone(),
-            webhook_event: "subscription.failed".to_string(),
-            reason: status.to_string(),
-        }
+        MarkCheckoutFlowFailedCommand::new(owner_id.clone(), "subscription.failed".to_string(), status.to_string())
         .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
@@ -419,37 +392,31 @@ pub(super) async fn handle_subscription_expired(
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
     if !owner_id.is_empty() {
-        UpsertSubscriptionCommand {
-            owner_id: owner_id.clone(),
-            provider_customer_id: customer_id.to_string(),
-            provider_subscription_id: subscription_id.to_string(),
-            product_id,
-            status: status.to_string(),
-            previous_billing_date,
-        }
-        .execute_with(app_state.db_router.writer(), next_subscription_id(app_state)?)
+        UpsertSubscriptionCommand::new(
+            next_subscription_id(app_state)?,
+            owner_id.clone(),
+            customer_id.to_string(),
+            subscription_id.to_string(),
+            status.to_string(),
+        )
+        .with_product_id(product_id)
+        .with_previous_billing_date(previous_billing_date)
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        UpdateBillingAccountStatusCommand {
-            owner_id: owner_id.clone(),
-            status: status.to_string(),
-        }
-        .execute_with(app_state.db_router.writer())
+        UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
+    .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        MarkCheckoutFlowFailedCommand {
-            owner_id: owner_id.clone(),
-            webhook_event: "subscription.expired".to_string(),
-            reason: status.to_string(),
-        }
+        MarkCheckoutFlowFailedCommand::new(owner_id.clone(), "subscription.expired".to_string(), status.to_string())
         .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {

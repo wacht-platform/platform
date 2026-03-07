@@ -2,19 +2,21 @@ use std::str::FromStr;
 
 use chrono::Utc;
 
-use common::error::AppError;
+use common::{HasDbRouter, HasRedis, error::AppError};
 use dto::json::DeploymentSocialConnectionUpsert;
 use models::{DeploymentSocialConnection, OauthCredentials, SocialConnectionProvider};
 
 use super::ClearDeploymentCacheCommand;
 
 pub struct UpsertDeploymentSocialConnectionCommand {
+    social_connection_id: Option<i64>,
     deployment_id: i64,
     connection: DeploymentSocialConnectionUpsert,
 }
 
 #[derive(Default)]
 pub struct UpsertDeploymentSocialConnectionCommandBuilder {
+    social_connection_id: Option<i64>,
     deployment_id: Option<i64>,
     connection: Option<DeploymentSocialConnectionUpsert>,
 }
@@ -26,6 +28,7 @@ impl UpsertDeploymentSocialConnectionCommand {
 
     pub fn new(deployment_id: i64, connection: DeploymentSocialConnectionUpsert) -> Self {
         Self {
+            social_connection_id: None,
             deployment_id,
             connection,
         }
@@ -33,16 +36,15 @@ impl UpsertDeploymentSocialConnectionCommand {
 }
 
 impl UpsertDeploymentSocialConnectionCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        social_connection_id: i64,
-        redis_client: &redis::Client,
-    ) -> Result<DeploymentSocialConnection, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<DeploymentSocialConnection, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasRedis,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let redis_client = deps.redis_client();
+        let social_connection_id = self.social_connection_id.ok_or_else(|| {
+            AppError::Validation("social_connection_id is required".to_string())
+        })?;
         let provider = self.connection.provider;
         let enabled = self.connection.enabled;
         let mut credentials = self.connection.credentials;
@@ -129,7 +131,7 @@ impl UpsertDeploymentSocialConnectionCommand {
         };
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_deps(&mut conn, redis_client)
+            .execute_with_conn_and_redis(&mut conn, redis_client)
             .await?;
 
         Ok(connection)
@@ -137,6 +139,11 @@ impl UpsertDeploymentSocialConnectionCommand {
 }
 
 impl UpsertDeploymentSocialConnectionCommandBuilder {
+    pub fn social_connection_id(mut self, social_connection_id: i64) -> Self {
+        self.social_connection_id = Some(social_connection_id);
+        self
+    }
+
     pub fn deployment_id(mut self, deployment_id: i64) -> Self {
         self.deployment_id = Some(deployment_id);
         self
@@ -149,6 +156,7 @@ impl UpsertDeploymentSocialConnectionCommandBuilder {
 
     pub fn build(self) -> Result<UpsertDeploymentSocialConnectionCommand, AppError> {
         Ok(UpsertDeploymentSocialConnectionCommand {
+            social_connection_id: self.social_connection_id,
             deployment_id: self
                 .deployment_id
                 .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,

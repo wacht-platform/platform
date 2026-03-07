@@ -41,14 +41,16 @@ pub async fn create_ai_tool(
     request: CreateToolRequest,
 ) -> Result<AiTool, AppError> {
     let tool_type = AiToolType::from(request.tool_type);
+    let tool_id = app_state.sf.next_id()? as i64;
     CreateAiToolCommand::new(
+        tool_id,
         deployment_id,
         request.name,
         request.description,
         tool_type,
         request.configuration,
     )
-    .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+    .execute_with(app_state.db_router.writer())
     .await
 }
 

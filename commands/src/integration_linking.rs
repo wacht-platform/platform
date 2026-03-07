@@ -21,6 +21,7 @@ fn base62_encode(mut num: u64) -> String {
 
 /// Command to create a new integration link code
 pub struct CreateIntegrationLinkCodeCommand {
+    id: Option<i64>,
     deployment_id: i64,
     context_group: String,
     agent_id: i64,
@@ -35,6 +36,7 @@ impl CreateIntegrationLinkCodeCommand {
         integration_type: String,
     ) -> Self {
         Self {
+            id: None,
             deployment_id,
             context_group,
             agent_id,
@@ -42,14 +44,18 @@ impl CreateIntegrationLinkCodeCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        id: i64,
-    ) -> Result<LinkCodeResponse, AppError>
+    pub fn with_id(mut self, id: i64) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<LinkCodeResponse, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
+        let id = self
+            .id
+            .ok_or_else(|| AppError::Validation("id is required".to_string()))?;
         let mut conn = acquirer.acquire().await?;
         let code = base62_encode(id as u64);
         let expires_at = Utc::now() + Duration::minutes(10);
@@ -83,6 +89,7 @@ pub struct LinkCodeResponse {
 
 /// Command to validate a link code and create the connection
 pub struct ValidateLinkCodeCommand {
+    connection_id: Option<i64>,
     code: String,
     integration_id: i64,
     external_id: String,
@@ -97,6 +104,7 @@ impl ValidateLinkCodeCommand {
         connection_metadata: serde_json::Value,
     ) -> Self {
         Self {
+            connection_id: None,
             code,
             integration_id,
             external_id,
@@ -104,14 +112,18 @@ impl ValidateLinkCodeCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        connection_id: i64,
-    ) -> Result<ValidateLinkCodeResponse, AppError>
+    pub fn with_connection_id(mut self, connection_id: i64) -> Self {
+        self.connection_id = Some(connection_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<ValidateLinkCodeResponse, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
+        let connection_id = self
+            .connection_id
+            .ok_or_else(|| AppError::Validation("connection_id is required".to_string()))?;
         let mut conn = acquirer.acquire().await?;
         let link_code = sqlx::query_as!(
             IntegrationLinkCode,

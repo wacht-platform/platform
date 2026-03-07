@@ -58,10 +58,8 @@ pub async fn create_webhook_app(
     }
 
     command
-        .execute_with(
-            app_state.db_router.writer(),
-            format!("slug_{}", app_state.sf.next_id()?),
-        )
+        .with_generated_slug(format!("slug_{}", app_state.sf.next_id()?))
+        .execute_with(app_state.db_router.writer())
         .await
 }
 
@@ -82,13 +80,9 @@ pub async fn create_event_catalog(
     deployment_id: i64,
     request: CreateEventCatalogRequest,
 ) -> Result<models::webhook::WebhookEventCatalog, AppError> {
-    let command = CreateEventCatalogCommand {
-        deployment_id,
-        slug: request.slug,
-        name: request.name,
-        description: request.description,
-        events: request.events,
-    };
+    let command =
+        CreateEventCatalogCommand::new(deployment_id, request.slug, request.name, request.events)
+            .with_description(request.description);
     command.execute_with(app_state.db_router.writer()).await
 }
 
@@ -111,12 +105,9 @@ pub async fn update_event_catalog(
     slug: String,
     request: UpdateEventCatalogRequest,
 ) -> Result<models::webhook::WebhookEventCatalog, AppError> {
-    let command = UpdateEventCatalogCommand {
-        deployment_id,
-        slug,
-        name: request.name,
-        description: request.description,
-    };
+    let command = UpdateEventCatalogCommand::new(deployment_id, slug)
+        .with_name(request.name)
+        .with_description(request.description);
     command.execute_with(app_state.db_router.writer()).await
 }
 
@@ -126,11 +117,11 @@ pub async fn append_events_to_catalog(
     slug: String,
     request: AppendEventsToCatalogRequest,
 ) -> Result<models::webhook::WebhookEventCatalog, AppError> {
-    let command = commands::webhook_event_catalog::AppendEventsToCatalogCommand {
+    let command = commands::webhook_event_catalog::AppendEventsToCatalogCommand::new(
         deployment_id,
         slug,
-        events: request.events,
-    };
+        request.events,
+    );
     command.execute_with(app_state.db_router.writer()).await
 }
 
@@ -140,12 +131,12 @@ pub async fn archive_event_in_catalog(
     slug: String,
     request: ArchiveEventInCatalogRequest,
 ) -> Result<models::webhook::WebhookEventCatalog, AppError> {
-    let command = commands::webhook_event_catalog::ArchiveEventInCatalogCommand {
+    let command = commands::webhook_event_catalog::ArchiveEventInCatalogCommand::new(
         deployment_id,
         slug,
-        event_name: request.event_name,
-        is_archived: request.is_archived,
-    };
+        request.event_name,
+        request.is_archived,
+    );
     command.execute_with(app_state.db_router.writer()).await
 }
 
@@ -155,15 +146,12 @@ pub async fn update_webhook_app(
     app_slug: String,
     request: UpdateWebhookAppRequest,
 ) -> Result<WebhookApp, AppError> {
-    let command = UpdateWebhookAppCommand {
-        deployment_id,
-        app_slug,
-        new_name: request.name,
-        description: request.description,
-        is_active: request.is_active,
-        failure_notification_emails: request.failure_notification_emails,
-        event_catalog_slug: request.event_catalog_slug,
-    };
+    let command = UpdateWebhookAppCommand::new(deployment_id, app_slug)
+        .with_new_name(request.name)
+        .with_description(request.description)
+        .with_is_active(request.is_active)
+        .with_failure_notification_emails(request.failure_notification_emails)
+        .with_event_catalog_slug(request.event_catalog_slug);
     command.execute_with(app_state.db_router.writer()).await
 }
 
@@ -183,10 +171,7 @@ pub async fn delete_webhook_app(
     deployment_id: i64,
     app_slug: String,
 ) -> Result<(), AppError> {
-    let command = DeleteWebhookAppCommand {
-        deployment_id,
-        app_slug,
-    };
+    let command = DeleteWebhookAppCommand::new(deployment_id, app_slug);
     command.execute_with(app_state.db_router.writer()).await?;
     Ok(())
 }
@@ -196,10 +181,7 @@ pub async fn rotate_webhook_secret(
     deployment_id: i64,
     app_slug: String,
 ) -> Result<WebhookApp, AppError> {
-    let command = RotateWebhookSecretCommand {
-        deployment_id,
-        app_slug,
-    };
+    let command = RotateWebhookSecretCommand::new(deployment_id, app_slug);
     command.execute_with(app_state.db_router.writer()).await
 }
 

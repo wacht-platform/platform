@@ -29,12 +29,11 @@ pub async fn verify_oauth_app_domain(
     deployment_id: i64,
     oauth_app_slug: String,
 ) -> Result<VerifyOAuthAppDomainResponse, AppError> {
-    let writer = app_state.db_router.writer();
     let result = VerifyOAuthAppDomainCommand {
         deployment_id,
         oauth_app_slug,
     }
-    .execute_with(writer, &app_state.cloudflare_service)
+    .execute_with_deps(app_state)
     .await?;
 
     Ok(VerifyOAuthAppDomainResponse {
@@ -64,7 +63,6 @@ pub async fn create_oauth_app(
     deployment_id: i64,
     input: CreateOAuthAppInput,
 ) -> Result<OAuthAppResponse, AppError> {
-    let writer = app_state.db_router.writer();
     let logo_url = if let Some((image_buffer, file_extension)) = input.logo_image_data {
         let file_path = format!(
             "deployments/{}/oauth-apps/{}/logo.{}",
@@ -72,7 +70,7 @@ pub async fn create_oauth_app(
         );
         Some(
             UploadToCdnCommand::new(file_path, image_buffer)
-                .execute_with(&app_state.s3_client)
+                .execute_with_deps(&app_state.s3_client)
                 .await
                 .map_err(|e| AppError::Internal(e.to_string()))?,
         )
@@ -81,6 +79,7 @@ pub async fn create_oauth_app(
     };
 
     let created = CreateOAuthAppCommand {
+        oauth_app_id: Some(app_state.sf.next_id()? as i64),
         deployment_id,
         slug: input.slug,
         name: input.name,
@@ -91,11 +90,7 @@ pub async fn create_oauth_app(
         scope_definitions: input.scope_definitions,
         allow_dynamic_client_registration: input.allow_dynamic_client_registration,
     }
-    .execute_with(
-        writer,
-        &app_state.cloudflare_service,
-        app_state.sf.next_id()? as i64,
-    )
+    .execute_with_deps(app_state)
     .await?;
 
     Ok(map_oauth_app_response(created))

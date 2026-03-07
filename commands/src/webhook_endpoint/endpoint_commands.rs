@@ -11,6 +11,22 @@ use super::validation::{
     validate_endpoint_max_retries, validate_event_subscriptions,
 };
 
+pub struct CreateWebhookEndpointDeps<'a, A> {
+    pub acquirer: A,
+    pub db_router: &'a common::DbRouter,
+    pub endpoint_id: i64,
+}
+
+pub struct UpdateWebhookEndpointDeps<'a, A> {
+    pub acquirer: A,
+    pub db_router: &'a common::DbRouter,
+}
+
+pub struct UpdateEndpointSubscriptionsDeps<'a, A> {
+    pub acquirer: A,
+    pub db_router: &'a common::DbRouter,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateWebhookEndpointCommand {
     pub deployment_id: i64,
@@ -69,16 +85,14 @@ impl CreateWebhookEndpointCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_deps<'a, A>(
         self,
-        acquirer: A,
-        reader: &sqlx::PgPool,
-        endpoint_id: i64,
+        deps: CreateWebhookEndpointDeps<'a, A>,
     ) -> Result<WebhookEndpoint, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.acquirer.acquire().await?;
         url::Url::parse(&self.url)
             .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
 
@@ -86,7 +100,7 @@ impl CreateWebhookEndpointCommand {
             .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
 
         validate_event_subscriptions(
-            reader,
+            deps.db_router,
             self.deployment_id,
             &self.app_slug,
             &self.subscriptions,
@@ -123,7 +137,7 @@ impl CreateWebhookEndpointCommand {
                       created_at as "created_at!",
                       updated_at as "updated_at!"
             "#,
-            endpoint_id,
+            deps.endpoint_id,
             self.deployment_id,
             self.app_slug,
             self.url,
@@ -227,15 +241,14 @@ impl UpdateWebhookEndpointCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_deps<'a, A>(
         self,
-        acquirer: A,
-        reader: &sqlx::PgPool,
+        deps: UpdateWebhookEndpointDeps<'a, A>,
     ) -> Result<WebhookEndpoint, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.acquirer.acquire().await?;
         if let Some(ref url) = self.url {
             url::Url::parse(url)
                 .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
@@ -296,7 +309,7 @@ impl UpdateWebhookEndpointCommand {
 
         if let Some(subscriptions) = self.subscriptions {
             validate_event_subscriptions(
-                reader,
+                deps.db_router,
                 self.deployment_id,
                 &endpoint.app_slug,
                 &subscriptions,
@@ -358,15 +371,14 @@ impl UpdateEndpointSubscriptionsCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_deps<'a, A>(
         self,
-        acquirer: A,
-        reader: &sqlx::PgPool,
+        deps: UpdateEndpointSubscriptionsDeps<'a, A>,
     ) -> Result<Vec<String>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.acquirer.acquire().await?;
 
         let app_slug = query!(
             r#"
@@ -392,7 +404,7 @@ impl UpdateEndpointSubscriptionsCommand {
             .collect::<Vec<_>>();
 
         validate_event_subscriptions(
-            reader,
+            deps.db_router,
             self.deployment_id,
             &app_slug,
             &subscriptions_for_validation,

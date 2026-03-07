@@ -4,6 +4,7 @@ use queries::oauth::OAuthClientData;
 use sha2::{Digest, Sha256};
 
 pub struct CreateOAuthClientCommand {
+    pub client_record_id: Option<i64>,
     pub deployment_id: i64,
     pub oauth_app_id: i64,
     pub client_auth_method: String,
@@ -205,21 +206,24 @@ fn validate_redirect_uris(
 }
 
 impl CreateOAuthClientCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        encryptor: &dyn OAuthClientSecretEncryptor,
-        client_record_id: i64,
-    ) -> Result<OAuthClientWithSecret, AppError>
+    pub fn with_client_record_id(mut self, client_record_id: i64) -> Self {
+        self.client_record_id = Some(client_record_id);
+        self
+    }
+
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<OAuthClientWithSecret, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasEncryptionService,
     {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn, encryptor, client_record_id)
+        let conn = deps.db_router().writer().acquire().await?;
+        let client_record_id = self
+            .client_record_id
+            .ok_or_else(|| AppError::Validation("client_record_id is required".to_string()))?;
+        self.run_with_conn(conn, deps.encryption_service(), client_record_id)
             .await
     }
 
-    async fn execute_with_deps<C>(
+    async fn run_with_conn<C>(
         self,
         mut conn: C,
         encryptor: &dyn OAuthClientSecretEncryptor,
@@ -964,20 +968,8 @@ impl RotateOAuthClientSecret {
     where
         D: HasDbRouter + HasEncryptionService,
     {
-        self.execute_with(deps.db_router().writer(), deps.encryption_service())
-            .await
-    }
-
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        encryptor: &dyn OAuthClientSecretEncryptor,
-    ) -> Result<Option<String>, AppError>
-    where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let conn = acquirer.acquire().await?;
-        self.apply_with_conn(conn, encryptor).await
+        let conn = deps.db_router().writer().acquire().await?;
+        self.apply_with_conn(conn, deps.encryption_service()).await
     }
 
     async fn apply_with_conn<C>(

@@ -20,7 +20,7 @@ pub async fn get_webhook_analytics(
         query = query.with_date_range(start, end);
     }
 
-    query.execute_with(&app_state.clickhouse_service).await
+    query.execute_with_deps(&app_state.clickhouse_service).await
 }
 
 pub async fn get_webhook_timeseries(
@@ -40,5 +40,5 @@ pub async fn get_webhook_timeseries(
         query = query.with_date_range(start, end);
     }
 
-    query.execute_with(&app_state.clickhouse_service).await
+    query.execute_with_deps(&app_state.clickhouse_service).await
 }

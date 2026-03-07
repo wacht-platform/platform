@@ -129,13 +129,14 @@ pub async fn verify_deployment_dns_records(
     input: VerifyDeploymentDnsRecordsInput,
 ) -> Result<Deployment, AppError> {
     let deps = VerifyDeploymentDnsDeps {
+        db_router: &app_state.db_router,
         cloudflare_service: &app_state.cloudflare_service,
         dns_verification_service: &app_state.dns_verification_service,
     };
     VerifyDeploymentDnsRecordsCommand::builder()
         .deployment_id(input.deployment_id)
         .build()?
-        .execute_with(&deps, app_state.db_router.writer())
+        .execute_with_deps(&deps)
         .await
 }
 

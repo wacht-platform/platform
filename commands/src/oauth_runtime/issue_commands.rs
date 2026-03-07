@@ -4,6 +4,7 @@ use common::error::AppError;
 use super::helpers::{generate_token, hash_value};
 
 pub struct IssueOAuthAuthorizationCode {
+    pub code_id: Option<i64>,
     pub deployment_id: i64,
     pub oauth_client_id: i64,
     pub oauth_grant_id: i64,
@@ -22,15 +23,19 @@ pub struct OAuthAuthorizationCodeIssued {
 }
 
 impl IssueOAuthAuthorizationCode {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        code_id: i64,
-    ) -> Result<OAuthAuthorizationCodeIssued, AppError>
+    pub fn with_code_id(mut self, code_id: i64) -> Self {
+        self.code_id = Some(code_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OAuthAuthorizationCodeIssued, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
+        let code_id = self
+            .code_id
+            .ok_or_else(|| AppError::Validation("code_id is required".to_string()))?;
         self.execute_with_deps(conn, code_id).await
     }
 
@@ -115,6 +120,8 @@ impl ConsumeOAuthAuthorizationCode {
 }
 
 pub struct IssueOAuthTokenPair {
+    pub access_token_id: Option<i64>,
+    pub refresh_token_id: Option<i64>,
     pub deployment_id: i64,
     pub oauth_client_id: i64,
     pub oauth_grant_id: i64,
@@ -132,16 +139,27 @@ pub struct OAuthTokenPairIssued {
 }
 
 impl IssueOAuthTokenPair {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        access_token_id: i64,
-        refresh_token_id: i64,
-    ) -> Result<OAuthTokenPairIssued, AppError>
+    pub fn with_access_token_id(mut self, access_token_id: i64) -> Self {
+        self.access_token_id = Some(access_token_id);
+        self
+    }
+
+    pub fn with_refresh_token_id(mut self, refresh_token_id: i64) -> Self {
+        self.refresh_token_id = Some(refresh_token_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OAuthTokenPairIssued, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
+        let access_token_id = self
+            .access_token_id
+            .ok_or_else(|| AppError::Validation("access_token_id is required".to_string()))?;
+        let refresh_token_id = self
+            .refresh_token_id
+            .ok_or_else(|| AppError::Validation("refresh_token_id is required".to_string()))?;
         self.execute_with_deps(conn, access_token_id, refresh_token_id)
             .await
     }

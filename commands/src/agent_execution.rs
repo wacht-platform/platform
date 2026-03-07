@@ -1,4 +1,4 @@
-use common::error::AppError;
+use common::{HasIdGenerator, HasNatsJetStream, error::AppError};
 use dto::json::{AgentExecutionRequest, AgentExecutionType, NatsTaskMessage};
 use models::{FileData, ImageData};
 
@@ -51,10 +51,9 @@ impl UploadImagesToS3Command {
 }
 
 impl UploadImagesToS3Command {
-    pub async fn execute_with<IdFn>(
+    pub async fn execute_with_deps<IdFn>(
         self,
-        storage_client: &aws_sdk_s3::Client,
-        id_gen: IdFn,
+        deps: UploadImagesToS3Deps<'_, IdFn>,
     ) -> Result<Option<Vec<ImageData>>, AppError>
     where
         IdFn: Fn() -> Result<i64, AppError> + Copy,
@@ -75,7 +74,7 @@ impl UploadImagesToS3Command {
 
             // Get file extension from mime type
             let file_extension = img.mime_type.split('/').next_back().unwrap_or("png");
-            let filename = format!("{}.{}", id_gen()?, file_extension);
+            let filename = format!("{}.{}", (deps.id_gen)()?, file_extension);
 
             // S3 key: {deployment}/persistent/{context}/uploads/{filename}
             let key = format!(
@@ -86,7 +85,9 @@ impl UploadImagesToS3Command {
             // Upload to S3 via agent storage command
             let write_image_command = WriteToAgentStorageCommand::new(key, bytes.clone())
                 .with_content_type(img.mime_type.clone());
-            write_image_command.execute_with(storage_client).await?;
+            write_image_command
+                .execute_with_deps(deps.storage_client)
+                .await?;
 
             uploaded.push(ImageData {
                 mime_type: img.mime_type,
@@ -126,10 +127,9 @@ impl UploadFilesToS3Command {
 }
 
 impl UploadFilesToS3Command {
-    pub async fn execute_with<IdFn>(
+    pub async fn execute_with_deps<IdFn>(
         self,
-        storage_client: &aws_sdk_s3::Client,
-        id_gen: IdFn,
+        deps: UploadFilesToS3Deps<'_, IdFn>,
     ) -> Result<Option<Vec<FileData>>, AppError>
     where
         IdFn: Fn() -> Result<i64, AppError> + Copy,
@@ -150,7 +150,7 @@ impl UploadFilesToS3Command {
 
             // Generate unique filename with original name preserved
             let safe_filename = sanitize_upload_filename(&file.filename)?;
-            let filename = format!("{}_{}", id_gen()?, safe_filename);
+            let filename = format!("{}_{}", (deps.id_gen)()?, safe_filename);
 
             // S3 key: {deployment}/persistent/{context}/uploads/{filename}
             let key = format!(
@@ -161,7 +161,9 @@ impl UploadFilesToS3Command {
             // Upload to S3 via agent storage command
             let write_file_command = WriteToAgentStorageCommand::new(key, bytes.clone())
                 .with_content_type(file.mime_type.clone());
-            write_file_command.execute_with(storage_client).await?;
+            write_file_command
+                .execute_with_deps(deps.storage_client)
+                .await?;
 
             uploaded.push(FileData {
                 filename: file.filename,
@@ -196,11 +198,20 @@ impl SignalAgentExecutionCancellationCommand {
 }
 
 impl SignalAgentExecutionCancellationCommand {
-    pub async fn execute_with(
+    pub async fn execute_with_deps<D>(
         self,
-        jetstream: &async_nats::jetstream::Context,
-        marker_id: i64,
-    ) -> Result<(), AppError> {
+        deps: &D,
+    ) -> Result<(), AppError>
+    where
+        D: HasNatsJetStream + HasIdGenerator,
+    {
+        let marker_id = deps.id_generator().next_id().map_err(|e| {
+            AppError::Internal(format!(
+                "Failed to generate cancellation marker id for context {}: {}",
+                self.context_id, e
+            ))
+        })? as i64;
+        let jetstream = deps.nats_jetstream();
         let kv = match jetstream.get_key_value(AGENT_EXECUTION_KV_BUCKET).await {
             Ok(store) => store,
             Err(_) => match jetstream
@@ -307,11 +318,17 @@ impl PublishAgentExecutionCommand {
 }
 
 impl PublishAgentExecutionCommand {
-    pub async fn execute_with(
+    pub async fn execute_with_deps<D>(
         self,
-        jetstream: &async_nats::jetstream::Context,
-        task_id: i64,
-    ) -> Result<(), AppError> {
+        deps: &D,
+    ) -> Result<(), AppError>
+    where
+        D: HasNatsJetStream + HasIdGenerator,
+    {
+        let task_id = deps.id_generator().next_id().map_err(|e| {
+            AppError::Internal(format!("Failed to generate task id: {}", e))
+        })? as i64;
+        let jetstream = deps.nats_jetstream();
         let task = NatsTaskMessage {
             task_id: format!("exec_{}", task_id),
             task_type: "agent.execution_request".to_string(),
@@ -343,4 +360,14 @@ impl PublishAgentExecutionCommand {
 
         Ok(())
     }
+}
+
+pub struct UploadImagesToS3Deps<'a, IdFn> {
+    pub storage_client: &'a aws_sdk_s3::Client,
+    pub id_gen: IdFn,
+}
+
+pub struct UploadFilesToS3Deps<'a, IdFn> {
+    pub storage_client: &'a aws_sdk_s3::Client,
+    pub id_gen: IdFn,
 }

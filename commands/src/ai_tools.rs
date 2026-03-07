@@ -5,6 +5,7 @@ use chrono::Utc;
 use sqlx::Row;
 
 pub struct CreateAiToolCommand {
+    pub id: i64,
     pub deployment_id: i64,
     pub name: String,
     pub description: Option<String>,
@@ -14,6 +15,7 @@ pub struct CreateAiToolCommand {
 
 impl CreateAiToolCommand {
     pub fn new(
+        id: i64,
         deployment_id: i64,
         name: String,
         description: Option<String>,
@@ -21,6 +23,7 @@ impl CreateAiToolCommand {
         configuration: AiToolConfiguration,
     ) -> Self {
         Self {
+            id,
             deployment_id,
             name,
             description,
@@ -70,7 +73,7 @@ impl CreateAiToolCommand {
         Ok(())
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A, tool_id: i64) -> Result<AiTool, AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiTool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -78,6 +81,7 @@ impl CreateAiToolCommand {
 
         let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
+        let tool_id = self.id;
         let tool_type_str: String = self.tool_type.into();
         let configuration_json = serde_json::to_value(&self.configuration)
             .map_err(|e| AppError::Serialization(e.to_string()))?;

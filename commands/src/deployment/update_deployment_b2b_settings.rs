@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use common::error::AppError;
+use common::{HasDbRouter, HasRedis, error::AppError};
 use dto::json::DeploymentB2bSettingsUpdates;
 use models::DeploymentPermissionCatalogEntry;
 use serde_json::Value;
@@ -55,15 +55,12 @@ fn active_permissions_from_catalog(entries: &[DeploymentPermissionCatalogEntry])
 }
 
 impl UpdateDeploymentB2bSettingsCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        redis_client: &redis::Client,
-    ) -> Result<(), AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasRedis,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let redis_client = deps.redis_client();
         let existing_catalogs = sqlx::query_as::<_, (Option<Value>, Option<Value>)>(
             "SELECT workspace_permission_catalog, organization_permission_catalog
              FROM deployment_b2b_settings
@@ -267,7 +264,7 @@ impl UpdateDeploymentB2bSettingsCommand {
         }
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_deps(&mut conn, redis_client)
+            .execute_with_conn_and_redis(&mut conn, redis_client)
             .await?;
 
         Ok(())

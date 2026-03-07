@@ -39,11 +39,12 @@ pub async fn create_segment(
 ) -> Result<Segment, AppError> {
     let segment_id = app_state.sf.next_id()? as i64;
     CreateSegmentCommand::builder()
+        .id(segment_id)
         .deployment_id(deployment_id)
         .name(name)
         .segment_type(segment_type)
         .build()?
-        .execute_with(app_state.db_router.writer(), segment_id)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 

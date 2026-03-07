@@ -62,9 +62,8 @@ pub async fn update_deployment_b2b_settings(
     deployment_id: i64,
     settings: DeploymentB2bSettingsUpdates,
 ) -> Result<(), AppError> {
-    let writer = app_state.db_router.writer();
     UpdateDeploymentB2bSettingsCommand::new(deployment_id, settings)
-        .execute_with(writer, &app_state.redis_client)
+        .execute_with_deps(app_state)
         .await?;
     Ok(())
 }

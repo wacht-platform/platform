@@ -1,5 +1,4 @@
 use common::error::AppError;
-use common::state::AppState;
 use common::validators::ProjectValidator;
 use common::{CloudflareService, DnsVerificationService, HasIdGenerator, PostmarkService};
 use models::{
@@ -18,22 +17,6 @@ use std::str::FromStr;
 
 pub trait IdGenerator: Send + Sync {
     fn next_id(&self) -> Result<i64, AppError>;
-}
-
-pub struct AppStateIdGenerator<'a> {
-    app_state: &'a AppState,
-}
-
-impl<'a> AppStateIdGenerator<'a> {
-    pub fn new(app_state: &'a AppState) -> Self {
-        Self { app_state }
-    }
-}
-
-impl IdGenerator for AppStateIdGenerator<'_> {
-    fn next_id(&self) -> Result<i64, AppError> {
-        Ok(self.app_state.sf.next_id()? as i64)
-    }
 }
 
 pub struct DepsIdGeneratorAdapter<'a, D>
@@ -68,6 +51,7 @@ pub struct ProductionDeploymentDeps<'a> {
 }
 
 pub struct VerifyDeploymentDnsDeps<'a> {
+    pub db_router: &'a common::DbRouter,
     pub cloudflare_service: &'a CloudflareService,
     pub dns_verification_service: &'a DnsVerificationService,
 }

@@ -1,4 +1,4 @@
-use common::error::AppError;
+use common::{HasDbRouter, HasRedis, error::AppError};
 use dto::params::deployment::DeploymentNameParams;
 use models::EmailTemplate;
 use scraper::{Html, Selector};
@@ -48,15 +48,12 @@ impl UpdateDeploymentEmailTemplateCommand {
 }
 
 impl UpdateDeploymentEmailTemplateCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        redis: &redis::Client,
-    ) -> Result<EmailTemplate, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<EmailTemplate, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasRedis,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let redis = deps.redis_client();
         let column_name = match self.template_name {
             DeploymentNameParams::OrganizationInviteTemplate => "organization_invite_template",
             DeploymentNameParams::VerificationCodeTemplate => "verification_code_template",
@@ -108,7 +105,7 @@ impl UpdateDeploymentEmailTemplateCommand {
         // Clear Redis cache for deployment
         use crate::deployment::ClearDeploymentCacheCommand;
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_deps(&mut conn, redis)
+            .execute_with_conn_and_redis(&mut conn, redis)
             .await?;
 
         Ok(template)

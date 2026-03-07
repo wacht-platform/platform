@@ -4,6 +4,7 @@ use models::billing_invoice::{BillingInvoice, InvoiceStatus};
 use serde_json::Value;
 
 pub struct UpsertInvoiceCommand {
+    pub id: Option<i64>,
     pub owner_id: String,
     pub provider_payment_id: String,
     pub provider_customer_id: String,
@@ -22,15 +23,87 @@ pub struct UpsertInvoiceCommand {
 }
 
 impl UpsertInvoiceCommand {
+    pub fn new(
+        id: i64,
+        owner_id: String,
+        provider_payment_id: String,
+        provider_customer_id: String,
+        amount_due_cents: i64,
+        amount_paid_cents: i64,
+        currency: String,
+        status: String,
+    ) -> Self {
+        Self {
+            id: Some(id),
+            owner_id,
+            provider_payment_id,
+            provider_customer_id,
+            amount_due_cents,
+            amount_paid_cents,
+            currency,
+            status,
+            invoice_pdf_url: None,
+            hosted_invoice_url: None,
+            invoice_number: None,
+            due_date: None,
+            paid_at: None,
+            period_start: None,
+            period_end: None,
+            metadata: serde_json::json!({}),
+        }
+    }
+
+    pub fn with_invoice_pdf_url(mut self, invoice_pdf_url: Option<String>) -> Self {
+        self.invoice_pdf_url = invoice_pdf_url;
+        self
+    }
+
+    pub fn with_hosted_invoice_url(mut self, hosted_invoice_url: Option<String>) -> Self {
+        self.hosted_invoice_url = hosted_invoice_url;
+        self
+    }
+
+    pub fn with_invoice_number(mut self, invoice_number: Option<String>) -> Self {
+        self.invoice_number = invoice_number;
+        self
+    }
+
+    pub fn with_due_date(mut self, due_date: Option<DateTime<Utc>>) -> Self {
+        self.due_date = due_date;
+        self
+    }
+
+    pub fn with_paid_at(mut self, paid_at: Option<DateTime<Utc>>) -> Self {
+        self.paid_at = paid_at;
+        self
+    }
+
+    pub fn with_period_start(mut self, period_start: Option<DateTime<Utc>>) -> Self {
+        self.period_start = period_start;
+        self
+    }
+
+    pub fn with_period_end(mut self, period_end: Option<DateTime<Utc>>) -> Self {
+        self.period_end = period_end;
+        self
+    }
+
+    pub fn with_metadata(mut self, metadata: Value) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
-        invoice_id: i64,
     ) -> Result<BillingInvoice, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        let invoice_id = self
+            .id
+            .ok_or_else(|| AppError::Validation("invoice_id is required".to_string()))?;
         let billing_account_id: Option<i64> = sqlx::query_scalar!(
             "SELECT id FROM billing_accounts WHERE owner_id = $1",
             self.owner_id

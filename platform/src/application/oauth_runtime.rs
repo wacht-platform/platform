@@ -63,7 +63,7 @@ fn enqueue_grant_last_used(
             oauth_client_id,
             grant_id,
         }
-        .execute_with(&app_state.redis_client)
+        .execute_with_deps(&app_state.redis_client)
         .await;
     });
 }
@@ -328,6 +328,12 @@ pub async fn oauth_consent_submit(
             .await?;
 
             let issued = IssueOAuthAuthorizationCode {
+                code_id: Some(
+                    app_state
+                        .sf
+                        .next_id()
+                        .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+                ),
                 deployment_id: claims.deployment_id,
                 oauth_client_id: claims.oauth_client_id,
                 oauth_grant_id,
@@ -339,13 +345,7 @@ pub async fn oauth_consent_submit(
                 resource: claims.resource,
                 granted_resource: Some(selected_resource),
             }
-            .execute_with(
-                app_state.db_router.writer(),
-                app_state
-                    .sf
-                    .next_id()
-                    .map_err(|e| AppError::Internal(e.to_string()))? as i64,
-            )
+            .execute_with(app_state.db_router.writer())
             .await?;
 
             let redirect_uri = build_consent_redirect_uri(
@@ -374,7 +374,6 @@ pub async fn oauth_register_client(
     headers: &HeaderMap,
     request: OAuthDynamicClientRegistrationRequest,
 ) -> Result<OAuthDynamicClientRegistrationResponse, ApiErrorResponse> {
-    let writer = app_state.db_router.writer();
     let oauth_app = resolve_oauth_app_from_host(app_state, headers).await?;
     if !oauth_app.allow_dynamic_client_registration {
         return Err((
@@ -398,6 +397,12 @@ pub async fn oauth_register_client(
         .unwrap_or_else(|| "client_secret_basic".to_string());
 
     let created = CreateOAuthClientCommand {
+        client_record_id: Some(
+            app_state
+                .sf
+                .next_id()
+                .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+        ),
         deployment_id: oauth_app.deployment_id,
         oauth_app_id: oauth_app.id,
         client_auth_method: method.clone(),
@@ -416,14 +421,7 @@ pub async fn oauth_register_client(
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
     }
-    .execute_with(
-        writer,
-        &app_state.encryption_service,
-        app_state
-            .sf
-            .next_id()
-            .map_err(|e| AppError::Internal(e.to_string()))? as i64,
-    )
+    .execute_with_deps(app_state)
     .await?;
 
     let registration_access_token = generate_registration_access_token();
@@ -434,7 +432,7 @@ pub async fn oauth_register_client(
         client_id: created_client_id,
         registration_access_token_hash: Some(registration_access_token_hash),
     }
-    .execute_with(writer)
+    .execute_with(app_state.db_router.writer())
     .await?;
 
     let issuer = resolve_issuer_from_oauth_app(&oauth_app)?;
@@ -771,6 +769,8 @@ async fn handle_authorization_code_grant(
         .map_err(|e| map_token_app_error(AppError::Internal(e.to_string())))?
         as i64;
     let tokens = IssueOAuthTokenPair {
+        access_token_id: Some(access_token_id),
+        refresh_token_id: Some(refresh_token_id),
         deployment_id: context.oauth_app.deployment_id,
         oauth_client_id: context.client.id,
         oauth_grant_id,
@@ -779,11 +779,7 @@ async fn handle_authorization_code_grant(
         resource: code_row.resource,
         granted_resource: code_row.granted_resource,
     }
-    .execute_with(
-        app_state.db_router.writer(),
-        access_token_id,
-        refresh_token_id,
-    )
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(map_token_app_error)?;
 
@@ -900,6 +896,8 @@ async fn handle_refresh_token_grant(
         .map_err(|e| map_token_app_error(AppError::Internal(e.to_string())))?
         as i64;
     let tokens = IssueOAuthTokenPair {
+        access_token_id: Some(access_token_id),
+        refresh_token_id: Some(refresh_token_id),
         deployment_id: context.oauth_app.deployment_id,
         oauth_client_id: context.client.id,
         oauth_grant_id,
@@ -908,11 +906,7 @@ async fn handle_refresh_token_grant(
         resource: refresh_row.resource.clone(),
         granted_resource: refresh_row.granted_resource.clone(),
     }
-    .execute_with(
-        app_state.db_router.writer(),
-        access_token_id,
-        refresh_token_id,
-    )
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(map_token_app_error)?;
 

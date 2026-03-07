@@ -24,7 +24,7 @@ impl WriteToAgentStorageCommand {
 }
 
 impl WriteToAgentStorageCommand {
-    pub async fn execute_with(self, client: &aws_sdk_s3::Client) -> Result<String, AppError> {
+    pub async fn execute_with_deps(self, client: &aws_sdk_s3::Client) -> Result<String, AppError> {
         info!("[AgentStorage] Starting file upload to agent storage");
         debug!(
             "[AgentStorage] Upload details - key: {}, content_type: {:?}, body_size: {} bytes",
@@ -105,7 +105,7 @@ impl DeleteFromAgentStorageCommand {
 }
 
 impl DeleteFromAgentStorageCommand {
-    pub async fn execute_with(self, client: &aws_sdk_s3::Client) -> Result<(), AppError> {
+    pub async fn execute_with_deps(self, client: &aws_sdk_s3::Client) -> Result<(), AppError> {
         client
             .delete_object()
             .bucket("wacht-agents")
@@ -129,7 +129,7 @@ impl DeletePrefixFromAgentStorageCommand {
 }
 
 impl DeletePrefixFromAgentStorageCommand {
-    pub async fn execute_with(self, client: &aws_sdk_s3::Client) -> Result<(), AppError> {
+    pub async fn execute_with_deps(self, client: &aws_sdk_s3::Client) -> Result<(), AppError> {
         let list_result = client
             .list_objects_v2()
             .bucket("wacht-agents")

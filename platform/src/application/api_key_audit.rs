@@ -64,7 +64,7 @@ pub async fn get_api_audit_logs(
         start_date: params.start_date,
         end_date: params.end_date,
     }
-    .execute_with(clickhouse_client)
+    .execute_with_deps(clickhouse_client)
     .await
 }
 
@@ -89,7 +89,7 @@ pub async fn get_api_audit_analytics(
         include_rate_limits: params.include_rate_limits.unwrap_or(false),
         top_limit: params.top_limit.unwrap_or(10),
     }
-    .execute_with(clickhouse_client)
+    .execute_with_deps(clickhouse_client)
     .await
 }
 
@@ -116,6 +116,6 @@ pub async fn get_api_audit_timeseries(
         interval: normalized_interval,
         key_id: params.key_id.map(|v| v.get()),
     }
-    .execute_with(clickhouse_client)
+    .execute_with_deps(clickhouse_client)
     .await
 }

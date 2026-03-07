@@ -250,17 +250,6 @@ impl CreateProjectWithStagingDeploymentCommand {
         })
     }
 
-    pub async fn execute_with(
-        self,
-        writer: &sqlx::PgPool,
-        ids: &dyn IdGenerator,
-    ) -> Result<ProjectWithDeployments, AppError> {
-        let mut tx = writer.begin().await?;
-        let result = self.run_with_tx(ids, &mut tx).await?;
-        tx.commit().await?;
-        Ok(result)
-    }
-
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<ProjectWithDeployments, AppError>
     where
         D: common::HasDbRouter + common::HasIdGenerator + Sync,

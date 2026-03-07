@@ -15,6 +15,28 @@ pub struct CreateEventCatalogCommand {
 }
 
 impl CreateEventCatalogCommand {
+    pub fn new(
+        deployment_id: i64,
+        slug: String,
+        name: String,
+        events: Vec<WebhookEventDefinition>,
+    ) -> Self {
+        Self {
+            deployment_id,
+            slug,
+            name,
+            description: None,
+            events,
+        }
+    }
+
+    pub fn with_description(mut self, description: Option<String>) -> Self {
+        self.description = description;
+        self
+    }
+}
+
+impl CreateEventCatalogCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
@@ -58,6 +80,27 @@ pub struct UpdateEventCatalogCommand {
 }
 
 impl UpdateEventCatalogCommand {
+    pub fn new(deployment_id: i64, slug: String) -> Self {
+        Self {
+            deployment_id,
+            slug,
+            name: None,
+            description: None,
+        }
+    }
+
+    pub fn with_name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
+    }
+
+    pub fn with_description(mut self, description: Option<String>) -> Self {
+        self.description = description;
+        self
+    }
+}
+
+impl UpdateEventCatalogCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
@@ -97,6 +140,16 @@ pub struct AppendEventsToCatalogCommand {
     pub deployment_id: i64,
     pub slug: String,
     pub events: Vec<WebhookEventDefinition>,
+}
+
+impl AppendEventsToCatalogCommand {
+    pub fn new(deployment_id: i64, slug: String, events: Vec<WebhookEventDefinition>) -> Self {
+        Self {
+            deployment_id,
+            slug,
+            events,
+        }
+    }
 }
 
 impl AppendEventsToCatalogCommand {
@@ -180,6 +233,17 @@ pub struct ArchiveEventInCatalogCommand {
     pub slug: String,
     pub event_name: String,
     pub is_archived: bool,
+}
+
+impl ArchiveEventInCatalogCommand {
+    pub fn new(deployment_id: i64, slug: String, event_name: String, is_archived: bool) -> Self {
+        Self {
+            deployment_id,
+            slug,
+            event_name,
+            is_archived,
+        }
+    }
 }
 
 impl ArchiveEventInCatalogCommand {

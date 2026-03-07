@@ -23,6 +23,11 @@ pub struct GetSubscribedEndpointsCommand {
     pub event_name: String,
 }
 
+pub struct GetSubscribedEndpointsDeps<'a, A> {
+    pub acquirer: A,
+    pub redis_client: &'a redis::Client,
+}
+
 impl GetSubscribedEndpointsCommand {
     pub fn new(deployment_id: i64, app_slug: String, event_name: String) -> Self {
         Self {
@@ -32,21 +37,20 @@ impl GetSubscribedEndpointsCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_deps<'a, A>(
         self,
-        acquirer: A,
-        redis_client: &redis::Client,
+        deps: GetSubscribedEndpointsDeps<'a, A>,
     ) -> Result<Vec<EndpointWithRules>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.acquirer.acquire().await?;
         let cache_key = format!(
             "webhook:subs:{}:{}:{}",
             self.deployment_id, self.app_slug, self.event_name
         );
 
-        if let Ok(mut redis_conn) = redis_client.get_multiplexed_async_connection().await {
+        if let Ok(mut redis_conn) = deps.redis_client.get_multiplexed_async_connection().await {
             if let Ok(cached) = redis_conn.get::<_, String>(&cache_key).await {
                 if let Ok(endpoints) = serde_json::from_str::<Vec<EndpointWithRules>>(&cached) {
                     return Ok(endpoints);
@@ -94,7 +98,7 @@ impl GetSubscribedEndpointsCommand {
             .collect();
 
         if let Ok(json) = serde_json::to_string(&endpoints) {
-            if let Ok(mut redis_conn) = redis_client.get_multiplexed_async_connection().await {
+            if let Ok(mut redis_conn) = deps.redis_client.get_multiplexed_async_connection().await {
                 let _: Result<(), _> = redis_conn.set_ex(&cache_key, json, 300).await;
             }
         }
@@ -112,7 +116,7 @@ pub struct InvalidateEndpointCacheCommand {
 }
 
 impl InvalidateEndpointCacheCommand {
-    pub async fn execute_with(self, redis_client: &redis::Client) -> Result<(), AppError> {
+    pub async fn execute_with_deps(self, redis_client: &redis::Client) -> Result<(), AppError> {
         if let Ok(mut redis_conn) = redis_client.get_multiplexed_async_connection().await {
             for event_name in self.event_names {
                 let cache_key = format!(

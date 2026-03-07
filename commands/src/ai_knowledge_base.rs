@@ -7,6 +7,7 @@ use chrono::Utc;
 use sqlx::Row;
 
 pub struct CreateAiKnowledgeBaseCommand {
+    pub knowledge_base_id: Option<i64>,
     pub deployment_id: i64,
     pub name: String,
     pub description: Option<String>,
@@ -21,6 +22,7 @@ impl CreateAiKnowledgeBaseCommand {
         configuration: serde_json::Value,
     ) -> Self {
         Self {
+            knowledge_base_id: None,
             deployment_id,
             name,
             description,
@@ -28,16 +30,20 @@ impl CreateAiKnowledgeBaseCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        knowledge_base_id: i64,
-    ) -> Result<AiKnowledgeBase, AppError>
+    pub fn with_knowledge_base_id(mut self, knowledge_base_id: i64) -> Self {
+        self.knowledge_base_id = Some(knowledge_base_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiKnowledgeBase, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         validate_knowledge_base_name(&self.name)?;
         let mut conn = acquirer.acquire().await?;
+        let knowledge_base_id = self.knowledge_base_id.ok_or_else(|| {
+            AppError::Validation("knowledge_base_id is required".to_string())
+        })?;
         let now = Utc::now();
 
         let knowledge_base = sqlx::query!(
@@ -208,6 +214,11 @@ pub struct DeleteAiKnowledgeBaseCommand {
     pub knowledge_base_id: i64,
 }
 
+pub struct KnowledgeBaseStorageDeps<'a> {
+    pub db_router: &'a common::DbRouter,
+    pub storage_client: &'a aws_sdk_s3::Client,
+}
+
 impl DeleteAiKnowledgeBaseCommand {
     pub fn new(deployment_id: i64, knowledge_base_id: i64) -> Self {
         Self {
@@ -216,10 +227,9 @@ impl DeleteAiKnowledgeBaseCommand {
         }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_deps(
         self,
-        writer: &sqlx::PgPool,
-        storage_client: &aws_sdk_s3::Client,
+        deps: KnowledgeBaseStorageDeps<'_>,
     ) -> Result<(), AppError> {
         let dependent_tools = sqlx::query!(
             r#"
@@ -232,7 +242,7 @@ impl DeleteAiKnowledgeBaseCommand {
             self.deployment_id,
             self.knowledge_base_id.to_string()
         )
-        .fetch_all(writer)
+        .fetch_all(deps.db_router.writer())
         .await
         .map_err(AppError::Database)?;
 
@@ -259,7 +269,7 @@ impl DeleteAiKnowledgeBaseCommand {
             self.deployment_id,
             self.knowledge_base_id
         )
-        .fetch_all(writer)
+        .fetch_all(deps.db_router.writer())
         .await
         .map_err(AppError::Database)?;
 
@@ -279,7 +289,7 @@ impl DeleteAiKnowledgeBaseCommand {
             self.deployment_id, self.knowledge_base_id
         );
         if let Err(e) = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix)
-            .execute_with(storage_client)
+            .execute_with_deps(deps.storage_client)
             .await
         {
             tracing::warn!(
@@ -289,7 +299,12 @@ impl DeleteAiKnowledgeBaseCommand {
             );
         }
 
-        let mut tx = writer.begin().await.map_err(AppError::Database)?;
+        let mut tx = deps
+            .db_router
+            .writer()
+            .begin()
+            .await
+            .map_err(AppError::Database)?;
         sqlx::query!(
             "DELETE FROM ai_knowledge_base_documents WHERE knowledge_base_id = $1",
             self.knowledge_base_id
@@ -319,6 +334,7 @@ pub struct UploadKnowledgeBaseDocumentCommand {
     pub file_name: String,
     pub file_content: Vec<u8>,
     pub file_type: String,
+    pub document_id: Option<i64>,
 }
 
 impl UploadKnowledgeBaseDocumentCommand {
@@ -337,16 +353,22 @@ impl UploadKnowledgeBaseDocumentCommand {
             file_name,
             file_content,
             file_type,
+            document_id: None,
         }
     }
 
-    pub async fn execute_with(
+    pub fn with_document_id(mut self, document_id: i64) -> Self {
+        self.document_id = Some(document_id);
+        self
+    }
+
+    pub async fn execute_with_deps(
         self,
-        pool: &sqlx::PgPool,
-        storage_client: &aws_sdk_s3::Client,
-        nats_client: &async_nats::Client,
-        document_id: i64,
+        deps: UploadKnowledgeBaseDocumentDeps<'_>,
     ) -> Result<AiKnowledgeBaseDocument, AppError> {
+        let document_id = self
+            .document_id
+            .ok_or_else(|| AppError::Validation("document_id is required".to_string()))?;
         let now = Utc::now();
         let file_size = self.file_content.len() as i64;
 
@@ -354,7 +376,7 @@ impl UploadKnowledgeBaseDocumentCommand {
             "SELECT deployment_id FROM ai_knowledge_bases WHERE id = $1",
             self.knowledge_base_id
         )
-        .fetch_one(pool)
+        .fetch_one(deps.db_router.writer())
         .await?;
         let deployment_id = kb_query.deployment_id;
 
@@ -364,7 +386,7 @@ impl UploadKnowledgeBaseDocumentCommand {
         );
         let file_url = WriteToAgentStorageCommand::new(file_path, self.file_content.clone())
             .with_content_type(self.file_type.clone())
-            .execute_with(storage_client)
+            .execute_with_deps(deps.storage_client)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -387,7 +409,7 @@ impl UploadKnowledgeBaseDocumentCommand {
             self.knowledge_base_id,
             serde_json::json!({"status": "processing"})
         )
-        .fetch_one(pool)
+        .fetch_one(deps.db_router.writer())
         .await
         .map_err(AppError::Database)?;
 
@@ -397,7 +419,7 @@ impl UploadKnowledgeBaseDocumentCommand {
             document.id,
         );
 
-        if let Err(e) = dispatch_processing_task.execute_with(nats_client).await {
+        if let Err(e) = dispatch_processing_task.execute_with_deps(deps.nats_client).await {
             tracing::error!("Failed to dispatch document processing task: {}", e);
             let _ = sqlx::query!(
                 r#"
@@ -413,7 +435,7 @@ impl UploadKnowledgeBaseDocumentCommand {
                 chrono::Utc::now(),
                 document.id
             )
-            .execute(pool)
+            .execute(deps.db_router.writer())
             .await;
         }
 
@@ -448,13 +470,12 @@ impl DeleteKnowledgeBaseDocumentCommand {
         }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_deps(
         self,
-        pool: &sqlx::PgPool,
-        storage_client: &aws_sdk_s3::Client,
+        deps: KnowledgeBaseStorageDeps<'_>,
     ) -> Result<(), AppError> {
         let _kb = GetAiKnowledgeBaseByIdQuery::new(self.deployment_id, self.knowledge_base_id)
-            .execute_with(pool)
+            .execute_with(deps.db_router.writer())
             .await
             .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
 
@@ -463,7 +484,7 @@ impl DeleteKnowledgeBaseDocumentCommand {
             self.document_id,
             self.knowledge_base_id
         )
-        .fetch_optional(pool)
+        .fetch_optional(deps.db_router.writer())
         .await
         .map_err(AppError::Database)?
         .ok_or(AppError::NotFound("Document not found".to_string()))?;
@@ -473,7 +494,7 @@ impl DeleteKnowledgeBaseDocumentCommand {
             self.deployment_id, self.knowledge_base_id, doc.file_name
         );
         if let Err(e) = crate::DeleteFromAgentStorageCommand::new(storage_key)
-            .execute_with(storage_client)
+            .execute_with_deps(deps.storage_client)
             .await
         {
             tracing::warn!("Failed to delete file from storage: {}", e);
@@ -484,10 +505,16 @@ impl DeleteKnowledgeBaseDocumentCommand {
             self.document_id,
             self.knowledge_base_id
         )
-        .execute(pool)
+        .execute(deps.db_router.writer())
         .await
         .map_err(AppError::Database)?;
 
         Ok(())
     }
+}
+
+pub struct UploadKnowledgeBaseDocumentDeps<'a> {
+    pub db_router: &'a common::DbRouter,
+    pub storage_client: &'a aws_sdk_s3::Client,
+    pub nats_client: &'a async_nats::Client,
 }

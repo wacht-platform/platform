@@ -5,6 +5,7 @@ use sqlx::Row;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateOrganizationRoleCommand {
+    pub role_id: Option<i64>,
     pub deployment_id: i64,
     pub organization_id: i64,
     pub name: String,
@@ -19,24 +20,29 @@ impl CreateOrganizationRoleCommand {
         permissions: Vec<String>,
     ) -> Self {
         Self {
+            role_id: None,
             deployment_id,
             organization_id,
             name,
             permissions,
         }
     }
+
+    pub fn with_role_id(mut self, role_id: i64) -> Self {
+        self.role_id = Some(role_id);
+        self
+    }
 }
 
 impl CreateOrganizationRoleCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        role_id: i64,
-    ) -> Result<OrganizationRole, AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OrganizationRole, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        let role_id = self
+            .role_id
+            .ok_or_else(|| AppError::Validation("role_id is required".to_string()))?;
         // Check if organization exists
         let org_exists = sqlx::query!(
             "SELECT id FROM organizations WHERE deployment_id = $1 AND id = $2",

@@ -18,12 +18,14 @@ pub struct GenerateScimTokenResponse {
 }
 
 pub struct GenerateScimTokenCommand {
+    token_id: Option<i64>,
     deployment_id: i64,
     request: GenerateScimTokenRequest,
 }
 
 #[derive(Default)]
 pub struct GenerateScimTokenCommandBuilder {
+    token_id: Option<i64>,
     deployment_id: Option<i64>,
     request: Option<GenerateScimTokenRequest>,
 }
@@ -35,9 +37,15 @@ impl GenerateScimTokenCommand {
 
     pub fn new(deployment_id: i64, request: GenerateScimTokenRequest) -> Self {
         Self {
+            token_id: None,
             deployment_id,
             request,
         }
+    }
+
+    pub fn with_token_id(mut self, token_id: i64) -> Self {
+        self.token_id = Some(token_id);
+        self
     }
 
     fn generate_token() -> (String, String, String) {
@@ -59,9 +67,11 @@ impl GenerateScimTokenCommand {
     pub async fn execute_with(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        token_id: i64,
     ) -> Result<GenerateScimTokenResponse, AppError> {
         let mut conn = acquirer.acquire().await?;
+        let token_id = self
+            .token_id
+            .ok_or_else(|| AppError::Validation("token_id is required".to_string()))?;
         // Delete any existing token for this connection
         sqlx::query!(
             r#"
@@ -111,6 +121,11 @@ impl GenerateScimTokenCommand {
 }
 
 impl GenerateScimTokenCommandBuilder {
+    pub fn token_id(mut self, token_id: i64) -> Self {
+        self.token_id = Some(token_id);
+        self
+    }
+
     pub fn deployment_id(mut self, deployment_id: i64) -> Self {
         self.deployment_id = Some(deployment_id);
         self
@@ -123,6 +138,7 @@ impl GenerateScimTokenCommandBuilder {
 
     pub fn build(self) -> Result<GenerateScimTokenCommand, AppError> {
         Ok(GenerateScimTokenCommand {
+            token_id: self.token_id,
             deployment_id: self
                 .deployment_id
                 .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,

@@ -131,10 +131,10 @@ async fn mark_checkout_session_created(
     owner_id: &str,
     checkout_session_id: &str,
 ) -> Result<(), AppError> {
-    MarkCheckoutSessionCreatedCommand {
-        owner_id: owner_id.to_string(),
-        checkout_session_id: checkout_session_id.to_string(),
-    }
+    MarkCheckoutSessionCreatedCommand::new(
+        owner_id.to_string(),
+        checkout_session_id.to_string(),
+    )
     .execute_with(state.db_router.writer())
     .await?;
     Ok(())
@@ -157,19 +157,17 @@ pub async fn update_billing_account(
     let existing = get_billing_account_or_404(state, owner_id).await?;
     enforce_checkout_cooldown(&existing)?;
 
-    UpdateBillingAccountCommand {
-        id: existing.billing_account.id,
-        legal_name: req.legal_name,
-        billing_email: req.billing_email,
-        billing_phone: req.billing_phone,
-        tax_id: req.tax_id,
-        address_line1: req.address_line1,
-        address_line2: req.address_line2,
-        city: req.city,
-        state: req.state,
-        postal_code: req.postal_code,
-        country: req.country,
-    }
+    UpdateBillingAccountCommand::new(existing.billing_account.id)
+        .with_legal_name(req.legal_name)
+        .with_billing_email(req.billing_email)
+        .with_billing_phone(req.billing_phone)
+        .with_tax_id(req.tax_id)
+        .with_address_line1(req.address_line1)
+        .with_address_line2(req.address_line2)
+        .with_city(req.city)
+        .with_state(req.state)
+        .with_postal_code(req.postal_code)
+        .with_country(req.country)
     .execute_with(state.db_router.writer())
     .await?;
 
@@ -270,19 +268,11 @@ pub async fn create_checkout(
     let dodo = DodoClient::new().map_err(|e| AppError::Internal(e.to_string()))?;
 
     let provider_customer_id = if let Some(ref account) = existing {
-        UpdateBillingAccountCommand {
-            id: account.billing_account.id,
-            legal_name: Some(req.legal_name.clone()),
-            billing_email: Some(req.billing_email.clone()),
-            billing_phone: req.billing_phone.clone(),
-            tax_id: req.tax_id.clone(),
-            address_line1: None,
-            address_line2: None,
-            city: None,
-            state: None,
-            postal_code: None,
-            country: None,
-        }
+        UpdateBillingAccountCommand::new(account.billing_account.id)
+            .with_legal_name(Some(req.legal_name.clone()))
+            .with_billing_email(Some(req.billing_email.clone()))
+            .with_billing_phone(req.billing_phone.clone())
+            .with_tax_id(req.tax_id.clone())
         .execute_with(state.db_router.writer())
         .await?;
 
@@ -312,31 +302,23 @@ pub async fn create_checkout(
                     AppError::Internal("Failed to create customer".to_string())
                 })?;
 
-            SetProviderCustomerIdCommand {
-                owner_id: owner_id.to_string(),
-                provider_customer_id: customer.customer_id.clone(),
-            }
+            SetProviderCustomerIdCommand::new(owner_id.to_string(), customer.customer_id.clone())
             .execute_with(state.db_router.writer())
             .await?;
 
             customer.customer_id
         }
     } else {
-        CreateBillingAccountCommand {
-            owner_id: owner_id.to_string(),
-            owner_type: owner_type.to_string(),
-            legal_name: req.legal_name.clone(),
-            billing_email: req.billing_email.clone(),
-            billing_phone: req.billing_phone.clone(),
-            tax_id: req.tax_id.clone(),
-            address_line1: None,
-            address_line2: None,
-            city: None,
-            state: None,
-            postal_code: None,
-            country: None,
-        }
-        .execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
+        CreateBillingAccountCommand::new(
+            state.sf.next_id()? as i64,
+            owner_id.to_string(),
+            owner_type.to_string(),
+            req.legal_name.clone(),
+            req.billing_email.clone(),
+        )
+        .with_billing_phone(req.billing_phone.clone())
+        .with_tax_id(req.tax_id.clone())
+        .execute_with(state.db_router.writer())
         .await?;
 
         let customer = dodo
@@ -351,10 +333,7 @@ pub async fn create_checkout(
                 AppError::Internal("Failed to create customer".to_string())
             })?;
 
-        SetProviderCustomerIdCommand {
-            owner_id: owner_id.to_string(),
-            provider_customer_id: customer.customer_id.clone(),
-        }
+        SetProviderCustomerIdCommand::new(owner_id.to_string(), customer.customer_id.clone())
         .execute_with(state.db_router.writer())
         .await?;
 
@@ -368,21 +347,19 @@ pub async fn create_checkout(
             .map(|p| p.product_id)
             .unwrap_or_else(|| STARTER_PRODUCT_ID_FALLBACK.to_string());
 
-        UpsertSubscriptionCommand {
-            owner_id: owner_id.to_string(),
+        UpsertSubscriptionCommand::new(
+            state.sf.next_id()? as i64,
+            owner_id.to_string(),
             provider_customer_id,
-            provider_subscription_id: format!("local_starter_{}", owner_id),
-            product_id: Some(starter_product_id),
-            status: "active".to_string(),
-            previous_billing_date: Some(Utc::now()),
-        }
-        .execute_with(state.db_router.writer(), state.sf.next_id()? as i64)
+            format!("local_starter_{}", owner_id),
+            "active".to_string(),
+        )
+        .with_product_id(Some(starter_product_id))
+        .with_previous_billing_date(Some(Utc::now()))
+        .execute_with(state.db_router.writer())
         .await?;
 
-        UpdateBillingAccountStatusCommand {
-            owner_id: owner_id.to_string(),
-            status: "active".to_string(),
-        }
+        UpdateBillingAccountStatusCommand::new(owner_id.to_string(), "active".to_string())
         .execute_with(state.db_router.writer())
         .await?;
 

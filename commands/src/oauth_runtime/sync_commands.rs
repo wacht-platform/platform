@@ -1,5 +1,5 @@
 use chrono::Utc;
-use common::error::AppError;
+use common::{HasDbRouter, HasRedis, error::AppError};
 use redis::AsyncCommands;
 
 const OAUTH_GRANT_LAST_USED_DIRTY_KEY: &str = "oauth:grant:last_used:dirty";
@@ -11,7 +11,7 @@ pub struct EnqueueOAuthGrantLastUsed {
 }
 
 impl EnqueueOAuthGrantLastUsed {
-    pub async fn execute_with(self, redis_client: &redis::Client) -> Result<(), AppError> {
+    pub async fn execute_with_deps(self, redis_client: &redis::Client) -> Result<(), AppError> {
         let mut redis_conn = redis_client
             .get_multiplexed_async_connection()
             .await
@@ -40,17 +40,17 @@ pub struct SyncOAuthGrantLastUsedBatch {
 }
 
 impl SyncOAuthGrantLastUsedBatch {
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_deps<D>(
         self,
-        redis_client: &redis::Client,
-        acquirer: A,
+        deps: &D,
     ) -> Result<usize, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasRedis + HasDbRouter,
     {
         let batch_size = self.batch_size.max(1);
 
-        let mut redis_conn = redis_client
+        let mut redis_conn = deps
+            .redis_client()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to connect redis: {}", e)))?;
@@ -99,7 +99,7 @@ impl SyncOAuthGrantLastUsedBatch {
         }
 
         let synced = grant_ids.len();
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.writer_pool().acquire().await?;
 
         sqlx::query(
             r#"

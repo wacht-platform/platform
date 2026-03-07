@@ -15,12 +15,14 @@ pub struct CreateEnterpriseConnectionRequest {
 }
 
 pub struct CreateEnterpriseConnectionCommand {
+    connection_id: Option<i64>,
     deployment_id: i64,
     request: CreateEnterpriseConnectionRequest,
 }
 
 #[derive(Default)]
 pub struct CreateEnterpriseConnectionCommandBuilder {
+    connection_id: Option<i64>,
     deployment_id: Option<i64>,
     request: Option<CreateEnterpriseConnectionRequest>,
 }
@@ -32,14 +34,20 @@ impl CreateEnterpriseConnectionCommand {
 
     pub fn new(deployment_id: i64, request: CreateEnterpriseConnectionRequest) -> Self {
         Self {
+            connection_id: None,
             deployment_id,
             request,
         }
     }
+
+    pub fn with_connection_id(mut self, connection_id: i64) -> Self {
+        self.connection_id = Some(connection_id);
+        self
+    }
 }
 
 impl CreateEnterpriseConnectionCommand {
-    pub async fn execute_with(
+    async fn run_with_connection_id(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         connection_id: i64,
@@ -80,9 +88,24 @@ impl CreateEnterpriseConnectionCommand {
 
         Ok(connection)
     }
+
+    pub async fn execute_with(
+        self,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    ) -> Result<EnterpriseConnection, AppError> {
+        let connection_id = self.connection_id.ok_or_else(|| {
+            AppError::Validation("connection_id is required".to_string())
+        })?;
+        self.run_with_connection_id(acquirer, connection_id).await
+    }
 }
 
 impl CreateEnterpriseConnectionCommandBuilder {
+    pub fn connection_id(mut self, connection_id: i64) -> Self {
+        self.connection_id = Some(connection_id);
+        self
+    }
+
     pub fn deployment_id(mut self, deployment_id: i64) -> Self {
         self.deployment_id = Some(deployment_id);
         self
@@ -95,6 +118,7 @@ impl CreateEnterpriseConnectionCommandBuilder {
 
     pub fn build(self) -> Result<CreateEnterpriseConnectionCommand, AppError> {
         Ok(CreateEnterpriseConnectionCommand {
+            connection_id: self.connection_id,
             deployment_id: self
                 .deployment_id
                 .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?,

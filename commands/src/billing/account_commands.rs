@@ -1,22 +1,87 @@
 use common::error::AppError;
 
 pub struct CreateBillingAccountCommand {
-    pub owner_id: String,
-    pub owner_type: String,
-    pub legal_name: String,
-    pub billing_email: String,
-    pub billing_phone: Option<String>,
-    pub tax_id: Option<String>,
-    pub address_line1: Option<String>,
-    pub address_line2: Option<String>,
-    pub city: Option<String>,
-    pub state: Option<String>,
-    pub postal_code: Option<String>,
-    pub country: Option<String>,
+    id: i64,
+    owner_id: String,
+    owner_type: String,
+    legal_name: String,
+    billing_email: String,
+    billing_phone: Option<String>,
+    tax_id: Option<String>,
+    address_line1: Option<String>,
+    address_line2: Option<String>,
+    city: Option<String>,
+    state: Option<String>,
+    postal_code: Option<String>,
+    country: Option<String>,
 }
 
 impl CreateBillingAccountCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A, id: i64) -> Result<i64, AppError>
+    pub fn new(
+        id: i64,
+        owner_id: String,
+        owner_type: String,
+        legal_name: String,
+        billing_email: String,
+    ) -> Self {
+        Self {
+            id,
+            owner_id,
+            owner_type,
+            legal_name,
+            billing_email,
+            billing_phone: None,
+            tax_id: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
+        }
+    }
+
+    pub fn with_billing_phone(mut self, billing_phone: Option<String>) -> Self {
+        self.billing_phone = billing_phone;
+        self
+    }
+
+    pub fn with_tax_id(mut self, tax_id: Option<String>) -> Self {
+        self.tax_id = tax_id;
+        self
+    }
+
+    pub fn with_address_line1(mut self, address_line1: Option<String>) -> Self {
+        self.address_line1 = address_line1;
+        self
+    }
+
+    pub fn with_address_line2(mut self, address_line2: Option<String>) -> Self {
+        self.address_line2 = address_line2;
+        self
+    }
+
+    pub fn with_city(mut self, city: Option<String>) -> Self {
+        self.city = city;
+        self
+    }
+
+    pub fn with_state(mut self, state: Option<String>) -> Self {
+        self.state = state;
+        self
+    }
+
+    pub fn with_postal_code(mut self, postal_code: Option<String>) -> Self {
+        self.postal_code = postal_code;
+        self
+    }
+
+    pub fn with_country(mut self, country: Option<String>) -> Self {
+        self.country = country;
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<i64, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -49,7 +114,7 @@ impl CreateBillingAccountCommand {
                 updated_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'USD', 'en-US', 0, true, false, false, false, NOW(), NOW())
             "#,
-            id,
+            self.id,
             self.owner_id,
             self.owner_type,
             self.legal_name,
@@ -66,7 +131,7 @@ impl CreateBillingAccountCommand {
         .execute(&mut *conn)
         .await?;
 
-        Ok(id)
+        Ok(self.id)
     }
 }
 
@@ -82,6 +147,74 @@ pub struct UpdateBillingAccountCommand {
     pub state: Option<String>,
     pub postal_code: Option<String>,
     pub country: Option<String>,
+}
+
+impl UpdateBillingAccountCommand {
+    pub fn new(id: i64) -> Self {
+        Self {
+            id,
+            legal_name: None,
+            billing_email: None,
+            billing_phone: None,
+            tax_id: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
+        }
+    }
+
+    pub fn with_legal_name(mut self, legal_name: Option<String>) -> Self {
+        self.legal_name = legal_name;
+        self
+    }
+
+    pub fn with_billing_email(mut self, billing_email: Option<String>) -> Self {
+        self.billing_email = billing_email;
+        self
+    }
+
+    pub fn with_billing_phone(mut self, billing_phone: Option<String>) -> Self {
+        self.billing_phone = billing_phone;
+        self
+    }
+
+    pub fn with_tax_id(mut self, tax_id: Option<String>) -> Self {
+        self.tax_id = tax_id;
+        self
+    }
+
+    pub fn with_address_line1(mut self, address_line1: Option<String>) -> Self {
+        self.address_line1 = address_line1;
+        self
+    }
+
+    pub fn with_address_line2(mut self, address_line2: Option<String>) -> Self {
+        self.address_line2 = address_line2;
+        self
+    }
+
+    pub fn with_city(mut self, city: Option<String>) -> Self {
+        self.city = city;
+        self
+    }
+
+    pub fn with_state(mut self, state: Option<String>) -> Self {
+        self.state = state;
+        self
+    }
+
+    pub fn with_postal_code(mut self, postal_code: Option<String>) -> Self {
+        self.postal_code = postal_code;
+        self
+    }
+
+    pub fn with_country(mut self, country: Option<String>) -> Self {
+        self.country = country;
+        self
+    }
 }
 
 pub struct UpdateBillingAccountFromWebhookCommand {
@@ -207,6 +340,12 @@ pub struct UpdateBillingAccountStatusCommand {
     pub status: String,
 }
 
+impl UpdateBillingAccountStatusCommand {
+    pub fn new(owner_id: String, status: String) -> Self {
+        Self { owner_id, status }
+    }
+}
+
 fn normalize_billing_account_status(status: &str) -> &'static str {
     match status.to_ascii_lowercase().as_str() {
         "active" => "active",
@@ -247,6 +386,15 @@ pub struct SetProviderCustomerIdCommand {
 }
 
 impl SetProviderCustomerIdCommand {
+    pub fn new(owner_id: String, provider_customer_id: String) -> Self {
+        Self {
+            owner_id,
+            provider_customer_id,
+        }
+    }
+}
+
+impl SetProviderCustomerIdCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
@@ -271,6 +419,15 @@ impl SetProviderCustomerIdCommand {
 pub struct MarkCheckoutSessionCreatedCommand {
     pub owner_id: String,
     pub checkout_session_id: String,
+}
+
+impl MarkCheckoutSessionCreatedCommand {
+    pub fn new(owner_id: String, checkout_session_id: String) -> Self {
+        Self {
+            owner_id,
+            checkout_session_id,
+        }
+    }
 }
 
 impl MarkCheckoutSessionCreatedCommand {
@@ -309,6 +466,15 @@ pub struct MarkPaymentSucceededCommand {
 }
 
 impl MarkPaymentSucceededCommand {
+    pub fn new(owner_id: String, webhook_event: String) -> Self {
+        Self {
+            owner_id,
+            webhook_event,
+        }
+    }
+}
+
+impl MarkPaymentSucceededCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
@@ -341,6 +507,15 @@ impl MarkPaymentSucceededCommand {
 pub struct MarkSubscriptionActivatedCommand {
     pub owner_id: String,
     pub webhook_event: String,
+}
+
+impl MarkSubscriptionActivatedCommand {
+    pub fn new(owner_id: String, webhook_event: String) -> Self {
+        Self {
+            owner_id,
+            webhook_event,
+        }
+    }
 }
 
 impl MarkSubscriptionActivatedCommand {
@@ -377,6 +552,16 @@ pub struct MarkCheckoutFlowFailedCommand {
     pub owner_id: String,
     pub webhook_event: String,
     pub reason: String,
+}
+
+impl MarkCheckoutFlowFailedCommand {
+    pub fn new(owner_id: String, webhook_event: String, reason: String) -> Self {
+        Self {
+            owner_id,
+            webhook_event,
+            reason,
+        }
+    }
 }
 
 impl MarkCheckoutFlowFailedCommand {

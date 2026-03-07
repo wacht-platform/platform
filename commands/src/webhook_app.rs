@@ -17,6 +17,7 @@ fn generate_signing_secret() -> String {
 pub struct CreateWebhookAppCommand {
     pub deployment_id: i64,
     pub name: String,
+    pub generated_slug: Option<String>,
     pub app_slug: Option<String>,
     pub description: Option<String>,
     pub failure_notification_emails: Option<Vec<String>>,
@@ -28,6 +29,7 @@ impl CreateWebhookAppCommand {
         Self {
             deployment_id,
             name,
+            generated_slug: None,
             app_slug: None,
             description: None,
             failure_notification_emails: None,
@@ -37,6 +39,11 @@ impl CreateWebhookAppCommand {
 
     pub fn with_app_slug(mut self, app_slug: String) -> Self {
         self.app_slug = Some(app_slug);
+        self
+    }
+
+    pub fn with_generated_slug(mut self, generated_slug: String) -> Self {
+        self.generated_slug = Some(generated_slug);
         self
     }
 
@@ -57,11 +64,7 @@ impl CreateWebhookAppCommand {
 }
 
 impl CreateWebhookAppCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        generated_slug: String,
-    ) -> Result<WebhookApp, AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -72,7 +75,9 @@ impl CreateWebhookAppCommand {
         let app_slug = if let Some(slug) = self.app_slug {
             slug
         } else {
-            generated_slug
+            self.generated_slug.ok_or_else(|| {
+                AppError::Validation("generated_slug is required when app_slug is missing".to_string())
+            })?
         };
 
         let app = query_as!(
@@ -116,6 +121,48 @@ pub struct UpdateWebhookAppCommand {
     pub is_active: Option<bool>,
     pub failure_notification_emails: Option<Vec<String>>,
     pub event_catalog_slug: Option<String>,
+}
+
+impl UpdateWebhookAppCommand {
+    pub fn new(deployment_id: i64, app_slug: String) -> Self {
+        Self {
+            deployment_id,
+            app_slug,
+            new_name: None,
+            description: None,
+            is_active: None,
+            failure_notification_emails: None,
+            event_catalog_slug: None,
+        }
+    }
+
+    pub fn with_new_name(mut self, new_name: Option<String>) -> Self {
+        self.new_name = new_name;
+        self
+    }
+
+    pub fn with_description(mut self, description: Option<String>) -> Self {
+        self.description = description;
+        self
+    }
+
+    pub fn with_is_active(mut self, is_active: Option<bool>) -> Self {
+        self.is_active = is_active;
+        self
+    }
+
+    pub fn with_failure_notification_emails(
+        mut self,
+        failure_notification_emails: Option<Vec<String>>,
+    ) -> Self {
+        self.failure_notification_emails = failure_notification_emails;
+        self
+    }
+
+    pub fn with_event_catalog_slug(mut self, event_catalog_slug: Option<String>) -> Self {
+        self.event_catalog_slug = event_catalog_slug;
+        self
+    }
 }
 
 impl UpdateWebhookAppCommand {
@@ -173,6 +220,15 @@ pub struct DeleteWebhookAppCommand {
 }
 
 impl DeleteWebhookAppCommand {
+    pub fn new(deployment_id: i64, app_slug: String) -> Self {
+        Self {
+            deployment_id,
+            app_slug,
+        }
+    }
+}
+
+impl DeleteWebhookAppCommand {
     pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
@@ -201,6 +257,15 @@ impl DeleteWebhookAppCommand {
 pub struct RotateWebhookSecretCommand {
     pub deployment_id: i64,
     pub app_slug: String,
+}
+
+impl RotateWebhookSecretCommand {
+    pub fn new(deployment_id: i64, app_slug: String) -> Self {
+        Self {
+            deployment_id,
+            app_slug,
+        }
+    }
 }
 
 impl RotateWebhookSecretCommand {

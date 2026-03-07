@@ -4,6 +4,7 @@ use models::api_key::{ApiKey, ApiKeyWithSecret};
 use sha2::{Digest, Sha256};
 
 pub struct CreateApiKeyCommand {
+    pub key_id: Option<i64>,
     pub app_slug: String,
     pub deployment_id: i64,
     pub name: String,
@@ -24,6 +25,7 @@ pub struct CreateApiKeyCommand {
 impl CreateApiKeyCommand {
     pub fn new(app_slug: String, deployment_id: i64, name: String, key_prefix: String) -> Self {
         Self {
+            key_id: None,
             app_slug,
             deployment_id,
             name,
@@ -75,6 +77,11 @@ impl CreateApiKeyCommand {
         self
     }
 
+    pub fn with_key_id(mut self, key_id: i64) -> Self {
+        self.key_id = Some(key_id);
+        self
+    }
+
     fn generate_api_key(&self) -> (String, String, String) {
         // Generate 32 random bytes
         use rand::RngCore;
@@ -109,23 +116,21 @@ impl CreateApiKeyCommand {
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
-        key_id: i64,
     ) -> Result<ApiKeyWithSecret, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn, key_id).await
+        self.execute_with_deps(conn).await
     }
 
-    async fn execute_with_deps<C>(
-        self,
-        mut conn: C,
-        key_id: i64,
-    ) -> Result<ApiKeyWithSecret, AppError>
+    async fn execute_with_deps<C>(self, mut conn: C) -> Result<ApiKeyWithSecret, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {
+        let key_id = self
+            .key_id
+            .ok_or_else(|| AppError::Validation("key_id is required".to_string()))?;
         let (full_key, key_hash, key_suffix) = self.generate_api_key();
 
         let rec = sqlx::query!(
@@ -271,29 +276,33 @@ impl RevokeApiKeyCommand {
 pub struct RotateApiKeyCommand {
     pub key_id: i64,
     pub deployment_id: i64,
+    pub new_key_id: Option<i64>,
 }
 
 impl RotateApiKeyCommand {
+    pub fn with_new_key_id(mut self, new_key_id: i64) -> Self {
+        self.new_key_id = Some(new_key_id);
+        self
+    }
+
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
-        new_key_id: i64,
     ) -> Result<ApiKeyWithSecret, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn, new_key_id).await
+        self.execute_with_deps(conn).await
     }
 
-    async fn execute_with_deps<C>(
-        self,
-        mut conn: C,
-        new_key_id: i64,
-    ) -> Result<ApiKeyWithSecret, AppError>
+    async fn execute_with_deps<C>(self, mut conn: C) -> Result<ApiKeyWithSecret, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {
+        let new_key_id = self
+            .new_key_id
+            .ok_or_else(|| AppError::Validation("new_key_id is required".to_string()))?;
         // Get the existing key
         let rec = sqlx::query!(
             r#"
@@ -531,6 +540,7 @@ impl RotateApiKeyCommand {
 
         // Create a new key with the same settings
         let create_command = CreateApiKeyCommand {
+            key_id: Some(new_key_id),
             app_slug: existing_key.app_slug,
             deployment_id: existing_key.deployment_id,
             name: existing_key.name,
@@ -548,8 +558,6 @@ impl RotateApiKeyCommand {
             workspace_role_permissions,
         };
 
-        create_command
-            .execute_with_deps(&mut *conn, new_key_id)
-            .await
+        create_command.execute_with_deps(&mut *conn).await
     }
 }

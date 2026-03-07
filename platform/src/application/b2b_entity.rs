@@ -36,7 +36,7 @@ async fn upload_entity_image(
         deployment_id, entity_kind, entity_id, file_extension
     );
     let url = UploadToCdnCommand::new(file_path, image_buffer)
-        .execute_with(&app_state.s3_client)
+        .execute_with_deps(&app_state.s3_client)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Some(url))
@@ -77,13 +77,13 @@ pub async fn create_organization(
         data.public_metadata,
         data.private_metadata,
     )
-    .execute_with(
-        app_state.db_router.writer(),
+    .with_organization_id(
         app_state
             .sf
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(Into::into)
 }
@@ -125,13 +125,13 @@ pub async fn create_workspace_for_organization(
         data.public_metadata,
         data.private_metadata,
     )
-    .execute_with(
-        app_state.db_router.writer(),
+    .with_workspace_id(
         app_state
             .sf
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(Into::into)
 }

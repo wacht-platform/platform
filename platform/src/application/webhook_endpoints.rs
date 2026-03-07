@@ -1,7 +1,9 @@
 use axum::http::StatusCode;
 use commands::webhook_endpoint::{
-    CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, EventSubscriptionData,
-    ReactivateEndpointCommand, TestWebhookEndpointCommand, UpdateWebhookEndpointCommand,
+    CreateWebhookEndpointCommand, CreateWebhookEndpointDeps, DeleteWebhookEndpointCommand,
+    EventSubscriptionData, ReactivateEndpointCommand, ReactivateEndpointDeps,
+    TestWebhookEndpointCommand, TestWebhookEndpointDeps, UpdateWebhookEndpointCommand,
+    UpdateWebhookEndpointDeps,
 };
 use common::db_router::ReadConsistency;
 use common::error::AppError;
@@ -97,11 +99,11 @@ pub async fn create_webhook_endpoint(
         .with_rate_limit_config(rate_limit_config);
 
     command
-        .execute_with(
-            app_state.db_router.writer(),
-            app_state.db_router.reader(ReadConsistency::Strong),
-            app_state.sf.next_id()? as i64,
-        )
+        .execute_with_deps(CreateWebhookEndpointDeps {
+            acquirer: app_state.db_router.writer(),
+            db_router: &app_state.db_router,
+            endpoint_id: app_state.sf.next_id()? as i64,
+        })
         .await
 }
 
@@ -125,10 +127,10 @@ pub async fn update_webhook_endpoint(
         .with_rate_limit_config(rate_limit_config);
 
     command
-        .execute_with(
-            app_state.db_router.writer(),
-            app_state.db_router.reader(ReadConsistency::Strong),
-        )
+        .execute_with_deps(UpdateWebhookEndpointDeps {
+            acquirer: app_state.db_router.writer(),
+            db_router: &app_state.db_router,
+            })
         .await
 }
 
@@ -148,7 +150,10 @@ pub async fn reactivate_webhook_endpoint(
     endpoint_id: i64,
 ) -> Result<ReactivateEndpointResponse, AppError> {
     let endpoint = ReactivateEndpointCommand::new(endpoint_id, deployment_id)
-        .execute_with(app_state.db_router.writer(), app_state)
+        .execute_with_deps(ReactivateEndpointDeps {
+            acquirer: app_state.db_router.writer(),
+            redis_deps: app_state,
+        })
         .await?;
 
     if let Ok(log_id) = app_state.sf.next_id() {
@@ -200,12 +205,12 @@ pub async fn test_webhook_endpoint(
     });
 
     let result = TestWebhookEndpointCommand::new(endpoint_id, deployment_id, test_payload)
-        .execute_with(
-            app_state.db_router.writer(),
-            &app_state.clickhouse_service,
-            &app_state.nats_client,
-            app_state.sf.next_id()? as i64,
-        )
+        .execute_with_deps(TestWebhookEndpointDeps {
+            acquirer: app_state.db_router.writer(),
+            clickhouse_service: &app_state.clickhouse_service,
+            nats_client: &app_state.nats_client,
+            delivery_id: app_state.sf.next_id()? as i64,
+        })
         .await?;
 
     Ok(TestWebhookEndpointResponse {

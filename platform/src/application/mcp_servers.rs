@@ -32,8 +32,8 @@ pub async fn create_mcp_server(
     name: String,
     config: McpServerConfig,
 ) -> Result<McpServer, common::error::AppError> {
-    CreateMcpServerCommand::new(deployment_id, name, config)
-        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+    CreateMcpServerCommand::new(app_state.sf.next_id()? as i64, deployment_id, name, config)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 

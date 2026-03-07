@@ -378,17 +378,6 @@ impl CreateProductionDeploymentCommand {
         })
     }
 
-    pub async fn execute_with(
-        self,
-        writer: &sqlx::PgPool,
-        deps: &ProductionDeploymentDeps<'_>,
-    ) -> Result<Deployment, AppError> {
-        let mut tx = writer.begin().await?;
-        let result = self.run_with_tx(deps, &mut tx).await?;
-        tx.commit().await?;
-        Ok(result)
-    }
-
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Deployment, AppError>
     where
         D: common::HasDbRouter

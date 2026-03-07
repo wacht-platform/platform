@@ -5,6 +5,7 @@ use serde_json::Value;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateWorkspaceCommand {
+    pub workspace_id: Option<i64>,
     pub deployment_id: i64,
     pub organization_id: i64,
     pub name: String,
@@ -25,6 +26,7 @@ impl CreateWorkspaceCommand {
         private_metadata: Option<Value>,
     ) -> Self {
         Self {
+            workspace_id: None,
             deployment_id,
             organization_id,
             name,
@@ -35,15 +37,19 @@ impl CreateWorkspaceCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        workspace_id: i64,
-    ) -> Result<Workspace, AppError>
+    pub fn with_workspace_id(mut self, workspace_id: i64) -> Self {
+        self.workspace_id = Some(workspace_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Workspace, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        let workspace_id = self
+            .workspace_id
+            .ok_or_else(|| AppError::Validation("workspace_id is required".to_string()))?;
         let default_public_metadata = Value::Object(serde_json::Map::new());
         let default_private_metadata = Value::Object(serde_json::Map::new());
 

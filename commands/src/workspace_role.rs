@@ -5,6 +5,7 @@ use sqlx::Row;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateWorkspaceRoleCommand {
+    pub role_id: Option<i64>,
     pub deployment_id: i64,
     pub workspace_id: i64,
     pub name: String,
@@ -19,24 +20,29 @@ impl CreateWorkspaceRoleCommand {
         permissions: Vec<String>,
     ) -> Self {
         Self {
+            role_id: None,
             deployment_id,
             workspace_id,
             name,
             permissions,
         }
     }
+
+    pub fn with_role_id(mut self, role_id: i64) -> Self {
+        self.role_id = Some(role_id);
+        self
+    }
 }
 
 impl CreateWorkspaceRoleCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        role_id: i64,
-    ) -> Result<WorkspaceRole, AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WorkspaceRole, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        let role_id = self
+            .role_id
+            .ok_or_else(|| AppError::Validation("role_id is required".to_string()))?;
         // Check if role with same name already exists in this workspace
         let existing_role = sqlx::query!(
             "SELECT id FROM workspace_roles WHERE workspace_id = $1 AND name = $2",

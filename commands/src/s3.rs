@@ -14,7 +14,7 @@ impl UploadToCdnCommand {
 }
 
 impl UploadToCdnCommand {
-    pub async fn execute_with(self, s3_client: &aws_sdk_s3::Client) -> Result<String, AppError> {
+    pub async fn execute_with_deps(self, s3_client: &aws_sdk_s3::Client) -> Result<String, AppError> {
         s3_client
             .put_object()
             .bucket(std::env::var("R2_CDN_BUCKET").expect("R2_CDN_BUCKET must be set"))
@@ -53,7 +53,7 @@ impl UploadToKnowledgeBaseBucketCommand {
 }
 
 impl UploadToKnowledgeBaseBucketCommand {
-    pub async fn execute_with(self, s3_client: &aws_sdk_s3::Client) -> Result<String, AppError> {
+    pub async fn execute_with_deps(self, s3_client: &aws_sdk_s3::Client) -> Result<String, AppError> {
         s3_client
             .put_object()
             .bucket("wacht-knowledge-base")

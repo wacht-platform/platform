@@ -71,7 +71,8 @@ pub async fn create_api_key(
         );
 
     command
-        .execute_with(writer, app_state.sf.next_id()? as i64)
+        .with_key_id(app_state.sf.next_id()? as i64)
+        .execute_with(writer)
         .await
 }
 
@@ -126,9 +127,11 @@ pub async fn rotate_api_key(
     let command = RotateApiKeyCommand {
         key_id: request.key_id.get(),
         deployment_id,
+        new_key_id: None,
     };
     command
-        .execute_with(writer, app_state.sf.next_id()? as i64)
+        .with_new_key_id(app_state.sf.next_id()? as i64)
+        .execute_with(writer)
         .await
 }
 
@@ -145,8 +148,10 @@ pub async fn rotate_api_key_for_app(
     let command = RotateApiKeyCommand {
         key_id,
         deployment_id,
+        new_key_id: None,
     };
     command
-        .execute_with(writer, app_state.sf.next_id()? as i64)
+        .with_new_key_id(app_state.sf.next_id()? as i64)
+        .execute_with(writer)
         .await
 }

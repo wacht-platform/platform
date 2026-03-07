@@ -19,7 +19,7 @@ impl DispatchDocumentProcessingTaskCommand {
 }
 
 impl DispatchDocumentProcessingTaskCommand {
-    pub async fn execute_with(self, nats_client: &async_nats::Client) -> Result<(), AppError> {
+    pub async fn execute_with_deps(self, nats_client: &async_nats::Client) -> Result<(), AppError> {
         let task_message = NatsTaskMessage {
             task_type: "document.process".to_string(),
             task_id: format!(
@@ -69,7 +69,7 @@ impl DispatchDocumentBatchTaskCommand {
 }
 
 impl DispatchDocumentBatchTaskCommand {
-    pub async fn execute_with(self, nats_client: &async_nats::Client) -> Result<(), AppError> {
+    pub async fn execute_with_deps(self, nats_client: &async_nats::Client) -> Result<(), AppError> {
         let task_message = NatsTaskMessage {
             task_type: "embedding.process_batch".to_string(),
             task_id: format!(

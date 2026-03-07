@@ -3,17 +3,33 @@ use common::error::AppError;
 use models::billing::Subscription;
 
 pub struct CreateSubscriptionCommand {
-    pub billing_account_id: i64,
-    pub provider_customer_id: String,
-    pub provider_subscription_id: String,
-    pub status: String,
+    id: i64,
+    billing_account_id: i64,
+    provider_customer_id: String,
+    provider_subscription_id: String,
+    status: String,
 }
 
 impl CreateSubscriptionCommand {
+    pub fn new(
+        id: i64,
+        billing_account_id: i64,
+        provider_customer_id: String,
+        provider_subscription_id: String,
+        status: String,
+    ) -> Self {
+        Self {
+            id,
+            billing_account_id,
+            provider_customer_id,
+            provider_subscription_id,
+            status,
+        }
+    }
+
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
-        subscription_id: i64,
     ) -> Result<Subscription, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
@@ -33,7 +49,7 @@ impl CreateSubscriptionCommand {
             RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
             "#
         )
-        .bind(subscription_id)
+        .bind(self.id)
         .bind(self.billing_account_id)
         .bind(&self.provider_customer_id)
         .bind(&self.provider_subscription_id)
@@ -74,19 +90,50 @@ impl UpdateSubscriptionStatusCommand {
 }
 
 pub struct UpsertSubscriptionCommand {
-    pub owner_id: String,
-    pub provider_customer_id: String,
-    pub provider_subscription_id: String,
-    pub product_id: Option<String>,
-    pub status: String,
-    pub previous_billing_date: Option<DateTime<Utc>>,
+    id: i64,
+    owner_id: String,
+    provider_customer_id: String,
+    provider_subscription_id: String,
+    product_id: Option<String>,
+    status: String,
+    previous_billing_date: Option<DateTime<Utc>>,
 }
 
 impl UpsertSubscriptionCommand {
+    pub fn new(
+        id: i64,
+        owner_id: String,
+        provider_customer_id: String,
+        provider_subscription_id: String,
+        status: String,
+    ) -> Self {
+        Self {
+            id,
+            owner_id,
+            provider_customer_id,
+            provider_subscription_id,
+            product_id: None,
+            status,
+            previous_billing_date: None,
+        }
+    }
+
+    pub fn with_product_id(mut self, product_id: Option<String>) -> Self {
+        self.product_id = product_id;
+        self
+    }
+
+    pub fn with_previous_billing_date(
+        mut self,
+        previous_billing_date: Option<DateTime<Utc>>,
+    ) -> Self {
+        self.previous_billing_date = previous_billing_date;
+        self
+    }
+
     pub async fn execute_with<'a, A>(
         self,
         acquirer: A,
-        subscription_id: i64,
     ) -> Result<Subscription, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
@@ -154,7 +201,7 @@ impl UpsertSubscriptionCommand {
                 RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
                 "#,
             )
-            .bind(subscription_id)
+            .bind(self.id)
             .bind(billing_account_id)
             .bind(&self.provider_customer_id)
             .bind(&self.provider_subscription_id)

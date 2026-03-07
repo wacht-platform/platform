@@ -6,6 +6,7 @@ use models::{UserEmailAddress, UserPhoneNumber, VerificationStrategy};
 use sqlx::Connection;
 
 pub struct AddUserEmailCommand {
+    email_id: Option<i64>,
     deployment_id: i64,
     user_id: i64,
     request: AddEmailRequest,
@@ -14,21 +15,26 @@ pub struct AddUserEmailCommand {
 impl AddUserEmailCommand {
     pub fn new(deployment_id: i64, user_id: i64, request: AddEmailRequest) -> Self {
         Self {
+            email_id: None,
             deployment_id,
             user_id,
             request,
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        email_id: i64,
-    ) -> Result<UserEmailAddress, AppError>
+    pub fn with_email_id(mut self, email_id: i64) -> Self {
+        self.email_id = Some(email_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<UserEmailAddress, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        let email_id = self
+            .email_id
+            .ok_or_else(|| AppError::Validation("email_id is required".to_string()))?;
         let now = Utc::now();
         let verified = self.request.verified.unwrap_or(false);
         let is_primary = self.request.is_primary.unwrap_or(false);
@@ -250,6 +256,7 @@ impl DeleteUserEmailCommand {
 }
 
 pub struct AddUserPhoneCommand {
+    phone_id: Option<i64>,
     deployment_id: i64,
     user_id: i64,
     request: AddPhoneRequest,
@@ -258,21 +265,26 @@ pub struct AddUserPhoneCommand {
 impl AddUserPhoneCommand {
     pub fn new(deployment_id: i64, user_id: i64, request: AddPhoneRequest) -> Self {
         Self {
+            phone_id: None,
             deployment_id,
             user_id,
             request,
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        phone_id: i64,
-    ) -> Result<UserPhoneNumber, AppError>
+    pub fn with_phone_id(mut self, phone_id: i64) -> Self {
+        self.phone_id = Some(phone_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<UserPhoneNumber, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        let phone_id = self
+            .phone_id
+            .ok_or_else(|| AppError::Validation("phone_id is required".to_string()))?;
         let now = Utc::now();
         let verified = self.request.verified.unwrap_or(false);
         let is_primary = self.request.is_primary.unwrap_or(false);

@@ -1,7 +1,7 @@
 use commands::{
     AttachKnowledgeBaseToAgentCommand, CreateAiKnowledgeBaseCommand, DeleteAiKnowledgeBaseCommand,
-    DeleteKnowledgeBaseDocumentCommand, DetachKnowledgeBaseFromAgentCommand,
-    UpdateAiKnowledgeBaseCommand, UploadKnowledgeBaseDocumentCommand,
+    DeleteKnowledgeBaseDocumentCommand, DetachKnowledgeBaseFromAgentCommand, KnowledgeBaseStorageDeps,
+    UpdateAiKnowledgeBaseCommand, UploadKnowledgeBaseDocumentCommand, UploadKnowledgeBaseDocumentDeps,
 };
 use common::ReadConsistency;
 use common::error::AppError;
@@ -100,9 +100,10 @@ pub async fn create_ai_knowledge_base(
         request.name,
         request.description,
         configuration,
-    );
+    )
+    .with_knowledge_base_id(app_state.sf.next_id()? as i64);
     create_command
-        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 
@@ -182,7 +183,10 @@ pub async fn delete_ai_knowledge_base(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
     DeleteAiKnowledgeBaseCommand::new(deployment_id, kb_id)
-        .execute_with(app_state.db_router.writer(), storage_client)
+        .execute_with_deps(KnowledgeBaseStorageDeps {
+            db_router: &app_state.db_router,
+            storage_client,
+        })
         .await?;
     Ok(())
 }
@@ -234,15 +238,17 @@ pub async fn upload_knowledge_base_document(
         input.file_content,
         file_type,
     )
-    .execute_with(
-        app_state.db_router.writer(),
-        storage_client,
-        &app_state.nats_client,
+    .with_document_id(
         app_state
             .sf
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
+    .execute_with_deps(UploadKnowledgeBaseDocumentDeps {
+        db_router: &app_state.db_router,
+        storage_client,
+        nats_client: &app_state.nats_client,
+    })
     .await?;
 
     Ok(document)
@@ -283,7 +289,10 @@ pub async fn delete_knowledge_base_document(
         .as_ref()
         .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))?;
     DeleteKnowledgeBaseDocumentCommand::new(deployment_id, kb_id, document_id)
-        .execute_with(app_state.db_router.writer(), storage_client)
+        .execute_with_deps(KnowledgeBaseStorageDeps {
+            db_router: &app_state.db_router,
+            storage_client,
+        })
         .await?;
     Ok(())
 }

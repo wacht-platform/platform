@@ -337,17 +337,14 @@ async fn sync_deployment(
             };
 
             let deduct_pulse_command = DeductPulseCreditsCommand {
+                transaction_id: Some(app_state.sf.next_id()? as i64),
                 owner_id: subscription_info.owner_id.clone(),
                 amount_pulse_cents: *delta,
                 transaction_type,
                 reference_id: Some(app_state.sf.next_id().unwrap().to_string()),
             };
             match deduct_pulse_command
-                .execute_with(
-                    app_state.db_router.writer(),
-                    &app_state.nats_client,
-                    app_state.sf.next_id()? as i64,
-                )
+                .execute_with_deps(app_state)
                 .await
             {
                 Ok(_) => {
@@ -417,7 +414,7 @@ async fn sync_deployment(
             metrics: metrics_to_sync,
             redis_prefix: current_prefix.clone(),
         }
-        .execute_with(app_state.db_router.writer(), &app_state.redis_client)
+        .execute_with_deps(app_state)
         .await?
     } else {
         Vec::new()

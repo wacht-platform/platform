@@ -1,7 +1,10 @@
 use chrono::{Duration, Utc};
-use std::future::Future;
 
-use common::error::AppError;
+use common::{
+    HasDbRouter, HasEncryptionService, HasIdGenerator, HasPostmarkService, HasTemplateRenderer,
+    db_router::ReadConsistency, error::AppError,
+};
+use crate::SendEmailCommand;
 use dto::json::InviteUserRequest;
 use models::DeploymentInvitation;
 use sqlx::Connection;
@@ -9,6 +12,7 @@ use sqlx::Connection;
 pub struct InviteUserCommand {
     deployment_id: i64,
     request: InviteUserRequest,
+    invitation_id: Option<i64>,
 }
 
 impl InviteUserCommand {
@@ -16,22 +20,28 @@ impl InviteUserCommand {
         Self {
             deployment_id,
             request,
+            invitation_id: None,
         }
     }
 
-    pub async fn execute_with<'a, A, SendEmailFn, SendEmailFut>(
+    pub fn with_invitation_id(mut self, invitation_id: i64) -> Self {
+        self.invitation_id = Some(invitation_id);
+        self
+    }
+
+    pub async fn execute_with_deps<D>(
         self,
-        acquirer: A,
-        reader: &sqlx::PgPool,
-        send_email: SendEmailFn,
-        invitation_id: i64,
+        deps: &D,
     ) -> Result<DeploymentInvitation, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        SendEmailFn: FnOnce(i64, String, serde_json::Value) -> SendEmailFut,
-        SendEmailFut: Future<Output = Result<(), AppError>>,
+        D: HasDbRouter + HasTemplateRenderer + HasPostmarkService + HasEncryptionService + HasIdGenerator,
     {
-        let mut conn = acquirer.acquire().await?;
+        let invitation_id =
+            self.invitation_id
+                .unwrap_or(deps.id_generator().next_id()? as i64);
+        let reader = deps.reader_pool(ReadConsistency::Strong);
+
+        let mut conn = deps.writer_pool().acquire().await?;
         let now = Utc::now();
         let expiry_days = self.request.expiry_days.unwrap_or(7);
         let expiry = now + Duration::days(expiry_days);
@@ -98,11 +108,13 @@ impl InviteUserCommand {
             "action_url": format!("https://{}/sign-up?invite_token={}", deployment_settings.frontend_host, token)
         });
 
-        send_email(
+        SendEmailCommand::new(
             self.deployment_id,
+            "waitlist_invite_template".to_string(),
             self.request.email_address.clone(),
             variables,
         )
+        .execute_with_deps(deps)
         .await?;
 
         Ok(DeploymentInvitation {
@@ -122,6 +134,7 @@ impl InviteUserCommand {
 pub struct ApproveWaitlistUserCommand {
     deployment_id: i64,
     waitlist_user_id: i64,
+    invitation_id: Option<i64>,
 }
 
 impl ApproveWaitlistUserCommand {
@@ -129,22 +142,28 @@ impl ApproveWaitlistUserCommand {
         Self {
             deployment_id,
             waitlist_user_id,
+            invitation_id: None,
         }
     }
 
-    pub async fn execute_with<'a, A, SendEmailFn, SendEmailFut>(
+    pub fn with_invitation_id(mut self, invitation_id: i64) -> Self {
+        self.invitation_id = Some(invitation_id);
+        self
+    }
+
+    pub async fn execute_with_deps<D>(
         self,
-        acquirer: A,
-        reader: &sqlx::PgPool,
-        send_email: SendEmailFn,
-        invitation_id: i64,
+        deps: &D,
     ) -> Result<DeploymentInvitation, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        SendEmailFn: FnOnce(i64, String, serde_json::Value) -> SendEmailFut,
-        SendEmailFut: Future<Output = Result<(), AppError>>,
+        D: HasDbRouter + HasTemplateRenderer + HasPostmarkService + HasEncryptionService + HasIdGenerator,
     {
-        let mut conn = acquirer.acquire().await?;
+        let invitation_id =
+            self.invitation_id
+                .unwrap_or(deps.id_generator().next_id()? as i64);
+        let reader = deps.reader_pool(ReadConsistency::Strong);
+
+        let mut conn = deps.writer_pool().acquire().await?;
         let now = Utc::now();
         let mut tx = conn.begin().await?;
 
@@ -222,7 +241,14 @@ impl ApproveWaitlistUserCommand {
             "action_url": format!("https://{}/sign-up?invite_token={}", deployment_settings.frontend_host, token)
         });
 
-        send_email(self.deployment_id, email_address.clone(), variables).await?;
+        SendEmailCommand::new(
+            self.deployment_id,
+            "waitlist_invite_template".to_string(),
+            email_address.clone(),
+            variables,
+        )
+        .execute_with_deps(deps)
+        .await?;
 
         sqlx::query!(
             "DELETE FROM deployment_waitlist_users WHERE id = $1",

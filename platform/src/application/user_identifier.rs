@@ -14,7 +14,8 @@ pub async fn add_user_email(
     request: AddEmailRequest,
 ) -> Result<UserEmailAddress, AppError> {
     AddUserEmailCommand::new(deployment_id, user_id, request)
-        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+        .with_email_id(app_state.sf.next_id()? as i64)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 
@@ -48,7 +49,8 @@ pub async fn add_user_phone(
     request: AddPhoneRequest,
 ) -> Result<UserPhoneNumber, AppError> {
     AddUserPhoneCommand::new(deployment_id, user_id, request)
-        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+        .with_phone_id(app_state.sf.next_id()? as i64)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 

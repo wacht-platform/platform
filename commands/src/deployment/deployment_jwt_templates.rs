@@ -1,13 +1,14 @@
 use chrono::Utc;
 use sqlx::Row;
 
-use common::error::AppError;
+use common::{HasDbRouter, HasRedis, error::AppError};
 use dto::json::{NewDeploymentJwtTemplate, PartialDeploymentJwtTemplate};
 use models::DeploymentJwtTemplate;
 
 use super::ClearDeploymentCacheCommand;
 
 pub struct CreateDeploymentJwtTemplateCommand {
+    pub template_id: Option<i64>,
     pub deployment_id: i64,
     pub template: NewDeploymentJwtTemplate,
 }
@@ -15,23 +16,28 @@ pub struct CreateDeploymentJwtTemplateCommand {
 impl CreateDeploymentJwtTemplateCommand {
     pub fn new(deployment_id: i64, template: NewDeploymentJwtTemplate) -> Self {
         Self {
+            template_id: None,
             deployment_id,
             template,
         }
     }
+
+    pub fn with_template_id(mut self, template_id: i64) -> Self {
+        self.template_id = Some(template_id);
+        self
+    }
 }
 
 impl CreateDeploymentJwtTemplateCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        template_id: i64,
-        redis_client: &redis::Client,
-    ) -> Result<DeploymentJwtTemplate, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<DeploymentJwtTemplate, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasRedis,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let redis_client = deps.redis_client();
+        let template_id = self
+            .template_id
+            .ok_or_else(|| AppError::Validation("template_id is required".to_string()))?;
         let result = sqlx::query!(
             r#"
             INSERT INTO deployment_jwt_templates (id, created_at, updated_at, deployment_id, name, token_lifetime, allowed_clock_skew, custom_signing_key, template)
@@ -67,7 +73,7 @@ impl CreateDeploymentJwtTemplateCommand {
         };
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_deps(&mut conn, redis_client)
+            .execute_with_conn_and_redis(&mut conn, redis_client)
             .await?;
 
         Ok(template)
@@ -91,15 +97,12 @@ impl UpdateDeploymentJwtTemplateCommand {
 }
 
 impl UpdateDeploymentJwtTemplateCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        redis_client: &redis::Client,
-    ) -> Result<DeploymentJwtTemplate, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<DeploymentJwtTemplate, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasRedis,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let redis_client = deps.redis_client();
         let mut query_builder =
             sqlx::QueryBuilder::new("UPDATE deployment_jwt_templates SET updated_at = NOW() ");
 
@@ -165,7 +168,7 @@ impl UpdateDeploymentJwtTemplateCommand {
 
         let deployment_id: i64 = result.get("deployment_id");
         ClearDeploymentCacheCommand::new(deployment_id)
-            .execute_with_deps(&mut conn, redis_client)
+            .execute_with_conn_and_redis(&mut conn, redis_client)
             .await?;
 
         Ok(template)
@@ -184,15 +187,12 @@ impl DeleteDeploymentJwtTemplateCommand {
 }
 
 impl DeleteDeploymentJwtTemplateCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        redis_client: &redis::Client,
-    ) -> Result<(), AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasRedis,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let redis_client = deps.redis_client();
         let result = sqlx::query!(
             "DELETE FROM deployment_jwt_templates WHERE id = $1 AND deployment_id = $2",
             self.id,
@@ -209,7 +209,7 @@ impl DeleteDeploymentJwtTemplateCommand {
         }
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_deps(&mut conn, redis_client)
+            .execute_with_conn_and_redis(&mut conn, redis_client)
             .await?;
 
         Ok(())

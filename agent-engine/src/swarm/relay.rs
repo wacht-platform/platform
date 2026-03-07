@@ -141,9 +141,10 @@ async fn execute_relay(
         let create_child_command =
             CreateChildContextCommand::new(current_agent.deployment_id, current_context_id, title)
                 .with_initial_task(instruction_text.to_string())
-                .with_task_type("spawn_context_execution".to_string());
+                .with_task_type("spawn_context_execution".to_string())
+                .with_context_id(app_state.sf.next_id()? as i64);
         let child_context = create_child_command
-            .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+            .execute_with(app_state.db_router.writer())
             .await?;
 
         // Child context inherits parent conversation up to this point (without copying rows).
@@ -211,9 +212,7 @@ async fn execute_relay(
             Some(resolved_agent_name.clone()),
             conversation_id,
         );
-        publish_command
-            .execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
-            .await?;
+        publish_command.execute_with_deps(app_state).await?;
     }
 
     response::success(

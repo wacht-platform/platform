@@ -1,8 +1,9 @@
-use common::error::AppError;
+use common::{HasCloudflareService, HasDbRouter, error::AppError};
 use models::api_key::OAuthScopeDefinition;
 use queries::oauth::OAuthAppData;
 
 pub struct CreateOAuthAppCommand {
+    pub oauth_app_id: Option<i64>,
     pub deployment_id: i64,
     pub slug: String,
     pub name: String,
@@ -15,21 +16,24 @@ pub struct CreateOAuthAppCommand {
 }
 
 impl CreateOAuthAppCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        cloudflare_service: &common::CloudflareService,
-        oauth_app_id: i64,
-    ) -> Result<OAuthAppData, AppError>
+    pub fn with_oauth_app_id(mut self, oauth_app_id: i64) -> Self {
+        self.oauth_app_id = Some(oauth_app_id);
+        self
+    }
+
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<OAuthAppData, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasCloudflareService,
     {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn, cloudflare_service, oauth_app_id)
+        let conn = deps.db_router().writer().acquire().await?;
+        let oauth_app_id = self
+            .oauth_app_id
+            .ok_or_else(|| AppError::Validation("oauth_app_id is required".to_string()))?;
+        self.run_with_conn(conn, deps.cloudflare_service(), oauth_app_id)
             .await
     }
 
-    async fn execute_with_deps<C>(
+    async fn run_with_conn<C>(
         self,
         mut conn: C,
         cloudflare_service: &common::CloudflareService,
@@ -166,19 +170,15 @@ pub struct VerifyOAuthAppDomainCommand {
 }
 
 impl VerifyOAuthAppDomainCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        cloudflare_service: &common::CloudflareService,
-    ) -> Result<VerifyOAuthAppDomainResult, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<VerifyOAuthAppDomainResult, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasCloudflareService,
     {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn, cloudflare_service).await
+        let conn = deps.db_router().writer().acquire().await?;
+        self.run_with_conn(conn, deps.cloudflare_service()).await
     }
 
-    async fn execute_with_deps<C>(
+    async fn run_with_conn<C>(
         self,
         mut conn: C,
         cloudflare_service: &common::CloudflareService,

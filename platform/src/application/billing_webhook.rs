@@ -238,10 +238,7 @@ async fn handle_payment_succeeded(
                 }
             };
 
-            UpdateBillingAccountStatusCommand {
-                owner_id: owner_id.clone(),
-                status: status.to_string(),
-            }
+            UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
             .execute_with(app_state.db_router.writer())
             .await
             .map_err(|e| {
@@ -252,10 +249,10 @@ async fn handle_payment_succeeded(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
-            MarkPaymentSucceededCommand {
-                owner_id: owner_id.clone(),
-                webhook_event: "payment.succeeded".to_string(),
-            }
+            MarkPaymentSucceededCommand::new(
+                owner_id.clone(),
+                "payment.succeeded".to_string(),
+            )
             .execute_with(app_state.db_router.writer())
             .await
             .map_err(|e| {
@@ -264,33 +261,26 @@ async fn handle_payment_succeeded(
             })?;
         }
 
-        UpsertInvoiceCommand {
-            owner_id: owner_id.clone(),
-            provider_payment_id: payment_id.to_string(),
-            provider_customer_id: customer_id.to_string(),
-            amount_due_cents: amount,
-            amount_paid_cents: amount,
-            currency: currency.to_string(),
-            status: "paid".to_string(),
-            invoice_pdf_url: Some(format!(
-                "https://live.dodopayments.com/invoices/payments/{}",
-                payment_id
-            )),
-            hosted_invoice_url: None,
-            invoice_number: None,
-            due_date: None,
-            paid_at: Some(chrono::Utc::now()),
-            period_start: None,
-            period_end: None,
-            metadata: serde_json::json!({}),
-        }
-        .execute_with(
-            app_state.db_router.writer(),
+        UpsertInvoiceCommand::new(
             app_state.sf.next_id().map_err(|e| {
                 error!("Failed to generate billing invoice id: {}", e);
                 StatusCode::INTERNAL_SERVER_ERROR
             })? as i64,
+            owner_id.clone(),
+            payment_id.to_string(),
+            customer_id.to_string(),
+            amount,
+            amount,
+            currency.to_string(),
+            "paid".to_string(),
         )
+        .with_invoice_pdf_url(Some(format!(
+            "https://live.dodopayments.com/invoices/payments/{}",
+            payment_id
+        )))
+        .with_paid_at(Some(chrono::Utc::now()))
+        .with_metadata(serde_json::json!({}))
+        .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to upsert invoice: {}", e);
@@ -305,19 +295,17 @@ async fn handle_payment_succeeded(
                 let pulse_to_add = ((amount as f64 * 0.96) - 50.0).floor() as i64;
 
                 if pulse_to_add > 0 {
-                    AddPulseCreditsCommand {
-                        owner_id: owner_id.clone(),
-                        amount_pulse_cents: pulse_to_add,
-                        transaction_type: PulseTransactionType::Purchase,
-                        reference_id: Some(payment_id.to_string()),
-                    }
-                    .execute_with(
-                        app_state.db_router.writer(),
-                        app_state.sf.next_id().map_err(|e| {
-                            error!("Failed to generate pulse transaction id: {}", e);
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        })? as i64,
+                    AddPulseCreditsCommand::new(
+                        owner_id.clone(),
+                        pulse_to_add,
+                        PulseTransactionType::Purchase,
                     )
+                    .with_reference_id(Some(payment_id.to_string()))
+                    .with_transaction_id(app_state.sf.next_id().map_err(|e| {
+                        error!("Failed to generate pulse transaction id: {}", e);
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    })? as i64)
+                    .execute_with(app_state.db_router.writer())
                     .await
                     .map_err(|e| {
                         error!("Failed to add Pulse credits from webhook: {}", e);
@@ -346,10 +334,7 @@ async fn handle_payment_failed(
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
     if !owner_id.is_empty() {
-        UpdateBillingAccountStatusCommand {
-            owner_id: owner_id.clone(),
-            status: "payment_failed".to_string(),
-        }
+        UpdateBillingAccountStatusCommand::new(owner_id.clone(), "payment_failed".to_string())
         .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
@@ -360,11 +345,11 @@ async fn handle_payment_failed(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        MarkCheckoutFlowFailedCommand {
-            owner_id: owner_id.clone(),
-            webhook_event: "payment.failed".to_string(),
-            reason: "payment_failed".to_string(),
-        }
+        MarkCheckoutFlowFailedCommand::new(
+            owner_id.clone(),
+            "payment.failed".to_string(),
+            "payment_failed".to_string(),
+        )
         .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
@@ -395,31 +380,26 @@ async fn upsert_subscription_and_status(
     webhook_event: &str,
     send_email_message: &str,
 ) -> Result<(), StatusCode> {
-    UpsertSubscriptionCommand {
-        owner_id: owner_id.to_string(),
-        provider_customer_id: customer_id.to_string(),
-        provider_subscription_id: subscription_id.to_string(),
-        product_id,
-        status: status.to_string(),
-        previous_billing_date,
-    }
-    .execute_with(
-        app_state.db_router.writer(),
+    UpsertSubscriptionCommand::new(
         app_state.sf.next_id().map_err(|e| {
             error!("Failed to generate subscription id: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })? as i64,
+        owner_id.to_string(),
+        customer_id.to_string(),
+        subscription_id.to_string(),
+        status.to_string(),
     )
+    .with_product_id(product_id)
+    .with_previous_billing_date(previous_billing_date)
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to update subscription status: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    UpdateBillingAccountStatusCommand {
-        owner_id: owner_id.to_string(),
-        status: status.to_string(),
-    }
+    UpdateBillingAccountStatusCommand::new(owner_id.to_string(), status.to_string())
     .execute_with(app_state.db_router.writer())
     .await
     .map_err(|e| {
@@ -428,10 +408,7 @@ async fn upsert_subscription_and_status(
     })?;
 
     if status == "active" {
-        MarkSubscriptionActivatedCommand {
-            owner_id: owner_id.to_string(),
-            webhook_event: webhook_event.to_string(),
-        }
+        MarkSubscriptionActivatedCommand::new(owner_id.to_string(), webhook_event.to_string())
         .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {
@@ -439,11 +416,11 @@ async fn upsert_subscription_and_status(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     } else {
-        MarkCheckoutFlowFailedCommand {
-            owner_id: owner_id.to_string(),
-            webhook_event: webhook_event.to_string(),
-            reason: status.to_string(),
-        }
+        MarkCheckoutFlowFailedCommand::new(
+            owner_id.to_string(),
+            webhook_event.to_string(),
+            status.to_string(),
+        )
         .execute_with(app_state.db_router.writer())
         .await
         .map_err(|e| {

@@ -40,10 +40,10 @@ pub async fn create_oauth_client(
     oauth_app_slug: String,
     request: CreateOAuthClientRequest,
 ) -> Result<OAuthClientResponse, AppError> {
-    let writer = app_state.db_router.writer();
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
 
     let created = CreateOAuthClientCommand {
+        client_record_id: Some(app_state.sf.next_id()? as i64),
         deployment_id,
         oauth_app_id: oauth_app.id,
         client_auth_method: request.client_auth_method,
@@ -62,11 +62,7 @@ pub async fn create_oauth_client(
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
     }
-    .execute_with(
-        writer,
-        &app_state.encryption_service,
-        app_state.sf.next_id()? as i64,
-    )
+    .execute_with_deps(app_state)
     .await?;
 
     Ok(map_oauth_client_response_with_secret(
@@ -146,7 +142,6 @@ pub async fn rotate_oauth_client_secret(
     oauth_app_slug: String,
     oauth_client_id: i64,
 ) -> Result<RotateOAuthClientSecretResponse, AppError> {
-    let writer = app_state.db_router.writer();
     let oauth_app = get_oauth_app_by_slug(app_state, deployment_id, oauth_app_slug).await?;
     let client =
         get_oauth_client_by_id(app_state, deployment_id, oauth_app.id, oauth_client_id).await?;
@@ -155,7 +150,7 @@ pub async fn rotate_oauth_client_secret(
         oauth_app_id: oauth_app.id,
         client_id: client.client_id,
     }
-    .execute_with(writer, &app_state.encryption_service)
+    .execute_with_deps(app_state)
     .await?
     .ok_or_else(|| AppError::NotFound("OAuth client not found or inactive".to_string()))?;
 

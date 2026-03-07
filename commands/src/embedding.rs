@@ -55,6 +55,12 @@ struct Embedding {
     values: Vec<f32>,
 }
 
+pub struct EmbeddingApiDeps<'a> {
+    pub client: &'a reqwest::Client,
+    pub api_key: &'a str,
+    pub model: &'a str,
+}
+
 #[derive(Clone)]
 pub struct GenerateEmbeddingCommand {
     pub text: String,
@@ -74,14 +80,12 @@ impl GenerateEmbeddingCommand {
         self
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_deps(
         self,
-        client: &reqwest::Client,
-        api_key: &str,
-        model: &str,
+        deps: EmbeddingApiDeps<'_>,
     ) -> Result<Vec<f32>, AppError> {
         let request = EmbedContentRequest {
-            model: model.to_string(),
+            model: deps.model.to_string(),
             content: Content {
                 parts: vec![Part { text: self.text }],
             },
@@ -91,12 +95,13 @@ impl GenerateEmbeddingCommand {
 
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/{}:embedContent",
-            model
+            deps.model
         );
 
-        let response = client
+        let response = deps
+            .client
             .post(&url)
-            .header("x-goog-api-key", api_key)
+            .header("x-goog-api-key", deps.api_key)
             .header("Content-Type", "application/json")
             .json(&request)
             .send()
@@ -138,11 +143,9 @@ impl GenerateEmbeddingsCommand {
         self
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_deps(
         self,
-        client: &reqwest::Client,
-        api_key: &str,
-        model: &str,
+        deps: EmbeddingApiDeps<'_>,
     ) -> Result<Vec<Vec<f32>>, AppError> {
         if self.texts.is_empty() {
             return Ok(vec![]);
@@ -155,7 +158,7 @@ impl GenerateEmbeddingsCommand {
             let requests: Vec<EmbedContentRequestItem> = chunk
                 .iter()
                 .map(|text| EmbedContentRequestItem {
-                    model: model.to_string(),
+                    model: deps.model.to_string(),
                     content: Content {
                         parts: vec![Part { text: text.clone() }],
                     },
@@ -170,12 +173,13 @@ impl GenerateEmbeddingsCommand {
             let batch_request = BatchEmbedContentsRequest { requests };
             let url = format!(
                 "https://generativelanguage.googleapis.com/v1/{}:batchEmbedContents",
-                model
+                deps.model
             );
 
-            let response = client
+            let response = deps
+                .client
                 .post(&url)
-                .header("x-goog-api-key", api_key)
+                .header("x-goog-api-key", deps.api_key)
                 .header("Content-Type", "application/json")
                 .json(&batch_request)
                 .send()

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use commands::webhook_trigger::ReplayWebhookDeliveryCommand;
+use commands::webhook_trigger::{ReplayWebhookDeliveryCommand, ReplayWebhookDeliveryDeps};
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::nats::WebhookReplayBatchPayload;
@@ -263,12 +263,12 @@ pub async fn handle_webhook_replay_batch(app_state: &AppState, payload: Value) -
                 deployment_id,
             };
             let result = replay_command
-                .execute_with(
-                    app_state.db_router.writer(),
-                    &app_state.clickhouse_service,
-                    &app_state.nats_client,
-                    || Ok(app_state.sf.next_id()? as i64),
-                )
+                .execute_with_deps(ReplayWebhookDeliveryDeps {
+                    db_router: &app_state.db_router,
+                    clickhouse_service: &app_state.clickhouse_service,
+                    nats_client: &app_state.nats_client,
+                    id_gen: || Ok(app_state.sf.next_id()? as i64),
+                })
                 .await;
 
             match result {

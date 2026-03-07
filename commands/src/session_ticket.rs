@@ -1,5 +1,5 @@
 use chrono::Utc;
-use common::error::AppError;
+use common::{HasIdGenerator, HasRedis, error::AppError};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 
@@ -122,11 +122,16 @@ pub struct GenerateSessionTicketResponse {
 }
 
 impl GenerateSessionTicketCommand {
-    pub async fn execute_with(
+    pub async fn execute_with_deps<D>(
         self,
-        redis_client: &redis::Client,
-        ticket_id: i64,
-    ) -> Result<GenerateSessionTicketResponse, AppError> {
+        deps: &D,
+    ) -> Result<GenerateSessionTicketResponse, AppError>
+    where
+        D: HasRedis + HasIdGenerator,
+    {
+        let ticket_id = deps.id_generator().next_id().map_err(|e| {
+            AppError::Internal(format!("Failed to generate ticket ID: {}", e))
+        })? as i64;
         // Validate inputs based on ticket type
         match self.ticket_type {
             SessionTicketType::Impersonation => {
@@ -200,7 +205,8 @@ impl GenerateSessionTicketCommand {
 
         let redis_key = format!("session:ticket:{}", ticket);
 
-        let mut conn = redis_client
+        let mut conn = deps
+            .redis_client()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to connect to Redis: {}", e)))?;

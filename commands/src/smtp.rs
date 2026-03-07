@@ -43,7 +43,7 @@ impl VerifySmtpConnectionCommand {
 }
 
 impl VerifySmtpConnectionCommand {
-    pub async fn execute_with(self) -> Result<(), AppError> {
+    pub async fn execute_with_deps(self) -> Result<(), AppError> {
         let config = SmtpConfig {
             host: self.host,
             port: self.port,
@@ -97,19 +97,8 @@ impl UpdateDeploymentSmtpConfigCommand {
     where
         D: HasDbRouter + HasEncryptionService,
     {
-        self.execute_with(deps.db_router().writer(), deps.encryption_service())
-            .await
-    }
-
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        encryptor: &dyn SmtpConfigEncryptor,
-    ) -> Result<CustomSmtpConfig, AppError>
-    where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let encryptor = deps.encryption_service();
         let encrypted_password = encryptor.encrypt(&self.password)?;
 
         let config = CustomSmtpConfig {
@@ -181,19 +170,8 @@ impl RemoveDeploymentSmtpConfigCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        self.execute_with(deps.db_router().writer(), deps.redis_client())
-            .await
-    }
-
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        redis: &redis::Client,
-    ) -> Result<(), AppError>
-    where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let redis = deps.redis_client();
         sqlx::query!(
             r#"
             UPDATE deployments
@@ -209,7 +187,7 @@ impl RemoveDeploymentSmtpConfigCommand {
         .await?;
 
         crate::ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_deps(&mut conn, redis)
+            .execute_with_conn_and_redis(&mut conn, redis)
             .await?;
 
         tracing::info!(

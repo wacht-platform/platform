@@ -38,9 +38,8 @@ pub async fn update_deployment_display_settings(
     deployment_id: i64,
     updates: DeploymentDisplaySettingsUpdates,
 ) -> Result<(), AppError> {
-    let writer = app_state.db_router.writer();
     UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)
-        .execute_with(writer, &app_state.redis_client)
+        .execute_with_deps(app_state)
         .await?;
     Ok(())
 }
@@ -50,9 +49,8 @@ pub async fn update_deployment_auth_settings(
     deployment_id: i64,
     updates: DeploymentAuthSettingsUpdates,
 ) -> Result<(), AppError> {
-    let writer = app_state.db_router.writer();
     UpdateDeploymentAuthSettingsCommand::new(deployment_id, updates)
-        .execute_with(writer, &app_state.redis_client)
+        .execute_with_deps(app_state)
         .await?;
     Ok(())
 }
@@ -62,9 +60,8 @@ pub async fn update_deployment_restrictions(
     deployment_id: i64,
     updates: DeploymentRestrictionsUpdates,
 ) -> Result<(), AppError> {
-    let writer = app_state.db_router.writer();
     UpdateDeploymentRestrictionsCommand::new(deployment_id, updates)
-        .execute_with(writer, &app_state.redis_client)
+        .execute_with_deps(app_state)
         .await?;
     Ok(())
 }
@@ -84,13 +81,9 @@ pub async fn create_deployment_jwt_template(
     deployment_id: i64,
     template: NewDeploymentJwtTemplate,
 ) -> Result<DeploymentJwtTemplate, AppError> {
-    let writer = app_state.db_router.writer();
     CreateDeploymentJwtTemplateCommand::new(deployment_id, template)
-        .execute_with(
-            writer,
-            app_state.sf.next_id()? as i64,
-            &app_state.redis_client,
-        )
+        .with_template_id(app_state.sf.next_id()? as i64)
+        .execute_with_deps(app_state)
         .await
 }
 
@@ -100,9 +93,8 @@ pub async fn update_deployment_jwt_template(
     template_id: i64,
     updates: PartialDeploymentJwtTemplate,
 ) -> Result<DeploymentJwtTemplate, AppError> {
-    let writer = app_state.db_router.writer();
     UpdateDeploymentJwtTemplateCommand::new(deployment_id, template_id, updates)
-        .execute_with(writer, &app_state.redis_client)
+        .execute_with_deps(app_state)
         .await
 }
 
@@ -111,9 +103,8 @@ pub async fn delete_deployment_jwt_template(
     deployment_id: i64,
     template_id: i64,
 ) -> Result<(), AppError> {
-    let writer = app_state.db_router.writer();
     DeleteDeploymentJwtTemplateCommand::new(deployment_id, template_id)
-        .execute_with(writer, &app_state.redis_client)
+        .execute_with_deps(app_state)
         .await?;
     Ok(())
 }
@@ -135,9 +126,8 @@ pub async fn update_deployment_email_template(
     template_name: DeploymentNameParams,
     template: EmailTemplate,
 ) -> Result<EmailTemplate, AppError> {
-    let writer = app_state.db_router.writer();
     UpdateDeploymentEmailTemplateCommand::new(deployment_id, template_name, template)
-        .execute_with(writer, &app_state.redis_client)
+        .execute_with_deps(app_state)
         .await
 }
 
@@ -153,7 +143,7 @@ pub async fn verify_smtp_connection(
         config.from_email,
         config.use_tls,
     )
-    .execute_with()
+    .execute_with_deps()
     .await?;
 
     Ok(SmtpVerifyResponse {
@@ -175,10 +165,9 @@ pub async fn update_smtp_config(
         config.from_email.clone(),
         config.use_tls,
     )
-    .execute_with()
+    .execute_with_deps()
     .await?;
 
-    let writer = app_state.db_router.writer();
     let result = UpdateDeploymentSmtpConfigCommand::new(
         deployment_id,
         config.host,
@@ -188,7 +177,7 @@ pub async fn update_smtp_config(
         config.from_email,
         config.use_tls,
     )
-    .execute_with(writer, &app_state.encryption_service)
+    .execute_with_deps(app_state)
     .await?;
 
     Ok(SmtpConfigResponse {
@@ -202,9 +191,8 @@ pub async fn update_smtp_config(
 }
 
 pub async fn remove_smtp_config(app_state: &AppState, deployment_id: i64) -> Result<(), AppError> {
-    let writer = app_state.db_router.writer();
     RemoveDeploymentSmtpConfigCommand::new(deployment_id)
-        .execute_with(writer, &app_state.redis_client)
+        .execute_with_deps(app_state)
         .await?;
     Ok(())
 }

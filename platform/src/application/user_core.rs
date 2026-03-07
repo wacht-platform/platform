@@ -169,6 +169,6 @@ async fn upload_user_profile_image(
     );
 
     UploadToCdnCommand::new(file_path, image_buffer)
-        .execute_with(&app_state.s3_client)
+        .execute_with_deps(&app_state.s3_client)
         .await
 }

@@ -71,7 +71,7 @@ impl AgentExecutor {
             let gemini_client = reqwest::Client::new();
             match GenerateEmbeddingsCommand::new(vec![directive.focus.clone()])
                 .with_task_type("RETRIEVAL_QUERY".to_string())
-                .execute_with(&gemini_client, &gemini_api_key, &gemini_model)
+                .execute_with_deps(commands::EmbeddingApiDeps { client: &gemini_client, api_key: &gemini_api_key, model: &gemini_model })
                 .await
             {
                 Ok(embeddings) if !embeddings.is_empty() => Some(embeddings[0].clone()),

@@ -43,7 +43,7 @@ impl GetWebhookAnalyticsQuery {
         self
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_deps(
         &self,
         clickhouse_service: &common::ClickHouseService,
     ) -> Result<WebhookAnalyticsResult, AppError> {
@@ -203,7 +203,7 @@ impl GetWebhookTimeseriesQuery {
         self
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_deps(
         &self,
         clickhouse_service: &common::ClickHouseService,
     ) -> Result<WebhookTimeseriesResult, AppError> {

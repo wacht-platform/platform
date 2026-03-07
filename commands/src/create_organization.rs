@@ -5,6 +5,7 @@ use serde_json::Value;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateOrganizationCommand {
+    pub organization_id: Option<i64>,
     pub deployment_id: i64,
     pub name: String,
     pub description: Option<String>,
@@ -23,6 +24,7 @@ impl CreateOrganizationCommand {
         private_metadata: Option<Value>,
     ) -> Self {
         Self {
+            organization_id: None,
             deployment_id,
             name,
             description,
@@ -32,15 +34,19 @@ impl CreateOrganizationCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        organization_id: i64,
-    ) -> Result<Organization, AppError>
+    pub fn with_organization_id(mut self, organization_id: i64) -> Self {
+        self.organization_id = Some(organization_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Organization, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        let organization_id = self
+            .organization_id
+            .ok_or_else(|| AppError::Validation("organization_id is required".to_string()))?;
         let default_public_metadata = Value::Object(serde_json::Map::new());
         let default_private_metadata = Value::Object(serde_json::Map::new());
 

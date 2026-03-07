@@ -5,6 +5,7 @@ use sqlx::Row;
 use std::str::FromStr;
 
 pub struct CreateAgentIntegrationCommand {
+    id: Option<i64>,
     deployment_id: i64,
     agent_id: i64,
     integration_type: IntegrationType,
@@ -14,6 +15,7 @@ pub struct CreateAgentIntegrationCommand {
 
 #[derive(Default)]
 pub struct CreateAgentIntegrationCommandBuilder {
+    id: Option<i64>,
     deployment_id: Option<i64>,
     agent_id: Option<i64>,
     integration_type: Option<IntegrationType>,
@@ -34,6 +36,7 @@ impl CreateAgentIntegrationCommand {
         config: serde_json::Value,
     ) -> Self {
         Self {
+            id: None,
             deployment_id,
             agent_id,
             integration_type,
@@ -48,11 +51,11 @@ impl CreateAgentIntegrationCommand {
     where
         D: HasDbRouter + HasIdGenerator,
     {
-        let id = deps.id_generator().next_id()? as i64;
-        self.execute_with(deps.db_router().writer(), id).await
+        let id = self.id.unwrap_or(deps.id_generator().next_id()? as i64);
+        self.run_with_id(deps.db_router().writer(), id).await
     }
 
-    pub async fn execute_with(
+    async fn run_with_id(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
         id: i64,
@@ -90,9 +93,24 @@ impl CreateAgentIntegrationCommand {
             config: integration.config,
         })
     }
+
+    pub async fn execute_with(
+        self,
+        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    ) -> Result<AgentIntegration, AppError> {
+        let id = self
+            .id
+            .ok_or_else(|| AppError::Validation("id is required".into()))?;
+        self.run_with_id(acquirer, id).await
+    }
 }
 
 impl CreateAgentIntegrationCommandBuilder {
+    pub fn id(mut self, id: i64) -> Self {
+        self.id = Some(id);
+        self
+    }
+
     pub fn deployment_id(mut self, deployment_id: i64) -> Self {
         self.deployment_id = Some(deployment_id);
         self
@@ -120,6 +138,7 @@ impl CreateAgentIntegrationCommandBuilder {
 
     pub fn build(self) -> Result<CreateAgentIntegrationCommand, AppError> {
         Ok(CreateAgentIntegrationCommand {
+            id: self.id,
             deployment_id: self
                 .deployment_id
                 .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,

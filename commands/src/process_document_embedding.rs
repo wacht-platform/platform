@@ -20,18 +20,22 @@ impl ProcessDocumentBatchCommand {
     }
 }
 
+pub struct ProcessDocumentBatchDeps<A, GenerateEmbeddingsFn> {
+    pub acquirer: A,
+    pub generate_embeddings: GenerateEmbeddingsFn,
+}
+
 impl ProcessDocumentBatchCommand {
-    pub async fn execute_with<'a, A, GenerateEmbeddingsFn, GenerateEmbeddingsFut>(
+    pub async fn execute_with_deps<'a, A, GenerateEmbeddingsFn, GenerateEmbeddingsFut>(
         self,
-        acquirer: A,
-        generate_embeddings: GenerateEmbeddingsFn,
+        deps: ProcessDocumentBatchDeps<A, GenerateEmbeddingsFn>,
     ) -> Result<String, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
         GenerateEmbeddingsFn: Fn(Vec<String>) -> GenerateEmbeddingsFut + Copy,
         GenerateEmbeddingsFut: Future<Output = Result<Vec<Vec<f32>>, AppError>>,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.acquirer.acquire().await?;
         info!(
             "Processing embeddings for up to {} chunks in knowledge base {} (deployment {})",
             self.batch_size, self.knowledge_base_id, self.deployment_id
@@ -72,7 +76,7 @@ impl ProcessDocumentBatchCommand {
                 .map(|chunk| chunk.content.clone())
                 .collect();
 
-            let embeddings = match generate_embeddings(chunk_texts).await {
+            let embeddings = match (deps.generate_embeddings)(chunk_texts).await {
                 Ok(embeddings) => embeddings,
                 Err(e) => {
                     error!("Failed to generate embeddings for batch: {}", e);

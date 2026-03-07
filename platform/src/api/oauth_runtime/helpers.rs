@@ -249,6 +249,12 @@ pub(crate) async fn ensure_or_create_grant_coverage(
 
     let writer = app_state.db_router.writer();
     let created = CreateOAuthClientGrantCommand {
+        grant_id: Some(
+            app_state
+                .sf
+                .next_id()
+                .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+        ),
         deployment_id,
         api_auth_app_slug: app_slug,
         oauth_client_id,
@@ -257,13 +263,7 @@ pub(crate) async fn ensure_or_create_grant_coverage(
         granted_by_user_id: Some(user_id),
         expires_at: None,
     }
-    .execute_with(
-        writer,
-        app_state
-            .sf
-            .next_id()
-            .map_err(|e| AppError::Internal(e.to_string()))? as i64,
-    )
+    .execute_with(writer)
     .await?;
     Ok(created.id)
 }

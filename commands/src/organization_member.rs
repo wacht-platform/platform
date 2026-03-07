@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct AddOrganizationMemberCommand {
+    pub membership_id: Option<i64>,
     pub deployment_id: i64,
     pub organization_id: i64,
     pub user_id: i64,
@@ -12,15 +13,29 @@ pub struct AddOrganizationMemberCommand {
 }
 
 impl AddOrganizationMemberCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        membership_id: i64,
-    ) -> Result<OrganizationMemberDetails, AppError>
+    pub fn new(deployment_id: i64, organization_id: i64, user_id: i64, role_ids: Vec<i64>) -> Self {
+        Self {
+            membership_id: None,
+            deployment_id,
+            organization_id,
+            user_id,
+            role_ids,
+        }
+    }
+
+    pub fn with_membership_id(mut self, membership_id: i64) -> Self {
+        self.membership_id = Some(membership_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OrganizationMemberDetails, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut conn = acquirer.acquire().await?;
+        let membership_id = self
+            .membership_id
+            .ok_or_else(|| AppError::Validation("membership_id is required".to_string()))?;
         // Check if user exists
         let user_exists = sqlx::query!("SELECT id FROM users WHERE id = $1", self.user_id)
             .fetch_optional(&mut *conn)

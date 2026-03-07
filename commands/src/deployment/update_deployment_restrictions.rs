@@ -1,4 +1,4 @@
-use common::error::AppError;
+use common::{HasDbRouter, HasRedis, error::AppError};
 use dto::json::DeploymentRestrictionsUpdates;
 
 use super::ClearDeploymentCacheCommand;
@@ -18,15 +18,12 @@ impl UpdateDeploymentRestrictionsCommand {
 }
 
 impl UpdateDeploymentRestrictionsCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        redis_client: &redis::Client,
-    ) -> Result<(), AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasRedis,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut conn = deps.db_router().writer().acquire().await?;
+        let redis_client = deps.redis_client();
         let mut query_builder =
             sqlx::QueryBuilder::new("UPDATE deployment_restrictions SET updated_at = NOW() ");
 
@@ -91,7 +88,7 @@ impl UpdateDeploymentRestrictionsCommand {
         query_builder.build().execute(&mut *conn).await?;
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_deps(&mut conn, redis_client)
+            .execute_with_conn_and_redis(&mut conn, redis_client)
             .await?;
 
         Ok(())

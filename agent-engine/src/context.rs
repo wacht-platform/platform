@@ -329,7 +329,7 @@ impl ContextOrchestrator {
 
         GenerateEmbeddingCommand::new(query.to_string())
             .with_task_type("RETRIEVAL_QUERY".to_string())
-            .execute_with(&gemini_client, &gemini_api_key, &gemini_model)
+            .execute_with_deps(commands::EmbeddingApiDeps { client: &gemini_client, api_key: &gemini_api_key, model: &gemini_model })
             .await
     }
 

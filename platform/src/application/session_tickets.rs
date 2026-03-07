@@ -136,13 +136,8 @@ pub async fn create_session_ticket(
         command = command.expires_in(expires_in);
     }
 
-    let ticket_id = app_state
-        .sf
-        .next_id()
-        .map_err(|e| AppError::Internal(format!("Failed to generate ticket ID: {}", e)))?
-        as i64;
     command
         .build()?
-        .execute_with(&app_state.redis_client, ticket_id)
+        .execute_with_deps(app_state)
         .await
 }

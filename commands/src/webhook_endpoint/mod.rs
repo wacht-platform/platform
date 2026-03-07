@@ -3,8 +3,12 @@ mod testing;
 mod validation;
 
 pub use endpoint_commands::{
-    CreateWebhookEndpointCommand, DeleteWebhookEndpointCommand, UpdateEndpointSubscriptionsCommand,
-    UpdateWebhookEndpointCommand,
+    CreateWebhookEndpointCommand, CreateWebhookEndpointDeps, DeleteWebhookEndpointCommand,
+    UpdateEndpointSubscriptionsCommand, UpdateEndpointSubscriptionsDeps, UpdateWebhookEndpointCommand,
+    UpdateWebhookEndpointDeps,
 };
-pub use testing::{ReactivateEndpointCommand, TestWebhookEndpointCommand, TestWebhookResult};
+pub use testing::{
+    ReactivateEndpointCommand, ReactivateEndpointDeps, TestWebhookEndpointCommand,
+    TestWebhookEndpointDeps, TestWebhookResult,
+};
 pub use validation::EventSubscriptionData;

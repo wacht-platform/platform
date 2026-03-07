@@ -5,6 +5,7 @@ use sqlx::{query, query_as};
 use tracing::warn;
 
 use common::error::AppError;
+use common::{HasDbRouter, HasNatsClient};
 use models::notification::{Notification, NotificationRow, NotificationSeverity};
 
 // NATS notification message
@@ -107,12 +108,14 @@ impl CreateNotificationCommand {
 }
 
 impl CreateNotificationCommand {
-    pub async fn execute_with(
+    pub async fn execute_with_deps<D>(
         self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        nats_client: &async_nats::Client,
-    ) -> Result<Notification, AppError> {
-        let mut conn = acquirer.acquire().await?;
+        deps: &D,
+    ) -> Result<Notification, AppError>
+    where
+        D: HasDbRouter + HasNatsClient,
+    {
+        let mut conn = deps.writer_pool().acquire().await?;
         // Create new notification
         let row: NotificationRow = query_as(
             r#"
@@ -172,7 +175,7 @@ impl CreateNotificationCommand {
             };
 
             if let Ok(payload) = serde_json::to_vec(&message) {
-                if let Err(e) = nats_client.publish(subject, payload.into()).await {
+                if let Err(e) = deps.nats_client().publish(subject, payload.into()).await {
                     warn!("Failed to publish notification to NATS: {}", e);
                     // Don't fail the command, just log the error
                 }

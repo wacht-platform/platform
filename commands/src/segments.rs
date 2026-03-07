@@ -5,6 +5,7 @@ use sqlx::Row;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateSegmentCommand {
+    id: Option<i64>,
     deployment_id: i64,
     name: String,
     r#type: String,
@@ -12,6 +13,7 @@ pub struct CreateSegmentCommand {
 
 #[derive(Default)]
 pub struct CreateSegmentCommandBuilder {
+    id: Option<i64>,
     deployment_id: Option<i64>,
     name: Option<String>,
     r#type: Option<String>,
@@ -27,9 +29,11 @@ impl CreateSegmentCommand {
     pub async fn execute_with(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        id: i64,
     ) -> Result<Segment, AppError> {
         let mut conn = acquirer.acquire().await?;
+        let id = self
+            .id
+            .ok_or_else(|| AppError::Validation("id is required".into()))?;
         let segment = sqlx::query_as::<_, Segment>(
             r#"
             INSERT INTO segments (id, deployment_id, name, type)
@@ -50,6 +54,11 @@ impl CreateSegmentCommand {
 }
 
 impl CreateSegmentCommandBuilder {
+    pub fn id(mut self, id: i64) -> Self {
+        self.id = Some(id);
+        self
+    }
+
     pub fn deployment_id(mut self, deployment_id: i64) -> Self {
         self.deployment_id = Some(deployment_id);
         self
@@ -67,6 +76,7 @@ impl CreateSegmentCommandBuilder {
 
     pub fn build(self) -> Result<CreateSegmentCommand, AppError> {
         Ok(CreateSegmentCommand {
+            id: self.id,
             deployment_id: self
                 .deployment_id
                 .ok_or_else(|| AppError::Validation("deployment_id is required".into()))?,

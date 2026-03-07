@@ -1,5 +1,6 @@
 use commands::agent_execution::{
     PublishAgentExecutionCommand, SignalAgentExecutionCancellationCommand, UploadFilesToS3Command,
+    UploadFilesToS3Deps,
 };
 use commands::{
     CreateConversationCommand, CreateExecutionContextCommand,
@@ -29,10 +30,11 @@ const EXECUTION_VARIANT_VALIDATION_ERROR: &str =
     "Exactly one execution_type variant must be provided";
 
 fn build_create_execution_context_command(
+    context_id: i64,
     deployment_id: i64,
     request: CreateExecutionContextRequest,
 ) -> CreateExecutionContextCommand {
-    let mut command = CreateExecutionContextCommand::new(deployment_id);
+    let mut command = CreateExecutionContextCommand::new(context_id, deployment_id);
 
     if let Some(title) = request.title {
         command = command.with_title(title);
@@ -108,7 +110,7 @@ async fn cancel_running_execution_if_needed(
 ) -> Result<(), AppError> {
     if has_running_execution {
         SignalAgentExecutionCancellationCommand::new(context_id)
-            .execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
+            .execute_with_deps(app_state)
             .await?;
     }
     Ok(())
@@ -119,8 +121,9 @@ pub async fn create_execution_context(
     deployment_id: i64,
     request: CreateExecutionContextRequest,
 ) -> Result<AgentExecutionContext, AppError> {
-    build_create_execution_context_command(deployment_id, request)
-        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+    let context_id = app_state.sf.next_id()? as i64;
+    build_create_execution_context_command(context_id, deployment_id, request)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 
@@ -252,7 +255,10 @@ pub async fn execute_agent_async(
                 AppError::Internal("Agent storage client not configured".to_string())
             })?;
             let model_files = match upload_files_command
-                .execute_with(storage_client, || Ok(app_state.sf.next_id()? as i64))
+                .execute_with_deps(UploadFilesToS3Deps {
+                    storage_client,
+                    id_gen: || Ok(app_state.sf.next_id()? as i64),
+                })
                 .await
             {
                 Ok(files) => files,
@@ -303,7 +309,7 @@ pub async fn execute_agent_async(
                 conversation_id,
             );
             publish_command
-                .execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
+                .execute_with_deps(app_state)
                 .await?;
 
             info!(
@@ -345,7 +351,7 @@ pub async fn execute_agent_async(
                 conversation_id,
             );
             publish_command
-                .execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
+                .execute_with_deps(app_state)
                 .await?;
 
             info!(
@@ -369,7 +375,7 @@ pub async fn execute_agent_async(
                 platform_function_result.result,
             );
             publish_command
-                .execute_with(&app_state.nats_jetstream, app_state.sf.next_id()? as i64)
+                .execute_with_deps(app_state)
                 .await?;
 
             info!(

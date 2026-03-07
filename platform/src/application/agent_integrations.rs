@@ -87,13 +87,14 @@ pub async fn create_agent_integration(
 ) -> Result<AgentIntegration, AppError> {
     let integration_id = app_state.sf.next_id()? as i64;
     CreateAgentIntegrationCommand::builder()
+        .id(integration_id)
         .deployment_id(deployment_id)
         .agent_id(agent_id)
         .integration_type(integration_type)
         .name(name)
         .config(config)
         .build()?
-        .execute_with(app_state.db_router.writer(), integration_id)
+        .execute_with(app_state.db_router.writer())
         .await
 }
 

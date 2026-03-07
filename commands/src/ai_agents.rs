@@ -3,6 +3,7 @@ use common::error::AppError;
 use models::AiAgent;
 
 pub struct CreateAiAgentCommand {
+    pub id: i64,
     pub deployment_id: i64,
     pub name: String,
     pub description: Option<String>,
@@ -15,12 +16,14 @@ pub struct CreateAiAgentCommand {
 
 impl CreateAiAgentCommand {
     pub fn new(
+        id: i64,
         deployment_id: i64,
         name: String,
         description: Option<String>,
         configuration: serde_json::Value,
     ) -> Self {
         Self {
+            id,
             deployment_id,
             name,
             description,
@@ -54,13 +57,14 @@ impl CreateAiAgentCommand {
 }
 
 impl CreateAiAgentCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A, agent_id: i64) -> Result<AiAgent, AppError>
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiAgent, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         use sqlx::Connection;
         let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
+        let agent_id = self.id;
         let tool_ids = self.tool_ids.unwrap_or_default();
         let knowledge_base_ids = self.knowledge_base_ids.unwrap_or_default();
         let sanitized_configuration = sanitize_configuration(self.configuration);

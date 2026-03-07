@@ -81,15 +81,14 @@ pub async fn upload_image(
     image_buffer: Vec<u8>,
     file_extension: &str,
 ) -> Result<UploadResult, AppError> {
-    let writer = app_state.db_router.writer();
     let (file_path, updates) = build_upload_target(deployment_id, image_type, file_extension)?;
 
     let url = UploadToCdnCommand::new(file_path, image_buffer)
-        .execute_with(&app_state.s3_client)
+        .execute_with_deps(&app_state.s3_client)
         .await?;
 
     UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)
-        .execute_with(writer, &app_state.redis_client)
+        .execute_with_deps(app_state)
         .await?;
 
     Ok(UploadResult { url })

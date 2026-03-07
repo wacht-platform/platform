@@ -419,7 +419,7 @@ async fn publish_stream_event(
         subject
     );
 
-    use commands::TriggerWebhookEventCommand;
+    use commands::{TriggerWebhookEventCommand, webhook_trigger::TriggerWebhookEventDeps};
 
     let webhook_payload = serde_json::json!({
         "context_id": context_key,
@@ -441,13 +441,13 @@ async fn publish_stream_event(
     );
 
     if let Err(e) = trigger_command
-        .execute_with(
-            app_state.db_router.writer(),
-            &app_state.redis_client,
-            &app_state.clickhouse_service,
-            &app_state.nats_client,
-            || Ok(app_state.sf.next_id()? as i64),
-        )
+        .execute_with_deps(TriggerWebhookEventDeps {
+            db_router: &app_state.db_router,
+            redis_client: &app_state.redis_client,
+            clickhouse_service: &app_state.clickhouse_service,
+            nats_client: &app_state.nats_client,
+            id_gen: || Ok(app_state.sf.next_id()? as i64),
+        })
         .await
     {
         tracing::warn!(
@@ -628,9 +628,10 @@ async fn apply_spawn_control_params(
         context_id,
         deployment_id,
         "Parent updated execution parameters".to_string(),
-    );
+    )
+    .with_status_update_id(app_state.sf.next_id()? as i64);
     status_cmd
-        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+        .execute_with(app_state.db_router.writer())
         .await?;
 
     Ok(())
@@ -645,9 +646,10 @@ async fn record_spawn_control_restart(
         context_id,
         deployment_id,
         "Parent requested execution restart".to_string(),
-    );
+    )
+    .with_status_update_id(app_state.sf.next_id()? as i64);
     status_cmd
-        .execute_with(app_state.db_router.writer(), app_state.sf.next_id()? as i64)
+        .execute_with(app_state.db_router.writer())
         .await?;
     Ok(())
 }

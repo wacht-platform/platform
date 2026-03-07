@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct AddWorkspaceMemberCommand {
+    pub workspace_membership_id: Option<i64>,
+    pub implicit_org_membership_id: Option<i64>,
     pub deployment_id: i64,
     pub workspace_id: i64,
     pub user_id: i64,
@@ -11,17 +13,39 @@ pub struct AddWorkspaceMemberCommand {
 }
 
 impl AddWorkspaceMemberCommand {
-    pub async fn execute_with<'a, A>(
-        self,
-        acquirer: A,
-        workspace_membership_id: i64,
-        implicit_org_membership_id: i64,
-    ) -> Result<WorkspaceMemberDetails, AppError>
+    pub fn new(deployment_id: i64, workspace_id: i64, user_id: i64, role_ids: Vec<i64>) -> Self {
+        Self {
+            workspace_membership_id: None,
+            implicit_org_membership_id: None,
+            deployment_id,
+            workspace_id,
+            user_id,
+            role_ids,
+        }
+    }
+
+    pub fn with_workspace_membership_id(mut self, workspace_membership_id: i64) -> Self {
+        self.workspace_membership_id = Some(workspace_membership_id);
+        self
+    }
+
+    pub fn with_implicit_org_membership_id(mut self, implicit_org_membership_id: i64) -> Self {
+        self.implicit_org_membership_id = Some(implicit_org_membership_id);
+        self
+    }
+
+    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WorkspaceMemberDetails, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         use sqlx::Connection;
         let mut conn = acquirer.acquire().await?;
+        let workspace_membership_id = self.workspace_membership_id.ok_or_else(|| {
+            AppError::Validation("workspace_membership_id is required".to_string())
+        })?;
+        let implicit_org_membership_id = self.implicit_org_membership_id.ok_or_else(|| {
+            AppError::Validation("implicit_org_membership_id is required".to_string())
+        })?;
         let mut tx = conn.begin().await?;
 
         let workspace = sqlx::query!(

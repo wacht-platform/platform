@@ -32,19 +32,19 @@ pub async fn add_organization_member(
     organization_id: i64,
     request: AddOrganizationMemberRequest,
 ) -> Result<OrganizationMemberDetails, ApiErrorResponse> {
-    let member = AddOrganizationMemberCommand {
+    let member = AddOrganizationMemberCommand::new(
         deployment_id,
         organization_id,
-        user_id: request.user_id,
-        role_ids: request.role_ids,
-    }
-    .execute_with(
-        app_state.db_router.writer(),
+        request.user_id,
+        request.role_ids,
+    )
+    .with_membership_id(
         app_state
             .sf
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
+    .execute_with(app_state.db_router.writer())
     .await?;
 
     publish_task(
@@ -118,13 +118,13 @@ pub async fn create_organization_role(
         request.name,
         request.permissions,
     )
-    .execute_with(
-        app_state.db_router.writer(),
+    .with_role_id(
         app_state
             .sf
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(Into::into)
 }
@@ -199,13 +199,13 @@ pub async fn create_workspace_role(
         request.name,
         request.permissions,
     )
-    .execute_with(
-        app_state.db_router.writer(),
+    .with_role_id(
         app_state
             .sf
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
+    .execute_with(app_state.db_router.writer())
     .await
     .map_err(Into::into)
 }
@@ -274,23 +274,25 @@ pub async fn add_workspace_member(
     workspace_id: i64,
     request: AddWorkspaceMemberRequest,
 ) -> Result<WorkspaceMemberDetails, ApiErrorResponse> {
-    let member = AddWorkspaceMemberCommand {
+    let member = AddWorkspaceMemberCommand::new(
         deployment_id,
         workspace_id,
-        user_id: request.user_id,
-        role_ids: request.role_ids,
-    }
-    .execute_with(
-        app_state.db_router.writer(),
-        app_state
-            .sf
-            .next_id()
-            .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+        request.user_id,
+        request.role_ids,
+    )
+    .with_workspace_membership_id(
         app_state
             .sf
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
+    .with_implicit_org_membership_id(
+        app_state
+            .sf
+            .next_id()
+            .map_err(|e| AppError::Internal(e.to_string()))? as i64,
+    )
+    .execute_with(app_state.db_router.writer())
     .await?;
 
     publish_task(

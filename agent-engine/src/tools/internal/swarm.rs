@@ -142,15 +142,13 @@ impl ToolExecutor {
         let params: UpdateStatusParams = parse_params(execution_params, "update_status")?;
 
         commands::PostStatusUpdateCommand {
+            status_update_id: Some(self.app_state().sf.next_id()? as i64),
             context_id: self.context_id(),
             deployment_id: self.agent().deployment_id,
             status_update: params.status,
             metadata: params.metadata,
         }
-        .execute_with(
-            self.app_state().db_router.writer(),
-            self.app_state().sf.next_id()? as i64,
-        )
+        .execute_with(self.app_state().db_router.writer())
         .await?;
 
         Ok(serde_json::json!({

@@ -49,7 +49,7 @@ pub async fn spawn_control(
     )
     .with_sender(sender_context_id);
     publish_control_command
-        .execute_with(&app_state.nats_jetstream)
+        .execute_with_deps(&app_state.nats_jetstream)
         .await?;
 
     response::success(
