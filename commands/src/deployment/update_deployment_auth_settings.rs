@@ -58,7 +58,6 @@ impl UpdateDeploymentAuthSettingsCommand {
         D: HasDbRouter + HasRedis,
     {
         let mut conn = deps.db_router().writer().acquire().await?;
-        let redis_client = deps.redis_client();
         if enables_phone_auth(&self.updates) {
             let deployment = sqlx::query!(
                 r#"
@@ -252,7 +251,7 @@ impl UpdateDeploymentAuthSettingsCommand {
         query_builder.build().execute(&mut *conn).await?;
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_conn_and_redis(&mut conn, redis_client)
+            .execute_with_deps(deps)
             .await?;
 
         Ok(())

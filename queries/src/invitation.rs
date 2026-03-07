@@ -10,11 +10,10 @@ impl GetDeploymentInvitationQuery {
         Self { invitation_id }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<DeploymentInvitation, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<DeploymentInvitation, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, deployment_id, first_name, last_name, email_address, token, expiry
@@ -23,7 +22,7 @@ impl GetDeploymentInvitationQuery {
             "#,
             self.invitation_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         let invitation = DeploymentInvitation {

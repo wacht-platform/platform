@@ -450,17 +450,9 @@ pub struct SetOAuthClientRegistrationAccessToken {
 }
 
 impl SetOAuthClientRegistrationAccessToken {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<bool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
-    }
-
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<bool, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let res = sqlx::query!(
             r#"
@@ -475,7 +467,7 @@ impl SetOAuthClientRegistrationAccessToken {
             self.client_id,
             self.registration_access_token_hash
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(res.rows_affected() > 0)
@@ -488,17 +480,9 @@ pub struct DeactivateOAuthClient {
 }
 
 impl DeactivateOAuthClient {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<bool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
-    }
-
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<bool, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let res = sqlx::query!(
             r#"
@@ -514,7 +498,7 @@ impl DeactivateOAuthClient {
             self.oauth_app_id,
             self.client_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(res.rows_affected() > 0)
@@ -547,10 +531,10 @@ impl UpdateOAuthClientSettings {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
+        self.run_with_conn(conn).await
     }
 
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<Option<OAuthClientData>, AppError>
+    async fn run_with_conn<C>(self, mut conn: C) -> Result<Option<OAuthClientData>, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {

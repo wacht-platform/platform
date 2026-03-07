@@ -53,7 +53,6 @@ impl UpdateDeploymentEmailTemplateCommand {
         D: HasDbRouter + HasRedis,
     {
         let mut conn = deps.db_router().writer().acquire().await?;
-        let redis = deps.redis_client();
         let column_name = match self.template_name {
             DeploymentNameParams::OrganizationInviteTemplate => "organization_invite_template",
             DeploymentNameParams::VerificationCodeTemplate => "verification_code_template",
@@ -105,7 +104,7 @@ impl UpdateDeploymentEmailTemplateCommand {
         // Clear Redis cache for deployment
         use crate::deployment::ClearDeploymentCacheCommand;
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_conn_and_redis(&mut conn, redis)
+            .execute_with_deps(deps)
             .await?;
 
         Ok(template)

@@ -195,17 +195,9 @@ impl DeleteOrganizationDomainCommand {
 }
 
 impl DeleteOrganizationDomainCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
-    }
-
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<(), AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let result = sqlx::query!(
             r#"
@@ -216,7 +208,7 @@ impl DeleteOrganizationDomainCommand {
             self.request.organization_id,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         if result.rows_affected() == 0 {

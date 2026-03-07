@@ -7,18 +7,17 @@ pub struct CreateBillingSyncRunCommand {
 }
 
 impl CreateBillingSyncRunCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<i64, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             "INSERT INTO billing_sync_runs (from_event_id, to_event_id, status)
              VALUES ($1, 0, 'running')
              RETURNING id",
             self.from_event_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(rec.id)
@@ -32,11 +31,10 @@ pub struct CompleteBillingSyncRunCommand {
 }
 
 impl CompleteBillingSyncRunCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             "UPDATE billing_sync_runs
              SET completed_at = NOW(),
@@ -48,7 +46,7 @@ impl CompleteBillingSyncRunCommand {
             self.events_processed,
             self.deployments_affected
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())

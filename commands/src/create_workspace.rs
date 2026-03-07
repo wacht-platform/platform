@@ -42,11 +42,10 @@ impl CreateWorkspaceCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<Workspace, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Workspace, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let workspace_id = self
             .workspace_id
             .ok_or_else(|| AppError::Validation("workspace_id is required".to_string()))?;
@@ -80,7 +79,7 @@ impl CreateWorkspaceCommand {
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(Workspace {

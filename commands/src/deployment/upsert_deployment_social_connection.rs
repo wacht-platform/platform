@@ -41,7 +41,6 @@ impl UpsertDeploymentSocialConnectionCommand {
         D: HasDbRouter + HasRedis,
     {
         let mut conn = deps.db_router().writer().acquire().await?;
-        let redis_client = deps.redis_client();
         let social_connection_id = self.social_connection_id.ok_or_else(|| {
             AppError::Validation("social_connection_id is required".to_string())
         })?;
@@ -131,7 +130,7 @@ impl UpsertDeploymentSocialConnectionCommand {
         };
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_conn_and_redis(&mut conn, redis_client)
+            .execute_with_deps(deps)
             .await?;
 
         Ok(connection)

@@ -281,11 +281,10 @@ impl MarkNotificationReadCommand {
         MarkNotificationReadCommandBuilder::default()
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<bool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let result = query!(
             r#"
             UPDATE notifications 
@@ -298,7 +297,7 @@ impl MarkNotificationReadCommand {
             self.notification_id,
             self.user_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(result.rows_affected() > 0)
@@ -345,11 +344,10 @@ impl MarkAllNotificationsReadCommand {
         MarkAllNotificationsReadCommandBuilder::default()
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<i64, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let result = query!(
             r#"
             UPDATE notifications 
@@ -365,7 +363,7 @@ impl MarkAllNotificationsReadCommand {
             self.user_id,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(result.rows_affected() as i64)
@@ -412,17 +410,9 @@ impl ArchiveNotificationCommand {
         ArchiveNotificationCommandBuilder::default()
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<bool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
-    }
-
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<bool, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let result = query!(
             r#"
@@ -436,7 +426,7 @@ impl ArchiveNotificationCommand {
             self.notification_id,
             self.user_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(result.rows_affected() > 0)
@@ -492,7 +482,7 @@ impl DeleteNotificationCommand {
             .notification_id(self.notification_id)
             .user_id(self.user_id)
             .build()?
-            .execute_with_deps(&mut *conn)
+            .execute_with_db(&mut *conn)
             .await
     }
 }
@@ -524,18 +514,17 @@ impl DeleteNotificationCommandBuilder {
 pub struct CleanupExpiredNotificationsCommand;
 
 impl CleanupExpiredNotificationsCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<i64, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let result = query!(
             r#"
             DELETE FROM notifications 
             WHERE expires_at < NOW()
             "#
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(result.rows_affected() as i64)

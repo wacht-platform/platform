@@ -34,7 +34,6 @@ impl CreateDeploymentJwtTemplateCommand {
         D: HasDbRouter + HasRedis,
     {
         let mut conn = deps.db_router().writer().acquire().await?;
-        let redis_client = deps.redis_client();
         let template_id = self
             .template_id
             .ok_or_else(|| AppError::Validation("template_id is required".to_string()))?;
@@ -73,7 +72,7 @@ impl CreateDeploymentJwtTemplateCommand {
         };
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_conn_and_redis(&mut conn, redis_client)
+            .execute_with_deps(deps)
             .await?;
 
         Ok(template)
@@ -102,7 +101,6 @@ impl UpdateDeploymentJwtTemplateCommand {
         D: HasDbRouter + HasRedis,
     {
         let mut conn = deps.db_router().writer().acquire().await?;
-        let redis_client = deps.redis_client();
         let mut query_builder =
             sqlx::QueryBuilder::new("UPDATE deployment_jwt_templates SET updated_at = NOW() ");
 
@@ -168,7 +166,7 @@ impl UpdateDeploymentJwtTemplateCommand {
 
         let deployment_id: i64 = result.get("deployment_id");
         ClearDeploymentCacheCommand::new(deployment_id)
-            .execute_with_conn_and_redis(&mut conn, redis_client)
+            .execute_with_deps(deps)
             .await?;
 
         Ok(template)
@@ -192,7 +190,6 @@ impl DeleteDeploymentJwtTemplateCommand {
         D: HasDbRouter + HasRedis,
     {
         let mut conn = deps.db_router().writer().acquire().await?;
-        let redis_client = deps.redis_client();
         let result = sqlx::query!(
             "DELETE FROM deployment_jwt_templates WHERE id = $1 AND deployment_id = $2",
             self.id,
@@ -209,7 +206,7 @@ impl DeleteDeploymentJwtTemplateCommand {
         }
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_conn_and_redis(&mut conn, redis_client)
+            .execute_with_deps(deps)
             .await?;
 
         Ok(())

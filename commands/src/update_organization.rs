@@ -36,11 +36,10 @@ impl UpdateOrganizationCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<Organization, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Organization, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let mut query_parts = Vec::new();
         let mut param_count = 3; // deployment_id and organization_id are $1 and $2
 
@@ -106,7 +105,7 @@ impl UpdateOrganizationCommand {
 
         query = query.bind(chrono::Utc::now());
 
-        let organization = query.fetch_one(&mut *conn).await?;
+        let organization = query.fetch_one(executor).await?;
 
         Ok(Organization {
             id: organization.get("id"),

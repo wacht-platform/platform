@@ -17,15 +17,6 @@ impl ClearDeploymentCacheCommand {
         D: HasDbRouter + HasRedis,
     {
         let mut conn = deps.db_router().writer().acquire().await?;
-        let redis_client = deps.redis_client();
-        self.execute_with_conn_and_redis(&mut conn, redis_client).await
-    }
-
-    pub(crate) async fn execute_with_conn_and_redis(
-        self,
-        conn: &mut sqlx::PgConnection,
-        redis_client: &redis::Client,
-    ) -> Result<(), AppError> {
         let deployment_row = sqlx::query!(
             "SELECT backend_host FROM deployments WHERE id = $1",
             self.deployment_id
@@ -33,7 +24,7 @@ impl ClearDeploymentCacheCommand {
         .fetch_one(&mut *conn)
         .await?;
 
-        let mut redis_conn = redis_client.get_multiplexed_tokio_connection().await?;
+        let mut redis_conn = deps.redis_client().get_multiplexed_tokio_connection().await?;
 
         let cache_key = format!("deployment:{}", deployment_row.backend_host);
         let _: () = redis_conn.del(cache_key).await?;

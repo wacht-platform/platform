@@ -218,10 +218,10 @@ impl UpdateOAuthAppCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
+        self.run_with_conn(conn).await
     }
 
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<OAuthAppData, AppError>
+    async fn run_with_conn<C>(self, mut conn: C) -> Result<OAuthAppData, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {

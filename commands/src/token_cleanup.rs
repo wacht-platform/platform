@@ -5,11 +5,10 @@ pub struct CleanupRotatingTokenCommand {
 }
 
 impl CleanupRotatingTokenCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<bool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let res = sqlx::query!(
             r#"
             DELETE FROM rotating_tokens
@@ -19,7 +18,7 @@ impl CleanupRotatingTokenCommand {
             "#,
             self.rotating_token_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(res.rows_affected() > 0)
@@ -31,11 +30,10 @@ pub struct CleanupOrphanSessionCommand {
 }
 
 impl CleanupOrphanSessionCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<bool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let res = sqlx::query!(
             r#"
             DELETE FROM sessions s
@@ -51,7 +49,7 @@ impl CleanupOrphanSessionCommand {
             "#,
             self.session_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(res.rows_affected() > 0)

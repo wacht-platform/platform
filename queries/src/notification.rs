@@ -23,11 +23,10 @@ impl GetOrganizationNotificationRecipientUserIdsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<i64>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT om.user_id
@@ -40,7 +39,7 @@ impl GetOrganizationNotificationRecipientUserIdsQuery {
             self.deployment_id,
             self.organization_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(rows.into_iter().map(|r| r.user_id).collect())
@@ -93,11 +92,10 @@ impl GetWorkspaceNotificationRecipientUserIdsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<i64>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT wm.user_id
@@ -110,7 +108,7 @@ impl GetWorkspaceNotificationRecipientUserIdsQuery {
             self.deployment_id,
             self.workspace_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(rows.into_iter().map(|r| r.user_id).collect())

@@ -39,11 +39,10 @@ impl CreateOrganizationCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<Organization, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Organization, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let organization_id = self
             .organization_id
             .ok_or_else(|| AppError::Validation("organization_id is required".to_string()))?;
@@ -76,7 +75,7 @@ impl CreateOrganizationCommand {
             chrono::Utc::now(),
             chrono::Utc::now(),
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(Organization {

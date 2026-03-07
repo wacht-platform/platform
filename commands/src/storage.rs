@@ -5,16 +5,15 @@ pub struct MarkStorageAsCleanCommand {
 }
 
 impl MarkStorageAsCleanCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             "UPDATE deployment_storage_usage SET is_dirty = false WHERE deployment_id = $1",
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())

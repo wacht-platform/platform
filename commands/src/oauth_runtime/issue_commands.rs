@@ -36,10 +36,10 @@ impl IssueOAuthAuthorizationCode {
         let code_id = self
             .code_id
             .ok_or_else(|| AppError::Validation("code_id is required".to_string()))?;
-        self.execute_with_deps(conn, code_id).await
+        self.run_with_conn(conn, code_id).await
     }
 
-    async fn execute_with_deps<C>(
+    async fn run_with_conn<C>(
         self,
         mut conn: C,
         code_id: i64,
@@ -160,11 +160,11 @@ impl IssueOAuthTokenPair {
         let refresh_token_id = self
             .refresh_token_id
             .ok_or_else(|| AppError::Validation("refresh_token_id is required".to_string()))?;
-        self.execute_with_deps(conn, access_token_id, refresh_token_id)
+        self.run_with_conn(conn, access_token_id, refresh_token_id)
             .await
     }
 
-    async fn execute_with_deps<C>(
+    async fn run_with_conn<C>(
         self,
         mut conn: C,
         access_token_id: i64,

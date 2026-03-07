@@ -23,7 +23,6 @@ impl UpdateDeploymentDisplaySettingsCommand {
         D: HasDbRouter + HasRedis,
     {
         let mut conn = deps.db_router().writer().acquire().await?;
-        let redis_client = deps.redis_client();
         let mut query_builder =
             sqlx::QueryBuilder::new("UPDATE deployment_ui_settings SET updated_at = NOW() ");
 
@@ -186,7 +185,7 @@ impl UpdateDeploymentDisplaySettingsCommand {
         }
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_conn_and_redis(&mut conn, redis_client)
+            .execute_with_deps(deps)
             .await?;
 
         Ok(())

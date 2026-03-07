@@ -36,14 +36,7 @@ impl CreateDeploymentAiSettingsCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
-    }
-
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<DeploymentAiSettings, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
+        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query_as::<_, DeploymentAiSettings>(
             r#"
             INSERT INTO deployment_ai_settings (deployment_id)
@@ -244,14 +237,7 @@ impl ClearDeploymentAiKeyCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
-    }
-
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<(), AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
+        let mut conn = acquirer.acquire().await?;
         let column = match self.key_type {
             AiKeyType::Gemini => "gemini_api_key",
             AiKeyType::OpenAI => "openai_api_key",

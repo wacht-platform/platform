@@ -171,7 +171,6 @@ impl RemoveDeploymentSmtpConfigCommand {
         D: HasDbRouter + HasRedis,
     {
         let mut conn = deps.db_router().writer().acquire().await?;
-        let redis = deps.redis_client();
         sqlx::query!(
             r#"
             UPDATE deployments
@@ -187,7 +186,7 @@ impl RemoveDeploymentSmtpConfigCommand {
         .await?;
 
         crate::ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_conn_and_redis(&mut conn, redis)
+            .execute_with_deps(deps)
             .await?;
 
         tracing::info!(

@@ -13,11 +13,10 @@ impl GetSignInQuery {
         Self { signin_id }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<SignIn, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<SignIn, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, session_id, user_id,
@@ -29,7 +28,7 @@ impl GetSignInQuery {
             "#,
             self.signin_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         let signin = SignIn {
@@ -65,11 +64,10 @@ impl GetSessionWithActiveContextQuery {
         Self { session_id }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<SessionContext, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<SessionContext, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT
@@ -84,7 +82,7 @@ impl GetSessionWithActiveContextQuery {
             "#,
         )
         .bind(self.session_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         let Some(row) = row else {

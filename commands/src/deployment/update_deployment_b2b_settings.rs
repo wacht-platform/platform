@@ -60,7 +60,6 @@ impl UpdateDeploymentB2bSettingsCommand {
         D: HasDbRouter + HasRedis,
     {
         let mut conn = deps.db_router().writer().acquire().await?;
-        let redis_client = deps.redis_client();
         let existing_catalogs = sqlx::query_as::<_, (Option<Value>, Option<Value>)>(
             "SELECT workspace_permission_catalog, organization_permission_catalog
              FROM deployment_b2b_settings
@@ -264,7 +263,7 @@ impl UpdateDeploymentB2bSettingsCommand {
         }
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
-            .execute_with_conn_and_redis(&mut conn, redis_client)
+            .execute_with_deps(deps)
             .await?;
 
         Ok(())

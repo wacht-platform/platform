@@ -212,10 +212,10 @@ impl CreateApiAuthAppCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
+        self.run_with_conn(conn).await
     }
 
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<ApiAuthApp, AppError>
+    async fn run_with_conn<C>(self, mut conn: C) -> Result<ApiAuthApp, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {
@@ -317,10 +317,10 @@ impl UpdateApiAuthAppCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
+        self.run_with_conn(conn).await
     }
 
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<ApiAuthApp, AppError>
+    async fn run_with_conn<C>(self, mut conn: C) -> Result<ApiAuthApp, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {
@@ -447,17 +447,9 @@ pub struct DeleteApiAuthAppCommand {
 }
 
 impl DeleteApiAuthAppCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
-    }
-
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<(), AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let result = sqlx::query!(
             r#"
@@ -468,7 +460,7 @@ impl DeleteApiAuthAppCommand {
             self.app_slug,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -499,10 +491,10 @@ impl EnsureUserApiAuthAppCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
+        self.run_with_conn(conn).await
     }
 
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<String, AppError>
+    async fn run_with_conn<C>(self, mut conn: C) -> Result<String, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {
@@ -540,7 +532,7 @@ impl EnsureUserApiAuthAppCommand {
             format!("OAuth identity for user {}", self.user_id),
             "sk_live".to_string(),
         )
-        .execute_with_deps(&mut *conn)
+        .run_with_conn(&mut *conn)
         .await;
 
         match create_result {

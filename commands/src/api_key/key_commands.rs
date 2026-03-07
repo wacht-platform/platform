@@ -113,20 +113,9 @@ impl CreateApiKeyCommand {
 }
 
 impl CreateApiKeyCommand {
-    pub async fn execute_with_db<'a, A>(
-        self,
-        acquirer: A,
-    ) -> Result<ApiKeyWithSecret, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<ApiKeyWithSecret, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
-    }
-
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<ApiKeyWithSecret, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let key_id = self
             .key_id
@@ -173,7 +162,7 @@ impl CreateApiKeyCommand {
             serde_json::to_value(&self.org_role_permissions)?,
             serde_json::to_value(&self.workspace_role_permissions)?,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         let key = ApiKey {
@@ -234,17 +223,9 @@ pub struct RevokeApiKeyCommand {
 }
 
 impl RevokeApiKeyCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
-    }
-
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<(), AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let result = sqlx::query!(
             r#"
@@ -260,7 +241,7 @@ impl RevokeApiKeyCommand {
             self.deployment_id,
             self.reason
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -293,10 +274,10 @@ impl RotateApiKeyCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let conn = acquirer.acquire().await?;
-        self.execute_with_deps(conn).await
+        self.run_with_conn(conn).await
     }
 
-    async fn execute_with_deps<C>(self, mut conn: C) -> Result<ApiKeyWithSecret, AppError>
+    async fn run_with_conn<C>(self, mut conn: C) -> Result<ApiKeyWithSecret, AppError>
     where
         C: std::ops::DerefMut<Target = sqlx::PgConnection>,
     {
@@ -558,6 +539,6 @@ impl RotateApiKeyCommand {
             workspace_role_permissions,
         };
 
-        create_command.execute_with_deps(&mut *conn).await
+        create_command.execute_with_db(&mut *conn).await
     }
 }
