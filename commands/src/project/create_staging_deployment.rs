@@ -22,11 +22,12 @@ impl CreateStagingDeploymentCommand {
         }
     }
 
-    pub async fn run_with_tx(
-        self,
-        ids: &dyn IdGenerator,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<Deployment, AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Deployment, AppError>
+    where
+        D: common::HasDbRouter + common::HasIdGenerator + Sync,
+    {
+        let mut tx = deps.db_router().writer().begin().await?;
+        let ids = DepsIdGeneratorAdapter::new(deps);
         let validator = ProjectValidator::new();
         validator.validate_auth_methods(&self.auth_methods)?;
 
@@ -184,6 +185,7 @@ impl CreateStagingDeploymentCommand {
             .execute_with_deps(tx.as_mut())
             .await?;
 
+        tx.commit().await?;
         Ok(Deployment {
             id: deployment_row.id,
             created_at: deployment_row.created_at,
@@ -200,17 +202,6 @@ impl CreateStagingDeploymentCommand {
             email_provider: EmailProvider::default(),
             custom_smtp_config: None,
         })
-    }
-
-    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Deployment, AppError>
-    where
-        D: common::HasDbRouter + common::HasIdGenerator + Sync,
-    {
-        let mut tx = deps.db_router().writer().begin().await?;
-        let ids = DepsIdGeneratorAdapter::new(deps);
-        let result = self.run_with_tx(&ids, &mut tx).await?;
-        tx.commit().await?;
-        Ok(result)
     }
 }
 

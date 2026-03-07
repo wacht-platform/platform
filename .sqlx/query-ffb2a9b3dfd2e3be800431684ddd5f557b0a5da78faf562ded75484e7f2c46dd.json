@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH org AS (\n                SELECT id\n                FROM organizations\n                WHERE deployment_id = $1 AND id = $2\n            ),\n            updated_signins_workspace AS (\n                UPDATE signins\n                SET active_workspace_membership_id = NULL\n                WHERE active_workspace_membership_id IN (\n                    SELECT id\n                    FROM workspace_memberships\n                    WHERE organization_id = $2\n                )\n            ),\n            deleted_workspace_membership_roles AS (\n                DELETE FROM workspace_membership_roles\n                WHERE workspace_membership_id IN (\n                    SELECT id\n                    FROM workspace_memberships\n                    WHERE organization_id = $2\n                )\n            ),\n            deleted_workspace_memberships AS (\n                DELETE FROM workspace_memberships\n                WHERE organization_id = $2\n            ),\n            deleted_workspace_roles AS (\n                DELETE FROM workspace_roles\n                WHERE organization_id = $2\n            ),\n            deleted_workspaces AS (\n                DELETE FROM workspaces\n                WHERE organization_id = $2\n            ),\n            updated_signins_org AS (\n                UPDATE signins\n                SET active_organization_membership_id = NULL\n                WHERE active_organization_membership_id IN (\n                    SELECT id\n                    FROM organization_memberships\n                    WHERE organization_id = $2\n                )\n            ),\n            deleted_org_membership_roles AS (\n                DELETE FROM organization_membership_roles\n                WHERE organization_id = $2\n            ),\n            deleted_org_memberships AS (\n                DELETE FROM organization_memberships\n                WHERE organization_id = $2\n            ),\n            deleted_org_roles AS (\n                DELETE FROM organization_roles\n                WHERE organization_id = $2\n            ),\n            deleted_org AS (\n                DELETE FROM organizations\n                WHERE deployment_id = $1 AND id = $2\n            )\n            SELECT EXISTS(SELECT 1 FROM org) AS \"org_exists!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "org_exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ffb2a9b3dfd2e3be800431684ddd5f557b0a5da78faf562ded75484e7f2c46dd"
+}

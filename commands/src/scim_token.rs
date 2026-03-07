@@ -64,31 +64,26 @@ impl GenerateScimTokenCommand {
 }
 
 impl GenerateScimTokenCommand {
-    pub async fn execute_with_db(
+    pub async fn execute_with_db<'e, E>(
         self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<GenerateScimTokenResponse, AppError> {
-        let mut conn = acquirer.acquire().await?;
+        executor: E,
+    ) -> Result<GenerateScimTokenResponse, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         let token_id = self
             .token_id
             .ok_or_else(|| AppError::Validation("token_id is required".to_string()))?;
-        // Delete any existing token for this connection
-        sqlx::query!(
-            r#"
-            DELETE FROM scim_tokens
-            WHERE enterprise_connection_id = $1
-            "#,
-            self.request.connection_id
-        )
-        .execute(&mut *conn)
-        .await?;
-
-        // Generate new token
         let (plain_token, token_prefix, token_hash) = Self::generate_token();
         let now = Utc::now();
 
-        let token = sqlx::query_as::<_, ScimToken>(
+        let token = sqlx::query_as!(
+            ScimToken,
             r#"
+            WITH deleted AS (
+                DELETE FROM scim_tokens
+                WHERE enterprise_connection_id = $2
+            )
             INSERT INTO scim_tokens (
                 id,
                 enterprise_connection_id,
@@ -103,17 +98,17 @@ impl GenerateScimTokenCommand {
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
             "#,
+            token_id,
+            self.request.connection_id,
+            self.deployment_id,
+            self.request.organization_id,
+            token_hash,
+            token_prefix,
+            true,
+            now,
+            now
         )
-        .bind(token_id)
-        .bind(self.request.connection_id)
-        .bind(self.deployment_id)
-        .bind(self.request.organization_id)
-        .bind(&token_hash)
-        .bind(&token_prefix)
-        .bind(true)
-        .bind(now)
-        .bind(now)
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(GenerateScimTokenResponse { token, plain_token })

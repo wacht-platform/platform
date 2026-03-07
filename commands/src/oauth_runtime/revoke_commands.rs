@@ -160,29 +160,20 @@ pub struct RevokeOAuthTokensByGrant {
 }
 
 impl RevokeOAuthTokensByGrant {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query(
             r#"
-            UPDATE oauth_access_tokens
-            SET revoked_at = NOW()
-            WHERE deployment_id = $1
-              AND oauth_client_id = $2
-              AND oauth_grant_id = $3
-              AND revoked_at IS NULL
-            "#,
-        )
-        .bind(self.deployment_id)
-        .bind(self.oauth_client_id)
-        .bind(self.oauth_grant_id)
-        .execute(&mut *conn)
-        .await?;
-
-        sqlx::query(
-            r#"
+            WITH revoked_access AS (
+                UPDATE oauth_access_tokens
+                SET revoked_at = NOW()
+                WHERE deployment_id = $1
+                  AND oauth_client_id = $2
+                  AND oauth_grant_id = $3
+                  AND revoked_at IS NULL
+            )
             UPDATE oauth_refresh_tokens
             SET revoked_at = NOW()
             WHERE deployment_id = $1
@@ -194,7 +185,7 @@ impl RevokeOAuthTokensByGrant {
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(self.oauth_grant_id)
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())

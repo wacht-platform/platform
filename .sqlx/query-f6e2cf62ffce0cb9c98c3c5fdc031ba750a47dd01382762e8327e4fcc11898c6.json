@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH org AS (\n                SELECT id\n                FROM organizations\n                WHERE deployment_id = $2 AND id = $3\n            ),\n            dup AS (\n                SELECT id\n                FROM organization_roles\n                WHERE organization_id = $3 AND name = $4\n            ),\n            ins AS (\n                INSERT INTO organization_roles (\n                    id, organization_id, deployment_id, name, permissions, created_at, updated_at\n                )\n                SELECT $1, $3, $2, $4, $5, $6, $7\n                FROM org\n                WHERE NOT EXISTS (SELECT 1 FROM dup)\n                RETURNING id, created_at, updated_at, permissions\n            )\n            SELECT\n                (SELECT EXISTS(SELECT 1 FROM org)) AS \"org_exists!\",\n                (SELECT EXISTS(SELECT 1 FROM dup)) AS \"role_exists!\",\n                ins.id,\n                ins.created_at,\n                ins.updated_at,\n                ins.permissions\n            FROM ins\n            UNION ALL\n            SELECT\n                (SELECT EXISTS(SELECT 1 FROM org)) AS \"org_exists!\",\n                (SELECT EXISTS(SELECT 1 FROM dup)) AS \"role_exists!\",\n                NULL::BIGINT AS id,\n                NULL::TIMESTAMPTZ AS created_at,\n                NULL::TIMESTAMPTZ AS updated_at,\n                NULL::TEXT[] AS permissions\n            WHERE NOT EXISTS (SELECT 1 FROM ins)\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "org_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "role_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "permissions",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "TextArray",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "f6e2cf62ffce0cb9c98c3c5fdc031ba750a47dd01382762e8327e4fcc11898c6"
+}

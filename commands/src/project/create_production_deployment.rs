@@ -80,11 +80,21 @@ impl CreateProductionDeploymentCommand {
         }
     }
 
-    pub async fn run_with_tx(
-        self,
-        deps: &ProductionDeploymentDeps<'_>,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<Deployment, AppError> {
+    pub async fn execute_with_deps<D>(self, app_deps: &D) -> Result<Deployment, AppError>
+    where
+        D: common::HasDbRouter
+            + common::HasIdGenerator
+            + common::HasCloudflareService
+            + common::HasPostmarkService
+            + Sync,
+    {
+        let mut tx = app_deps.db_router().writer().begin().await?;
+        let ids = DepsIdGeneratorAdapter::new(app_deps);
+        let deps = ProductionDeploymentDeps {
+            ids: &ids,
+            cloudflare_service: app_deps.cloudflare_service(),
+            postmark_service: app_deps.postmark_service(),
+        };
         let validator = ProjectValidator::new();
         validator.validate_domain_format(&self.custom_domain)?;
         validator.validate_auth_methods(&self.auth_methods)?;
@@ -305,7 +315,7 @@ impl CreateProductionDeploymentCommand {
             Err(e) => {
                 tracing::error!("Failed to create backend custom hostname: {}", e);
                 self.cleanup_external_resources_on_failure(
-                    deps,
+                    &deps,
                     &frontend_hostname,
                     &backend_hostname,
                     &self.custom_domain,
@@ -354,6 +364,7 @@ impl CreateProductionDeploymentCommand {
             backend_hostname
         );
 
+        tx.commit().await?;
         Ok(Deployment {
             id: deployment_row.id,
             created_at: deployment_row.created_at,
@@ -376,26 +387,6 @@ impl CreateProductionDeploymentCommand {
                     c
                 }),
         })
-    }
-
-    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Deployment, AppError>
-    where
-        D: common::HasDbRouter
-            + common::HasIdGenerator
-            + common::HasCloudflareService
-            + common::HasPostmarkService
-            + Sync,
-    {
-        let mut tx = deps.db_router().writer().begin().await?;
-        let ids = DepsIdGeneratorAdapter::new(deps);
-        let production_deps = ProductionDeploymentDeps {
-            ids: &ids,
-            cloudflare_service: deps.cloudflare_service(),
-            postmark_service: deps.postmark_service(),
-        };
-        let result = self.run_with_tx(&production_deps, &mut tx).await?;
-        tx.commit().await?;
-        Ok(result)
     }
 }
 

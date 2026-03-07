@@ -21,11 +21,10 @@ impl VerifyDeploymentDnsRecordsCommand {
         self,
         deps: &VerifyDeploymentDnsDeps<'_>,
     ) -> Result<Deployment, AppError> {
-        let mut conn = deps.db_router.writer().acquire().await?;
         // Get current deployment with DNS records
         let deployment_row = DeploymentByIdQuery::builder()
             .deployment_id(self.deployment_id)
-            .execute_with_deps(&mut conn)
+            .execute_with_db(deps.db_router.writer())
             .await?;
 
         // Extract domain from backend host for email verification
@@ -98,7 +97,7 @@ impl VerifyDeploymentDnsRecordsCommand {
                 serde_json::to_value(&email_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_with_deps(&mut conn)
+            .execute_with_db(deps.db_router.writer())
             .await?;
 
         let _final_verification_status = match verification_status {

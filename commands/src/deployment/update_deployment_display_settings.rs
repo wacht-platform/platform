@@ -22,7 +22,7 @@ impl UpdateDeploymentDisplaySettingsCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let mut query_builder =
             sqlx::QueryBuilder::new("UPDATE deployment_ui_settings SET updated_at = NOW() ");
 
@@ -175,7 +175,7 @@ impl UpdateDeploymentDisplaySettingsCommand {
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 
-        let result = query_builder.build().execute(&mut *conn).await?;
+        let result = query_builder.build().execute(writer).await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound(format!(

@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH scheme AS (\n                SELECT 1\n                FROM rate_limit_schemes\n                WHERE deployment_id = $1 AND slug = $2\n            ),\n            app_refs AS (\n                SELECT COUNT(*)::BIGINT AS count\n                FROM api_auth_apps\n                WHERE deployment_id = $1\n                  AND deleted_at IS NULL\n                  AND rate_limit_scheme_slug = $2\n            ),\n            key_refs AS (\n                SELECT COUNT(*)::BIGINT AS count\n                FROM api_keys\n                WHERE deployment_id = $1\n                  AND revoked_at IS NULL\n                  AND rate_limit_scheme_slug = $2\n            ),\n            del AS (\n                DELETE FROM rate_limit_schemes\n                WHERE deployment_id = $1\n                  AND slug = $2\n                  AND (SELECT count FROM app_refs) = 0\n                  AND (SELECT count FROM key_refs) = 0\n            )\n            SELECT\n                EXISTS(SELECT 1 FROM scheme) AS \"scheme_exists!\",\n                (SELECT count FROM app_refs) AS \"app_ref_count!\",\n                (SELECT count FROM key_refs) AS \"key_ref_count!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "scheme_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "app_ref_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "key_ref_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "e763c13ccc95b6659b879552109ece955fcccbcab6ace539257d1f1e636814a1"
+}

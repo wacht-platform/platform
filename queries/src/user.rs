@@ -47,14 +47,13 @@ impl DeploymentActiveUserListQuery {
         Self { search, ..self }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<UserWithIdentifiers>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
         let sort_order = self.sort_order.as_deref().unwrap_or("desc");
 
@@ -138,7 +137,7 @@ impl DeploymentActiveUserListQuery {
         query_builder.push(" LIMIT ");
         query_builder.push_bind(self.limit);
 
-        let rows = query_builder.build().fetch_all(&mut *conn).await?;
+        let rows = query_builder.build().fetch_all(executor).await?;
 
         let users = rows
             .into_iter()
@@ -200,14 +199,13 @@ impl DeploymentInvitationQuery {
         Self { search, ..self }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<DeploymentInvitation>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
         let sort_order = self.sort_order.as_deref().unwrap_or("desc");
 
@@ -257,7 +255,7 @@ impl DeploymentInvitationQuery {
         query_builder.push(" LIMIT ");
         query_builder.push_bind(self.limit);
 
-        let rows = query_builder.build().fetch_all(&mut *conn).await?;
+        let rows = query_builder.build().fetch_all(executor).await?;
 
         let invitations = rows
             .into_iter()
@@ -319,14 +317,13 @@ impl DeploymentWaitlistQuery {
         Self { search, ..self }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<DeploymentWaitlistUser>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let sort_key = self.sort_key.as_deref().unwrap_or("created_at");
         let sort_order = self.sort_order.as_deref().unwrap_or("desc");
 
@@ -375,7 +372,7 @@ impl DeploymentWaitlistQuery {
         query_builder.push(" LIMIT ");
         query_builder.push_bind(self.limit);
 
-        let rows = query_builder.build().fetch_all(&mut *conn).await?;
+        let rows = query_builder.build().fetch_all(executor).await?;
 
         let waitlist_users = rows
             .into_iter()
@@ -411,7 +408,7 @@ impl GetUserDetailsQuery {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
+        let mut tx = acquirer.begin().await?;
         let user_row = sqlx::query!(
             r#"
             SELECT
@@ -433,7 +430,7 @@ impl GetUserDetailsQuery {
             self.deployment_id,
             self.user_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *tx)
         .await?;
 
         let email_rows = sqlx::query!(
@@ -447,7 +444,7 @@ impl GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *tx)
         .await?;
 
         let email_addresses = email_rows
@@ -479,7 +476,7 @@ impl GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *tx)
         .await?;
 
         let phone_numbers = phone_rows
@@ -506,7 +503,7 @@ impl GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *tx)
         .await?;
 
         let social_connections = social_rows
@@ -536,7 +533,7 @@ impl GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *tx)
         .await?;
 
         let user_details = UserDetails {
@@ -578,6 +575,7 @@ impl GetUserDetailsQuery {
             has_backup_codes: user_row.backup_codes.is_some()
                 && !user_row.backup_codes.unwrap_or_default().is_empty(),
         };
+        tx.commit().await?;
 
         Ok(user_details)
     }
@@ -592,14 +590,13 @@ impl GetUserAuthenticatorQuery {
         Self { user_id }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<models::UserAuthenticator, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, user_id, totp_secret, otp_url
@@ -608,7 +605,7 @@ impl GetUserAuthenticatorQuery {
             "#,
             self.user_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(models::UserAuthenticator {

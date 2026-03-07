@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH client AS (\n                SELECT oa.supported_scopes\n                FROM oauth_clients c\n                INNER JOIN oauth_apps oa\n                  ON oa.id = c.oauth_app_id\n                 AND oa.deployment_id = c.deployment_id\n                WHERE c.deployment_id = $1\n                  AND c.id = $2\n            ),\n            ins AS (\n                INSERT INTO oauth_client_grants (\n                    id,\n                    deployment_id,\n                    app_slug,\n                    oauth_client_id,\n                    resource,\n                    scopes,\n                    status,\n                    granted_at,\n                    expires_at,\n                    granted_by_user_id,\n                    created_at,\n                    updated_at\n                )\n                SELECT\n                    $3,\n                    $1,\n                    $4,\n                    $2,\n                    $5,\n                    $6,\n                    'active',\n                    NOW(),\n                    $7,\n                    $8,\n                    NOW(),\n                    NOW()\n                FROM client\n                WHERE jsonb_array_length((SELECT supported_scopes FROM client)) > 0\n                  AND NOT EXISTS (\n                    SELECT 1\n                    FROM jsonb_array_elements_text($6::jsonb) req(scope)\n                    WHERE NOT ((SELECT supported_scopes FROM client) ? req.scope)\n                  )\n                RETURNING id\n            )\n            SELECT\n                EXISTS(SELECT 1 FROM client) AS \"client_exists!\",\n                COALESCE((SELECT supported_scopes FROM client), '[]'::jsonb) AS \"supported_scopes!: serde_json::Value\",\n                (SELECT id FROM ins) AS \"grant_id?\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "client_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "supported_scopes!: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "grant_id?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "0b4fbe7ea0f5e3e41b4772d62b79e678039f93b99f5ed93c13e68ee3568e9793"
+}

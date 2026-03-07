@@ -27,14 +27,13 @@ impl CreateSubscriptionCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Subscription, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let subscription = sqlx::query_as::<_, Subscription>(
             r#"
             INSERT INTO subscriptions (
@@ -54,7 +53,7 @@ impl CreateSubscriptionCommand {
         .bind(&self.provider_customer_id)
         .bind(&self.provider_subscription_id)
         .bind(&self.status)
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(subscription)
@@ -67,11 +66,10 @@ pub struct UpdateSubscriptionStatusCommand {
 }
 
 impl UpdateSubscriptionStatusCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<Subscription, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Subscription, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let subscription = sqlx::query_as::<_, Subscription>(
             r#"
             UPDATE subscriptions 
@@ -82,7 +80,7 @@ impl UpdateSubscriptionStatusCommand {
         )
         .bind(&self.status)
         .bind(self.subscription_id)
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(subscription)
@@ -133,60 +131,24 @@ impl UpsertSubscriptionCommand {
 
     pub async fn execute_with_db<'a, A>(
         self,
-        acquirer: A,
+        executor: A,
     ) -> Result<Subscription, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        A: sqlx::Executor<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let billing_account_id: Option<i64> = sqlx::query_scalar!(
-            "SELECT id FROM billing_accounts WHERE owner_id = $1",
-            self.owner_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let billing_account_id = match billing_account_id {
-            Some(id) => id,
-            None => {
-                return Err(AppError::Validation(
-                    "Billing account not found for owner".to_string(),
-                ));
-            }
-        };
-
-        let existing_id: Option<i64> = sqlx::query_scalar!(
-            "SELECT id FROM subscriptions WHERE billing_account_id = $1",
-            billing_account_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let subscription = if let Some(id) = existing_id {
-            sqlx::query_as::<_, Subscription>(
-                r#"
-                UPDATE subscriptions SET
-                    provider_customer_id = $1,
-                    provider_subscription_id = $2,
-                    product_id = $3,
-                    status = $4,
-                    previous_billing_date = $5,
-                    updated_at = NOW()
-                WHERE id = $6
-                RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
-                "#,
-            )
-            .bind(&self.provider_customer_id)
-            .bind(&self.provider_subscription_id)
-            .bind(&self.product_id)
-            .bind(&self.status)
-            .bind(self.previous_billing_date)
-            .bind(id)
-            .fetch_one(&mut *conn)
-            .await?
-        } else {
-            sqlx::query_as::<_, Subscription>(
-                r#"
+        let row = sqlx::query!(
+            r#"
+            WITH account AS (
+                SELECT id AS billing_account_id
+                FROM billing_accounts
+                WHERE owner_id = $1
+            ),
+            existing AS (
+                SELECT s.id
+                FROM subscriptions s
+                WHERE s.billing_account_id = (SELECT billing_account_id FROM account)
+            ),
+            upsert AS (
                 INSERT INTO subscriptions (
                     id,
                     billing_account_id,
@@ -197,21 +159,82 @@ impl UpsertSubscriptionCommand {
                     previous_billing_date,
                     created_at,
                     updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+                )
+                SELECT
+                    COALESCE((SELECT id FROM existing), $2),
+                    (SELECT billing_account_id FROM account),
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    $7,
+                    NOW(),
+                    NOW()
+                WHERE EXISTS(SELECT 1 FROM account)
+                ON CONFLICT (id) DO UPDATE SET
+                    provider_customer_id = EXCLUDED.provider_customer_id,
+                    provider_subscription_id = EXCLUDED.provider_subscription_id,
+                    product_id = EXCLUDED.product_id,
+                    status = EXCLUDED.status,
+                    previous_billing_date = EXCLUDED.previous_billing_date,
+                    updated_at = NOW()
                 RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
-                "#,
             )
-            .bind(self.id)
-            .bind(billing_account_id)
-            .bind(&self.provider_customer_id)
-            .bind(&self.provider_subscription_id)
-            .bind(&self.product_id)
-            .bind(&self.status)
-            .bind(self.previous_billing_date)
-            .fetch_one(&mut *conn)
-            .await?
-        };
+            SELECT
+                EXISTS(SELECT 1 FROM account) AS "account_exists!",
+                upsert.id,
+                upsert.billing_account_id,
+                upsert.provider_customer_id,
+                upsert.provider_subscription_id,
+                upsert.product_id,
+                upsert.status,
+                upsert.previous_billing_date,
+                upsert.created_at,
+                upsert.updated_at
+            FROM upsert
+            UNION ALL
+            SELECT
+                EXISTS(SELECT 1 FROM account) AS "account_exists!",
+                NULL::BIGINT AS id,
+                NULL::BIGINT AS billing_account_id,
+                NULL::TEXT AS provider_customer_id,
+                NULL::TEXT AS provider_subscription_id,
+                NULL::TEXT AS product_id,
+                NULL::TEXT AS status,
+                NULL::TIMESTAMPTZ AS previous_billing_date,
+                NOW() AS created_at,
+                NOW() AS updated_at
+            WHERE NOT EXISTS(SELECT 1 FROM upsert)
+            LIMIT 1
+            "#,
+            self.owner_id,
+            self.id,
+            self.provider_customer_id,
+            self.provider_subscription_id,
+            self.product_id,
+            self.status,
+            self.previous_billing_date
+        )
+        .fetch_one(executor)
+        .await?;
 
-        Ok(subscription)
+        if !row.account_exists {
+            return Err(AppError::Validation(
+                "Billing account not found for owner".to_string(),
+            ));
+        }
+
+        Ok(Subscription {
+            id: row.id.unwrap_or(self.id),
+            billing_account_id: row.billing_account_id.unwrap_or_default(),
+            provider_customer_id: row.provider_customer_id.unwrap_or_default(),
+            provider_subscription_id: row.provider_subscription_id.unwrap_or_default(),
+            product_id: row.product_id,
+            plan_name: None,
+            status: row.status.unwrap_or_default(),
+            previous_billing_date: row.previous_billing_date,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
     }
 }

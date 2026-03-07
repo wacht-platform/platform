@@ -16,11 +16,10 @@ pub struct CreateMemoryCommand {
 }
 
 impl CreateMemoryCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<MemoryRecord, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<MemoryRecord, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
         let embedding = if self.embedding.is_empty() {
             None
@@ -61,7 +60,7 @@ impl CreateMemoryCommand {
         .bind(now)
         .bind(self.creation_context_id)
         .bind(self.agent_id)
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::from)?;
 
@@ -75,11 +74,10 @@ pub struct UpdateMemoryAccessCommand {
 }
 
 impl UpdateMemoryAccessCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query(
             r#"
             UPDATE memories
@@ -89,7 +87,7 @@ impl UpdateMemoryAccessCommand {
             "#,
         )
         .bind(self.memory_id)
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())
@@ -102,18 +100,17 @@ pub struct DeleteMemoriesCommand {
 }
 
 impl DeleteMemoriesCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<u64, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<u64, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         if self.memory_ids.is_empty() {
             return Ok(0);
         }
-        let mut conn = acquirer.acquire().await?;
 
         let result = sqlx::query(r#"DELETE FROM memories WHERE id = ANY($1)"#)
             .bind(&self.memory_ids)
-            .execute(&mut *conn)
+            .execute(executor)
             .await?;
 
         Ok(result.rows_affected())

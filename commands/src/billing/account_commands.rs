@@ -81,11 +81,10 @@ impl CreateBillingAccountCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<i64, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             INSERT INTO billing_accounts (
@@ -128,7 +127,7 @@ impl CreateBillingAccountCommand {
             self.postal_code.as_deref().unwrap_or(""),
             self.country.as_deref().unwrap_or("US")
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(self.id)
@@ -232,11 +231,10 @@ pub struct UpdateBillingAccountFromWebhookCommand {
 }
 
 impl UpdateBillingAccountCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let mut query = String::from("UPDATE billing_accounts SET updated_at = NOW()");
         let mut param_count = 1;
 
@@ -329,7 +327,7 @@ impl UpdateBillingAccountCommand {
         // Finally bind the id for the WHERE clause
         q = q.bind(self.id);
 
-        q.execute(&mut *conn).await?;
+        q.execute(executor).await?;
 
         Ok(())
     }
@@ -357,11 +355,10 @@ fn normalize_billing_account_status(status: &str) -> &'static str {
 }
 
 impl UpdateBillingAccountStatusCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let normalized_status = normalize_billing_account_status(&self.status);
 
         sqlx::query!(
@@ -373,7 +370,7 @@ impl UpdateBillingAccountStatusCommand {
             normalized_status,
             self.owner_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())
@@ -395,11 +392,10 @@ impl SetProviderCustomerIdCommand {
 }
 
 impl SetProviderCustomerIdCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             UPDATE billing_accounts
@@ -409,7 +405,7 @@ impl SetProviderCustomerIdCommand {
             self.provider_customer_id,
             self.owner_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())
@@ -431,11 +427,10 @@ impl MarkCheckoutSessionCreatedCommand {
 }
 
 impl MarkCheckoutSessionCreatedCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             UPDATE billing_accounts
@@ -453,7 +448,7 @@ impl MarkCheckoutSessionCreatedCommand {
             self.checkout_session_id,
             self.owner_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())
@@ -475,11 +470,10 @@ impl MarkPaymentSucceededCommand {
 }
 
 impl MarkPaymentSucceededCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             UPDATE billing_accounts
@@ -497,7 +491,7 @@ impl MarkPaymentSucceededCommand {
             self.webhook_event,
             self.owner_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())
@@ -519,11 +513,10 @@ impl MarkSubscriptionActivatedCommand {
 }
 
 impl MarkSubscriptionActivatedCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             UPDATE billing_accounts
@@ -541,7 +534,7 @@ impl MarkSubscriptionActivatedCommand {
             self.webhook_event,
             self.owner_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())
@@ -565,11 +558,10 @@ impl MarkCheckoutFlowFailedCommand {
 }
 
 impl MarkCheckoutFlowFailedCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             UPDATE billing_accounts
@@ -584,7 +576,7 @@ impl MarkCheckoutFlowFailedCommand {
             self.reason,
             self.owner_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())
@@ -592,11 +584,10 @@ impl MarkCheckoutFlowFailedCommand {
 }
 
 impl UpdateBillingAccountFromWebhookCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         // Simple approach: just update all fields that are provided
         // Use COALESCE to keep existing values if new value is NULL
         sqlx::query!(
@@ -626,7 +617,7 @@ impl UpdateBillingAccountFromWebhookCommand {
             self.country,
             self.owner_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())

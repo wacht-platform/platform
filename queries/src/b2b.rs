@@ -16,21 +16,20 @@ impl GetDeploymentWorkspaceRolesQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<DeploymentWorkspaceRole>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rows = query_as!(
             DeploymentWorkspaceRole,
             r#"
             SELECT * FROM workspace_roles WHERE deployment_id = $1"#,
             self.deployment_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(rows)
@@ -46,20 +45,19 @@ impl GetDeploymentOrganizationRolesQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<DeploymentOrganizationRole>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rows = query_as!(
             DeploymentOrganizationRole,
             r#"SELECT * FROM organization_roles WHERE deployment_id = $1"#,
             self.deployment_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(rows)
@@ -112,11 +110,10 @@ impl DeploymentOrganizationListQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<Organization>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<Organization>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
@@ -160,7 +157,7 @@ impl DeploymentOrganizationListQuery {
         qb.push(" LIMIT ");
         qb.push_bind(self.limit);
 
-        let rows = qb.build().fetch_all(&mut *conn).await?;
+        let rows = qb.build().fetch_all(executor).await?;
 
         Ok(rows
             .into_iter()
@@ -225,14 +222,13 @@ impl DeploymentWorkspaceListQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<WorkspaceWithOrganizationName>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
@@ -291,7 +287,7 @@ impl DeploymentWorkspaceListQuery {
         qb.push(" LIMIT ");
         qb.push_bind(self.limit);
 
-        let rows = qb.build().fetch_all(&mut *conn).await?;
+        let rows = qb.build().fetch_all(executor).await?;
 
         Ok(rows
             .into_iter()
@@ -322,105 +318,93 @@ impl GetOrganizationDetailsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<OrganizationDetails, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<OrganizationDetails, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let org_row = sqlx::query!(
+        let row = sqlx::query(
             r#"
             SELECT
                 o.id, o.created_at, o.updated_at,
                 o.name, o.image_url, o.description, o.member_count,
-                o.public_metadata, o.private_metadata
+                o.public_metadata, o.private_metadata,
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'id', r.id,
+                            'created_at', r.created_at,
+                            'updated_at', r.updated_at,
+                            'name', r.name,
+                            'permissions', r.permissions,
+                            'is_deployment_level', (r.organization_id IS NULL)
+                        )
+                        ORDER BY r.created_at
+                    )
+                    FROM organization_roles r
+                    WHERE (r.deployment_id = o.deployment_id AND r.organization_id IS NULL)
+                       OR r.organization_id = o.id
+                ), '[]'::json) AS roles,
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'id', w.id,
+                            'created_at', w.created_at,
+                            'updated_at', w.updated_at,
+                            'name', w.name,
+                            'image_url', COALESCE(w.image_url, ''),
+                            'description', COALESCE(w.description, ''),
+                            'member_count', w.member_count,
+                            'public_metadata', w.public_metadata,
+                            'private_metadata', w.private_metadata
+                        )
+                        ORDER BY w.created_at DESC
+                    )
+                    FROM workspaces w
+                    WHERE w.organization_id = o.id
+                ), '[]'::json) AS workspaces,
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'id', s.id,
+                            'created_at', s.created_at,
+                            'updated_at', s.updated_at,
+                            'deleted_at', s.deleted_at,
+                            'deployment_id', s.deployment_id,
+                            'name', s.name,
+                            'type', s.type
+                        )
+                        ORDER BY s.created_at DESC
+                    )
+                    FROM segments s
+                    JOIN organization_segments os ON os.segment_id = s.id
+                    WHERE os.organization_id = o.id
+                ), '[]'::json) AS segments
             FROM organizations o
             WHERE o.deployment_id = $1 AND o.id = $2
             "#,
-            self.deployment_id,
-            self.organization_id
         )
-        .fetch_one(&mut *conn)
-        .await?;
+        .bind(self.deployment_id)
+        .bind(self.organization_id)
+        .fetch_optional(executor)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Organization not found".to_string()))?;
 
-        let role_rows = sqlx::query!(
-            r#"
-            SELECT id, created_at, updated_at, name, permissions, organization_id
-            FROM organization_roles
-            WHERE (deployment_id = $1 AND organization_id IS NULL)
-               OR organization_id = $2
-            "#,
-            self.deployment_id,
-            self.organization_id
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let roles: Vec<OrganizationRole> = role_rows
-            .into_iter()
-            .map(|row| OrganizationRole {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                name: row.name,
-                permissions: row.permissions,
-                is_deployment_level: row.organization_id.is_none(),
-            })
-            .collect();
-
-        let workspace_rows = sqlx::query!(
-            r#"
-            SELECT
-                id, created_at, updated_at,
-                name, image_url as "image_url?", description as "description?", member_count,
-                public_metadata, private_metadata
-            FROM workspaces
-            WHERE organization_id = $1
-            ORDER BY created_at DESC
-            "#,
-            self.organization_id
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let workspaces: Vec<Workspace> = workspace_rows
-            .into_iter()
-            .map(|row| Workspace {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                name: row.name,
-                image_url: row.image_url.unwrap_or_default(),
-                description: row.description.unwrap_or_default(),
-                member_count: row.member_count,
-                public_metadata: row.public_metadata,
-                private_metadata: row.private_metadata,
-            })
-            .collect();
-
-        let segments = sqlx::query_as!(
-            models::Segment,
-            r#"
-            SELECT s.id, s.created_at, s.updated_at, s.deleted_at, s.deployment_id, s.name,
-                   s.type as "segment_type: _"
-            FROM segments s
-            JOIN organization_segments os ON s.id = os.segment_id
-            WHERE os.organization_id = $1
-            "#,
-            self.organization_id
-        )
-        .fetch_all(&mut *conn)
-        .await?;
+        let roles: Vec<OrganizationRole> = serde_json::from_value(row.get("roles")).unwrap_or_default();
+        let workspaces: Vec<Workspace> =
+            serde_json::from_value(row.get("workspaces")).unwrap_or_default();
+        let segments: Vec<models::Segment> =
+            serde_json::from_value(row.get("segments")).unwrap_or_default();
 
         Ok(OrganizationDetails {
-            id: org_row.id,
-            created_at: org_row.created_at,
-            updated_at: org_row.updated_at,
-            name: org_row.name,
-            image_url: org_row.image_url,
-            description: org_row.description.unwrap_or_default(),
-            member_count: org_row.member_count,
-            public_metadata: org_row.public_metadata,
-            private_metadata: org_row.private_metadata,
+            id: row.get("id"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+            name: row.get("name"),
+            image_url: row.get("image_url"),
+            description: row.get::<Option<String>, _>("description").unwrap_or_default(),
+            member_count: row.get("member_count"),
+            public_metadata: row.get("public_metadata"),
+            private_metadata: row.get("private_metadata"),
             roles,
             workspaces,
             segments,
@@ -441,79 +425,77 @@ impl GetWorkspaceDetailsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<WorkspaceDetails, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<WorkspaceDetails, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let workspace_row = sqlx::query!(
+        let row = sqlx::query(
             r#"
             SELECT
                 w.id, w.created_at, w.updated_at,
                 w.name, w.image_url, w.description, w.member_count,
                 w.public_metadata, w.private_metadata, w.organization_id,
-                o.name as "organization_name?"
+                COALESCE(o.name, '') AS organization_name,
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'id', r.id,
+                            'created_at', r.created_at,
+                            'updated_at', r.updated_at,
+                            'name', r.name,
+                            'permissions', r.permissions,
+                            'is_deployment_level', (r.workspace_id IS NULL)
+                        )
+                        ORDER BY r.created_at
+                    )
+                    FROM workspace_roles r
+                    WHERE (r.deployment_id = w.deployment_id AND r.workspace_id IS NULL)
+                       OR r.workspace_id = w.id
+                ), '[]'::json) AS roles,
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'id', s.id,
+                            'created_at', s.created_at,
+                            'updated_at', s.updated_at,
+                            'deleted_at', s.deleted_at,
+                            'deployment_id', s.deployment_id,
+                            'name', s.name,
+                            'type', s.type
+                        )
+                        ORDER BY s.created_at DESC
+                    )
+                    FROM segments s
+                    JOIN workspace_segments ws ON ws.segment_id = s.id
+                    WHERE ws.workspace_id = w.id
+                ), '[]'::json) AS segments
             FROM workspaces w
             LEFT JOIN organizations o ON w.organization_id = o.id
             WHERE w.deployment_id = $1 AND w.id = $2
             "#,
-            self.deployment_id,
-            self.workspace_id
         )
-        .fetch_one(&mut *conn)
-        .await?;
+        .bind(self.deployment_id)
+        .bind(self.workspace_id)
+        .fetch_optional(executor)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Workspace not found".to_string()))?;
 
-        let role_rows = sqlx::query!(
-            r#"
-            SELECT id, created_at, updated_at, name, permissions, workspace_id
-            FROM workspace_roles
-            WHERE (deployment_id = $1 AND workspace_id IS NULL)
-               OR workspace_id = $2
-            "#,
-            self.deployment_id,
-            self.workspace_id
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let roles: Vec<WorkspaceRole> = role_rows
-            .into_iter()
-            .map(|row| WorkspaceRole {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                name: row.name,
-                permissions: row.permissions,
-                is_deployment_level: row.workspace_id.is_none(),
-            })
-            .collect();
-
-        let segments = sqlx::query_as!(
-            models::Segment,
-            r#"
-            SELECT s.id, s.created_at, s.updated_at, s.deleted_at, s.deployment_id, s.name,
-                   s.type as "segment_type: _"
-            FROM segments s
-            JOIN workspace_segments ws ON s.id = ws.segment_id
-            WHERE ws.workspace_id = $1
-            "#,
-            self.workspace_id
-        )
-        .fetch_all(&mut *conn)
-        .await?;
+        let roles: Vec<WorkspaceRole> = serde_json::from_value(row.get("roles")).unwrap_or_default();
+        let segments: Vec<models::Segment> =
+            serde_json::from_value(row.get("segments")).unwrap_or_default();
 
         Ok(WorkspaceDetails {
-            id: workspace_row.id,
-            created_at: workspace_row.created_at,
-            updated_at: workspace_row.updated_at,
-            name: workspace_row.name,
-            image_url: workspace_row.image_url,
-            description: workspace_row.description,
-            member_count: workspace_row.member_count as i32,
-            public_metadata: workspace_row.public_metadata,
-            private_metadata: workspace_row.private_metadata,
-            organization_id: workspace_row.organization_id,
-            organization_name: workspace_row.organization_name.unwrap_or_default(),
+            id: row.get("id"),
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+            name: row.get("name"),
+            image_url: row.get("image_url"),
+            description: row.get("description"),
+            member_count: row.get::<i64, _>("member_count") as i32,
+            public_metadata: row.get("public_metadata"),
+            private_metadata: row.get("private_metadata"),
+            organization_id: row.get("organization_id"),
+            organization_name: row.get("organization_name"),
             roles,
             segments,
         })
@@ -566,14 +548,13 @@ impl GetOrganizationMembersQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<(Vec<OrganizationMemberDetails>, bool), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
@@ -678,7 +659,7 @@ impl GetOrganizationMembersQuery {
         qb.push(" OFFSET ");
         qb.push_bind(self.offset);
 
-        let member_rows = qb.build().fetch_all(&mut *conn).await?;
+        let member_rows = qb.build().fetch_all(executor).await?;
 
         let has_more = member_rows.len() > self.limit as usize;
         let members: Vec<OrganizationMemberDetails> = member_rows
@@ -763,14 +744,13 @@ impl GetWorkspaceMembersQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<(Vec<WorkspaceMemberDetails>, bool), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             r#"
             SELECT
@@ -875,7 +855,7 @@ impl GetWorkspaceMembersQuery {
         qb.push(" OFFSET ");
         qb.push_bind(self.offset);
 
-        let member_rows = qb.build().fetch_all(&mut *conn).await?;
+        let member_rows = qb.build().fetch_all(executor).await?;
 
         let has_more = member_rows.len() > self.limit as usize;
         let members: Vec<WorkspaceMemberDetails> = member_rows

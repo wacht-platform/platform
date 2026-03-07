@@ -23,25 +23,13 @@ impl CreateOAuthClientGrantCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OAuthClientGrantCreated, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<OAuthClientGrantCreated, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let conn = acquirer.acquire().await?;
         let grant_id = self
             .grant_id
             .ok_or_else(|| AppError::Validation("grant_id is required".to_string()))?;
-        self.run_with_conn(conn, grant_id).await
-    }
-
-    async fn run_with_conn<C>(
-        self,
-        mut conn: C,
-        grant_id: i64,
-    ) -> Result<OAuthClientGrantCreated, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
         let resource = self.resource.trim();
         if resource.is_empty() {
             return Err(AppError::Validation("resource is required".to_string()));
@@ -63,25 +51,78 @@ impl CreateOAuthClientGrantCommand {
                 "resource must be an absolute URI (e.g. urn:wacht:workspace:123)".to_string(),
             ));
         }
-        let scope_policy = sqlx::query!(
+        let scopes_json = serde_json::to_value(&self.scopes)?;
+        let row = sqlx::query!(
             r#"
-            SELECT oa.supported_scopes as "supported_scopes: serde_json::Value"
-            FROM oauth_clients c
-            INNER JOIN oauth_apps oa
-              ON oa.id = c.oauth_app_id
-             AND oa.deployment_id = c.deployment_id
-            WHERE c.deployment_id = $1
-              AND c.id = $2
+            WITH client AS (
+                SELECT oa.supported_scopes
+                FROM oauth_clients c
+                INNER JOIN oauth_apps oa
+                  ON oa.id = c.oauth_app_id
+                 AND oa.deployment_id = c.deployment_id
+                WHERE c.deployment_id = $1
+                  AND c.id = $2
+            ),
+            ins AS (
+                INSERT INTO oauth_client_grants (
+                    id,
+                    deployment_id,
+                    app_slug,
+                    oauth_client_id,
+                    resource,
+                    scopes,
+                    status,
+                    granted_at,
+                    expires_at,
+                    granted_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                SELECT
+                    $3,
+                    $1,
+                    $4,
+                    $2,
+                    $5,
+                    $6,
+                    'active',
+                    NOW(),
+                    $7,
+                    $8,
+                    NOW(),
+                    NOW()
+                FROM client
+                WHERE jsonb_array_length((SELECT supported_scopes FROM client)) > 0
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements_text($6::jsonb) req(scope)
+                    WHERE NOT ((SELECT supported_scopes FROM client) ? req.scope)
+                  )
+                RETURNING id
+            )
+            SELECT
+                EXISTS(SELECT 1 FROM client) AS "client_exists!",
+                COALESCE((SELECT supported_scopes FROM client), '[]'::jsonb) AS "supported_scopes!: serde_json::Value",
+                (SELECT id FROM ins) AS "grant_id?"
             "#,
             self.deployment_id,
-            self.oauth_client_id
+            self.oauth_client_id,
+            grant_id,
+            self.api_auth_app_slug,
+            resource,
+            scopes_json,
+            self.expires_at,
+            self.granted_by_user_id
         )
-        .fetch_optional(&mut *conn)
-        .await?
-        .ok_or_else(|| AppError::NotFound("OAuth client not found".to_string()))?;
+        .fetch_one(executor)
+        .await?;
+
+        if !row.client_exists {
+            return Err(AppError::NotFound("OAuth client not found".to_string()));
+        }
 
         let supported_scopes: Vec<String> =
-            serde_json::from_value(scope_policy.supported_scopes).unwrap_or_default();
+            serde_json::from_value(row.supported_scopes).unwrap_or_default();
         if supported_scopes.is_empty() {
             return Err(AppError::Validation(
                 "OAuth app has no supported scopes configured".to_string(),
@@ -100,39 +141,11 @@ impl CreateOAuthClientGrantCommand {
                 invalid_scopes.join(", ")
             )));
         }
+        let inserted_id = row
+            .grant_id
+            .ok_or_else(|| AppError::BadRequest("Failed to create OAuth client grant".to_string()))?;
 
-        let rec = sqlx::query!(
-            r#"
-            INSERT INTO oauth_client_grants (
-                id,
-                deployment_id,
-                app_slug,
-                oauth_client_id,
-                resource,
-                scopes,
-                status,
-                granted_at,
-                expires_at,
-                granted_by_user_id,
-                created_at,
-                updated_at
-            )
-            VALUES ($1,$2,$3,$4,$5,$6,'active',NOW(),$7,$8,NOW(),NOW())
-            RETURNING id
-            "#,
-            grant_id,
-            self.deployment_id,
-            self.api_auth_app_slug,
-            self.oauth_client_id,
-            resource,
-            serde_json::to_value(&self.scopes)?,
-            self.expires_at,
-            self.granted_by_user_id
-        )
-        .fetch_one(&mut *conn)
-        .await?;
-
-        Ok(OAuthClientGrantCreated { id: rec.id })
+        Ok(OAuthClientGrantCreated { id: inserted_id })
     }
 }
 

@@ -52,21 +52,23 @@ impl ListRateLimitSchemesQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<RateLimitSchemeData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut conn).await
+        self.execute_with_deps(executor).await
     }
 
-    pub(crate) async fn execute_with_deps(
+    pub(crate) async fn execute_with_deps<'e, E>(
         &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<Vec<RateLimitSchemeData>, AppError> {
+        executor: E,
+    ) -> Result<Vec<RateLimitSchemeData>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         let rows = sqlx::query_as::<_, RateLimitSchemeRow>(
             r#"
             SELECT
@@ -84,7 +86,7 @@ impl ListRateLimitSchemesQuery {
             "#,
         )
         .bind(self.deployment_id)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(rows.into_iter().map(Into::into).collect())
@@ -104,21 +106,23 @@ impl GetRateLimitSchemeQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<RateLimitSchemeData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut conn).await
+        self.execute_with_deps(executor).await
     }
 
-    pub(crate) async fn execute_with_deps(
+    pub(crate) async fn execute_with_deps<'e, E>(
         &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<Option<RateLimitSchemeData>, AppError> {
+        executor: E,
+    ) -> Result<Option<RateLimitSchemeData>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         let rec = sqlx::query_as::<_, RateLimitSchemeRow>(
             r#"
             SELECT
@@ -137,7 +141,7 @@ impl GetRateLimitSchemeQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.slug)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(rec.map(Into::into))

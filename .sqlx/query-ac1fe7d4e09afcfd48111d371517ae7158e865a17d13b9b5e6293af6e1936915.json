@@ -1,0 +1,75 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH existing AS (\n                SELECT id\n                FROM rate_limit_schemes\n                WHERE deployment_id = $2\n                  AND slug = $3\n            ),\n            ins AS (\n                INSERT INTO rate_limit_schemes (id, deployment_id, slug, name, description, rules)\n                SELECT $1, $2, $3, $4, $5, $6\n                WHERE NOT EXISTS(SELECT 1 FROM existing)\n                RETURNING id, deployment_id, slug, name, description, rules,\n                          created_at,\n                          updated_at\n            )\n            SELECT\n                EXISTS(SELECT 1 FROM existing) AS \"already_exists!\",\n                ins.id,\n                ins.deployment_id,\n                ins.slug,\n                ins.name,\n                ins.description,\n                ins.rules,\n                ins.created_at AS \"created_at!\",\n                ins.updated_at AS \"updated_at!\"\n            FROM ins\n            UNION ALL\n            SELECT\n                EXISTS(SELECT 1 FROM existing) AS \"already_exists!\",\n                NULL::BIGINT AS id,\n                NULL::BIGINT AS deployment_id,\n                NULL::TEXT AS slug,\n                NULL::TEXT AS name,\n                NULL::TEXT AS description,\n                NULL::JSONB AS rules,\n                NOW() AS \"created_at!\",\n                NOW() AS \"updated_at!\"\n            WHERE NOT EXISTS(SELECT 1 FROM ins)\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "already_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "slug",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "rules",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Varchar",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ac1fe7d4e09afcfd48111d371517ae7158e865a17d13b9b5e6293af6e1936915"
+}

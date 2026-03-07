@@ -26,11 +26,10 @@ impl CleanupExpiredDeliveriesCommand {
         Ok(result.rows_affected() as i64)
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<i64, AppError>
     where
-        A: sqlx::Acquire<'a, Database = Postgres>,
+        E: Executor<'e, Database = Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut *conn).await
+        self.execute_with_deps(executor).await
     }
 }

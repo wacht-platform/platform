@@ -32,11 +32,10 @@ impl CreateDeploymentAiSettingsCommand {
 }
 
 impl CreateDeploymentAiSettingsCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<DeploymentAiSettings, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<DeploymentAiSettings, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query_as::<_, DeploymentAiSettings>(
             r#"
             INSERT INTO deployment_ai_settings (deployment_id)
@@ -45,7 +44,7 @@ impl CreateDeploymentAiSettingsCommand {
             "#,
         )
         .bind(self.deployment_id)
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(result)
@@ -120,18 +119,8 @@ impl UpdateDeploymentAiSettingsCommand {
     where
         D: HasDbRouter + HasEncryptionService,
     {
-        let conn = deps.db_router().writer().acquire().await?;
-        self.apply_with_conn(conn, deps.encryption_service()).await
-    }
-
-    async fn apply_with_conn<C>(
-        self,
-        mut conn: C,
-        encryptor: &dyn AiSettingsEncryptor,
-    ) -> Result<DeploymentAiSettings, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
+        let writer = deps.db_router().writer();
+        let encryptor = deps.encryption_service();
         // Encrypt API keys before storing
         let encrypted_gemini = self
             .updates
@@ -169,7 +158,7 @@ impl UpdateDeploymentAiSettingsCommand {
         .bind(&encrypted_gemini)
         .bind(&encrypted_openai)
         .bind(&encrypted_anthropic)
-        .fetch_one(&mut *conn)
+        .fetch_one(writer)
         .await?;
 
         Ok(result)
@@ -233,11 +222,10 @@ impl ClearDeploymentAiKeyCommandBuilder {
 }
 
 impl ClearDeploymentAiKeyCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let column = match self.key_type {
             AiKeyType::Gemini => "gemini_api_key",
             AiKeyType::OpenAI => "openai_api_key",
@@ -251,7 +239,7 @@ impl ClearDeploymentAiKeyCommand {
 
         sqlx::query(&query)
             .bind(self.deployment_id)
-            .execute(&mut *conn)
+            .execute(executor)
             .await?;
 
         Ok(())

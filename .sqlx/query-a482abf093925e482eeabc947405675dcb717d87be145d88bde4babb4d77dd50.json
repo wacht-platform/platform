@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH membership AS (\n                SELECT id\n                FROM organization_memberships\n                WHERE id = $1\n                  AND organization_id = $2\n            ),\n            updated_signins AS (\n                UPDATE signins\n                SET active_organization_membership_id = NULL,\n                    active_workspace_membership_id = NULL\n                WHERE active_organization_membership_id = $1\n                  AND EXISTS(SELECT 1 FROM membership)\n            ),\n            deleted_workspace_membership_roles AS (\n                DELETE FROM workspace_membership_roles\n                WHERE workspace_membership_id IN (\n                    SELECT id\n                    FROM workspace_memberships\n                    WHERE organization_membership_id = $1\n                )\n                  AND EXISTS(SELECT 1 FROM membership)\n            ),\n            deleted_workspace_memberships AS (\n                DELETE FROM workspace_memberships\n                WHERE organization_membership_id = $1\n                  AND EXISTS(SELECT 1 FROM membership)\n            ),\n            deleted_org_membership_roles AS (\n                DELETE FROM organization_membership_roles\n                WHERE organization_membership_id = $1\n                  AND EXISTS(SELECT 1 FROM membership)\n            ),\n            deleted_membership AS (\n                DELETE FROM organization_memberships\n                WHERE id = $1\n                  AND EXISTS(SELECT 1 FROM membership)\n            )\n            SELECT EXISTS(SELECT 1 FROM membership) AS \"membership_exists!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "membership_exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a482abf093925e482eeabc947405675dcb717d87be145d88bde4babb4d77dd50"
+}

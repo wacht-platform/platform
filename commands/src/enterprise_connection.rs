@@ -47,14 +47,14 @@ impl CreateEnterpriseConnectionCommand {
 }
 
 impl CreateEnterpriseConnectionCommand {
-    async fn run_with_connection_id(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        connection_id: i64,
-    ) -> Result<EnterpriseConnection, AppError> {
-        let mut conn = acquirer.acquire().await?;
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<EnterpriseConnection, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let connection_id = self.connection_id.ok_or_else(|| {
+            AppError::Validation("connection_id is required".to_string())
+        })?;
         let now = Utc::now();
-
         let connection = sqlx::query_as::<_, EnterpriseConnection>(
             r#"
             INSERT INTO enterprise_connections (
@@ -83,20 +83,10 @@ impl CreateEnterpriseConnectionCommand {
         .bind(self.request.idp_certificate)
         .bind(now)
         .bind(now)
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(connection)
-    }
-
-    pub async fn execute_with_db(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<EnterpriseConnection, AppError> {
-        let connection_id = self.connection_id.ok_or_else(|| {
-            AppError::Validation("connection_id is required".to_string())
-        })?;
-        self.run_with_connection_id(acquirer, connection_id).await
     }
 }
 
@@ -165,11 +155,10 @@ impl UpdateEnterpriseConnectionCommand {
 }
 
 impl UpdateEnterpriseConnectionCommand {
-    pub async fn execute_with_db(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<EnterpriseConnection, AppError> {
-        let mut conn = acquirer.acquire().await?;
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<EnterpriseConnection, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         let connection = sqlx::query_as::<_, EnterpriseConnection>(
             r#"
             UPDATE enterprise_connections
@@ -189,7 +178,7 @@ impl UpdateEnterpriseConnectionCommand {
         .bind(self.request.connection_id)
         .bind(self.request.organization_id)
         .bind(self.deployment_id)
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(connection)

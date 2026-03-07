@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use sqlx::{query, query_as};
+use sqlx::{Row, query, query_as};
 
 use common::{HasClickHouseService, HasDbRouter, error::AppError};
 use dto::json::webhook_requests::{
@@ -7,7 +7,6 @@ use dto::json::webhook_requests::{
 };
 use models::webhook::{
     PendingDeliveryRow, WebhookApp, WebhookEndpoint as ModelWebhookEndpoint,
-    WebhookEndpointSubscription,
 };
 
 #[derive(Debug, Deserialize)]
@@ -39,11 +38,10 @@ impl GetWebhookAppsQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<WebhookApp>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<WebhookApp>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let limit = self.limit.unwrap_or(50);
         let offset = self.offset.unwrap_or(0);
 
@@ -70,7 +68,7 @@ impl GetWebhookAppsQuery {
                 limit + 1,
                 offset
             )
-            .fetch_all(&mut *conn)
+            .fetch_all(executor)
             .await?
         } else {
             query_as!(
@@ -95,7 +93,7 @@ impl GetWebhookAppsQuery {
                 limit + 1,
                 offset
             )
-            .fetch_all(&mut *conn)
+            .fetch_all(executor)
             .await?
         };
 
@@ -129,14 +127,13 @@ impl GetWebhookEndpointsQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<ModelWebhookEndpoint>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let endpoints = match (&self.app_slug, self.include_inactive) {
             (Some(app_slug), true) => {
                 query_as!(
@@ -155,7 +152,7 @@ impl GetWebhookEndpointsQuery {
                     self.deployment_id,
                     app_slug
                 )
-                .fetch_all(&mut *conn)
+                .fetch_all(executor)
                 .await?
             }
             (Some(app_slug), false) => {
@@ -174,7 +171,7 @@ impl GetWebhookEndpointsQuery {
                     self.deployment_id,
                     app_slug
                 )
-                .fetch_all(&mut *conn)
+                .fetch_all(executor)
                 .await?
             }
             (None, true) => {
@@ -192,7 +189,7 @@ impl GetWebhookEndpointsQuery {
                     "#,
                     self.deployment_id
                 )
-                .fetch_all(&mut *conn)
+                .fetch_all(executor)
                 .await?
             }
             (None, false) => {
@@ -210,7 +207,7 @@ impl GetWebhookEndpointsQuery {
                     "#,
                     self.deployment_id
                 )
-                .fetch_all(&mut *conn)
+                .fetch_all(executor)
                 .await?
             }
         };
@@ -255,141 +252,93 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<WebhookEndpoint>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<WebhookEndpoint>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let limit = self.limit.unwrap_or(100) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
-        let endpoints = match (&self.app_slug, self.include_inactive) {
-            (Some(app_slug), true) => {
-                query_as!(
-                    ModelWebhookEndpoint,
-                    r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
-                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
-                           e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
-                           e.rate_limit_config,
-                           e.created_at as "created_at!", e.updated_at as "updated_at!"
-                    FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1 AND e.app_slug = $2
-                    ORDER BY e.created_at DESC
-                    LIMIT $3 OFFSET $4
-                    "#,
-                    self.deployment_id,
-                    app_slug,
-                    limit,
-                    offset
-                )
-                .fetch_all(&mut *conn)
-                .await?
-            }
-            (Some(app_slug), false) => {
-                query_as!(
-                    ModelWebhookEndpoint,
-                    r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
-                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
-                           e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
-                           e.rate_limit_config,
-                           e.created_at as "created_at!", e.updated_at as "updated_at!"
-                    FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1 AND e.app_slug = $2 AND e.is_active = true
-                    ORDER BY e.created_at DESC
-                    "#,
-                    self.deployment_id,
-                    app_slug
-                )
-                .fetch_all(&mut *conn)
-                .await?
-            }
-            (None, true) => {
-                query_as!(
-                    ModelWebhookEndpoint,
-                    r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
-                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
-                           e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
-                           e.rate_limit_config,
-                           e.created_at as "created_at!", e.updated_at as "updated_at!"
-                    FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1
-                    ORDER BY e.created_at DESC
-                    "#,
-                    self.deployment_id
-                )
-                .fetch_all(&mut *conn)
-                .await?
-            }
-            (None, false) => {
-                query_as!(
-                    ModelWebhookEndpoint,
-                    r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
-                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
-                           e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
-                           e.rate_limit_config,
-                           e.created_at as "created_at!", e.updated_at as "updated_at!"
-                    FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1 AND e.is_active = true
-                    ORDER BY e.created_at DESC
-                    "#,
-                    self.deployment_id
-                )
-                .fetch_all(&mut *conn)
-                .await?
-            }
-        };
+        let mut qb: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new(
+            r#"
+            SELECT
+                e.id, e.deployment_id, e.app_slug, e.url, e.description, e.headers,
+                e.max_retries, e.timeout_seconds, e.is_active, e.failure_count, e.last_failure_at,
+                e.auto_disabled, e.auto_disabled_at, e.rate_limit_config, e.created_at, e.updated_at,
+                COALESCE(
+                    (
+                        SELECT json_agg(
+                            json_build_object(
+                                'event_name', s.event_name,
+                                'filter_rules', s.filter_rules
+                            )
+                            ORDER BY s.event_name
+                        )
+                        FROM webhook_endpoint_subscriptions s
+                        WHERE s.endpoint_id = e.id AND s.deployment_id = e.deployment_id
+                    ),
+                    '[]'::json
+                ) AS subscriptions
+            FROM webhook_endpoints e
+            WHERE e.deployment_id = "#,
+        );
+        qb.push_bind(self.deployment_id);
 
-        let mut endpoints_with_subs = Vec::new();
-        for endpoint in endpoints {
-            let subscriptions = query_as!(
-                WebhookEndpointSubscription,
-                r#"
-                SELECT endpoint_id as "endpoint_id!", deployment_id as "deployment_id!", app_slug as "app_slug!",
-                       event_name as "event_name!", filter_rules, created_at as "created_at!"
-                FROM webhook_endpoint_subscriptions
-                WHERE endpoint_id = $1 AND deployment_id = $2
-                ORDER BY event_name
-                "#,
-                endpoint.id,
-                endpoint.deployment_id
-            )
-            .fetch_all(&mut *conn)
-            .await?;
+        if let Some(app_slug) = &self.app_slug {
+            qb.push(" AND e.app_slug = ");
+            qb.push_bind(app_slug);
+        }
+        if !self.include_inactive {
+            qb.push(" AND e.is_active = true");
+        }
 
-            let subscription_dtos: Vec<WebhookEndpointSubscriptionDTO> = subscriptions
+        qb.push(" ORDER BY e.created_at DESC LIMIT ");
+        qb.push_bind(limit);
+        qb.push(" OFFSET ");
+        qb.push_bind(offset);
+
+        let rows = qb.build().fetch_all(executor).await?;
+
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let subscriptions_value: serde_json::Value = row.get("subscriptions");
+            let subscriptions: Vec<WebhookEndpointSubscriptionDTO> = subscriptions_value
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
                 .into_iter()
-                .map(|s| WebhookEndpointSubscriptionDTO {
-                    event_name: s.event_name,
-                    filter_rules: s.filter_rules,
+                .map(|v| WebhookEndpointSubscriptionDTO {
+                    event_name: v
+                        .get("event_name")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    filter_rules: v.get("filter_rules").cloned(),
                 })
                 .collect();
 
-            endpoints_with_subs.push(WebhookEndpoint {
-                id: endpoint.id,
-                deployment_id: endpoint.deployment_id,
-                app_slug: endpoint.app_slug,
-                url: endpoint.url,
-                description: endpoint.description,
-                headers: endpoint.headers,
-                is_active: endpoint.is_active,
-                max_retries: endpoint.max_retries,
-                timeout_seconds: endpoint.timeout_seconds,
-                failure_count: endpoint.failure_count,
-                last_failure_at: endpoint.last_failure_at,
-                auto_disabled: endpoint.auto_disabled,
-                auto_disabled_at: endpoint.auto_disabled_at,
-                rate_limit_config: endpoint.rate_limit_config,
-                created_at: endpoint.created_at,
-                updated_at: endpoint.updated_at,
-                subscriptions: subscription_dtos,
+            out.push(WebhookEndpoint {
+                id: row.get("id"),
+                deployment_id: row.get("deployment_id"),
+                app_slug: row.get("app_slug"),
+                url: row.get("url"),
+                description: row.get("description"),
+                headers: row.get("headers"),
+                is_active: row.get("is_active"),
+                max_retries: row.get("max_retries"),
+                timeout_seconds: row.get("timeout_seconds"),
+                failure_count: row.get("failure_count"),
+                last_failure_at: row.get("last_failure_at"),
+                auto_disabled: row.get("auto_disabled"),
+                auto_disabled_at: row.get("auto_disabled_at"),
+                rate_limit_config: row.get("rate_limit_config"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+                subscriptions,
             });
         }
 
-        Ok(endpoints_with_subs)
+        Ok(out)
     }
 }
 
@@ -408,11 +357,10 @@ impl GetWebhookAppByNameQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<WebhookApp>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<WebhookApp>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let app = query_as!(
             WebhookApp,
             r#"
@@ -432,7 +380,7 @@ impl GetWebhookAppByNameQuery {
             self.deployment_id,
             self.app_slug
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(app)
@@ -454,50 +402,41 @@ impl GetWebhookEventsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<models::webhook::WebhookEventDefinition>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let app = query!(
+        let row = sqlx::query(
             r#"
-            SELECT event_catalog_slug, created_at as "created_at!"
-            FROM webhook_apps
-            WHERE deployment_id = $1 AND app_slug = $2
+            SELECT wa.event_catalog_slug, wec.events
+            FROM webhook_apps wa
+            LEFT JOIN webhook_event_catalogs wec
+              ON wec.deployment_id = wa.deployment_id
+             AND wec.slug = wa.event_catalog_slug
+            WHERE wa.deployment_id = $1
+              AND wa.app_slug = $2
             "#,
-            self.deployment_id,
-            self.app_slug
         )
-        .fetch_optional(&mut *conn)
+        .bind(self.deployment_id)
+        .bind(&self.app_slug)
+        .fetch_optional(executor)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
 
-        if let Some(catalog_slug) = app.event_catalog_slug {
-            let catalog = query!(
-                r#"
-                SELECT events as "events!", created_at as "created_at!"
-                FROM webhook_event_catalogs
-                WHERE deployment_id = $1 AND slug = $2
-                "#,
-                self.deployment_id,
-                catalog_slug
-            )
-            .fetch_optional(&mut *conn)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
-
-            let events: Vec<models::webhook::WebhookEventDefinition> =
-                serde_json::from_value(catalog.events).map_err(|e| {
-                    AppError::Internal(format!("Invalid catalog events format: {}", e))
-                })?;
-
-            return Ok(events);
+        let catalog_slug: Option<String> = row.try_get("event_catalog_slug").ok().flatten();
+        if catalog_slug.is_none() {
+            return Ok(Vec::new());
         }
 
-        Ok(Vec::new())
+        let events_value: Option<serde_json::Value> = row.try_get("events").ok().flatten();
+        let events_value = events_value
+            .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
+
+        serde_json::from_value(events_value)
+            .map_err(|e| AppError::Internal(format!("Invalid catalog events format: {}", e)))
     }
 }
 
@@ -586,14 +525,13 @@ impl GetPendingWebhookDeliveryQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<dto::clickhouse::webhook::WebhookLog, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query_as::<_, PendingDeliveryRow>(
             r#"
             SELECT
@@ -614,7 +552,7 @@ impl GetPendingWebhookDeliveryQuery {
         )
         .bind(self.delivery_id)
         .bind(self.deployment_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?
         .ok_or_else(|| AppError::NotFound("Pending delivery not found".to_string()))?;
 

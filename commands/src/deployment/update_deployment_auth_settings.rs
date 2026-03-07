@@ -57,7 +57,7 @@ impl UpdateDeploymentAuthSettingsCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         if enables_phone_auth(&self.updates) {
             let deployment = sqlx::query!(
                 r#"
@@ -71,7 +71,7 @@ impl UpdateDeploymentAuthSettingsCommand {
                 "#,
                 self.deployment_id
             )
-            .fetch_optional(&mut *conn)
+            .fetch_optional(writer)
             .await?
             .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
 
@@ -248,7 +248,7 @@ impl UpdateDeploymentAuthSettingsCommand {
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 
-        query_builder.build().execute(&mut *conn).await?;
+        query_builder.build().execute(writer).await?;
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
             .execute_with_deps(deps)

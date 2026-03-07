@@ -31,14 +31,13 @@ impl GetApiKeyGatewayDataQuery {
         Self { key_hash }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<ApiKeyGatewayData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rec = sqlx::query!(
             r#"
             SELECT
@@ -69,7 +68,7 @@ impl GetApiKeyGatewayDataQuery {
             "#,
             self.key_hash
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(rec.map(|r| ApiKeyGatewayData {

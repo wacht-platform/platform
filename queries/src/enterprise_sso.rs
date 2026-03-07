@@ -44,14 +44,13 @@ impl ListOrganizationDomainsQuery {
 }
 
 impl ListOrganizationDomainsQuery {
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<OrganizationDomain>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let domains = sqlx::query_as!(
             OrganizationDomain,
             r#"
@@ -66,7 +65,7 @@ impl ListOrganizationDomainsQuery {
             self.limit as i64,
             self.offset
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(domains)
@@ -149,14 +148,13 @@ impl ListEnterpriseConnectionsQuery {
 }
 
 impl ListEnterpriseConnectionsQuery {
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<EnterpriseConnection>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let connections = sqlx::query_as::<_, EnterpriseConnection>(
             r#"
             SELECT *
@@ -170,7 +168,7 @@ impl ListEnterpriseConnectionsQuery {
         .bind(self.organization_id)
         .bind(self.limit as i64)
         .bind(self.offset)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(connections)
@@ -240,14 +238,13 @@ impl GetScimTokenQuery {
 }
 
 impl GetScimTokenQuery {
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<models::scim_token::ScimToken>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let token = sqlx::query_as::<_, models::scim_token::ScimToken>(
             r#"
             SELECT *
@@ -261,7 +258,7 @@ impl GetScimTokenQuery {
         .bind(self.connection_id)
         .bind(self.organization_id)
         .bind(self.deployment_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(token)

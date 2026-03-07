@@ -37,14 +37,13 @@ impl GetAiAgentsQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<AiAgentWithDetails>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         if let Some(search) = &self.search {
             let search_pattern = format!("%{}%", search);
             let agents = sqlx::query!(
@@ -65,7 +64,7 @@ impl GetAiAgentsQuery {
                 self.limit as i64,
                 self.offset as i64
             )
-            .fetch_all(&mut *conn)
+            .fetch_all(executor)
             .await
             .map_err(AppError::Database)?;
 
@@ -111,7 +110,7 @@ impl GetAiAgentsQuery {
                 self.limit as i64,
                 self.offset as i64
             )
-            .fetch_all(&mut *conn)
+            .fetch_all(executor)
             .await
             .map_err(AppError::Database)?;
 
@@ -157,11 +156,10 @@ impl GetAiAgentByIdQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiAgentWithDetails, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AiAgentWithDetails, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let agent = sqlx::query!(
             r#"
             SELECT
@@ -175,7 +173,7 @@ impl GetAiAgentByIdQuery {
             self.agent_id,
             self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Agent not found".to_string()))?;
@@ -216,18 +214,16 @@ impl GetAiAgentsByIdsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<AiAgentWithDetails>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         if self.agent_ids.is_empty() {
             return Ok(Vec::new());
         }
-
-        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query(
             r#"
             SELECT
@@ -243,7 +239,7 @@ impl GetAiAgentsByIdsQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.agent_ids)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -290,11 +286,10 @@ impl GetAiAgentByNameQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiAgent, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AiAgent, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let agent = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, name, description, configuration, deployment_id, sub_agents, spawn_config
@@ -304,7 +299,7 @@ impl GetAiAgentByNameQuery {
             self.agent_name,
             self.deployment_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(|e| AppError::Database(e))?;
 
@@ -342,11 +337,10 @@ impl GetAiAgentByNameWithFeatures {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiAgentWithFeatures, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AiAgentWithFeatures, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -424,7 +418,7 @@ impl GetAiAgentByNameWithFeatures {
             self.agent_name,
             self.deployment_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -470,11 +464,10 @@ impl GetAiAgentByIdWithFeatures {
         Self { agent_id }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiAgentWithFeatures, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AiAgentWithFeatures, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -549,7 +542,7 @@ impl GetAiAgentByIdWithFeatures {
             "#,
             self.agent_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 

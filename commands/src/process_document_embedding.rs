@@ -35,7 +35,7 @@ impl ProcessDocumentBatchCommand {
         GenerateEmbeddingsFn: Fn(Vec<String>) -> GenerateEmbeddingsFut + Copy,
         GenerateEmbeddingsFut: Future<Output = Result<Vec<Vec<f32>>, AppError>>,
     {
-        let mut conn = deps.acquirer.acquire().await?;
+        let mut tx = deps.acquirer.begin().await?;
         info!(
             "Processing embeddings for up to {} chunks in knowledge base {} (deployment {})",
             self.batch_size, self.knowledge_base_id, self.deployment_id
@@ -55,7 +55,7 @@ impl ProcessDocumentBatchCommand {
             self.deployment_id,
             self.batch_size as i64
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *tx)
         .await
         .map_err(|e| AppError::Database(e))?;
 
@@ -95,7 +95,7 @@ impl ProcessDocumentBatchCommand {
                 .bind(Utc::now())
                 .bind(chunk.document_id)
                 .bind(chunk.chunk_index)
-                .execute(&mut *conn)
+                .execute(&mut *tx)
                 .await {
                     Ok(_) => {
                         total_processed += 1;
@@ -116,7 +116,7 @@ impl ProcessDocumentBatchCommand {
                 "SELECT COUNT(*) as count FROM knowledge_base_document_chunks WHERE document_id = $1 AND embedding IS NULL",
                 document_id
             )
-            .fetch_one(&mut *conn)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|e| AppError::Database(e))?;
 
@@ -136,7 +136,7 @@ impl ProcessDocumentBatchCommand {
                     Utc::now(),
                     document_id
                 )
-                .execute(&mut *conn)
+                .execute(&mut *tx)
                 .await
                 {
                     error!(
@@ -146,6 +146,7 @@ impl ProcessDocumentBatchCommand {
                 }
             }
         }
+        tx.commit().await.map_err(AppError::Database)?;
 
         Ok(format!(
             "Processed embeddings for {} chunks across {} documents",

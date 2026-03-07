@@ -35,11 +35,10 @@ impl GetAiToolsQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AiToolWithDetails>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<AiToolWithDetails>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let mut query = r#"
             SELECT
                 t.id, t.created_at, t.updated_at, t.name, t.description,
@@ -87,7 +86,7 @@ impl GetAiToolsQuery {
             .bind(self.offset.unwrap_or(0) as i64);
 
         let tools = query_builder
-            .fetch_all(&mut *conn)
+            .fetch_all(executor)
             .await
             .map_err(AppError::Database)?;
 
@@ -126,11 +125,10 @@ impl GetAiToolByIdQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiToolWithDetails, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AiToolWithDetails, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let tool = sqlx::query!(
             r#"
             SELECT
@@ -148,7 +146,7 @@ impl GetAiToolByIdQuery {
             self.tool_id,
             self.deployment_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -182,11 +180,10 @@ impl GetAgentToolsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AiTool>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<AiTool>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let tools = sqlx::query!(
             r#"
             SELECT
@@ -200,7 +197,7 @@ impl GetAgentToolsQuery {
             self.deployment_id,
             self.agent_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -235,11 +232,10 @@ impl GetToolByIdQuery {
         Self { tool_id }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiTool, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AiTool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let tool = sqlx::query!(
             r#"
             SELECT 
@@ -256,7 +252,7 @@ impl GetToolByIdQuery {
             "#,
             self.tool_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(|e| match e {
             sqlx::Error::RowNotFound => {
@@ -295,9 +291,9 @@ impl GetAiToolsByIdsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AiTool>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<AiTool>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         if self.tool_ids.is_empty() {
             return Ok(Vec::new());
@@ -321,10 +317,8 @@ impl GetAiToolsByIdsQuery {
         for tool_id in &self.tool_ids {
             query_builder = query_builder.bind(tool_id);
         }
-
-        let mut conn = acquirer.acquire().await?;
         let tools = query_builder
-            .fetch_all(&mut *conn)
+            .fetch_all(executor)
             .await
             .map_err(|e| AppError::Database(e))?;
 

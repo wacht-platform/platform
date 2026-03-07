@@ -38,15 +38,13 @@ impl AddWorkspaceMemberCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        use sqlx::Connection;
-        let mut conn = acquirer.acquire().await?;
         let workspace_membership_id = self.workspace_membership_id.ok_or_else(|| {
             AppError::Validation("workspace_membership_id is required".to_string())
         })?;
         let implicit_org_membership_id = self.implicit_org_membership_id.ok_or_else(|| {
             AppError::Validation("implicit_org_membership_id is required".to_string())
         })?;
-        let mut tx = conn.begin().await?;
+        let mut tx = acquirer.begin().await?;
 
         let workspace = sqlx::query!(
             "SELECT id, organization_id FROM workspaces WHERE id = $1 AND deployment_id = $2",
@@ -190,9 +188,7 @@ impl AddWorkspaceMemberCommand {
             })?;
         }
 
-        tx.commit().await.map_err(|e| e)?;
-
-        // Fetch the created member details (outside transaction)
+        // Fetch the created member details
         let member = sqlx::query!(
             r#"
             SELECT
@@ -215,7 +211,7 @@ impl AddWorkspaceMemberCommand {
             "#,
             membership_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *tx)
         .await?;
 
         // Get roles separately
@@ -228,7 +224,7 @@ impl AddWorkspaceMemberCommand {
             "#,
             membership_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *tx)
         .await?;
 
         let roles = role_rows
@@ -242,6 +238,8 @@ impl AddWorkspaceMemberCommand {
                 updated_at: chrono::Utc::now(),
             })
             .collect();
+
+        tx.commit().await.map_err(|e| e)?;
 
         let member_details = WorkspaceMemberDetails {
             id: member.id,
@@ -277,61 +275,68 @@ pub struct UpdateWorkspaceMemberCommand {
 }
 
 impl UpdateWorkspaceMemberCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let membership = sqlx::query!(
+        let role_ids_present = self.role_ids.is_some();
+        let role_ids = self.role_ids.unwrap_or_default();
+        let metadata_present = self.public_metadata.is_some();
+
+        let result = sqlx::query!(
             r#"
-            SELECT wm.id, wm.organization_id
-            FROM workspace_memberships wm
-            JOIN workspaces w ON wm.workspace_id = w.id
-            WHERE wm.id = $1 AND wm.workspace_id = $2 AND w.deployment_id = $3
+            WITH membership AS (
+                SELECT wm.id, wm.organization_id
+                FROM workspace_memberships wm
+                JOIN workspaces w ON wm.workspace_id = w.id
+                WHERE wm.id = $1
+                  AND wm.workspace_id = $2
+                  AND w.deployment_id = $3
+            ),
+            cleared_roles AS (
+                DELETE FROM workspace_membership_roles
+                WHERE workspace_membership_id = $1
+                  AND $4 = true
+                  AND EXISTS(SELECT 1 FROM membership)
+            ),
+            inserted_roles AS (
+                INSERT INTO workspace_membership_roles (
+                    workspace_membership_id, workspace_role_id, workspace_id, organization_id
+                )
+                SELECT
+                    $1,
+                    role_id,
+                    $2,
+                    (SELECT organization_id FROM membership LIMIT 1)
+                FROM UNNEST($5::BIGINT[]) AS role_id
+                WHERE $4 = true
+                  AND EXISTS(SELECT 1 FROM membership)
+            ),
+            updated_metadata AS (
+                UPDATE workspace_memberships
+                SET public_metadata = $6,
+                    updated_at = NOW()
+                WHERE id = $1
+                  AND $7 = true
+                  AND EXISTS(SELECT 1 FROM membership)
+            )
+            SELECT EXISTS(SELECT 1 FROM membership) AS "membership_exists!"
             "#,
             self.membership_id,
             self.workspace_id,
-            self.deployment_id
+            self.deployment_id,
+            role_ids_present,
+            &role_ids,
+            self.public_metadata,
+            metadata_present
         )
-        .fetch_optional(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
-        let membership = membership.ok_or(AppError::NotFound(
-            "Workspace membership not found".to_string(),
-        ))?;
-
-        if let Some(role_ids) = self.role_ids {
-            sqlx::query!(
-                "DELETE FROM workspace_membership_roles WHERE workspace_membership_id = $1",
-                self.membership_id
-            )
-            .execute(&mut *conn)
-            .await?;
-
-            for role_id in role_ids {
-                sqlx::query!(
-                    r#"
-                INSERT INTO workspace_membership_roles (workspace_membership_id, workspace_role_id, workspace_id, organization_id)
-                VALUES ($1, $2, $3, $4)
-                "#,
-                    self.membership_id,
-                    role_id,
-                    self.workspace_id,
-                    membership.organization_id
-                )
-                .execute(&mut *conn)
-                .await?;
-            }
-        }
-
-        if let Some(metadata) = self.public_metadata {
-            sqlx::query!(
-                "UPDATE workspace_memberships SET public_metadata = $1, updated_at = NOW() WHERE id = $2",
-                metadata,
-                self.membership_id
-            )
-            .execute(&mut *conn)
-            .await?;
+        if !result.membership_exists {
+            return Err(AppError::NotFound(
+                "Workspace membership not found".to_string(),
+            ));
         }
 
         Ok(())
@@ -346,51 +351,50 @@ pub struct RemoveWorkspaceMemberCommand {
 }
 
 impl RemoveWorkspaceMemberCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let membership = sqlx::query!(
+        let result = sqlx::query!(
             r#"
-            SELECT wm.id
-            FROM workspace_memberships wm
-            JOIN workspaces w ON wm.workspace_id = w.id
-            WHERE wm.id = $1 AND wm.workspace_id = $2 AND w.deployment_id = $3
+            WITH membership AS (
+                SELECT wm.id
+                FROM workspace_memberships wm
+                JOIN workspaces w ON wm.workspace_id = w.id
+                WHERE wm.id = $1
+                  AND wm.workspace_id = $2
+                  AND w.deployment_id = $3
+            ),
+            cleared_signins AS (
+                UPDATE signins
+                SET active_workspace_membership_id = NULL
+                WHERE active_workspace_membership_id = $1
+                  AND EXISTS(SELECT 1 FROM membership)
+            ),
+            deleted_roles AS (
+                DELETE FROM workspace_membership_roles
+                WHERE workspace_membership_id = $1
+                  AND EXISTS(SELECT 1 FROM membership)
+            ),
+            deleted_membership AS (
+                DELETE FROM workspace_memberships
+                WHERE id = $1
+                  AND EXISTS(SELECT 1 FROM membership)
+            )
+            SELECT EXISTS(SELECT 1 FROM membership) AS "membership_exists!"
             "#,
             self.membership_id,
             self.workspace_id,
             self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
-        if membership.is_none() {
+        if !result.membership_exists {
             return Err(AppError::NotFound(
                 "Workspace membership not found".to_string(),
             ));
         }
-
-        sqlx::query!(
-            "UPDATE signins SET active_workspace_membership_id = NULL WHERE active_workspace_membership_id = $1",
-            self.membership_id
-        )
-        .execute(&mut *conn)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM workspace_membership_roles WHERE workspace_membership_id = $1",
-            self.membership_id
-        )
-        .execute(&mut *conn)
-        .await?;
-
-        sqlx::query!(
-            "DELETE FROM workspace_memberships WHERE id = $1",
-            self.membership_id
-        )
-        .execute(&mut *conn)
-        .await?;
 
         Ok(())
     }

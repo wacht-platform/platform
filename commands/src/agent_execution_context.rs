@@ -48,11 +48,10 @@ impl CreateExecutionContextCommand {
 }
 
 impl CreateExecutionContextCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AgentExecutionContext, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         sqlx::query!(
@@ -72,7 +71,7 @@ impl CreateExecutionContextCommand {
             "idle",
             self.parent_context_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -400,20 +399,12 @@ impl UpdateExecutionContextCommand {
 }
 
 impl UpdateExecutionContextCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AgentExecutionContext, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut conn).await
-    }
-
-    async fn execute_with_deps(
-        self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<AgentExecutionContext, AppError> {
         let now = Utc::now();
-        sqlx::query!(
+        let row = sqlx::query!(
             r#"
             UPDATE agent_execution_contexts
             SET
@@ -424,6 +415,10 @@ impl UpdateExecutionContextCommand {
                 context_group = COALESCE($5, context_group),
                 status = COALESCE($6, status)
             WHERE id = $7 AND deployment_id = $8
+            RETURNING id, created_at, updated_at, deployment_id,
+                      title, context_group, system_instructions, last_activity_at, completed_at,
+                      execution_state as "execution_state: Option<serde_json::Value>", status, source, external_context_id, external_resource_metadata,
+                      parent_context_id, completion_summary
             "#,
             now,
             now,
@@ -434,14 +429,36 @@ impl UpdateExecutionContextCommand {
             self.context_id,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .fetch_optional(executor)
         .await
-        .map_err(AppError::Database)?;
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Execution context not found".to_string()))?;
 
-        use queries::GetExecutionContextQuery;
-        GetExecutionContextQuery::new(self.context_id, self.deployment_id)
-            .execute_with_deps(&mut *conn)
-            .await
+        use std::str::FromStr;
+        let status = ExecutionContextStatus::from_str(&row.status).unwrap_or_default();
+        let execution_state = row
+            .execution_state
+            .flatten()
+            .and_then(|s| serde_json::from_value::<AgentExecutionState>(s).ok());
+
+        Ok(AgentExecutionContext {
+            id: row.id,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            deployment_id: row.deployment_id,
+            title: row.title,
+            context_group: row.context_group,
+            system_instructions: row.system_instructions,
+            last_activity_at: row.last_activity_at,
+            completed_at: row.completed_at,
+            execution_state,
+            status,
+            source: row.source,
+            external_context_id: row.external_context_id,
+            external_resource_metadata: row.external_resource_metadata,
+            parent_context_id: row.parent_context_id,
+            completion_summary: row.completion_summary,
+        })
     }
 }
 
@@ -481,33 +498,34 @@ impl PostStatusUpdateCommand {
 }
 
 impl PostStatusUpdateCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AgentStatusUpdate, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AgentStatusUpdate, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let id = self
             .status_update_id
             .ok_or_else(|| AppError::Validation("status_update_id is required".to_string()))?;
         let row = sqlx::query!(
-            "INSERT INTO agent_status_updates (id, context_id, status_update, metadata, created_at)
-             VALUES ($1, $2, $3, $4, NOW())
-             RETURNING id, context_id, status_update, metadata, created_at",
+            r#"
+            WITH inserted AS (
+                INSERT INTO agent_status_updates (id, context_id, status_update, metadata, created_at)
+                VALUES ($1, $2, $3, $4, NOW())
+                RETURNING id, context_id, status_update, metadata, created_at
+            ),
+            touched AS (
+                UPDATE agent_execution_contexts
+                SET last_activity_at = NOW()
+                WHERE id = $2
+            )
+            SELECT id, context_id, status_update, metadata, created_at
+            FROM inserted
+            "#,
             id,
             self.context_id,
             self.status_update,
             self.metadata
         )
-        .fetch_one(&mut *conn)
-        .await
-        .map_err(|e| AppError::Database(e))?;
-
-        // Update last_activity_at on context
-        sqlx::query!(
-            "UPDATE agent_execution_contexts SET last_activity_at = NOW() WHERE id = $1",
-            self.context_id
-        )
-        .execute(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(|e| AppError::Database(e))?;
 
@@ -516,7 +534,7 @@ impl PostStatusUpdateCommand {
             context_id: row.context_id,
             status_update: row.status_update,
             metadata: row.metadata,
-            created_at: row.created_at.unwrap_or_else(|| chrono::Utc::now()),
+            created_at: row.created_at.unwrap_or_else(chrono::Utc::now),
         })
     }
 }
@@ -560,11 +578,10 @@ impl CreateChildContextCommand {
 }
 
 impl CreateChildContextCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AgentExecutionContext, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let context_id = self
             .context_id
             .ok_or_else(|| AppError::Validation("context_id is required".to_string()))?;
@@ -587,7 +604,7 @@ impl CreateChildContextCommand {
             "idle",
             self.parent_context_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -736,11 +753,10 @@ impl StoreCompletionSummaryEnhancedCommand {
 }
 
 impl StoreCompletionSummaryEnhancedCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let status = self.summary.status.clone();
         let summary_json = serde_json::to_value(self.summary)
             .map_err(|e| AppError::Internal(format!("Failed to serialize summary: {}", e)))?;
@@ -768,7 +784,7 @@ impl StoreCompletionSummaryEnhancedCommand {
             self.context_id,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await
         .map_err(AppError::Database)?;
 

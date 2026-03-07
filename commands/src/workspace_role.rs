@@ -35,53 +35,69 @@ impl CreateWorkspaceRoleCommand {
 }
 
 impl CreateWorkspaceRoleCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WorkspaceRole, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<WorkspaceRole, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let role_id = self
             .role_id
             .ok_or_else(|| AppError::Validation("role_id is required".to_string()))?;
-        // Check if role with same name already exists in this workspace
-        let existing_role = sqlx::query!(
-            "SELECT id FROM workspace_roles WHERE workspace_id = $1 AND name = $2",
+        let now = chrono::Utc::now();
+        let row = sqlx::query!(
+            r#"
+            WITH dup AS (
+                SELECT id
+                FROM workspace_roles
+                WHERE workspace_id = $2 AND name = $3
+            ),
+            ins AS (
+                INSERT INTO workspace_roles (
+                    id, workspace_id, deployment_id, name, permissions, created_at, updated_at
+                )
+                SELECT $1, $2, $4, $3, $5, $6, $7
+                WHERE NOT EXISTS (SELECT 1 FROM dup)
+                RETURNING id, created_at, updated_at, permissions
+            )
+            SELECT
+                (SELECT EXISTS(SELECT 1 FROM dup)) AS "role_exists!",
+                ins.id,
+                ins.created_at,
+                ins.updated_at,
+                ins.permissions
+            FROM ins
+            UNION ALL
+            SELECT
+                (SELECT EXISTS(SELECT 1 FROM dup)) AS "role_exists!",
+                NULL::BIGINT AS id,
+                NULL::TIMESTAMPTZ AS created_at,
+                NULL::TIMESTAMPTZ AS updated_at,
+                NULL::TEXT[] AS permissions
+            WHERE NOT EXISTS (SELECT 1 FROM ins)
+            LIMIT 1
+            "#,
+            role_id,
             self.workspace_id,
-            self.name
+            self.name,
+            self.deployment_id,
+            &self.permissions,
+            now,
+            now
         )
-        .fetch_optional(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
-        if existing_role.is_some() {
+        if row.role_exists {
             return Err(AppError::BadRequest(
                 "Role with this name already exists".to_string(),
             ));
         }
 
-        // Create role with permissions stored as array
-        let role = sqlx::query!(
-            r#"
-            INSERT INTO workspace_roles (id, workspace_id, deployment_id, name, permissions, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, created_at, updated_at, permissions
-            "#,
-            role_id,
-            self.workspace_id,
-            self.deployment_id,
-            self.name,
-            &self.permissions,
-            chrono::Utc::now(),
-            chrono::Utc::now()
-        )
-        .fetch_one(&mut *conn)
-        .await?;
-
         Ok(WorkspaceRole {
-            id: role.id,
-            created_at: role.created_at,
-            updated_at: role.updated_at,
+            id: row.id.unwrap_or(role_id),
+            created_at: row.created_at.unwrap_or(now),
+            updated_at: row.updated_at.unwrap_or(now),
             name: self.name,
-            permissions: role.permissions,
+            permissions: row.permissions.unwrap_or_default(),
             is_deployment_level: false, // Workspace-specific roles are never deployment-level
         })
     }
@@ -115,27 +131,13 @@ impl UpdateWorkspaceRoleCommand {
 }
 
 impl UpdateWorkspaceRoleCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WorkspaceRole, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<WorkspaceRole, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        // Check if role exists
-        let role_exists = sqlx::query!(
-            "SELECT id FROM workspace_roles WHERE id = $1 AND workspace_id = $2",
-            self.role_id,
-            self.workspace_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        if role_exists.is_none() {
-            return Err(AppError::NotFound("Workspace role not found".to_string()));
-        }
-
         // Build update query dynamically
         let mut query_parts = Vec::new();
-        let mut param_count = 2; // role_id is $1, updated_at will be the last param
+        let mut param_count = 3; // role_id is $1, workspace_id is $2
 
         if self.name.is_some() {
             query_parts.push(format!("name = ${}", param_count));
@@ -153,11 +155,13 @@ impl UpdateWorkspaceRoleCommand {
         query_parts.push(format!("updated_at = ${}", param_count));
 
         let query_str = format!(
-            "UPDATE workspace_roles SET {} WHERE id = $1 RETURNING id, created_at, updated_at, name, permissions",
+            "UPDATE workspace_roles SET {} WHERE id = $1 AND workspace_id = $2 RETURNING id, created_at, updated_at, name, permissions",
             query_parts.join(", ")
         );
 
-        let mut query = sqlx::query(&query_str).bind(self.role_id);
+        let mut query = sqlx::query(&query_str)
+            .bind(self.role_id)
+            .bind(self.workspace_id);
 
         if let Some(name) = &self.name {
             query = query.bind(name);
@@ -168,7 +172,10 @@ impl UpdateWorkspaceRoleCommand {
 
         query = query.bind(chrono::Utc::now());
 
-        let role = query.fetch_one(&mut *conn).await?;
+        let role = query
+            .fetch_optional(executor)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Workspace role not found".to_string()))?;
 
         // Get permissions from database
         let permissions_vec: Vec<String> = role.get("permissions");
@@ -202,28 +209,24 @@ impl DeleteWorkspaceRoleCommand {
 }
 
 impl DeleteWorkspaceRoleCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        // Check if role exists
-        let role_exists = sqlx::query!(
-            "SELECT id FROM workspace_roles WHERE id = $1 AND workspace_id = $2",
+        let result = sqlx::query!(
+            r#"
+            DELETE FROM workspace_roles
+            WHERE id = $1 AND workspace_id = $2
+            "#,
             self.role_id,
             self.workspace_id
         )
-        .fetch_optional(&mut *conn)
+        .execute(executor)
         .await?;
 
-        if role_exists.is_none() {
+        if result.rows_affected() == 0 {
             return Err(AppError::NotFound("Workspace role not found".to_string()));
         }
-
-        // Delete role (this should cascade to permissions and role assignments)
-        sqlx::query!("DELETE FROM workspace_roles WHERE id = $1", self.role_id)
-            .execute(&mut *conn)
-            .await?;
 
         Ok(())
     }

@@ -215,23 +215,11 @@ impl CreateOAuthClientCommand {
     where
         D: HasDbRouter + HasEncryptionService,
     {
-        let conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let client_record_id = self
             .client_record_id
             .ok_or_else(|| AppError::Validation("client_record_id is required".to_string()))?;
-        self.run_with_conn(conn, deps.encryption_service(), client_record_id)
-            .await
-    }
-
-    async fn run_with_conn<C>(
-        self,
-        mut conn: C,
-        encryptor: &dyn OAuthClientSecretEncryptor,
-        client_record_id: i64,
-    ) -> Result<OAuthClientWithSecret, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
+        let encryptor = deps.encryption_service();
         self.validate()?;
 
         let client_id = Self::generate_client_id();
@@ -403,7 +391,7 @@ impl CreateOAuthClientCommand {
             software_id,
             software_version
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(writer)
         .await?;
 
         let jwks = row.jwks.map(|j| j.0);
@@ -530,14 +518,7 @@ impl UpdateOAuthClientSettings {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let conn = acquirer.acquire().await?;
-        self.run_with_conn(conn).await
-    }
-
-    async fn run_with_conn<C>(self, mut conn: C) -> Result<Option<OAuthClientData>, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
+        let mut tx = acquirer.begin().await?;
         if let Some(grant_types) = &self.grant_types {
             validate_oauth_client_grant_types(grant_types)?;
         }
@@ -575,7 +556,7 @@ impl UpdateOAuthClientSettings {
             self.oauth_app_id,
             self.client_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *tx)
         .await?;
 
         let Some(current) = current else {
@@ -842,8 +823,10 @@ impl UpdateOAuthClientSettings {
             software_id,
             software_version
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *tx)
         .await?;
+
+        tx.commit().await?;
 
         Ok(row.map(|r| {
             let jwks = r.jwks.map(|j| j.0);
@@ -952,18 +935,8 @@ impl RotateOAuthClientSecret {
     where
         D: HasDbRouter + HasEncryptionService,
     {
-        let conn = deps.db_router().writer().acquire().await?;
-        self.apply_with_conn(conn, deps.encryption_service()).await
-    }
-
-    async fn apply_with_conn<C>(
-        self,
-        mut conn: C,
-        encryptor: &dyn OAuthClientSecretEncryptor,
-    ) -> Result<Option<String>, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
+        let writer = deps.db_router().writer();
+        let encryptor = deps.encryption_service();
         let client = sqlx::query!(
             r#"
             SELECT client_auth_method
@@ -975,7 +948,7 @@ impl RotateOAuthClientSecret {
             self.oauth_app_id,
             self.client_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(writer)
         .await?;
 
         let Some(client) = client else {
@@ -1006,7 +979,7 @@ impl RotateOAuthClientSecret {
             client_secret_hash,
             client_secret_encrypted
         )
-        .execute(&mut *conn)
+        .execute(writer)
         .await?;
 
         Ok(Some(client_secret))

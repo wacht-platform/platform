@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH segment AS (\n                SELECT type\n                FROM segments\n                WHERE id = $1\n                  AND deployment_id = $2\n                  AND deleted_at IS NULL\n            ),\n            deleted_org AS (\n                DELETE FROM organization_segments\n                WHERE organization_id = $3\n                  AND segment_id = $1\n                  AND EXISTS(SELECT 1 FROM segment WHERE type = 'organization')\n            ),\n            deleted_ws AS (\n                DELETE FROM workspace_segments\n                WHERE workspace_id = $3\n                  AND segment_id = $1\n                  AND EXISTS(SELECT 1 FROM segment WHERE type = 'workspace')\n            ),\n            deleted_user AS (\n                DELETE FROM user_segments\n                WHERE user_id = $3\n                  AND segment_id = $1\n                  AND EXISTS(SELECT 1 FROM segment WHERE type = 'user')\n            )\n            SELECT\n                (SELECT type FROM segment LIMIT 1) AS \"segment_type?\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "segment_type?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "24ec2b46e9d8cc55dafc9e0384d2f3f082d15b1546cab9ed421868bb1f56aed8"
+}

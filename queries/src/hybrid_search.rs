@@ -13,14 +13,13 @@ pub struct HybridSearchKnowledgeBaseQuery {
 }
 
 impl HybridSearchKnowledgeBaseQuery {
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<HybridSearchKbResult>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let embedding_str = format!(
             "[{}]",
             self.query_embedding
@@ -102,7 +101,7 @@ impl HybridSearchKnowledgeBaseQuery {
         .bind(self.max_results)
         .bind(self.vector_weight)
         .bind(self.text_weight)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(|e| {
             tracing::error!("Hybrid search query failed: {}", e);
@@ -141,14 +140,13 @@ pub struct HybridSearchMemoriesQuery {
 }
 
 impl HybridSearchMemoriesQuery {
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<HybridSearchMemoryResult>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let embedding_str = format!(
             "[{}]",
             self.query_embedding
@@ -189,7 +187,7 @@ impl HybridSearchMemoriesQuery {
         .bind(0.0_f64)
         .bind(self.vector_weight)
         .bind(self.text_weight)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(|e| {
             tracing::error!("Hybrid memory search query failed: {}", e);
@@ -209,14 +207,13 @@ pub struct FullTextSearchKnowledgeBaseQuery {
 }
 
 impl FullTextSearchKnowledgeBaseQuery {
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<FullTextSearchResult>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let results = sqlx::query_as::<_, FullTextSearchResult>(
             r#"
             SELECT
@@ -240,7 +237,7 @@ impl FullTextSearchKnowledgeBaseQuery {
         .bind(&self.knowledge_base_ids)
         .bind(self.deployment_id)
         .bind(self.max_results)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(|e| {
             tracing::error!("Full-text search query failed: {}", e);

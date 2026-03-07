@@ -20,16 +20,15 @@ impl GetDeploymentIdByBackendHostQuery {
         Self { backend_host }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<i64, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<i64, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = query!(
             "SELECT id FROM deployments WHERE backend_host = $1 AND deleted_at IS NULL",
             self.backend_host
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         let row = row.ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
@@ -46,11 +45,10 @@ impl GetDeploymentWithKeyPairQuery {
         Self { backend_host }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(i64, String), AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(i64, String), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = query!(
             r#"
             SELECT d.id, kp.public_key as "public_key?"
@@ -60,7 +58,7 @@ impl GetDeploymentWithKeyPairQuery {
             "#,
             self.backend_host
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         let row = row.ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
@@ -82,11 +80,10 @@ impl GetDeploymentWithSettingsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<DeploymentWithSettings, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<DeploymentWithSettings, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = query!(
             r#"
             SELECT
@@ -242,7 +239,7 @@ impl GetDeploymentWithSettingsQuery {
             "#,
             self.deployment_id,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         let mode = match row.mode.as_str() {
@@ -514,14 +511,13 @@ impl GetDeploymentSocialConnectionsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<DeploymentSocialConnection>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = query!(
             r#"
             SELECT
@@ -537,7 +533,7 @@ impl GetDeploymentSocialConnectionsQuery {
             "#,
             self.deployment_id,
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(row
@@ -581,14 +577,13 @@ impl GetDeploymentJwtTemplatesQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<DeploymentJwtTemplate>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = query!(
             r#"
             SELECT
@@ -606,7 +601,7 @@ impl GetDeploymentJwtTemplatesQuery {
             "#,
             self.deployment_id,
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         let templates = row
@@ -643,11 +638,10 @@ impl GetDeploymentEmailTemplateQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<EmailTemplate, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<EmailTemplate, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let template = match self.template_name {
             DeploymentNameParams::OrganizationInviteTemplate => {
                 let row = query!(
@@ -656,7 +650,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.organization_invite_template
@@ -668,7 +662,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.verification_code_template
@@ -680,7 +674,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.reset_password_code_template
@@ -692,7 +686,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.primary_email_change_template
@@ -704,7 +698,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.password_change_template
@@ -716,7 +710,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.password_remove_template
@@ -728,7 +722,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.sign_in_from_new_device_template
@@ -740,7 +734,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.magic_link_template
@@ -752,7 +746,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.waitlist_signup_template
@@ -764,7 +758,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.waitlist_invite_template
@@ -776,7 +770,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.workspace_invite_template
@@ -788,7 +782,7 @@ impl GetDeploymentEmailTemplateQuery {
                     "#,
                     self.deployment_id,
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(executor)
                 .await?;
 
                 row.webhook_failure_notification_template
@@ -813,11 +807,10 @@ impl GetEmailTemplateByNameQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<EmailTemplate, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<EmailTemplate, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let column_name = match self.template_name.as_str() {
             "organization_invite_template" => "organization_invite_template",
             "verification_code_template" => "verification_code_template",
@@ -845,7 +838,7 @@ impl GetEmailTemplateByNameQuery {
 
         let row = sqlx::query(&query_str)
             .bind(self.deployment_id)
-            .fetch_one(&mut *conn)
+            .fetch_one(executor)
             .await?;
 
         let template_json: serde_json::Value = row.get(column_name);
@@ -866,14 +859,13 @@ impl GetDeploymentAuthSettingsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<models::DeploymentAuthSettings, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -888,7 +880,7 @@ impl GetDeploymentAuthSettingsQuery {
             "#,
             self.deployment_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         let auth_settings = models::DeploymentAuthSettings {
@@ -960,14 +952,13 @@ impl GetDeploymentWithProjectQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<DeploymentWithProject>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -980,7 +971,7 @@ impl GetDeploymentWithProjectQuery {
             "#,
             self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| DeploymentWithProject {
@@ -1006,11 +997,10 @@ impl GetDeploymentChargebeeSubscriptionIdQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<String>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT s.provider_subscription_id
@@ -1022,7 +1012,7 @@ impl GetDeploymentChargebeeSubscriptionIdQuery {
             "#,
             self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.and_then(|r| Some(r.provider_subscription_id)))

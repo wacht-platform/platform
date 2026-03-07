@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH deps AS (\n                SELECT COALESCE(array_agg(a.name ORDER BY a.name), ARRAY[]::TEXT[]) AS agent_names\n                FROM ai_agents a\n                JOIN ai_agent_tools aat ON aat.agent_id = a.id\n                WHERE a.deployment_id = $1\n                  AND aat.tool_id = $2\n                  AND aat.deployment_id = $1\n            ),\n            del AS (\n                DELETE FROM ai_tools\n                WHERE id = $2\n                  AND deployment_id = $1\n                  AND (SELECT cardinality(agent_names) = 0 FROM deps)\n                RETURNING id\n            )\n            SELECT\n                deps.agent_names AS \"agent_names!: Vec<String>\",\n                EXISTS(SELECT 1 FROM del) AS \"deleted!\"\n            FROM deps\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_names!: Vec<String>",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 1,
+        "name": "deleted!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "e1dfe1418418cb391c1d0bac774b10ab73fdb2b0ad7b587905a6d61ab2f2ffc2"
+}

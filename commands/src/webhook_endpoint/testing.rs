@@ -46,7 +46,7 @@ impl TestWebhookEndpointCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = deps.acquirer.acquire().await?;
+        let mut tx = deps.acquirer.begin().await?;
         let endpoint = query!(
             r#"
             SELECT e.url, e.headers, e.timeout_seconds, e.app_slug, a.signing_secret
@@ -57,7 +57,7 @@ impl TestWebhookEndpointCommand {
             self.endpoint_id,
             self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
 
@@ -109,7 +109,7 @@ impl TestWebhookEndpointCommand {
             app_slug,
             "test.webhook"
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *tx)
         .await?;
 
         query!(
@@ -130,8 +130,10 @@ impl TestWebhookEndpointCommand {
             webhook_timestamp,
             signature
         )
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await?;
+
+        tx.commit().await?;
 
         let task_message = NatsTaskMessage {
             task_type: "webhook.deliver".to_string(),
@@ -197,7 +199,7 @@ impl ReactivateEndpointCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
         C: HasRedis + ?Sized,
     {
-        let mut conn = deps.acquirer.acquire().await?;
+        let mut tx = deps.acquirer.begin().await?;
         let endpoint = query_as!(
             WebhookEndpoint,
             r#"
@@ -224,9 +226,11 @@ impl ReactivateEndpointCommand {
             self.endpoint_id,
             self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
+
+        tx.commit().await?;
 
         ClearEndpointFailuresCommand {
             endpoint_id: self.endpoint_id,

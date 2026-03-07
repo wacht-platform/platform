@@ -156,14 +156,13 @@ impl ResolveOAuthAppByFqdnQuery {
         Self { fqdn }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<RuntimeOAuthAppData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT id, deployment_id, slug, fqdn, supported_scopes, scope_definitions, allow_dynamic_client_registration
@@ -173,7 +172,7 @@ impl ResolveOAuthAppByFqdnQuery {
             "#,
         )
         .bind(&self.fqdn)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| RuntimeOAuthAppData {
@@ -198,14 +197,13 @@ impl GetRuntimeDeploymentHostsByIdQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<RuntimeDeploymentHostsData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT backend_host, frontend_host
@@ -215,7 +213,7 @@ impl GetRuntimeDeploymentHostsByIdQuery {
             "#,
         )
         .bind(self.deployment_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| RuntimeDeploymentHostsData {
@@ -238,11 +236,10 @@ impl ResolveApiAuthAppSlugByApiKeyHashQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<String>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT app_slug
@@ -257,7 +254,7 @@ impl ResolveApiAuthAppSlugByApiKeyHashQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.key_hash)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| r.get("app_slug")))
@@ -277,11 +274,10 @@ impl GetRuntimeApiAuthAppSlugByUserIdQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<String>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT app_slug
@@ -295,7 +291,7 @@ impl GetRuntimeApiAuthAppSlugByUserIdQuery {
         )
         .bind(self.deployment_id)
         .bind(self.user_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| r.get("app_slug")))
@@ -315,14 +311,13 @@ impl GetRuntimeOAuthClientByClientIdQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<RuntimeOAuthClientData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT
@@ -354,7 +349,7 @@ impl GetRuntimeOAuthClientByClientIdQuery {
         )
         .bind(self.oauth_app_id)
         .bind(&self.client_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| RuntimeOAuthClientData {
@@ -403,14 +398,13 @@ impl ListActiveRuntimeOAuthGrantsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<RuntimeOAuthGrantData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query(
             r#"
             SELECT scopes, resource, granted_resource
@@ -425,7 +419,7 @@ impl ListActiveRuntimeOAuthGrantsQuery {
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(&self.app_slug)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(rows
@@ -454,14 +448,13 @@ impl GetRuntimeAuthorizationCodeForExchangeQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<RuntimeAuthorizationCodeData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT
@@ -485,7 +478,7 @@ impl GetRuntimeAuthorizationCodeForExchangeQuery {
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(&self.code_hash)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| RuntimeAuthorizationCodeData {
@@ -517,14 +510,13 @@ impl GetRuntimeRefreshTokenForExchangeQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<RuntimeRefreshTokenData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT
@@ -548,7 +540,7 @@ impl GetRuntimeRefreshTokenForExchangeQuery {
         .bind(self.deployment_id)
         .bind(self.oauth_client_id)
         .bind(&self.token_hash)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| RuntimeRefreshTokenData {
@@ -603,14 +595,13 @@ impl ResolveRuntimeOAuthGrantQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<RuntimeOAuthGrantResolution, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let scopes_json = serde_json::to_value(&self.scopes)?;
         let row = sqlx::query!(
             r#"
@@ -657,7 +648,7 @@ impl ResolveRuntimeOAuthGrantQuery {
             self.granted_resource,
             scopes_json
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(RuntimeOAuthGrantResolution {
@@ -681,11 +672,10 @@ impl GetRuntimeApiAuthUserIdByAppSlugQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<i64>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<i64>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT user_id
@@ -698,7 +688,7 @@ impl GetRuntimeApiAuthUserIdByAppSlugQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.app_slug)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| r.get("user_id")))
@@ -727,11 +717,10 @@ impl ValidateRuntimeResourceEntitlementQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<bool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let required_permissions: Vec<String> = self
             .required_permissions
             .iter()
@@ -782,7 +771,7 @@ impl ValidateRuntimeResourceEntitlementQuery {
             .bind(org_id)
             .bind(self.user_id)
             .bind(required_permissions)
-            .fetch_one(&mut *conn)
+            .fetch_one(executor)
             .await?;
             return Ok(row.get("entitled"));
         }
@@ -823,7 +812,7 @@ impl ValidateRuntimeResourceEntitlementQuery {
             .bind(workspace_id)
             .bind(self.user_id)
             .bind(required_permissions)
-            .fetch_one(&mut *conn)
+            .fetch_one(executor)
             .await?;
             return Ok(row.get("entitled"));
         }
@@ -845,14 +834,13 @@ impl GetRuntimeAccessTokenByHashQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<RuntimeAccessTokenData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT
@@ -875,7 +863,7 @@ impl GetRuntimeAccessTokenByHashQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.token_hash)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| RuntimeAccessTokenData {
@@ -907,14 +895,13 @@ impl GetRuntimeIntrospectionDataQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<RuntimeIntrospectionData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             WITH token_row AS (
@@ -1096,7 +1083,7 @@ impl GetRuntimeIntrospectionDataQuery {
             self.oauth_client_id,
             self.token_hash
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| RuntimeIntrospectionData {
@@ -1122,14 +1109,13 @@ impl GetGatewayOAuthAccessTokenByHashQuery {
         Self { token_hash }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<GatewayOAuthAccessTokenData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             WITH token_row AS (
@@ -1307,7 +1293,7 @@ impl GetGatewayOAuthAccessTokenByHashQuery {
             "#,
             self.token_hash
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| GatewayOAuthAccessTokenData {

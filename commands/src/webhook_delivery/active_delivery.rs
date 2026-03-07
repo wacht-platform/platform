@@ -71,15 +71,14 @@ impl GetActiveDeliveryCommand {
         }))
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<ActiveDeliveryInfo>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = Postgres>,
+        E: Executor<'e, Database = Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut *conn).await
+        self.execute_with_deps(executor).await
     }
 }
 
@@ -126,12 +125,11 @@ impl DeleteActiveDeliveryCommand {
         Ok(())
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = Postgres>,
+        E: Executor<'e, Database = Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut *conn).await
+        self.execute_with_deps(executor).await
     }
 }
 
@@ -163,12 +161,11 @@ impl UpdateDeliveryAttemptsCommand {
         Ok(())
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = Postgres>,
+        E: Executor<'e, Database = Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut *conn).await
+        self.execute_with_deps(executor).await
     }
 }
 
@@ -202,11 +199,10 @@ impl DeactivateEndpointCommand {
         Ok(())
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = Postgres>,
+        E: Executor<'e, Database = Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut *conn).await
+        self.execute_with_deps(executor).await
     }
 }

@@ -22,7 +22,7 @@ impl UpdateDeploymentRestrictionsCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let mut query_builder =
             sqlx::QueryBuilder::new("UPDATE deployment_restrictions SET updated_at = NOW() ");
 
@@ -84,7 +84,7 @@ impl UpdateDeploymentRestrictionsCommand {
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 
-        query_builder.build().execute(&mut *conn).await?;
+        query_builder.build().execute(writer).await?;
 
         ClearDeploymentCacheCommand::new(self.deployment_id)
             .execute_with_deps(deps)

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH membership AS (\n                SELECT wm.id\n                FROM workspace_memberships wm\n                JOIN workspaces w ON wm.workspace_id = w.id\n                WHERE wm.id = $1\n                  AND wm.workspace_id = $2\n                  AND w.deployment_id = $3\n            ),\n            cleared_signins AS (\n                UPDATE signins\n                SET active_workspace_membership_id = NULL\n                WHERE active_workspace_membership_id = $1\n                  AND EXISTS(SELECT 1 FROM membership)\n            ),\n            deleted_roles AS (\n                DELETE FROM workspace_membership_roles\n                WHERE workspace_membership_id = $1\n                  AND EXISTS(SELECT 1 FROM membership)\n            ),\n            deleted_membership AS (\n                DELETE FROM workspace_memberships\n                WHERE id = $1\n                  AND EXISTS(SELECT 1 FROM membership)\n            )\n            SELECT EXISTS(SELECT 1 FROM membership) AS \"membership_exists!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "membership_exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "33d37a2ae6159f1e2a7c1c0b9cdee16e4e0876782f9181197372cb54cbbc61ee"
+}

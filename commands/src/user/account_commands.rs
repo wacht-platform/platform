@@ -1,6 +1,5 @@
 use chrono::Utc;
 use serde_json::json;
-use sqlx::Connection;
 use sqlx::Execute;
 
 use common::utils::{security::PasswordHasher, validation::UserValidator};
@@ -49,8 +48,7 @@ impl CreateUserCommand {
             )
             .await?;
 
-        let mut conn = deps.db_router().writer().acquire().await?;
-        let mut tx = conn.begin().await?;
+        let mut tx = deps.db_router().writer().begin().await?;
 
         UserValidator::validate_user_creation(
             &self.request.first_name,
@@ -221,8 +219,7 @@ impl UpdateUserCommand {
     where
         D: HasDbRouter,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
-        let mut tx = conn.begin().await?;
+        let mut tx = deps.db_router().writer().begin().await?;
 
         // Build a single dynamic UPDATE query
         let mut query_builder = sqlx::QueryBuilder::new("UPDATE users SET updated_at = NOW()");
@@ -314,18 +311,17 @@ impl UpdateUserProfileImageCommand {
 }
 
 impl UpdateUserProfileImageCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             "UPDATE users SET updated_at = NOW(), profile_picture_url = $1, has_profile_picture = true WHERE deployment_id = $2 AND id = $3",
             self.profile_picture_url,
             self.deployment_id,
             self.user_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())
@@ -381,14 +377,14 @@ impl UpdateUserPasswordCommand {
         }
 
         let hashed_password = PasswordHasher::hash_password(&self.new_password)?;
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         sqlx::query!(
             "UPDATE users SET updated_at = NOW(), password = $1 WHERE deployment_id = $2 AND id = $3",
             hashed_password,
             self.deployment_id,
             self.user_id
         )
-        .execute(&mut *conn)
+        .execute(writer)
         .await?;
 
         Ok(())
@@ -410,54 +406,57 @@ impl DeleteUserCommand {
 }
 
 impl DeleteUserCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        use sqlx::Connection;
-        let mut conn = acquirer.acquire().await?;
-        let mut tx = conn.begin().await?;
-
-        let exists = sqlx::query!(
-            "SELECT id FROM users WHERE id = $1 AND deployment_id = $2",
-            self.user_id,
-            self.deployment_id
-        )
-        .fetch_optional(&mut *tx)
-        .await?;
-
-        if exists.is_none() {
-            return Err(AppError::NotFound("User not found".to_string()));
-        }
-
-        // Consolidate all deletions into a single roundtrip using CTEs for compile-time checks
-        sqlx::query!(
+        let result = sqlx::query!(
             r#"
-            WITH 
-                deleted_social AS (DELETE FROM social_connections WHERE user_id = $1),
-                deleted_emails AS (DELETE FROM user_email_addresses WHERE user_id = $1),
-                deleted_phones AS (DELETE FROM user_phone_numbers WHERE user_id = $1),
-                deleted_segments AS (DELETE FROM user_segments WHERE user_id = $1),
-                deleted_authenticators AS (DELETE FROM user_authenticators WHERE user_id = $1),
-                deleted_passkeys AS (DELETE FROM user_passkeys WHERE user_id = $1),
-                deleted_notifications AS (DELETE FROM notifications WHERE user_id = $1),
-                deleted_scim_ext AS (DELETE FROM scim_external_ids WHERE user_id = $1),
-                deleted_scim_members AS (DELETE FROM scim_group_members WHERE user_id = $1),
-                deleted_workspace_roles AS (DELETE FROM workspace_membership_roles WHERE workspace_membership_id IN (SELECT id FROM workspace_memberships WHERE user_id = $1)),
-                deleted_workspaces AS (DELETE FROM workspace_memberships WHERE user_id = $1),
-                deleted_org_roles AS (DELETE FROM organization_membership_roles WHERE organization_membership_id IN (SELECT id FROM organization_memberships WHERE user_id = $1)),
-                deleted_orgs AS (DELETE FROM organization_memberships WHERE user_id = $1),
-                updated_sessions AS (UPDATE sessions SET active_signin_id = NULL WHERE active_signin_id IN (SELECT id FROM signins WHERE user_id = $1)),
-                deleted_signins AS (DELETE FROM signins WHERE user_id = $1)
-            DELETE FROM users WHERE id = $1 AND deployment_id = $2
+            WITH user_exists AS (
+                SELECT id
+                FROM users
+                WHERE id = $1 AND deployment_id = $2
+            ),
+            deleted_social AS (DELETE FROM social_connections WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_emails AS (DELETE FROM user_email_addresses WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_phones AS (DELETE FROM user_phone_numbers WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_segments AS (DELETE FROM user_segments WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_authenticators AS (DELETE FROM user_authenticators WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_passkeys AS (DELETE FROM user_passkeys WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_notifications AS (DELETE FROM notifications WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_scim_ext AS (DELETE FROM scim_external_ids WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_scim_members AS (DELETE FROM scim_group_members WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_workspace_roles AS (
+                DELETE FROM workspace_membership_roles
+                WHERE workspace_membership_id IN (SELECT id FROM workspace_memberships WHERE user_id = $1)
+                  AND EXISTS(SELECT 1 FROM user_exists)
+            ),
+            deleted_workspaces AS (DELETE FROM workspace_memberships WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_org_roles AS (
+                DELETE FROM organization_membership_roles
+                WHERE organization_membership_id IN (SELECT id FROM organization_memberships WHERE user_id = $1)
+                  AND EXISTS(SELECT 1 FROM user_exists)
+            ),
+            deleted_orgs AS (DELETE FROM organization_memberships WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            updated_sessions AS (
+                UPDATE sessions
+                SET active_signin_id = NULL
+                WHERE active_signin_id IN (SELECT id FROM signins WHERE user_id = $1)
+                  AND EXISTS(SELECT 1 FROM user_exists)
+            ),
+            deleted_signins AS (DELETE FROM signins WHERE user_id = $1 AND EXISTS(SELECT 1 FROM user_exists)),
+            deleted_user AS (DELETE FROM users WHERE id = $1 AND deployment_id = $2 AND EXISTS(SELECT 1 FROM user_exists))
+            SELECT EXISTS(SELECT 1 FROM user_exists) AS "user_exists!"
             "#,
             self.user_id,
             self.deployment_id
         )
-        .execute(&mut *tx)
+        .fetch_one(executor)
         .await?;
 
-        tx.commit().await?;
+        if !result.user_exists {
+            return Err(AppError::NotFound("User not found".to_string()));
+        }
 
         Ok(())
     }

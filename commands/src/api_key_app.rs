@@ -211,19 +211,12 @@ impl CreateApiAuthAppCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let conn = acquirer.acquire().await?;
-        self.run_with_conn(conn).await
-    }
-
-    async fn run_with_conn<C>(self, mut conn: C) -> Result<ApiAuthApp, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
+        let mut tx = acquirer.begin().await?;
         let mut organization_id = self.organization_id;
 
         if let Some(workspace_id) = self.workspace_id {
             let workspace_org_id =
-                resolve_workspace_organization(&mut *conn, self.deployment_id, workspace_id)
+                resolve_workspace_organization(tx.as_mut(), self.deployment_id, workspace_id)
                     .await?;
             if let Some(explicit_org_id) = organization_id {
                 if explicit_org_id != workspace_org_id {
@@ -236,16 +229,16 @@ impl CreateApiAuthAppCommand {
         }
 
         if let Some(org_id) = organization_id {
-            ensure_organization_exists(&mut *conn, self.deployment_id, org_id).await?;
+            ensure_organization_exists(tx.as_mut(), self.deployment_id, org_id).await?;
         }
 
         if let Some(user_id) = self.user_id {
-            ensure_user_exists(&mut *conn, self.deployment_id, user_id).await?;
+            ensure_user_exists(tx.as_mut(), self.deployment_id, user_id).await?;
             if let Some(org_id) = organization_id {
-                ensure_user_in_organization(&mut *conn, user_id, org_id).await?;
+                ensure_user_in_organization(tx.as_mut(), user_id, org_id).await?;
             }
             if let Some(workspace_id) = self.workspace_id {
-                ensure_user_in_workspace(&mut *conn, user_id, workspace_id).await?;
+                ensure_user_in_workspace(tx.as_mut(), user_id, workspace_id).await?;
             }
         } else if organization_id.is_some() || self.workspace_id.is_some() {
             return Err(AppError::Validation(
@@ -273,9 +266,10 @@ impl CreateApiAuthAppCommand {
             serde_json::to_value(&self.permissions)?,
             serde_json::to_value(&self.resources)?
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *tx)
         .await?;
 
+        tx.commit().await?;
         Ok(ApiAuthApp {
             deployment_id: rec.deployment_id,
             user_id: rec.user_id,
@@ -316,14 +310,7 @@ impl UpdateApiAuthAppCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let conn = acquirer.acquire().await?;
-        self.run_with_conn(conn).await
-    }
-
-    async fn run_with_conn<C>(self, mut conn: C) -> Result<ApiAuthApp, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
+        let mut tx = acquirer.begin().await?;
         let current = sqlx::query!(
             r#"
             SELECT user_id, organization_id, workspace_id
@@ -333,7 +320,7 @@ impl UpdateApiAuthAppCommand {
             self.app_slug,
             self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound("API auth app not found".to_string()))?;
 
@@ -342,7 +329,7 @@ impl UpdateApiAuthAppCommand {
 
         if let Some(workspace_id) = next_workspace_id {
             let workspace_org_id =
-                resolve_workspace_organization(&mut *conn, self.deployment_id, workspace_id)
+                resolve_workspace_organization(tx.as_mut(), self.deployment_id, workspace_id)
                     .await?;
             if let Some(explicit_org_id) = next_organization_id {
                 if explicit_org_id != workspace_org_id {
@@ -355,15 +342,15 @@ impl UpdateApiAuthAppCommand {
         }
 
         if let Some(org_id) = next_organization_id {
-            ensure_organization_exists(&mut *conn, self.deployment_id, org_id).await?;
+            ensure_organization_exists(tx.as_mut(), self.deployment_id, org_id).await?;
         }
 
         if let Some(user_id) = current.user_id {
             if let Some(org_id) = next_organization_id {
-                ensure_user_in_organization(&mut *conn, user_id, org_id).await?;
+                ensure_user_in_organization(tx.as_mut(), user_id, org_id).await?;
             }
             if let Some(workspace_id) = next_workspace_id {
-                ensure_user_in_workspace(&mut *conn, user_id, workspace_id).await?;
+                ensure_user_in_workspace(tx.as_mut(), user_id, workspace_id).await?;
             }
         } else if next_organization_id.is_some() || next_workspace_id.is_some() {
             return Err(AppError::Validation(
@@ -402,7 +389,7 @@ impl UpdateApiAuthAppCommand {
             self.permissions.map(|v| serde_json::to_value(v)).transpose()?,
             self.resources.map(|v| serde_json::to_value(v)).transpose()?
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *tx)
         .await?;
 
         sqlx::query!(
@@ -417,9 +404,10 @@ impl UpdateApiAuthAppCommand {
             rec.deployment_id,
             rec.app_slug
         )
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await?;
 
+        tx.commit().await?;
         Ok(ApiAuthApp {
             deployment_id: rec.deployment_id,
             user_id: rec.user_id,
@@ -490,14 +478,7 @@ impl EnsureUserApiAuthAppCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let conn = acquirer.acquire().await?;
-        self.run_with_conn(conn).await
-    }
-
-    async fn run_with_conn<C>(self, mut conn: C) -> Result<String, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
+        let mut tx = acquirer.begin().await?;
         if self.user_id <= 0 {
             return Err(AppError::BadRequest(
                 "user_id must be a positive integer".to_string(),
@@ -518,7 +499,7 @@ impl EnsureUserApiAuthAppCommand {
             self.deployment_id,
             expected_slug
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *tx)
         .await?;
 
         if let Some(row) = existing {
@@ -532,17 +513,20 @@ impl EnsureUserApiAuthAppCommand {
             format!("OAuth identity for user {}", self.user_id),
             "sk_live".to_string(),
         )
-        .run_with_conn(&mut *conn)
+        .execute_with_db(tx.as_mut())
         .await;
 
-        match create_result {
-            Ok(created) => Ok(created.app_slug),
+        let result = match create_result {
+            Ok(created) => created.app_slug,
             Err(AppError::Database(sqlx::Error::Database(db_err)))
                 if db_err.code().as_deref() == Some("23505") =>
             {
-                Ok(expected_slug)
+                expected_slug
             }
-            Err(err) => Err(err),
-        }
+            Err(err) => return Err(err),
+        };
+
+        tx.commit().await?;
+        Ok(result)
     }
 }

@@ -1,5 +1,4 @@
 use super::*;
-use sqlx::Connection;
 #[allow(dead_code)]
 pub struct DeleteProjectCommand {
     id: i64,
@@ -19,10 +18,11 @@ impl DeleteProjectCommand {
         Self { id }
     }
 
-    pub async fn run_with_tx(
-        self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<(), AppError> {
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    where
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    {
+        let mut tx = acquirer.begin().await?;
         let deployment_ids = ActiveDeploymentIdsByProjectQuery::builder()
             .project_id(self.id)
             .execute_with_db(tx.as_mut())
@@ -58,16 +58,6 @@ impl DeleteProjectCommand {
             .execute_with_db(tx.as_mut())
             .await?;
 
-        Ok(())
-    }
-
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
-    where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let mut conn = acquirer.acquire().await?;
-        let mut tx = conn.begin().await?;
-        self.run_with_tx(&mut tx).await?;
         tx.commit().await?;
         Ok(())
     }

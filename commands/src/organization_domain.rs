@@ -1,5 +1,4 @@
 use chrono::Utc;
-use common::DnsVerificationService;
 use common::{HasDbRouter, HasDnsVerificationService, HasIdGenerator, error::AppError};
 use models::DnsRecord;
 use models::organization_domain::OrganizationDomain;
@@ -63,16 +62,24 @@ impl CreateOrganizationDomainCommand {
         let domain_id = self
             .domain_id
             .unwrap_or(deps.id_generator().next_id()? as i64);
-        self.run_with_domain_id(deps.db_router().writer(), domain_id)
+        CreateOrganizationDomainCommand {
+            domain_id: Some(domain_id),
+            ..self
+        }
+        .execute_with_db(deps.db_router().writer())
             .await
     }
 
-    async fn run_with_domain_id(
+    pub async fn execute_with_db<'e, E>(
         self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        domain_id: i64,
-    ) -> Result<CreateOrganizationDomainResponse, AppError> {
-        let mut conn = acquirer.acquire().await?;
+        executor: E,
+    ) -> Result<CreateOrganizationDomainResponse, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let domain_id = self
+            .domain_id
+            .ok_or_else(|| AppError::Validation("domain_id is required".to_string()))?;
         self.request
             .validate()
             .map_err(|e| AppError::Validation(e.to_string()))?;
@@ -109,7 +116,7 @@ impl CreateOrganizationDomainCommand {
             verification_token,
             Utc::now()
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(|e| match e {
             sqlx::Error::Database(ref db_err) if db_err.code().as_deref() == Some("23505") => {
@@ -122,16 +129,6 @@ impl CreateOrganizationDomainCommand {
             domain,
             verification_token,
         })
-    }
-
-    pub async fn execute_with_db(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<CreateOrganizationDomainResponse, AppError> {
-        let domain_id = self
-            .domain_id
-            .ok_or_else(|| AppError::Validation("domain_id is required".to_string()))?;
-        self.run_with_domain_id(acquirer, domain_id).await
     }
 }
 
@@ -286,16 +283,8 @@ impl VerifyOrganizationDomainCommand {
     where
         D: HasDbRouter + HasDnsVerificationService,
     {
-        self.run_with_deps(deps.db_router().writer(), deps.dns_verification_service())
-            .await
-    }
-
-    async fn run_with_deps(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        dns_verification_service: &DnsVerificationService,
-    ) -> Result<VerifyOrganizationDomainResponse, AppError> {
-        let mut conn = acquirer.acquire().await?;
+        let writer = deps.db_router().writer();
+        let dns_verification_service = deps.dns_verification_service();
         // Fetch the domain
         let domain = sqlx::query_as!(
             OrganizationDomain,
@@ -307,7 +296,7 @@ impl VerifyOrganizationDomainCommand {
             self.request.organization_id,
             self.deployment_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(writer)
         .await?;
 
         if domain.verified {
@@ -326,7 +315,7 @@ impl VerifyOrganizationDomainCommand {
             "#,
             domain.id
         )
-        .execute(&mut *conn)
+        .execute(writer)
         .await?;
 
         let txt_record_name = format!(
@@ -369,7 +358,7 @@ impl VerifyOrganizationDomainCommand {
                     Utc::now(),
                     domain.id
                 )
-                .execute(&mut *conn)
+                .execute(writer)
                 .await?;
 
                 Ok(VerifyOrganizationDomainResponse {

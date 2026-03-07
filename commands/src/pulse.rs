@@ -2,7 +2,6 @@ use crate::notification::CreateNotificationCommand;
 use common::{HasDbRouter, HasIdGenerator, HasNatsClient, error::AppError};
 use models::notification::NotificationSeverity;
 use models::pulse_transaction::{PulseTransaction, PulseTransactionType};
-use sqlx::Connection;
 use tracing::warn;
 
 const LOW_BALANCE_THRESHOLD_CENTS: i64 = 500;
@@ -166,8 +165,7 @@ impl AddPulseCreditsCommand {
             .transaction_id
             .ok_or_else(|| AppError::Validation("transaction_id is required".to_string()))?;
 
-        let mut conn = acquirer.acquire().await?;
-        let mut tx = conn.begin().await?;
+        let mut tx = acquirer.begin().await?;
 
         let row = sqlx::query!(
             r#"
@@ -409,11 +407,10 @@ impl EnsurePulseUsageAllowedForDeploymentCommand {
 }
 
 impl EnsurePulseUsageAllowedForDeploymentCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!"
@@ -424,7 +421,7 @@ impl EnsurePulseUsageAllowedForDeploymentCommand {
             "#,
             self.deployment_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         let disabled = row.pulse_usage_disabled;

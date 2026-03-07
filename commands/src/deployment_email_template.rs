@@ -52,7 +52,7 @@ impl UpdateDeploymentEmailTemplateCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let column_name = match self.template_name {
             DeploymentNameParams::OrganizationInviteTemplate => "organization_invite_template",
             DeploymentNameParams::VerificationCodeTemplate => "verification_code_template",
@@ -98,7 +98,7 @@ impl UpdateDeploymentEmailTemplateCommand {
         sqlx::query(&query)
             .bind(template_json)
             .bind(self.deployment_id)
-            .execute(&mut *conn)
+            .execute(writer)
             .await?;
 
         // Clear Redis cache for deployment

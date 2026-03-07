@@ -43,11 +43,12 @@ impl CreateProjectWithStagingDeploymentCommand {
             .ok_or_else(|| AppError::Validation("Invalid owner id format".to_string()))
     }
 
-    pub async fn run_with_tx(
-        self,
-        ids: &dyn IdGenerator,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    ) -> Result<ProjectWithDeployments, AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<ProjectWithDeployments, AppError>
+    where
+        D: common::HasDbRouter + common::HasIdGenerator + Sync,
+    {
+        let mut tx = deps.db_router().writer().begin().await?;
+        let ids = DepsIdGeneratorAdapter::new(deps);
         let validator = ProjectValidator::new();
         validator.validate_project_name(&self.name)?;
         validator.validate_auth_methods(&self.auth_methods)?;
@@ -238,6 +239,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             custom_smtp_config: None,
         };
 
+        tx.commit().await?;
         Ok(ProjectWithDeployments {
             id: project_row.id,
             image_url: project_row.image_url,
@@ -248,17 +250,6 @@ impl CreateProjectWithStagingDeploymentCommand {
             billing_account_id,
             deployments: vec![deployment],
         })
-    }
-
-    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<ProjectWithDeployments, AppError>
-    where
-        D: common::HasDbRouter + common::HasIdGenerator + Sync,
-    {
-        let mut tx = deps.db_router().writer().begin().await?;
-        let ids = DepsIdGeneratorAdapter::new(deps);
-        let result = self.run_with_tx(&ids, &mut tx).await?;
-        tx.commit().await?;
-        Ok(result)
     }
 }
 

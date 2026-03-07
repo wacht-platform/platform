@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM workspace_roles\n            WHERE id = $1 AND workspace_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f90a7ad7876261e2ef853eff0bc5f133c1a80b650a5dfedf0f35aab035097fcc"
+}

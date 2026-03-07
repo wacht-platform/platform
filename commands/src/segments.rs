@@ -1,7 +1,6 @@
 use common::error::AppError;
 use models::Segment;
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateSegmentCommand {
@@ -26,11 +25,13 @@ impl CreateSegmentCommand {
 }
 
 impl CreateSegmentCommand {
-    pub async fn execute_with_db(
+    pub async fn execute_with_db<'e, E>(
         self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<Segment, AppError> {
-        let mut conn = acquirer.acquire().await?;
+        executor: E,
+    ) -> Result<Segment, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         let id = self
             .id
             .ok_or_else(|| AppError::Validation("id is required".into()))?;
@@ -45,7 +46,7 @@ impl CreateSegmentCommand {
         .bind(self.deployment_id)
         .bind(self.name)
         .bind(self.r#type)
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -111,40 +112,37 @@ impl UpdateSegmentCommand {
 }
 
 impl UpdateSegmentCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<Segment, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Segment, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let existing = sqlx::query(
-            "SELECT id FROM segments WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
+        let segment = sqlx::query_as!(
+            Segment,
+            r#"
+            UPDATE segments
+            SET
+                updated_at = NOW(),
+                name = COALESCE($3, name)
+            WHERE id = $1
+              AND deployment_id = $2
+              AND deleted_at IS NULL
+            RETURNING
+                id,
+                created_at,
+                updated_at,
+                deleted_at,
+                deployment_id,
+                name,
+                type as "segment_type!"
+            "#,
+            self.id,
+            self.deployment_id,
+            self.name
         )
-        .bind(self.id)
-        .bind(self.deployment_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await
-        .map_err(AppError::Database)?;
-
-        if existing.is_none() {
-            return Err(AppError::NotFound("Segment not found".into()));
-        }
-
-        let mut query_builder = sqlx::QueryBuilder::new("UPDATE segments SET updated_at = NOW()");
-
-        if let Some(name) = self.name {
-            query_builder.push(", name = ");
-            query_builder.push_bind(name);
-        }
-
-        query_builder.push(" WHERE id = ");
-        query_builder.push_bind(self.id);
-        query_builder.push(" RETURNING *");
-
-        let segment = query_builder
-            .build_query_as::<Segment>()
-            .fetch_one(&mut *conn)
-            .await
-            .map_err(AppError::Database)?;
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Segment not found".into()))?;
 
         Ok(segment)
     }
@@ -198,42 +196,47 @@ impl DeleteSegmentCommand {
 }
 
 impl DeleteSegmentCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<serde_json::Value, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let result = sqlx::query(
-            "UPDATE segments SET deleted_at = NOW() WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
+        let result = sqlx::query!(
+            r#"
+            WITH updated_segment AS (
+                UPDATE segments
+                SET deleted_at = NOW()
+                WHERE id = $1
+                  AND deployment_id = $2
+                  AND deleted_at IS NULL
+                RETURNING id
+            ),
+            deleted_org AS (
+                DELETE FROM organization_segments
+                WHERE segment_id = $1
+                  AND EXISTS(SELECT 1 FROM updated_segment)
+            ),
+            deleted_ws AS (
+                DELETE FROM workspace_segments
+                WHERE segment_id = $1
+                  AND EXISTS(SELECT 1 FROM updated_segment)
+            ),
+            deleted_user AS (
+                DELETE FROM user_segments
+                WHERE segment_id = $1
+                  AND EXISTS(SELECT 1 FROM updated_segment)
+            )
+            SELECT EXISTS(SELECT 1 FROM updated_segment) AS "segment_exists!"
+            "#,
+            self.id,
+            self.deployment_id
         )
-        .bind(self.id)
-        .bind(self.deployment_id)
-        .execute(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
-        if result.rows_affected() == 0 {
+        if !result.segment_exists {
             return Err(AppError::NotFound("Segment not found".into()));
         }
-
-        // Clean up associations
-        sqlx::query("DELETE FROM organization_segments WHERE segment_id = $1")
-            .bind(self.id)
-            .execute(&mut *conn)
-            .await
-            .map_err(AppError::Database)?;
-
-        sqlx::query("DELETE FROM workspace_segments WHERE segment_id = $1")
-            .bind(self.id)
-            .execute(&mut *conn)
-            .await
-            .map_err(AppError::Database)?;
-
-        sqlx::query("DELETE FROM user_segments WHERE segment_id = $1")
-            .bind(self.id)
-            .execute(&mut *conn)
-            .await
-            .map_err(AppError::Database)?;
 
         Ok(serde_json::json!({ "success": true }))
     }
@@ -283,94 +286,100 @@ impl AssignSegmentCommand {
 }
 
 impl AssignSegmentCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<serde_json::Value, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let segment_row = sqlx::query(
-            "SELECT type FROM segments WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
+        let result = sqlx::query!(
+            r#"
+            WITH segment AS (
+                SELECT type
+                FROM segments
+                WHERE id = $1
+                  AND deployment_id = $2
+                  AND deleted_at IS NULL
+            ),
+            organization_exists AS (
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM organizations
+                    WHERE id = $3
+                      AND deployment_id = $2
+                      AND deleted_at IS NULL
+                ) AS v
+            ),
+            workspace_exists AS (
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM workspaces
+                    WHERE id = $3
+                      AND deployment_id = $2
+                      AND deleted_at IS NULL
+                ) AS v
+            ),
+            user_exists AS (
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM users
+                    WHERE id = $3
+                      AND deployment_id = $2
+                      AND deleted_at IS NULL
+                ) AS v
+            ),
+            ins_org AS (
+                INSERT INTO organization_segments (organization_id, segment_id)
+                SELECT $3, $1
+                WHERE EXISTS(SELECT 1 FROM segment WHERE type = 'organization')
+                  AND (SELECT v FROM organization_exists)
+                ON CONFLICT DO NOTHING
+            ),
+            ins_ws AS (
+                INSERT INTO workspace_segments (workspace_id, segment_id)
+                SELECT $3, $1
+                WHERE EXISTS(SELECT 1 FROM segment WHERE type = 'workspace')
+                  AND (SELECT v FROM workspace_exists)
+                ON CONFLICT DO NOTHING
+            ),
+            ins_user AS (
+                INSERT INTO user_segments (user_id, segment_id)
+                SELECT $3, $1
+                WHERE EXISTS(SELECT 1 FROM segment WHERE type = 'user')
+                  AND (SELECT v FROM user_exists)
+                ON CONFLICT DO NOTHING
+            )
+            SELECT
+                (SELECT type FROM segment LIMIT 1) AS "segment_type?",
+                (SELECT v FROM organization_exists) AS "organization_exists!",
+                (SELECT v FROM workspace_exists) AS "workspace_exists!",
+                (SELECT v FROM user_exists) AS "user_exists!"
+            "#,
+            self.segment_id,
+            self.deployment_id,
+            self.entity_id
         )
-        .bind(self.segment_id)
-        .bind(self.deployment_id)
-        .fetch_optional(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
-        let segment_type: String = match segment_row {
-            Some(row) => row.try_get("type").unwrap_or_default(),
-            None => return Err(AppError::NotFound("Segment not found".into())),
+        let Some(segment_type) = result.segment_type else {
+            return Err(AppError::NotFound("Segment not found".into()));
         };
 
         match segment_type.as_str() {
             "organization" => {
-                let org_exists = sqlx::query(
-                    "SELECT id FROM organizations WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
-                )
-                .bind(self.entity_id)
-                .bind(self.deployment_id)
-                .fetch_optional(&mut *conn)
-                .await
-                .map_err(AppError::Database)?;
-
-                if org_exists.is_none() {
+                if !result.organization_exists {
                     return Err(AppError::NotFound("Organization not found".into()));
                 }
-
-                sqlx::query(
-                    "INSERT INTO organization_segments (organization_id, segment_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                )
-                .bind(self.entity_id)
-                .bind(self.segment_id)
-                .execute(&mut *conn)
-                .await
-                .map_err(AppError::Database)?;
             }
             "workspace" => {
-                let ws_exists = sqlx::query(
-                    "SELECT id FROM workspaces WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
-                )
-                .bind(self.entity_id)
-                .bind(self.deployment_id)
-                .fetch_optional(&mut *conn)
-                .await
-                .map_err(AppError::Database)?;
-
-                if ws_exists.is_none() {
+                if !result.workspace_exists {
                     return Err(AppError::NotFound("Workspace not found".into()));
                 }
-
-                sqlx::query(
-                    "INSERT INTO workspace_segments (workspace_id, segment_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                )
-                .bind(self.entity_id)
-                .bind(self.segment_id)
-                .execute(&mut *conn)
-                .await
-                .map_err(AppError::Database)?;
             }
             "user" => {
-                let user_exists = sqlx::query(
-                    "SELECT id FROM users WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
-                )
-                .bind(self.entity_id)
-                .bind(self.deployment_id)
-                .fetch_optional(&mut *conn)
-                .await
-                .map_err(AppError::Database)?;
-
-                if user_exists.is_none() {
+                if !result.user_exists {
                     return Err(AppError::NotFound("User not found".into()));
                 }
-
-                sqlx::query(
-                    "INSERT INTO user_segments (user_id, segment_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                )
-                .bind(self.entity_id)
-                .bind(self.segment_id)
-                .execute(&mut *conn)
-                .await
-                .map_err(AppError::Database)?;
             }
             _ => return Err(AppError::Internal("Invalid segment type".into())),
         }
@@ -431,55 +440,53 @@ impl RemoveSegmentCommand {
 }
 
 impl RemoveSegmentCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<serde_json::Value, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let segment_row = sqlx::query(
-            "SELECT type FROM segments WHERE id = $1 AND deployment_id = $2 AND deleted_at IS NULL",
+        let result = sqlx::query!(
+            r#"
+            WITH segment AS (
+                SELECT type
+                FROM segments
+                WHERE id = $1
+                  AND deployment_id = $2
+                  AND deleted_at IS NULL
+            ),
+            deleted_org AS (
+                DELETE FROM organization_segments
+                WHERE organization_id = $3
+                  AND segment_id = $1
+                  AND EXISTS(SELECT 1 FROM segment WHERE type = 'organization')
+            ),
+            deleted_ws AS (
+                DELETE FROM workspace_segments
+                WHERE workspace_id = $3
+                  AND segment_id = $1
+                  AND EXISTS(SELECT 1 FROM segment WHERE type = 'workspace')
+            ),
+            deleted_user AS (
+                DELETE FROM user_segments
+                WHERE user_id = $3
+                  AND segment_id = $1
+                  AND EXISTS(SELECT 1 FROM segment WHERE type = 'user')
+            )
+            SELECT
+                (SELECT type FROM segment LIMIT 1) AS "segment_type?"
+            "#,
+            self.segment_id,
+            self.deployment_id,
+            self.entity_id
         )
-        .bind(self.segment_id)
-        .bind(self.deployment_id)
-        .fetch_optional(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
-        let segment_type: String = match segment_row {
-            Some(row) => row.try_get("type").unwrap_or_default(),
-            None => return Err(AppError::NotFound("Segment not found".into())),
+        let Some(segment_type) = result.segment_type else {
+            return Err(AppError::NotFound("Segment not found".into()));
         };
-
-        match segment_type.as_str() {
-            "organization" => {
-                sqlx::query(
-                    "DELETE FROM organization_segments WHERE organization_id = $1 AND segment_id = $2",
-                )
-                .bind(self.entity_id)
-                .bind(self.segment_id)
-                .execute(&mut *conn)
-                .await
-                .map_err(AppError::Database)?;
-            }
-            "workspace" => {
-                sqlx::query(
-                    "DELETE FROM workspace_segments WHERE workspace_id = $1 AND segment_id = $2",
-                )
-                .bind(self.entity_id)
-                .bind(self.segment_id)
-                .execute(&mut *conn)
-                .await
-                .map_err(AppError::Database)?;
-            }
-            "user" => {
-                sqlx::query("DELETE FROM user_segments WHERE user_id = $1 AND segment_id = $2")
-                    .bind(self.entity_id)
-                    .bind(self.segment_id)
-                    .execute(&mut *conn)
-                    .await
-                    .map_err(AppError::Database)?;
-            }
-            _ => return Err(AppError::Internal("Invalid segment type".into())),
+        if segment_type != "organization" && segment_type != "workspace" && segment_type != "user" {
+            return Err(AppError::Internal("Invalid segment type".into()));
         }
 
         Ok(serde_json::json!({ "success": true }))

@@ -23,8 +23,8 @@ pub struct GetSubscribedEndpointsCommand {
     pub event_name: String,
 }
 
-pub struct GetSubscribedEndpointsDeps<'a, A> {
-    pub acquirer: A,
+pub struct GetSubscribedEndpointsDeps<'a, E> {
+    pub executor: E,
     pub redis_client: &'a redis::Client,
 }
 
@@ -37,14 +37,13 @@ impl GetSubscribedEndpointsCommand {
         }
     }
 
-    pub async fn execute_with_deps<'a, A>(
+    pub async fn execute_with_deps<'a, E>(
         self,
-        deps: GetSubscribedEndpointsDeps<'a, A>,
+        deps: GetSubscribedEndpointsDeps<'a, E>,
     ) -> Result<Vec<EndpointWithRules>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = deps.acquirer.acquire().await?;
         let cache_key = format!(
             "webhook:subs:{}:{}:{}",
             self.deployment_id, self.app_slug, self.event_name
@@ -81,7 +80,7 @@ impl GetSubscribedEndpointsCommand {
             self.event_name,
             self.deployment_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(deps.executor)
         .await?;
 
         let endpoints: Vec<EndpointWithRules> = endpoints

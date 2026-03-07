@@ -1,0 +1,85 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH cleared_primary AS (\n                UPDATE user_email_addresses\n                SET is_primary = false\n                WHERE user_id = $5\n                  AND $7 = true\n            ),\n            inserted_email AS (\n                INSERT INTO user_email_addresses (\n                    id, created_at, updated_at, deployment_id, user_id,\n                    email_address, is_primary, verified, verified_at, verification_strategy\n                )\n                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n                RETURNING\n                    id,\n                    created_at,\n                    updated_at,\n                    deployment_id,\n                    user_id,\n                    email_address as \"email!\",\n                    is_primary,\n                    verified,\n                    verified_at as \"verified_at!\",\n                    verification_strategy as \"verification_strategy: VerificationStrategy\"\n            ),\n            updated_user AS (\n                UPDATE users\n                SET primary_email_address_id = (SELECT id FROM inserted_email)\n                WHERE id = $5\n                  AND $7 = true\n            )\n            SELECT *\n            FROM inserted_email\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "deployment_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "email!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_primary",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "verified_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "verification_strategy: VerificationStrategy",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Int8",
+        "Text",
+        "Bool",
+        "Bool",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "f645a439cb2de619e449b78e5b40c9031e1cd5f4d815f7e1d4503ce9d817515c"
+}

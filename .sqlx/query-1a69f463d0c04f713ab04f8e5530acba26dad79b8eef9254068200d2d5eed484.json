@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH membership AS (\n                SELECT id\n                FROM organization_memberships\n                WHERE id = $1\n                  AND organization_id = $2\n            ),\n            cleared_roles AS (\n                DELETE FROM organization_membership_roles\n                WHERE organization_membership_id = $1\n                  AND $3 = true\n                  AND EXISTS(SELECT 1 FROM membership)\n            ),\n            inserted_roles AS (\n                INSERT INTO organization_membership_roles (\n                    organization_membership_id, organization_role_id, organization_id\n                )\n                SELECT\n                    $1,\n                    role_id,\n                    $2\n                FROM UNNEST($4::BIGINT[]) AS role_id\n                WHERE $3 = true\n                  AND EXISTS(SELECT 1 FROM membership)\n            ),\n            updated_metadata AS (\n                UPDATE organization_memberships\n                SET public_metadata = $5,\n                    updated_at = NOW()\n                WHERE id = $1\n                  AND $6 = true\n                  AND EXISTS(SELECT 1 FROM membership)\n            )\n            SELECT EXISTS(SELECT 1 FROM membership) AS \"membership_exists!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "membership_exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Int8Array",
+        "Jsonb",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1a69f463d0c04f713ab04f8e5530acba26dad79b8eef9254068200d2d5eed484"
+}

@@ -41,14 +41,13 @@ impl GetAgentIntegrationsQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> StdResult<Vec<AgentIntegration>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let limit = self.limit.unwrap_or(50) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
@@ -65,7 +64,7 @@ impl GetAgentIntegrationsQuery {
             limit,
             offset,
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -153,11 +152,10 @@ impl GetAgentIntegrationByIdQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<AgentIntegration, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> StdResult<AgentIntegration, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, deployment_id, agent_id, integration_type, name, config
@@ -168,7 +166,7 @@ impl GetAgentIntegrationByIdQuery {
             self.deployment_id,
             self.agent_id,
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Integration not found".to_string()))?;
@@ -232,14 +230,13 @@ impl GetActiveIntegrationsForContextQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> StdResult<Vec<AgentIntegration>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await.map_err(AppError::Database)?;
         let rows = sqlx::query!(
             r#"
             SELECT i.id, i.created_at, i.updated_at, i.deployment_id, i.agent_id, i.integration_type, i.name, i.config
@@ -253,7 +250,7 @@ impl GetActiveIntegrationsForContextQuery {
             self.deployment_id,
             self.agent_id,
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -286,11 +283,10 @@ impl GetClickUpTokenQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<String, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> StdResult<String, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await.map_err(AppError::Database)?;
         let row: Option<(Option<serde_json::Value>,)> = sqlx::query_as(
             r#"
             SELECT aai.connection_metadata
@@ -304,7 +300,7 @@ impl GetClickUpTokenQuery {
         )
         .bind(self.deployment_id)
         .bind(&self.context_group)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await
         .map_err(AppError::Database)?;
 

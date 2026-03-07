@@ -1,6 +1,7 @@
 use common::error::AppError;
 use josekit::jws::{ES256, JwsHeader};
 use josekit::jwt::{self, JwtPayload};
+use sqlx::Row;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ImpersonationTokenClaims {
@@ -23,50 +24,43 @@ impl GenerateImpersonationTokenCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         self,
-        acquirer: A,
+        executor: E,
     ) -> Result<GenerateImpersonationTokenResponse, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let keypair = sqlx::query!(
+        let row = sqlx::query(
             r#"
-            SELECT private_key, public_key, frontend_host
+            SELECT dk.private_key, d.frontend_host, u.disabled
             FROM deployment_key_pairs dk
             JOIN deployments d ON d.id = dk.deployment_id
+            JOIN users u ON u.deployment_id = dk.deployment_id
             WHERE dk.deployment_id = $1
+              AND u.id = $2
             "#,
-            self.deployment_id
         )
-        .fetch_one(&mut *conn)
+        .bind(self.deployment_id)
+        .bind(self.user_id)
+        .fetch_optional(executor)
         .await
-        .map_err(|e| AppError::Internal(format!("Failed to get deployment keypair: {}", e)))?;
-
-        let user = sqlx::query!(
-            r#"
-            SELECT id, disabled
-            FROM users
-            WHERE id = $1 AND deployment_id = $2
-            "#,
-            self.user_id,
-            self.deployment_id
-        )
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to fetch user: {}", e)))?
+        .map_err(|e| AppError::Internal(format!("Failed to fetch impersonation context: {}", e)))?
         .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
-        if user.disabled {
+        let disabled: bool = row.get("disabled");
+        if disabled {
             return Err(AppError::BadRequest(
                 "Cannot impersonate disabled user".to_string(),
             ));
         }
 
+        let private_key: String = row.get("private_key");
+        let frontend_host: String = row.get("frontend_host");
+
         let mut payload = JwtPayload::new();
         payload.set_subject(&self.user_id.to_string());
-        payload.set_issuer(&format!("https://{}", keypair.frontend_host));
+        payload.set_issuer(&format!("https://{}", frontend_host));
 
         let now = std::time::SystemTime::now();
         let expires = now + std::time::Duration::from_secs(600);
@@ -88,7 +82,7 @@ impl GenerateImpersonationTokenCommand {
             .map_err(|e| AppError::Internal(format!("Failed to set type claim: {}", e)))?;
 
         let signer = ES256
-            .signer_from_pem(&keypair.private_key)
+            .signer_from_pem(&private_key)
             .map_err(|e| AppError::Internal(format!("Failed to create signer: {}", e)))?;
 
         let mut header = JwsHeader::new();
@@ -99,7 +93,7 @@ impl GenerateImpersonationTokenCommand {
 
         let redirect_url = format!(
             "https://{}/sign-in?impersonation_token={}",
-            keypair.frontend_host,
+            frontend_host,
             urlencoding::encode(&token)
         );
 

@@ -7,7 +7,6 @@ use common::{
 use crate::SendEmailCommand;
 use dto::json::InviteUserRequest;
 use models::DeploymentInvitation;
-use sqlx::Connection;
 
 pub struct InviteUserCommand {
     deployment_id: i64,
@@ -41,7 +40,7 @@ impl InviteUserCommand {
                 .unwrap_or(deps.id_generator().next_id()? as i64);
         let reader = deps.reader_pool(ReadConsistency::Strong);
 
-        let mut conn = deps.writer_pool().acquire().await?;
+        let writer_pool = deps.writer_pool();
         let now = Utc::now();
         let expiry_days = self.request.expiry_days.unwrap_or(7);
         let expiry = now + Duration::days(expiry_days);
@@ -71,7 +70,7 @@ impl InviteUserCommand {
             token,
             expiry
         )
-        .execute(&mut *conn)
+        .execute(writer_pool)
         .await?;
 
         let deployment_settings =
@@ -163,9 +162,8 @@ impl ApproveWaitlistUserCommand {
                 .unwrap_or(deps.id_generator().next_id()? as i64);
         let reader = deps.reader_pool(ReadConsistency::Strong);
 
-        let mut conn = deps.writer_pool().acquire().await?;
+        let mut tx = deps.writer_pool().begin().await?;
         let now = Utc::now();
-        let mut tx = conn.begin().await?;
 
         let waitlist_user = sqlx::query!(
             r#"
@@ -288,11 +286,10 @@ impl DeleteInvitationCommand {
 }
 
 impl DeleteInvitationCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query!(
             r#"
             DELETE FROM deployment_invitations
@@ -301,7 +298,7 @@ impl DeleteInvitationCommand {
             self.invitation_id,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         if result.rows_affected() == 0 {

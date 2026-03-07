@@ -103,11 +103,10 @@ impl ListOAuthAppsByDeploymentQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<OAuthAppData>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<OAuthAppData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT
@@ -130,7 +129,7 @@ impl ListOAuthAppsByDeploymentQuery {
             "#,
             self.deployment_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(rows
@@ -167,11 +166,10 @@ impl GetOAuthAppBySlugQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<OAuthAppData>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<OAuthAppData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -195,7 +193,7 @@ impl GetOAuthAppBySlugQuery {
             self.deployment_id,
             self.oauth_app_slug
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| OAuthAppData {
@@ -229,11 +227,10 @@ impl ListOAuthClientsByOAuthAppQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<OAuthClientData>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<OAuthClientData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT
@@ -267,7 +264,7 @@ impl ListOAuthClientsByOAuthAppQuery {
             self.deployment_id,
             self.oauth_app_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(rows
@@ -320,14 +317,13 @@ impl GetOAuthClientByIdQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<OAuthClientData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -362,7 +358,7 @@ impl GetOAuthClientByIdQuery {
             self.oauth_app_id,
             self.oauth_client_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(row.map(|r| {
@@ -410,14 +406,13 @@ impl ListOAuthGrantsByClientQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<OAuthClientGrantData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT
@@ -442,7 +437,7 @@ impl ListOAuthGrantsByClientQuery {
             self.deployment_id,
             self.oauth_client_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(rows

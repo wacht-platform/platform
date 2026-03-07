@@ -67,12 +67,11 @@ impl GetExecutionContextQuery {
         })
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AgentExecutionContext, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut *conn).await
+        self.execute_with_deps(executor).await
     }
 }
 
@@ -129,14 +128,13 @@ impl ListExecutionContextsQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<AgentExecutionContext>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let limit = self.limit.unwrap_or(50) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
@@ -179,7 +177,7 @@ impl ListExecutionContextsQuery {
 
         let rows = query
             .build()
-            .fetch_all(&mut *conn)
+            .fetch_all(executor)
             .await
             .map_err(AppError::Database)?;
 
@@ -240,14 +238,13 @@ impl GetChildContextsQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<AgentExecutionContext>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let mut query = sqlx::QueryBuilder::new(
             r#"
             SELECT id, created_at, updated_at, deployment_id,
@@ -269,7 +266,7 @@ impl GetChildContextsQuery {
 
         let rows = query
             .build()
-            .fetch_all(&mut *conn)
+            .fetch_all(executor)
             .await
             .map_err(AppError::Database)?;
 
@@ -326,19 +323,18 @@ impl GetStatusUpdatesQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AgentStatusUpdate>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<AgentStatusUpdate>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let limit = self.limit.unwrap_or(100);
-        let mut conn = acquirer.acquire().await?;
 
         let rows = sqlx::query!(
             "SELECT id, context_id, status_update, metadata, created_at FROM agent_status_updates WHERE context_id = $1 ORDER BY created_at ASC LIMIT $2",
             self.context_id,
             limit
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -374,17 +370,16 @@ impl GetLatestStatusUpdatesForContextsQuery {
         Self { context_ids }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<LatestStatusUpdate>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         if self.context_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query(
             r#"
             SELECT DISTINCT ON (context_id) context_id, status_update, created_at
@@ -394,7 +389,7 @@ impl GetLatestStatusUpdatesForContextsQuery {
             "#,
         )
         .bind(&self.context_ids)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -426,67 +421,64 @@ impl GetParentContextQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<AgentExecutionContext>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
 
-        let parent_id_opt = sqlx::query_scalar!(
-            "SELECT parent_context_id FROM agent_execution_contexts
-             WHERE id = $1 AND deployment_id = $2",
-            self.context_id,
-            self.deployment_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        if let Some(parent_id) = parent_id_opt {
-            let ctx = sqlx::query!(
-                r#"
-                SELECT id, created_at, updated_at, deployment_id,
-                       title, context_group, system_instructions, last_activity_at, completed_at,
-                       execution_state, status, source, external_context_id, external_resource_metadata,
-                       parent_context_id, completion_summary
+        let ctx = sqlx::query(
+            r#"
+            SELECT id, created_at, updated_at, deployment_id,
+                   title, context_group, system_instructions, last_activity_at, completed_at,
+                   execution_state, status, source, external_context_id, external_resource_metadata,
+                   parent_context_id, completion_summary
+            FROM agent_execution_contexts
+            WHERE id = (
+                SELECT parent_context_id
                 FROM agent_execution_contexts
                 WHERE id = $1 AND deployment_id = $2
-                "#,
-                parent_id,
-                self.deployment_id
             )
-            .fetch_one(&mut *conn)
-            .await?;
+              AND deployment_id = $2
+            "#,
+        )
+        .bind(self.context_id)
+        .bind(self.deployment_id)
+        .fetch_optional(executor)
+        .await?;
 
-            let status = ExecutionContextStatus::from_str(&ctx.status).unwrap_or_default();
-            let execution_state = ctx
-                .execution_state
+        if let Some(ctx) = ctx {
+            use sqlx::Row;
+            let status_str: String = ctx.get("status");
+            let status = ExecutionContextStatus::from_str(&status_str).unwrap_or_default();
+            let execution_state: Option<serde_json::Value> = ctx.get("execution_state");
+            let execution_state = execution_state
                 .as_ref()
                 .and_then(|s| serde_json::from_value::<AgentExecutionState>(s.clone()).ok());
 
-            Ok(Some(AgentExecutionContext {
-                id: ctx.id,
-                created_at: ctx.created_at,
-                updated_at: ctx.updated_at,
-                deployment_id: ctx.deployment_id,
-                title: ctx.title,
-                context_group: ctx.context_group,
-                system_instructions: ctx.system_instructions,
-                last_activity_at: ctx.last_activity_at,
-                completed_at: ctx.completed_at,
+            return Ok(Some(AgentExecutionContext {
+                id: ctx.get("id"),
+                created_at: ctx.get("created_at"),
+                updated_at: ctx.get("updated_at"),
+                deployment_id: ctx.get("deployment_id"),
+                title: ctx.get("title"),
+                context_group: ctx.get("context_group"),
+                system_instructions: ctx.get("system_instructions"),
+                last_activity_at: ctx.get("last_activity_at"),
+                completed_at: ctx.get("completed_at"),
                 execution_state,
                 status,
-                source: ctx.source,
-                external_context_id: ctx.external_context_id,
-                external_resource_metadata: ctx.external_resource_metadata,
-                parent_context_id: ctx.parent_context_id,
-                completion_summary: ctx.completion_summary,
-            }))
-        } else {
-            Ok(None)
+                source: ctx.get("source"),
+                external_context_id: ctx.get("external_context_id"),
+                external_resource_metadata: ctx.get("external_resource_metadata"),
+                parent_context_id: ctx.get("parent_context_id"),
+                completion_summary: ctx.get("completion_summary"),
+            }));
         }
+
+        Ok(None)
     }
 }
 
@@ -511,14 +503,13 @@ impl GetChildCompletionSummaryQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<serde_json::Value>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let completion_summary = if let Some(parent_context_id) = self.parent_context_id {
             let row = sqlx::query!(
                 r#"
@@ -530,7 +521,7 @@ impl GetChildCompletionSummaryQuery {
                 self.deployment_id,
                 parent_context_id
             )
-            .fetch_optional(&mut *conn)
+            .fetch_optional(executor)
             .await
             .map_err(AppError::Database)?;
             row.and_then(|r| r.completion_summary)
@@ -544,7 +535,7 @@ impl GetChildCompletionSummaryQuery {
                 self.child_context_id,
                 self.deployment_id
             )
-            .fetch_optional(&mut *conn)
+            .fetch_optional(executor)
             .await
             .map_err(AppError::Database)?;
             row.and_then(|r| r.completion_summary)
@@ -568,14 +559,13 @@ impl GetChildrenCompletionSummariesQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<ChildCompletionSummary>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query!(
             r#"
             SELECT id, title, status, completion_summary, completed_at
@@ -587,7 +577,7 @@ impl GetChildrenCompletionSummariesQuery {
             self.parent_context_id,
             self.deployment_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 

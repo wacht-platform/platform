@@ -40,7 +40,7 @@ impl UpsertDeploymentSocialConnectionCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let social_connection_id = self.social_connection_id.ok_or_else(|| {
             AppError::Validation("social_connection_id is required".to_string())
         })?;
@@ -56,7 +56,7 @@ impl UpsertDeploymentSocialConnectionCommand {
             "#,
             self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(writer)
         .await?
         .ok_or_else(|| AppError::NotFound("Deployment not found".to_string()))?;
 
@@ -105,7 +105,7 @@ impl UpsertDeploymentSocialConnectionCommand {
             serde_json::to_value(credentials)
                 .map_err(|e| AppError::Serialization(e.to_string()))?,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(writer)
         .await?;
 
         let parsed_provider = result

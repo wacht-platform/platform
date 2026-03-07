@@ -95,128 +95,203 @@ impl UpsertInvoiceCommand {
 
     pub async fn execute_with_db<'a, A>(
         self,
-        acquirer: A,
+        executor: A,
     ) -> Result<BillingInvoice, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        A: sqlx::Executor<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let invoice_id = self
             .id
             .ok_or_else(|| AppError::Validation("invoice_id is required".to_string()))?;
-        let billing_account_id: Option<i64> = sqlx::query_scalar!(
-            "SELECT id FROM billing_accounts WHERE owner_id = $1",
-            self.owner_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let billing_account_id = billing_account_id
-            .ok_or_else(|| AppError::Validation("Billing account not found".to_string()))?;
-
-        let subscription_id: Option<i64> = sqlx::query_scalar!(
-            "SELECT id FROM subscriptions WHERE billing_account_id = $1",
-            billing_account_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
 
         let status: InvoiceStatus = self
             .status
             .parse()
             .map_err(|e| AppError::Validation(format!("Invalid invoice status: {}", e)))?;
-
-        let existing_id: Option<i64> = sqlx::query_scalar!(
-            "SELECT id FROM billing_invoices WHERE provider_payment_id = $1",
-            self.provider_payment_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let invoice = if let Some(id) = existing_id {
-            sqlx::query_as!(
-                BillingInvoice,
-                r#"
-                UPDATE billing_invoices SET
-                    amount_due_cents = $1,
-                    amount_paid_cents = $2,
-                    currency = $3,
-                    status = $4,
-                    invoice_pdf_url = $5,
-                    hosted_invoice_url = $6,
-                    invoice_number = $7,
-                    due_date = $8,
-                    paid_at = $9,
-                    period_start = $10,
-                    period_end = $11,
-                    metadata = $12,
-                    updated_at = NOW()
-                WHERE id = $13
-                RETURNING
-                    id, created_at, updated_at, billing_account_id, subscription_id,
-                    provider_payment_id, provider_customer_id, amount_due_cents,
-                    amount_paid_cents, currency, status as "status: InvoiceStatus",
-                    invoice_pdf_url, hosted_invoice_url, invoice_number, due_date,
-                    paid_at, period_start, period_end, attempt_count, next_payment_attempt,
-                    metadata
-                "#,
-                self.amount_due_cents,
-                self.amount_paid_cents,
-                self.currency,
-                status.to_string(),
-                self.invoice_pdf_url,
-                self.hosted_invoice_url,
-                self.invoice_number,
-                self.due_date,
-                self.paid_at,
-                self.period_start,
-                self.period_end,
-                self.metadata,
-                id
-            )
-            .fetch_one(&mut *conn)
-            .await?
-        } else {
-            sqlx::query_as!(
-                BillingInvoice,
-                r#"
+        let row = sqlx::query!(
+            r#"
+            WITH account AS (
+                SELECT id AS billing_account_id
+                FROM billing_accounts
+                WHERE owner_id = $1
+            ),
+            subscription AS (
+                SELECT id AS subscription_id
+                FROM subscriptions
+                WHERE billing_account_id = (SELECT billing_account_id FROM account)
+                LIMIT 1
+            ),
+            upsert AS (
                 INSERT INTO billing_invoices (
                     id, billing_account_id, subscription_id, provider_payment_id,
                     provider_customer_id, amount_due_cents, amount_paid_cents,
                     currency, status, invoice_pdf_url, hosted_invoice_url,
                     invoice_number, due_date, paid_at, period_start, period_end,
                     attempt_count, metadata, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 0, $17, NOW(), NOW())
+                )
+                SELECT
+                    $2,
+                    (SELECT billing_account_id FROM account),
+                    (SELECT subscription_id FROM subscription),
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    $7,
+                    $8,
+                    $9,
+                    $10,
+                    $11,
+                    $12,
+                    $13,
+                    $14,
+                    $15,
+                    0,
+                    $16,
+                    NOW(),
+                    NOW()
+                WHERE EXISTS(SELECT 1 FROM account)
+                ON CONFLICT (provider_payment_id) DO UPDATE SET
+                    amount_due_cents = EXCLUDED.amount_due_cents,
+                    amount_paid_cents = EXCLUDED.amount_paid_cents,
+                    currency = EXCLUDED.currency,
+                    status = EXCLUDED.status,
+                    invoice_pdf_url = EXCLUDED.invoice_pdf_url,
+                    hosted_invoice_url = EXCLUDED.hosted_invoice_url,
+                    invoice_number = EXCLUDED.invoice_number,
+                    due_date = EXCLUDED.due_date,
+                    paid_at = EXCLUDED.paid_at,
+                    period_start = EXCLUDED.period_start,
+                    period_end = EXCLUDED.period_end,
+                    metadata = EXCLUDED.metadata,
+                    updated_at = NOW()
                 RETURNING
-                    id, created_at, updated_at, billing_account_id, subscription_id,
-                    provider_payment_id, provider_customer_id, amount_due_cents,
-                    amount_paid_cents, currency, status as "status: InvoiceStatus",
-                    invoice_pdf_url, hosted_invoice_url, invoice_number, due_date,
-                    paid_at, period_start, period_end, attempt_count, next_payment_attempt,
+                    id,
+                    created_at,
+                    updated_at,
+                    billing_account_id,
+                    subscription_id,
+                    provider_payment_id,
+                    provider_customer_id,
+                    amount_due_cents,
+                    amount_paid_cents,
+                    currency,
+                    status,
+                    invoice_pdf_url,
+                    hosted_invoice_url,
+                    invoice_number,
+                    due_date,
+                    paid_at,
+                    period_start,
+                    period_end,
+                    attempt_count,
+                    next_payment_attempt,
                     metadata
-                "#,
-                invoice_id,
-                billing_account_id,
-                subscription_id,
-                self.provider_payment_id,
-                self.provider_customer_id,
-                self.amount_due_cents,
-                self.amount_paid_cents,
-                self.currency,
-                status.to_string(),
-                self.invoice_pdf_url,
-                self.hosted_invoice_url,
-                self.invoice_number,
-                self.due_date,
-                self.paid_at,
-                self.period_start,
-                self.period_end,
-                self.metadata
             )
-            .fetch_one(&mut *conn)
-            .await?
-        };
+            SELECT
+                EXISTS(SELECT 1 FROM account) AS "account_exists!",
+                upsert.id,
+                upsert.created_at,
+                upsert.updated_at,
+                upsert.billing_account_id,
+                upsert.subscription_id,
+                upsert.provider_payment_id,
+                upsert.provider_customer_id,
+                upsert.amount_due_cents,
+                upsert.amount_paid_cents,
+                upsert.currency,
+                upsert.status,
+                upsert.invoice_pdf_url,
+                upsert.hosted_invoice_url,
+                upsert.invoice_number,
+                upsert.due_date,
+                upsert.paid_at,
+                upsert.period_start,
+                upsert.period_end,
+                upsert.attempt_count,
+                upsert.next_payment_attempt,
+                upsert.metadata
+            FROM upsert
+            UNION ALL
+            SELECT
+                EXISTS(SELECT 1 FROM account) AS "account_exists!",
+                NULL::BIGINT AS id,
+                NOW() AS created_at,
+                NOW() AS updated_at,
+                NULL::BIGINT AS billing_account_id,
+                NULL::BIGINT AS subscription_id,
+                NULL::TEXT AS provider_payment_id,
+                NULL::TEXT AS provider_customer_id,
+                NULL::BIGINT AS amount_due_cents,
+                NULL::BIGINT AS amount_paid_cents,
+                NULL::TEXT AS currency,
+                NULL::TEXT AS status,
+                NULL::TEXT AS invoice_pdf_url,
+                NULL::TEXT AS hosted_invoice_url,
+                NULL::TEXT AS invoice_number,
+                NULL::TIMESTAMPTZ AS due_date,
+                NULL::TIMESTAMPTZ AS paid_at,
+                NULL::TIMESTAMPTZ AS period_start,
+                NULL::TIMESTAMPTZ AS period_end,
+                NULL::INT AS attempt_count,
+                NULL::TIMESTAMPTZ AS next_payment_attempt,
+                NULL::JSONB AS metadata
+            WHERE NOT EXISTS(SELECT 1 FROM upsert)
+            LIMIT 1
+            "#,
+            self.owner_id,
+            invoice_id,
+            self.provider_payment_id,
+            self.provider_customer_id,
+            self.amount_due_cents,
+            self.amount_paid_cents,
+            self.currency,
+            status.to_string(),
+            self.invoice_pdf_url,
+            self.hosted_invoice_url,
+            self.invoice_number,
+            self.due_date,
+            self.paid_at,
+            self.period_start,
+            self.period_end,
+            self.metadata
+        )
+        .fetch_one(executor)
+        .await?;
 
-        Ok(invoice)
+        if !row.account_exists {
+            return Err(AppError::Validation("Billing account not found".to_string()));
+        }
+
+        let parsed_status: InvoiceStatus = row
+            .status
+            .as_deref()
+            .unwrap_or("draft")
+            .parse()
+            .unwrap_or(InvoiceStatus::Draft);
+
+        Ok(BillingInvoice {
+            id: row.id.unwrap_or(invoice_id),
+            created_at: row.created_at.unwrap_or_else(Utc::now),
+            updated_at: row.updated_at.unwrap_or_else(Utc::now),
+            billing_account_id: row.billing_account_id.unwrap_or_default(),
+            subscription_id: row.subscription_id,
+            provider_payment_id: row.provider_payment_id.unwrap_or_default(),
+            provider_customer_id: row.provider_customer_id.unwrap_or_default(),
+            amount_due_cents: row.amount_due_cents.unwrap_or_default(),
+            amount_paid_cents: row.amount_paid_cents.unwrap_or_default(),
+            currency: row.currency.unwrap_or_default(),
+            status: parsed_status,
+            invoice_pdf_url: row.invoice_pdf_url,
+            hosted_invoice_url: row.hosted_invoice_url,
+            invoice_number: row.invoice_number,
+            due_date: row.due_date,
+            paid_at: row.paid_at,
+            period_start: row.period_start,
+            period_end: row.period_end,
+            attempt_count: row.attempt_count.unwrap_or(0),
+            next_payment_attempt: row.next_payment_attempt,
+            metadata: row.metadata.unwrap_or_else(|| serde_json::json!({})),
+        })
     }
 }

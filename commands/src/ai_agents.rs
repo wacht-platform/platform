@@ -61,8 +61,6 @@ impl CreateAiAgentCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        use sqlx::Connection;
-        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
         let agent_id = self.id;
         let tool_ids = self.tool_ids.unwrap_or_default();
@@ -74,7 +72,7 @@ impl CreateAiAgentCommand {
             .map(|ids| serde_json::to_value(ids).unwrap());
         let spawn_config_json = self.spawn_config.map(|c| serde_json::to_value(c).unwrap());
 
-        let mut tx = conn.begin().await.map_err(AppError::Database)?;
+        let mut tx = acquirer.begin().await.map_err(AppError::Database)?;
 
         let agent = sqlx::query!(
             r#"
@@ -196,8 +194,6 @@ impl UpdateAiAgentCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        use sqlx::Connection;
-        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
         let agent_id = self.agent_id;
         let deployment_id = self.deployment_id;
@@ -207,7 +203,7 @@ impl UpdateAiAgentCommand {
             .map(|ids| serde_json::to_value(ids).unwrap());
         let spawn_config_json = self.spawn_config.map(|c| serde_json::to_value(c).unwrap());
 
-        let mut tx = conn.begin().await.map_err(AppError::Database)?;
+        let mut tx = acquirer.begin().await.map_err(AppError::Database)?;
 
         let agent = sqlx::query!(
             r#"
@@ -280,11 +276,10 @@ impl AttachToolToAgentCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             INSERT INTO ai_agent_tools (deployment_id, agent_id, tool_id)
@@ -298,7 +293,7 @@ impl AttachToolToAgentCommand {
             self.agent_id,
             self.tool_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -321,11 +316,10 @@ impl DetachToolFromAgentCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             DELETE FROM ai_agent_tools aat
@@ -340,7 +334,7 @@ impl DetachToolFromAgentCommand {
             self.tool_id,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -363,11 +357,10 @@ impl AttachKnowledgeBaseToAgentCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             INSERT INTO ai_agent_knowledge_bases (deployment_id, agent_id, knowledge_base_id)
@@ -381,7 +374,7 @@ impl AttachKnowledgeBaseToAgentCommand {
             self.agent_id,
             self.knowledge_base_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -404,11 +397,10 @@ impl DetachKnowledgeBaseFromAgentCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         sqlx::query!(
             r#"
             DELETE FROM ai_agent_knowledge_bases aakb
@@ -423,7 +415,7 @@ impl DetachKnowledgeBaseFromAgentCommand {
             self.knowledge_base_id,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -458,9 +450,7 @@ impl AttachSubAgentToAgentCommand {
             ));
         }
 
-        use sqlx::Connection;
-        let mut conn = acquirer.acquire().await?;
-        let mut tx = conn.begin().await.map_err(AppError::Database)?;
+        let mut tx = acquirer.begin().await.map_err(AppError::Database)?;
 
         let parent_exists: Option<i64> =
             sqlx::query_scalar("SELECT id FROM ai_agents WHERE id = $1 AND deployment_id = $2")
@@ -541,9 +531,7 @@ impl DetachSubAgentFromAgentCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        use sqlx::Connection;
-        let mut conn = acquirer.acquire().await?;
-        let mut tx = conn.begin().await.map_err(AppError::Database)?;
+        let mut tx = acquirer.begin().await.map_err(AppError::Database)?;
 
         let sub_agents_json: Option<serde_json::Value> = sqlx::query_scalar(
             "SELECT sub_agents FROM ai_agents WHERE id = $1 AND deployment_id = $2",
@@ -597,9 +585,7 @@ impl DeleteAiAgentCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        use sqlx::Connection;
-        let mut conn = acquirer.acquire().await?;
-        let mut tx = conn.begin().await.map_err(AppError::Database)?;
+        let mut tx = acquirer.begin().await.map_err(AppError::Database)?;
 
         // Delete all agent relationships first
         sqlx::query!(

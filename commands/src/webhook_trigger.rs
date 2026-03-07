@@ -87,7 +87,7 @@ impl TriggerWebhookEventCommand {
             self.event_name.clone(),
         )
         .execute_with_deps(GetSubscribedEndpointsDeps {
-            acquirer: pool,
+            executor: pool,
             redis_client: deps.redis_client,
         })
         .await?;

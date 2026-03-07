@@ -14,7 +14,7 @@ impl SyncBillingMetricsCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let redis_client = deps.redis_client();
 
         for (metric_name, quantity) in &self.metrics {
@@ -32,7 +32,7 @@ impl SyncBillingMetricsCommand {
                 *quantity,
                 Option::<rust_decimal::Decimal>::None
             )
-            .execute(&mut *conn)
+            .execute(writer)
             .await?;
         }
 

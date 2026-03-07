@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH dup AS (\n                SELECT id\n                FROM workspace_roles\n                WHERE workspace_id = $2 AND name = $3\n            ),\n            ins AS (\n                INSERT INTO workspace_roles (\n                    id, workspace_id, deployment_id, name, permissions, created_at, updated_at\n                )\n                SELECT $1, $2, $4, $3, $5, $6, $7\n                WHERE NOT EXISTS (SELECT 1 FROM dup)\n                RETURNING id, created_at, updated_at, permissions\n            )\n            SELECT\n                (SELECT EXISTS(SELECT 1 FROM dup)) AS \"role_exists!\",\n                ins.id,\n                ins.created_at,\n                ins.updated_at,\n                ins.permissions\n            FROM ins\n            UNION ALL\n            SELECT\n                (SELECT EXISTS(SELECT 1 FROM dup)) AS \"role_exists!\",\n                NULL::BIGINT AS id,\n                NULL::TIMESTAMPTZ AS created_at,\n                NULL::TIMESTAMPTZ AS updated_at,\n                NULL::TEXT[] AS permissions\n            WHERE NOT EXISTS (SELECT 1 FROM ins)\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "permissions",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8",
+        "TextArray",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "b6f4ad7f63ff3de1fdeea3eedae608870c154dfa8f40ba2c8f50017e5c6a2478"
+}

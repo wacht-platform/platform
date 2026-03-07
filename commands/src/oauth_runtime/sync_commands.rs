@@ -99,7 +99,7 @@ impl SyncOAuthGrantLastUsedBatch {
         }
 
         let synced = grant_ids.len();
-        let mut conn = deps.writer_pool().acquire().await?;
+        let writer_pool = deps.writer_pool();
 
         sqlx::query(
             r#"
@@ -124,7 +124,7 @@ impl SyncOAuthGrantLastUsedBatch {
         .bind(&client_ids)
         .bind(&grant_ids)
         .bind(&used_ats)
-        .execute(&mut *conn)
+        .execute(writer_pool)
         .await?;
 
         Ok(synced)

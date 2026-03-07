@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use sqlx::Connection;
 use sqlx::query_as;
 
 use common::error::AppError;
@@ -37,11 +36,10 @@ impl CreateEventCatalogCommand {
 }
 
 impl CreateEventCatalogCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<WebhookEventCatalog, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let events_json = serde_json::to_value(&self.events)
             .map_err(|e| AppError::BadRequest(format!("Invalid events format: {}", e)))?;
 
@@ -64,7 +62,7 @@ impl CreateEventCatalogCommand {
             self.description,
             events_json
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(catalog)
@@ -101,11 +99,10 @@ impl UpdateEventCatalogCommand {
 }
 
 impl UpdateEventCatalogCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<WebhookEventCatalog, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let catalog = query_as!(
             WebhookEventCatalog,
             r#"
@@ -127,7 +124,7 @@ impl UpdateEventCatalogCommand {
             self.name,
             self.description
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?
         .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
 
@@ -157,8 +154,7 @@ impl AppendEventsToCatalogCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let mut tx = conn.begin().await?;
+        let mut tx = acquirer.begin().await?;
 
         let catalog = query_as!(
             WebhookEventCatalog,
@@ -251,8 +247,7 @@ impl ArchiveEventInCatalogCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let mut tx = conn.begin().await?;
+        let mut tx = acquirer.begin().await?;
 
         let catalog = query_as!(
             WebhookEventCatalog,
@@ -341,14 +336,13 @@ impl GetEventCatalogQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<WebhookEventCatalog>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let catalog = query_as!(
             WebhookEventCatalog,
             r#"
@@ -365,7 +359,7 @@ impl GetEventCatalogQuery {
             self.deployment_id,
             self.slug
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(catalog)
@@ -382,14 +376,13 @@ impl ListEventCatalogsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<WebhookEventCatalog>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let catalogs = query_as!(
             WebhookEventCatalog,
             r#"
@@ -406,7 +399,7 @@ impl ListEventCatalogsQuery {
             "#,
             self.deployment_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await?;
 
         Ok(catalogs)

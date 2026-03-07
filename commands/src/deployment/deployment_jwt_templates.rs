@@ -33,7 +33,7 @@ impl CreateDeploymentJwtTemplateCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let template_id = self
             .template_id
             .ok_or_else(|| AppError::Validation("template_id is required".to_string()))?;
@@ -54,7 +54,7 @@ impl CreateDeploymentJwtTemplateCommand {
                 .map_err(|e| AppError::Serialization(e.to_string()))?,
             self.template.template,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(writer)
         .await?;
 
         let template = DeploymentJwtTemplate {
@@ -100,7 +100,7 @@ impl UpdateDeploymentJwtTemplateCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let mut query_builder =
             sqlx::QueryBuilder::new("UPDATE deployment_jwt_templates SET updated_at = NOW() ");
 
@@ -142,7 +142,7 @@ impl UpdateDeploymentJwtTemplateCommand {
 
         let result = query_builder
             .build()
-            .fetch_optional(&mut *conn)
+            .fetch_optional(writer)
             .await?
             .ok_or_else(|| {
                 AppError::NotFound(format!(
@@ -189,13 +189,13 @@ impl DeleteDeploymentJwtTemplateCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let result = sqlx::query!(
             "DELETE FROM deployment_jwt_templates WHERE id = $1 AND deployment_id = $2",
             self.id,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(writer)
         .await?;
 
         if result.rows_affected() == 0 {

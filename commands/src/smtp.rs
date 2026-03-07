@@ -97,7 +97,7 @@ impl UpdateDeploymentSmtpConfigCommand {
     where
         D: HasDbRouter + HasEncryptionService,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let encryptor = deps.encryption_service();
         let encrypted_password = encryptor.encrypt(&self.password)?;
 
@@ -133,7 +133,7 @@ impl UpdateDeploymentSmtpConfigCommand {
             config_json,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(writer)
         .await?;
 
         tracing::info!(
@@ -170,7 +170,7 @@ impl RemoveDeploymentSmtpConfigCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         sqlx::query!(
             r#"
             UPDATE deployments
@@ -182,7 +182,7 @@ impl RemoveDeploymentSmtpConfigCommand {
             EmailProvider::Postmark.to_string(),
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(writer)
         .await?;
 
         crate::ClearDeploymentCacheCommand::new(self.deployment_id)

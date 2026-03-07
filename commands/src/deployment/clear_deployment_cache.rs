@@ -16,12 +16,12 @@ impl ClearDeploymentCacheCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let deployment_row = sqlx::query!(
             "SELECT backend_host FROM deployments WHERE id = $1",
             self.deployment_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(writer)
         .await?;
 
         let mut redis_conn = deps.redis_client().get_multiplexed_tokio_connection().await?;

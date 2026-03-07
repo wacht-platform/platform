@@ -683,8 +683,10 @@ impl DeploymentB2bBootstrapInsert {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut conn).await
+        let mut tx = acquirer.begin().await?;
+        self.execute_with_deps(tx.as_mut()).await?;
+        tx.commit().await?;
+        Ok(())
     }
 
     pub(super) async fn execute_with_deps(
@@ -938,8 +940,10 @@ impl ConsoleAppBootstrapInsert {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut conn).await
+        let mut tx = acquirer.begin().await?;
+        self.execute_with_deps(tx.as_mut()).await?;
+        tx.commit().await?;
+        Ok(())
     }
 
     pub(super) async fn execute_with_deps(
@@ -1941,8 +1945,10 @@ impl DeploymentByIdQuery {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut conn).await
+        let mut tx = acquirer.begin().await?;
+        let row = self.execute_with_deps(tx.as_mut()).await?;
+        tx.commit().await?;
+        Ok(row)
     }
 
     pub(super) async fn execute_with_deps(
@@ -2026,8 +2032,10 @@ impl DeploymentDnsRecordsUpdate {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        self.execute_with_deps(&mut conn).await
+        let mut tx = acquirer.begin().await?;
+        self.execute_with_deps(tx.as_mut()).await?;
+        tx.commit().await?;
+        Ok(())
     }
 
     pub(super) async fn execute_with_deps(

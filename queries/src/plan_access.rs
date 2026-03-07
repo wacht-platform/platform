@@ -24,52 +24,33 @@ impl CheckDeploymentFeatureAccessQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<bool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        // Get the project's billing_account_id
-        let billing_account_id: Option<i64> = sqlx::query_scalar!(
+        let product_id: Option<Option<String>> = sqlx::query_scalar(
             r#"
-            SELECT billing_account_id
-            FROM projects
-            WHERE id = (SELECT project_id FROM deployments WHERE id = $1)
+            SELECT s.product_id
+            FROM deployments d
+            JOIN projects p ON p.id = d.project_id
+            JOIN subscriptions s
+              ON s.billing_account_id = p.billing_account_id
+             AND s.status = 'active'
+            WHERE d.id = $1
+            LIMIT 1
             "#,
-            self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .bind(self.deployment_id)
+        .fetch_optional(executor)
         .await?;
 
-        let billing_account_id = match billing_account_id {
-            Some(id) => id,
-            None => return Ok(false), // No billing account = no access
+        let Some(Some(product_id)) = product_id else {
+            return Ok(false);
         };
 
-        // Get the subscription's product_id
-        let product_id = sqlx::query_scalar!(
-            r#"
-            SELECT product_id
-            FROM subscriptions
-            WHERE billing_account_id = $1 AND status = 'active'
-            "#,
-            billing_account_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let product_id = match product_id {
-            Some(Some(id)) => id,
-            _ => return Ok(false), // No active subscription or null product_id = no access
-        };
-
-        // Map product_id to plan tier and check feature access
-        let plan_tier = PlanTier::from_product_id(&product_id);
-
-        match plan_tier {
-            Some(tier) => Ok(tier.has_feature(self.feature)),
-            None => Ok(false), // Unknown plan = no access
-        }
+        Ok(PlanTier::from_product_id(&product_id)
+            .map(|tier| tier.has_feature(self.feature))
+            .unwrap_or(false))
     }
 }
 
@@ -114,43 +95,28 @@ impl GetDeploymentPlanTierQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<PlanTier>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<PlanTier>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        // Get the project's billing_account_id
-        let billing_account_id: Option<i64> = sqlx::query_scalar!(
+        let product_id: Option<Option<String>> = sqlx::query_scalar(
             r#"
-            SELECT billing_account_id
-            FROM projects
-            WHERE id = (SELECT project_id FROM deployments WHERE id = $1)
+            SELECT s.product_id
+            FROM deployments d
+            JOIN projects p ON p.id = d.project_id
+            JOIN subscriptions s
+              ON s.billing_account_id = p.billing_account_id
+             AND s.status = 'active'
+            WHERE d.id = $1
+            LIMIT 1
             "#,
-            self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .bind(self.deployment_id)
+        .fetch_optional(executor)
         .await?;
 
-        let billing_account_id = match billing_account_id {
-            Some(id) => id,
-            None => return Ok(None),
-        };
-
-        // Get the subscription's product_id
-        let product_id = sqlx::query_scalar!(
-            r#"
-            SELECT product_id
-            FROM subscriptions
-            WHERE billing_account_id = $1 AND status = 'active'
-            "#,
-            billing_account_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        let product_id = match product_id {
-            Some(Some(id)) => id,
-            _ => return Ok(None),
+        let Some(Some(product_id)) = product_id else {
+            return Ok(None);
         };
 
         Ok(PlanTier::from_product_id(&product_id))

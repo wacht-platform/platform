@@ -273,14 +273,7 @@ impl RotateApiKeyCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let conn = acquirer.acquire().await?;
-        self.run_with_conn(conn).await
-    }
-
-    async fn run_with_conn<C>(self, mut conn: C) -> Result<ApiKeyWithSecret, AppError>
-    where
-        C: std::ops::DerefMut<Target = sqlx::PgConnection>,
-    {
+        let mut tx = acquirer.begin().await?;
         let new_key_id = self
             .new_key_id
             .ok_or_else(|| AppError::Validation("new_key_id is required".to_string()))?;
@@ -302,7 +295,7 @@ impl RotateApiKeyCommand {
             self.key_id,
             self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound("API key not found or inactive".to_string()))?;
 
@@ -359,7 +352,7 @@ impl RotateApiKeyCommand {
             self.deployment_id,
             existing_key.app_slug.clone()
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound("API key app not found or inactive".to_string()))?;
 
@@ -389,7 +382,7 @@ impl RotateApiKeyCommand {
                 user_id,
                 organization_id
             )
-            .fetch_optional(&mut *conn)
+            .fetch_optional(&mut *tx)
             .await?;
 
             org_membership_id = org_membership.map(|r| r.id);
@@ -414,7 +407,7 @@ impl RotateApiKeyCommand {
                 user_id,
                 workspace_id
             )
-            .fetch_optional(&mut *conn)
+            .fetch_optional(&mut *tx)
             .await?;
 
             workspace_membership_id = workspace_membership.map(|r| r.id);
@@ -448,7 +441,7 @@ impl RotateApiKeyCommand {
                 "#,
                 org_membership_id
             )
-            .fetch_optional(&mut *conn)
+            .fetch_optional(&mut *tx)
             .await?
             .ok_or_else(|| AppError::NotFound("Organization membership not found".to_string()))?;
 
@@ -480,7 +473,7 @@ impl RotateApiKeyCommand {
                 "#,
                 workspace_membership_id
             )
-            .fetch_optional(&mut *conn)
+            .fetch_optional(&mut *tx)
             .await?
             .ok_or_else(|| AppError::NotFound("Workspace membership not found".to_string()))?;
 
@@ -516,7 +509,7 @@ impl RotateApiKeyCommand {
             "#,
             self.key_id
         )
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await?;
 
         // Create a new key with the same settings
@@ -539,6 +532,8 @@ impl RotateApiKeyCommand {
             workspace_role_permissions,
         };
 
-        create_command.execute_with_db(&mut *conn).await
+        let result = create_command.execute_with_db(tx.as_mut()).await?;
+        tx.commit().await?;
+        Ok(result)
     }
 }

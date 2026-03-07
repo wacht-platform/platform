@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::{Connection, query, query_as};
+use sqlx::{query, query_as};
 
 use common::error::AppError;
 use common::utils::ssrf::validate_webhook_url;
@@ -92,7 +92,6 @@ impl CreateWebhookEndpointCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = deps.acquirer.acquire().await?;
         url::Url::parse(&self.url)
             .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
 
@@ -111,7 +110,7 @@ impl CreateWebhookEndpointCommand {
         let endpoint_max_retries = self.max_retries.unwrap_or(max_allowed_retries);
         validate_endpoint_max_retries(endpoint_max_retries, max_allowed_retries)?;
 
-        let mut tx = conn.begin().await?;
+        let mut tx = deps.acquirer.begin().await?;
 
         let headers_json = self.headers.unwrap_or_else(|| serde_json::json!({}));
 
@@ -248,7 +247,6 @@ impl UpdateWebhookEndpointCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = deps.acquirer.acquire().await?;
         if let Some(ref url) = self.url {
             url::Url::parse(url)
                 .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
@@ -262,7 +260,7 @@ impl UpdateWebhookEndpointCommand {
             validate_endpoint_max_retries(max_retries, max_allowed_retries)?;
         }
 
-        let mut tx = conn.begin().await?;
+        let mut tx = deps.acquirer.begin().await?;
 
         let endpoint = query_as!(
             WebhookEndpoint,
@@ -378,7 +376,7 @@ impl UpdateEndpointSubscriptionsCommand {
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = deps.acquirer.acquire().await?;
+        let mut tx = deps.acquirer.begin().await?;
 
         let app_slug = query!(
             r#"
@@ -389,7 +387,7 @@ impl UpdateEndpointSubscriptionsCommand {
             self.endpoint_id,
             self.deployment_id
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?
         .app_slug;
@@ -410,8 +408,6 @@ impl UpdateEndpointSubscriptionsCommand {
             &subscriptions_for_validation,
         )
         .await?;
-
-        let mut tx = conn.begin().await?;
 
         query!(
             r#"
@@ -458,11 +454,10 @@ impl DeleteWebhookEndpointCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let result = query!(
             r#"
             DELETE FROM webhook_endpoints e
@@ -471,7 +466,7 @@ impl DeleteWebhookEndpointCommand {
             self.endpoint_id,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         if result.rows_affected() == 0 {

@@ -105,14 +105,13 @@ impl GetProjectsWithDeploymentQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<ProjectWithDeployments>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let mut query_str = r#"
             SELECT
                 p.id, p.created_at, p.updated_at, p.name, p.image_url,
@@ -140,11 +139,11 @@ impl GetProjectsWithDeploymentQuery {
         query_str.push_str(" ORDER BY p.id DESC");
 
         let rows = if self.owner_ids.is_empty() {
-            query(&query_str).fetch_all(&mut *conn).await?
+            query(&query_str).fetch_all(executor).await?
         } else {
             query(&query_str)
                 .bind(&self.owner_ids)
-                .fetch_all(&mut *conn)
+                .fetch_all(executor)
                 .await?
         };
 

@@ -14,14 +14,13 @@ impl GetAgentSessionQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> StdResult<Option<AgentSession>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query_as::<_, AgentSession>(
             r#"
             SELECT id, session_id, deployment_id, identifier, context_group,
@@ -35,7 +34,7 @@ impl GetAgentSessionQuery {
         )
         .bind(self.session_id)
         .bind(self.deployment_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         Ok(result)

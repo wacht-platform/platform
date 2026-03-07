@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH account AS (\n                SELECT id AS billing_account_id\n                FROM billing_accounts\n                WHERE owner_id = $1\n            ),\n            existing AS (\n                SELECT s.id\n                FROM subscriptions s\n                WHERE s.billing_account_id = (SELECT billing_account_id FROM account)\n            ),\n            upsert AS (\n                INSERT INTO subscriptions (\n                    id,\n                    billing_account_id,\n                    provider_customer_id,\n                    provider_subscription_id,\n                    product_id,\n                    status,\n                    previous_billing_date,\n                    created_at,\n                    updated_at\n                )\n                SELECT\n                    COALESCE((SELECT id FROM existing), $2),\n                    (SELECT billing_account_id FROM account),\n                    $3,\n                    $4,\n                    $5,\n                    $6,\n                    $7,\n                    NOW(),\n                    NOW()\n                WHERE EXISTS(SELECT 1 FROM account)\n                ON CONFLICT (id) DO UPDATE SET\n                    provider_customer_id = EXCLUDED.provider_customer_id,\n                    provider_subscription_id = EXCLUDED.provider_subscription_id,\n                    product_id = EXCLUDED.product_id,\n                    status = EXCLUDED.status,\n                    previous_billing_date = EXCLUDED.previous_billing_date,\n                    updated_at = NOW()\n                RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at\n            )\n            SELECT\n                EXISTS(SELECT 1 FROM account) AS \"account_exists!\",\n                upsert.id,\n                upsert.billing_account_id,\n                upsert.provider_customer_id,\n                upsert.provider_subscription_id,\n                upsert.product_id,\n                upsert.status,\n                upsert.previous_billing_date,\n                upsert.created_at,\n                upsert.updated_at\n            FROM upsert\n            UNION ALL\n            SELECT\n                EXISTS(SELECT 1 FROM account) AS \"account_exists!\",\n                NULL::BIGINT AS id,\n                NULL::BIGINT AS billing_account_id,\n                NULL::TEXT AS provider_customer_id,\n                NULL::TEXT AS provider_subscription_id,\n                NULL::TEXT AS product_id,\n                NULL::TEXT AS status,\n                NULL::TIMESTAMPTZ AS previous_billing_date,\n                NOW() AS created_at,\n                NOW() AS updated_at\n            WHERE NOT EXISTS(SELECT 1 FROM upsert)\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "billing_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_customer_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "provider_subscription_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "product_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "previous_billing_date",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "37a7ec66d4d407e9304952e6b315dabbd523d46e8b9421de6986d3167a3b545e"
+}

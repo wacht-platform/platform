@@ -27,11 +27,10 @@ impl GetMcpServersQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<Vec<McpServer>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> StdResult<Vec<McpServer>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let limit = self.limit.unwrap_or(50) as i64;
         let offset = self.offset.unwrap_or(0) as i64;
 
@@ -47,7 +46,7 @@ impl GetMcpServersQuery {
         .bind(self.deployment_id)
         .bind(limit)
         .bind(offset)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -85,11 +84,10 @@ impl GetMcpServerByIdQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<McpServer, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> StdResult<McpServer, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let row = sqlx::query(
             r#"
             SELECT id, created_at, updated_at, deployment_id, name, config
@@ -99,7 +97,7 @@ impl GetMcpServerByIdQuery {
         )
         .bind(self.mcp_server_id)
         .bind(self.deployment_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("MCP server not found".to_string()))?;
@@ -132,11 +130,10 @@ impl GetAgentMcpServersQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<Vec<McpServer>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> StdResult<Vec<McpServer>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let rows = sqlx::query(
             r#"
             SELECT m.id, m.created_at, m.updated_at, m.deployment_id, m.name, m.config
@@ -148,7 +145,7 @@ impl GetAgentMcpServersQuery {
         )
         .bind(self.deployment_id)
         .bind(self.agent_id)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -211,11 +208,10 @@ impl GetActiveAgentMcpServerIdsForContextQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<Vec<i64>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> StdResult<Vec<i64>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await.map_err(AppError::Database)?;
         let rows = sqlx::query(
             r#"
             SELECT mcp_server_id
@@ -228,7 +224,7 @@ impl GetActiveAgentMcpServerIdsForContextQuery {
         .bind(self.deployment_id)
         .bind(self.agent_id)
         .bind(&self.context_group)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -240,14 +236,13 @@ impl GetActiveAgentMcpServerIdsForContextQuery {
 }
 
 impl GetActiveAgentMcpServerConnectionMetadataQuery {
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> StdResult<Option<McpConnectionMetadata>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await.map_err(AppError::Database)?;
         let row = sqlx::query(
             r#"
             SELECT connection_metadata
@@ -263,7 +258,7 @@ impl GetActiveAgentMcpServerConnectionMetadataQuery {
         .bind(self.agent_id)
         .bind(&self.context_group)
         .bind(self.mcp_server_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await
         .map_err(AppError::Database)?;
 

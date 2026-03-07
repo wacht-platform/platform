@@ -25,14 +25,13 @@ impl GetAiKnowledgeBasesQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<AiKnowledgeBaseWithDetails>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let base_query = r#"
             SELECT
                 kb.id, kb.created_at, kb.updated_at, kb.name, kb.description,
@@ -57,7 +56,7 @@ impl GetAiKnowledgeBasesQuery {
                 .bind(format!("%{}%", search))
                 .bind(self.limit as i64)
                 .bind(self.offset as i64)
-                .fetch_all(&mut *conn)
+                .fetch_all(executor)
                 .await
         } else {
             let query_without_search = format!(
@@ -68,7 +67,7 @@ impl GetAiKnowledgeBasesQuery {
                 .bind(self.deployment_id)
                 .bind(self.limit as i64)
                 .bind(self.offset as i64)
-                .fetch_all(&mut *conn)
+                .fetch_all(executor)
                 .await
         }
         .map_err(AppError::Database)?;
@@ -103,14 +102,13 @@ impl GetAiKnowledgeBaseByIdQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<AiKnowledgeBaseWithDetails, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let knowledge_base = sqlx::query(
             r#"
             SELECT
@@ -129,7 +127,7 @@ impl GetAiKnowledgeBaseByIdQuery {
         )
         .bind(self.knowledge_base_id)
         .bind(self.deployment_id)
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -162,14 +160,13 @@ impl GetAgentKnowledgeBasesQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<AiKnowledgeBaseWithDetails>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let knowledge_bases = sqlx::query(
             r#"
             SELECT
@@ -190,7 +187,7 @@ impl GetAgentKnowledgeBasesQuery {
         )
         .bind(self.deployment_id)
         .bind(self.agent_id)
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -226,14 +223,13 @@ impl GetKnowledgeBaseDocumentsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         &self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Vec<AiKnowledgeBaseDocument>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let documents = sqlx::query!(
             r#"
             SELECT
@@ -249,7 +245,7 @@ impl GetKnowledgeBaseDocumentsQuery {
             self.limit as i64,
             self.offset as i64
         )
-        .fetch_all(&mut *conn)
+        .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -285,9 +281,9 @@ impl GetAiKnowledgeBasesByIdsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AiKnowledgeBase>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<AiKnowledgeBase>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         if self.knowledge_base_ids.is_empty() {
             return Ok(Vec::new());
@@ -311,10 +307,8 @@ impl GetAiKnowledgeBasesByIdsQuery {
         for kb_id in &self.knowledge_base_ids {
             query_builder = query_builder.bind(kb_id);
         }
-
-        let mut conn = acquirer.acquire().await?;
         let knowledge_bases = query_builder
-            .fetch_all(&mut *conn)
+            .fetch_all(executor)
             .await
             .map_err(|e| AppError::Database(e))?;
 
@@ -365,11 +359,10 @@ impl GetDocumentChunksQuery {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<DocumentChunk>, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<DocumentChunk>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let mut query_str = String::from(
             "SELECT content, chunk_index, knowledge_base_id, deployment_id
              FROM knowledge_base_document_chunks
@@ -411,7 +404,7 @@ impl GetDocumentChunksQuery {
         query = query.bind(self.limit.unwrap_or(10) as i64);
 
         let rows = query
-            .fetch_all(&mut *conn)
+            .fetch_all(executor)
             .await
             .map_err(AppError::Database)?;
 

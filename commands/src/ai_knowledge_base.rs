@@ -35,12 +35,11 @@ impl CreateAiKnowledgeBaseCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiKnowledgeBase, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AiKnowledgeBase, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         validate_knowledge_base_name(&self.name)?;
-        let mut conn = acquirer.acquire().await?;
         let knowledge_base_id = self.knowledge_base_id.ok_or_else(|| {
             AppError::Validation("knowledge_base_id is required".to_string())
         })?;
@@ -60,7 +59,7 @@ impl CreateAiKnowledgeBaseCommand {
             self.deployment_id,
             self.configuration,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -110,14 +109,13 @@ impl UpdateAiKnowledgeBaseCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiKnowledgeBase, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AiKnowledgeBase, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         if let Some(ref name) = self.name {
             validate_knowledge_base_name(name)?;
         }
-        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         let mut query_parts = vec!["updated_at = $1".to_string()];
@@ -164,7 +162,7 @@ impl UpdateAiKnowledgeBaseCommand {
             .bind(self.deployment_id);
 
         let knowledge_base = query_builder
-            .fetch_one(&mut *conn)
+            .fetch_one(executor)
             .await
             .map_err(AppError::Database)?;
 

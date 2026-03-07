@@ -1,0 +1,163 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH account AS (\n                SELECT id AS billing_account_id\n                FROM billing_accounts\n                WHERE owner_id = $1\n            ),\n            subscription AS (\n                SELECT id AS subscription_id\n                FROM subscriptions\n                WHERE billing_account_id = (SELECT billing_account_id FROM account)\n                LIMIT 1\n            ),\n            upsert AS (\n                INSERT INTO billing_invoices (\n                    id, billing_account_id, subscription_id, provider_payment_id,\n                    provider_customer_id, amount_due_cents, amount_paid_cents,\n                    currency, status, invoice_pdf_url, hosted_invoice_url,\n                    invoice_number, due_date, paid_at, period_start, period_end,\n                    attempt_count, metadata, created_at, updated_at\n                )\n                SELECT\n                    $2,\n                    (SELECT billing_account_id FROM account),\n                    (SELECT subscription_id FROM subscription),\n                    $3,\n                    $4,\n                    $5,\n                    $6,\n                    $7,\n                    $8,\n                    $9,\n                    $10,\n                    $11,\n                    $12,\n                    $13,\n                    $14,\n                    $15,\n                    0,\n                    $16,\n                    NOW(),\n                    NOW()\n                WHERE EXISTS(SELECT 1 FROM account)\n                ON CONFLICT (provider_payment_id) DO UPDATE SET\n                    amount_due_cents = EXCLUDED.amount_due_cents,\n                    amount_paid_cents = EXCLUDED.amount_paid_cents,\n                    currency = EXCLUDED.currency,\n                    status = EXCLUDED.status,\n                    invoice_pdf_url = EXCLUDED.invoice_pdf_url,\n                    hosted_invoice_url = EXCLUDED.hosted_invoice_url,\n                    invoice_number = EXCLUDED.invoice_number,\n                    due_date = EXCLUDED.due_date,\n                    paid_at = EXCLUDED.paid_at,\n                    period_start = EXCLUDED.period_start,\n                    period_end = EXCLUDED.period_end,\n                    metadata = EXCLUDED.metadata,\n                    updated_at = NOW()\n                RETURNING\n                    id,\n                    created_at,\n                    updated_at,\n                    billing_account_id,\n                    subscription_id,\n                    provider_payment_id,\n                    provider_customer_id,\n                    amount_due_cents,\n                    amount_paid_cents,\n                    currency,\n                    status,\n                    invoice_pdf_url,\n                    hosted_invoice_url,\n                    invoice_number,\n                    due_date,\n                    paid_at,\n                    period_start,\n                    period_end,\n                    attempt_count,\n                    next_payment_attempt,\n                    metadata\n            )\n            SELECT\n                EXISTS(SELECT 1 FROM account) AS \"account_exists!\",\n                upsert.id,\n                upsert.created_at,\n                upsert.updated_at,\n                upsert.billing_account_id,\n                upsert.subscription_id,\n                upsert.provider_payment_id,\n                upsert.provider_customer_id,\n                upsert.amount_due_cents,\n                upsert.amount_paid_cents,\n                upsert.currency,\n                upsert.status,\n                upsert.invoice_pdf_url,\n                upsert.hosted_invoice_url,\n                upsert.invoice_number,\n                upsert.due_date,\n                upsert.paid_at,\n                upsert.period_start,\n                upsert.period_end,\n                upsert.attempt_count,\n                upsert.next_payment_attempt,\n                upsert.metadata\n            FROM upsert\n            UNION ALL\n            SELECT\n                EXISTS(SELECT 1 FROM account) AS \"account_exists!\",\n                NULL::BIGINT AS id,\n                NOW() AS created_at,\n                NOW() AS updated_at,\n                NULL::BIGINT AS billing_account_id,\n                NULL::BIGINT AS subscription_id,\n                NULL::TEXT AS provider_payment_id,\n                NULL::TEXT AS provider_customer_id,\n                NULL::BIGINT AS amount_due_cents,\n                NULL::BIGINT AS amount_paid_cents,\n                NULL::TEXT AS currency,\n                NULL::TEXT AS status,\n                NULL::TEXT AS invoice_pdf_url,\n                NULL::TEXT AS hosted_invoice_url,\n                NULL::TEXT AS invoice_number,\n                NULL::TIMESTAMPTZ AS due_date,\n                NULL::TIMESTAMPTZ AS paid_at,\n                NULL::TIMESTAMPTZ AS period_start,\n                NULL::TIMESTAMPTZ AS period_end,\n                NULL::INT AS attempt_count,\n                NULL::TIMESTAMPTZ AS next_payment_attempt,\n                NULL::JSONB AS metadata\n            WHERE NOT EXISTS(SELECT 1 FROM upsert)\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_exists!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "billing_account_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "subscription_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "provider_payment_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "provider_customer_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "amount_due_cents",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "amount_paid_cents",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "currency",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "invoice_pdf_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "hosted_invoice_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "invoice_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "due_date",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "paid_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "period_start",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "period_end",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 19,
+        "name": "attempt_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 20,
+        "name": "next_payment_attempt",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 21,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "4ba3a2d10e1b1d204e76d18d1a6f58819f3ae320f375a461433f2bc746fd4896"
+}

@@ -73,13 +73,11 @@ impl CreateAiToolCommand {
         Ok(())
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiTool, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AiTool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         self.validate().await?;
-
-        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
         let tool_id = self.id;
         let tool_type_str: String = self.tool_type.into();
@@ -101,7 +99,7 @@ impl CreateAiToolCommand {
             self.deployment_id,
             configuration_json,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -210,13 +208,11 @@ impl UpdateAiToolCommand {
         Ok(())
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiTool, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AiTool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         self.validate().await?;
-
-        let mut conn = acquirer.acquire().await?;
         let now = Utc::now();
 
         let mut query_parts = vec!["updated_at = $1".to_string()];
@@ -273,7 +269,7 @@ impl UpdateAiToolCommand {
         query_builder = query_builder.bind(self.tool_id).bind(self.deployment_id);
 
         let tool = query_builder
-            .fetch_one(&mut *conn)
+            .fetch_one(executor)
             .await
             .map_err(AppError::Database)?;
 
@@ -307,47 +303,45 @@ impl DeleteAiToolCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let dependent_agents = sqlx::query!(
+        let result = sqlx::query!(
             r#"
-            SELECT a.id, a.name
-            FROM ai_agents a
-            JOIN ai_agent_tools aat ON aat.agent_id = a.id
-            WHERE a.deployment_id = $1
-            AND aat.tool_id = $2
-            AND aat.deployment_id = $1
+            WITH deps AS (
+                SELECT COALESCE(array_agg(a.name ORDER BY a.name), ARRAY[]::TEXT[]) AS agent_names
+                FROM ai_agents a
+                JOIN ai_agent_tools aat ON aat.agent_id = a.id
+                WHERE a.deployment_id = $1
+                  AND aat.tool_id = $2
+                  AND aat.deployment_id = $1
+            ),
+            del AS (
+                DELETE FROM ai_tools
+                WHERE id = $2
+                  AND deployment_id = $1
+                  AND (SELECT cardinality(agent_names) = 0 FROM deps)
+                RETURNING id
+            )
+            SELECT
+                deps.agent_names AS "agent_names!: Vec<String>",
+                EXISTS(SELECT 1 FROM del) AS "deleted!"
+            FROM deps
             "#,
             self.deployment_id,
             self.tool_id
         )
-        .fetch_all(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
-        if !dependent_agents.is_empty() {
-            let agent_names: Vec<String> = dependent_agents
-                .iter()
-                .map(|agent| agent.name.clone())
-                .collect();
-
+        if !result.agent_names.is_empty() {
             return Err(AppError::BadRequest(format!(
                 "Cannot delete tool. The following agents depend on it: {}. Please remove this tool from these agents first.",
-                agent_names.join(", ")
+                result.agent_names.join(", ")
             )));
         }
-
-        sqlx::query!(
-            "DELETE FROM ai_tools WHERE id = $1 AND deployment_id = $2",
-            self.tool_id,
-            self.deployment_id
-        )
-        .execute(&mut *conn)
-        .await
-        .map_err(AppError::Database)?;
 
         Ok(())
     }

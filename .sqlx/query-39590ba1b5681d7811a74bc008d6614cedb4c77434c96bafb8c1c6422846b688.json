@@ -1,0 +1,69 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH updated_user AS (\n                UPDATE users\n                SET primary_phone_number_id = $1\n                WHERE id = $2\n                  AND $6 = true\n            ),\n            updated_phone AS (\n                UPDATE user_phone_numbers\n                SET\n                    updated_at = NOW(),\n                    phone_number = COALESCE($3, phone_number),\n                    country_code = COALESCE($4, country_code),\n                    verified = COALESCE($5, verified),\n                    verified_at = CASE WHEN COALESCE($5, false) = true THEN NOW() ELSE verified_at END\n                WHERE id = $1\n                  AND user_id = $2\n                RETURNING id, created_at, updated_at, user_id, phone_number, country_code, verified, verified_at\n            )\n            SELECT id, created_at, updated_at, user_id, phone_number, country_code, verified, verified_at\n            FROM updated_phone\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "phone_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "country_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "verified_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Varchar",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "39590ba1b5681d7811a74bc008d6614cedb4c77434c96bafb8c1c6422846b688"
+}

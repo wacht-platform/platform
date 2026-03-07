@@ -203,50 +203,51 @@ impl AttachMcpServerToAgentCommand {
         }
     }
 
-    pub async fn execute_with_db(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        let mut conn = acquirer.acquire().await?;
-        let agent_exists =
-            sqlx::query("SELECT 1 FROM ai_agents WHERE id = $1 AND deployment_id = $2 LIMIT 1")
-                .bind(self.agent_id)
-                .bind(self.deployment_id)
-                .fetch_optional(&mut *conn)
-                .await
-                .map_err(AppError::Database)?
-                .is_some();
-
-        if !agent_exists {
-            return Err(AppError::NotFound("Agent not found".to_string()));
-        }
-
-        let server_exists =
-            sqlx::query("SELECT 1 FROM mcp_servers WHERE id = $1 AND deployment_id = $2 LIMIT 1")
-                .bind(self.mcp_server_id)
-                .bind(self.deployment_id)
-                .fetch_optional(&mut *conn)
-                .await
-                .map_err(AppError::Database)?
-                .is_some();
-
-        if !server_exists {
-            return Err(AppError::NotFound("MCP server not found".to_string()));
-        }
-
-        sqlx::query(
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let result = sqlx::query(
             r#"
-            INSERT INTO ai_agent_mcp_servers (deployment_id, agent_id, mcp_server_id)
-            VALUES ($1, $2, $3)
-            ON CONFLICT DO NOTHING
+            WITH
+                agent AS (
+                    SELECT id
+                    FROM ai_agents
+                    WHERE id = $2 AND deployment_id = $1
+                ),
+                server AS (
+                    SELECT id
+                    FROM mcp_servers
+                    WHERE id = $3 AND deployment_id = $1
+                ),
+                ins AS (
+                    INSERT INTO ai_agent_mcp_servers (deployment_id, agent_id, mcp_server_id)
+                    SELECT $1, agent.id, server.id
+                    FROM agent
+                    CROSS JOIN server
+                    ON CONFLICT DO NOTHING
+                    RETURNING 1
+                )
+            SELECT
+                EXISTS(SELECT 1 FROM agent) AS "agent_exists!",
+                EXISTS(SELECT 1 FROM server) AS "server_exists!",
+                EXISTS(SELECT 1 FROM ins) AS "inserted!"
             "#,
         )
         .bind(self.deployment_id)
         .bind(self.agent_id)
         .bind(self.mcp_server_id)
-        .execute(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
+
+        if !result.try_get::<bool, _>("agent_exists").unwrap_or(false) {
+            return Err(AppError::NotFound("Agent not found".to_string()));
+        }
+
+        if !result.try_get::<bool, _>("server_exists").unwrap_or(false) {
+            return Err(AppError::NotFound("MCP server not found".to_string()));
+        }
 
         Ok(())
     }

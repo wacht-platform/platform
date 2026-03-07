@@ -52,15 +52,21 @@ impl CreateAgentIntegrationCommand {
         D: HasDbRouter + HasIdGenerator,
     {
         let id = self.id.unwrap_or(deps.id_generator().next_id()? as i64);
-        self.run_with_id(deps.db_router().writer(), id).await
+        CreateAgentIntegrationCommand {
+            id: Some(id),
+            ..self
+        }
+        .execute_with_db(deps.db_router().writer())
+        .await
     }
 
-    async fn run_with_id(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        id: i64,
-    ) -> Result<AgentIntegration, AppError> {
-        let mut conn = acquirer.acquire().await?;
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AgentIntegration, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let id = self
+            .id
+            .ok_or_else(|| AppError::Validation("id is required".into()))?;
         let now = Utc::now();
 
         let integration = sqlx::query!(
@@ -78,7 +84,7 @@ impl CreateAgentIntegrationCommand {
             self.name,
             self.config,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -92,16 +98,6 @@ impl CreateAgentIntegrationCommand {
             name: integration.name,
             config: integration.config,
         })
-    }
-
-    pub async fn execute_with_db(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<AgentIntegration, AppError> {
-        let id = self
-            .id
-            .ok_or_else(|| AppError::Validation("id is required".into()))?;
-        self.run_with_id(acquirer, id).await
     }
 }
 
@@ -199,11 +195,10 @@ impl UpdateAgentIntegrationCommand {
 }
 
 impl UpdateAgentIntegrationCommand {
-    pub async fn execute_with_db(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<AgentIntegration, AppError> {
-        let mut conn = acquirer.acquire().await?;
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AgentIntegration, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         let now = Utc::now();
 
         let mut query_parts = vec!["updated_at = $1".to_string()];
@@ -245,7 +240,7 @@ impl UpdateAgentIntegrationCommand {
             .bind(self.deployment_id);
 
         let row = query_builder
-            .fetch_one(&mut *conn)
+            .fetch_one(executor)
             .await
             .map_err(AppError::Database)?;
 
@@ -326,17 +321,16 @@ impl DeleteAgentIntegrationCommand {
 }
 
 impl DeleteAgentIntegrationCommand {
-    pub async fn execute_with_db(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        let mut conn = acquirer.acquire().await?;
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         sqlx::query!(
             "DELETE FROM agent_integrations WHERE id = $1 AND deployment_id = $2",
             self.integration_id,
             self.deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await
         .map_err(AppError::Database)?;
 

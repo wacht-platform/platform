@@ -35,66 +35,80 @@ impl CreateOrganizationRoleCommand {
 }
 
 impl CreateOrganizationRoleCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OrganizationRole, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<OrganizationRole, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let role_id = self
             .role_id
             .ok_or_else(|| AppError::Validation("role_id is required".to_string()))?;
-        // Check if organization exists
-        let org_exists = sqlx::query!(
-            "SELECT id FROM organizations WHERE deployment_id = $1 AND id = $2",
+        let now = chrono::Utc::now();
+        let row = sqlx::query!(
+            r#"
+            WITH org AS (
+                SELECT id
+                FROM organizations
+                WHERE deployment_id = $2 AND id = $3
+            ),
+            dup AS (
+                SELECT id
+                FROM organization_roles
+                WHERE organization_id = $3 AND name = $4
+            ),
+            ins AS (
+                INSERT INTO organization_roles (
+                    id, organization_id, deployment_id, name, permissions, created_at, updated_at
+                )
+                SELECT $1, $3, $2, $4, $5, $6, $7
+                FROM org
+                WHERE NOT EXISTS (SELECT 1 FROM dup)
+                RETURNING id, created_at, updated_at, permissions
+            )
+            SELECT
+                (SELECT EXISTS(SELECT 1 FROM org)) AS "org_exists!",
+                (SELECT EXISTS(SELECT 1 FROM dup)) AS "role_exists!",
+                ins.id,
+                ins.created_at,
+                ins.updated_at,
+                ins.permissions
+            FROM ins
+            UNION ALL
+            SELECT
+                (SELECT EXISTS(SELECT 1 FROM org)) AS "org_exists!",
+                (SELECT EXISTS(SELECT 1 FROM dup)) AS "role_exists!",
+                NULL::BIGINT AS id,
+                NULL::TIMESTAMPTZ AS created_at,
+                NULL::TIMESTAMPTZ AS updated_at,
+                NULL::TEXT[] AS permissions
+            WHERE NOT EXISTS (SELECT 1 FROM ins)
+            LIMIT 1
+            "#,
+            role_id,
             self.deployment_id,
-            self.organization_id
+            self.organization_id,
+            self.name,
+            &self.permissions,
+            now,
+            now
         )
-        .fetch_optional(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
-        if org_exists.is_none() {
+        if !row.org_exists {
             return Err(AppError::NotFound("Organization not found".to_string()));
         }
-
-        // Check if role name already exists in this organization
-        let existing_role = sqlx::query!(
-            "SELECT id FROM organization_roles WHERE organization_id = $1 AND name = $2",
-            self.organization_id,
-            self.name
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        if existing_role.is_some() {
+        if row.role_exists {
             return Err(AppError::BadRequest(
                 "Role with this name already exists".to_string(),
             ));
         }
 
-        // Create role with permissions stored as array
-        let role = sqlx::query!(
-            r#"
-            INSERT INTO organization_roles (id, organization_id, deployment_id, name, permissions, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, created_at, updated_at, permissions
-            "#,
-            role_id,
-            self.organization_id,
-            self.deployment_id,
-            self.name,
-            &self.permissions,
-            chrono::Utc::now(),
-            chrono::Utc::now()
-        )
-        .fetch_one(&mut *conn)
-        .await?;
-
         Ok(OrganizationRole {
-            id: role.id,
-            created_at: role.created_at,
-            updated_at: role.updated_at,
+            id: row.id.unwrap_or(role_id),
+            created_at: row.created_at.unwrap_or(now),
+            updated_at: row.updated_at.unwrap_or(now),
             name: self.name,
-            permissions: role.permissions,
+            permissions: row.permissions.unwrap_or_default(),
             is_deployment_level: false, // Organization-specific roles are never deployment-level
         })
     }
@@ -128,29 +142,13 @@ impl UpdateOrganizationRoleCommand {
 }
 
 impl UpdateOrganizationRoleCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OrganizationRole, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<OrganizationRole, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        // Check if role exists
-        let role_exists = sqlx::query!(
-            "SELECT id FROM organization_roles WHERE id = $1 AND organization_id = $2",
-            self.role_id,
-            self.organization_id
-        )
-        .fetch_optional(&mut *conn)
-        .await?;
-
-        if role_exists.is_none() {
-            return Err(AppError::NotFound(
-                "Organization role not found".to_string(),
-            ));
-        }
-
         // Build update query dynamically
         let mut query_parts = Vec::new();
-        let mut param_count = 2; // role_id is $1, updated_at will be the last param
+        let mut param_count = 3; // role_id is $1, organization_id is $2
 
         if self.name.is_some() {
             query_parts.push(format!("name = ${}", param_count));
@@ -168,11 +166,13 @@ impl UpdateOrganizationRoleCommand {
         query_parts.push(format!("updated_at = ${}", param_count));
 
         let query_str = format!(
-            "UPDATE organization_roles SET {} WHERE id = $1 RETURNING id, created_at, updated_at, name, permissions",
+            "UPDATE organization_roles SET {} WHERE id = $1 AND organization_id = $2 RETURNING id, created_at, updated_at, name, permissions",
             query_parts.join(", ")
         );
 
-        let mut query = sqlx::query(&query_str).bind(self.role_id);
+        let mut query = sqlx::query(&query_str)
+            .bind(self.role_id)
+            .bind(self.organization_id);
 
         if let Some(name) = &self.name {
             query = query.bind(name);
@@ -183,7 +183,10 @@ impl UpdateOrganizationRoleCommand {
 
         query = query.bind(chrono::Utc::now());
 
-        let role = query.fetch_one(&mut *conn).await?;
+        let role = query
+            .fetch_optional(executor)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Organization role not found".to_string()))?;
 
         // Get permissions from database
         let permissions_vec: Vec<String> = role.get("permissions");
@@ -217,30 +220,26 @@ impl DeleteOrganizationRoleCommand {
 }
 
 impl DeleteOrganizationRoleCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        // Check if role exists
-        let role_exists = sqlx::query!(
-            "SELECT id FROM organization_roles WHERE id = $1 AND organization_id = $2",
+        let result = sqlx::query!(
+            r#"
+            DELETE FROM organization_roles
+            WHERE id = $1 AND organization_id = $2
+            "#,
             self.role_id,
             self.organization_id
         )
-        .fetch_optional(&mut *conn)
+        .execute(executor)
         .await?;
 
-        if role_exists.is_none() {
+        if result.rows_affected() == 0 {
             return Err(AppError::NotFound(
                 "Organization role not found".to_string(),
             ));
         }
-
-        // Delete role (this should cascade to permissions and role assignments)
-        sqlx::query!("DELETE FROM organization_roles WHERE id = $1", self.role_id)
-            .execute(&mut *conn)
-            .await?;
 
         Ok(())
     }

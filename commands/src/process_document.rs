@@ -1,6 +1,5 @@
 use chrono::Utc;
 use common::error::AppError;
-use sqlx::Connection;
 use std::future::Future;
 
 pub struct ProcessDocumentCommand {
@@ -34,7 +33,7 @@ impl ProcessDocumentCommand {
         DispatchFn: Fn(i64, i64, usize) -> DispatchFut,
         DispatchFut: Future<Output = Result<(), AppError>>,
     {
-        let mut conn = deps.acquirer.acquire().await?;
+        let mut tx = deps.acquirer.begin().await?;
         let now = Utc::now();
 
         let document = sqlx::query!(
@@ -46,7 +45,7 @@ impl ProcessDocumentCommand {
             self.document_id,
             self.knowledge_base_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *tx)
         .await
         .map_err(AppError::Database)?;
 
@@ -96,13 +95,11 @@ impl ProcessDocumentCommand {
                 now,
                 document.id
             )
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await;
-
+            tx.commit().await.map_err(AppError::Database)?;
             return Ok("No chunks created from document".to_string());
         }
-
-        let mut tx = conn.begin().await.map_err(AppError::Database)?;
 
         for (chunk_index, chunk) in chunks.iter().enumerate() {
             sqlx::query!(
@@ -124,8 +121,6 @@ impl ProcessDocumentCommand {
             .map_err(AppError::Database)?;
         }
 
-        tx.commit().await.map_err(AppError::Database)?;
-
         let _ = sqlx::query!(
             r#"
             UPDATE ai_knowledge_base_documents 
@@ -145,7 +140,7 @@ impl ProcessDocumentCommand {
             now,
             document.id
         )
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await;
 
         if let Err(e) =
@@ -166,10 +161,11 @@ impl ProcessDocumentCommand {
                 now,
                 document.id
             )
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await;
         }
 
+        tx.commit().await.map_err(AppError::Database)?;
         Ok(format!(
             "Processed document {} into {} chunks",
             document.title,

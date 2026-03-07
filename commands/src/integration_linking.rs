@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
 use common::error::AppError;
-use models::{ActiveAgentIntegration, IntegrationLinkCode};
+use models::ActiveAgentIntegration;
 use serde::Serialize;
 
 const BASE62_CHARS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -49,14 +49,13 @@ impl CreateIntegrationLinkCodeCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<LinkCodeResponse, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<LinkCodeResponse, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let id = self
             .id
             .ok_or_else(|| AppError::Validation("id is required".to_string()))?;
-        let mut conn = acquirer.acquire().await?;
         let code = base62_encode(id as u64);
         let expires_at = Utc::now() + Duration::minutes(10);
 
@@ -73,7 +72,7 @@ impl CreateIntegrationLinkCodeCommand {
             code,
             expires_at,
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await
         .map_err(AppError::Database)?;
 
@@ -117,58 +116,47 @@ impl ValidateLinkCodeCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<ValidateLinkCodeResponse, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<ValidateLinkCodeResponse, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let connection_id = self
             .connection_id
             .ok_or_else(|| AppError::Validation("connection_id is required".to_string()))?;
-        let mut conn = acquirer.acquire().await?;
-        let link_code = sqlx::query_as!(
-            IntegrationLinkCode,
+        let row = sqlx::query!(
             r#"
-            SELECT id, deployment_id, context_group, agent_id, integration_type, code, expires_at, used_at, created_at
-            FROM integration_link_codes
-            WHERE code = $1 AND used_at IS NULL AND expires_at > NOW()
-            "#,
-            self.code,
-        )
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or_else(|| AppError::BadRequest("Invalid or expired code".to_string()))?;
-
-        sqlx::query!(
-            "UPDATE integration_link_codes SET used_at = NOW() WHERE id = $1",
-            link_code.id,
-        )
-        .execute(&mut *conn)
-        .await
-        .map_err(AppError::Database)?;
-
-        let context_group = link_code.context_group.clone();
-        sqlx::query!(
-            r#"
-            INSERT INTO active_agent_integrations (id, deployment_id, context_group, integration_id, external_id, connection_metadata)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (integration_id, external_id) 
-            DO UPDATE SET context_group = $3, connection_metadata = $6, updated_at = NOW()
+            WITH link AS (
+                UPDATE integration_link_codes
+                SET used_at = NOW()
+                WHERE code = $2 AND used_at IS NULL AND expires_at > NOW()
+                RETURNING deployment_id, context_group
+            ),
+            upsert AS (
+                INSERT INTO active_agent_integrations (
+                    id, deployment_id, context_group, integration_id, external_id, connection_metadata
+                )
+                SELECT $1, link.deployment_id, link.context_group, $3, $4, $5
+                FROM link
+                ON CONFLICT (integration_id, external_id)
+                DO UPDATE SET context_group = EXCLUDED.context_group, connection_metadata = EXCLUDED.connection_metadata, updated_at = NOW()
+            )
+            SELECT deployment_id, context_group
+            FROM link
             "#,
             connection_id,
-            link_code.deployment_id,
-            context_group,
+            self.code,
             self.integration_id,
             self.external_id,
             self.connection_metadata,
         )
-        .execute(&mut *conn)
+        .fetch_optional(executor)
         .await
-        .map_err(AppError::Database)?;
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::BadRequest("Invalid or expired code".to_string()))?;
 
         Ok(ValidateLinkCodeResponse {
-            context_group,
-            deployment_id: link_code.deployment_id,
+            context_group: row.context_group,
+            deployment_id: row.deployment_id,
             connection_id,
         })
     }
@@ -195,14 +183,13 @@ impl GetActiveIntegrationCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         self,
-        acquirer: A,
+        executor: E,
     ) -> Result<Option<ActiveAgentIntegration>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let result = sqlx::query_as!(
             ActiveAgentIntegration,
             r#"
@@ -213,7 +200,7 @@ impl GetActiveIntegrationCommand {
             self.integration_id,
             self.external_id,
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await
         .map_err(AppError::Database)?;
 

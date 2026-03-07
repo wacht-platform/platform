@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH updated_segment AS (\n                UPDATE segments\n                SET deleted_at = NOW()\n                WHERE id = $1\n                  AND deployment_id = $2\n                  AND deleted_at IS NULL\n                RETURNING id\n            ),\n            deleted_org AS (\n                DELETE FROM organization_segments\n                WHERE segment_id = $1\n                  AND EXISTS(SELECT 1 FROM updated_segment)\n            ),\n            deleted_ws AS (\n                DELETE FROM workspace_segments\n                WHERE segment_id = $1\n                  AND EXISTS(SELECT 1 FROM updated_segment)\n            ),\n            deleted_user AS (\n                DELETE FROM user_segments\n                WHERE segment_id = $1\n                  AND EXISTS(SELECT 1 FROM updated_segment)\n            )\n            SELECT EXISTS(SELECT 1 FROM updated_segment) AS \"segment_exists!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "segment_exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "854cd32c03947b8abe562424378b104a06d7909324444d7b68e1452f75e417cc"
+}

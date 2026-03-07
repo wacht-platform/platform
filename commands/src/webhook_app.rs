@@ -64,11 +64,10 @@ impl CreateWebhookAppCommand {
 }
 
 impl CreateWebhookAppCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<WebhookApp, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let signing_secret = generate_signing_secret();
 
         // Generate app_slug: always use "slug_" prefix
@@ -105,7 +104,7 @@ impl CreateWebhookAppCommand {
                 .map_err(|e| AppError::Serialization(e.to_string()))?,
             self.event_catalog_slug
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(executor)
         .await?;
 
         Ok(app)
@@ -166,11 +165,10 @@ impl UpdateWebhookAppCommand {
 }
 
 impl UpdateWebhookAppCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<WebhookApp, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let app: Option<WebhookApp> = query_as!(
             WebhookApp,
             r#"
@@ -204,7 +202,7 @@ impl UpdateWebhookAppCommand {
                 .map_err(|e| AppError::Serialization(e.to_string()))?,
             self.event_catalog_slug
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         let app = app.ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
@@ -229,11 +227,10 @@ impl DeleteWebhookAppCommand {
 }
 
 impl DeleteWebhookAppCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let result = query!(
             r#"
             DELETE FROM webhook_apps
@@ -242,7 +239,7 @@ impl DeleteWebhookAppCommand {
             self.deployment_id,
             self.app_slug
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -269,11 +266,10 @@ impl RotateWebhookSecretCommand {
 }
 
 impl RotateWebhookSecretCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<WebhookApp, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         let new_secret = generate_signing_secret();
 
         let app: Option<WebhookApp> = query_as!(
@@ -298,7 +294,7 @@ impl RotateWebhookSecretCommand {
             self.app_slug,
             new_secret
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(executor)
         .await?;
 
         let app = app.ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;

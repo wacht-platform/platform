@@ -129,63 +129,87 @@ impl GetSessionWithSignInsQuery {
         Self { session_id }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<SessionWithSignIns, AppError>
+    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<SessionWithSignIns, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
-        let session_row = sqlx::query!(
+        let rows = sqlx::query(
             r#"
-            SELECT id, created_at, updated_at, active_signin_id
-            FROM sessions
-            WHERE id = $1 AND deleted_at IS NULL
+            SELECT
+                s.id AS session_id,
+                s.created_at AS session_created_at,
+                s.updated_at AS session_updated_at,
+                s.active_signin_id,
+                si.id AS signin_id,
+                si.created_at AS signin_created_at,
+                si.updated_at AS signin_updated_at,
+                si.session_id,
+                si.user_id,
+                si.active_organization_membership_id,
+                si.active_workspace_membership_id,
+                si.expires_at,
+                si.last_active_at,
+                si.ip_address,
+                si.browser,
+                si.device,
+                si.city,
+                si.region,
+                si.region_code,
+                si.country,
+                si.country_code
+            FROM sessions s
+            LEFT JOIN signins si
+              ON si.session_id = s.id
+             AND si.deleted_at IS NULL
+            WHERE s.id = $1
+              AND s.deleted_at IS NULL
             "#,
-            self.session_id
         )
-        .fetch_one(&mut *conn)
+        .bind(self.session_id)
+        .fetch_all(executor)
         .await?;
+
+        let first = rows
+            .first()
+            .ok_or_else(|| AppError::NotFound("Session not found".to_string()))?;
 
         let session = Session {
-            id: session_row.id,
-            created_at: session_row.created_at,
-            updated_at: session_row.updated_at,
-            active_signin_id: session_row.active_signin_id,
+            id: first.get("session_id"),
+            created_at: first.get("session_created_at"),
+            updated_at: first.get("session_updated_at"),
+            active_signin_id: first.get("active_signin_id"),
         };
 
-        let signin_rows = sqlx::query!(
-            r#"
-            SELECT id, created_at, updated_at, session_id, user_id,
-                   active_organization_membership_id, active_workspace_membership_id,
-                   expires_at, last_active_at, ip_address, browser, device,
-                   city, region, region_code, country, country_code
-            FROM signins
-            WHERE session_id = $1 AND deleted_at IS NULL
-            "#,
-            self.session_id
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-
-        let signins: Vec<SignIn> = signin_rows
+        let signins: Vec<SignIn> = rows
             .into_iter()
-            .map(|row| SignIn {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                session_id: row.session_id.unwrap_or(0),
-                user_id: row.user_id,
-                active_organization_membership_id: row.active_organization_membership_id,
-                active_workspace_membership_id: row.active_workspace_membership_id,
-                expires_at: DateTime::from_naive_utc_and_offset(row.expires_at, Utc),
-                last_active_at: DateTime::from_naive_utc_and_offset(row.last_active_at, Utc),
-                ip_address: row.ip_address.unwrap_or_default(),
-                browser: row.browser.unwrap_or_default(),
-                device: row.device.unwrap_or_default(),
-                city: row.city.unwrap_or_default(),
-                region: row.region.unwrap_or_default(),
-                region_code: row.region_code.unwrap_or_default(),
-                country: row.country.unwrap_or_default(),
-                country_code: row.country_code.unwrap_or_default(),
+            .filter_map(|row| {
+                let signin_id: Option<i64> = row.try_get("signin_id").ok();
+                signin_id.map(|id| SignIn {
+                    id,
+                    created_at: row.get("signin_created_at"),
+                    updated_at: row.get("signin_updated_at"),
+                    session_id: row.get::<Option<i64>, _>("session_id").unwrap_or(0),
+                    user_id: row.get("user_id"),
+                    active_organization_membership_id: row.get("active_organization_membership_id"),
+                    active_workspace_membership_id: row.get("active_workspace_membership_id"),
+                    expires_at: DateTime::from_naive_utc_and_offset(row.get("expires_at"), Utc),
+                    last_active_at: DateTime::from_naive_utc_and_offset(
+                        row.get("last_active_at"),
+                        Utc,
+                    ),
+                    ip_address: row.get::<Option<String>, _>("ip_address").unwrap_or_default(),
+                    browser: row.get::<Option<String>, _>("browser").unwrap_or_default(),
+                    device: row.get::<Option<String>, _>("device").unwrap_or_default(),
+                    city: row.get::<Option<String>, _>("city").unwrap_or_default(),
+                    region: row.get::<Option<String>, _>("region").unwrap_or_default(),
+                    region_code: row
+                        .get::<Option<String>, _>("region_code")
+                        .unwrap_or_default(),
+                    country: row.get::<Option<String>, _>("country").unwrap_or_default(),
+                    country_code: row
+                        .get::<Option<String>, _>("country_code")
+                        .unwrap_or_default(),
+                })
             })
             .collect();
 

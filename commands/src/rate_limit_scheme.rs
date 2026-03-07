@@ -1,7 +1,6 @@
 use common::error::AppError;
 use models::api_key::RateLimit;
 use queries::rate_limit_scheme::RateLimitSchemeData;
-use sqlx::Row;
 
 fn validate_rules(rules: &[RateLimit]) -> Result<(), AppError> {
     if rules.is_empty() {
@@ -15,44 +14,6 @@ fn validate_rules(rules: &[RateLimit]) -> Result<(), AppError> {
     }
 
     Ok(())
-}
-
-fn map_scheme_row(row: sqlx::postgres::PgRow) -> Result<RateLimitSchemeData, AppError> {
-    let rules: serde_json::Value = row.try_get("rules")?;
-    Ok(RateLimitSchemeData {
-        id: row.try_get("id")?,
-        deployment_id: row.try_get("deployment_id")?,
-        slug: row.try_get("slug")?,
-        name: row.try_get("name")?,
-        description: row.try_get("description")?,
-        rules: serde_json::from_value(rules).unwrap_or_default(),
-        created_at: row
-            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("created_at")?
-            .unwrap_or_else(chrono::Utc::now),
-        updated_at: row
-            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("updated_at")?
-            .unwrap_or_else(chrono::Utc::now),
-    })
-}
-
-async fn get_scheme_by_slug(
-    conn: &mut sqlx::PgConnection,
-    deployment_id: i64,
-    slug: &str,
-) -> Result<Option<RateLimitSchemeData>, AppError> {
-    let row = sqlx::query(
-        r#"
-        SELECT id, deployment_id, slug, name, description, rules, created_at, updated_at
-        FROM rate_limit_schemes
-        WHERE deployment_id = $1 AND slug = $2
-        "#,
-    )
-    .bind(deployment_id)
-    .bind(slug)
-    .fetch_optional(&mut *conn)
-    .await?;
-
-    row.map(map_scheme_row).transpose()
 }
 
 pub struct CreateRateLimitSchemeCommand {
@@ -89,48 +50,95 @@ impl CreateRateLimitSchemeCommand {
 }
 
 impl CreateRateLimitSchemeCommand {
-    pub async fn execute_with_db(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<RateLimitSchemeData, AppError> {
-        let mut conn = acquirer.acquire().await?;
-        if self.slug.trim().is_empty() {
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<RateLimitSchemeData, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let slug = self.slug;
+        let name = self.name;
+        let description = self.description;
+
+        if slug.trim().is_empty() {
             return Err(AppError::Validation("Scheme slug is required".to_string()));
         }
-        if self.name.trim().is_empty() {
+        if name.trim().is_empty() {
             return Err(AppError::Validation("Scheme name is required".to_string()));
         }
         validate_rules(&self.rules)?;
 
-        let existing = get_scheme_by_slug(&mut conn, self.deployment_id, &self.slug).await?;
-        if existing.is_some() {
+        let rules_json = serde_json::to_value(&self.rules)
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+        let row = sqlx::query!(
+            r#"
+            WITH existing AS (
+                SELECT id
+                FROM rate_limit_schemes
+                WHERE deployment_id = $2
+                  AND slug = $3
+            ),
+            ins AS (
+                INSERT INTO rate_limit_schemes (id, deployment_id, slug, name, description, rules)
+                SELECT $1, $2, $3, $4, $5, $6
+                WHERE NOT EXISTS(SELECT 1 FROM existing)
+                RETURNING id, deployment_id, slug, name, description, rules,
+                          created_at,
+                          updated_at
+            )
+            SELECT
+                EXISTS(SELECT 1 FROM existing) AS "already_exists!",
+                ins.id,
+                ins.deployment_id,
+                ins.slug,
+                ins.name,
+                ins.description,
+                ins.rules,
+                ins.created_at AS "created_at!",
+                ins.updated_at AS "updated_at!"
+            FROM ins
+            UNION ALL
+            SELECT
+                EXISTS(SELECT 1 FROM existing) AS "already_exists!",
+                NULL::BIGINT AS id,
+                NULL::BIGINT AS deployment_id,
+                NULL::TEXT AS slug,
+                NULL::TEXT AS name,
+                NULL::TEXT AS description,
+                NULL::JSONB AS rules,
+                NOW() AS "created_at!",
+                NOW() AS "updated_at!"
+            WHERE NOT EXISTS(SELECT 1 FROM ins)
+            LIMIT 1
+            "#,
+            self.id,
+            self.deployment_id,
+            &slug,
+            &name,
+            description.clone(),
+            rules_json
+        )
+        .fetch_one(executor)
+        .await?;
+
+        if row.already_exists {
             return Err(AppError::Conflict(format!(
                 "Rate limit scheme '{}' already exists",
-                self.slug
+                slug
             )));
         }
 
-        let rules_json = serde_json::to_value(&self.rules)
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
-
-        sqlx::query(
-            r#"
-            INSERT INTO rate_limit_schemes (id, deployment_id, slug, name, description, rules)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            "#,
-        )
-        .bind(self.id)
-        .bind(self.deployment_id)
-        .bind(&self.slug)
-        .bind(&self.name)
-        .bind(self.description)
-        .bind(rules_json)
-        .execute(&mut *conn)
-        .await?;
-
-        get_scheme_by_slug(&mut conn, self.deployment_id, &self.slug)
-            .await?
-            .ok_or_else(|| AppError::Internal("Failed to fetch created scheme".to_string()))
+        Ok(RateLimitSchemeData {
+            id: row.id.unwrap_or(self.id),
+            deployment_id: row.deployment_id.unwrap_or(self.deployment_id),
+            slug: row.slug.unwrap_or(slug),
+            name: row.name.unwrap_or(name),
+            description: row.description,
+            rules: row
+                .rules
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default(),
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
     }
 }
 
@@ -170,11 +178,10 @@ impl UpdateRateLimitSchemeCommand {
 }
 
 impl UpdateRateLimitSchemeCommand {
-    pub async fn execute_with_db(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<RateLimitSchemeData, AppError> {
-        let mut conn = acquirer.acquire().await?;
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<RateLimitSchemeData, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
         if let Some(name) = &self.name
             && name.trim().is_empty()
         {
@@ -185,36 +192,52 @@ impl UpdateRateLimitSchemeCommand {
         if let Some(rules) = &self.rules {
             validate_rules(rules)?;
         }
+        let rules_json = match self.rules {
+            Some(rules) => Some(
+                serde_json::to_value(&rules).map_err(|e| AppError::Serialization(e.to_string()))?,
+            ),
+            None => None,
+        };
 
-        let existing = get_scheme_by_slug(&mut conn, self.deployment_id, &self.slug)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Rate limit scheme not found".to_string()))?;
-
-        let rules_to_store = self.rules.unwrap_or(existing.rules);
-        let rules_json = serde_json::to_value(&rules_to_store)
-            .map_err(|e| AppError::Serialization(e.to_string()))?;
-
-        sqlx::query(
+        let row = sqlx::query!(
             r#"
             UPDATE rate_limit_schemes
             SET name = COALESCE($3, name),
                 description = COALESCE($4, description),
-                rules = $5,
+                rules = COALESCE($5, rules),
                 updated_at = NOW()
-            WHERE deployment_id = $1 AND slug = $2
+            WHERE deployment_id = $1
+              AND slug = $2
+            RETURNING
+                id,
+                deployment_id,
+                slug,
+                name,
+                description,
+                rules,
+                created_at as "created_at!",
+                updated_at as "updated_at!"
             "#,
+            self.deployment_id,
+            self.slug,
+            self.name,
+            self.description,
+            rules_json
         )
-        .bind(self.deployment_id)
-        .bind(&self.slug)
-        .bind(self.name)
-        .bind(self.description)
-        .bind(rules_json)
-        .execute(&mut *conn)
-        .await?;
+        .fetch_optional(executor)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Rate limit scheme not found".to_string()))?;
 
-        get_scheme_by_slug(&mut conn, self.deployment_id, &self.slug)
-            .await?
-            .ok_or_else(|| AppError::Internal("Failed to fetch updated scheme".to_string()))
+        Ok(RateLimitSchemeData {
+            id: row.id,
+            deployment_id: row.deployment_id,
+            slug: row.slug,
+            name: row.name,
+            description: row.description,
+            rules: serde_json::from_value(row.rules).unwrap_or_default(),
+            created_at: chrono::DateTime::from_naive_utc_and_offset(row.created_at, chrono::Utc),
+            updated_at: chrono::DateTime::from_naive_utc_and_offset(row.updated_at, chrono::Utc),
+        })
     }
 }
 
@@ -230,71 +253,63 @@ impl DeleteRateLimitSchemeCommand {
 }
 
 impl DeleteRateLimitSchemeCommand {
-    pub async fn execute_with_db(
-        self,
-        acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    ) -> Result<(), AppError> {
-        let mut conn = acquirer.acquire().await?;
-        let scheme = get_scheme_by_slug(&mut conn, self.deployment_id, &self.slug).await?;
-        if scheme.is_none() {
-            return Err(AppError::NotFound(
-                "Rate limit scheme not found".to_string(),
-            ));
-        }
-
-        let app_ref_count: i64 = sqlx::query(
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let result = sqlx::query!(
             r#"
-            SELECT COUNT(*) as count
-            FROM api_auth_apps
-            WHERE deployment_id = $1
-              AND deleted_at IS NULL
-              AND rate_limit_scheme_slug = $2
+            WITH scheme AS (
+                SELECT 1
+                FROM rate_limit_schemes
+                WHERE deployment_id = $1 AND slug = $2
+            ),
+            app_refs AS (
+                SELECT COUNT(*)::BIGINT AS count
+                FROM api_auth_apps
+                WHERE deployment_id = $1
+                  AND deleted_at IS NULL
+                  AND rate_limit_scheme_slug = $2
+            ),
+            key_refs AS (
+                SELECT COUNT(*)::BIGINT AS count
+                FROM api_keys
+                WHERE deployment_id = $1
+                  AND revoked_at IS NULL
+                  AND rate_limit_scheme_slug = $2
+            ),
+            del AS (
+                DELETE FROM rate_limit_schemes
+                WHERE deployment_id = $1
+                  AND slug = $2
+                  AND (SELECT count FROM app_refs) = 0
+                  AND (SELECT count FROM key_refs) = 0
+            )
+            SELECT
+                EXISTS(SELECT 1 FROM scheme) AS "scheme_exists!",
+                (SELECT count FROM app_refs) AS "app_ref_count!",
+                (SELECT count FROM key_refs) AS "key_ref_count!"
             "#,
+            self.deployment_id,
+            self.slug
         )
-        .bind(self.deployment_id)
-        .bind(&self.slug)
-        .fetch_one(&mut *conn)
-        .await?
-        .try_get("count")?;
+        .fetch_one(executor)
+        .await?;
 
-        if app_ref_count > 0 {
+        if !result.scheme_exists {
+            return Err(AppError::NotFound("Rate limit scheme not found".to_string()));
+        }
+        if result.app_ref_count > 0 {
             return Err(AppError::BadRequest(
                 "Cannot delete rate limit scheme while it is assigned to API auth apps".to_string(),
             ));
         }
-
-        let key_ref_count: i64 = sqlx::query(
-            r#"
-            SELECT COUNT(*) as count
-            FROM api_keys
-            WHERE deployment_id = $1
-              AND revoked_at IS NULL
-              AND rate_limit_scheme_slug = $2
-            "#,
-        )
-        .bind(self.deployment_id)
-        .bind(&self.slug)
-        .fetch_one(&mut *conn)
-        .await?
-        .try_get("count")?;
-
-        if key_ref_count > 0 {
+        if result.key_ref_count > 0 {
             return Err(AppError::BadRequest(
                 "Cannot delete rate limit scheme while it is assigned to active API keys"
                     .to_string(),
             ));
         }
-
-        sqlx::query(
-            r#"
-            DELETE FROM rate_limit_schemes
-            WHERE deployment_id = $1 AND slug = $2
-            "#,
-        )
-        .bind(self.deployment_id)
-        .bind(&self.slug)
-        .execute(&mut *conn)
-        .await?;
 
         Ok(())
     }

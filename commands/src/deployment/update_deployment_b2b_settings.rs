@@ -59,14 +59,14 @@ impl UpdateDeploymentB2bSettingsCommand {
     where
         D: HasDbRouter + HasRedis,
     {
-        let mut conn = deps.db_router().writer().acquire().await?;
+        let writer = deps.db_router().writer();
         let existing_catalogs = sqlx::query_as::<_, (Option<Value>, Option<Value>)>(
             "SELECT workspace_permission_catalog, organization_permission_catalog
              FROM deployment_b2b_settings
              WHERE deployment_id = $1",
         )
         .bind(self.deployment_id)
-        .fetch_optional(&mut *conn)
+        .fetch_optional(writer)
         .await?;
 
         let (existing_workspace_catalog, existing_organization_catalog) = existing_catalogs
@@ -253,7 +253,7 @@ impl UpdateDeploymentB2bSettingsCommand {
         query_builder.push(" WHERE deployment_id = ");
         query_builder.push_bind(self.deployment_id);
 
-        let result = query_builder.build().execute(&mut *conn).await?;
+        let result = query_builder.build().execute(writer).await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound(format!(

@@ -115,7 +115,7 @@ impl CreateNotificationCommand {
     where
         D: HasDbRouter + HasNatsClient,
     {
-        let mut conn = deps.writer_pool().acquire().await?;
+        let writer_pool = deps.writer_pool();
         // Create new notification
         let row: NotificationRow = query_as(
             r#"
@@ -144,7 +144,7 @@ impl CreateNotificationCommand {
         .bind(&self.severity)
         .bind(self.metadata)
         .bind(self.expires_at)
-        .fetch_one(&mut *conn)
+        .fetch_one(writer_pool)
         .await?;
 
         // Convert row to strongly typed Notification
@@ -473,16 +473,15 @@ impl DeleteNotificationCommand {
         DeleteNotificationCommandBuilder::default()
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<bool, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut conn = acquirer.acquire().await?;
         ArchiveNotificationCommand::builder()
             .notification_id(self.notification_id)
             .user_id(self.user_id)
             .build()?
-            .execute_with_db(&mut *conn)
+            .execute_with_db(executor)
             .await
     }
 }
