@@ -22,6 +22,7 @@ use queries::{
 };
 
 use crate::application::AppState;
+use crate::application::deps;
 
 pub async fn get_deployment_with_settings(
     app_state: &AppState,
@@ -39,7 +40,7 @@ pub async fn update_deployment_display_settings(
     updates: DeploymentDisplaySettingsUpdates,
 ) -> Result<(), AppError> {
     UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await?;
     Ok(())
 }
@@ -50,7 +51,7 @@ pub async fn update_deployment_auth_settings(
     updates: DeploymentAuthSettingsUpdates,
 ) -> Result<(), AppError> {
     UpdateDeploymentAuthSettingsCommand::new(deployment_id, updates)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await?;
     Ok(())
 }
@@ -61,7 +62,7 @@ pub async fn update_deployment_restrictions(
     updates: DeploymentRestrictionsUpdates,
 ) -> Result<(), AppError> {
     UpdateDeploymentRestrictionsCommand::new(deployment_id, updates)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await?;
     Ok(())
 }
@@ -83,7 +84,7 @@ pub async fn create_deployment_jwt_template(
 ) -> Result<DeploymentJwtTemplate, AppError> {
     CreateDeploymentJwtTemplateCommand::new(deployment_id, template)
         .with_template_id(app_state.sf.next_id()? as i64)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await
 }
 
@@ -94,7 +95,7 @@ pub async fn update_deployment_jwt_template(
     updates: PartialDeploymentJwtTemplate,
 ) -> Result<DeploymentJwtTemplate, AppError> {
     UpdateDeploymentJwtTemplateCommand::new(deployment_id, template_id, updates)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await
 }
 
@@ -104,7 +105,7 @@ pub async fn delete_deployment_jwt_template(
     template_id: i64,
 ) -> Result<(), AppError> {
     DeleteDeploymentJwtTemplateCommand::new(deployment_id, template_id)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await?;
     Ok(())
 }
@@ -127,12 +128,11 @@ pub async fn update_deployment_email_template(
     template: EmailTemplate,
 ) -> Result<EmailTemplate, AppError> {
     UpdateDeploymentEmailTemplateCommand::new(deployment_id, template_name, template)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await
 }
 
 pub async fn verify_smtp_connection(
-    _app_state: &AppState,
     config: SmtpConfigRequest,
 ) -> Result<SmtpVerifyResponse, AppError> {
     VerifySmtpConnectionCommand::new(
@@ -177,7 +177,7 @@ pub async fn update_smtp_config(
         config.from_email,
         config.use_tls,
     )
-    .execute_with_deps(app_state)
+    .execute_with_deps(&deps::from_app(app_state).db().enc())
     .await?;
 
     Ok(SmtpConfigResponse {
@@ -192,7 +192,7 @@ pub async fn update_smtp_config(
 
 pub async fn remove_smtp_config(app_state: &AppState, deployment_id: i64) -> Result<(), AppError> {
     RemoveDeploymentSmtpConfigCommand::new(deployment_id)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await?;
     Ok(())
 }

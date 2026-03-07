@@ -3,7 +3,7 @@ use axum::extract::{Json, Path, Query, State};
 use serde::Deserialize;
 
 use crate::application::{
-    ai_agents as ai_agents_use_cases,
+    ai_agents as ai_agents_app,
     response::{ApiResult, PaginatedResponse},
 };
 use common::state::AppState;
@@ -14,7 +14,7 @@ use dto::{
 };
 use models::{AiAgent, AiAgentWithDetails};
 
-pub use ai_agents_use_cases::{AgentDetailsResponse, IntegrationWithUrl, IntegrationsResponse};
+pub use ai_agents_app::{AgentDetailsResponse, IntegrationWithUrl, IntegrationsResponse};
 
 #[derive(Deserialize)]
 pub struct AgentParams {
@@ -32,7 +32,7 @@ pub async fn get_ai_agents(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(query): Query<GetAgentsQuery>,
 ) -> ApiResult<PaginatedResponse<AiAgentWithDetails>> {
-    let agents = ai_agents_use_cases::get_ai_agents(&app_state, deployment_id, query).await?;
+    let agents = ai_agents_app::get_ai_agents(&app_state, deployment_id, query).await?;
     Ok(agents.into())
 }
 
@@ -41,7 +41,7 @@ pub async fn create_ai_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateAgentRequest>,
 ) -> ApiResult<AiAgent> {
-    let agent = ai_agents_use_cases::create_ai_agent(&app_state, deployment_id, request).await?;
+    let agent = ai_agents_app::create_ai_agent(&app_state, deployment_id, request).await?;
     Ok(agent.into())
 }
 
@@ -51,7 +51,7 @@ pub async fn get_ai_agent_by_id(
     Path(params): Path<AgentParams>,
 ) -> ApiResult<AiAgentWithDetails> {
     let agent =
-        ai_agents_use_cases::get_ai_agent_by_id(&app_state, deployment_id, params.agent_id).await?;
+        ai_agents_app::get_ai_agent_by_id(&app_state, deployment_id, params.agent_id).await?;
     Ok(agent.into())
 }
 
@@ -61,7 +61,7 @@ pub async fn get_ai_agent_details(
     Path(params): Path<AgentParams>,
 ) -> ApiResult<AgentDetailsResponse> {
     let details =
-        ai_agents_use_cases::get_ai_agent_details(&app_state, deployment_id, params.agent_id)
+        ai_agents_app::get_ai_agent_details(&app_state, deployment_id, params.agent_id)
             .await?;
     Ok(details.into())
 }
@@ -73,7 +73,7 @@ pub async fn update_ai_agent(
     Json(request): Json<UpdateAgentRequest>,
 ) -> ApiResult<AiAgent> {
     let agent =
-        ai_agents_use_cases::update_ai_agent(&app_state, deployment_id, params.agent_id, request)
+        ai_agents_app::update_ai_agent(&app_state, deployment_id, params.agent_id, request)
             .await?;
     Ok(agent.into())
 }
@@ -83,7 +83,7 @@ pub async fn delete_ai_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<()> {
-    ai_agents_use_cases::delete_ai_agent(&app_state, deployment_id, params.agent_id).await?;
+    ai_agents_app::delete_ai_agent(&app_state, deployment_id, params.agent_id).await?;
     Ok(().into())
 }
 
@@ -93,7 +93,7 @@ pub async fn get_agent_sub_agents(
     Path(params): Path<AgentParams>,
 ) -> ApiResult<PaginatedResponse<AiAgentWithDetails>> {
     let sub_agents =
-        ai_agents_use_cases::get_agent_sub_agents(&app_state, deployment_id, params.agent_id)
+        ai_agents_app::get_agent_sub_agents(&app_state, deployment_id, params.agent_id)
             .await?;
     Ok(sub_agents.into())
 }
@@ -103,7 +103,7 @@ pub async fn attach_sub_agent_to_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentSubAgentParams>,
 ) -> ApiResult<()> {
-    ai_agents_use_cases::attach_sub_agent_to_agent(
+    ai_agents_app::attach_sub_agent_to_agent(
         &app_state,
         deployment_id,
         params.agent_id,
@@ -118,7 +118,7 @@ pub async fn detach_sub_agent_from_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentSubAgentParams>,
 ) -> ApiResult<()> {
-    ai_agents_use_cases::detach_sub_agent_from_agent(
+    ai_agents_app::detach_sub_agent_from_agent(
         &app_state,
         deployment_id,
         params.agent_id,
@@ -134,7 +134,7 @@ pub async fn get_agent_integrations(
     Path(params): Path<AgentParams>,
 ) -> ApiResult<IntegrationsResponse> {
     let integrations =
-        ai_agents_use_cases::get_agent_integrations(&app_state, deployment_id, params.agent_id)
+        ai_agents_app::get_agent_integrations(&app_state, deployment_id, params.agent_id)
             .await?;
     Ok(integrations.into())
 }

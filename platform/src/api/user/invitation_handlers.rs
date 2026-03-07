@@ -1,7 +1,7 @@
 use crate::{
     application::{
         response::{ApiResult, PaginatedResponse},
-        user_invitation as user_invitation_use_cases,
+        user_invitation as user_invitation_app,
     },
     middleware::RequireDeployment,
 };
@@ -23,7 +23,7 @@ pub async fn get_invited_user_list(
     QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentInvitation>> {
     let invitations =
-        user_invitation_use_cases::get_invited_user_list(&app_state, deployment_id, params).await?;
+        user_invitation_app::get_invited_user_list(&app_state, deployment_id, params).await?;
 
     Ok(invitations.into())
 }
@@ -34,7 +34,7 @@ pub async fn get_user_waitlist(
     QueryParams(params): QueryParams<InvitationsWaitlistQueryParams>,
 ) -> ApiResult<PaginatedResponse<DeploymentWaitlistUser>> {
     let waitlist =
-        user_invitation_use_cases::get_user_waitlist(&app_state, deployment_id, params).await?;
+        user_invitation_app::get_user_waitlist(&app_state, deployment_id, params).await?;
 
     Ok(waitlist.into())
 }
@@ -45,7 +45,7 @@ pub async fn invite_user(
     Json(request): Json<InviteUserRequest>,
 ) -> ApiResult<DeploymentInvitation> {
     let invitation =
-        user_invitation_use_cases::invite_user(&app_state, deployment_id, request).await?;
+        user_invitation_app::invite_user(&app_state, deployment_id, request).await?;
     Ok(invitation.into())
 }
 
@@ -54,7 +54,7 @@ pub async fn delete_invitation(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<InvitationParams>,
 ) -> ApiResult<()> {
-    user_invitation_use_cases::delete_invitation(&app_state, deployment_id, params.invitation_id)
+    user_invitation_app::delete_invitation(&app_state, deployment_id, params.invitation_id)
         .await?;
     Ok(().into())
 }
@@ -64,7 +64,7 @@ pub async fn approve_waitlist_user(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WaitlistUserParams>,
 ) -> ApiResult<DeploymentInvitation> {
-    let invitation = user_invitation_use_cases::approve_waitlist_user(
+    let invitation = user_invitation_app::approve_waitlist_user(
         &app_state,
         deployment_id,
         params.waitlist_user_id,

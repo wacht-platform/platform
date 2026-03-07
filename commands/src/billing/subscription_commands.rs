@@ -14,6 +14,10 @@ created_at,
 updated_at
 "#;
 
+fn require_opt<T>(value: Option<T>, field: &str) -> Result<T, AppError> {
+    value.ok_or_else(|| AppError::Internal(format!("Missing required field: {}", field)))
+}
+
 pub struct CreateSubscriptionCommand {
     id: i64,
     billing_account_id: i64,
@@ -149,9 +153,9 @@ impl UpsertSubscriptionCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, executor: A) -> Result<Subscription, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Subscription, AppError>
     where
-        A: sqlx::Executor<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let row = sqlx::query!(
             r#"
@@ -243,12 +247,18 @@ impl UpsertSubscriptionCommand {
 
         Ok(Subscription {
             id: row.id.unwrap_or(self.id),
-            billing_account_id: row.billing_account_id.unwrap_or_default(),
-            provider_customer_id: row.provider_customer_id.unwrap_or_default(),
-            provider_subscription_id: row.provider_subscription_id.unwrap_or_default(),
+            billing_account_id: require_opt(row.billing_account_id, "billing_account_id")?,
+            provider_customer_id: require_opt(
+                row.provider_customer_id,
+                "provider_customer_id",
+            )?,
+            provider_subscription_id: require_opt(
+                row.provider_subscription_id,
+                "provider_subscription_id",
+            )?,
             product_id: row.product_id,
             plan_name: None,
-            status: row.status.unwrap_or_default(),
+            status: require_opt(row.status, "status")?,
             previous_billing_date: row.previous_billing_date,
             created_at: row.created_at,
             updated_at: row.updated_at,

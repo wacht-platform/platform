@@ -16,7 +16,7 @@ fn base62_encode(mut num: u64) -> String {
         num /= 62;
     }
     result.reverse();
-    String::from_utf8(result).unwrap()
+    String::from_utf8_lossy(&result).into_owned()
 }
 
 /// Command to create a new integration link code

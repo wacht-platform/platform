@@ -7,14 +7,14 @@ use axum::{
 use common::{error::AppError, state::AppState};
 use dto::json::oauth_runtime::{OAuthErrorResponse, OAuthTokenRequest};
 
-use crate::application::oauth_runtime as oauth_runtime_use_cases;
+use crate::application::oauth_runtime as oauth_runtime_app;
 
 pub async fn oauth_token(
     State(app_state): State<AppState>,
     headers: HeaderMap,
     Form(request): Form<OAuthTokenRequest>,
 ) -> axum::response::Response {
-    oauth_runtime_use_cases::oauth_token(app_state, headers, request)
+    oauth_runtime_app::oauth_token(app_state, headers, request)
         .await
         .into_response()
 }

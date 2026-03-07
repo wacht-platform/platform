@@ -1,5 +1,5 @@
 use crate::{
-    application::{response::ApiResult, user_identifier as user_identifier_use_cases},
+    application::{response::ApiResult, user_identifier as user_identifier_app},
     middleware::RequireDeployment,
 };
 use common::state::AppState;
@@ -20,7 +20,7 @@ pub async fn add_user_email(
     Path(params): Path<UserParams>,
     Json(request): Json<AddEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    let email = user_identifier_use_cases::add_user_email(
+    let email = user_identifier_app::add_user_email(
         &app_state,
         deployment_id,
         params.user_id,
@@ -36,7 +36,7 @@ pub async fn update_user_email(
     Path(params): Path<UserEmailParams>,
     Json(request): Json<UpdateEmailRequest>,
 ) -> ApiResult<UserEmailAddress> {
-    let email = user_identifier_use_cases::update_user_email(
+    let email = user_identifier_app::update_user_email(
         &app_state,
         deployment_id,
         params.user_id,
@@ -52,7 +52,7 @@ pub async fn delete_user_email(
     RequireDeployment(_): RequireDeployment,
     Path(params): Path<UserEmailParams>,
 ) -> ApiResult<()> {
-    user_identifier_use_cases::delete_user_email(&app_state, params.user_id, params.email_id)
+    user_identifier_app::delete_user_email(&app_state, params.user_id, params.email_id)
         .await?;
     Ok(().into())
 }
@@ -63,7 +63,7 @@ pub async fn add_user_phone(
     Path(params): Path<UserParams>,
     Json(request): Json<AddPhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    let phone = user_identifier_use_cases::add_user_phone(
+    let phone = user_identifier_app::add_user_phone(
         &app_state,
         deployment_id,
         params.user_id,
@@ -79,7 +79,7 @@ pub async fn update_user_phone(
     Path(params): Path<UserPhoneParams>,
     Json(request): Json<UpdatePhoneRequest>,
 ) -> ApiResult<UserPhoneNumber> {
-    let phone = user_identifier_use_cases::update_user_phone(
+    let phone = user_identifier_app::update_user_phone(
         &app_state,
         params.user_id,
         params.phone_id,
@@ -94,7 +94,7 @@ pub async fn delete_user_phone(
     RequireDeployment(_): RequireDeployment,
     Path(params): Path<UserPhoneParams>,
 ) -> ApiResult<()> {
-    user_identifier_use_cases::delete_user_phone(&app_state, params.user_id, params.phone_id)
+    user_identifier_app::delete_user_phone(&app_state, params.user_id, params.phone_id)
         .await?;
     Ok(().into())
 }
@@ -104,7 +104,7 @@ pub async fn delete_user_social_connection(
     RequireDeployment(_): RequireDeployment,
     Path(params): Path<UserSocialParams>,
 ) -> ApiResult<()> {
-    user_identifier_use_cases::delete_user_social_connection(
+    user_identifier_app::delete_user_social_connection(
         &app_state,
         params.user_id,
         params.connection_id,

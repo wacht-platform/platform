@@ -27,6 +27,42 @@ pub struct UpdateEndpointSubscriptionsDeps<'a, A> {
     pub db_router: &'a common::DbRouter,
 }
 
+async fn replace_endpoint_subscriptions(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    endpoint_id: i64,
+    deployment_id: i64,
+    app_slug: &str,
+    subscriptions: &[EventSubscriptionData],
+) -> Result<(), AppError> {
+    query(
+        r#"
+        DELETE FROM webhook_endpoint_subscriptions
+        WHERE endpoint_id = $1
+        "#,
+    )
+    .bind(endpoint_id)
+    .execute(&mut **tx)
+    .await?;
+
+    for subscription in subscriptions {
+        query(
+            r#"
+            INSERT INTO webhook_endpoint_subscriptions (endpoint_id, deployment_id, app_slug, event_name, filter_rules)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(endpoint_id)
+        .bind(deployment_id)
+        .bind(app_slug)
+        .bind(&subscription.event_name)
+        .bind(&subscription.filter_rules)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateWebhookEndpointCommand {
     pub deployment_id: i64,
@@ -314,31 +350,14 @@ impl UpdateWebhookEndpointCommand {
             )
             .await?;
 
-            query!(
-                r#"
-                DELETE FROM webhook_endpoint_subscriptions
-                WHERE endpoint_id = $1
-                "#,
-                self.endpoint_id
+            replace_endpoint_subscriptions(
+                &mut tx,
+                self.endpoint_id,
+                self.deployment_id,
+                &endpoint.app_slug,
+                &subscriptions,
             )
-            .execute(&mut *tx)
             .await?;
-
-            for subscription in subscriptions {
-                query!(
-                    r#"
-                    INSERT INTO webhook_endpoint_subscriptions (endpoint_id, deployment_id, app_slug, event_name, filter_rules)
-                    VALUES ($1, $2, $3, $4, $5)
-                    "#,
-                    self.endpoint_id,
-                    self.deployment_id,
-                    endpoint.app_slug.clone(),
-                    subscription.event_name,
-                    subscription.filter_rules
-                )
-                .execute(&mut *tx)
-                .await?;
-            }
         }
 
         tx.commit().await?;
@@ -409,31 +428,23 @@ impl UpdateEndpointSubscriptionsCommand {
         )
         .await?;
 
-        query!(
-            r#"
-            DELETE FROM webhook_endpoint_subscriptions
-            WHERE endpoint_id = $1
-            "#,
-            self.endpoint_id
-        )
-        .execute(&mut *tx)
-        .await?;
+        let subscriptions = self
+            .subscribe_to_events
+            .iter()
+            .map(|event_name| EventSubscriptionData {
+                event_name: event_name.clone(),
+                filter_rules: self.filter_rules.clone(),
+            })
+            .collect::<Vec<_>>();
 
-        for event_name in &self.subscribe_to_events {
-            query!(
-                r#"
-                INSERT INTO webhook_endpoint_subscriptions (endpoint_id, deployment_id, app_slug, event_name, filter_rules)
-                VALUES ($1, $2, $3, $4, $5)
-                "#,
-                self.endpoint_id,
-                self.deployment_id,
-                app_slug.clone(),
-                event_name,
-                self.filter_rules.clone()
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
+        replace_endpoint_subscriptions(
+            &mut tx,
+            self.endpoint_id,
+            self.deployment_id,
+            &app_slug,
+            &subscriptions,
+        )
+        .await?;
 
         tx.commit().await?;
         Ok(self.subscribe_to_events)

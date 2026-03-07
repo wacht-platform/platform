@@ -15,6 +15,7 @@ use super::oauth_shared::{
     get_oauth_app_by_slug, get_oauth_client_by_id, map_oauth_client_response,
     map_oauth_client_response_with_secret,
 };
+use crate::application::deps;
 
 pub async fn list_oauth_clients(
     app_state: &AppState,
@@ -62,7 +63,7 @@ pub async fn create_oauth_client(
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
     }
-    .execute_with_deps(app_state)
+    .execute_with_deps(&deps::from_app(app_state).db().enc())
     .await?;
 
     Ok(map_oauth_client_response_with_secret(
@@ -150,7 +151,7 @@ pub async fn rotate_oauth_client_secret(
         oauth_app_id: oauth_app.id,
         client_id: client.client_id,
     }
-    .execute_with_deps(app_state)
+    .execute_with_deps(&deps::from_app(app_state).db().enc())
     .await?
     .ok_or_else(|| AppError::NotFound("OAuth client not found or inactive".to_string()))?;
 

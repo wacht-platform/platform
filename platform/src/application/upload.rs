@@ -3,6 +3,7 @@ use common::error::AppError;
 use dto::json::{DeploymentDisplaySettingsUpdates, UploadResult};
 
 use crate::application::AppState;
+use crate::application::deps;
 
 fn build_upload_target(
     deployment_id: i64,
@@ -88,7 +89,7 @@ pub async fn upload_image(
         .await?;
 
     UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await?;
 
     Ok(UploadResult { url })

@@ -3,6 +3,7 @@ use commands::session_ticket::{AgentSessionIdentifier, SessionTicketType};
 use dto::json::session_ticket::{AgentSessionIdentifierDto, CreateSessionTicketRequest};
 
 use crate::application::{AppError, AppState};
+use crate::application::deps;
 
 fn parse_ticket_type(ticket_type: &str) -> Result<SessionTicketType, AppError> {
     match ticket_type {
@@ -136,5 +137,8 @@ pub async fn create_session_ticket(
         command = command.expires_in(expires_in);
     }
 
-    command.build()?.execute_with_deps(app_state).await
+    command
+        .build()?
+        .execute_with_deps(&deps::from_app(app_state).redis().id())
+        .await
 }

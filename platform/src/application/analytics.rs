@@ -6,6 +6,13 @@ use tracing::error;
 use crate::application::AppState;
 
 #[derive(serde::Serialize)]
+pub struct DailyAuthMetric {
+    pub day: String,
+    pub signins: i64,
+    pub signups: i64,
+}
+
+#[derive(serde::Serialize)]
 pub struct AnalyticsStatsResponse {
     pub unique_signins: i64,
     pub signups: i64,
@@ -16,6 +23,7 @@ pub struct AnalyticsStatsResponse {
     pub signups_change: Option<f64>,
     pub organizations_created_change: Option<f64>,
     pub workspaces_created_change: Option<f64>,
+    pub daily_metrics: Vec<DailyAuthMetric>,
     pub recent_signups: Vec<RecentSignup>,
     pub recent_signins: Vec<RecentSignup>,
 }
@@ -50,6 +58,16 @@ pub async fn get_analytics_stats(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    let daily_metrics = stats
+        .get_daily_metrics()
+        .into_iter()
+        .map(|(day, signins, signups)| DailyAuthMetric {
+            day,
+            signins: signins as i64,
+            signups: signups as i64,
+        })
+        .collect();
+
     Ok(AnalyticsStatsResponse {
         unique_signins: stats.unique_signins as i64,
         signups: stats.signups as i64,
@@ -69,6 +87,7 @@ pub async fn get_analytics_stats(
             stats.workspaces_created as i64,
             stats.previous_workspaces as i64,
         ),
+        daily_metrics,
         recent_signups: stats.get_recent_signups(),
         recent_signins: stats.get_recent_signins(),
     })

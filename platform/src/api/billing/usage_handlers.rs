@@ -1,7 +1,7 @@
 use axum::extract::State;
 
 use crate::application::{
-    billing as billing_use_cases,
+    billing as billing_app,
     response::{ApiResult, PaginatedResponse},
 };
 
@@ -16,7 +16,7 @@ pub async fn get_current_usage(
 ) -> ApiResult<UsageResponse> {
     let owner_id = owner_id_from_auth(&auth);
     let (snapshots, billing_period) =
-        billing_use_cases::get_current_usage(&state, &owner_id).await?;
+        billing_app::get_current_usage(&state, &owner_id).await?;
 
     Ok(UsageResponse {
         snapshots,
@@ -30,7 +30,7 @@ pub async fn list_pulse_transactions(
     RequireAuth(auth): RequireAuth,
 ) -> ApiResult<PaginatedResponse<models::pulse_transaction::PulseTransaction>> {
     let owner_id = owner_id_from_auth(&auth);
-    let transactions = billing_use_cases::list_pulse_transactions(&state, &owner_id).await?;
+    let transactions = billing_app::list_pulse_transactions(&state, &owner_id).await?;
 
     Ok(PaginatedResponse::from(transactions).into())
 }

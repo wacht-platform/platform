@@ -5,6 +5,7 @@ use models::DeploymentSocialConnection;
 use queries::deployment::GetDeploymentSocialConnectionsQuery;
 
 use crate::application::{AppError, AppState};
+use crate::application::deps;
 
 pub async fn get_deployment_social_connections(
     app_state: &AppState,
@@ -28,6 +29,6 @@ pub async fn upsert_deployment_social_connection(
         .deployment_id(deployment_id)
         .connection(payload)
         .build()?
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await
 }

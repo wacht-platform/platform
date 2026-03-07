@@ -1,6 +1,11 @@
 use common::{HasCloudflareService, HasDbRouter, error::AppError};
 use models::api_key::OAuthScopeDefinition;
 use queries::oauth::OAuthAppData;
+use serde::de::DeserializeOwned;
+
+fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
+    serde_json::from_value(value).unwrap_or_default()
+}
 
 pub struct CreateOAuthAppCommand {
     pub oauth_app_id: Option<i64>,
@@ -215,8 +220,7 @@ impl UpdateOAuthAppCommand {
         .await?
         .ok_or_else(|| AppError::NotFound("OAuth app not found".to_string()))?;
 
-        let current_supported_scopes: Vec<String> =
-            serde_json::from_value(current.supported_scopes).unwrap_or_default();
+        let current_supported_scopes: Vec<String> = json_default(current.supported_scopes);
         let supported_scopes = self.supported_scopes.unwrap_or(current_supported_scopes);
         let normalized_supported_scopes = normalize_supported_scopes(supported_scopes);
         let scope_definitions =

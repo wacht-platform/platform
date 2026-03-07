@@ -1,7 +1,12 @@
 use common::{EncryptionService, HasDbRouter, HasEncryptionService, error::AppError};
 use models::api_key::JwksDocument;
 use queries::oauth::OAuthClientData;
+use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
+
+fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
+    serde_json::from_value(value).unwrap_or_default()
+}
 
 pub struct CreateOAuthClientCommand {
     pub client_record_id: Option<i64>,
@@ -571,10 +576,10 @@ impl UpdateOAuthClientSettings {
             .clone()
             .unwrap_or_else(|| current.client_auth_method.clone());
         let effective_grant_types = self.grant_types.clone().unwrap_or_else(|| {
-            serde_json::from_value(current.grant_types.clone()).unwrap_or_default()
+            json_default(current.grant_types.clone())
         });
         let effective_redirect_uris = self.redirect_uris.clone().unwrap_or_else(|| {
-            serde_json::from_value(current.redirect_uris.clone()).unwrap_or_default()
+            json_default(current.redirect_uris.clone())
         });
         let allowed = [
             "client_secret_basic",

@@ -23,6 +23,7 @@ use models::{
 use queries::{GetScimTokenQuery, ListEnterpriseConnectionsQuery, ListOrganizationDomainsQuery};
 
 use crate::application::{AppError, AppState};
+use crate::application::deps;
 
 pub struct ListInput {
     deployment_id: i64,
@@ -93,7 +94,7 @@ pub async fn verify_domain(
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().dns())
         .await
 }
 

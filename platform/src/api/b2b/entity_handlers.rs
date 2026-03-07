@@ -5,7 +5,7 @@ use axum::{
 
 use crate::api::multipart::{MultipartField, MultipartPayload};
 use crate::application::{
-    b2b_entity as b2b_entity_use_cases,
+    b2b_entity as b2b_entity_app,
     response::{ApiErrorResponse, ApiResult},
 };
 use crate::middleware::RequireDeployment;
@@ -91,10 +91,10 @@ pub async fn create_organization(
 ) -> ApiResult<Organization> {
     let data = parse_entity_multipart(multipart, "organization_image", false).await?;
 
-    let organization = b2b_entity_use_cases::create_organization(
+    let organization = b2b_entity_app::create_organization(
         &app_state,
         deployment_id,
-        b2b_entity_use_cases::EntityMutationInput {
+        b2b_entity_app::EntityMutationInput {
             name: data.name,
             description: data.description,
             public_metadata: data.public_metadata,
@@ -116,11 +116,11 @@ pub async fn create_workspace_for_organization(
 ) -> ApiResult<Workspace> {
     let data = parse_entity_multipart(multipart, "workspace_image", false).await?;
 
-    let workspace = b2b_entity_use_cases::create_workspace_for_organization(
+    let workspace = b2b_entity_app::create_workspace_for_organization(
         &app_state,
         deployment_id,
         params.organization_id,
-        b2b_entity_use_cases::EntityMutationInput {
+        b2b_entity_app::EntityMutationInput {
             name: data.name,
             description: data.description,
             public_metadata: data.public_metadata,
@@ -142,11 +142,11 @@ pub async fn update_workspace(
 ) -> ApiResult<Workspace> {
     let data = parse_entity_multipart(multipart, "workspace_image", true).await?;
 
-    let workspace = b2b_entity_use_cases::update_workspace(
+    let workspace = b2b_entity_app::update_workspace(
         &app_state,
         deployment_id,
         params.workspace_id,
-        b2b_entity_use_cases::EntityMutationInput {
+        b2b_entity_app::EntityMutationInput {
             name: data.name,
             description: data.description,
             public_metadata: data.public_metadata,
@@ -168,11 +168,11 @@ pub async fn update_organization(
 ) -> ApiResult<Organization> {
     let data = parse_entity_multipart(multipart, "organization_image", true).await?;
 
-    let organization = b2b_entity_use_cases::update_organization(
+    let organization = b2b_entity_app::update_organization(
         &app_state,
         deployment_id,
         params.organization_id,
-        b2b_entity_use_cases::EntityMutationInput {
+        b2b_entity_app::EntityMutationInput {
             name: data.name,
             description: data.description,
             public_metadata: data.public_metadata,
@@ -191,7 +191,7 @@ pub async fn delete_organization(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OrganizationParams>,
 ) -> ApiResult<()> {
-    b2b_entity_use_cases::delete_organization(&app_state, deployment_id, params.organization_id)
+    b2b_entity_app::delete_organization(&app_state, deployment_id, params.organization_id)
         .await?;
 
     Ok(().into())
@@ -202,7 +202,7 @@ pub async fn delete_workspace(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WorkspaceParams>,
 ) -> ApiResult<()> {
-    b2b_entity_use_cases::delete_workspace(&app_state, deployment_id, params.workspace_id).await?;
+    b2b_entity_app::delete_workspace(&app_state, deployment_id, params.workspace_id).await?;
 
     Ok(().into())
 }

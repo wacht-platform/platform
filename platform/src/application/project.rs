@@ -3,9 +3,12 @@ use commands::{
     CreateStagingDeploymentCommand, DeleteProjectCommand, VerifyDeploymentDnsDeps,
     VerifyDeploymentDnsRecordsCommand,
 };
-use common::db_router::ReadConsistency;
+use common::{
+    db_router::ReadConsistency,
+};
 
 use crate::application::{AppError, AppState};
+use crate::application::deps;
 use models::{Deployment, ProjectWithDeployments};
 use queries::GetProjectsWithDeploymentQuery;
 
@@ -29,7 +32,7 @@ pub async fn get_projects(
 ) -> Result<Vec<ProjectWithDeployments>, AppError> {
     GetProjectsWithDeploymentQuery::for_user_or_organization(input.user_id, input.organization_id)
         .with_consistency(ReadConsistency::Eventual)
-        .execute_with_deps(&app_state.db_router)
+        .execute_with_deps(&deps::from_app(app_state).db())
         .await
 }
 
@@ -58,7 +61,15 @@ pub async fn create_project_with_staging(
         .auth_methods(input.auth_methods)
         .owner_id(input.owner_id)
         .build()?;
-    command.execute_with_deps(app_state).await
+    command
+        .execute_with_deps(
+            &deps::from_app(app_state)
+                .db()
+                .id()
+                .cloudflare()
+                .postmark(),
+        )
+        .await
 }
 
 pub struct CreateStagingDeploymentInput {
@@ -83,7 +94,15 @@ pub async fn create_staging_deployment(
         .project_id(input.project_id)
         .auth_methods(input.auth_methods)
         .build()?;
-    command.execute_with_deps(app_state).await
+    command
+        .execute_with_deps(
+            &deps::from_app(app_state)
+                .db()
+                .id()
+                .cloudflare()
+                .postmark(),
+        )
+        .await
 }
 
 pub struct CreateProductionDeploymentInput {
@@ -111,7 +130,15 @@ pub async fn create_production_deployment(
         .custom_domain(input.custom_domain)
         .auth_methods(input.auth_methods)
         .build()?;
-    command.execute_with_deps(app_state).await
+    command
+        .execute_with_deps(
+            &deps::from_app(app_state)
+                .db()
+                .id()
+                .cloudflare()
+                .postmark(),
+        )
+        .await
 }
 
 pub struct VerifyDeploymentDnsRecordsInput {

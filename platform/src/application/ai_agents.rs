@@ -17,6 +17,7 @@ use crate::{
     api::pagination::paginate_results,
     application::{AppState, response::PaginatedResponse},
 };
+use crate::application::deps;
 
 #[derive(serde::Serialize)]
 pub struct IntegrationWithUrl {
@@ -107,7 +108,9 @@ pub async fn create_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command.execute_with_deps(app_state).await
+    command
+        .execute_with_deps(&deps::from_app(app_state).db())
+        .await
 }
 
 pub async fn get_ai_agent_by_id(
@@ -215,7 +218,9 @@ pub async fn update_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command.execute_with_deps(app_state).await
+    command
+        .execute_with_deps(&deps::from_app(app_state).db())
+        .await
 }
 
 pub async fn delete_ai_agent(
@@ -224,7 +229,7 @@ pub async fn delete_ai_agent(
     agent_id: i64,
 ) -> Result<(), AppError> {
     DeleteAiAgentCommand::new(deployment_id, agent_id)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db())
         .await?;
     Ok(())
 }
@@ -253,7 +258,7 @@ pub async fn attach_sub_agent_to_agent(
     sub_agent_id: i64,
 ) -> Result<(), AppError> {
     AttachSubAgentToAgentCommand::new(deployment_id, agent_id, sub_agent_id)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db())
         .await?;
     Ok(())
 }
@@ -265,7 +270,7 @@ pub async fn detach_sub_agent_from_agent(
     sub_agent_id: i64,
 ) -> Result<(), AppError> {
     DetachSubAgentFromAgentCommand::new(deployment_id, agent_id, sub_agent_id)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db())
         .await?;
     Ok(())
 }

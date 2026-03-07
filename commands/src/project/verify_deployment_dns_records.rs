@@ -40,7 +40,11 @@ impl VerifyDeploymentDnsRecordsCommand {
         // Get existing records from database or create new ones
         let mut domain_verification_records = deployment_row
             .domain_verification_records
-            .and_then(|v| serde_json::from_value(v).ok())
+            .map(|v| serde_json::from_value(v))
+            .transpose()
+            .map_err(|e| {
+                AppError::Internal(format!("Invalid domain_verification_records JSON: {}", e))
+            })?
             .unwrap_or_else(|| {
                 deps.cloudflare_service
                     .generate_domain_verification_records(
@@ -51,7 +55,11 @@ impl VerifyDeploymentDnsRecordsCommand {
 
         let mut email_verification_records = deployment_row
             .email_verification_records
-            .and_then(|v| serde_json::from_value(v).ok())
+            .map(|v| serde_json::from_value(v))
+            .transpose()
+            .map_err(|e| {
+                AppError::Internal(format!("Invalid email_verification_records JSON: {}", e))
+            })?
             .unwrap_or_default();
 
         deps.dns_verification_service
@@ -130,7 +138,11 @@ impl VerifyDeploymentDnsRecordsCommand {
             email_provider: EmailProvider::from(deployment_row.email_provider),
             custom_smtp_config: deployment_row
                 .custom_smtp_config
-                .and_then(|v| serde_json::from_value(v).ok())
+                .map(|v| serde_json::from_value(v))
+                .transpose()
+                .map_err(|e| {
+                    AppError::Internal(format!("Invalid custom_smtp_config JSON: {}", e))
+                })?
                 .map(|mut c: CustomSmtpConfig| {
                     c.password = String::new();
                     c

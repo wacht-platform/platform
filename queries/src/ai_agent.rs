@@ -1,5 +1,18 @@
 use common::error::AppError;
 use models::{AiAgent, AiAgentWithDetails, AiAgentWithFeatures};
+use serde::de::DeserializeOwned;
+
+fn parse_optional_json<T: DeserializeOwned>(
+    value: Option<serde_json::Value>,
+    field: &str,
+) -> Result<Option<T>, AppError> {
+    value
+        .map(|v| {
+            serde_json::from_value(v)
+                .map_err(|e| AppError::Internal(format!("Failed to parse {}: {}", field, e)))
+        })
+        .transpose()
+}
 
 pub struct GetAiAgentsQuery {
     pub deployment_id: i64,
@@ -70,15 +83,11 @@ impl GetAiAgentsQuery {
 
             Ok(agents
                 .into_iter()
-                .map(|agent| {
-                    let sub_agents = agent
-                        .sub_agents
-                        .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
-                    let spawn_config = agent
-                        .spawn_config
-                        .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
+                .map(|agent| -> Result<AiAgentWithDetails, AppError> {
+                    let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
+                    let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
 
-                    AiAgentWithDetails {
+                    Ok(AiAgentWithDetails {
                         id: agent.id,
                         created_at: agent.created_at,
                         updated_at: agent.updated_at,
@@ -90,9 +99,9 @@ impl GetAiAgentsQuery {
                         knowledge_bases_count: agent.knowledge_bases_count,
                         sub_agents,
                         spawn_config,
-                    }
+                    })
                 })
-                .collect())
+                .collect::<Result<Vec<_>, _>>()?)
         } else {
             let agents = sqlx::query!(
                 r#"
@@ -116,15 +125,11 @@ impl GetAiAgentsQuery {
 
             Ok(agents
                 .into_iter()
-                .map(|agent| {
-                    let sub_agents = agent
-                        .sub_agents
-                        .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
-                    let spawn_config = agent
-                        .spawn_config
-                        .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
+                .map(|agent| -> Result<AiAgentWithDetails, AppError> {
+                    let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
+                    let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
 
-                    AiAgentWithDetails {
+                    Ok(AiAgentWithDetails {
                         id: agent.id,
                         created_at: agent.created_at,
                         updated_at: agent.updated_at,
@@ -136,9 +141,9 @@ impl GetAiAgentsQuery {
                         knowledge_bases_count: agent.knowledge_bases_count,
                         sub_agents,
                         spawn_config,
-                    }
+                    })
                 })
-                .collect())
+                .collect::<Result<Vec<_>, _>>()?)
         }
     }
 }
@@ -178,12 +183,8 @@ impl GetAiAgentByIdQuery {
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Agent not found".to_string()))?;
 
-        let sub_agents = agent
-            .sub_agents
-            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
-        let spawn_config = agent
-            .spawn_config
-            .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
+        let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
+        let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
 
         Ok(AiAgentWithDetails {
             id: agent.id,
@@ -245,12 +246,8 @@ impl GetAiAgentsByIdsQuery {
 
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            let sub_agents = row
-                .sub_agents
-                .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
-            let spawn_config = row
-                .spawn_config
-                .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
+            let sub_agents = parse_optional_json(row.sub_agents, "sub_agents")?;
+            let spawn_config = parse_optional_json(row.spawn_config, "spawn_config")?;
 
             result.push(AiAgentWithDetails {
                 id: row.id,
@@ -301,12 +298,8 @@ impl GetAiAgentByNameQuery {
         .await
         .map_err(|e| AppError::Database(e))?;
 
-        let sub_agents = agent
-            .sub_agents
-            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
-        let spawn_config = agent
-            .spawn_config
-            .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
+        let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
+        let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
 
         Ok(AiAgent {
             id: agent.id,
@@ -429,12 +422,8 @@ impl GetAiAgentByNameWithFeatures {
             AppError::Internal(format!("Failed to deserialize integrations: {}", e))
         })?;
 
-        let sub_agents = row
-            .sub_agents
-            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
-        let spawn_config = row
-            .spawn_config
-            .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
+        let sub_agents = parse_optional_json(row.sub_agents, "sub_agents")?;
+        let spawn_config = parse_optional_json(row.spawn_config, "spawn_config")?;
 
         Ok(AiAgentWithFeatures {
             id: row.id,
@@ -553,12 +542,8 @@ impl GetAiAgentByIdWithFeatures {
             AppError::Internal(format!("Failed to deserialize integrations: {}", e))
         })?;
 
-        let sub_agents = row
-            .sub_agents
-            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
-        let spawn_config = row
-            .spawn_config
-            .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
+        let sub_agents = parse_optional_json(row.sub_agents, "sub_agents")?;
+        let spawn_config = parse_optional_json(row.spawn_config, "spawn_config")?;
 
         Ok(AiAgentWithFeatures {
             id: row.id,

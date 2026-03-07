@@ -1,3 +1,4 @@
+use serde::de::DeserializeOwned;
 use sqlx::{Postgres, QueryBuilder, Row, query_as};
 
 use crate::prelude::*;
@@ -6,6 +7,15 @@ use models::{
     OrganizationMemberDetails, OrganizationRole, Workspace, WorkspaceDetails,
     WorkspaceMemberDetails, WorkspaceRole, WorkspaceWithOrganizationName,
 };
+
+fn parse_json_row_field<T: DeserializeOwned>(
+    row: &sqlx::postgres::PgRow,
+    field: &str,
+    context: &str,
+) -> Result<T, AppError> {
+    serde_json::from_value(row.get(field))
+        .map_err(|e| AppError::Internal(format!("Failed to parse {}: {}", context, e)))
+}
 
 pub struct GetDeploymentWorkspaceRolesQuery {
     deployment_id: i64,
@@ -390,17 +400,11 @@ impl GetOrganizationDetailsQuery {
         .ok_or_else(|| AppError::NotFound("Organization not found".to_string()))?;
 
         let roles: Vec<OrganizationRole> =
-            serde_json::from_value(row.get("roles")).map_err(|e| {
-                AppError::Internal(format!("Failed to parse organization roles: {}", e))
-            })?;
+            parse_json_row_field(&row, "roles", "organization roles")?;
         let workspaces: Vec<Workspace> =
-            serde_json::from_value(row.get("workspaces")).map_err(|e| {
-                AppError::Internal(format!("Failed to parse organization workspaces: {}", e))
-            })?;
+            parse_json_row_field(&row, "workspaces", "organization workspaces")?;
         let segments: Vec<models::Segment> =
-            serde_json::from_value(row.get("segments")).map_err(|e| {
-                AppError::Internal(format!("Failed to parse organization segments: {}", e))
-            })?;
+            parse_json_row_field(&row, "segments", "organization segments")?;
 
         Ok(OrganizationDetails {
             id: row.get("id"),
@@ -489,12 +493,9 @@ impl GetWorkspaceDetailsQuery {
         .await?
         .ok_or_else(|| AppError::NotFound("Workspace not found".to_string()))?;
 
-        let roles: Vec<WorkspaceRole> = serde_json::from_value(row.get("roles"))
-            .map_err(|e| AppError::Internal(format!("Failed to parse workspace roles: {}", e)))?;
+        let roles: Vec<WorkspaceRole> = parse_json_row_field(&row, "roles", "workspace roles")?;
         let segments: Vec<models::Segment> =
-            serde_json::from_value(row.get("segments")).map_err(|e| {
-                AppError::Internal(format!("Failed to parse workspace segments: {}", e))
-            })?;
+            parse_json_row_field(&row, "segments", "workspace segments")?;
 
         Ok(WorkspaceDetails {
             id: row.get("id"),
@@ -677,18 +678,11 @@ impl GetOrganizationMembersQuery {
         let members: Vec<OrganizationMemberDetails> = member_rows
             .into_iter()
             .take(self.limit as usize)
-            .map(|row| {
-                let roles_json: serde_json::Value = row.get("roles");
-                let roles_array = roles_json.as_array().unwrap();
+            .map(|row| -> Result<OrganizationMemberDetails, AppError> {
+                let roles: Vec<OrganizationRole> =
+                    parse_json_row_field(&row, "roles", "organization member roles")?;
 
-                let roles: Vec<OrganizationRole> = roles_array
-                    .iter()
-                    .filter_map(|role_json| {
-                        serde_json::from_value::<OrganizationRole>(role_json.clone()).ok()
-                    })
-                    .collect();
-
-                OrganizationMemberDetails {
+                Ok(OrganizationMemberDetails {
                     id: row.get("id"),
                     created_at: row.get("created_at"),
                     updated_at: row.get("updated_at"),
@@ -702,9 +696,9 @@ impl GetOrganizationMembersQuery {
                     primary_email_address: row.get("primary_email_address"),
                     primary_phone_number: row.get("primary_phone_number"),
                     user_created_at: row.get("user_created_at"),
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok((members, has_more))
     }
@@ -873,18 +867,11 @@ impl GetWorkspaceMembersQuery {
         let members: Vec<WorkspaceMemberDetails> = member_rows
             .into_iter()
             .take(self.limit as usize)
-            .map(|row| {
-                let roles_json: serde_json::Value = row.get("roles");
-                let roles_array = roles_json.as_array().unwrap();
+            .map(|row| -> Result<WorkspaceMemberDetails, AppError> {
+                let roles: Vec<WorkspaceRole> =
+                    parse_json_row_field(&row, "roles", "workspace member roles")?;
 
-                let roles: Vec<WorkspaceRole> = roles_array
-                    .iter()
-                    .filter_map(|role_json| {
-                        serde_json::from_value::<WorkspaceRole>(role_json.clone()).ok()
-                    })
-                    .collect();
-
-                WorkspaceMemberDetails {
+                Ok(WorkspaceMemberDetails {
                     id: row.get("id"),
                     created_at: row.get("created_at"),
                     updated_at: row.get("updated_at"),
@@ -898,9 +885,9 @@ impl GetWorkspaceMembersQuery {
                     primary_email_address: row.get("primary_email_address"),
                     primary_phone_number: row.get("primary_phone_number"),
                     user_created_at: row.get("user_created_at"),
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok((members, has_more))
     }

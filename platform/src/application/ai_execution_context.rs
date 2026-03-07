@@ -23,7 +23,7 @@ use tracing::{error, info};
 
 use crate::{
     api::pagination::paginate_results,
-    application::{AppState, response::PaginatedResponse},
+    application::{AppState, deps, response::PaginatedResponse},
 };
 
 const EXECUTION_VARIANT_VALIDATION_ERROR: &str =
@@ -109,8 +109,9 @@ async fn cancel_running_execution_if_needed(
     has_running_execution: bool,
 ) -> Result<(), AppError> {
     if has_running_execution {
+        let execution_deps = deps::from_app(app_state).nats().id();
         SignalAgentExecutionCancellationCommand::new(context_id)
-            .execute_with_deps(app_state)
+            .execute_with_deps(&execution_deps)
             .await?;
     }
     Ok(())
@@ -308,7 +309,8 @@ pub async fn execute_agent_async(
                 agent_name.clone(),
                 conversation_id,
             );
-            publish_command.execute_with_deps(app_state).await?;
+            let execution_deps = deps::from_app(app_state).nats().id();
+            publish_command.execute_with_deps(&execution_deps).await?;
 
             info!(
                 "Published new_message execution for context {} (conversation_id: {})",
@@ -348,7 +350,8 @@ pub async fn execute_agent_async(
                 agent_name.clone(),
                 conversation_id,
             );
-            publish_command.execute_with_deps(app_state).await?;
+            let execution_deps = deps::from_app(app_state).nats().id();
+            publish_command.execute_with_deps(&execution_deps).await?;
 
             info!(
                 "Published user_input_response execution for context {} (conversation_id: {})",
@@ -370,7 +373,8 @@ pub async fn execute_agent_async(
                 platform_function_result.execution_id.clone(),
                 platform_function_result.result,
             );
-            publish_command.execute_with_deps(app_state).await?;
+            let execution_deps = deps::from_app(app_state).nats().id();
+            publish_command.execute_with_deps(&execution_deps).await?;
 
             info!(
                 "Published platform_function_result execution for context {} (execution_id: {})",
@@ -387,7 +391,8 @@ pub async fn execute_agent_async(
                 UpdateExecutionContextQuery::new(context_id, deployment_id)
                     .with_status(ExecutionContextStatus::Failed)
                     .mark_status_as_cancellation();
-            update_context_command.execute_with_deps(app_state).await?;
+            let update_deps = deps::from_app(app_state).db().nats().id();
+            update_context_command.execute_with_deps(&update_deps).await?;
 
             Ok(ExecuteAgentResponse {
                 status: "cancelled".to_string(),

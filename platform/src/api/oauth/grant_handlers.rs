@@ -1,6 +1,6 @@
 use axum::extract::{Path, State};
 
-use crate::application::{oauth_grant as oauth_grant_use_cases, response::ApiResult};
+use crate::application::{oauth_grant as oauth_grant_app, response::ApiResult};
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 use dto::json::api_key::ListOAuthGrantsResponse;
@@ -12,7 +12,7 @@ pub(crate) async fn list_oauth_grants(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthClientPathParams>,
 ) -> ApiResult<ListOAuthGrantsResponse> {
-    let grants = oauth_grant_use_cases::list_oauth_grants(
+    let grants = oauth_grant_app::list_oauth_grants(
         &app_state,
         deployment_id,
         params.oauth_app_slug,
@@ -28,7 +28,7 @@ pub(crate) async fn revoke_oauth_grant(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthGrantPathParams>,
 ) -> ApiResult<()> {
-    oauth_grant_use_cases::revoke_oauth_grant(
+    oauth_grant_app::revoke_oauth_grant(
         &app_state,
         deployment_id,
         params.oauth_app_slug,

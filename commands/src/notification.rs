@@ -156,7 +156,9 @@ impl CreateNotificationCommand {
             let ctas_json = notification
                 .ctas
                 .as_ref()
-                .and_then(|ctas| serde_json::to_value(ctas).ok());
+                .map(serde_json::to_value)
+                .transpose()
+                .map_err(|e| AppError::Internal(format!("Failed to serialize notification ctas: {}", e)))?;
 
             let message = NotificationMessage {
                 id: notification.id,

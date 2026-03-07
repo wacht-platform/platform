@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use common::error::AppError;
 use dto::params::deployment::DeploymentNameParams;
+use serde::de::DeserializeOwned;
 use models::{
     DeploymentAuthSettings, DeploymentB2bSettings, DeploymentB2bSettingsWithRoles,
     DeploymentJwtTemplate, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
@@ -10,6 +11,22 @@ use models::{
     SecondFactorPolicy,
 };
 use sqlx::{Row, query};
+
+fn parse_json<T: DeserializeOwned>(value: serde_json::Value, field: &str) -> Result<T, AppError> {
+    serde_json::from_value(value)
+        .map_err(|e| AppError::Internal(format!("Invalid {} JSON: {}", field, e)))
+}
+
+fn parse_json_or_default<T: DeserializeOwned + Default>(
+    value: Option<serde_json::Value>,
+    field: &str,
+) -> Result<T, AppError> {
+    parse_json(value.unwrap_or_default(), field)
+}
+
+fn require_opt<T>(value: Option<T>, field: &str) -> Result<T, AppError> {
+    value.ok_or_else(|| AppError::Internal(format!("Missing required field: {}", field)))
+}
 
 pub struct GetDeploymentIdByBackendHostQuery {
     backend_host: String,
@@ -256,6 +273,113 @@ impl GetDeploymentWithSettingsQuery {
             }
         };
 
+        let auth_settings = if row.auth_settings_id.is_some() {
+            let auth_settings_id = require_opt(row.auth_settings_id, "auth_settings_id")?;
+            Some(DeploymentAuthSettings {
+                id: auth_settings_id,
+                created_at: row.auth_settings_created_at,
+                updated_at: row.auth_settings_updated_at,
+                email_address: parse_json_or_default(row.email_address, "email_address")?,
+                phone_number: parse_json_or_default(row.phone_number, "phone_number")?,
+                username: parse_json(row.username, "username")?,
+                first_name: parse_json(row.first_name, "first_name")?,
+                last_name: parse_json(row.last_name, "last_name")?,
+                password: parse_json(row.password, "password")?,
+                auth_factors_enabled: parse_json(
+                    row.auth_factors_enabled,
+                    "auth_factors_enabled",
+                )?,
+                verification_policy: parse_json(row.verification_policy, "verification_policy")?,
+                passkey: parse_json(row.passkey, "passkey")?,
+                magic_link: parse_json(row.magic_link, "magic_link")?,
+                second_factor_policy: FromStr::from_str(&row.second_factor_policy).map_err(|_| {
+                    AppError::Internal(format!(
+                        "Invalid second_factor_policy: {}",
+                        row.second_factor_policy
+                    ))
+                })?,
+                first_factor: FromStr::from_str(&row.first_factor).map_err(|_| {
+                    AppError::Internal(format!("Invalid first_factor: {}", row.first_factor))
+                })?,
+                deployment_id: self.deployment_id,
+                multi_session_support: parse_json(
+                    row.multi_session_support,
+                    "multi_session_support",
+                )?,
+                session_token_lifetime: row.session_token_lifetime,
+                session_validity_period: row.session_validity_period,
+                session_inactive_timeout: row.session_inactive_timeout,
+            })
+        } else {
+            None
+        };
+
+        let ui_settings = if row.ui_settings_id.is_some() {
+            let ui_settings_id = require_opt(row.ui_settings_id, "ui_settings_id")?;
+            Some(DeploymentUISettings {
+                id: ui_settings_id,
+                created_at: row.ui_settings_created_at,
+                updated_at: row.ui_settings_updated_at,
+                deployment_id: self.deployment_id,
+                app_name: row.app_name,
+                tos_page_url: row.tos_page_url,
+                sign_in_page_url: row.sign_in_page_url,
+                sign_up_page_url: row.sign_up_page_url,
+                after_sign_out_one_page_url: row.after_sign_out_one_page_url,
+                after_sign_out_all_page_url: row.after_sign_out_all_page_url,
+                favicon_image_url: row.favicon_image_url,
+                logo_image_url: row.logo_image_url,
+                privacy_policy_url: row.privacy_policy_url,
+                signup_terms_statement: row.signup_terms_statement,
+                signup_terms_statement_shown: row.signup_terms_statement_shown,
+                light_mode_settings: parse_json(row.light_mode_settings, "light_mode_settings")?,
+                dark_mode_settings: parse_json(row.dark_mode_settings, "dark_mode_settings")?,
+                after_logo_click_url: row.after_logo_click_url,
+                organization_profile_url: row.organization_profile_url,
+                create_organization_url: row.create_organization_url,
+                default_user_profile_image_url: row.default_user_profile_image_url,
+                default_organization_profile_image_url: row.default_organization_profile_image_url,
+                default_workspace_profile_image_url: row.default_workspace_profile_image_url,
+                use_initials_for_user_profile_image: row.use_initials_for_user_profile_image,
+                use_initials_for_organization_profile_image: row
+                    .use_initials_for_organization_profile_image,
+                after_signup_redirect_url: row.after_signup_redirect_url,
+                after_signin_redirect_url: row.after_signin_redirect_url,
+                user_profile_url: row.user_profile_url,
+                after_create_organization_redirect_url: row.after_create_organization_redirect_url,
+                waitlist_page_url: row.waitlist_page_url,
+                support_page_url: row.support_page_url,
+            })
+        } else {
+            None
+        };
+
+        let restrictions = if row.restrictions_id.is_some() {
+            let restrictions_id = require_opt(row.restrictions_id, "restrictions_id")?;
+            Some(DeploymentRestrictions {
+                id: restrictions_id,
+                created_at: row.restrictions_created_at,
+                updated_at: row.restrictions_updated_at,
+                deployment_id: self.deployment_id,
+                allowlist_enabled: row.allowlist_enabled,
+                blocklist_enabled: row.blocklist_enabled,
+                block_subaddresses: row.block_subaddresses,
+                block_disposable_emails: row.block_disposable_emails,
+                block_voip_numbers: row.block_voip_numbers,
+                country_restrictions: parse_json(row.country_restrictions, "country_restrictions")?,
+                banned_keywords: row.banned_keywords,
+                allowlisted_resources: row.allowlisted_resources,
+                blocklisted_resources: row.blocklisted_resources,
+                sign_up_mode: DeploymentRestrictionsSignUpMode::from_str(&row.sign_up_mode)
+                    .map_err(|_| {
+                        AppError::Internal(format!("Invalid sign_up_mode: {}", row.sign_up_mode))
+                    })?,
+                waitlist_collect_names: row.waitlist_collect_names,
+            })
+        } else {
+            None
+        };
+
         Ok(DeploymentWithSettings {
             id: row.id,
             created_at: row.created_at,
@@ -266,166 +390,177 @@ impl GetDeploymentWithSettingsQuery {
             publishable_key: row.publishable_key,
             mail_from_host: row.mail_from_host,
             mode,
-            auth_settings: if row.auth_settings_id.is_some() {
-                Some(DeploymentAuthSettings {
-                    id: row.auth_settings_id.unwrap(),
-
-                    created_at: row.auth_settings_created_at,
-                    updated_at: row.auth_settings_updated_at,
-                    email_address: serde_json::from_value(row.email_address.unwrap_or_default())
-                        .unwrap(),
-                    phone_number: serde_json::from_value(row.phone_number.unwrap_or_default())
-                        .unwrap(),
-                    username: serde_json::from_value(row.username).unwrap(),
-                    first_name: serde_json::from_value(row.first_name).unwrap(),
-                    last_name: serde_json::from_value(row.last_name).unwrap(),
-                    password: serde_json::from_value(row.password).unwrap(),
-                    auth_factors_enabled: serde_json::from_value(row.auth_factors_enabled).unwrap(),
-                    verification_policy: serde_json::from_value(row.verification_policy).unwrap(),
-                    passkey: serde_json::from_value(row.passkey).unwrap(),
-                    magic_link: serde_json::from_value(row.magic_link).unwrap(),
-                    second_factor_policy: FromStr::from_str(&row.second_factor_policy).unwrap(),
-                    first_factor: FromStr::from_str(&row.first_factor).unwrap(),
-                    deployment_id: self.deployment_id,
-                    multi_session_support: serde_json::from_value(row.multi_session_support)
-                        .unwrap(),
-                    session_token_lifetime: row.session_token_lifetime,
-                    session_validity_period: row.session_validity_period,
-                    session_inactive_timeout: row.session_inactive_timeout,
-                })
-            } else {
-                None
-            },
-            ui_settings: if row.ui_settings_id.is_some() {
-                Some(DeploymentUISettings {
-                    id: row.ui_settings_id.unwrap(),
-                    created_at: row.ui_settings_created_at,
-                    updated_at: row.ui_settings_updated_at,
-                    deployment_id: self.deployment_id,
-                    app_name: row.app_name,
-                    tos_page_url: row.tos_page_url,
-                    sign_in_page_url: row.sign_in_page_url,
-                    sign_up_page_url: row.sign_up_page_url,
-                    after_sign_out_one_page_url: row.after_sign_out_one_page_url,
-                    after_sign_out_all_page_url: row.after_sign_out_all_page_url,
-                    favicon_image_url: row.favicon_image_url,
-                    logo_image_url: row.logo_image_url,
-                    privacy_policy_url: row.privacy_policy_url,
-                    signup_terms_statement: row.signup_terms_statement,
-                    signup_terms_statement_shown: row.signup_terms_statement_shown,
-                    light_mode_settings: serde_json::from_value(row.light_mode_settings).unwrap(),
-                    dark_mode_settings: serde_json::from_value(row.dark_mode_settings).unwrap(),
-                    after_logo_click_url: row.after_logo_click_url,
-                    organization_profile_url: row.organization_profile_url,
-                    create_organization_url: row.create_organization_url,
-                    default_user_profile_image_url: row.default_user_profile_image_url,
-                    default_organization_profile_image_url: row
-                        .default_organization_profile_image_url,
-                    default_workspace_profile_image_url: row.default_workspace_profile_image_url,
-                    use_initials_for_user_profile_image: row.use_initials_for_user_profile_image,
-                    use_initials_for_organization_profile_image: row
-                        .use_initials_for_organization_profile_image,
-                    after_signup_redirect_url: row.after_signup_redirect_url,
-                    after_signin_redirect_url: row.after_signin_redirect_url,
-                    user_profile_url: row.user_profile_url,
-                    after_create_organization_redirect_url: row
-                        .after_create_organization_redirect_url,
-                    waitlist_page_url: row.waitlist_page_url,
-                    support_page_url: row.support_page_url,
-                })
-            } else {
-                None
-            },
-            restrictions: if row.restrictions_id.is_some() {
-                Some(DeploymentRestrictions {
-                    id: row.restrictions_id.unwrap(),
-                    created_at: row.restrictions_created_at,
-                    updated_at: row.restrictions_updated_at,
-                    deployment_id: self.deployment_id,
-                    allowlist_enabled: row.allowlist_enabled,
-                    blocklist_enabled: row.blocklist_enabled,
-                    block_subaddresses: row.block_subaddresses,
-                    block_disposable_emails: row.block_disposable_emails,
-                    block_voip_numbers: row.block_voip_numbers,
-                    country_restrictions: serde_json::from_value(row.country_restrictions).unwrap(),
-                    banned_keywords: row.banned_keywords,
-                    allowlisted_resources: row.allowlisted_resources,
-                    blocklisted_resources: row.blocklisted_resources,
-                    sign_up_mode: DeploymentRestrictionsSignUpMode::from_str(&row.sign_up_mode)
-                        .unwrap(),
-                    waitlist_collect_names: row.waitlist_collect_names,
-                })
-            } else {
-                None
-            },
+            auth_settings,
+            ui_settings,
+            restrictions,
             b2b_settings: if row.b2b_settings_id.is_some() {
+                let b2b_settings_id = require_opt(row.b2b_settings_id, "b2b_settings_id")?;
+                let b2b_settings_created_at = require_opt(
+                    row.b2b_settings_created_at,
+                    "b2b_settings_created_at",
+                )?;
+                let b2b_settings_updated_at = require_opt(
+                    row.b2b_settings_updated_at,
+                    "b2b_settings_updated_at",
+                )?;
+                let organizations_enabled = require_opt(
+                    row.b2b_settings_organizations_enabled,
+                    "b2b_settings_organizations_enabled",
+                )?;
+                let workspaces_enabled = require_opt(
+                    row.b2b_settings_workspaces_enabled,
+                    "b2b_settings_workspaces_enabled",
+                )?;
+                let ip_allowlist_per_org_enabled = require_opt(
+                    row.b2b_settings_ip_allowlist_per_org_enabled,
+                    "b2b_settings_ip_allowlist_per_org_enabled",
+                )?;
+                let max_allowed_org_members = require_opt(
+                    row.b2b_settings_max_allowed_org_members,
+                    "b2b_settings_max_allowed_org_members",
+                )?;
+                let max_allowed_workspace_members = require_opt(
+                    row.b2b_settings_max_allowed_workspace_members,
+                    "b2b_settings_max_allowed_workspace_members",
+                )?;
+                let allow_org_deletion = require_opt(
+                    row.b2b_settings_allow_org_deletion,
+                    "b2b_settings_allow_org_deletion",
+                )?;
+                let allow_workspace_deletion = require_opt(
+                    row.b2b_settings_allow_workspace_deletion,
+                    "b2b_settings_allow_workspace_deletion",
+                )?;
+                let custom_org_role_enabled = require_opt(
+                    row.b2b_settings_custom_org_role_enabled,
+                    "b2b_settings_custom_org_role_enabled",
+                )?;
+                let custom_workspace_role_enabled = require_opt(
+                    row.b2b_settings_custom_workspace_role_enabled,
+                    "b2b_settings_custom_workspace_role_enabled",
+                )?;
+                let default_workspace_creator_role_id = require_opt(
+                    row.b2b_settings_default_workspace_creator_role_id,
+                    "b2b_settings_default_workspace_creator_role_id",
+                )?;
+                let default_workspace_member_role_id = require_opt(
+                    row.b2b_settings_default_workspace_member_role_id,
+                    "b2b_settings_default_workspace_member_role_id",
+                )?;
+                let default_org_creator_role_id = require_opt(
+                    row.b2b_settings_default_org_creator_role_id,
+                    "b2b_settings_default_org_creator_role_id",
+                )?;
+                let default_org_member_role_id = require_opt(
+                    row.b2b_settings_default_org_member_role_id,
+                    "b2b_settings_default_org_member_role_id",
+                )?;
+                let limit_org_creation_per_user = require_opt(
+                    row.b2b_settings_limit_org_creation_per_user,
+                    "b2b_settings_limit_org_creation_per_user",
+                )?;
+                let limit_workspace_creation_per_org = require_opt(
+                    row.b2b_settings_limit_workspace_creation_per_org,
+                    "b2b_settings_limit_workspace_creation_per_org",
+                )?;
+                let org_creation_per_user_count = require_opt(
+                    row.b2b_settings_org_creation_per_user_count,
+                    "b2b_settings_org_creation_per_user_count",
+                )?;
+                let workspaces_per_org_count = require_opt(
+                    row.b2b_settings_workspaces_per_org_count,
+                    "b2b_settings_workspaces_per_org_count",
+                )?;
+                let allow_users_to_create_orgs = require_opt(
+                    row.b2b_settings_allow_users_to_create_orgs,
+                    "b2b_settings_allow_users_to_create_orgs",
+                )?;
+                let max_orgs_per_user =
+                    require_opt(row.b2b_settings_max_orgs_per_user, "b2b_settings_max_orgs_per_user")?;
+                let workspace_permission_catalog = row
+                    .b2b_settings_workspace_permission_catalog
+                    .map(|v| parse_json(v, "b2b_settings_workspace_permission_catalog"))
+                    .transpose()?;
+                let organization_permission_catalog = row
+                    .b2b_settings_organization_permission_catalog
+                    .map(|v| parse_json(v, "b2b_settings_organization_permission_catalog"))
+                    .transpose()?;
+                let ip_allowlist_per_workspace_enabled = require_opt(
+                    row.b2b_settings_ip_allowlist_per_workspace_enabled,
+                    "b2b_settings_ip_allowlist_per_workspace_enabled",
+                )?;
+                let enforce_mfa_per_org_enabled = require_opt(
+                    row.b2b_settings_enforce_mfa_per_org_enabled,
+                    "b2b_settings_enforce_mfa_per_org_enabled",
+                )?;
+                let enforce_mfa_per_workspace_enabled = require_opt(
+                    row.b2b_settings_enforce_mfa_per_workspace_enabled,
+                    "b2b_settings_enforce_mfa_per_workspace_enabled",
+                )?;
+                let default_workspace_creator_role_created_at = require_opt(
+                    row.default_workspace_creator_role_created_at,
+                    "default_workspace_creator_role_created_at",
+                )?;
+                let default_workspace_creator_role_updated_at = require_opt(
+                    row.default_workspace_creator_role_updated_at,
+                    "default_workspace_creator_role_updated_at",
+                )?;
+                let default_workspace_member_role_created_at = require_opt(
+                    row.default_workspace_member_role_created_at,
+                    "default_workspace_member_role_created_at",
+                )?;
+                let default_workspace_member_role_updated_at = require_opt(
+                    row.default_workspace_member_role_updated_at,
+                    "default_workspace_member_role_updated_at",
+                )?;
+                let default_org_creator_role_created_at = require_opt(
+                    row.default_org_creator_role_created_at,
+                    "default_org_creator_role_created_at",
+                )?;
+                let default_org_creator_role_updated_at = require_opt(
+                    row.default_org_creator_role_updated_at,
+                    "default_org_creator_role_updated_at",
+                )?;
+                let default_org_member_role_created_at = require_opt(
+                    row.default_org_member_role_created_at,
+                    "default_org_member_role_created_at",
+                )?;
+                let default_org_member_role_updated_at = require_opt(
+                    row.default_org_member_role_updated_at,
+                    "default_org_member_role_updated_at",
+                )?;
+
                 let b2b_settings = DeploymentB2bSettings {
-                    id: row.b2b_settings_id.unwrap(),
-                    created_at: row.b2b_settings_created_at.unwrap(),
-                    updated_at: row.b2b_settings_updated_at.unwrap(),
+                    id: b2b_settings_id,
+                    created_at: b2b_settings_created_at,
+                    updated_at: b2b_settings_updated_at,
                     deployment_id: self.deployment_id,
-                    organizations_enabled: row.b2b_settings_organizations_enabled.unwrap(),
-                    workspaces_enabled: row.b2b_settings_workspaces_enabled.unwrap(),
-                    ip_allowlist_per_org_enabled: row
-                        .b2b_settings_ip_allowlist_per_org_enabled
-                        .unwrap(),
-                    max_allowed_org_members: row.b2b_settings_max_allowed_org_members.unwrap(),
-                    max_allowed_workspace_members: row
-                        .b2b_settings_max_allowed_workspace_members
-                        .unwrap(),
-                    allow_org_deletion: row.b2b_settings_allow_org_deletion.unwrap(),
-                    allow_workspace_deletion: row.b2b_settings_allow_workspace_deletion.unwrap(),
-                    custom_org_role_enabled: row.b2b_settings_custom_org_role_enabled.unwrap(),
-                    custom_workspace_role_enabled: row
-                        .b2b_settings_custom_workspace_role_enabled
-                        .unwrap(),
-                    default_workspace_creator_role_id: row
-                        .b2b_settings_default_workspace_creator_role_id
-                        .unwrap(),
-                    default_workspace_member_role_id: row
-                        .b2b_settings_default_workspace_member_role_id
-                        .unwrap(),
-                    default_org_creator_role_id: row
-                        .b2b_settings_default_org_creator_role_id
-                        .unwrap(),
-                    default_org_member_role_id: row
-                        .b2b_settings_default_org_member_role_id
-                        .unwrap(),
-                    limit_org_creation_per_user: row
-                        .b2b_settings_limit_org_creation_per_user
-                        .unwrap(),
-                    limit_workspace_creation_per_org: row
-                        .b2b_settings_limit_workspace_creation_per_org
-                        .unwrap(),
-                    org_creation_per_user_count: row
-                        .b2b_settings_org_creation_per_user_count
-                        .unwrap(),
-                    workspaces_per_org_count: row.b2b_settings_workspaces_per_org_count.unwrap(),
-                    allow_users_to_create_orgs: row
-                        .b2b_settings_allow_users_to_create_orgs
-                        .unwrap(),
-                    max_orgs_per_user: row.b2b_settings_max_orgs_per_user.unwrap(),
+                    organizations_enabled,
+                    workspaces_enabled,
+                    ip_allowlist_per_org_enabled,
+                    max_allowed_org_members,
+                    max_allowed_workspace_members,
+                    allow_org_deletion,
+                    allow_workspace_deletion,
+                    custom_org_role_enabled,
+                    custom_workspace_role_enabled,
+                    default_workspace_creator_role_id,
+                    default_workspace_member_role_id,
+                    default_org_creator_role_id,
+                    default_org_member_role_id,
+                    limit_org_creation_per_user,
+                    limit_workspace_creation_per_org,
+                    org_creation_per_user_count,
+                    workspaces_per_org_count,
+                    allow_users_to_create_orgs,
+                    max_orgs_per_user,
                     workspace_permissions: row.b2b_settings_workspace_permissions,
                     organization_permissions: row.b2b_settings_organization_permissions,
-                    workspace_permission_catalog: row
-                        .b2b_settings_workspace_permission_catalog
-                        .map(serde_json::from_value)
-                        .transpose()
-                        .unwrap(),
-                    organization_permission_catalog: row
-                        .b2b_settings_organization_permission_catalog
-                        .map(serde_json::from_value)
-                        .transpose()
-                        .unwrap(),
-                    ip_allowlist_per_workspace_enabled: row
-                        .b2b_settings_ip_allowlist_per_workspace_enabled
-                        .unwrap(),
-                    enforce_mfa_per_org_enabled: row
-                        .b2b_settings_enforce_mfa_per_org_enabled
-                        .unwrap(),
-                    enforce_mfa_per_workspace_enabled: row
-                        .b2b_settings_enforce_mfa_per_workspace_enabled
-                        .unwrap(),
+                    workspace_permission_catalog,
+                    organization_permission_catalog,
+                    ip_allowlist_per_workspace_enabled,
+                    enforce_mfa_per_org_enabled,
+                    enforce_mfa_per_workspace_enabled,
                     enterprise_sso_enabled: row
                         .b2b_settings_enterprise_sso_enabled
                         .unwrap_or(false),
@@ -433,9 +568,9 @@ impl GetDeploymentWithSettingsQuery {
                 Some(DeploymentB2bSettingsWithRoles {
                     settings: b2b_settings,
                     default_workspace_creator_role: DeploymentWorkspaceRole {
-                        id: row.b2b_settings_default_workspace_creator_role_id.unwrap(),
-                        created_at: row.default_workspace_creator_role_created_at.unwrap(),
-                        updated_at: row.default_workspace_creator_role_updated_at.unwrap(),
+                        id: default_workspace_creator_role_id,
+                        created_at: default_workspace_creator_role_created_at,
+                        updated_at: default_workspace_creator_role_updated_at,
                         name: row.default_workspace_creator_role_name.unwrap_or_default(),
                         permissions: row
                             .default_workspace_creator_role_permissions
@@ -445,9 +580,9 @@ impl GetDeploymentWithSettingsQuery {
                         workspace_id: None,
                     },
                     default_workspace_member_role: DeploymentWorkspaceRole {
-                        id: row.b2b_settings_default_workspace_member_role_id.unwrap(),
-                        created_at: row.default_workspace_member_role_created_at.unwrap(),
-                        updated_at: row.default_workspace_member_role_updated_at.unwrap(),
+                        id: default_workspace_member_role_id,
+                        created_at: default_workspace_member_role_created_at,
+                        updated_at: default_workspace_member_role_updated_at,
                         name: row.default_workspace_member_role_name.unwrap_or_default(),
                         permissions: row
                             .default_workspace_member_role_permissions
@@ -457,18 +592,18 @@ impl GetDeploymentWithSettingsQuery {
                         workspace_id: None,
                     },
                     default_org_creator_role: DeploymentOrganizationRole {
-                        id: row.b2b_settings_default_org_creator_role_id.unwrap(),
-                        created_at: row.default_org_creator_role_created_at.unwrap(),
-                        updated_at: row.default_org_creator_role_updated_at.unwrap(),
+                        id: default_org_creator_role_id,
+                        created_at: default_org_creator_role_created_at,
+                        updated_at: default_org_creator_role_updated_at,
                         name: row.default_org_creator_role_name.unwrap_or_default(),
                         permissions: row.default_org_creator_role_permissions.unwrap_or_default(),
                         deployment_id: self.deployment_id,
                         organization_id: None,
                     },
                     default_org_member_role: DeploymentOrganizationRole {
-                        id: row.b2b_settings_default_org_member_role_id.unwrap(),
-                        created_at: row.default_org_member_role_created_at.unwrap(),
-                        updated_at: row.default_org_member_role_updated_at.unwrap(),
+                        id: default_org_member_role_id,
+                        created_at: default_org_member_role_created_at,
+                        updated_at: default_org_member_role_updated_at,
                         name: row.default_org_member_role_name.unwrap_or_default(),
                         permissions: row.default_org_member_role_permissions.unwrap_or_default(),
                         deployment_id: self.deployment_id,
@@ -480,14 +615,17 @@ impl GetDeploymentWithSettingsQuery {
             },
             domain_verification_records: row
                 .domain_verification_records
-                .and_then(|v| serde_json::from_value(v).ok()),
+                .map(|v| parse_json(v, "domain_verification_records"))
+                .transpose()?,
             email_verification_records: row
                 .email_verification_records
-                .and_then(|v| serde_json::from_value(v).ok()),
+                .map(|v| parse_json(v, "email_verification_records"))
+                .transpose()?,
             email_provider: models::EmailProvider::from(row.email_provider),
             custom_smtp_config: row
                 .custom_smtp_config
-                .and_then(|v| serde_json::from_value(v).ok())
+                .map(|v| parse_json(v, "custom_smtp_config"))
+                .transpose()?
                 .map(|mut c: models::CustomSmtpConfig| {
                     c.password = String::new();
                     c
@@ -539,20 +677,31 @@ impl GetDeploymentSocialConnectionsQuery {
         .fetch_all(executor)
         .await?;
 
-        Ok(row
-            .into_iter()
-            .map(|row| DeploymentSocialConnection {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                deployment_id: row.deployment_id,
-                provider: row.provider.map(|s| FromStr::from_str(&s).unwrap()),
-                enabled: row.enabled,
-                credentials: row
-                    .credentials
-                    .map(|v| serde_json::from_value(v).unwrap_or_default()),
+        row.into_iter()
+            .map(|row| -> Result<DeploymentSocialConnection, AppError> {
+                let provider = row
+                    .provider
+                    .map(|s| {
+                        models::SocialConnectionProvider::from_str(&s).map_err(|_| {
+                            AppError::Internal(format!("Invalid social provider value: {}", s))
+                        })
+                    })
+                    .transpose()?;
+
+                Ok(DeploymentSocialConnection {
+                    id: row.id,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                    deployment_id: row.deployment_id,
+                    provider,
+                    enabled: row.enabled,
+                    credentials: row
+                        .credentials
+                        .map(|v| parse_json(v, "credentials"))
+                        .transpose()?,
+                })
             })
-            .collect())
+            .collect()
     }
 }
 
@@ -609,20 +758,23 @@ impl GetDeploymentJwtTemplatesQuery {
 
         let templates = row
             .into_iter()
-            .map(|row| DeploymentJwtTemplate {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                deployment_id: row.deployment_id,
-                name: row.name,
-                token_lifetime: row.token_lifetime,
-                allowed_clock_skew: row.allowed_clock_skew,
-                custom_signing_key: row
-                    .custom_signing_key
-                    .map(|v| serde_json::from_value(v).unwrap_or_default()),
-                template: row.template,
+            .map(|row| -> Result<DeploymentJwtTemplate, AppError> {
+                Ok(DeploymentJwtTemplate {
+                    id: row.id,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                    deployment_id: row.deployment_id,
+                    name: row.name,
+                    token_lifetime: row.token_lifetime,
+                    allowed_clock_skew: row.allowed_clock_skew,
+                    custom_signing_key: row
+                        .custom_signing_key
+                        .map(|v| parse_json(v, "custom_signing_key"))
+                        .transpose()?,
+                    template: row.template,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(templates)
     }

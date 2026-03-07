@@ -1,6 +1,6 @@
 use axum::extract::{Json, Path, Query, State};
 
-use crate::application::{api_key_app as api_key_app_use_cases, response::ApiResult};
+use crate::application::{api_key_app as api_key_app_app, response::ApiResult};
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 use dto::json::api_key::*;
@@ -11,7 +11,7 @@ pub async fn list_api_auth_apps(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ListApiAuthAppsQuery>,
 ) -> ApiResult<ListApiAuthAppsResponse> {
-    let apps = api_key_app_use_cases::list_api_auth_apps(&app_state, deployment_id, params).await?;
+    let apps = api_key_app_app::list_api_auth_apps(&app_state, deployment_id, params).await?;
     Ok(apps.into())
 }
 
@@ -20,7 +20,7 @@ pub async fn get_api_auth_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
 ) -> ApiResult<ApiAuthApp> {
-    let app = api_key_app_use_cases::get_api_auth_app(&app_state, deployment_id, app_slug).await?;
+    let app = api_key_app_app::get_api_auth_app(&app_state, deployment_id, app_slug).await?;
     Ok(app.into())
 }
 
@@ -30,7 +30,7 @@ pub async fn create_api_auth_app(
     Json(request): Json<CreateApiAuthAppRequest>,
 ) -> ApiResult<ApiAuthApp> {
     let app =
-        api_key_app_use_cases::create_api_auth_app(&app_state, deployment_id, request).await?;
+        api_key_app_app::create_api_auth_app(&app_state, deployment_id, request).await?;
     Ok(app.into())
 }
 
@@ -41,7 +41,7 @@ pub async fn update_api_auth_app(
     Json(request): Json<UpdateApiAuthAppRequest>,
 ) -> ApiResult<ApiAuthApp> {
     let app =
-        api_key_app_use_cases::update_api_auth_app(&app_state, deployment_id, app_slug, request)
+        api_key_app_app::update_api_auth_app(&app_state, deployment_id, app_slug, request)
             .await?;
     Ok(app.into())
 }
@@ -51,6 +51,6 @@ pub async fn delete_api_auth_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(app_slug): Path<String>,
 ) -> ApiResult<()> {
-    api_key_app_use_cases::delete_api_auth_app(&app_state, deployment_id, app_slug).await?;
+    api_key_app_app::delete_api_auth_app(&app_state, deployment_id, app_slug).await?;
     Ok(().into())
 }

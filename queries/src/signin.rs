@@ -129,14 +129,19 @@ impl GetSessionWithActiveContextQuery {
             return Err(AppError::NotFound("Session not found".to_string()));
         };
 
-        let user_id: Option<i64> = row.try_get("user_id").ok();
-        let user_id = user_id.unwrap_or(0);
-        if user_id == 0 {
-            return Err(AppError::NotFound("No active user for session".to_string()));
-        }
+        let user_id: Option<i64> = row
+            .try_get("user_id")
+            .map_err(|e| AppError::Internal(format!("Invalid user_id field: {}", e)))?;
+        let user_id = user_id
+            .filter(|id| *id > 0)
+            .ok_or_else(|| AppError::NotFound("No active user for session".to_string()))?;
 
-        let active_organization_id: Option<i64> = row.try_get("organization_id").ok().flatten();
-        let active_workspace_id: Option<i64> = row.try_get("workspace_id").ok().flatten();
+        let active_organization_id: Option<i64> = row
+            .try_get("organization_id")
+            .map_err(|e| AppError::Internal(format!("Invalid organization_id field: {}", e)))?;
+        let active_workspace_id: Option<i64> = row
+            .try_get("workspace_id")
+            .map_err(|e| AppError::Internal(format!("Invalid workspace_id field: {}", e)))?;
 
         Ok(SessionContext {
             user_id,
@@ -222,9 +227,12 @@ impl GetSessionWithSignInsQuery {
 
         let signins: Vec<SignIn> = rows
             .into_iter()
-            .filter_map(|row| {
-                let signin_id: Option<i64> = row.try_get("signin_id").ok();
-                signin_id.map(|id| {
+            .map(|row| -> Result<Option<SignIn>, AppError> {
+                let signin_id: Option<i64> = row
+                    .try_get("signin_id")
+                    .map_err(|e| AppError::Internal(format!("Invalid signin_id field: {}", e)))?;
+
+                Ok(signin_id.map(|id| {
                     normalize_signin(
                         id,
                         row.get("signin_created_at"),
@@ -244,8 +252,11 @@ impl GetSessionWithSignInsQuery {
                         row.get("country"),
                         row.get("country_code"),
                     )
-                })
+                }))
             })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
             .collect();
 
         Ok(SessionWithSignIns { session, signins })

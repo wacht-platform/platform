@@ -6,6 +6,7 @@ use models::{DeploymentAiSettingsResponse, UpdateDeploymentAiSettingsRequest};
 use queries::{GetDeploymentAiSettingsQuery, plan_access::CheckDeploymentFeatureAccessQuery};
 
 use crate::application::AppState;
+use crate::application::deps;
 
 pub async fn get_ai_settings(
     app_state: &AppState,
@@ -50,7 +51,7 @@ pub async fn update_ai_settings(
         .deployment_id(deployment_id)
         .updates(updates)
         .build()?
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().enc())
         .await?;
 
     Ok(DeploymentAiSettingsResponse::from(settings))

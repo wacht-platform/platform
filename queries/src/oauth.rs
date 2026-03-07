@@ -1,7 +1,12 @@
 use chrono::{DateTime, Utc};
 use common::error::AppError;
 use models::api_key::{JwksDocument, OAuthScopeDefinition};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+
+fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
+    serde_json::from_value(value).unwrap_or_default()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthAppData {
@@ -22,11 +27,11 @@ pub struct OAuthAppData {
 
 impl OAuthAppData {
     pub fn supported_scopes_vec(&self) -> Vec<String> {
-        serde_json::from_value(self.supported_scopes.clone()).unwrap_or_default()
+        json_default(self.supported_scopes.clone())
     }
 
     pub fn scope_definitions_vec(&self) -> Vec<OAuthScopeDefinition> {
-        serde_json::from_value(self.scope_definitions.clone()).unwrap_or_default()
+        json_default(self.scope_definitions.clone())
     }
 }
 
@@ -59,15 +64,15 @@ pub struct OAuthClientData {
 
 impl OAuthClientData {
     pub fn grant_types_vec(&self) -> Vec<String> {
-        serde_json::from_value(self.grant_types.clone()).unwrap_or_default()
+        json_default(self.grant_types.clone())
     }
 
     pub fn redirect_uris_vec(&self) -> Vec<String> {
-        serde_json::from_value(self.redirect_uris.clone()).unwrap_or_default()
+        json_default(self.redirect_uris.clone())
     }
 
     pub fn contacts_vec(&self) -> Vec<String> {
-        serde_json::from_value(self.contacts.clone()).unwrap_or_default()
+        json_default(self.contacts.clone())
     }
 }
 
@@ -90,7 +95,7 @@ pub struct OAuthClientGrantData {
 
 impl OAuthClientGrantData {
     pub fn scopes_vec(&self) -> Vec<String> {
-        serde_json::from_value(self.scopes.clone()).unwrap_or_default()
+        json_default(self.scopes.clone())
     }
 }
 

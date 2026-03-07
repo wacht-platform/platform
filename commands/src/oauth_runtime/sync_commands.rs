@@ -11,8 +11,12 @@ pub struct EnqueueOAuthGrantLastUsed {
 }
 
 impl EnqueueOAuthGrantLastUsed {
-    pub async fn execute_with_deps(self, redis_client: &redis::Client) -> Result<(), AppError> {
-        let mut redis_conn = redis_client
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasRedis,
+    {
+        let mut redis_conn = deps
+            .redis_client()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to connect redis: {}", e)))?;
@@ -70,24 +74,28 @@ impl SyncOAuthGrantLastUsedBatch {
 
         for (member, score) in popped {
             let mut parts = member.split(':');
-            let deployment_id = parts.next().and_then(|p| p.parse::<i64>().ok());
-            let oauth_client_id = parts.next().and_then(|p| p.parse::<i64>().ok());
-            let grant_id = parts.next().and_then(|p| p.parse::<i64>().ok());
-            if deployment_id.is_none()
-                || oauth_client_id.is_none()
-                || grant_id.is_none()
-                || parts.next().is_some()
-            {
+            let (Some(deployment_part), Some(client_part), Some(grant_part), None) =
+                (parts.next(), parts.next(), parts.next(), parts.next())
+            else {
                 continue;
-            }
+            };
+
+            let (Ok(deployment_id), Ok(oauth_client_id), Ok(grant_id)) = (
+                deployment_part.parse::<i64>(),
+                client_part.parse::<i64>(),
+                grant_part.parse::<i64>(),
+            ) else {
+                continue;
+            };
+
             let Some(used_at) =
                 chrono::DateTime::<chrono::Utc>::from_timestamp_millis(score as i64)
             else {
                 continue;
             };
-            deployment_ids.push(deployment_id.unwrap_or_default());
-            client_ids.push(oauth_client_id.unwrap_or_default());
-            grant_ids.push(grant_id.unwrap_or_default());
+            deployment_ids.push(deployment_id);
+            client_ids.push(oauth_client_id);
+            grant_ids.push(grant_id);
             used_ats.push(used_at);
         }
 

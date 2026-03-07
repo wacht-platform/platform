@@ -12,6 +12,7 @@ use models::error::AppError;
 use queries::oauth::ListOAuthAppsByDeploymentQuery;
 
 use super::oauth_shared::map_oauth_app_response;
+use crate::application::deps;
 
 pub struct CreateOAuthAppInput {
     pub slug: String,
@@ -33,7 +34,7 @@ pub async fn verify_oauth_app_domain(
         deployment_id,
         oauth_app_slug,
     }
-    .execute_with_deps(app_state)
+    .execute_with_deps(&deps::from_app(app_state).db().cloudflare())
     .await?;
 
     Ok(VerifyOAuthAppDomainResponse {
@@ -90,7 +91,7 @@ pub async fn create_oauth_app(
         scope_definitions: input.scope_definitions,
         allow_dynamic_client_registration: input.allow_dynamic_client_registration,
     }
-    .execute_with_deps(app_state)
+    .execute_with_deps(&deps::from_app(app_state).db().cloudflare())
     .await?;
 
     Ok(map_oauth_app_response(created))

@@ -1,4 +1,5 @@
 use chrono::Utc;
+use serde::de::DeserializeOwned;
 use sqlx::Row;
 
 use common::{HasDbRouter, HasRedis, error::AppError};
@@ -6,6 +7,10 @@ use dto::json::{NewDeploymentJwtTemplate, PartialDeploymentJwtTemplate};
 use models::DeploymentJwtTemplate;
 
 use super::ClearDeploymentCacheCommand;
+
+fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
+    serde_json::from_value(value).unwrap_or_default()
+}
 
 pub struct CreateDeploymentJwtTemplateCommand {
     pub template_id: Option<i64>,
@@ -65,10 +70,8 @@ impl CreateDeploymentJwtTemplateCommand {
             name: result.name,
             token_lifetime: result.token_lifetime,
             allowed_clock_skew: result.allowed_clock_skew,
-            custom_signing_key: result
-                .custom_signing_key
-                .map(|v| serde_json::from_value(v).unwrap_or_default()),
-            template: serde_json::from_value(result.template).unwrap_or_default(),
+            custom_signing_key: result.custom_signing_key.map(json_default),
+            template: json_default(result.template),
         };
 
         ClearDeploymentCacheCommand::new(self.deployment_id)

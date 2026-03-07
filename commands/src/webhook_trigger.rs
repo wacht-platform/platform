@@ -139,7 +139,7 @@ impl TriggerWebhookEventCommand {
 
             delivery_ids.push(delivery.id);
 
-            let payload_json = serde_json::to_string(&self.payload).unwrap_or_default();
+            let payload_json = self.payload.to_string();
             let ch_log = WebhookLog {
                 deployment_id: self.deployment_id,
                 delivery_id: delivery.id,
@@ -332,7 +332,7 @@ impl ReplayWebhookDeliveryCommand {
             webhook_timestamp,
             &payload,
         ));
-        let payload_size_bytes = serde_json::to_string(&payload).unwrap_or_default().len() as i32;
+        let payload_size_bytes = payload.to_string().len() as i32;
         let max_attempts = replay_source.max_attempts.max(1);
 
         tracing::info!(

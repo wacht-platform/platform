@@ -1,6 +1,19 @@
 use chrono::Utc;
 use common::{HasDbRouter, error::AppError};
 use models::AiAgent;
+use serde::de::DeserializeOwned;
+
+fn parse_optional_json<T: DeserializeOwned>(
+    value: Option<serde_json::Value>,
+    field: &str,
+) -> Result<Option<T>, AppError> {
+    value
+        .map(|v| {
+            serde_json::from_value(v)
+                .map_err(|e| AppError::Internal(format!("Failed to parse {}: {}", field, e)))
+        })
+        .transpose()
+}
 
 pub struct CreateAiAgentCommand {
     pub id: i64,
@@ -69,8 +82,14 @@ impl CreateAiAgentCommand {
 
         let sub_agents_json = self
             .sub_agents
-            .map(|ids| serde_json::to_value(ids).unwrap());
-        let spawn_config_json = self.spawn_config.map(|c| serde_json::to_value(c).unwrap());
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+        let spawn_config_json = self
+            .spawn_config
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
 
         let mut tx = deps
             .db_router()
@@ -110,12 +129,8 @@ impl CreateAiAgentCommand {
 
         tx.commit().await.map_err(AppError::Database)?;
 
-        let sub_agents = agent
-            .sub_agents
-            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
-        let spawn_config = agent
-            .spawn_config
-            .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
+        let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
+        let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
 
         Ok(AiAgent {
             id: agent.id,
@@ -205,8 +220,14 @@ impl UpdateAiAgentCommand {
         let configuration = self.configuration.map(sanitize_configuration);
         let sub_agents_json = self
             .sub_agents
-            .map(|ids| serde_json::to_value(ids).unwrap());
-        let spawn_config_json = self.spawn_config.map(|c| serde_json::to_value(c).unwrap());
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
+        let spawn_config_json = self
+            .spawn_config
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| AppError::Serialization(e.to_string()))?;
 
         let mut tx = deps
             .db_router()
@@ -250,12 +271,8 @@ impl UpdateAiAgentCommand {
         }
         tx.commit().await.map_err(AppError::Database)?;
 
-        let sub_agents = agent
-            .sub_agents
-            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
-        let spawn_config = agent
-            .spawn_config
-            .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
+        let sub_agents = parse_optional_json(agent.sub_agents, "sub_agents")?;
+        let spawn_config = parse_optional_json(agent.spawn_config, "spawn_config")?;
 
         Ok(AiAgent {
             id: agent.id,
@@ -506,9 +523,8 @@ impl AttachSubAgentToAgentCommand {
         .await
         .map_err(AppError::Database)?;
 
-        let mut sub_agents = sub_agents_json
-            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok())
-            .unwrap_or_default();
+        let mut sub_agents: Vec<i64> =
+            parse_optional_json(sub_agents_json, "sub_agents")?.unwrap_or_default();
 
         if !sub_agents.contains(&self.sub_agent_id) {
             sub_agents.push(self.sub_agent_id);
@@ -575,9 +591,8 @@ impl DetachSubAgentFromAgentCommand {
         .map_err(AppError::Database)?
         .ok_or_else(|| AppError::NotFound("Agent not found".to_string()))?;
 
-        let mut sub_agents = sub_agents_json
-            .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok())
-            .unwrap_or_default();
+        let mut sub_agents: Vec<i64> =
+            parse_optional_json(sub_agents_json, "sub_agents")?.unwrap_or_default();
 
         sub_agents.retain(|id| *id != self.sub_agent_id);
 

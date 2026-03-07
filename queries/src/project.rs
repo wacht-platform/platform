@@ -52,8 +52,8 @@ impl GetProjectsWithDeploymentQuery {
 }
 
 impl GetProjectsWithDeploymentQuery {
-    fn create_deployment_from_row(row: &sqlx::postgres::PgRow) -> Deployment {
-        Deployment {
+    fn create_deployment_from_row(row: &sqlx::postgres::PgRow) -> Result<Deployment, AppError> {
+        Ok(Deployment {
             id: row
                 .get::<Option<i64>, _>("deployment_id")
                 .unwrap_or_default(),
@@ -87,22 +87,46 @@ impl GetProjectsWithDeploymentQuery {
                 .unwrap_or_default(),
             domain_verification_records: row
                 .get::<Option<serde_json::Value>, _>("deployment_domain_verification_records")
-                .and_then(|v| serde_json::from_value(v).ok()),
+                .map(|v| {
+                    serde_json::from_value(v).map_err(|e| {
+                        AppError::Internal(format!(
+                            "Invalid deployment_domain_verification_records JSON: {}",
+                            e
+                        ))
+                    })
+                })
+                .transpose()?,
             email_verification_records: row
                 .get::<Option<serde_json::Value>, _>("deployment_email_verification_records")
-                .and_then(|v| serde_json::from_value(v).ok()),
+                .map(|v| {
+                    serde_json::from_value(v).map_err(|e| {
+                        AppError::Internal(format!(
+                            "Invalid deployment_email_verification_records JSON: {}",
+                            e
+                        ))
+                    })
+                })
+                .transpose()?,
             email_provider: row
                 .get::<Option<String>, _>("deployment_email_provider")
                 .map(models::EmailProvider::from)
                 .unwrap_or_default(),
             custom_smtp_config: row
                 .get::<Option<serde_json::Value>, _>("deployment_custom_smtp_config")
-                .and_then(|v| serde_json::from_value(v).ok())
+                .map(|v| {
+                    serde_json::from_value(v).map_err(|e| {
+                        AppError::Internal(format!(
+                            "Invalid deployment_custom_smtp_config JSON: {}",
+                            e
+                        ))
+                    })
+                })
+                .transpose()?
                 .map(|mut c: models::CustomSmtpConfig| {
                     c.password = String::new();
                     c
                 }),
-        }
+        })
     }
 
     pub async fn execute_with_db<'e, E>(
@@ -154,14 +178,12 @@ impl GetProjectsWithDeploymentQuery {
 
             if let Some(project) = projects_map.get_mut(&project_id) {
                 if row.get::<Option<i64>, _>("deployment_id").is_some() {
-                    project
-                        .deployments
-                        .push(Self::create_deployment_from_row(&row));
+                    project.deployments.push(Self::create_deployment_from_row(&row)?);
                 }
             } else {
                 let mut deployments = Vec::new();
                 if row.get::<Option<i64>, _>("deployment_id").is_some() {
-                    deployments.push(Self::create_deployment_from_row(&row));
+                    deployments.push(Self::create_deployment_from_row(&row)?);
                 }
 
                 projects_map.insert(

@@ -64,7 +64,7 @@ impl TestWebhookEndpointCommand {
 
         let app_slug = endpoint.app_slug.clone();
         let now = Utc::now();
-        let payload_json = serde_json::to_string(&self.test_payload).unwrap_or_default();
+        let payload_json = self.test_payload.to_string();
         let payload_size = payload_json.len() as i32;
 
         let log = WebhookLog {

@@ -10,7 +10,7 @@ use models::webhook_analytics::WebhookAnalyticsResult;
 
 use crate::application::{
     response::{ApiResult, PaginatedResponse},
-    webhook_deliveries as webhook_deliveries_use_cases,
+    webhook_deliveries as webhook_deliveries_app,
 };
 use crate::middleware::RequireDeployment;
 
@@ -20,14 +20,14 @@ pub async fn get_webhook_delivery_details(
     Path(delivery_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> ApiResult<WebhookDeliveryDetails> {
-    let delivery = webhook_deliveries_use_cases::get_webhook_delivery_details(
+    let delivery = webhook_deliveries_app::get_webhook_delivery_details(
         &app_state,
         deployment_id,
         delivery_id,
         params,
     )
     .await
-    .map_err(webhook_deliveries_use_cases::map_error_to_api)?;
+    .map_err(webhook_deliveries_app::map_error_to_api)?;
 
     Ok(delivery.into())
 }
@@ -38,7 +38,7 @@ pub async fn get_webhook_delivery_details_for_app(
     Path((app_slug, delivery_id)): Path<(String, String)>,
     Query(params): Query<HashMap<String, String>>,
 ) -> ApiResult<WebhookDeliveryDetails> {
-    let delivery = webhook_deliveries_use_cases::get_webhook_delivery_details_for_app(
+    let delivery = webhook_deliveries_app::get_webhook_delivery_details_for_app(
         &app_state,
         deployment_id,
         app_slug,
@@ -46,7 +46,7 @@ pub async fn get_webhook_delivery_details_for_app(
         params,
     )
     .await
-    .map_err(webhook_deliveries_use_cases::map_error_to_api)?;
+    .map_err(webhook_deliveries_app::map_error_to_api)?;
 
     Ok(delivery.into())
 }
@@ -57,7 +57,7 @@ pub async fn get_webhook_stats(
     Path(app_slug): Path<String>,
 ) -> ApiResult<WebhookAnalyticsResult> {
     let stats =
-        webhook_deliveries_use_cases::get_webhook_stats(&app_state, deployment_id, app_slug)
+        webhook_deliveries_app::get_webhook_stats(&app_state, deployment_id, app_slug)
             .await?;
 
     Ok(stats.into())
@@ -69,7 +69,7 @@ pub async fn get_app_webhook_deliveries(
     Path(app_slug): Path<String>,
     Query(params): Query<GetAppWebhookDeliveriesQuery>,
 ) -> ApiResult<PaginatedResponse<WebhookDeliveryListResponse>> {
-    let deliveries = webhook_deliveries_use_cases::get_app_webhook_deliveries(
+    let deliveries = webhook_deliveries_app::get_app_webhook_deliveries(
         &app_state,
         deployment_id,
         app_slug,

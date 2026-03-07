@@ -13,6 +13,7 @@ use models::{UserDetails, UserWithIdentifiers};
 use queries::{DeploymentActiveUserListQuery, GetUserDetailsQuery};
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
+use crate::application::deps;
 
 pub async fn get_active_user_list(
     app_state: &AppState,
@@ -52,7 +53,7 @@ pub async fn create_user(
     profile_image_data: Option<(Vec<u8>, String)>,
 ) -> Result<UserWithIdentifiers, AppError> {
     let user = CreateUserCommand::new(deployment_id, request)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().id())
         .await?;
 
     if let Some((image_buffer, file_extension)) = profile_image_data {
@@ -82,7 +83,7 @@ pub async fn update_user(
     remove_profile_image: bool,
 ) -> Result<UserDetails, AppError> {
     let user_details = UpdateUserCommand::new(deployment_id, user_id, request)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db())
         .await?;
 
     if remove_profile_image {
@@ -131,7 +132,9 @@ pub async fn update_user_password(
         request.new_password,
         request.skip_password_check,
     );
-    password_command.execute_with_deps(app_state).await?;
+    password_command
+        .execute_with_deps(&deps::from_app(app_state).db())
+        .await?;
     Ok(())
 }
 

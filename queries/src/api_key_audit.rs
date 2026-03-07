@@ -108,21 +108,23 @@ impl GetApiAuditLogsQuery {
 
         let data = kept
             .iter()
-            .map(|row| ApiAuditLog {
-                request_id: row.request_id.clone(),
-                deployment_id: row.deployment_id,
-                app_slug: row.app_slug.clone(),
-                key_id: row.key_id,
-                key_name: row.key_name.clone(),
-                outcome: row.outcome.clone(),
-                blocked_by_rule: row.blocked_by_rule.clone(),
-                client_ip: row.client_ip.clone(),
-                path: row.path.clone(),
-                user_agent: row.user_agent.clone(),
-                rate_limits: parse_rate_limits(row.rate_limits.as_deref()),
-                timestamp: row.timestamp,
+            .map(|row| -> Result<ApiAuditLog, AppError> {
+                Ok(ApiAuditLog {
+                    request_id: row.request_id.clone(),
+                    deployment_id: row.deployment_id,
+                    app_slug: row.app_slug.clone(),
+                    key_id: row.key_id,
+                    key_name: row.key_name.clone(),
+                    outcome: row.outcome.clone(),
+                    blocked_by_rule: row.blocked_by_rule.clone(),
+                    client_ip: row.client_ip.clone(),
+                    path: row.path.clone(),
+                    user_agent: row.user_agent.clone(),
+                    rate_limits: parse_rate_limits(row.rate_limits.as_deref())?,
+                    timestamp: row.timestamp,
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let next_cursor = kept.last().map(|last| {
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!(
@@ -458,8 +460,10 @@ fn base_where(
     (where_parts, where_binds)
 }
 
-fn parse_rate_limits(raw: Option<&str>) -> Option<Value> {
-    raw.and_then(|v| serde_json::from_str::<Value>(v).ok())
+fn parse_rate_limits(raw: Option<&str>) -> Result<Option<Value>, AppError> {
+    raw.map(|v| serde_json::from_str::<Value>(v))
+        .transpose()
+        .map_err(|e| AppError::Internal(format!("Invalid rate_limits JSON: {}", e)))
 }
 
 #[derive(Debug, Clone, Row, Deserialize)]

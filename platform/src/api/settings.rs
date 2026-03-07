@@ -1,7 +1,7 @@
 use crate::{
     application::{
         response::{ApiResult, PaginatedResponse},
-        settings as settings_use_cases,
+        settings as deployment_settings,
     },
     middleware::RequireDeployment,
 };
@@ -43,7 +43,7 @@ pub async fn get_deployment_with_settings(
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<DeploymentWithSettings> {
     let deployment =
-        settings_use_cases::get_deployment_with_settings(&app_state, deployment_id).await?;
+        deployment_settings::get_deployment_with_settings(&app_state, deployment_id).await?;
     Ok(deployment.into())
 }
 
@@ -52,7 +52,7 @@ pub async fn update_deployment_display_settings(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentDisplaySettingsUpdates>,
 ) -> ApiResult<()> {
-    settings_use_cases::update_deployment_display_settings(&app_state, deployment_id, updates)
+    deployment_settings::update_deployment_display_settings(&app_state, deployment_id, updates)
         .await?;
     Ok(().into())
 }
@@ -62,7 +62,8 @@ pub async fn update_deployment_auth_settings(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentAuthSettingsUpdates>,
 ) -> ApiResult<()> {
-    settings_use_cases::update_deployment_auth_settings(&app_state, deployment_id, updates).await?;
+    deployment_settings::update_deployment_auth_settings(&app_state, deployment_id, updates)
+        .await?;
     Ok(().into())
 }
 
@@ -71,7 +72,7 @@ pub async fn update_deployment_restrictions(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(updates): Json<DeploymentRestrictionsUpdates>,
 ) -> ApiResult<()> {
-    settings_use_cases::update_deployment_restrictions(&app_state, deployment_id, updates).await?;
+    deployment_settings::update_deployment_restrictions(&app_state, deployment_id, updates).await?;
     Ok(().into())
 }
 
@@ -80,7 +81,7 @@ pub async fn get_deployment_jwt_templates(
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<PaginatedResponse<DeploymentJwtTemplate>> {
     let templates =
-        settings_use_cases::get_deployment_jwt_templates(&app_state, deployment_id).await?;
+        deployment_settings::get_deployment_jwt_templates(&app_state, deployment_id).await?;
 
     Ok(PaginatedResponse::from(templates).into())
 }
@@ -90,9 +91,12 @@ pub async fn create_deployment_jwt_template(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(template): Json<NewDeploymentJwtTemplate>,
 ) -> ApiResult<DeploymentJwtTemplate> {
-    let jwt_template =
-        settings_use_cases::create_deployment_jwt_template(&app_state, deployment_id, template)
-            .await?;
+    let jwt_template = deployment_settings::create_deployment_jwt_template(
+        &app_state,
+        deployment_id,
+        template,
+    )
+    .await?;
     Ok(jwt_template.into())
 }
 
@@ -102,7 +106,7 @@ pub async fn update_deployment_jwt_template(
     Path(params): Path<JWTTemplateParams>,
     Json(updates): Json<PartialDeploymentJwtTemplate>,
 ) -> ApiResult<DeploymentJwtTemplate> {
-    let jwt_template = settings_use_cases::update_deployment_jwt_template(
+    let jwt_template = deployment_settings::update_deployment_jwt_template(
         &app_state,
         deployment_id,
         params.id,
@@ -117,7 +121,7 @@ pub async fn delete_deployment_jwt_template(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<JWTTemplateParams>,
 ) -> ApiResult<()> {
-    settings_use_cases::delete_deployment_jwt_template(&app_state, deployment_id, params.id)
+    deployment_settings::delete_deployment_jwt_template(&app_state, deployment_id, params.id)
         .await?;
     Ok(().into())
 }
@@ -127,7 +131,7 @@ pub async fn get_deployment_email_template(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<EmailTemplateParams>,
 ) -> ApiResult<EmailTemplate> {
-    let template = settings_use_cases::get_deployment_email_template(
+    let template = deployment_settings::get_deployment_email_template(
         &app_state,
         deployment_id,
         params.template_name,
@@ -142,7 +146,7 @@ pub async fn update_deployment_email_template(
     Path(params): Path<EmailTemplateParams>,
     Json(template): Json<EmailTemplate>,
 ) -> ApiResult<EmailTemplate> {
-    let updated = settings_use_cases::update_deployment_email_template(
+    let updated = deployment_settings::update_deployment_email_template(
         &app_state,
         deployment_id,
         params.template_name,
@@ -153,11 +157,10 @@ pub async fn update_deployment_email_template(
 }
 
 pub async fn verify_smtp_connection(
-    State(app_state): State<AppState>,
     RequireDeployment(_deployment_id): RequireDeployment,
     Json(config): Json<SmtpConfigRequest>,
 ) -> ApiResult<SmtpVerifyResponse> {
-    let response = settings_use_cases::verify_smtp_connection(&app_state, config).await?;
+    let response = deployment_settings::verify_smtp_connection(config).await?;
     Ok(response.into())
 }
 
@@ -167,7 +170,7 @@ pub async fn update_smtp_config(
     Json(config): Json<SmtpConfigRequest>,
 ) -> ApiResult<SmtpConfigResponse> {
     let response =
-        settings_use_cases::update_smtp_config(&app_state, deployment_id, config).await?;
+        deployment_settings::update_smtp_config(&app_state, deployment_id, config).await?;
     Ok(response.into())
 }
 
@@ -175,6 +178,6 @@ pub async fn remove_smtp_config(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<()> {
-    settings_use_cases::remove_smtp_config(&app_state, deployment_id).await?;
+    deployment_settings::remove_smtp_config(&app_state, deployment_id).await?;
     Ok(().into())
 }

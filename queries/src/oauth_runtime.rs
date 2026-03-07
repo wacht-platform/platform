@@ -1,7 +1,31 @@
 use common::error::AppError;
 use models::api_key::{JwksDocument, OAuthScopeDefinition, RateLimit};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+
+fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
+    serde_json::from_value(value).unwrap_or_default()
+}
+
+fn json_optional<T: DeserializeOwned>(value: Option<serde_json::Value>) -> Option<T> {
+    value.and_then(|v| serde_json::from_value(v).ok())
+}
+
+fn normalize_permissions(permissions: &[String]) -> Vec<String> {
+    permissions
+        .iter()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+fn parse_urn_resource_id(resource: &str, prefix: &str) -> Option<i64> {
+    resource
+        .strip_prefix(prefix)
+        .and_then(|id| id.parse::<i64>().ok())
+        .filter(|id| *id > 0)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeOAuthAppData {
@@ -180,9 +204,8 @@ impl ResolveOAuthAppByFqdnQuery {
             deployment_id: r.get("deployment_id"),
             slug: r.get("slug"),
             fqdn: r.get("fqdn"),
-            supported_scopes: serde_json::from_value(r.get("supported_scopes")).unwrap_or_default(),
-            scope_definitions: serde_json::from_value(r.get("scope_definitions"))
-                .unwrap_or_default(),
+            supported_scopes: json_default(r.get("supported_scopes")),
+            scope_definitions: json_default(r.get("scope_definitions")),
             allow_dynamic_client_registration: r.get("allow_dynamic_client_registration"),
         }))
     }
@@ -360,21 +383,16 @@ impl GetRuntimeOAuthClientByClientIdQuery {
             client_secret_encrypted: r.get("client_secret_encrypted"),
             registration_access_token_hash: r.get("registration_access_token_hash"),
             client_auth_method: r.get("client_auth_method"),
-            grant_types: serde_json::from_value(r.get("grant_types")).unwrap_or_default(),
-            redirect_uris: serde_json::from_value(r.get("redirect_uris")).unwrap_or_default(),
+            grant_types: json_default(r.get("grant_types")),
+            redirect_uris: json_default(r.get("redirect_uris")),
             token_endpoint_auth_signing_alg: r.get("token_endpoint_auth_signing_alg"),
-            jwks: r
-                .get::<Option<serde_json::Value>, _>("jwks")
-                .and_then(|v| serde_json::from_value(v).ok()),
+            jwks: json_optional(r.get("jwks")),
             client_name: r.get("client_name"),
             client_uri: r.get("client_uri"),
             logo_uri: r.get("logo_uri"),
             tos_uri: r.get("tos_uri"),
             policy_uri: r.get("policy_uri"),
-            contacts: r
-                .get::<Option<serde_json::Value>, _>("contacts")
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default(),
+            contacts: json_optional(r.get("contacts")).unwrap_or_default(),
             software_id: r.get("software_id"),
             software_version: r.get("software_version"),
             is_active: r.get("is_active"),
@@ -425,7 +443,7 @@ impl ListActiveRuntimeOAuthGrantsQuery {
         Ok(rows
             .into_iter()
             .map(|r| RuntimeOAuthGrantData {
-                scopes: serde_json::from_value(r.get("scopes")).unwrap_or_default(),
+                scopes: json_default(r.get("scopes")),
                 resource: r.get("resource"),
                 granted_resource: r.get("granted_resource"),
             })
@@ -488,7 +506,7 @@ impl GetRuntimeAuthorizationCodeForExchangeQuery {
             redirect_uri: r.get("redirect_uri"),
             pkce_code_challenge: r.get("pkce_code_challenge"),
             pkce_code_challenge_method: r.get("pkce_code_challenge_method"),
-            scopes: serde_json::from_value(r.get("scopes")).unwrap_or_default(),
+            scopes: json_default(r.get("scopes")),
             resource: r.get("resource"),
             granted_resource: r.get("granted_resource"),
         }))
@@ -550,7 +568,7 @@ impl GetRuntimeRefreshTokenForExchangeQuery {
             replaced_by_token_id: r.get("replaced_by_token_id"),
             revoked_at: r.get("revoked_at"),
             expires_at: r.get("expires_at"),
-            scopes: serde_json::from_value(r.get("scopes")).unwrap_or_default(),
+            scopes: json_default(r.get("scopes")),
             resource: r.get("resource"),
             granted_resource: r.get("granted_resource"),
         }))
@@ -721,26 +739,13 @@ impl ValidateRuntimeResourceEntitlementQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let required_permissions: Vec<String> = self
-            .required_permissions
-            .iter()
-            .map(|p| p.trim().to_string())
-            .filter(|p| !p.is_empty())
-            .collect();
+        let required_permissions = normalize_permissions(&self.required_permissions);
 
-        if let Some(id) = self.resource.strip_prefix("urn:wacht:user:") {
-            let resource_user_id = id.parse::<i64>().ok().unwrap_or_default();
-            return Ok(resource_user_id > 0
-                && resource_user_id == self.user_id
-                && required_permissions.is_empty());
+        if let Some(resource_user_id) = parse_urn_resource_id(&self.resource, "urn:wacht:user:") {
+            return Ok(resource_user_id == self.user_id && required_permissions.is_empty());
         }
 
-        if let Some(id) = self.resource.strip_prefix("urn:wacht:organization:") {
-            let org_id = id.parse::<i64>().ok().unwrap_or_default();
-            if org_id <= 0 {
-                return Ok(false);
-            }
-
+        if let Some(org_id) = parse_urn_resource_id(&self.resource, "urn:wacht:organization:") {
             let row = sqlx::query(
                 r#"
                 SELECT
@@ -776,12 +781,7 @@ impl ValidateRuntimeResourceEntitlementQuery {
             return Ok(row.get("entitled"));
         }
 
-        if let Some(id) = self.resource.strip_prefix("urn:wacht:workspace:") {
-            let workspace_id = id.parse::<i64>().ok().unwrap_or_default();
-            if workspace_id <= 0 {
-                return Ok(false);
-            }
-
+        if let Some(workspace_id) = parse_urn_resource_id(&self.resource, "urn:wacht:workspace:") {
             let row = sqlx::query(
                 r#"
                 SELECT
@@ -871,7 +871,7 @@ impl GetRuntimeAccessTokenByHashQuery {
             app_slug: r.get("app_slug"),
             oauth_client_id: r.get("oauth_client_id"),
             client_id: r.get("client_id"),
-            scopes: serde_json::from_value(r.get("scopes")).unwrap_or_default(),
+            scopes: json_default(r.get("scopes")),
             resource: r.get("resource"),
             granted_resource: r.get("granted_resource"),
             expires_at: r.get("expires_at"),
@@ -1091,7 +1091,7 @@ impl GetRuntimeIntrospectionDataQuery {
             oauth_grant_id: r.oauth_grant_id,
             client_id: r.client_id,
             app_slug: r.app_slug,
-            scopes: serde_json::from_value(r.scopes).unwrap_or_default(),
+            scopes: json_default(r.scopes),
             resource: r.resource,
             granted_resource: r.granted_resource,
             issued_at: r.created_at,
@@ -1304,13 +1304,13 @@ impl GetGatewayOAuthAccessTokenByHashQuery {
             app_slug: r.app_slug,
             oauth_issuer: format!("https://{}", r.oauth_issuer),
             owner_user_id: r.owner_user_id,
-            scopes: serde_json::from_value(r.scopes).unwrap_or_default(),
+            scopes: json_default(r.scopes),
             resource: r.resource,
             granted_resource: r.granted_resource,
             expires_at: r.expires_at,
             rate_limits: vec![],
             rate_limit_scheme_slug: r.rate_limit_scheme_slug,
-            scope_definitions: serde_json::from_value(r.scope_definitions).unwrap_or_default(),
+            scope_definitions: json_default(r.scope_definitions),
             active: r.active,
         }))
     }

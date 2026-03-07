@@ -34,13 +34,7 @@ fn serialize_optional_json<T: serde::Serialize>(
 fn map_event_subscriptions(
     subscriptions: Vec<dto::json::webhook_requests::EventSubscription>,
 ) -> Vec<EventSubscriptionData> {
-    subscriptions
-        .into_iter()
-        .map(|subscription| EventSubscriptionData {
-            event_name: subscription.event_name,
-            filter_rules: subscription.filter_rules,
-        })
-        .collect()
+    subscriptions.into_iter().map(Into::into).collect()
 }
 
 pub async fn ensure_endpoint_belongs_to_app(

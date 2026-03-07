@@ -50,6 +50,7 @@ use crate::{
     },
     application::response::ApiErrorResponse,
 };
+use crate::application::deps;
 
 fn enqueue_grant_last_used(
     app_state: AppState,
@@ -63,7 +64,7 @@ fn enqueue_grant_last_used(
             oauth_client_id,
             grant_id,
         }
-        .execute_with_deps(&app_state.redis_client)
+        .execute_with_deps(&deps::from_app(&app_state).redis())
         .await;
     });
 }
@@ -421,7 +422,7 @@ pub async fn oauth_register_client(
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
     }
-    .execute_with_deps(app_state)
+    .execute_with_deps(&deps::from_app(app_state).db().enc())
     .await?;
 
     let registration_access_token = generate_registration_access_token();

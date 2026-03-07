@@ -1,6 +1,6 @@
 use crate::api::multipart::MultipartPayload;
 use crate::{
-    application::{response::ApiResult, upload as upload_use_cases},
+    application::{response::ApiResult, upload as upload_app},
     middleware::RequireDeployment,
 };
 use common::state::AppState;
@@ -52,7 +52,7 @@ pub async fn upload_image(
             .into());
     }
 
-    let result = match upload_use_cases::upload_image(
+    let result = match upload_app::upload_image(
         &app_state,
         deployment_id,
         &params.image_type,

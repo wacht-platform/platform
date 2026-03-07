@@ -11,14 +11,14 @@ use dto::json::oauth_runtime::{
     OAuthRevokeRequest,
 };
 
-use crate::application::{oauth_runtime as oauth_runtime_use_cases, response::ApiResult};
+use crate::application::{oauth_runtime as oauth_runtime_app, response::ApiResult};
 
 pub async fn oauth_revoke(
     State(app_state): State<AppState>,
     headers: HeaderMap,
     Form(request): Form<OAuthRevokeRequest>,
 ) -> axum::response::Response {
-    oauth_runtime_use_cases::oauth_revoke(app_state, headers, request)
+    oauth_runtime_app::oauth_revoke(app_state, headers, request)
         .await
         .into_response()
 }
@@ -28,7 +28,7 @@ pub async fn oauth_introspect(
     headers: HeaderMap,
     Form(request): Form<OAuthIntrospectRequest>,
 ) -> axum::response::Response {
-    oauth_runtime_use_cases::oauth_introspect(app_state, headers, request)
+    oauth_runtime_app::oauth_introspect(app_state, headers, request)
         .await
         .into_response()
 }
@@ -39,7 +39,7 @@ pub async fn oauth_register_client(
     Json(request): Json<OAuthDynamicClientRegistrationRequest>,
 ) -> ApiResult<OAuthDynamicClientRegistrationResponse> {
     let response =
-        oauth_runtime_use_cases::oauth_register_client(&app_state, &headers, request).await?;
+        oauth_runtime_app::oauth_register_client(&app_state, &headers, request).await?;
     Ok(response.into())
 }
 
@@ -49,7 +49,7 @@ pub async fn oauth_get_registered_client(
     Path(params): Path<OAuthRegisterPathParams>,
 ) -> ApiResult<OAuthDynamicClientRegistrationResponse> {
     let response =
-        oauth_runtime_use_cases::oauth_get_registered_client(&app_state, &headers, params).await?;
+        oauth_runtime_app::oauth_get_registered_client(&app_state, &headers, params).await?;
     Ok(response.into())
 }
 
@@ -59,7 +59,7 @@ pub async fn oauth_update_registered_client(
     Path(params): Path<OAuthRegisterPathParams>,
     Json(request): Json<OAuthDynamicClientUpdateRequest>,
 ) -> ApiResult<OAuthDynamicClientRegistrationResponse> {
-    let response = oauth_runtime_use_cases::oauth_update_registered_client(
+    let response = oauth_runtime_app::oauth_update_registered_client(
         &app_state, &headers, params, request,
     )
     .await?;
@@ -71,6 +71,6 @@ pub async fn oauth_delete_registered_client(
     headers: HeaderMap,
     Path(params): Path<OAuthRegisterPathParams>,
 ) -> ApiResult<()> {
-    oauth_runtime_use_cases::oauth_delete_registered_client(&app_state, &headers, params).await?;
+    oauth_runtime_app::oauth_delete_registered_client(&app_state, &headers, params).await?;
     Ok((StatusCode::NO_CONTENT, ()).into())
 }

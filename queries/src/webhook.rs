@@ -7,6 +7,59 @@ use dto::json::webhook_requests::{
 };
 use models::webhook::{PendingDeliveryRow, WebhookApp, WebhookEndpoint as ModelWebhookEndpoint};
 
+fn parse_endpoint_subscriptions(
+    value: serde_json::Value,
+) -> Result<Vec<WebhookEndpointSubscriptionDTO>, AppError> {
+    let array = value.as_array().ok_or_else(|| {
+        AppError::Internal("Invalid endpoint subscriptions format: expected array".to_string())
+    })?;
+
+    let mut subscriptions = Vec::with_capacity(array.len());
+    for item in array {
+        let event_name = item
+            .get("event_name")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| {
+                AppError::Internal(
+                    "Invalid endpoint subscriptions format: missing event_name".to_string(),
+                )
+            })?
+            .to_string();
+
+        subscriptions.push(WebhookEndpointSubscriptionDTO {
+            event_name,
+            filter_rules: item.get("filter_rules").cloned(),
+        });
+    }
+
+    Ok(subscriptions)
+}
+
+fn map_webhook_endpoint_row(
+    row: sqlx::postgres::PgRow,
+    subscriptions: Vec<WebhookEndpointSubscriptionDTO>,
+) -> WebhookEndpoint {
+    WebhookEndpoint {
+        id: row.get("id"),
+        deployment_id: row.get("deployment_id"),
+        app_slug: row.get("app_slug"),
+        url: row.get("url"),
+        description: row.get("description"),
+        headers: row.get("headers"),
+        is_active: row.get("is_active"),
+        max_retries: row.get("max_retries"),
+        timeout_seconds: row.get("timeout_seconds"),
+        failure_count: row.get("failure_count"),
+        last_failure_at: row.get("last_failure_at"),
+        auto_disabled: row.get("auto_disabled"),
+        auto_disabled_at: row.get("auto_disabled_at"),
+        rate_limit_config: row.get("rate_limit_config"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+        subscriptions,
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookAppsQuery {
     deployment_id: i64,
@@ -303,40 +356,8 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
         let mut out = Vec::with_capacity(rows.len());
         for row in rows {
             let subscriptions_value: serde_json::Value = row.get("subscriptions");
-            let subscriptions: Vec<WebhookEndpointSubscriptionDTO> = subscriptions_value
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|v| WebhookEndpointSubscriptionDTO {
-                    event_name: v
-                        .get("event_name")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    filter_rules: v.get("filter_rules").cloned(),
-                })
-                .collect();
-
-            out.push(WebhookEndpoint {
-                id: row.get("id"),
-                deployment_id: row.get("deployment_id"),
-                app_slug: row.get("app_slug"),
-                url: row.get("url"),
-                description: row.get("description"),
-                headers: row.get("headers"),
-                is_active: row.get("is_active"),
-                max_retries: row.get("max_retries"),
-                timeout_seconds: row.get("timeout_seconds"),
-                failure_count: row.get("failure_count"),
-                last_failure_at: row.get("last_failure_at"),
-                auto_disabled: row.get("auto_disabled"),
-                auto_disabled_at: row.get("auto_disabled_at"),
-                rate_limit_config: row.get("rate_limit_config"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                subscriptions,
-            });
+            let subscriptions = parse_endpoint_subscriptions(subscriptions_value)?;
+            out.push(map_webhook_endpoint_row(row, subscriptions));
         }
 
         Ok(out)
@@ -470,12 +491,16 @@ impl GetWebhookEventsQuery {
         .await?
         .ok_or_else(|| AppError::NotFound("Webhook app not found".to_string()))?;
 
-        let catalog_slug: Option<String> = row.try_get("event_catalog_slug").ok().flatten();
+        let catalog_slug: Option<String> = row
+            .try_get("event_catalog_slug")
+            .map_err(|e| AppError::Internal(format!("Invalid event_catalog_slug field: {}", e)))?;
         if catalog_slug.is_none() {
             return Ok(Vec::new());
         }
 
-        let events_value: Option<serde_json::Value> = row.try_get("events").ok().flatten();
+        let events_value: Option<serde_json::Value> = row
+            .try_get("events")
+            .map_err(|e| AppError::Internal(format!("Invalid events field: {}", e)))?;
         let events_value = events_value
             .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;
 
@@ -602,7 +627,9 @@ impl GetPendingWebhookDeliveryQuery {
 
         let payload_json = row
             .payload
-            .map(|p| serde_json::to_string(&p).unwrap_or_default());
+            .map(|p| serde_json::to_string(&p))
+            .transpose()
+            .map_err(|e| AppError::Internal(format!("Failed to serialize webhook payload: {}", e)))?;
         Ok(dto::clickhouse::webhook::WebhookLog {
             deployment_id: row.deployment_id,
             delivery_id: row.delivery_id,

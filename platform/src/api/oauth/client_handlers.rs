@@ -2,7 +2,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 
-use crate::application::{oauth_client as oauth_client_use_cases, response::ApiResult};
+use crate::application::{oauth_client as oauth_client_app, response::ApiResult};
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 use dto::json::api_key::{
@@ -17,7 +17,7 @@ pub(crate) async fn list_oauth_clients(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthAppPathParams>,
 ) -> ApiResult<ListOAuthClientsResponse> {
-    let clients = oauth_client_use_cases::list_oauth_clients(
+    let clients = oauth_client_app::list_oauth_clients(
         &app_state,
         deployment_id,
         params.oauth_app_slug,
@@ -32,7 +32,7 @@ pub(crate) async fn create_oauth_client(
     Path(params): Path<OAuthAppPathParams>,
     Json(request): Json<CreateOAuthClientRequest>,
 ) -> ApiResult<OAuthClientResponse> {
-    let client = oauth_client_use_cases::create_oauth_client(
+    let client = oauth_client_app::create_oauth_client(
         &app_state,
         deployment_id,
         params.oauth_app_slug,
@@ -49,7 +49,7 @@ pub(crate) async fn update_oauth_client(
     Path(params): Path<OAuthClientPathParams>,
     Json(request): Json<UpdateOAuthClientRequest>,
 ) -> ApiResult<OAuthClientResponse> {
-    let client = oauth_client_use_cases::update_oauth_client(
+    let client = oauth_client_app::update_oauth_client(
         &app_state,
         deployment_id,
         params.oauth_app_slug,
@@ -66,7 +66,7 @@ pub(crate) async fn deactivate_oauth_client(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthClientPathParams>,
 ) -> ApiResult<()> {
-    oauth_client_use_cases::deactivate_oauth_client(
+    oauth_client_app::deactivate_oauth_client(
         &app_state,
         deployment_id,
         params.oauth_app_slug,
@@ -82,7 +82,7 @@ pub(crate) async fn rotate_oauth_client_secret(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthClientPathParams>,
 ) -> ApiResult<RotateOAuthClientSecretResponse> {
-    let response = oauth_client_use_cases::rotate_oauth_client_secret(
+    let response = oauth_client_app::rotate_oauth_client_secret(
         &app_state,
         deployment_id,
         params.oauth_app_slug,

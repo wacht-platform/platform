@@ -75,7 +75,7 @@ fn map_billing_account_with_prefix(row: &sqlx::postgres::PgRow, prefix: &str) ->
 }
 
 fn map_subscription_with_prefix(row: &sqlx::postgres::PgRow, prefix: &str) -> Option<Subscription> {
-    let id: Option<i64> = row.try_get(format!("{prefix}id").as_str()).ok().flatten();
+    let id: Option<i64> = row.get(format!("{prefix}id").as_str());
     id.map(|id| Subscription {
         id,
         billing_account_id: row.get(format!("{prefix}billing_account_id").as_str()),

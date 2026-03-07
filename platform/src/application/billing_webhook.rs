@@ -10,10 +10,13 @@ use commands::{
     email::SendRawEmailCommand,
     pulse::AddPulseCreditsCommand,
 };
-use common::{db_router::ReadConsistency, dodo::DodoClient, state::AppState};
+use common::{
+    db_router::ReadConsistency, dodo::DodoClient, state::AppState,
+};
 use models::pulse_transaction::PulseTransactionType;
 use queries::billing::{GetBillingAccountByProviderCustomerIdQuery, GetBillingAccountQuery};
 use tracing::{error, info, warn};
+use crate::application::deps;
 
 pub async fn handle_dodo_webhook(
     app_state: &AppState,
@@ -156,7 +159,10 @@ async fn send_billing_change_email(app_state: &AppState, owner_id: &str, message
             body_html.clone(),
             Some(body_text.clone()),
         );
-        if let Err(e) = send_email_command.execute_with_deps(app_state).await {
+        if let Err(e) = send_email_command
+            .execute_with_deps(&deps::from_app(app_state).db().enc().postmark())
+            .await
+        {
             warn!(
                 "Failed to send billing change email to {} for {}: {}",
                 email, owner_id, e

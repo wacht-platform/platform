@@ -17,6 +17,7 @@ use queries::{
 use queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery};
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
+use crate::application::deps;
 
 fn paginated_with_has_more<T>(
     data: Vec<T>,
@@ -63,7 +64,7 @@ pub async fn update_deployment_b2b_settings(
     settings: DeploymentB2bSettingsUpdates,
 ) -> Result<(), AppError> {
     UpdateDeploymentB2bSettingsCommand::new(deployment_id, settings)
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().redis())
         .await?;
     Ok(())
 }

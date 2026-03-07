@@ -83,7 +83,9 @@ impl SendEmailCommand {
 
         let smtp_config: Option<CustomSmtpConfig> = deployment
             .custom_smtp_config
-            .and_then(|v| serde_json::from_value(v).ok());
+            .map(|v| serde_json::from_value(v))
+            .transpose()
+            .map_err(|e| AppError::Internal(format!("Invalid custom_smtp_config JSON: {}", e)))?;
 
         if email_provider == EmailProvider::CustomSmtp {
             if let Some(config) = &smtp_config {
@@ -226,7 +228,9 @@ impl SendRawEmailCommand {
 
         let smtp_config: Option<CustomSmtpConfig> = deployment
             .custom_smtp_config
-            .and_then(|v| serde_json::from_value(v).ok());
+            .map(|v| serde_json::from_value(v))
+            .transpose()
+            .map_err(|e| AppError::Internal(format!("Invalid custom_smtp_config JSON: {}", e)))?;
 
         if email_provider == EmailProvider::CustomSmtp {
             if let Some(config) = &smtp_config {

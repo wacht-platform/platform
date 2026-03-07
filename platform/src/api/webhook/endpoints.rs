@@ -12,7 +12,7 @@ use models::webhook::WebhookEndpoint;
 
 use crate::application::{
     response::{ApiResult, PaginatedResponse},
-    webhook_endpoints as webhook_endpoints_use_cases,
+    webhook_endpoints as webhook_endpoints_app,
 };
 use crate::middleware::RequireDeployment;
 
@@ -22,7 +22,7 @@ pub async fn list_webhook_endpoints(
     Path(app_slug): Path<String>,
     Query(params): Query<ListWebhookEndpointsQuery>,
 ) -> ApiResult<PaginatedResponse<WebhookEndpointDto>> {
-    let endpoints = webhook_endpoints_use_cases::list_webhook_endpoints(
+    let endpoints = webhook_endpoints_app::list_webhook_endpoints(
         &app_state,
         deployment_id,
         app_slug,
@@ -39,7 +39,7 @@ pub async fn create_webhook_endpoint(
     Json(request): Json<CreateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
     let endpoint =
-        webhook_endpoints_use_cases::create_webhook_endpoint(&app_state, deployment_id, request)
+        webhook_endpoints_app::create_webhook_endpoint(&app_state, deployment_id, request)
             .await?;
 
     Ok(endpoint.into())
@@ -66,7 +66,7 @@ pub async fn update_webhook_endpoint(
     Path(endpoint_id): Path<i64>,
     Json(request): Json<UpdateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
-    let endpoint = webhook_endpoints_use_cases::update_webhook_endpoint(
+    let endpoint = webhook_endpoints_app::update_webhook_endpoint(
         &app_state,
         deployment_id,
         endpoint_id,
@@ -82,14 +82,14 @@ pub async fn update_webhook_endpoint_for_app(
     Path((app_slug, endpoint_id)): Path<(String, i64)>,
     Json(request): Json<UpdateWebhookEndpointRequest>,
 ) -> ApiResult<WebhookEndpoint> {
-    webhook_endpoints_use_cases::ensure_endpoint_belongs_to_app(
+    webhook_endpoints_app::ensure_endpoint_belongs_to_app(
         &app_state,
         deployment_id,
         app_slug,
         endpoint_id,
     )
     .await
-    .map_err(webhook_endpoints_use_cases::map_error_to_api)?;
+    .map_err(webhook_endpoints_app::map_error_to_api)?;
 
     update_webhook_endpoint(
         State(app_state),
@@ -105,7 +105,7 @@ pub async fn delete_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
 ) -> ApiResult<()> {
-    webhook_endpoints_use_cases::delete_webhook_endpoint(&app_state, deployment_id, endpoint_id)
+    webhook_endpoints_app::delete_webhook_endpoint(&app_state, deployment_id, endpoint_id)
         .await?;
 
     Ok(().into())
@@ -116,14 +116,14 @@ pub async fn delete_webhook_endpoint_for_app(
     RequireDeployment(deployment_id): RequireDeployment,
     Path((app_slug, endpoint_id)): Path<(String, i64)>,
 ) -> ApiResult<()> {
-    webhook_endpoints_use_cases::ensure_endpoint_belongs_to_app(
+    webhook_endpoints_app::ensure_endpoint_belongs_to_app(
         &app_state,
         deployment_id,
         app_slug,
         endpoint_id,
     )
     .await
-    .map_err(webhook_endpoints_use_cases::map_error_to_api)?;
+    .map_err(webhook_endpoints_app::map_error_to_api)?;
 
     delete_webhook_endpoint(
         State(app_state),
@@ -138,7 +138,7 @@ pub async fn reactivate_webhook_endpoint(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(endpoint_id): Path<i64>,
 ) -> ApiResult<ReactivateEndpointResponse> {
-    let response = webhook_endpoints_use_cases::reactivate_webhook_endpoint(
+    let response = webhook_endpoints_app::reactivate_webhook_endpoint(
         &app_state,
         deployment_id,
         endpoint_id,
@@ -154,7 +154,7 @@ pub async fn test_webhook_endpoint(
     Path((_app_name, endpoint_id)): Path<(String, i64)>,
     Json(request): Json<TestWebhookEndpointRequest>,
 ) -> ApiResult<TestWebhookEndpointResponse> {
-    let response = webhook_endpoints_use_cases::test_webhook_endpoint(
+    let response = webhook_endpoints_app::test_webhook_endpoint(
         &app_state,
         deployment_id,
         endpoint_id,

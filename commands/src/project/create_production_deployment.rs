@@ -304,7 +304,9 @@ impl CreateProductionDeploymentCommand {
             email_provider: EmailProvider::from(deployment_row.email_provider),
             custom_smtp_config: deployment_row
                 .custom_smtp_config
-                .and_then(|v| serde_json::from_value(v).ok())
+                .map(|v| serde_json::from_value(v))
+                .transpose()
+                .map_err(|e| AppError::Internal(format!("Invalid custom_smtp_config JSON: {}", e)))?
                 .map(|mut c: CustomSmtpConfig| {
                     c.password = String::new();
                     c

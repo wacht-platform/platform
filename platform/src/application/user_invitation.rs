@@ -7,6 +7,7 @@ use models::{DeploymentInvitation, DeploymentWaitlistUser};
 use queries::{DeploymentInvitationQuery, DeploymentWaitlistQuery};
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
+use crate::application::deps;
 
 pub async fn get_invited_user_list(
     app_state: &AppState,
@@ -55,7 +56,14 @@ pub async fn invite_user(
 ) -> Result<DeploymentInvitation, AppError> {
     InviteUserCommand::new(deployment_id, request)
         .with_invitation_id(app_state.sf.next_id()? as i64)
-        .execute_with_deps(app_state)
+        .execute_with_deps(
+            &deps::from_app(app_state)
+                .db()
+                .id()
+                .template()
+                .postmark()
+                .enc(),
+        )
         .await
 }
 
@@ -78,6 +86,13 @@ pub async fn approve_waitlist_user(
 ) -> Result<DeploymentInvitation, AppError> {
     ApproveWaitlistUserCommand::new(deployment_id, waitlist_user_id)
         .with_invitation_id(app_state.sf.next_id()? as i64)
-        .execute_with_deps(app_state)
+        .execute_with_deps(
+            &deps::from_app(app_state)
+                .db()
+                .id()
+                .template()
+                .postmark()
+                .enc(),
+        )
         .await
 }

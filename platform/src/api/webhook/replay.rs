@@ -8,7 +8,7 @@ use dto::json::webhook_requests::{
     ReplayTaskStatusResponse, ReplayWebhookDeliveryRequest, ReplayWebhookDeliveryResponse,
 };
 
-use crate::application::{response::ApiResult, webhook_replay as webhook_replay_use_cases};
+use crate::application::{response::ApiResult, webhook_replay as webhook_replay_app};
 use crate::middleware::RequireDeployment;
 
 pub async fn replay_webhook_delivery(
@@ -17,7 +17,7 @@ pub async fn replay_webhook_delivery(
     Path(app_slug): Path<String>,
     Json(request): Json<ReplayWebhookDeliveryRequest>,
 ) -> ApiResult<ReplayWebhookDeliveryResponse> {
-    let response = webhook_replay_use_cases::replay_webhook_delivery(
+    let response = webhook_replay_app::replay_webhook_delivery(
         &app_state,
         deployment_id,
         app_slug,
@@ -33,7 +33,7 @@ pub async fn get_webhook_replay_task_status(
     RequireDeployment(deployment_id): RequireDeployment,
     Path((app_slug, task_id)): Path<(String, String)>,
 ) -> ApiResult<ReplayTaskStatusResponse> {
-    let response = webhook_replay_use_cases::get_webhook_replay_task_status(
+    let response = webhook_replay_app::get_webhook_replay_task_status(
         &app_state,
         deployment_id,
         app_slug,
@@ -49,7 +49,7 @@ pub async fn cancel_webhook_replay_task(
     RequireDeployment(deployment_id): RequireDeployment,
     Path((app_slug, task_id)): Path<(String, String)>,
 ) -> ApiResult<ReplayTaskCancelResponse> {
-    let response = webhook_replay_use_cases::cancel_webhook_replay_task(
+    let response = webhook_replay_app::cancel_webhook_replay_task(
         &app_state,
         deployment_id,
         app_slug,
@@ -66,7 +66,7 @@ pub async fn list_webhook_replay_tasks(
     Path(app_slug): Path<String>,
     Query(params): Query<ReplayTaskListQuery>,
 ) -> ApiResult<ReplayTaskListResponse> {
-    let response = webhook_replay_use_cases::list_webhook_replay_tasks(
+    let response = webhook_replay_app::list_webhook_replay_tasks(
         &app_state,
         deployment_id,
         app_slug,

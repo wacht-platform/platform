@@ -1,12 +1,17 @@
 use chrono::{DateTime, Utc};
 use common::error::AppError;
 use models::api_key::{ApiKey, ApiKeyWithSecret};
+use serde::de::DeserializeOwned;
 use queries::api_key::{
     GetApiAuthAppBySlugQuery, GetOrganizationMembershipIdByUserAndOrganizationQuery,
     GetOrganizationMembershipPermissionsQuery, GetWorkspaceMembershipIdByUserAndWorkspaceQuery,
     GetWorkspaceMembershipPermissionsQuery,
 };
 use sha2::{Digest, Sha256};
+
+fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
+    serde_json::from_value(value).unwrap_or_default()
+}
 
 pub struct CreateApiKeyCommand {
     pub key_id: Option<i64>,
@@ -178,12 +183,7 @@ impl CreateApiKeyCommand {
             key_prefix: rec.key_prefix,
             key_suffix: rec.key_suffix,
             key_hash: rec.key_hash,
-            permissions: serde_json::from_value(
-                rec.permissions
-                    .clone()
-                    .unwrap_or_else(|| serde_json::json!([])),
-            )
-            .unwrap_or_default(),
+            permissions: json_default(rec.permissions.clone().unwrap_or_else(|| serde_json::json!([]))),
             metadata: rec
                 .metadata
                 .clone()
@@ -198,12 +198,12 @@ impl CreateApiKeyCommand {
             org_role_permissions: if rec.org_role_permissions.is_null() {
                 vec![]
             } else {
-                serde_json::from_value(rec.org_role_permissions.clone()).unwrap_or_default()
+                json_default(rec.org_role_permissions.clone())
             },
             workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
                 vec![]
             } else {
-                serde_json::from_value(rec.workspace_role_permissions.clone()).unwrap_or_default()
+                json_default(rec.workspace_role_permissions.clone())
             },
             expires_at: rec.expires_at,
             last_used_at: rec.last_used_at,
@@ -309,12 +309,7 @@ impl RotateApiKeyCommand {
             key_prefix: rec.key_prefix,
             key_suffix: rec.key_suffix,
             key_hash: String::new(), // Not needed for rotation
-            permissions: serde_json::from_value(
-                rec.permissions
-                    .clone()
-                    .unwrap_or_else(|| serde_json::json!([])),
-            )
-            .unwrap_or_default(),
+            permissions: json_default(rec.permissions.clone().unwrap_or_else(|| serde_json::json!([]))),
             metadata: rec
                 .metadata
                 .clone()
@@ -329,12 +324,12 @@ impl RotateApiKeyCommand {
             org_role_permissions: if rec.org_role_permissions.is_null() {
                 vec![]
             } else {
-                serde_json::from_value(rec.org_role_permissions.clone()).unwrap_or_default()
+                json_default(rec.org_role_permissions.clone())
             },
             workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
                 vec![]
             } else {
-                serde_json::from_value(rec.workspace_role_permissions.clone()).unwrap_or_default()
+                json_default(rec.workspace_role_permissions.clone())
             },
             expires_at: rec.expires_at,
             last_used_at: None,

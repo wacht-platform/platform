@@ -3,7 +3,7 @@ use axum::{
     extract::{Path, State},
 };
 
-use crate::application::{b2b_membership as b2b_membership_use_cases, response::ApiResult};
+use crate::application::{b2b_membership as b2b_membership_app, response::ApiResult};
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 use dto::json::b2b::{
@@ -24,7 +24,7 @@ pub async fn add_organization_member(
     Path(params): Path<OrganizationParams>,
     Json(request): Json<AddOrganizationMemberRequest>,
 ) -> ApiResult<OrganizationMemberDetails> {
-    let member = b2b_membership_use_cases::add_organization_member(
+    let member = b2b_membership_app::add_organization_member(
         &app_state,
         deployment_id,
         params.organization_id,
@@ -41,7 +41,7 @@ pub async fn update_organization_member(
     Path(params): Path<OrganizationMemberParams>,
     Json(request): Json<UpdateOrganizationMemberRequest>,
 ) -> ApiResult<()> {
-    b2b_membership_use_cases::update_organization_member(
+    b2b_membership_app::update_organization_member(
         &app_state,
         deployment_id,
         params.organization_id,
@@ -58,7 +58,7 @@ pub async fn remove_organization_member(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OrganizationMemberParams>,
 ) -> ApiResult<()> {
-    b2b_membership_use_cases::remove_organization_member(
+    b2b_membership_app::remove_organization_member(
         &app_state,
         deployment_id,
         params.organization_id,
@@ -75,7 +75,7 @@ pub async fn create_organization_role(
     Path(params): Path<OrganizationParams>,
     Json(request): Json<CreateOrganizationRoleRequest>,
 ) -> ApiResult<OrganizationRole> {
-    let role = b2b_membership_use_cases::create_organization_role(
+    let role = b2b_membership_app::create_organization_role(
         &app_state,
         deployment_id,
         params.organization_id,
@@ -92,7 +92,7 @@ pub async fn update_organization_role(
     Path(params): Path<OrganizationRoleParams>,
     Json(request): Json<UpdateOrganizationRoleRequest>,
 ) -> ApiResult<OrganizationRole> {
-    let role = b2b_membership_use_cases::update_organization_role(
+    let role = b2b_membership_app::update_organization_role(
         &app_state,
         deployment_id,
         params.organization_id,
@@ -109,7 +109,7 @@ pub async fn delete_organization_role(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OrganizationRoleParams>,
 ) -> ApiResult<()> {
-    b2b_membership_use_cases::delete_organization_role(
+    b2b_membership_app::delete_organization_role(
         &app_state,
         deployment_id,
         params.organization_id,
@@ -126,7 +126,7 @@ pub async fn create_workspace_role(
     Path(params): Path<WorkspaceParams>,
     Json(request): Json<CreateWorkspaceRoleRequest>,
 ) -> ApiResult<WorkspaceRole> {
-    let role = b2b_membership_use_cases::create_workspace_role(
+    let role = b2b_membership_app::create_workspace_role(
         &app_state,
         deployment_id,
         params.workspace_id,
@@ -143,7 +143,7 @@ pub async fn update_workspace_role(
     Path(params): Path<WorkspaceRoleParams>,
     Json(request): Json<UpdateWorkspaceRoleRequest>,
 ) -> ApiResult<WorkspaceRole> {
-    let role = b2b_membership_use_cases::update_workspace_role(
+    let role = b2b_membership_app::update_workspace_role(
         &app_state,
         deployment_id,
         params.workspace_id,
@@ -160,7 +160,7 @@ pub async fn delete_workspace_role(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WorkspaceRoleParams>,
 ) -> ApiResult<()> {
-    b2b_membership_use_cases::delete_workspace_role(
+    b2b_membership_app::delete_workspace_role(
         &app_state,
         deployment_id,
         params.workspace_id,
@@ -177,7 +177,7 @@ pub async fn add_workspace_member(
     Path(params): Path<WorkspaceParams>,
     Json(request): Json<AddWorkspaceMemberRequest>,
 ) -> ApiResult<WorkspaceMemberDetails> {
-    let member = b2b_membership_use_cases::add_workspace_member(
+    let member = b2b_membership_app::add_workspace_member(
         &app_state,
         deployment_id,
         params.workspace_id,
@@ -194,7 +194,7 @@ pub async fn update_workspace_member(
     Path(params): Path<WorkspaceMemberParams>,
     Json(request): Json<UpdateWorkspaceMemberRequest>,
 ) -> ApiResult<()> {
-    b2b_membership_use_cases::update_workspace_member(
+    b2b_membership_app::update_workspace_member(
         &app_state,
         deployment_id,
         params.workspace_id,
@@ -211,7 +211,7 @@ pub async fn remove_workspace_member(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<WorkspaceMemberParams>,
 ) -> ApiResult<()> {
-    b2b_membership_use_cases::remove_workspace_member(
+    b2b_membership_app::remove_workspace_member(
         &app_state,
         deployment_id,
         params.workspace_id,

@@ -3,6 +3,10 @@ use common::error::AppError;
 use models::billing_invoice::{BillingInvoice, InvoiceStatus};
 use serde_json::Value;
 
+fn require_opt<T>(value: Option<T>, field: &str) -> Result<T, AppError> {
+    value.ok_or_else(|| AppError::Internal(format!("Missing required field: {}", field)))
+}
+
 pub struct UpsertInvoiceCommand {
     pub id: Option<i64>,
     pub owner_id: String,
@@ -93,9 +97,9 @@ impl UpsertInvoiceCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, executor: A) -> Result<BillingInvoice, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<BillingInvoice, AppError>
     where
-        A: sqlx::Executor<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let invoice_id = self
             .id
@@ -262,24 +266,21 @@ impl UpsertInvoiceCommand {
             ));
         }
 
-        let parsed_status: InvoiceStatus = row
-            .status
-            .as_deref()
-            .unwrap_or("draft")
+        let parsed_status: InvoiceStatus = require_opt(row.status.as_deref(), "status")?
             .parse()
-            .unwrap_or(InvoiceStatus::Draft);
+            .map_err(|e| AppError::Validation(format!("Invalid invoice status: {}", e)))?;
 
         Ok(BillingInvoice {
             id: row.id.unwrap_or(invoice_id),
-            created_at: row.created_at.unwrap_or_else(Utc::now),
-            updated_at: row.updated_at.unwrap_or_else(Utc::now),
-            billing_account_id: row.billing_account_id.unwrap_or_default(),
+            created_at: require_opt(row.created_at, "created_at")?,
+            updated_at: require_opt(row.updated_at, "updated_at")?,
+            billing_account_id: require_opt(row.billing_account_id, "billing_account_id")?,
             subscription_id: row.subscription_id,
-            provider_payment_id: row.provider_payment_id.unwrap_or_default(),
-            provider_customer_id: row.provider_customer_id.unwrap_or_default(),
-            amount_due_cents: row.amount_due_cents.unwrap_or_default(),
-            amount_paid_cents: row.amount_paid_cents.unwrap_or_default(),
-            currency: row.currency.unwrap_or_default(),
+            provider_payment_id: require_opt(row.provider_payment_id, "provider_payment_id")?,
+            provider_customer_id: require_opt(row.provider_customer_id, "provider_customer_id")?,
+            amount_due_cents: require_opt(row.amount_due_cents, "amount_due_cents")?,
+            amount_paid_cents: require_opt(row.amount_paid_cents, "amount_paid_cents")?,
+            currency: require_opt(row.currency, "currency")?,
             status: parsed_status,
             invoice_pdf_url: row.invoice_pdf_url,
             hosted_invoice_url: row.hosted_invoice_url,
@@ -288,7 +289,7 @@ impl UpsertInvoiceCommand {
             paid_at: row.paid_at,
             period_start: row.period_start,
             period_end: row.period_end,
-            attempt_count: row.attempt_count.unwrap_or(0),
+            attempt_count: require_opt(row.attempt_count, "attempt_count")?,
             next_payment_attempt: row.next_payment_attempt,
             metadata: row.metadata.unwrap_or_else(|| serde_json::json!({})),
         })

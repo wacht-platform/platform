@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use common::error::AppError;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +25,10 @@ pub struct ApiKeyGatewayData {
 
 pub struct GetApiKeyGatewayDataQuery {
     pub key_hash: String,
+}
+
+fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
+    serde_json::from_value(value).unwrap_or_default()
 }
 
 impl GetApiKeyGatewayDataQuery {
@@ -79,21 +84,16 @@ impl GetApiKeyGatewayDataQuery {
             owner_user_id: r.owner_user_id,
             is_active: r.is_active.unwrap_or(true),
             expires_at: r.expires_at,
-            permissions: serde_json::from_value(
-                r.permissions
-                    .clone()
-                    .unwrap_or_else(|| serde_json::json!([])),
-            )
-            .unwrap_or_default(),
+            permissions: json_default(r.permissions.clone().unwrap_or_else(|| serde_json::json!([]))),
             org_role_permissions: if r.org_role_permissions.is_null() {
                 vec![]
             } else {
-                serde_json::from_value(r.org_role_permissions.clone()).unwrap_or_default()
+                json_default(r.org_role_permissions.clone())
             },
             workspace_role_permissions: if r.workspace_role_permissions.is_null() {
                 vec![]
             } else {
-                serde_json::from_value(r.workspace_role_permissions.clone()).unwrap_or_default()
+                json_default(r.workspace_role_permissions.clone())
             },
             metadata: r.metadata.clone().unwrap_or_else(|| serde_json::json!({})),
             rate_limit_scheme_slug: r.rate_limit_scheme_slug,

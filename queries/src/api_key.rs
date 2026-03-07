@@ -1,6 +1,11 @@
 use common::error::AppError;
 use models::api_key::{ApiAuthApp, ApiKey, ApiKeyWithIdentifers};
+use serde::de::DeserializeOwned;
 use sqlx::Row;
+
+fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
+    serde_json::from_value(value).unwrap_or_default()
+}
 
 fn api_auth_app_base_query(where_clause: &str, order_clause: &str) -> String {
     format!(
@@ -60,7 +65,7 @@ fn map_api_auth_app(row: &sqlx::postgres::PgRow) -> ApiAuthApp {
             .unwrap_or_default(),
         resources: serde_json::from_value(resources.unwrap_or_else(|| serde_json::json!([])))
             .unwrap_or_default(),
-        rate_limits: serde_json::from_value(rate_limits).unwrap_or_default(),
+        rate_limits: json_default(rate_limits),
         rate_limit_scheme_slug: row.get("rate_limit_scheme_slug"),
         created_at: row
             .get::<Option<chrono::DateTime<chrono::Utc>>, _>("created_at")
@@ -91,7 +96,7 @@ fn map_api_key(row: &sqlx::postgres::PgRow) -> ApiKey {
         permissions: serde_json::from_value(permissions.unwrap_or_else(|| serde_json::json!([])))
             .unwrap_or_default(),
         metadata: metadata.unwrap_or_else(|| serde_json::json!({})),
-        rate_limits: serde_json::from_value(rate_limits).unwrap_or_default(),
+        rate_limits: json_default(rate_limits),
         rate_limit_scheme_slug: row.get("rate_limit_scheme_slug"),
         owner_user_id: row.get("owner_user_id"),
         organization_id: row.get("organization_id"),
@@ -315,21 +320,16 @@ impl GetApiKeyIdentifiersByHashQuery {
         Ok(rec.map(|rec| ApiKeyWithIdentifers {
             id: rec.id,
             app_slug: rec.app_slug,
-            permissions: serde_json::from_value(
-                rec.permissions
-                    .clone()
-                    .unwrap_or_else(|| serde_json::json!([])),
-            )
-            .unwrap_or_default(),
+            permissions: json_default(rec.permissions.clone().unwrap_or_else(|| serde_json::json!([]))),
             org_role_permissions: if rec.org_role_permissions.is_null() {
                 vec![]
             } else {
-                serde_json::from_value(rec.org_role_permissions.clone()).unwrap_or_default()
+                json_default(rec.org_role_permissions.clone())
             },
             workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
                 vec![]
             } else {
-                serde_json::from_value(rec.workspace_role_permissions.clone()).unwrap_or_default()
+                json_default(rec.workspace_role_permissions.clone())
             },
             organization_id: rec.organization_id,
             workspace_id: rec.workspace_id,

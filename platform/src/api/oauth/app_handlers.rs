@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use models::api_key::OAuthScopeDefinition;
 
 use crate::api::multipart::MultipartPayload;
-use crate::application::{oauth_app as oauth_app_use_cases, response::ApiResult};
+use crate::application::{oauth_app as oauth_app_app, response::ApiResult};
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 use dto::json::api_key::{
@@ -15,7 +15,7 @@ use super::types::OAuthAppPathParams;
 
 async fn parse_create_oauth_app_input(
     multipart: Multipart,
-) -> Result<oauth_app_use_cases::CreateOAuthAppInput, crate::application::response::ApiErrorResponse>
+) -> Result<oauth_app_app::CreateOAuthAppInput, crate::application::response::ApiErrorResponse>
 {
     let mut slug: Option<String> = None;
     let mut name: Option<String> = None;
@@ -72,7 +72,7 @@ async fn parse_create_oauth_app_input(
     let slug = slug.ok_or((StatusCode::BAD_REQUEST, "slug is required"))?;
     let name = name.ok_or((StatusCode::BAD_REQUEST, "name is required"))?;
 
-    Ok(oauth_app_use_cases::CreateOAuthAppInput {
+    Ok(oauth_app_app::CreateOAuthAppInput {
         slug,
         name,
         description,
@@ -89,7 +89,7 @@ pub(crate) async fn verify_oauth_app_domain(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthAppPathParams>,
 ) -> ApiResult<VerifyOAuthAppDomainResponse> {
-    let result = oauth_app_use_cases::verify_oauth_app_domain(
+    let result = oauth_app_app::verify_oauth_app_domain(
         &app_state,
         deployment_id,
         params.oauth_app_slug,
@@ -102,7 +102,7 @@ pub async fn list_oauth_apps(
     State(app_state): State<AppState>,
     RequireDeployment(deployment_id): RequireDeployment,
 ) -> ApiResult<ListOAuthAppsResponse> {
-    let apps = oauth_app_use_cases::list_oauth_apps(&app_state, deployment_id).await?;
+    let apps = oauth_app_app::list_oauth_apps(&app_state, deployment_id).await?;
     Ok(apps.into())
 }
 
@@ -112,7 +112,7 @@ pub async fn create_oauth_app(
     multipart: Multipart,
 ) -> ApiResult<OAuthAppResponse> {
     let input = parse_create_oauth_app_input(multipart).await?;
-    let app = oauth_app_use_cases::create_oauth_app(&app_state, deployment_id, input).await?;
+    let app = oauth_app_app::create_oauth_app(&app_state, deployment_id, input).await?;
     Ok(app.into())
 }
 
@@ -122,7 +122,7 @@ pub(crate) async fn update_oauth_app(
     Path(params): Path<OAuthAppPathParams>,
     Json(request): Json<UpdateOAuthAppRequest>,
 ) -> ApiResult<OAuthAppResponse> {
-    let app = oauth_app_use_cases::update_oauth_app(
+    let app = oauth_app_app::update_oauth_app(
         &app_state,
         deployment_id,
         params.oauth_app_slug,

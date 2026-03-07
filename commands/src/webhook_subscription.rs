@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::query;
 
-use common::error::AppError;
+use common::{HasRedis, error::AppError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EndpointWithRules {
@@ -115,8 +115,11 @@ pub struct InvalidateEndpointCacheCommand {
 }
 
 impl InvalidateEndpointCacheCommand {
-    pub async fn execute_with_deps(self, redis_client: &redis::Client) -> Result<(), AppError> {
-        if let Ok(mut redis_conn) = redis_client.get_multiplexed_async_connection().await {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasRedis,
+    {
+        if let Ok(mut redis_conn) = deps.redis_client().get_multiplexed_async_connection().await {
             for event_name in self.event_names {
                 let cache_key = format!(
                     "webhook:subs:{}:{}:{}",

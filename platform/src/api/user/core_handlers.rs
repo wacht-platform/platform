@@ -2,7 +2,7 @@ use crate::{
     api::multipart::{MultipartField, MultipartPayload},
     application::{
         response::{ApiErrorResponse, ApiResult, PaginatedResponse},
-        user_core as user_core_use_cases,
+        user_core as user_core_app,
     },
     middleware::RequireDeployment,
 };
@@ -41,7 +41,7 @@ pub async fn get_active_user_list(
     QueryParams(params): QueryParams<ActiveUserListQueryParams>,
 ) -> ApiResult<PaginatedResponse<UserWithIdentifiers>> {
     let users =
-        user_core_use_cases::get_active_user_list(&app_state, deployment_id, params).await?;
+        user_core_app::get_active_user_list(&app_state, deployment_id, params).await?;
     Ok(users.into())
 }
 
@@ -51,7 +51,7 @@ pub async fn get_user_details(
     Path(params): Path<UserParams>,
 ) -> ApiResult<UserDetails> {
     let user_details =
-        user_core_use_cases::get_user_details(&app_state, deployment_id, params.user_id).await?;
+        user_core_app::get_user_details(&app_state, deployment_id, params.user_id).await?;
     Ok(user_details.into())
 }
 
@@ -94,7 +94,7 @@ pub async fn create_user(
     validate_create_user_request(&app_state, deployment_id, &request).await?;
 
     let user =
-        user_core_use_cases::create_user(&app_state, deployment_id, request, profile_image_data)
+        user_core_app::create_user(&app_state, deployment_id, request, profile_image_data)
             .await?;
     Ok(user.into())
 }
@@ -167,7 +167,7 @@ pub async fn update_user(
 
     validate_update_user_request(&app_state, deployment_id, &request).await?;
 
-    let user_details = user_core_use_cases::update_user(
+    let user_details = user_core_app::update_user(
         &app_state,
         deployment_id,
         params.user_id,
@@ -186,7 +186,7 @@ pub async fn update_user_password(
     Path(params): Path<UserParams>,
     Json(request): Json<UpdatePasswordRequest>,
 ) -> ApiResult<()> {
-    user_core_use_cases::update_user_password(&app_state, deployment_id, params.user_id, request)
+    user_core_app::update_user_password(&app_state, deployment_id, params.user_id, request)
         .await?;
     Ok(().into())
 }
@@ -196,7 +196,7 @@ pub async fn delete_user(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<UserParams>,
 ) -> ApiResult<()> {
-    user_core_use_cases::delete_user(&app_state, deployment_id, params.user_id).await?;
+    user_core_app::delete_user(&app_state, deployment_id, params.user_id).await?;
     Ok(().into())
 }
 
@@ -206,6 +206,6 @@ pub async fn impersonate_user(
     Path(params): Path<UserParams>,
 ) -> ApiResult<commands::GenerateImpersonationTokenResponse> {
     let response =
-        user_core_use_cases::impersonate_user(&app_state, deployment_id, params.user_id).await?;
+        user_core_app::impersonate_user(&app_state, deployment_id, params.user_id).await?;
     Ok(response.into())
 }

@@ -1,6 +1,6 @@
 use axum::{extract::State, response::Json};
 
-use crate::application::{billing as billing_use_cases, response::ApiResult};
+use crate::application::{billing as billing_app, response::ApiResult};
 use common::state::AppState;
 use wacht::middleware::RequireAuth;
 
@@ -15,10 +15,10 @@ pub async fn create_checkout(
     Json(req): Json<CreateCheckoutRequest>,
 ) -> ApiResult<CheckoutResponse> {
     let owner_id = owner_id_from_auth(&auth);
-    let result = billing_use_cases::create_checkout(
+    let result = billing_app::create_checkout(
         &state,
         &owner_id,
-        billing_use_cases::CreateCheckoutInput {
+        billing_app::CreateCheckoutInput {
             plan_name: req.plan_name,
             legal_name: req.legal_name,
             billing_email: req.billing_email,
@@ -43,10 +43,10 @@ pub async fn change_plan(
     Json(req): Json<ChangePlanRequest>,
 ) -> ApiResult<CheckoutResponse> {
     let owner_id = owner_id_from_auth(&auth);
-    let result = billing_use_cases::change_plan(
+    let result = billing_app::change_plan(
         &state,
         &owner_id,
-        billing_use_cases::ChangePlanInput {
+        billing_app::ChangePlanInput {
             plan_name: req.plan_name,
             proration_mode: req.proration_mode,
             return_url: req.return_url,
@@ -68,10 +68,10 @@ pub async fn create_pulse_checkout(
     Json(req): Json<CreatePulseCheckoutRequest>,
 ) -> ApiResult<CheckoutResponse> {
     let owner_id = owner_id_from_auth(&auth);
-    let result = billing_use_cases::create_pulse_checkout(
+    let result = billing_app::create_pulse_checkout(
         &state,
         &owner_id,
-        billing_use_cases::CreatePulseCheckoutInput {
+        billing_app::CreatePulseCheckoutInput {
             pulse_amount: req.pulse_amount,
             return_url: req.return_url,
         },

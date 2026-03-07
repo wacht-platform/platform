@@ -3999,6 +3999,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sonyflake",
  "tiktoken-rs 0.5.9",
  "tokio",
  "tokio-stream",

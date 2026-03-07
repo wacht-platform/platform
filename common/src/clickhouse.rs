@@ -75,6 +75,8 @@ pub struct AnalyticsStatsResult {
     pub recent_signups: (Vec<String>, Vec<String>, Vec<String>, Vec<String>),
     // Recent signins - Tuple from single subquery: (names, emails, methods, timestamps)
     pub recent_signins: (Vec<String>, Vec<String>, Vec<String>, Vec<String>),
+    // Daily metrics - Tuple from single subquery: (days, signins, signups)
+    pub daily_metrics: (Vec<String>, Vec<u64>, Vec<u64>),
 }
 
 impl AnalyticsStatsResult {
@@ -119,6 +121,16 @@ impl AnalyticsStatsResult {
                     date: parsed_date,
                 })
             })
+            .collect()
+    }
+
+    pub fn get_daily_metrics(&self) -> Vec<(String, u64, u64)> {
+        self.daily_metrics
+            .0
+            .iter()
+            .zip(&self.daily_metrics.1)
+            .zip(&self.daily_metrics.2)
+            .map(|((day, signins), signups)| (day.clone(), *signins, *signups))
             .collect()
     }
 }
@@ -431,7 +443,21 @@ impl ClickHouseService {
                        FROM user_events
                        WHERE deployment_id = ? AND event_type = 'signin'
                        ORDER BY timestamp DESC
-                       LIMIT 10)) as recent_signins
+                       LIMIT 10)) as recent_signins,
+                (SELECT groupArray(day), groupArray(signins), groupArray(signups)
+                 FROM (
+                       SELECT
+                           formatDateTime(toDate(timestamp), '%Y-%m-%d') as day,
+                           countDistinctIf(user_id, event_type = 'signin' AND user_id IS NOT NULL) as signins,
+                           countIf(event_type = 'signup') as signups
+                       FROM user_events
+                       WHERE deployment_id = ?
+                         AND timestamp >= fromUnixTimestamp64Milli(?*1000)
+                         AND timestamp <= fromUnixTimestamp64Milli(?*1000)
+                         AND event_type IN ('signin', 'signup')
+                       GROUP BY toDate(timestamp)
+                       ORDER BY toDate(timestamp) ASC
+                 )) as daily_metrics
             FROM user_events
             WHERE deployment_id = ?
                 AND ((timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000)) OR (timestamp >= fromUnixTimestamp64Milli(?*1000) AND timestamp <= fromUnixTimestamp64Milli(?*1000)))
@@ -458,6 +484,9 @@ impl ClickHouseService {
             .bind(prev_to_ts)
             .bind(deployment_id)
             .bind(deployment_id)
+            .bind(deployment_id)
+            .bind(from_ts)
+            .bind(to_ts)
             .bind(deployment_id)
             .bind(from_ts)
             .bind(to_ts)

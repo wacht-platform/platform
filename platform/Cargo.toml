@@ -65,3 +65,4 @@ quick-xml = { version = "0.38.0", features = ["serialize"] }
 tokio-stream = "0.1"
 urlencoding = "2.1"
 regex = "1.10"
+sonyflake = "0.3"

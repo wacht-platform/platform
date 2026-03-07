@@ -138,8 +138,7 @@ impl AddOrganizationMemberCommand {
             member_details.user_id
         )
         .fetch_all(&mut *tx)
-        .await
-        .unwrap_or_default();
+        .await?;
 
         let roles = role_rows
             .into_iter()

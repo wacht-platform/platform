@@ -5,7 +5,7 @@ use axum::{
 use common::state::AppState;
 use dto::json::webhook_requests::{TriggerWebhookEventRequest, TriggerWebhookEventResponse};
 
-use crate::application::{response::ApiResult, webhook_dispatch as webhook_dispatch_use_cases};
+use crate::application::{response::ApiResult, webhook_dispatch as webhook_dispatch_app};
 use crate::middleware::RequireDeployment;
 
 pub async fn trigger_webhook_event(
@@ -14,7 +14,7 @@ pub async fn trigger_webhook_event(
     Path(app_slug): Path<String>,
     Json(request): Json<TriggerWebhookEventRequest>,
 ) -> ApiResult<TriggerWebhookEventResponse> {
-    let response = webhook_dispatch_use_cases::trigger_webhook_event(
+    let response = webhook_dispatch_app::trigger_webhook_event(
         &app_state,
         deployment_id,
         app_slug,

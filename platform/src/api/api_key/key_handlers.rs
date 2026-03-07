@@ -1,6 +1,6 @@
 use axum::extract::{Json, Path, Query, State};
 
-use crate::application::{api_key_key as api_key_key_use_cases, response::ApiResult};
+use crate::application::{api_key_key as api_key_key_app, response::ApiResult};
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 use dto::json::api_key::*;
@@ -13,7 +13,7 @@ pub async fn list_api_keys(
     Query(params): Query<ListApiKeysQuery>,
 ) -> ApiResult<ListApiKeysResponse> {
     let keys =
-        api_key_key_use_cases::list_api_keys(&app_state, deployment_id, app_slug, params).await?;
+        api_key_key_app::list_api_keys(&app_state, deployment_id, app_slug, params).await?;
     Ok(keys.into())
 }
 
@@ -24,7 +24,7 @@ pub async fn create_api_key(
     Json(request): Json<CreateApiKeyRequest>,
 ) -> ApiResult<ApiKeyWithSecret> {
     let key =
-        api_key_key_use_cases::create_api_key(&app_state, deployment_id, app_slug, request).await?;
+        api_key_key_app::create_api_key(&app_state, deployment_id, app_slug, request).await?;
     Ok(key.into())
 }
 
@@ -33,7 +33,7 @@ pub async fn revoke_api_key(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<RevokeApiKeyRequest>,
 ) -> ApiResult<()> {
-    api_key_key_use_cases::revoke_api_key(&app_state, deployment_id, request).await?;
+    api_key_key_app::revoke_api_key(&app_state, deployment_id, request).await?;
     Ok(().into())
 }
 
@@ -43,7 +43,7 @@ pub async fn revoke_api_key_for_app(
     Path((app_slug, key_id)): Path<(String, i64)>,
     Json(request): Json<RevokeApiKeyRequest>,
 ) -> ApiResult<()> {
-    api_key_key_use_cases::revoke_api_key_for_app(
+    api_key_key_app::revoke_api_key_for_app(
         &app_state,
         deployment_id,
         app_slug,
@@ -60,7 +60,7 @@ pub async fn rotate_api_key(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<RotateApiKeyRequest>,
 ) -> ApiResult<ApiKeyWithSecret> {
-    let key = api_key_key_use_cases::rotate_api_key(&app_state, deployment_id, request).await?;
+    let key = api_key_key_app::rotate_api_key(&app_state, deployment_id, request).await?;
     Ok(key.into())
 }
 
@@ -70,7 +70,7 @@ pub async fn rotate_api_key_for_app(
     Path((app_slug, key_id)): Path<(String, i64)>,
 ) -> ApiResult<ApiKeyWithSecret> {
     let key =
-        api_key_key_use_cases::rotate_api_key_for_app(&app_state, deployment_id, app_slug, key_id)
+        api_key_key_app::rotate_api_key_for_app(&app_state, deployment_id, app_slug, key_id)
             .await?;
     Ok(key.into())
 }

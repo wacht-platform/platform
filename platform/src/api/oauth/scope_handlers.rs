@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 
-use crate::application::{oauth_scope as oauth_scope_use_cases, response::ApiResult};
+use crate::application::{oauth_scope as oauth_scope_app, response::ApiResult};
 use crate::middleware::RequireDeployment;
 use common::state::AppState;
 use dto::json::api_key::{OAuthAppResponse, SetOAuthScopeMappingRequest, UpdateOAuthScopeRequest};
@@ -14,7 +14,7 @@ pub(crate) async fn update_oauth_scope(
     Path(params): Path<OAuthScopePathParams>,
     Json(request): Json<UpdateOAuthScopeRequest>,
 ) -> ApiResult<OAuthAppResponse> {
-    let app = oauth_scope_use_cases::update_oauth_scope(
+    let app = oauth_scope_app::update_oauth_scope(
         &app_state,
         deployment_id,
         params.oauth_app_slug,
@@ -30,7 +30,7 @@ pub(crate) async fn archive_oauth_scope(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthScopePathParams>,
 ) -> ApiResult<OAuthAppResponse> {
-    let app = oauth_scope_use_cases::archive_oauth_scope(
+    let app = oauth_scope_app::archive_oauth_scope(
         &app_state,
         deployment_id,
         params.oauth_app_slug,
@@ -45,7 +45,7 @@ pub(crate) async fn unarchive_oauth_scope(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<OAuthScopePathParams>,
 ) -> ApiResult<OAuthAppResponse> {
-    let app = oauth_scope_use_cases::unarchive_oauth_scope(
+    let app = oauth_scope_app::unarchive_oauth_scope(
         &app_state,
         deployment_id,
         params.oauth_app_slug,
@@ -61,7 +61,7 @@ pub(crate) async fn set_oauth_scope_mapping(
     Path(params): Path<OAuthScopePathParams>,
     Json(request): Json<SetOAuthScopeMappingRequest>,
 ) -> ApiResult<OAuthAppResponse> {
-    let app = oauth_scope_use_cases::set_oauth_scope_mapping(
+    let app = oauth_scope_app::set_oauth_scope_mapping(
         &app_state,
         deployment_id,
         params.oauth_app_slug,

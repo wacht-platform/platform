@@ -449,22 +449,28 @@ impl GetUserDetailsQuery {
 
         let email_addresses = email_rows
             .into_iter()
-            .map(|row| UserEmailAddress {
-                id: row.id,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                deployment_id: row.deployment_id.unwrap_or(self.deployment_id),
-                user_id: row.user_id.unwrap_or(self.user_id),
-                email: row.email.unwrap_or_default(),
-                is_primary: row.is_primary,
-                verified: row.verified,
-                verified_at: row.verified_at.unwrap_or_else(|| chrono::Utc::now()),
-                verification_strategy: row
-                    .verification_strategy
-                    .and_then(|s| models::VerificationStrategy::from_str(&s).ok())
-                    .unwrap_or(models::VerificationStrategy::Otp),
+            .map(|row| -> Result<UserEmailAddress, AppError> {
+                let verification_strategy = match row.verification_strategy {
+                    Some(s) => models::VerificationStrategy::from_str(&s).map_err(|_| {
+                        AppError::Internal(format!("Invalid verification_strategy: {}", s))
+                    })?,
+                    None => models::VerificationStrategy::Otp,
+                };
+
+                Ok(UserEmailAddress {
+                    id: row.id,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                    deployment_id: row.deployment_id.unwrap_or(self.deployment_id),
+                    user_id: row.user_id.unwrap_or(self.user_id),
+                    email: row.email.unwrap_or_default(),
+                    is_primary: row.is_primary,
+                    verified: row.verified,
+                    verified_at: row.verified_at.unwrap_or_else(|| chrono::Utc::now()),
+                    verification_strategy,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let phone_rows = sqlx::query!(
             r#"

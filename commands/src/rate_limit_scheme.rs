@@ -2,6 +2,10 @@ use common::error::AppError;
 use models::api_key::RateLimit;
 use queries::rate_limit_scheme::RateLimitSchemeData;
 
+fn json_default<T: serde::de::DeserializeOwned + Default>(value: serde_json::Value) -> T {
+    serde_json::from_value(value).unwrap_or_default()
+}
+
 fn validate_rules(rules: &[RateLimit]) -> Result<(), AppError> {
     if rules.is_empty() {
         return Err(AppError::Validation(
@@ -134,7 +138,7 @@ impl CreateRateLimitSchemeCommand {
             description: row.description,
             rules: row
                 .rules
-                .and_then(|v| serde_json::from_value(v).ok())
+                .map(json_default)
                 .unwrap_or_default(),
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -234,7 +238,7 @@ impl UpdateRateLimitSchemeCommand {
             slug: row.slug,
             name: row.name,
             description: row.description,
-            rules: serde_json::from_value(row.rules).unwrap_or_default(),
+            rules: json_default(row.rules),
             created_at: chrono::DateTime::from_naive_utc_and_offset(row.created_at, chrono::Utc),
             updated_at: chrono::DateTime::from_naive_utc_and_offset(row.updated_at, chrono::Utc),
         })

@@ -228,12 +228,12 @@ impl SearchKnowledgeBaseEmbeddingsCommand {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'e, E>(
         self,
-        executor: A,
+        executor: E,
     ) -> Result<Vec<DocumentChunkSearchResult>, AppError>
     where
-        A: sqlx::Executor<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let query_embedding = HalfVector::from_f32_slice(&self.query_embedding);
         let max_distance = 1.2_f64;

@@ -1,8 +1,21 @@
 use common::error::AppError;
 use models::{
-    AgentExecutionContext, AgentExecutionState, AgentStatusUpdate, ExecutionContextStatus,
+    AgentExecutionContext, AgentStatusUpdate, ExecutionContextStatus,
 };
+use serde::de::DeserializeOwned;
 use std::str::FromStr;
+
+fn parse_optional_json<T: DeserializeOwned>(
+    value: Option<serde_json::Value>,
+    field: &str,
+) -> Result<Option<T>, AppError> {
+    value
+        .map(|v| {
+            serde_json::from_value(v)
+                .map_err(|e| AppError::Internal(format!("Failed to parse {}: {}", field, e)))
+        })
+        .transpose()
+}
 
 pub struct GetExecutionContextQuery {
     pub context_id: i64,
@@ -40,12 +53,10 @@ impl GetExecutionContextQuery {
         .await
         .map_err(AppError::Database)?;
 
-        let status = ExecutionContextStatus::from_str(&context.status).unwrap_or_default();
+        let status = ExecutionContextStatus::from_str(&context.status)
+            .map_err(|_| AppError::Internal(format!("Invalid context status: {}", context.status)))?;
 
-        let execution_state = context
-            .execution_state
-            .as_ref()
-            .and_then(|s| serde_json::from_value::<AgentExecutionState>(s.clone()).ok());
+        let execution_state = parse_optional_json(context.execution_state, "execution_state")?;
 
         Ok(AgentExecutionContext {
             id: context.id,
@@ -179,12 +190,11 @@ impl ListExecutionContextsQuery {
             use sqlx::Row;
 
             let status_str: String = row.get("status");
-            let status = ExecutionContextStatus::from_str(&status_str).unwrap_or_default();
+            let status = ExecutionContextStatus::from_str(&status_str)
+                .map_err(|_| AppError::Internal(format!("Invalid context status: {}", status_str)))?;
 
             let execution_state: Option<serde_json::Value> = row.get("execution_state");
-            let execution_state = execution_state
-                .as_ref()
-                .and_then(|s| serde_json::from_value::<AgentExecutionState>(s.clone()).ok());
+            let execution_state = parse_optional_json(execution_state, "execution_state")?;
 
             result.push(AgentExecutionContext {
                 id: row.get("id"),
@@ -267,11 +277,10 @@ impl GetChildContextsQuery {
         for row in rows {
             use sqlx::Row;
             let status_str: String = row.get("status");
-            let status = ExecutionContextStatus::from_str(&status_str).unwrap_or_default();
+            let status = ExecutionContextStatus::from_str(&status_str)
+                .map_err(|_| AppError::Internal(format!("Invalid context status: {}", status_str)))?;
             let execution_state: Option<serde_json::Value> = row.get("execution_state");
-            let execution_state = execution_state
-                .as_ref()
-                .and_then(|s| serde_json::from_value::<AgentExecutionState>(s.clone()).ok());
+            let execution_state = parse_optional_json(execution_state, "execution_state")?;
 
             result.push(AgentExecutionContext {
                 id: row.get("id"),
@@ -448,11 +457,9 @@ impl GetParentContextQuery {
         .map_err(AppError::Database)?;
 
         if let Some(ctx) = ctx {
-            let status = ExecutionContextStatus::from_str(&ctx.status).unwrap_or_default();
-            let execution_state = ctx
-                .execution_state
-                .as_ref()
-                .and_then(|s| serde_json::from_value::<AgentExecutionState>(s.clone()).ok());
+            let status = ExecutionContextStatus::from_str(&ctx.status)
+                .map_err(|_| AppError::Internal(format!("Invalid context status: {}", ctx.status)))?;
+            let execution_state = parse_optional_json(ctx.execution_state, "execution_state")?;
 
             return Ok(Some(AgentExecutionContext {
                 id: ctx.id,

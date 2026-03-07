@@ -10,6 +10,7 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeSet;
 
 use crate::application::AppState;
+use crate::application::deps;
 use crate::application::response::ApiResult;
 
 #[derive(Debug, Deserialize)]
@@ -206,7 +207,12 @@ pub async fn create_notification(
             expires_hours,
         );
 
-        created.push(command.build()?.execute_with_deps(state).await?);
+        created.push(
+            command
+                .build()?
+                .execute_with_deps(&deps::from_app(state).db().nats())
+                .await?,
+        );
     }
 
     Ok(created.into())

@@ -1,5 +1,10 @@
 use chrono::{DateTime, Utc};
 use common::error::AppError;
+use serde::de::DeserializeOwned;
+
+fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
+    serde_json::from_value(value).unwrap_or_default()
+}
 
 pub struct CreateOAuthClientGrantCommand {
     pub grant_id: Option<i64>,
@@ -46,7 +51,15 @@ impl CreateOAuthClientGrantCommand {
             .strip_prefix("urn:wacht:organization:")
             .or_else(|| resource.strip_prefix("urn:wacht:workspace:"))
             .or_else(|| resource.strip_prefix("urn:wacht:user:"))
-            .and_then(|v| v.parse::<i64>().ok())
+            .map(|v| {
+                v.parse::<i64>().map_err(|_| {
+                    AppError::Validation(
+                        "resource must be an absolute URI (e.g. urn:wacht:workspace:123)"
+                            .to_string(),
+                    )
+                })
+            })
+            .transpose()?
             .filter(|id| *id > 0)
             .is_some();
         if !valid_resource {
@@ -124,8 +137,7 @@ impl CreateOAuthClientGrantCommand {
             return Err(AppError::NotFound("OAuth client not found".to_string()));
         }
 
-        let supported_scopes: Vec<String> =
-            serde_json::from_value(row.supported_scopes).unwrap_or_default();
+        let supported_scopes: Vec<String> = json_default(row.supported_scopes);
         if supported_scopes.is_empty() {
             return Err(AppError::Validation(
                 "OAuth app has no supported scopes configured".to_string(),

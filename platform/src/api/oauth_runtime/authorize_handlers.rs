@@ -9,13 +9,13 @@ use dto::json::oauth_runtime::{
     OAuthServerMetadataResponse,
 };
 
-use crate::application::{oauth_runtime as oauth_runtime_use_cases, response::ApiResult};
+use crate::application::{oauth_runtime as oauth_runtime_app, response::ApiResult};
 
 pub async fn oauth_server_metadata(
     State(app_state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<OAuthServerMetadataResponse> {
-    let response = oauth_runtime_use_cases::oauth_server_metadata(&app_state, &headers).await?;
+    let response = oauth_runtime_app::oauth_server_metadata(&app_state, &headers).await?;
     Ok(response.into())
 }
 
@@ -24,7 +24,7 @@ pub async fn oauth_protected_resource_metadata(
     headers: HeaderMap,
 ) -> ApiResult<OAuthProtectedResourceMetadataResponse> {
     let response =
-        oauth_runtime_use_cases::oauth_protected_resource_metadata(&app_state, &headers).await?;
+        oauth_runtime_app::oauth_protected_resource_metadata(&app_state, &headers).await?;
     Ok(response.into())
 }
 
@@ -33,7 +33,7 @@ pub async fn oauth_authorize_get(
     headers: HeaderMap,
     Query(request): Query<OAuthAuthorizeRequest>,
 ) -> Result<Redirect, crate::application::response::ApiErrorResponse> {
-    oauth_runtime_use_cases::oauth_authorize_get(&app_state, &headers, request).await
+    oauth_runtime_app::oauth_authorize_get(&app_state, &headers, request).await
 }
 
 pub async fn oauth_consent_submit(
@@ -41,5 +41,5 @@ pub async fn oauth_consent_submit(
     headers: HeaderMap,
     Form(request): Form<OAuthConsentSubmitRequest>,
 ) -> Result<Redirect, crate::application::response::ApiErrorResponse> {
-    oauth_runtime_use_cases::oauth_consent_submit(&app_state, &headers, request).await
+    oauth_runtime_app::oauth_consent_submit(&app_state, &headers, request).await
 }

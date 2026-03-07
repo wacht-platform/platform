@@ -114,7 +114,15 @@ impl UpsertDeploymentSocialConnectionCommand {
         let parsed_provider = result
             .provider
             .as_deref()
-            .and_then(|provider| SocialConnectionProvider::from_str(provider).ok());
+            .map(|provider| {
+                SocialConnectionProvider::from_str(provider).map_err(|_| {
+                    AppError::Internal(format!(
+                        "Invalid social provider returned from DB: {}",
+                        provider
+                    ))
+                })
+            })
+            .transpose()?;
 
         let parsed_credentials = match result.credentials {
             Some(value) => serde_json::from_value::<Option<OauthCredentials>>(value)

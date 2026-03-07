@@ -144,7 +144,7 @@ impl GenerateSessionTicketCommand {
                 }
             }
             SessionTicketType::AgentAccess => {
-                if self.agent_ids.is_none() || self.agent_ids.as_ref().unwrap().is_empty() {
+                if self.agent_ids.as_ref().is_none_or(Vec::is_empty) {
                     return Err(AppError::BadRequest(
                         "agent_ids is required for agent_access tickets".to_string(),
                     ));
@@ -162,18 +162,14 @@ impl GenerateSessionTicketCommand {
                 }
             }
             SessionTicketType::WebhookAppAccess => {
-                if self.webhook_app_slug.is_none()
-                    || self.webhook_app_slug.as_ref().unwrap().is_empty()
-                {
+                if self.webhook_app_slug.as_deref().is_none_or(str::is_empty) {
                     return Err(AppError::BadRequest(
                         "webhook_app_slug is required for webhook_app_access tickets".to_string(),
                     ));
                 }
             }
             SessionTicketType::ApiAuthAccess => {
-                if self.api_auth_app_slug.is_none()
-                    || self.api_auth_app_slug.as_ref().unwrap().is_empty()
-                {
+                if self.api_auth_app_slug.as_deref().is_none_or(str::is_empty) {
                     return Err(AppError::BadRequest(
                         "api_auth_app_slug is required for api_auth_access tickets".to_string(),
                     ));

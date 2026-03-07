@@ -1,5 +1,5 @@
 use crate::application::{
-    ai_execution_context as ai_execution_context_use_cases,
+    ai_execution_context as ai_execution_context_app,
     response::{ApiResult, PaginatedResponse},
 };
 use crate::middleware::{ConsoleDeployment, RequireDeployment};
@@ -26,7 +26,7 @@ pub async fn create_execution_context(
     ConsoleDeployment(deployment_id): ConsoleDeployment,
     Json(request): Json<CreateExecutionContextRequest>,
 ) -> ApiResult<AgentExecutionContext> {
-    let context = ai_execution_context_use_cases::create_execution_context(
+    let context = ai_execution_context_app::create_execution_context(
         &app_state,
         deployment_id,
         request,
@@ -40,7 +40,7 @@ pub async fn create_execution_context_backend(
     RequireDeployment(deployment_id): RequireDeployment,
     Json(request): Json<CreateExecutionContextRequest>,
 ) -> ApiResult<AgentExecutionContext> {
-    let context = ai_execution_context_use_cases::create_execution_context(
+    let context = ai_execution_context_app::create_execution_context(
         &app_state,
         deployment_id,
         request,
@@ -54,7 +54,7 @@ pub async fn get_execution_contexts(
     ConsoleDeployment(deployment_id): ConsoleDeployment,
     Query(params): Query<ListExecutionContextsParams>,
 ) -> ApiResult<PaginatedResponse<AgentExecutionContext>> {
-    let contexts = ai_execution_context_use_cases::get_execution_contexts(
+    let contexts = ai_execution_context_app::get_execution_contexts(
         &app_state,
         deployment_id,
         params.limit.unwrap_or(50),
@@ -71,7 +71,7 @@ pub async fn get_execution_contexts_backend(
     RequireDeployment(deployment_id): RequireDeployment,
     Query(params): Query<ListExecutionContextsParams>,
 ) -> ApiResult<PaginatedResponse<AgentExecutionContext>> {
-    let contexts = ai_execution_context_use_cases::get_execution_contexts(
+    let contexts = ai_execution_context_app::get_execution_contexts(
         &app_state,
         deployment_id,
         params.limit.unwrap_or(50),
@@ -94,7 +94,7 @@ pub async fn update_execution_context(
     Path(params): Path<ContextIdParam>,
     Json(request): Json<UpdateExecutionContextRequest>,
 ) -> ApiResult<AgentExecutionContext> {
-    let context = ai_execution_context_use_cases::update_execution_context(
+    let context = ai_execution_context_app::update_execution_context(
         &app_state,
         deployment_id,
         params.context_id,
@@ -115,7 +115,7 @@ pub async fn execute_agent_async(
     Path(params): Path<ExecuteParams>,
     Json(request): Json<ExecuteAgentRequest>,
 ) -> ApiResult<ExecuteAgentResponse> {
-    let response = ai_execution_context_use_cases::execute_agent_async(
+    let response = ai_execution_context_app::execute_agent_async(
         &app_state,
         deployment_id,
         params.context_id,

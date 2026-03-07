@@ -262,7 +262,9 @@ impl UpdateUserCommand {
 
         let mut query = query_builder.build();
 
-        let arguments = query.take_arguments().unwrap();
+        let arguments = query
+            .take_arguments()
+            .map_err(|e| AppError::Internal(format!("Failed to build query arguments: {}", e)))?;
         let sql = query.sql();
 
         if let Some(args) = arguments {

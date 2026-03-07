@@ -441,11 +441,14 @@ impl UpdateExecutionContextCommand {
         .ok_or_else(|| AppError::NotFound("Execution context not found".to_string()))?;
 
         use std::str::FromStr;
-        let status = ExecutionContextStatus::from_str(&row.status).unwrap_or_default();
+        let status = ExecutionContextStatus::from_str(&row.status)
+            .map_err(|_| AppError::Internal(format!("Invalid context status: {}", row.status)))?;
         let execution_state = row
             .execution_state
             .flatten()
-            .and_then(|s| serde_json::from_value::<AgentExecutionState>(s).ok());
+            .map(|s| serde_json::from_value::<AgentExecutionState>(s))
+            .transpose()
+            .map_err(|e| AppError::Internal(format!("Invalid execution_state JSON: {}", e)))?;
 
         Ok(AgentExecutionContext {
             id: row.id,

@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::api::multipart::MultipartPayload;
 use crate::application::{
-    ai_knowledge_base as ai_knowledge_base_use_cases,
+    ai_knowledge_base as ai_knowledge_base_app,
     response::{ApiResult, PaginatedResponse},
 };
 use common::state::AppState;
@@ -49,7 +49,7 @@ pub async fn get_ai_knowledge_bases(
     Query(query): Query<GetKnowledgeBasesQuery>,
 ) -> ApiResult<KnowledgeBaseResponse> {
     let response =
-        ai_knowledge_base_use_cases::get_ai_knowledge_bases(&app_state, deployment_id, query)
+        ai_knowledge_base_app::get_ai_knowledge_bases(&app_state, deployment_id, query)
             .await?;
     Ok(response.into())
 }
@@ -60,7 +60,7 @@ pub async fn create_ai_knowledge_base(
     Json(request): Json<CreateKnowledgeBaseRequest>,
 ) -> ApiResult<AiKnowledgeBase> {
     let knowledge_base =
-        ai_knowledge_base_use_cases::create_ai_knowledge_base(&app_state, deployment_id, request)
+        ai_knowledge_base_app::create_ai_knowledge_base(&app_state, deployment_id, request)
             .await?;
     Ok(knowledge_base.into())
 }
@@ -70,7 +70,7 @@ pub async fn get_ai_knowledge_base_by_id(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
 ) -> ApiResult<AiKnowledgeBaseWithDetails> {
-    let knowledge_base = ai_knowledge_base_use_cases::get_ai_knowledge_base_by_id(
+    let knowledge_base = ai_knowledge_base_app::get_ai_knowledge_base_by_id(
         &app_state,
         deployment_id,
         params.kb_id,
@@ -84,7 +84,7 @@ pub async fn get_agent_knowledge_bases(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentParams>,
 ) -> ApiResult<PaginatedResponse<AiKnowledgeBaseWithDetails>> {
-    let knowledge_bases = ai_knowledge_base_use_cases::get_agent_knowledge_bases(
+    let knowledge_bases = ai_knowledge_base_app::get_agent_knowledge_bases(
         &app_state,
         deployment_id,
         params.agent_id,
@@ -98,7 +98,7 @@ pub async fn attach_knowledge_base_to_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentKnowledgeBaseParams>,
 ) -> ApiResult<()> {
-    ai_knowledge_base_use_cases::attach_knowledge_base_to_agent(
+    ai_knowledge_base_app::attach_knowledge_base_to_agent(
         &app_state,
         deployment_id,
         params.agent_id,
@@ -113,7 +113,7 @@ pub async fn detach_knowledge_base_from_agent(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<AgentKnowledgeBaseParams>,
 ) -> ApiResult<()> {
-    ai_knowledge_base_use_cases::detach_knowledge_base_from_agent(
+    ai_knowledge_base_app::detach_knowledge_base_from_agent(
         &app_state,
         deployment_id,
         params.agent_id,
@@ -129,7 +129,7 @@ pub async fn update_ai_knowledge_base(
     Path(params): Path<KnowledgeBaseParams>,
     Json(request): Json<UpdateKnowledgeBaseRequest>,
 ) -> ApiResult<AiKnowledgeBase> {
-    let knowledge_base = ai_knowledge_base_use_cases::update_ai_knowledge_base(
+    let knowledge_base = ai_knowledge_base_app::update_ai_knowledge_base(
         &app_state,
         deployment_id,
         params.kb_id,
@@ -144,7 +144,7 @@ pub async fn delete_ai_knowledge_base(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<KnowledgeBaseParams>,
 ) -> ApiResult<()> {
-    ai_knowledge_base_use_cases::delete_ai_knowledge_base(&app_state, deployment_id, params.kb_id)
+    ai_knowledge_base_app::delete_ai_knowledge_base(&app_state, deployment_id, params.kb_id)
         .await?;
     Ok(().into())
 }
@@ -182,11 +182,11 @@ pub async fn upload_knowledge_base_document(
 
     let file_name = file_name.ok_or((StatusCode::BAD_REQUEST, "File is required".to_string()))?;
 
-    let document = ai_knowledge_base_use_cases::upload_knowledge_base_document(
+    let document = ai_knowledge_base_app::upload_knowledge_base_document(
         &app_state,
         deployment_id,
         params.kb_id,
-        ai_knowledge_base_use_cases::UploadKnowledgeBaseDocumentInput {
+        ai_knowledge_base_app::UploadKnowledgeBaseDocumentInput {
             title,
             description,
             file_content,
@@ -205,7 +205,7 @@ pub async fn get_knowledge_base_documents(
     Path(params): Path<KnowledgeBaseParams>,
     Query(query): Query<GetDocumentsQuery>,
 ) -> ApiResult<PaginatedResponse<AiKnowledgeBaseDocument>> {
-    let documents = ai_knowledge_base_use_cases::get_knowledge_base_documents(
+    let documents = ai_knowledge_base_app::get_knowledge_base_documents(
         &app_state,
         deployment_id,
         params.kb_id,
@@ -220,7 +220,7 @@ pub async fn delete_knowledge_base_document(
     RequireDeployment(deployment_id): RequireDeployment,
     Path(params): Path<DocumentParams>,
 ) -> ApiResult<()> {
-    ai_knowledge_base_use_cases::delete_knowledge_base_document(
+    ai_knowledge_base_app::delete_knowledge_base_document(
         &app_state,
         deployment_id,
         params.kb_id,
