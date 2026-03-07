@@ -2,6 +2,18 @@ use chrono::{DateTime, Utc};
 use common::error::AppError;
 use models::billing::Subscription;
 
+const SUBSCRIPTION_RETURNING_COLUMNS: &str = r#"
+id,
+billing_account_id,
+provider_customer_id,
+provider_subscription_id,
+product_id,
+status,
+previous_billing_date,
+created_at,
+updated_at
+"#;
+
 pub struct CreateSubscriptionCommand {
     id: i64,
     billing_account_id: i64,
@@ -31,7 +43,7 @@ impl CreateSubscriptionCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let subscription = sqlx::query_as::<_, Subscription>(
+        let sql = format!(
             r#"
             INSERT INTO subscriptions (
                 id,
@@ -42,16 +54,18 @@ impl CreateSubscriptionCommand {
                 created_at,
                 updated_at
             ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-            RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
-            "#
-        )
-        .bind(self.id)
-        .bind(self.billing_account_id)
-        .bind(&self.provider_customer_id)
-        .bind(&self.provider_subscription_id)
-        .bind(&self.status)
-        .fetch_one(executor)
-        .await?;
+            RETURNING {returning}
+            "#,
+            returning = SUBSCRIPTION_RETURNING_COLUMNS
+        );
+        let subscription = sqlx::query_as::<_, Subscription>(&sql)
+            .bind(self.id)
+            .bind(self.billing_account_id)
+            .bind(&self.provider_customer_id)
+            .bind(&self.provider_subscription_id)
+            .bind(&self.status)
+            .fetch_one(executor)
+            .await?;
 
         Ok(subscription)
     }
@@ -63,22 +77,31 @@ pub struct UpdateSubscriptionStatusCommand {
 }
 
 impl UpdateSubscriptionStatusCommand {
+    pub fn new(subscription_id: i64, status: String) -> Self {
+        Self {
+            subscription_id,
+            status,
+        }
+    }
+
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Subscription, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let subscription = sqlx::query_as::<_, Subscription>(
+        let sql = format!(
             r#"
             UPDATE subscriptions 
             SET status = $1, updated_at = NOW()
             WHERE id = $2
-            RETURNING id, billing_account_id, provider_customer_id, provider_subscription_id, product_id, status, previous_billing_date, created_at, updated_at
-            "#
-        )
-        .bind(&self.status)
-        .bind(self.subscription_id)
-        .fetch_one(executor)
-        .await?;
+            RETURNING {returning}
+            "#,
+            returning = SUBSCRIPTION_RETURNING_COLUMNS
+        );
+        let subscription = sqlx::query_as::<_, Subscription>(&sql)
+            .bind(&self.status)
+            .bind(self.subscription_id)
+            .fetch_one(executor)
+            .await?;
 
         Ok(subscription)
     }

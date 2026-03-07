@@ -83,7 +83,7 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
 
     info!("[BILLING SYNC] Starting sync for current billing cycles");
 
-    let sync_run_id = CreateBillingSyncRunCommand { from_event_id: 0 }
+    let sync_run_id = CreateBillingSyncRunCommand::new(0)
         .execute_with_db(app_state.db_router.writer())
         .await?;
 
@@ -101,13 +101,9 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
 
     if dirty.is_empty() {
         info!("[BILLING SYNC] No dirty deployments to sync");
-        CompleteBillingSyncRunCommand {
-            sync_run_id,
-            events_processed: 0,
-            deployments_affected: 0,
-        }
-        .execute_with_db(app_state.db_router.writer())
-        .await?;
+        CompleteBillingSyncRunCommand::new(sync_run_id, 0, 0)
+            .execute_with_db(app_state.db_router.writer())
+            .await?;
         return Ok("No dirty deployments".to_string());
     }
 
@@ -152,13 +148,9 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
         }
     }
 
-    CompleteBillingSyncRunCommand {
-        sync_run_id,
-        events_processed: total_units_synced,
-        deployments_affected: dirty.len() as i32,
-    }
-    .execute_with_db(app_state.db_router.writer())
-    .await?;
+    CompleteBillingSyncRunCommand::new(sync_run_id, total_units_synced, dirty.len() as i32)
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
 
     info!(
         "[BILLING SYNC] ✅ Completed sync of {} deployments ({} total units)",

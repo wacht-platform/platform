@@ -230,104 +230,60 @@ pub struct UpdateBillingAccountFromWebhookCommand {
     pub country: Option<String>,
 }
 
+impl UpdateBillingAccountFromWebhookCommand {
+    pub fn new(owner_id: String) -> Self {
+        Self {
+            owner_id,
+            legal_name: None,
+            billing_email: None,
+            billing_phone: None,
+            company: None,
+            address_line1: None,
+            address_line2: None,
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
+        }
+    }
+}
+
 impl UpdateBillingAccountCommand {
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut query = String::from("UPDATE billing_accounts SET updated_at = NOW()");
-        let mut param_count = 1;
-
-        if self.legal_name.is_some() {
-            query.push_str(&format!(", legal_name = ${}", param_count));
-            param_count += 1;
-        }
-
-        if self.billing_email.is_some() {
-            query.push_str(&format!(", billing_email = ${}", param_count));
-            param_count += 1;
-        }
-
-        if self.billing_phone.is_some() {
-            query.push_str(&format!(", billing_phone = ${}", param_count));
-            param_count += 1;
-        }
-
-        if self.tax_id.is_some() {
-            query.push_str(&format!(", tax_id = ${}", param_count));
-            param_count += 1;
-        }
-
-        if self.address_line1.is_some() {
-            query.push_str(&format!(", address_line1 = ${}", param_count));
-            param_count += 1;
-        }
-
-        if self.address_line2.is_some() {
-            query.push_str(&format!(", address_line2 = ${}", param_count));
-            param_count += 1;
-        }
-
-        if self.city.is_some() {
-            query.push_str(&format!(", city = ${}", param_count));
-            param_count += 1;
-        }
-
-        if self.state.is_some() {
-            query.push_str(&format!(", state = ${}", param_count));
-            param_count += 1;
-        }
-
-        if self.postal_code.is_some() {
-            query.push_str(&format!(", postal_code = ${}", param_count));
-            param_count += 1;
-        }
-
-        if self.country.is_some() {
-            query.push_str(&format!(", country = ${}", param_count));
-            param_count += 1;
-        }
-
-        query.push_str(&format!(" WHERE id = ${}", param_count));
-
-        let mut q = sqlx::query(&query);
-
-        // Bind all parameters in the same order they were added to the query
-        if let Some(legal_name) = self.legal_name {
-            q = q.bind(legal_name);
-        }
-        if let Some(billing_email) = self.billing_email {
-            q = q.bind(billing_email);
-        }
-        if let Some(billing_phone) = self.billing_phone {
-            q = q.bind(billing_phone);
-        }
-        if let Some(tax_id) = self.tax_id {
-            q = q.bind(tax_id);
-        }
-        if let Some(address_line1) = self.address_line1 {
-            q = q.bind(address_line1);
-        }
-        if let Some(address_line2) = self.address_line2 {
-            q = q.bind(address_line2);
-        }
-        if let Some(city) = self.city {
-            q = q.bind(city);
-        }
-        if let Some(state) = self.state {
-            q = q.bind(state);
-        }
-        if let Some(postal_code) = self.postal_code {
-            q = q.bind(postal_code);
-        }
-        if let Some(country) = self.country {
-            q = q.bind(country);
-        }
-
-        // Finally bind the id for the WHERE clause
-        q = q.bind(self.id);
-
-        q.execute(executor).await?;
+        sqlx::query(
+            r#"
+            UPDATE billing_accounts
+            SET
+                legal_name = COALESCE($1, legal_name),
+                billing_email = COALESCE($2, billing_email),
+                billing_phone = COALESCE($3, billing_phone),
+                tax_id = COALESCE($4, tax_id),
+                address_line1 = COALESCE($5, address_line1),
+                address_line2 = COALESCE($6, address_line2),
+                city = COALESCE($7, city),
+                state = COALESCE($8, state),
+                postal_code = COALESCE($9, postal_code),
+                country = COALESCE($10, country),
+                updated_at = NOW()
+            WHERE id = $11
+            "#,
+        )
+        .bind(self.legal_name)
+        .bind(self.billing_email)
+        .bind(self.billing_phone)
+        .bind(self.tax_id)
+        .bind(self.address_line1)
+        .bind(self.address_line2)
+        .bind(self.city)
+        .bind(self.state)
+        .bind(self.postal_code)
+        .bind(self.country)
+        .bind(self.id)
+        .execute(executor)
+        .await?;
 
         Ok(())
     }
@@ -368,7 +324,7 @@ impl UpdateBillingAccountStatusCommand {
             WHERE owner_id = $2
             "#,
             normalized_status,
-            self.owner_id
+            self.owner_id,
         )
         .execute(executor)
         .await?;

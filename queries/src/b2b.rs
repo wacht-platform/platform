@@ -331,7 +331,7 @@ impl GetOrganizationDetailsQuery {
                 COALESCE((
                     SELECT json_agg(
                         json_build_object(
-                            'id', r.id,
+                            'id', r.id::text,
                             'created_at', r.created_at,
                             'updated_at', r.updated_at,
                             'name', r.name,
@@ -347,7 +347,7 @@ impl GetOrganizationDetailsQuery {
                 COALESCE((
                     SELECT json_agg(
                         json_build_object(
-                            'id', w.id,
+                            'id', w.id::text,
                             'created_at', w.created_at,
                             'updated_at', w.updated_at,
                             'name', w.name,
@@ -365,11 +365,11 @@ impl GetOrganizationDetailsQuery {
                 COALESCE((
                     SELECT json_agg(
                         json_build_object(
-                            'id', s.id,
+                            'id', s.id::text,
                             'created_at', s.created_at,
                             'updated_at', s.updated_at,
                             'deleted_at', s.deleted_at,
-                            'deployment_id', s.deployment_id,
+                            'deployment_id', s.deployment_id::text,
                             'name', s.name,
                             'type', s.type
                         )
@@ -390,11 +390,17 @@ impl GetOrganizationDetailsQuery {
         .ok_or_else(|| AppError::NotFound("Organization not found".to_string()))?;
 
         let roles: Vec<OrganizationRole> =
-            serde_json::from_value(row.get("roles")).unwrap_or_default();
+            serde_json::from_value(row.get("roles")).map_err(|e| {
+                AppError::Internal(format!("Failed to parse organization roles: {}", e))
+            })?;
         let workspaces: Vec<Workspace> =
-            serde_json::from_value(row.get("workspaces")).unwrap_or_default();
+            serde_json::from_value(row.get("workspaces")).map_err(|e| {
+                AppError::Internal(format!("Failed to parse organization workspaces: {}", e))
+            })?;
         let segments: Vec<models::Segment> =
-            serde_json::from_value(row.get("segments")).unwrap_or_default();
+            serde_json::from_value(row.get("segments")).map_err(|e| {
+                AppError::Internal(format!("Failed to parse organization segments: {}", e))
+            })?;
 
         Ok(OrganizationDetails {
             id: row.get("id"),
@@ -442,7 +448,7 @@ impl GetWorkspaceDetailsQuery {
                 COALESCE((
                     SELECT json_agg(
                         json_build_object(
-                            'id', r.id,
+                            'id', r.id::text,
                             'created_at', r.created_at,
                             'updated_at', r.updated_at,
                             'name', r.name,
@@ -458,11 +464,11 @@ impl GetWorkspaceDetailsQuery {
                 COALESCE((
                     SELECT json_agg(
                         json_build_object(
-                            'id', s.id,
+                            'id', s.id::text,
                             'created_at', s.created_at,
                             'updated_at', s.updated_at,
                             'deleted_at', s.deleted_at,
-                            'deployment_id', s.deployment_id,
+                            'deployment_id', s.deployment_id::text,
                             'name', s.name,
                             'type', s.type
                         )
@@ -483,10 +489,12 @@ impl GetWorkspaceDetailsQuery {
         .await?
         .ok_or_else(|| AppError::NotFound("Workspace not found".to_string()))?;
 
-        let roles: Vec<WorkspaceRole> =
-            serde_json::from_value(row.get("roles")).unwrap_or_default();
+        let roles: Vec<WorkspaceRole> = serde_json::from_value(row.get("roles"))
+            .map_err(|e| AppError::Internal(format!("Failed to parse workspace roles: {}", e)))?;
         let segments: Vec<models::Segment> =
-            serde_json::from_value(row.get("segments")).unwrap_or_default();
+            serde_json::from_value(row.get("segments")).map_err(|e| {
+                AppError::Internal(format!("Failed to parse workspace segments: {}", e))
+            })?;
 
         Ok(WorkspaceDetails {
             id: row.get("id"),

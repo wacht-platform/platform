@@ -4,6 +4,46 @@ use models::{Session, SignIn};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
+fn normalize_signin(
+    id: i64,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+    session_id: Option<i64>,
+    user_id: Option<i64>,
+    active_organization_membership_id: Option<i64>,
+    active_workspace_membership_id: Option<i64>,
+    expires_at: chrono::NaiveDateTime,
+    last_active_at: chrono::NaiveDateTime,
+    ip_address: Option<String>,
+    browser: Option<String>,
+    device: Option<String>,
+    city: Option<String>,
+    region: Option<String>,
+    region_code: Option<String>,
+    country: Option<String>,
+    country_code: Option<String>,
+) -> SignIn {
+    SignIn {
+        id,
+        created_at,
+        updated_at,
+        session_id: session_id.unwrap_or(0),
+        user_id,
+        active_organization_membership_id,
+        active_workspace_membership_id,
+        expires_at: DateTime::from_naive_utc_and_offset(expires_at, Utc),
+        last_active_at: DateTime::from_naive_utc_and_offset(last_active_at, Utc),
+        ip_address: ip_address.unwrap_or_default(),
+        browser: browser.unwrap_or_default(),
+        device: device.unwrap_or_default(),
+        city: city.unwrap_or_default(),
+        region: region.unwrap_or_default(),
+        region_code: region_code.unwrap_or_default(),
+        country: country.unwrap_or_default(),
+        country_code: country_code.unwrap_or_default(),
+    }
+}
+
 pub struct GetSignInQuery {
     signin_id: i64,
 }
@@ -31,25 +71,25 @@ impl GetSignInQuery {
         .fetch_one(executor)
         .await?;
 
-        let signin = SignIn {
-            id: row.id,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            session_id: row.session_id.unwrap_or(0),
-            user_id: row.user_id,
-            active_organization_membership_id: row.active_organization_membership_id,
-            active_workspace_membership_id: row.active_workspace_membership_id,
-            expires_at: DateTime::from_naive_utc_and_offset(row.expires_at, Utc),
-            last_active_at: DateTime::from_naive_utc_and_offset(row.last_active_at, Utc),
-            ip_address: row.ip_address.unwrap_or_default(),
-            browser: row.browser.unwrap_or_default(),
-            device: row.device.unwrap_or_default(),
-            city: row.city.unwrap_or_default(),
-            region: row.region.unwrap_or_default(),
-            region_code: row.region_code.unwrap_or_default(),
-            country: row.country.unwrap_or_default(),
-            country_code: row.country_code.unwrap_or_default(),
-        };
+        let signin = normalize_signin(
+            row.id,
+            row.created_at,
+            row.updated_at,
+            row.session_id,
+            row.user_id,
+            row.active_organization_membership_id,
+            row.active_workspace_membership_id,
+            row.expires_at,
+            row.last_active_at,
+            row.ip_address,
+            row.browser,
+            row.device,
+            row.city,
+            row.region,
+            row.region_code,
+            row.country,
+            row.country_code,
+        );
 
         Ok(signin)
     }
@@ -184,33 +224,26 @@ impl GetSessionWithSignInsQuery {
             .into_iter()
             .filter_map(|row| {
                 let signin_id: Option<i64> = row.try_get("signin_id").ok();
-                signin_id.map(|id| SignIn {
-                    id,
-                    created_at: row.get("signin_created_at"),
-                    updated_at: row.get("signin_updated_at"),
-                    session_id: row.get::<Option<i64>, _>("session_id").unwrap_or(0),
-                    user_id: row.get("user_id"),
-                    active_organization_membership_id: row.get("active_organization_membership_id"),
-                    active_workspace_membership_id: row.get("active_workspace_membership_id"),
-                    expires_at: DateTime::from_naive_utc_and_offset(row.get("expires_at"), Utc),
-                    last_active_at: DateTime::from_naive_utc_and_offset(
+                signin_id.map(|id| {
+                    normalize_signin(
+                        id,
+                        row.get("signin_created_at"),
+                        row.get("signin_updated_at"),
+                        row.get::<Option<i64>, _>("session_id"),
+                        row.get("user_id"),
+                        row.get("active_organization_membership_id"),
+                        row.get("active_workspace_membership_id"),
+                        row.get("expires_at"),
                         row.get("last_active_at"),
-                        Utc,
-                    ),
-                    ip_address: row
-                        .get::<Option<String>, _>("ip_address")
-                        .unwrap_or_default(),
-                    browser: row.get::<Option<String>, _>("browser").unwrap_or_default(),
-                    device: row.get::<Option<String>, _>("device").unwrap_or_default(),
-                    city: row.get::<Option<String>, _>("city").unwrap_or_default(),
-                    region: row.get::<Option<String>, _>("region").unwrap_or_default(),
-                    region_code: row
-                        .get::<Option<String>, _>("region_code")
-                        .unwrap_or_default(),
-                    country: row.get::<Option<String>, _>("country").unwrap_or_default(),
-                    country_code: row
-                        .get::<Option<String>, _>("country_code")
-                        .unwrap_or_default(),
+                        row.get("ip_address"),
+                        row.get("browser"),
+                        row.get("device"),
+                        row.get("city"),
+                        row.get("region"),
+                        row.get("region_code"),
+                        row.get("country"),
+                        row.get("country_code"),
+                    )
                 })
             })
             .collect();

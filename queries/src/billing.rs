@@ -5,6 +5,36 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
+const BILLING_ACCOUNT_WITH_SUBSCRIPTION_SELECT: &str = r#"
+SELECT
+    ba.id AS ba_id, ba.owner_id AS ba_owner_id, ba.owner_type AS ba_owner_type,
+    ba.provider_customer_id AS ba_provider_customer_id, ba.legal_name AS ba_legal_name,
+    ba.tax_id AS ba_tax_id, ba.billing_email AS ba_billing_email, ba.billing_phone AS ba_billing_phone,
+    ba.address_line1 AS ba_address_line1, ba.address_line2 AS ba_address_line2,
+    ba.city AS ba_city, ba.state AS ba_state, ba.postal_code AS ba_postal_code,
+    ba.country AS ba_country, ba.status AS ba_status,
+    ba.payment_method_status AS ba_payment_method_status, ba.currency AS ba_currency,
+    ba.locale AS ba_locale, ba.pulse_balance_cents AS ba_pulse_balance_cents,
+    COALESCE(ba.pulse_usage_disabled, false) AS ba_pulse_usage_disabled,
+    COALESCE(ba.pulse_notified_below_five, false) AS ba_pulse_notified_below_five,
+    COALESCE(ba.pulse_notified_below_zero, false) AS ba_pulse_notified_below_zero,
+    COALESCE(ba.pulse_notified_disabled, false) AS ba_pulse_notified_disabled,
+    ba.last_checkout_session_id AS ba_last_checkout_session_id,
+    ba.checkout_flow_state AS ba_checkout_flow_state,
+    ba.last_payment_succeeded_at AS ba_last_payment_succeeded_at,
+    ba.last_subscription_activated_at AS ba_last_subscription_activated_at,
+    ba.last_billing_webhook_event AS ba_last_billing_webhook_event,
+    ba.checkout_flow_error AS ba_checkout_flow_error,
+    ba.last_checkout_session_created_at AS ba_last_checkout_session_created_at,
+    ba.created_at AS ba_created_at, ba.updated_at AS ba_updated_at,
+    s.id AS s_id, s.billing_account_id AS s_billing_account_id,
+    s.provider_customer_id AS s_provider_customer_id,
+    s.provider_subscription_id AS s_provider_subscription_id,
+    s.product_id AS s_product_id, s.plan_name AS s_plan_name, s.status AS s_status,
+    s.previous_billing_date AS s_previous_billing_date,
+    s.created_at AS s_created_at, s.updated_at AS s_updated_at
+"#;
+
 fn map_billing_account_with_prefix(row: &sqlx::postgres::PgRow, prefix: &str) -> BillingAccount {
     BillingAccount {
         id: row.get(format!("{prefix}id").as_str()),
@@ -60,6 +90,34 @@ fn map_subscription_with_prefix(row: &sqlx::postgres::PgRow, prefix: &str) -> Op
     })
 }
 
+fn map_billing_account_with_subscription(
+    row: sqlx::postgres::PgRow,
+) -> BillingAccountWithSubscription {
+    BillingAccountWithSubscription {
+        billing_account: map_billing_account_with_prefix(&row, "ba_"),
+        subscription: map_subscription_with_prefix(&row, "s_"),
+    }
+}
+
+fn map_usage_snapshot_row(row: &sqlx::postgres::PgRow) -> Result<UsageSnapshot, sqlx::Error> {
+    Ok(UsageSnapshot {
+        metric_name: row.try_get("metric_name")?,
+        quantity: row.try_get("quantity")?,
+        cost_cents: row.try_get("cost_cents")?,
+    })
+}
+
+fn map_usage_snapshot_aggregated_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<UsageSnapshot, sqlx::Error> {
+    let quantity: Option<Decimal> = row.try_get("quantity")?;
+    Ok(UsageSnapshot {
+        metric_name: row.try_get("metric_name")?,
+        quantity: quantity.unwrap_or(Decimal::ZERO).try_into().unwrap_or(0),
+        cost_cents: row.try_get("cost_cents")?,
+    })
+}
+
 pub struct GetBillingAccountQuery {
     owner_id: String,
 }
@@ -88,35 +146,9 @@ impl GetBillingAccountQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(
+        let sql = format!(
             r#"
-            SELECT
-                ba.id AS ba_id, ba.owner_id AS ba_owner_id, ba.owner_type AS ba_owner_type,
-                ba.provider_customer_id AS ba_provider_customer_id, ba.legal_name AS ba_legal_name,
-                ba.tax_id AS ba_tax_id, ba.billing_email AS ba_billing_email, ba.billing_phone AS ba_billing_phone,
-                ba.address_line1 AS ba_address_line1, ba.address_line2 AS ba_address_line2,
-                ba.city AS ba_city, ba.state AS ba_state, ba.postal_code AS ba_postal_code,
-                ba.country AS ba_country, ba.status AS ba_status,
-                ba.payment_method_status AS ba_payment_method_status, ba.currency AS ba_currency,
-                ba.locale AS ba_locale, ba.pulse_balance_cents AS ba_pulse_balance_cents,
-                COALESCE(ba.pulse_usage_disabled, false) AS ba_pulse_usage_disabled,
-                COALESCE(ba.pulse_notified_below_five, false) AS ba_pulse_notified_below_five,
-                COALESCE(ba.pulse_notified_below_zero, false) AS ba_pulse_notified_below_zero,
-                COALESCE(ba.pulse_notified_disabled, false) AS ba_pulse_notified_disabled,
-                ba.last_checkout_session_id AS ba_last_checkout_session_id,
-                ba.checkout_flow_state AS ba_checkout_flow_state,
-                ba.last_payment_succeeded_at AS ba_last_payment_succeeded_at,
-                ba.last_subscription_activated_at AS ba_last_subscription_activated_at,
-                ba.last_billing_webhook_event AS ba_last_billing_webhook_event,
-                ba.checkout_flow_error AS ba_checkout_flow_error,
-                ba.last_checkout_session_created_at AS ba_last_checkout_session_created_at,
-                ba.created_at AS ba_created_at, ba.updated_at AS ba_updated_at,
-                s.id AS s_id, s.billing_account_id AS s_billing_account_id,
-                s.provider_customer_id AS s_provider_customer_id,
-                s.provider_subscription_id AS s_provider_subscription_id,
-                s.product_id AS s_product_id, s.plan_name AS s_plan_name, s.status AS s_status,
-                s.previous_billing_date AS s_previous_billing_date,
-                s.created_at AS s_created_at, s.updated_at AS s_updated_at
+            {select}
             FROM billing_accounts ba
             LEFT JOIN LATERAL (
                 SELECT
@@ -130,15 +162,14 @@ impl GetBillingAccountQuery {
             WHERE ba.owner_id = $1
             LIMIT 1
             "#,
-        )
-        .bind(&self.owner_id)
-        .fetch_optional(executor)
-        .await?;
+            select = BILLING_ACCOUNT_WITH_SUBSCRIPTION_SELECT
+        );
+        let row = sqlx::query(&sql)
+            .bind(&self.owner_id)
+            .fetch_optional(executor)
+            .await?;
 
-        Ok(row.map(|row| BillingAccountWithSubscription {
-            billing_account: map_billing_account_with_prefix(&row, "ba_"),
-            subscription: map_subscription_with_prefix(&row, "s_"),
-        }))
+        Ok(row.map(map_billing_account_with_subscription))
     }
 }
 
@@ -160,50 +191,36 @@ impl GetSubscriptionByProviderIdQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(
+        let sql = format!(
             r#"
-            SELECT
-                ba.id AS ba_id, ba.owner_id AS ba_owner_id, ba.owner_type AS ba_owner_type,
-                ba.provider_customer_id AS ba_provider_customer_id, ba.legal_name AS ba_legal_name,
-                ba.tax_id AS ba_tax_id, ba.billing_email AS ba_billing_email, ba.billing_phone AS ba_billing_phone,
-                ba.address_line1 AS ba_address_line1, ba.address_line2 AS ba_address_line2,
-                ba.city AS ba_city, ba.state AS ba_state, ba.postal_code AS ba_postal_code,
-                ba.country AS ba_country, ba.status AS ba_status,
-                ba.payment_method_status AS ba_payment_method_status, ba.currency AS ba_currency,
-                ba.locale AS ba_locale, ba.pulse_balance_cents AS ba_pulse_balance_cents,
-                COALESCE(ba.pulse_usage_disabled, false) AS ba_pulse_usage_disabled,
-                COALESCE(ba.pulse_notified_below_five, false) AS ba_pulse_notified_below_five,
-                COALESCE(ba.pulse_notified_below_zero, false) AS ba_pulse_notified_below_zero,
-                COALESCE(ba.pulse_notified_disabled, false) AS ba_pulse_notified_disabled,
-                ba.last_checkout_session_id AS ba_last_checkout_session_id,
-                ba.checkout_flow_state AS ba_checkout_flow_state,
-                ba.last_payment_succeeded_at AS ba_last_payment_succeeded_at,
-                ba.last_subscription_activated_at AS ba_last_subscription_activated_at,
-                ba.last_billing_webhook_event AS ba_last_billing_webhook_event,
-                ba.checkout_flow_error AS ba_checkout_flow_error,
-                ba.last_checkout_session_created_at AS ba_last_checkout_session_created_at,
-                ba.created_at AS ba_created_at, ba.updated_at AS ba_updated_at,
-                s.id AS s_id, s.billing_account_id AS s_billing_account_id,
-                s.provider_customer_id AS s_provider_customer_id,
-                s.provider_subscription_id AS s_provider_subscription_id,
-                s.product_id AS s_product_id, dp.plan_name AS s_plan_name, s.status AS s_status,
-                s.previous_billing_date AS s_previous_billing_date,
-                s.created_at AS s_created_at, s.updated_at AS s_updated_at
-            FROM subscriptions s
-            LEFT JOIN dodo_products dp ON s.product_id = dp.product_id
+            {select}
+            FROM (
+                SELECT
+                    s.id,
+                    s.billing_account_id,
+                    s.provider_customer_id,
+                    s.provider_subscription_id,
+                    s.product_id,
+                    dp.plan_name,
+                    s.status,
+                    s.previous_billing_date,
+                    s.created_at,
+                    s.updated_at
+                FROM subscriptions s
+                LEFT JOIN dodo_products dp ON s.product_id = dp.product_id
+            ) s
             JOIN billing_accounts ba ON ba.id = s.billing_account_id
             WHERE s.provider_subscription_id = $1
             LIMIT 1
             "#,
-        )
-        .bind(&self.provider_subscription_id)
-        .fetch_optional(executor)
-        .await?;
+            select = BILLING_ACCOUNT_WITH_SUBSCRIPTION_SELECT
+        );
+        let row = sqlx::query(&sql)
+            .bind(&self.provider_subscription_id)
+            .fetch_optional(executor)
+            .await?;
 
-        Ok(row.map(|row| BillingAccountWithSubscription {
-            billing_account: map_billing_account_with_prefix(&row, "ba_"),
-            subscription: map_subscription_with_prefix(&row, "s_"),
-        }))
+        Ok(row.map(map_billing_account_with_subscription))
     }
 }
 
@@ -284,27 +301,23 @@ impl GetDeploymentUsageQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let rows = sqlx::query!(
+        let rows = sqlx::query(
             r#"
             SELECT metric_name, quantity, cost_cents
             FROM billing_usage_snapshots
             WHERE deployment_id = $1 AND billing_period = $2
             ORDER BY metric_name
             "#,
-            self.deployment_id,
-            self.billing_period
         )
+        .bind(self.deployment_id)
+        .bind(self.billing_period)
         .fetch_all(executor)
         .await?;
 
-        let snapshots = rows
-            .into_iter()
-            .map(|r| UsageSnapshot {
-                metric_name: r.metric_name,
-                quantity: r.quantity,
-                cost_cents: r.cost_cents,
-            })
-            .collect();
+        let mut snapshots = Vec::with_capacity(rows.len());
+        for row in rows {
+            snapshots.push(map_usage_snapshot_row(&row)?);
+        }
 
         Ok(snapshots)
     }
@@ -327,7 +340,7 @@ impl GetBillingAccountUsageQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let rows = sqlx::query!(
+        let rows = sqlx::query(
             r#"
             SELECT metric_name, SUM(quantity) as quantity, SUM(cost_cents) as cost_cents
             FROM billing_usage_snapshots
@@ -335,26 +348,22 @@ impl GetBillingAccountUsageQuery {
             GROUP BY metric_name
             ORDER BY metric_name
             "#,
-            self.billing_account_id,
-            self.billing_period
         )
+        .bind(self.billing_account_id)
+        .bind(self.billing_period)
         .fetch_all(executor)
         .await?;
 
-        let snapshots = rows
-            .into_iter()
-            .map(|r| UsageSnapshot {
-                metric_name: r.metric_name,
-                quantity: r.quantity.unwrap_or(Decimal::ZERO).try_into().unwrap_or(0),
-                cost_cents: r.cost_cents,
-            })
-            .collect();
+        let mut snapshots = Vec::with_capacity(rows.len());
+        for row in rows {
+            snapshots.push(map_usage_snapshot_aggregated_row(&row)?);
+        }
 
         Ok(snapshots)
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct DodoProduct {
     pub id: i32,
     pub plan_name: String,
@@ -380,26 +389,18 @@ impl GetDodoProductQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query!(
+        let row = sqlx::query_as::<_, DodoProduct>(
             r#"
             SELECT id, plan_name, product_id, display_name, description, base_price_cents, is_active
             FROM dodo_products
             WHERE plan_name = $1 AND is_active = true
             "#,
-            &self.plan_name
         )
+        .bind(&self.plan_name)
         .fetch_optional(executor)
         .await?;
 
-        Ok(row.map(|r| DodoProduct {
-            id: r.id,
-            plan_name: r.plan_name,
-            product_id: r.product_id,
-            display_name: r.display_name,
-            description: r.description,
-            base_price_cents: r.base_price_cents,
-            is_active: r.is_active,
-        }))
+        Ok(row)
     }
 }
 
@@ -436,29 +437,18 @@ impl GetAllDodoProductsQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let rows = sqlx::query!(
+        let rows = sqlx::query_as::<_, DodoProduct>(
             r#"
             SELECT id, plan_name, product_id, display_name, description, base_price_cents, is_active
             FROM dodo_products
             WHERE is_active = true
             ORDER BY base_price_cents ASC
-            "#
+            "#,
         )
         .fetch_all(executor)
         .await?;
 
-        Ok(rows
-            .into_iter()
-            .map(|r| DodoProduct {
-                id: r.id,
-                plan_name: r.plan_name,
-                product_id: r.product_id,
-                display_name: r.display_name,
-                description: r.description,
-                base_price_cents: r.base_price_cents,
-                is_active: r.is_active,
-            })
-            .collect())
+        Ok(rows)
     }
 }
 
@@ -475,7 +465,7 @@ impl GetOwnerIdByDeploymentIdQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(
+        let owner_id = sqlx::query_scalar(
             r#"
             SELECT p.owner_id
             FROM deployments d
@@ -487,8 +477,7 @@ impl GetOwnerIdByDeploymentIdQuery {
         .fetch_optional(executor)
         .await?;
 
-        use sqlx::Row;
-        Ok(row.and_then(|r| r.get("owner_id")))
+        Ok(owner_id)
     }
 }
 
@@ -540,7 +529,7 @@ impl ListBillingInvoicesQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let rows = sqlx::query(
+        let rows = sqlx::query_as::<_, models::billing_invoice::BillingInvoice>(
             r#"
             SELECT
                 id, created_at, updated_at, billing_account_id, subscription_id,
@@ -558,34 +547,6 @@ impl ListBillingInvoicesQuery {
         .fetch_all(executor)
         .await?;
 
-        let mut results = Vec::new();
-        for row in rows {
-            let invoice = models::billing_invoice::BillingInvoice {
-                id: row.try_get("id")?,
-                created_at: row.try_get("created_at")?,
-                updated_at: row.try_get("updated_at")?,
-                billing_account_id: row.try_get("billing_account_id")?,
-                subscription_id: row.try_get("subscription_id")?,
-                provider_payment_id: row.try_get("provider_payment_id")?,
-                provider_customer_id: row.try_get("provider_customer_id")?,
-                amount_due_cents: row.try_get("amount_due_cents")?,
-                amount_paid_cents: row.try_get("amount_paid_cents")?,
-                currency: row.try_get("currency")?,
-                status: row.try_get("status")?,
-                invoice_pdf_url: row.try_get("invoice_pdf_url")?,
-                hosted_invoice_url: row.try_get("hosted_invoice_url")?,
-                invoice_number: row.try_get("invoice_number")?,
-                due_date: row.try_get("due_date")?,
-                paid_at: row.try_get("paid_at")?,
-                period_start: row.try_get("period_start")?,
-                period_end: row.try_get("period_end")?,
-                attempt_count: row.try_get("attempt_count")?,
-                next_payment_attempt: row.try_get("next_payment_attempt")?,
-                metadata: row.try_get("metadata")?,
-            };
-            results.push(invoice);
-        }
-
-        Ok(results)
+        Ok(rows)
     }
 }

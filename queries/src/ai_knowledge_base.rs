@@ -3,6 +3,32 @@ use sqlx::Row;
 use common::error::AppError;
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument, AiKnowledgeBaseWithDetails};
 
+fn map_knowledge_base_with_details(row: sqlx::postgres::PgRow) -> AiKnowledgeBaseWithDetails {
+    AiKnowledgeBaseWithDetails {
+        id: row.get("id"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+        name: row.get("name"),
+        description: row.get("description"),
+        configuration: row.get("configuration"),
+        deployment_id: row.get("deployment_id"),
+        documents_count: row.get::<Option<i64>, _>("documents_count").unwrap_or(0),
+        total_size: row.get("total_size"),
+    }
+}
+
+fn map_knowledge_base(row: sqlx::postgres::PgRow) -> AiKnowledgeBase {
+    AiKnowledgeBase {
+        id: row.get("id"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+        name: row.get("name"),
+        description: row.get("description"),
+        deployment_id: row.get("deployment_id"),
+        configuration: row.get("configuration"),
+    }
+}
+
 pub struct GetAiKnowledgeBasesQuery {
     pub deployment_id: i64,
     pub limit: usize,
@@ -74,17 +100,7 @@ impl GetAiKnowledgeBasesQuery {
 
         Ok(knowledge_bases
             .into_iter()
-            .map(|row| AiKnowledgeBaseWithDetails {
-                id: row.get("id"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                name: row.get("name"),
-                description: row.get("description"),
-                configuration: row.get("configuration"),
-                deployment_id: row.get("deployment_id"),
-                documents_count: row.get::<Option<i64>, _>("documents_count").unwrap_or(0),
-                total_size: row.get("total_size"),
-            })
+            .map(map_knowledge_base_with_details)
             .collect())
     }
 }
@@ -131,19 +147,7 @@ impl GetAiKnowledgeBaseByIdQuery {
         .await
         .map_err(AppError::Database)?;
 
-        Ok(AiKnowledgeBaseWithDetails {
-            id: knowledge_base.get("id"),
-            created_at: knowledge_base.get("created_at"),
-            updated_at: knowledge_base.get("updated_at"),
-            name: knowledge_base.get("name"),
-            description: knowledge_base.get("description"),
-            configuration: knowledge_base.get("configuration"),
-            deployment_id: knowledge_base.get("deployment_id"),
-            documents_count: knowledge_base
-                .get::<Option<i64>, _>("documents_count")
-                .unwrap_or(0),
-            total_size: knowledge_base.get("total_size"),
-        })
+        Ok(map_knowledge_base_with_details(knowledge_base))
     }
 }
 
@@ -193,17 +197,7 @@ impl GetAgentKnowledgeBasesQuery {
 
         Ok(knowledge_bases
             .into_iter()
-            .map(|row| AiKnowledgeBaseWithDetails {
-                id: row.get("id"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                name: row.get("name"),
-                description: row.get("description"),
-                configuration: row.get("configuration"),
-                deployment_id: row.get("deployment_id"),
-                documents_count: row.get::<Option<i64>, _>("documents_count").unwrap_or(0),
-                total_size: row.get("total_size"),
-            })
+            .map(map_knowledge_base_with_details)
             .collect())
     }
 }
@@ -317,15 +311,7 @@ impl GetAiKnowledgeBasesByIdsQuery {
 
         Ok(knowledge_bases
             .into_iter()
-            .map(|row| AiKnowledgeBase {
-                id: row.get("id"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                name: row.get("name"),
-                description: row.get("description"),
-                deployment_id: row.get("deployment_id"),
-                configuration: row.get("configuration"),
-            })
+            .map(map_knowledge_base)
             .collect())
     }
 }

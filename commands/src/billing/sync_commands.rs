@@ -1,12 +1,14 @@
-use chrono::{DateTime, Utc};
 use common::error::AppError;
-use rust_decimal::Decimal;
 
 pub struct CreateBillingSyncRunCommand {
     pub from_event_id: i64,
 }
 
 impl CreateBillingSyncRunCommand {
+    pub fn new(from_event_id: i64) -> Self {
+        Self { from_event_id }
+    }
+
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<i64, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -31,6 +33,14 @@ pub struct CompleteBillingSyncRunCommand {
 }
 
 impl CompleteBillingSyncRunCommand {
+    pub fn new(sync_run_id: i64, events_processed: i64, deployments_affected: i32) -> Self {
+        Self {
+            sync_run_id,
+            events_processed,
+            deployments_affected,
+        }
+    }
+
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
@@ -51,13 +61,4 @@ impl CompleteBillingSyncRunCommand {
 
         Ok(())
     }
-}
-
-pub struct UpsertUsageSnapshotCommand {
-    pub deployment_id: i64,
-    pub billing_account_id: i64,
-    pub billing_period: DateTime<Utc>,
-    pub metric_name: String,
-    pub quantity: i64,
-    pub cost_cents: Option<Decimal>,
 }
