@@ -53,7 +53,7 @@ COPY oauth-relay/ ./oauth-relay/
 # Build only the binaries this image serves.
 RUN cargo build --release --locked \
     -p platform --bin backend-api --bin console-api --bin oauth-api --bin gateway-api --bin realtime-api \
-    -p worker --bin worker
+    -p platform-worker --bin worker
 
 FROM debian:bookworm-slim
 WORKDIR /app
