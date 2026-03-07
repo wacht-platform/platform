@@ -1,8 +1,27 @@
-FROM rust:1.93-bookworm as builder
+# syntax=docker/dockerfile:1
 
+FROM rust:1.93-bookworm AS chef
+RUN cargo install cargo-chef --locked
 WORKDIR /app
 
-# Copy workspace files
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock ./
+COPY models/Cargo.toml models/Cargo.toml
+COPY dto/Cargo.toml dto/Cargo.toml
+COPY commands/Cargo.toml commands/Cargo.toml
+COPY queries/Cargo.toml queries/Cargo.toml
+COPY common/Cargo.toml common/Cargo.toml
+COPY platform/Cargo.toml platform/Cargo.toml
+COPY worker/Cargo.toml worker/Cargo.toml
+COPY agent-engine/Cargo.toml agent-engine/Cargo.toml
+COPY oauth-relay/Cargo.toml oauth-relay/Cargo.toml
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+WORKDIR /app
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --locked --recipe-path recipe.json
+
 COPY Cargo.toml Cargo.lock ./
 COPY .sqlx/ ./.sqlx/
 COPY models/ ./models/
@@ -15,14 +34,15 @@ COPY worker/ ./worker/
 COPY agent-engine/ ./agent-engine/
 COPY oauth-relay/ ./oauth-relay/
 
-# Build backend API
-RUN cargo build --release --all
+# Build only the binaries this image serves.
+RUN cargo build --release --locked \
+    -p platform --bin backend-api --bin console-api --bin oauth-api --bin gateway-api --bin realtime-api \
+    -p worker --bin worker
 
 FROM debian:bookworm-slim
-
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
     curl \
@@ -39,7 +59,4 @@ COPY --from=builder /app/target/release/gateway-api /app/gateway
 COPY --from=builder /app/target/release/worker /app/worker
 
 EXPOSE 3001
-
-# Keep command selection external (backend/console/realtime/gateway/worker),
-# but always run through Doppler for secret injection.
 ENTRYPOINT ["doppler", "run", "--"]
