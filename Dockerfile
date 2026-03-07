@@ -14,6 +14,7 @@ COPY common/Cargo.toml common/Cargo.toml
 COPY platform/Cargo.toml platform/Cargo.toml
 COPY worker/Cargo.toml worker/Cargo.toml
 COPY agent-engine/Cargo.toml agent-engine/Cargo.toml
+COPY agent-engine/src/lib.rs agent-engine/src/lib.rs
 COPY oauth-relay/Cargo.toml oauth-relay/Cargo.toml
 RUN cargo chef prepare --recipe-path recipe.json
 
