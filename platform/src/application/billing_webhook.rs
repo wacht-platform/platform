@@ -213,6 +213,14 @@ async fn handle_payment_succeeded(
             .and_then(|v| v.as_str())
             == Some("pulse_purchase");
 
+        let mut tx = app_state.db_router.writer().begin().await.map_err(|e| {
+            error!(
+                "Failed to begin payment_succeeded transaction for {}: {}",
+                owner_id, e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
         if !is_pulse_purchase {
             let reader = app_state.db_router.reader(ReadConsistency::Strong);
             let status = match GetBillingAccountQuery::new(owner_id.clone())
@@ -239,26 +247,23 @@ async fn handle_payment_succeeded(
             };
 
             UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
-            .execute_with_db(app_state.db_router.writer())
-            .await
-            .map_err(|e| {
-                error!(
-                    "Failed to update billing account status on payment success: {}",
-                    e
-                );
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+                .execute_with_db(&mut *tx)
+                .await
+                .map_err(|e| {
+                    error!(
+                        "Failed to update billing account status on payment success: {}",
+                        e
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
 
-            MarkPaymentSucceededCommand::new(
-                owner_id.clone(),
-                "payment.succeeded".to_string(),
-            )
-            .execute_with_db(app_state.db_router.writer())
-            .await
-            .map_err(|e| {
-                error!("Failed to update checkout flow state: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+            MarkPaymentSucceededCommand::new(owner_id.clone(), "payment.succeeded".to_string())
+                .execute_with_db(&mut *tx)
+                .await
+                .map_err(|e| {
+                    error!("Failed to update checkout flow state: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
         }
 
         UpsertInvoiceCommand::new(
@@ -280,15 +285,12 @@ async fn handle_payment_succeeded(
         )))
         .with_paid_at(Some(chrono::Utc::now()))
         .with_metadata(serde_json::json!({}))
-        .execute_with_db(app_state.db_router.writer())
+        .execute_with_db(&mut *tx)
         .await
         .map_err(|e| {
             error!("Failed to upsert invoice: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-
-        info!("Payment {} succeeded for owner {}", payment_id, owner_id);
-        send_billing_change_email(app_state, &owner_id, "Your payment was successful.").await;
 
         if let Some(metadata) = data["metadata"].as_object() {
             if metadata.get("type").and_then(|v| v.as_str()) == Some("pulse_purchase") {
@@ -305,7 +307,7 @@ async fn handle_payment_succeeded(
                         error!("Failed to generate pulse transaction id: {}", e);
                         StatusCode::INTERNAL_SERVER_ERROR
                     })? as i64)
-                    .execute_with_db(app_state.db_router.writer())
+                    .execute_with_db(&mut *tx)
                     .await
                     .map_err(|e| {
                         error!("Failed to add Pulse credits from webhook: {}", e);
@@ -319,6 +321,17 @@ async fn handle_payment_succeeded(
                 }
             }
         }
+
+        tx.commit().await.map_err(|e| {
+            error!(
+                "Failed to commit payment_succeeded transaction for {}: {}",
+                owner_id, e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        info!("Payment {} succeeded for owner {}", payment_id, owner_id);
+        send_billing_change_email(app_state, &owner_id, "Your payment was successful.").await;
     }
 
     Ok(())
@@ -334,26 +347,42 @@ async fn handle_payment_failed(
     let owner_id = extract_owner_id(app_state, customer_id, data).await;
 
     if !owner_id.is_empty() {
-        UpdateBillingAccountStatusCommand::new(owner_id.clone(), "payment_failed".to_string())
-        .execute_with_db(app_state.db_router.writer())
-        .await
-        .map_err(|e| {
+        let mut tx = app_state.db_router.writer().begin().await.map_err(|e| {
             error!(
-                "Failed to update billing account status on payment failure: {}",
-                e
+                "Failed to begin payment_failed transaction for {}: {}",
+                owner_id, e
             );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+        UpdateBillingAccountStatusCommand::new(owner_id.clone(), "payment_failed".to_string())
+            .execute_with_db(&mut *tx)
+            .await
+            .map_err(|e| {
+                error!(
+                    "Failed to update billing account status on payment failure: {}",
+                    e
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
         MarkCheckoutFlowFailedCommand::new(
             owner_id.clone(),
             "payment.failed".to_string(),
             "payment_failed".to_string(),
         )
-        .execute_with_db(app_state.db_router.writer())
+        .execute_with_db(&mut *tx)
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        tx.commit().await.map_err(|e| {
+            error!(
+                "Failed to commit payment_failed transaction for {}: {}",
+                owner_id, e
+            );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
@@ -380,6 +409,14 @@ async fn upsert_subscription_and_status(
     webhook_event: &str,
     send_email_message: &str,
 ) -> Result<(), StatusCode> {
+    let mut tx = app_state.db_router.writer().begin().await.map_err(|e| {
+        error!(
+            "Failed to begin upsert_subscription_and_status transaction for {}: {}",
+            owner_id, e
+        );
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     UpsertSubscriptionCommand::new(
         app_state.sf.next_id().map_err(|e| {
             error!("Failed to generate subscription id: {}", e);
@@ -392,7 +429,7 @@ async fn upsert_subscription_and_status(
     )
     .with_product_id(product_id)
     .with_previous_billing_date(previous_billing_date)
-    .execute_with_db(app_state.db_router.writer())
+    .execute_with_db(&mut *tx)
     .await
     .map_err(|e| {
         error!("Failed to update subscription status: {}", e);
@@ -400,34 +437,42 @@ async fn upsert_subscription_and_status(
     })?;
 
     UpdateBillingAccountStatusCommand::new(owner_id.to_string(), status.to_string())
-    .execute_with_db(app_state.db_router.writer())
-    .await
-    .map_err(|e| {
-        error!("Failed to update billing account status: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+        .execute_with_db(&mut *tx)
+        .await
+        .map_err(|e| {
+            error!("Failed to update billing account status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     if status == "active" {
         MarkSubscriptionActivatedCommand::new(owner_id.to_string(), webhook_event.to_string())
-        .execute_with_db(app_state.db_router.writer())
-        .await
-        .map_err(|e| {
-            error!("Failed to update checkout flow state: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+            .execute_with_db(&mut *tx)
+            .await
+            .map_err(|e| {
+                error!("Failed to update checkout flow state: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
     } else {
         MarkCheckoutFlowFailedCommand::new(
             owner_id.to_string(),
             webhook_event.to_string(),
             status.to_string(),
         )
-        .execute_with_db(app_state.db_router.writer())
+        .execute_with_db(&mut *tx)
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     }
+
+    tx.commit().await.map_err(|e| {
+        error!(
+            "Failed to commit upsert_subscription_and_status transaction for {}: {}",
+            owner_id, e
+        );
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     send_billing_change_email(app_state, owner_id, send_email_message).await;
     Ok(())

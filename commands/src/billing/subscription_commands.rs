@@ -27,10 +27,7 @@ impl CreateSubscriptionCommand {
         }
     }
 
-    pub async fn execute_with_db<'e, E>(
-        self,
-        executor: E,
-    ) -> Result<Subscription, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Subscription, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -129,10 +126,7 @@ impl UpsertSubscriptionCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
-        self,
-        executor: A,
-    ) -> Result<Subscription, AppError>
+    pub async fn execute_with_db<'a, A>(self, executor: A) -> Result<Subscription, AppError>
     where
         A: sqlx::Executor<'a, Database = sqlx::Postgres>,
     {

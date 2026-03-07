@@ -1,3 +1,4 @@
+use crate::membership_role::insert_organization_membership_role;
 use common::error::AppError;
 use models::OrganizationMemberDetails;
 
@@ -28,7 +29,10 @@ impl AddOrganizationMemberCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OrganizationMemberDetails, AppError>
+    pub async fn execute_with_db<'a, A>(
+        self,
+        acquirer: A,
+    ) -> Result<OrganizationMemberDetails, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -91,16 +95,12 @@ impl AddOrganizationMemberCommand {
 
         // Add role associations
         for role_id in &self.role_ids {
-            sqlx::query!(
-                r#"
-                INSERT INTO organization_membership_roles (organization_membership_id, organization_role_id, organization_id)
-                VALUES ($1, $2, $3)
-                "#,
+            insert_organization_membership_role(
+                &mut *tx,
                 membership.id,
-                role_id,
-                self.organization_id
+                *role_id,
+                self.organization_id,
             )
-            .execute(&mut *tx)
             .await?;
         }
 

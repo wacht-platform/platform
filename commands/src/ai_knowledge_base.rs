@@ -1,3 +1,4 @@
+use crate::ai_knowledge_base_document_status::MarkKnowledgeBaseDocumentFailedCommand;
 use crate::{DispatchDocumentProcessingTaskCommand, WriteToAgentStorageCommand};
 use common::error::AppError;
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument};
@@ -40,9 +41,9 @@ impl CreateAiKnowledgeBaseCommand {
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         validate_knowledge_base_name(&self.name)?;
-        let knowledge_base_id = self.knowledge_base_id.ok_or_else(|| {
-            AppError::Validation("knowledge_base_id is required".to_string())
-        })?;
+        let knowledge_base_id = self
+            .knowledge_base_id
+            .ok_or_else(|| AppError::Validation("knowledge_base_id is required".to_string()))?;
         let now = Utc::now();
 
         let knowledge_base = sqlx::query!(
@@ -417,24 +418,18 @@ impl UploadKnowledgeBaseDocumentCommand {
             document.id,
         );
 
-        if let Err(e) = dispatch_processing_task.execute_with_deps(deps.nats_client).await {
+        if let Err(e) = dispatch_processing_task
+            .execute_with_deps(deps.nats_client)
+            .await
+        {
             tracing::error!("Failed to dispatch document processing task: {}", e);
-            let _ = sqlx::query!(
-                r#"
-                UPDATE ai_knowledge_base_documents 
-                SET processing_metadata = jsonb_set(
-                    COALESCE(processing_metadata, '{}'),
-                    '{status}',
-                    '"failed"'
-                ),
-                updated_at = $1
-                WHERE id = $2
-                "#,
-                chrono::Utc::now(),
-                document.id
-            )
-            .execute(deps.db_router.writer())
-            .await;
+            let _ = MarkKnowledgeBaseDocumentFailedCommand::new(document.id)
+                .with_error(format!(
+                    "Failed to dispatch document processing task: {}",
+                    e
+                ))
+                .execute_with_db(deps.db_router.writer())
+                .await;
         }
 
         Ok(AiKnowledgeBaseDocument {

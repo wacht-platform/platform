@@ -224,46 +224,44 @@ impl GetAiAgentsByIdsQuery {
         if self.agent_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             r#"
             SELECT
                 a.id, a.created_at, a.updated_at, a.name, a.description,
                 a.configuration, a.deployment_id, a.sub_agents, a.spawn_config,
-                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as tools_count,
-                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as knowledge_bases_count
+                COALESCE((SELECT COUNT(*) FROM ai_agent_tools aat WHERE aat.agent_id = a.id AND aat.deployment_id = a.deployment_id), 0)::bigint as "tools_count!",
+                COALESCE((SELECT COUNT(*) FROM ai_agent_knowledge_bases aakb WHERE aakb.agent_id = a.id AND aakb.deployment_id = a.deployment_id), 0)::bigint as "knowledge_bases_count!"
             FROM ai_agents a
             WHERE a.deployment_id = $1
               AND a.id = ANY($2::bigint[])
             ORDER BY a.name ASC
             "#,
+            self.deployment_id,
+            &self.agent_ids
         )
-        .bind(self.deployment_id)
-        .bind(&self.agent_ids)
         .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
-        use sqlx::Row;
-
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             let sub_agents = row
-                .get::<Option<serde_json::Value>, _>("sub_agents")
+                .sub_agents
                 .and_then(|v| serde_json::from_value::<Vec<i64>>(v).ok());
             let spawn_config = row
-                .get::<Option<serde_json::Value>, _>("spawn_config")
+                .spawn_config
                 .and_then(|v| serde_json::from_value::<models::SpawnConfig>(v).ok());
 
             result.push(AiAgentWithDetails {
-                id: row.get("id"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                name: row.get("name"),
-                description: row.get("description"),
-                deployment_id: row.get("deployment_id"),
-                configuration: row.get("configuration"),
-                tools_count: row.get("tools_count"),
-                knowledge_bases_count: row.get("knowledge_bases_count"),
+                id: row.id,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                name: row.name,
+                description: row.description,
+                deployment_id: row.deployment_id,
+                configuration: row.configuration,
+                tools_count: row.tools_count,
+                knowledge_bases_count: row.knowledge_bases_count,
                 sub_agents,
                 spawn_config,
             });

@@ -158,7 +158,10 @@ pub struct VerifyOAuthAppDomainCommand {
 }
 
 impl VerifyOAuthAppDomainCommand {
-    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<VerifyOAuthAppDomainResult, AppError>
+    pub async fn execute_with_deps<D>(
+        self,
+        deps: &D,
+    ) -> Result<VerifyOAuthAppDomainResult, AppError>
     where
         D: HasDbRouter + HasCloudflareService,
     {

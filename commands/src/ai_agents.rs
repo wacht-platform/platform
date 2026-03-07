@@ -1,5 +1,5 @@
 use chrono::Utc;
-use common::error::AppError;
+use common::{HasDbRouter, error::AppError};
 use models::AiAgent;
 
 pub struct CreateAiAgentCommand {
@@ -57,9 +57,9 @@ impl CreateAiAgentCommand {
 }
 
 impl CreateAiAgentCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiAgent, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<AiAgent, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter,
     {
         let now = Utc::now();
         let agent_id = self.id;
@@ -72,7 +72,12 @@ impl CreateAiAgentCommand {
             .map(|ids| serde_json::to_value(ids).unwrap());
         let spawn_config_json = self.spawn_config.map(|c| serde_json::to_value(c).unwrap());
 
-        let mut tx = acquirer.begin().await.map_err(AppError::Database)?;
+        let mut tx = deps
+            .db_router()
+            .writer()
+            .begin()
+            .await
+            .map_err(AppError::Database)?;
 
         let agent = sqlx::query!(
             r#"
@@ -92,7 +97,7 @@ impl CreateAiAgentCommand {
         )
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| AppError::Database(e))?;
+        .map_err(AppError::Database)?;
 
         sync_agent_relations(
             &mut tx,
@@ -190,9 +195,9 @@ impl UpdateAiAgentCommand {
 }
 
 impl UpdateAiAgentCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiAgent, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<AiAgent, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter,
     {
         let now = Utc::now();
         let agent_id = self.agent_id;
@@ -203,7 +208,12 @@ impl UpdateAiAgentCommand {
             .map(|ids| serde_json::to_value(ids).unwrap());
         let spawn_config_json = self.spawn_config.map(|c| serde_json::to_value(c).unwrap());
 
-        let mut tx = acquirer.begin().await.map_err(AppError::Database)?;
+        let mut tx = deps
+            .db_router()
+            .writer()
+            .begin()
+            .await
+            .map_err(AppError::Database)?;
 
         let agent = sqlx::query!(
             r#"
@@ -440,9 +450,9 @@ impl AttachSubAgentToAgentCommand {
 }
 
 impl AttachSubAgentToAgentCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter,
     {
         if self.agent_id == self.sub_agent_id {
             return Err(AppError::BadRequest(
@@ -450,37 +460,48 @@ impl AttachSubAgentToAgentCommand {
             ));
         }
 
-        let mut tx = acquirer.begin().await.map_err(AppError::Database)?;
+        let mut tx = deps
+            .db_router()
+            .writer()
+            .begin()
+            .await
+            .map_err(AppError::Database)?;
 
-        let parent_exists: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM ai_agents WHERE id = $1 AND deployment_id = $2")
-                .bind(self.agent_id)
-                .bind(self.deployment_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(AppError::Database)?;
+        let parent_exists: Option<i64> = sqlx::query_scalar!(
+            "SELECT id FROM ai_agents WHERE id = $1 AND deployment_id = $2",
+            self.agent_id,
+            self.deployment_id
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
 
         if parent_exists.is_none() {
             return Err(AppError::NotFound("Agent not found".to_string()));
         }
 
-        let child_exists: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM ai_agents WHERE id = $1 AND deployment_id = $2")
-                .bind(self.sub_agent_id)
-                .bind(self.deployment_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(AppError::Database)?;
+        let child_exists: Option<i64> = sqlx::query_scalar!(
+            "SELECT id FROM ai_agents WHERE id = $1 AND deployment_id = $2",
+            self.sub_agent_id,
+            self.deployment_id
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
 
         if child_exists.is_none() {
             return Err(AppError::NotFound("Sub-agent not found".to_string()));
         }
 
-        let sub_agents_json: Option<serde_json::Value> = sqlx::query_scalar(
-            "SELECT sub_agents FROM ai_agents WHERE id = $1 AND deployment_id = $2",
+        let sub_agents_json: Option<serde_json::Value> = sqlx::query_scalar!(
+            r#"
+            SELECT sub_agents as "sub_agents: serde_json::Value"
+            FROM ai_agents
+            WHERE id = $1 AND deployment_id = $2
+            "#,
+            self.agent_id,
+            self.deployment_id
         )
-        .bind(self.agent_id)
-        .bind(self.deployment_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(AppError::Database)?;
@@ -496,13 +517,15 @@ impl AttachSubAgentToAgentCommand {
         let updated_sub_agents = serde_json::to_value(sub_agents)
             .map_err(|e| AppError::Internal(format!("Failed to serialize sub_agents: {}", e)))?;
 
-        sqlx::query("UPDATE ai_agents SET sub_agents = $1, updated_at = NOW() WHERE id = $2 AND deployment_id = $3")
-            .bind(updated_sub_agents)
-            .bind(self.agent_id)
-            .bind(self.deployment_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(AppError::Database)?;
+        sqlx::query!(
+            "UPDATE ai_agents SET sub_agents = $1, updated_at = NOW() WHERE id = $2 AND deployment_id = $3",
+            updated_sub_agents,
+            self.agent_id,
+            self.deployment_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
 
         tx.commit().await.map_err(AppError::Database)?;
 
@@ -527,17 +550,26 @@ impl DetachSubAgentFromAgentCommand {
 }
 
 impl DetachSubAgentFromAgentCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter,
     {
-        let mut tx = acquirer.begin().await.map_err(AppError::Database)?;
+        let mut tx = deps
+            .db_router()
+            .writer()
+            .begin()
+            .await
+            .map_err(AppError::Database)?;
 
-        let sub_agents_json: Option<serde_json::Value> = sqlx::query_scalar(
-            "SELECT sub_agents FROM ai_agents WHERE id = $1 AND deployment_id = $2",
+        let sub_agents_json: Option<serde_json::Value> = sqlx::query_scalar!(
+            r#"
+            SELECT sub_agents as "sub_agents: serde_json::Value"
+            FROM ai_agents
+            WHERE id = $1 AND deployment_id = $2
+            "#,
+            self.agent_id,
+            self.deployment_id
         )
-        .bind(self.agent_id)
-        .bind(self.deployment_id)
         .fetch_optional(&mut *tx)
         .await
         .map_err(AppError::Database)?
@@ -552,13 +584,15 @@ impl DetachSubAgentFromAgentCommand {
         let updated_sub_agents = serde_json::to_value(sub_agents)
             .map_err(|e| AppError::Internal(format!("Failed to serialize sub_agents: {}", e)))?;
 
-        sqlx::query("UPDATE ai_agents SET sub_agents = $1, updated_at = NOW() WHERE id = $2 AND deployment_id = $3")
-            .bind(updated_sub_agents)
-            .bind(self.agent_id)
-            .bind(self.deployment_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(AppError::Database)?;
+        sqlx::query!(
+            "UPDATE ai_agents SET sub_agents = $1, updated_at = NOW() WHERE id = $2 AND deployment_id = $3",
+            updated_sub_agents,
+            self.agent_id,
+            self.deployment_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::Database)?;
 
         tx.commit().await.map_err(AppError::Database)?;
 
@@ -581,11 +615,16 @@ impl DeleteAiAgentCommand {
 }
 
 impl DeleteAiAgentCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter,
     {
-        let mut tx = acquirer.begin().await.map_err(AppError::Database)?;
+        let mut tx = deps
+            .db_router()
+            .writer()
+            .begin()
+            .await
+            .map_err(AppError::Database)?;
 
         // Delete all agent relationships first
         sqlx::query!(

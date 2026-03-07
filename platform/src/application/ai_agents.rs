@@ -107,7 +107,7 @@ pub async fn create_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command.execute_with_db(app_state.db_router.writer()).await
+    command.execute_with_deps(app_state).await
 }
 
 pub async fn get_ai_agent_by_id(
@@ -215,7 +215,7 @@ pub async fn update_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command.execute_with_db(app_state.db_router.writer()).await
+    command.execute_with_deps(app_state).await
 }
 
 pub async fn delete_ai_agent(
@@ -224,7 +224,7 @@ pub async fn delete_ai_agent(
     agent_id: i64,
 ) -> Result<(), AppError> {
     DeleteAiAgentCommand::new(deployment_id, agent_id)
-        .execute_with_db(app_state.db_router.writer())
+        .execute_with_deps(app_state)
         .await?;
     Ok(())
 }
@@ -253,7 +253,7 @@ pub async fn attach_sub_agent_to_agent(
     sub_agent_id: i64,
 ) -> Result<(), AppError> {
     AttachSubAgentToAgentCommand::new(deployment_id, agent_id, sub_agent_id)
-        .execute_with_db(app_state.db_router.writer())
+        .execute_with_deps(app_state)
         .await?;
     Ok(())
 }
@@ -265,7 +265,7 @@ pub async fn detach_sub_agent_from_agent(
     sub_agent_id: i64,
 ) -> Result<(), AppError> {
     DetachSubAgentFromAgentCommand::new(deployment_id, agent_id, sub_agent_id)
-        .execute_with_db(app_state.db_router.writer())
+        .execute_with_deps(app_state)
         .await?;
     Ok(())
 }

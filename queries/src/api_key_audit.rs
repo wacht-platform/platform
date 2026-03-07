@@ -45,7 +45,10 @@ pub struct GetApiAuditLogsQuery {
 }
 
 impl GetApiAuditLogsQuery {
-    pub async fn execute_with_deps(&self, client: &Client) -> Result<ApiAuditLogsResponse, AppError> {
+    pub async fn execute_with_deps(
+        &self,
+        client: &Client,
+    ) -> Result<ApiAuditLogsResponse, AppError> {
         let limit = self.limit.clamp(1, 1000) as usize;
         let (mut where_parts, mut where_binds) = base_where(
             self.deployment_id,

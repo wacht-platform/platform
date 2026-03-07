@@ -3,6 +3,54 @@ use sqlx::Row;
 use common::error::AppError;
 use models::{AiTool, AiToolConfiguration, AiToolType, AiToolWithDetails};
 
+fn parse_ai_tool_configuration(value: serde_json::Value) -> AiToolConfiguration {
+    serde_json::from_value(value).unwrap_or_default()
+}
+
+fn build_ai_tool(
+    id: i64,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+    name: String,
+    description: Option<String>,
+    tool_type: AiToolType,
+    deployment_id: i64,
+    configuration: serde_json::Value,
+) -> AiTool {
+    AiTool {
+        id,
+        created_at,
+        updated_at,
+        name,
+        description,
+        tool_type,
+        deployment_id,
+        configuration: parse_ai_tool_configuration(configuration),
+    }
+}
+
+fn build_ai_tool_with_details(
+    id: i64,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+    name: String,
+    description: Option<String>,
+    tool_type: AiToolType,
+    deployment_id: i64,
+    configuration: serde_json::Value,
+) -> AiToolWithDetails {
+    AiToolWithDetails {
+        id,
+        created_at,
+        updated_at,
+        name,
+        description,
+        tool_type,
+        deployment_id,
+        configuration: parse_ai_tool_configuration(configuration),
+    }
+}
+
 pub struct GetAiToolsQuery {
     pub deployment_id: i64,
     pub limit: Option<u32>,
@@ -35,7 +83,10 @@ impl GetAiToolsQuery {
         self
     }
 
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<AiToolWithDetails>, AppError>
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<AiToolWithDetails>, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -93,20 +144,16 @@ impl GetAiToolsQuery {
         Ok(tools
             .into_iter()
             .map(|row| {
-                let tool_type = AiToolType::from(row.get::<String, _>("tool_type"));
-                let configuration: AiToolConfiguration =
-                    serde_json::from_value(row.get("configuration")).unwrap_or_default();
-
-                AiToolWithDetails {
-                    id: row.get("id"),
-                    created_at: row.get("created_at"),
-                    updated_at: row.get("updated_at"),
-                    name: row.get("name"),
-                    description: row.get("description"),
-                    tool_type,
-                    deployment_id: row.get("deployment_id"),
-                    configuration,
-                }
+                build_ai_tool_with_details(
+                    row.get("id"),
+                    row.get("created_at"),
+                    row.get("updated_at"),
+                    row.get("name"),
+                    row.get("description"),
+                    AiToolType::from(row.get::<String, _>("tool_type")),
+                    row.get("deployment_id"),
+                    row.get("configuration"),
+                )
             })
             .collect())
     }
@@ -150,20 +197,16 @@ impl GetAiToolByIdQuery {
         .await
         .map_err(AppError::Database)?;
 
-        let tool_type = AiToolType::from(tool.tool_type);
-        let configuration: AiToolConfiguration =
-            serde_json::from_value(tool.configuration).unwrap_or_default();
-
-        Ok(AiToolWithDetails {
-            id: tool.id,
-            created_at: tool.created_at,
-            updated_at: tool.updated_at,
-            name: tool.name,
-            description: tool.description,
-            tool_type,
-            deployment_id: tool.deployment_id,
-            configuration,
-        })
+        Ok(build_ai_tool_with_details(
+            tool.id,
+            tool.created_at,
+            tool.updated_at,
+            tool.name,
+            tool.description,
+            AiToolType::from(tool.tool_type),
+            tool.deployment_id,
+            tool.configuration,
+        ))
     }
 }
 
@@ -204,20 +247,16 @@ impl GetAgentToolsQuery {
         Ok(tools
             .into_iter()
             .map(|tool| {
-                let tool_type = AiToolType::from(tool.tool_type);
-                let configuration: AiToolConfiguration =
-                    serde_json::from_value(tool.configuration).unwrap_or_default();
-
-                AiTool {
-                    id: tool.id,
-                    created_at: tool.created_at,
-                    updated_at: tool.updated_at,
-                    name: tool.name,
-                    description: tool.description,
-                    tool_type,
-                    deployment_id: tool.deployment_id,
-                    configuration,
-                }
+                build_ai_tool(
+                    tool.id,
+                    tool.created_at,
+                    tool.updated_at,
+                    tool.name,
+                    tool.description,
+                    AiToolType::from(tool.tool_type),
+                    tool.deployment_id,
+                    tool.configuration,
+                )
             })
             .collect())
     }
@@ -261,20 +300,16 @@ impl GetToolByIdQuery {
             _ => AppError::Database(e),
         })?;
 
-        let tool_type = AiToolType::from(tool.tool_type);
-        let configuration: AiToolConfiguration =
-            serde_json::from_value(tool.configuration).unwrap_or_default();
-
-        Ok(AiTool {
-            id: tool.id,
-            created_at: tool.created_at,
-            updated_at: tool.updated_at,
-            name: tool.name,
-            description: tool.description,
-            tool_type,
-            deployment_id: tool.deployment_id,
-            configuration,
-        })
+        Ok(build_ai_tool(
+            tool.id,
+            tool.created_at,
+            tool.updated_at,
+            tool.name,
+            tool.description,
+            AiToolType::from(tool.tool_type),
+            tool.deployment_id,
+            tool.configuration,
+        ))
     }
 }
 
@@ -325,20 +360,16 @@ impl GetAiToolsByIdsQuery {
         Ok(tools
             .into_iter()
             .map(|row| {
-                let tool_type = AiToolType::from(row.get::<String, _>("tool_type"));
-                let configuration: AiToolConfiguration =
-                    serde_json::from_value(row.get("configuration")).unwrap_or_default();
-
-                AiTool {
-                    id: row.get("id"),
-                    created_at: row.get("created_at"),
-                    updated_at: row.get("updated_at"),
-                    name: row.get("name"),
-                    description: row.get("description"),
-                    tool_type,
-                    deployment_id: row.get("deployment_id"),
-                    configuration,
-                }
+                build_ai_tool(
+                    row.get("id"),
+                    row.get("created_at"),
+                    row.get("updated_at"),
+                    row.get("name"),
+                    row.get("description"),
+                    AiToolType::from(row.get::<String, _>("tool_type")),
+                    row.get("deployment_id"),
+                    row.get("configuration"),
+                )
             })
             .collect())
     }

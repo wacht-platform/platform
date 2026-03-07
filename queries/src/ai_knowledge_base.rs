@@ -281,7 +281,10 @@ impl GetAiKnowledgeBasesByIdsQuery {
         }
     }
 
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<AiKnowledgeBase>, AppError>
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<AiKnowledgeBase>, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {

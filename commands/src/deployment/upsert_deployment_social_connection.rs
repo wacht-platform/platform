@@ -36,14 +36,17 @@ impl UpsertDeploymentSocialConnectionCommand {
 }
 
 impl UpsertDeploymentSocialConnectionCommand {
-    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<DeploymentSocialConnection, AppError>
+    pub async fn execute_with_deps<D>(
+        self,
+        deps: &D,
+    ) -> Result<DeploymentSocialConnection, AppError>
     where
         D: HasDbRouter + HasRedis,
     {
         let writer = deps.db_router().writer();
-        let social_connection_id = self.social_connection_id.ok_or_else(|| {
-            AppError::Validation("social_connection_id is required".to_string())
-        })?;
+        let social_connection_id = self
+            .social_connection_id
+            .ok_or_else(|| AppError::Validation("social_connection_id is required".to_string()))?;
         let provider = self.connection.provider;
         let enabled = self.connection.enabled;
         let mut credentials = self.connection.credentials;

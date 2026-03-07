@@ -614,7 +614,10 @@ async fn check_authz_oauth_access_token(
     let token_hash = format!("{:x}", hasher.finalize());
 
     let token_query = GetGatewayOAuthAccessTokenByHashQuery::new(token_hash.clone());
-    let token_data = match token_query.execute_with_db(app_state.db_router.writer()).await {
+    let token_data = match token_query
+        .execute_with_db(app_state.db_router.writer())
+        .await
+    {
         Ok(Some(data)) => data,
         Ok(None) => return error_response(StatusCode::UNAUTHORIZED, request_id, "invalid_token"),
         Err(_) => {

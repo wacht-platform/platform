@@ -1,3 +1,4 @@
+use crate::dynamic_update_set::DynamicUpdateSet;
 use common::error::AppError;
 use models::{AiTool, AiToolConfiguration, AiToolType};
 
@@ -215,25 +216,12 @@ impl UpdateAiToolCommand {
         self.validate().await?;
         let now = Utc::now();
 
-        let mut query_parts = vec!["updated_at = $1".to_string()];
-        let mut param_count = 2;
-
-        if self.name.is_some() {
-            query_parts.push(format!("name = ${}", param_count));
-            param_count += 1;
-        }
-        if self.description.is_some() {
-            query_parts.push(format!("description = ${}", param_count));
-            param_count += 1;
-        }
-        if self.tool_type.is_some() {
-            query_parts.push(format!("tool_type = ${}", param_count));
-            param_count += 1;
-        }
-        if self.configuration.is_some() {
-            query_parts.push(format!("configuration = ${}", param_count));
-            param_count += 1;
-        }
+        let mut update_set = DynamicUpdateSet::with_updated_at();
+        update_set.push_if_present("name", &self.name);
+        update_set.push_if_present("description", &self.description);
+        update_set.push_if_present("tool_type", &self.tool_type);
+        update_set.push_if_present("configuration", &self.configuration);
+        let (id_param, deployment_param) = update_set.where_indexes();
 
         let query = format!(
             r#"
@@ -242,9 +230,9 @@ impl UpdateAiToolCommand {
             WHERE id = ${} AND deployment_id = ${}
             RETURNING id, created_at, updated_at, name, description, tool_type, deployment_id, configuration
             "#,
-            query_parts.join(", "),
-            param_count,
-            param_count + 1
+            update_set.set_clause(),
+            id_param,
+            deployment_param
         );
 
         let mut query_builder = sqlx::query(&query);

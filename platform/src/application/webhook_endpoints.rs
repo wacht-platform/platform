@@ -130,7 +130,7 @@ pub async fn update_webhook_endpoint(
         .execute_with_deps(UpdateWebhookEndpointDeps {
             acquirer: app_state.db_router.writer(),
             db_router: &app_state.db_router,
-            })
+        })
         .await
 }
 
@@ -140,7 +140,9 @@ pub async fn delete_webhook_endpoint(
     endpoint_id: i64,
 ) -> Result<(), AppError> {
     let command = DeleteWebhookEndpointCommand::new(endpoint_id, deployment_id);
-    command.execute_with_db(app_state.db_router.writer()).await?;
+    command
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
     Ok(())
 }
 

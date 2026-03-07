@@ -7,6 +7,7 @@ use common::error::AppError;
 use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
 use dto::json::nats::NatsTaskMessage;
+use queries::GetWebhookSubscriptionFilterRulesQuery;
 
 use super::{
     GetSubscribedEndpointsCommand,
@@ -307,18 +308,13 @@ impl ReplayWebhookDeliveryCommand {
             ));
         }
 
-        let current_subscription = query!(
-            r#"
-            SELECT filter_rules
-            FROM webhook_endpoint_subscriptions
-            WHERE endpoint_id = $1 AND deployment_id = $2 AND app_slug = $3 AND event_name = $4
-            "#,
+        let current_filter_rules = GetWebhookSubscriptionFilterRulesQuery::new(
             endpoint_id,
             self.deployment_id,
             app_slug.clone(),
-            event_name.clone()
+            event_name.clone(),
         )
-        .fetch_optional(pool)
+        .execute_with_db(pool)
         .await?
         .ok_or_else(|| {
             AppError::BadRequest(
@@ -361,7 +357,7 @@ impl ReplayWebhookDeliveryCommand {
             app_slug.clone(),
             event_name.clone(),
             payload,
-            current_subscription.filter_rules,
+            current_filter_rules,
             payload_size_bytes,
             webhook_id,
             webhook_timestamp,

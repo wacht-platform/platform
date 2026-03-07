@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT mcp_server_id\n            FROM active_agent_mcp_servers\n            WHERE deployment_id = $1\n              AND agent_id = $2\n              AND context_group = $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mcp_server_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7b04961156d42744a7ed2b4d1b23b18efe3cffa0f324267dff07e2d31f20b896"
+}

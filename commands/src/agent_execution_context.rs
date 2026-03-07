@@ -48,7 +48,10 @@ impl CreateExecutionContextCommand {
 }
 
 impl CreateExecutionContextCommand {
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<AgentExecutionContext, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -399,7 +402,10 @@ impl UpdateExecutionContextCommand {
 }
 
 impl UpdateExecutionContextCommand {
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<AgentExecutionContext, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -578,7 +584,10 @@ impl CreateChildContextCommand {
 }
 
 impl CreateChildContextCommand {
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<AgentExecutionContext, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {

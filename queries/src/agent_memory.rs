@@ -4,7 +4,6 @@ use dto::json::agent_memory::MemoryCategory;
 use models::{ConversationRecord, MemoryBoundaries, MemoryRecord};
 use pgvector::HalfVector;
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
 
 #[derive(Debug)]
 pub struct GetMRUMemoriesQuery {
@@ -211,7 +210,10 @@ pub struct MemoryWithScore {
 }
 
 impl SearchMemoriesWithDecayQuery {
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<MemoryWithScore>, AppError>
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<MemoryWithScore>, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -414,22 +416,25 @@ impl SearchConversationsQuery {
 pub struct GetAllMemoryBoundariesQuery;
 
 impl GetAllMemoryBoundariesQuery {
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<MemoryBoundaries>, AppError>
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<MemoryBoundaries>, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             r#"
             SELECT
-                context_id,
-                max_conversations,
-                max_memories_per_category,
-                compression_threshold_days,
-                eviction_threshold_score,
-                created_at,
-                updated_at
+                context_id as "context_id!",
+                max_conversations as "max_conversations!",
+                max_memories_per_category as "max_memories_per_category!: serde_json::Value",
+                compression_threshold_days as "compression_threshold_days!",
+                eviction_threshold_score as "eviction_threshold_score!",
+                created_at as "created_at!",
+                updated_at as "updated_at!"
             FROM memory_boundaries
-            "#,
+            "#
         )
         .fetch_all(executor)
         .await
@@ -438,13 +443,13 @@ impl GetAllMemoryBoundariesQuery {
         let mut boundaries = Vec::new();
         for row in rows {
             boundaries.push(MemoryBoundaries {
-                context_id: row.try_get("context_id")?,
-                max_conversations: row.try_get("max_conversations")?,
-                max_memories_per_category: row.try_get("max_memories_per_category")?,
-                compression_threshold_days: row.try_get("compression_threshold_days")?,
-                eviction_threshold_score: row.try_get("eviction_threshold_score")?,
-                created_at: row.try_get("created_at")?,
-                updated_at: row.try_get("updated_at")?,
+                context_id: row.context_id,
+                max_conversations: row.max_conversations,
+                max_memories_per_category: row.max_memories_per_category,
+                compression_threshold_days: row.compression_threshold_days,
+                eviction_threshold_score: row.eviction_threshold_score,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
             });
         }
 
@@ -599,33 +604,33 @@ impl GetMemoryBoundariesQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             SELECT
-                context_id,
-                max_conversations,
-                max_memories_per_category,
-                compression_threshold_days,
-                eviction_threshold_score,
-                created_at,
-                updated_at
+                context_id as "context_id!",
+                max_conversations as "max_conversations!",
+                max_memories_per_category as "max_memories_per_category!: serde_json::Value",
+                compression_threshold_days as "compression_threshold_days!",
+                eviction_threshold_score as "eviction_threshold_score!",
+                created_at as "created_at!",
+                updated_at as "updated_at!"
             FROM memory_boundaries
             WHERE context_id = $1
             "#,
+            self.context_id
         )
-        .bind(self.context_id)
         .fetch_one(executor)
         .await
         .map_err(AppError::from)?;
 
         let boundaries = MemoryBoundaries {
-            context_id: row.try_get("context_id")?,
-            max_conversations: row.try_get("max_conversations")?,
-            max_memories_per_category: row.try_get("max_memories_per_category")?,
-            compression_threshold_days: row.try_get("compression_threshold_days")?,
-            eviction_threshold_score: row.try_get("eviction_threshold_score")?,
-            created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
+            context_id: row.context_id,
+            max_conversations: row.max_conversations,
+            max_memories_per_category: row.max_memories_per_category,
+            compression_threshold_days: row.compression_threshold_days,
+            eviction_threshold_score: row.eviction_threshold_score,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
         };
 
         Ok(boundaries)

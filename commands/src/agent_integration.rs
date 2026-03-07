@@ -1,3 +1,4 @@
+use crate::dynamic_update_set::DynamicUpdateSet;
 use chrono::Utc;
 use common::{HasDbRouter, HasIdGenerator, error::AppError};
 use models::{AgentIntegration, IntegrationType};
@@ -201,17 +202,10 @@ impl UpdateAgentIntegrationCommand {
     {
         let now = Utc::now();
 
-        let mut query_parts = vec!["updated_at = $1".to_string()];
-        let mut param_count = 2;
-
-        if self.name.is_some() {
-            query_parts.push(format!("name = ${}", param_count));
-            param_count += 1;
-        }
-        if self.config.is_some() {
-            query_parts.push(format!("config = ${}", param_count));
-            param_count += 1;
-        }
+        let mut update_set = DynamicUpdateSet::with_updated_at();
+        update_set.push_if_present("name", &self.name);
+        update_set.push_if_present("config", &self.config);
+        let (id_param, deployment_param) = update_set.where_indexes();
 
         let query = format!(
             r#"
@@ -220,9 +214,9 @@ impl UpdateAgentIntegrationCommand {
             WHERE id = ${} AND deployment_id = ${}
             RETURNING id, created_at, updated_at, deployment_id, agent_id, integration_type, name, config
             "#,
-            query_parts.join(", "),
-            param_count,
-            param_count + 1
+            update_set.set_clause(),
+            id_param,
+            deployment_param
         );
 
         let mut query_builder = sqlx::query(&query);

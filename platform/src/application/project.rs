@@ -157,6 +157,8 @@ pub async fn delete_project(
     let command = DeleteProjectCommand::builder()
         .id(input.project_id)
         .build()?;
-    command.execute_with_db(app_state.db_router.writer()).await?;
+    command
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
     Ok(())
 }

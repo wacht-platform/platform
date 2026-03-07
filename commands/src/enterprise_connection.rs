@@ -51,9 +51,9 @@ impl CreateEnterpriseConnectionCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let connection_id = self.connection_id.ok_or_else(|| {
-            AppError::Validation("connection_id is required".to_string())
-        })?;
+        let connection_id = self
+            .connection_id
+            .ok_or_else(|| AppError::Validation("connection_id is required".to_string()))?;
         let now = Utc::now();
         let connection = sqlx::query_as::<_, EnterpriseConnection>(
             r#"

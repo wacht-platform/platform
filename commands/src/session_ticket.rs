@@ -129,9 +129,11 @@ impl GenerateSessionTicketCommand {
     where
         D: HasRedis + HasIdGenerator,
     {
-        let ticket_id = deps.id_generator().next_id().map_err(|e| {
-            AppError::Internal(format!("Failed to generate ticket ID: {}", e))
-        })? as i64;
+        let ticket_id = deps
+            .id_generator()
+            .next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate ticket ID: {}", e)))?
+            as i64;
         // Validate inputs based on ticket type
         match self.ticket_type {
             SessionTicketType::Impersonation => {

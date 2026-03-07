@@ -1829,7 +1829,10 @@ impl DeploymentEmailVerificationUpdate {
         self
     }
 
-    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<(), AppError> {
         let deployment_id = self
             .deployment_id
             .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
@@ -1879,7 +1882,10 @@ impl DeploymentDomainVerificationUpdate {
         self
     }
 
-    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<(), AppError> {
         let deployment_id = self
             .deployment_id
             .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
@@ -2126,7 +2132,10 @@ impl DeleteDeploymentSocialConnectionsByIds {
         self
     }
 
-    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
             .as_ref()
@@ -2165,7 +2174,10 @@ impl DeleteDeploymentAuthSettingsByIds {
         self
     }
 
-    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
             .as_ref()
@@ -2204,7 +2216,10 @@ impl DeleteDeploymentUiSettingsByIds {
         self
     }
 
-    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
             .as_ref()
@@ -2243,7 +2258,10 @@ impl DeleteDeploymentB2bSettingsByIds {
         self
     }
 
-    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
             .as_ref()
@@ -2282,7 +2300,10 @@ impl DeleteDeploymentsByProject {
         self
     }
 
-    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<(), AppError> {
         let project_id = self
             .project_id
             .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?;
@@ -2316,7 +2337,10 @@ impl DeleteProjectById {
         self
     }
 
-    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(
+        &self,
+        conn: &mut sqlx::PgConnection,
+    ) -> Result<(), AppError> {
         let project_id = self
             .project_id
             .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?;

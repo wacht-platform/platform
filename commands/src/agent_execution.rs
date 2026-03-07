@@ -198,10 +198,7 @@ impl SignalAgentExecutionCancellationCommand {
 }
 
 impl SignalAgentExecutionCancellationCommand {
-    pub async fn execute_with_deps<D>(
-        self,
-        deps: &D,
-    ) -> Result<(), AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
         D: HasNatsJetStream + HasIdGenerator,
     {
@@ -318,16 +315,15 @@ impl PublishAgentExecutionCommand {
 }
 
 impl PublishAgentExecutionCommand {
-    pub async fn execute_with_deps<D>(
-        self,
-        deps: &D,
-    ) -> Result<(), AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
         D: HasNatsJetStream + HasIdGenerator,
     {
-        let task_id = deps.id_generator().next_id().map_err(|e| {
-            AppError::Internal(format!("Failed to generate task id: {}", e))
-        })? as i64;
+        let task_id = deps
+            .id_generator()
+            .next_id()
+            .map_err(|e| AppError::Internal(format!("Failed to generate task id: {}", e)))?
+            as i64;
         let jetstream = deps.nats_jetstream();
         let task = NatsTaskMessage {
             task_id: format!("exec_{}", task_id),

@@ -108,10 +108,7 @@ impl CreateNotificationCommand {
 }
 
 impl CreateNotificationCommand {
-    pub async fn execute_with_deps<D>(
-        self,
-        deps: &D,
-    ) -> Result<Notification, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Notification, AppError>
     where
         D: HasDbRouter + HasNatsClient,
     {

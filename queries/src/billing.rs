@@ -5,10 +5,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
-fn map_billing_account_with_prefix(
-    row: &sqlx::postgres::PgRow,
-    prefix: &str,
-) -> BillingAccount {
+fn map_billing_account_with_prefix(row: &sqlx::postgres::PgRow, prefix: &str) -> BillingAccount {
     BillingAccount {
         id: row.get(format!("{prefix}id").as_str()),
         owner_id: row.get(format!("{prefix}owner_id").as_str()),
@@ -47,10 +44,7 @@ fn map_billing_account_with_prefix(
     }
 }
 
-fn map_subscription_with_prefix(
-    row: &sqlx::postgres::PgRow,
-    prefix: &str,
-) -> Option<Subscription> {
+fn map_subscription_with_prefix(row: &sqlx::postgres::PgRow, prefix: &str) -> Option<Subscription> {
     let id: Option<i64> = row.try_get(format!("{prefix}id").as_str()).ok().flatten();
     id.map(|id| Subscription {
         id,

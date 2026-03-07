@@ -1,3 +1,4 @@
+use crate::membership_role::insert_organization_membership_role;
 use common::error::AppError;
 use models::WorkspaceMemberDetails;
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,10 @@ impl AddWorkspaceMemberCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WorkspaceMemberDetails, AppError>
+    pub async fn execute_with_db<'a, A>(
+        self,
+        acquirer: A,
+    ) -> Result<WorkspaceMemberDetails, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -113,20 +117,13 @@ impl AddWorkspaceMemberCommand {
             .map_err(|e| e)?;
 
             // Add the default role to the organization membership
-            sqlx::query!(
-                r#"
-                INSERT INTO organization_membership_roles (organization_membership_id, organization_role_id, organization_id)
-                VALUES ($1, $2, $3)
-                "#,
+            insert_organization_membership_role(
+                &mut *tx,
                 new_membership_id,
                 default_org_role_id,
-                workspace.organization_id
+                workspace.organization_id,
             )
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                e
-            })?;
+            .await?;
 
             new_membership_id
         };

@@ -87,6 +87,30 @@ fn includes_phone_auth(auth_methods: &[String]) -> bool {
     auth_methods.iter().any(|method| method == "phone")
 }
 
+fn ensure_billing_status_active(status: &str, target: &str) -> Result<(), AppError> {
+    if status != "active" {
+        return Err(AppError::Validation(format!(
+            "Cannot create {}. Billing account status is {}",
+            target, status
+        )));
+    }
+
+    Ok(())
+}
+
+fn ensure_phone_auth_allowed(
+    auth_methods: &[String],
+    pulse_usage_disabled: bool,
+) -> Result<(), AppError> {
+    if includes_phone_auth(auth_methods) && pulse_usage_disabled {
+        return Err(AppError::Validation(
+            "Prepaid recharge is required before enabling phone authentication for staging deployments".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 fn social_credentials_with_default_scopes(
     provider: &SocialConnectionProvider,
 ) -> Result<serde_json::Value, AppError> {
@@ -142,6 +166,59 @@ async fn generate_deployment_key_pairs() -> Result<(String, String, String, Stri
     key_pair_task
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?
+}
+
+async fn generate_deployment_key_material() -> Result<DeploymentKeyMaterial, AppError> {
+    Ok(DeploymentKeyMaterial::from_tuple(
+        generate_deployment_key_pairs().await?,
+    ))
+}
+
+fn build_publishable_key(prefix: &str, backend_host: &str) -> String {
+    let mut publishable_key = prefix.to_string();
+    let base64_backend_host = BASE64_STANDARD.encode(format!("https://{}", backend_host));
+    publishable_key.push_str(&base64_backend_host);
+    publishable_key
+}
+
+struct StagingDeploymentHosts {
+    backend_host: String,
+    frontend_host: String,
+    publishable_key: String,
+}
+
+fn build_staging_deployment_hosts() -> StagingDeploymentHosts {
+    let hostname = generate_nanoid();
+    let backend_host = format!("{}.fapi.trywacht.xyz", hostname);
+    let frontend_host = format!("{}.accounts.trywacht.xyz", hostname);
+    let publishable_key = build_publishable_key("pk_test_", &backend_host);
+
+    StagingDeploymentHosts {
+        backend_host,
+        frontend_host,
+        publishable_key,
+    }
+}
+
+struct ProductionDeploymentHosts {
+    backend_host: String,
+    frontend_host: String,
+    mail_from_host: String,
+    publishable_key: String,
+}
+
+fn build_production_deployment_hosts(custom_domain: &str) -> ProductionDeploymentHosts {
+    let backend_host = format!("frontend.{}", custom_domain);
+    let frontend_host = format!("accounts.{}", custom_domain);
+    let mail_from_host = format!("wcmail.{}", custom_domain);
+    let publishable_key = build_publishable_key("pk_live_", &backend_host);
+
+    ProductionDeploymentHosts {
+        backend_host,
+        frontend_host,
+        mail_from_host,
+        publishable_key,
+    }
 }
 
 fn build_b2b_settings(deployment_id: i64) -> DeploymentB2bSettingsWithRoles {
@@ -284,6 +361,194 @@ fn build_email_templates(deployment_id: i64) -> DeploymentEmailTemplate {
     DeploymentEmailTemplate {
         deployment_id,
         ..Default::default()
+    }
+}
+
+struct DeploymentKeyMaterial {
+    public_key: String,
+    private_key: String,
+    saml_public_key: String,
+    saml_private_key: String,
+}
+
+impl DeploymentKeyMaterial {
+    fn from_tuple(tuple: (String, String, String, String)) -> Self {
+        let (public_key, private_key, saml_public_key, saml_private_key) = tuple;
+        Self {
+            public_key,
+            private_key,
+            saml_public_key,
+            saml_private_key,
+        }
+    }
+}
+
+struct DeploymentBootstrapInput<'a> {
+    deployment_id: i64,
+    frontend_host: &'a str,
+    app_name: String,
+    auth_methods: &'a [String],
+    waitlist_page_url: String,
+    support_page_url: &'a str,
+    key_material: DeploymentKeyMaterial,
+}
+
+async fn bootstrap_deployment_defaults(
+    conn: &mut sqlx::PgConnection,
+    ids: &dyn IdGenerator,
+    input: DeploymentBootstrapInput<'_>,
+) -> Result<(), AppError> {
+    let auth_settings = build_auth_settings(input.auth_methods, input.deployment_id);
+    DeploymentAuthSettingsInsert::builder()
+        .id(ids.next_id()?)
+        .auth_settings(auth_settings)
+        .build()?
+        .execute_with_db(&mut *conn)
+        .await?;
+
+    let ui_settings = build_ui_settings(input.deployment_id, input.frontend_host, input.app_name);
+    DeploymentUiSettingsInsert::builder()
+        .id(ids.next_id()?)
+        .ui_settings(ui_settings)
+        .waitlist_page_url(input.waitlist_page_url)
+        .support_page_url(input.support_page_url)
+        .build()?
+        .execute_with_db(&mut *conn)
+        .await?;
+
+    let b2b_settings = build_b2b_settings(input.deployment_id);
+    DeploymentB2bBootstrapInsert::builder()
+        .settings_row_id(ids.next_id()?)
+        .workspace_creator_role_id(ids.next_id()?)
+        .workspace_member_role_id(ids.next_id()?)
+        .org_creator_role_id(ids.next_id()?)
+        .org_member_role_id(ids.next_id()?)
+        .b2b_settings(b2b_settings)
+        .build()?
+        .execute_with_deps(&mut *conn)
+        .await?;
+
+    let restrictions = build_restrictions(input.deployment_id);
+    DeploymentRestrictionsInsert::builder()
+        .id(ids.next_id()?)
+        .restrictions(restrictions)
+        .build()?
+        .execute_with_db(&mut *conn)
+        .await?;
+
+    let sms_templates = build_sms_templates(input.deployment_id);
+    DeploymentSmsTemplatesInsert::builder()
+        .id(ids.next_id()?)
+        .sms_templates(sms_templates)
+        .build()?
+        .execute_with_db(&mut *conn)
+        .await?;
+
+    let email_templates = build_email_templates(input.deployment_id);
+    DeploymentEmailTemplatesInsert::builder()
+        .id(ids.next_id()?)
+        .email_templates(email_templates)
+        .build()?
+        .execute_with_db(&mut *conn)
+        .await?;
+
+    DeploymentKeyPairsInsert::builder()
+        .id(ids.next_id()?)
+        .deployment_id(input.deployment_id)
+        .public_key(input.key_material.public_key)
+        .private_key(input.key_material.private_key)
+        .saml_public_key(input.key_material.saml_public_key)
+        .saml_private_key(input.key_material.saml_private_key)
+        .build()?
+        .execute_with_db(&mut *conn)
+        .await?;
+
+    if let Some(social_connections_insert) =
+        DeploymentSocialConnectionsBulkInsert::from_auth_methods(
+            input.deployment_id,
+            input.auth_methods,
+            || ids.next_id(),
+        )?
+    {
+        social_connections_insert
+            .execute_with_db(&mut *conn)
+            .await?;
+    }
+
+    let console_id = console_deployment_id()?;
+    ConsoleAppBootstrapInsert::builder()
+        .console_deployment_id(console_id)
+        .target_deployment_id(input.deployment_id)
+        .event_catalog_slug(DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG)
+        .build()?
+        .execute_with_deps(&mut *conn)
+        .await?;
+
+    DeploymentAiSettingsInsert::builder()
+        .id(ids.next_id()?)
+        .deployment_id(input.deployment_id)
+        .build()?
+        .execute_with_db(&mut *conn)
+        .await?;
+
+    Ok(())
+}
+
+async fn insert_staging_deployment_with_defaults(
+    conn: &mut sqlx::PgConnection,
+    ids: &dyn IdGenerator,
+    project_id: i64,
+    app_name: String,
+    auth_methods: &[String],
+    key_material: DeploymentKeyMaterial,
+) -> Result<StagingDeploymentInsertedRow, AppError> {
+    let hosts = build_staging_deployment_hosts();
+
+    let deployment_row = StagingDeploymentInsert::builder()
+        .id(ids.next_id()?)
+        .project_id(project_id)
+        .backend_host(hosts.backend_host)
+        .frontend_host(hosts.frontend_host)
+        .publishable_key(hosts.publishable_key)
+        .mail_from_host("staging.wacht.services")
+        .execute_with_db(&mut *conn)
+        .await?;
+
+    let waitlist_url = format!("https://{}/waitlist", deployment_row.frontend_host);
+    bootstrap_deployment_defaults(
+        conn,
+        ids,
+        DeploymentBootstrapInput {
+            deployment_id: deployment_row.id,
+            frontend_host: &deployment_row.frontend_host,
+            app_name,
+            auth_methods,
+            waitlist_page_url: waitlist_url,
+            support_page_url: "",
+            key_material,
+        },
+    )
+    .await?;
+
+    Ok(deployment_row)
+}
+
+fn build_staging_deployment_model(deployment_row: StagingDeploymentInsertedRow) -> Deployment {
+    Deployment {
+        id: deployment_row.id,
+        created_at: deployment_row.created_at,
+        updated_at: deployment_row.updated_at,
+        maintenance_mode: deployment_row.maintenance_mode,
+        backend_host: deployment_row.backend_host,
+        frontend_host: deployment_row.frontend_host,
+        publishable_key: deployment_row.publishable_key,
+        project_id: deployment_row.project_id,
+        mode: DeploymentMode::from(deployment_row.mode),
+        mail_from_host: deployment_row.mail_from_host,
+        domain_verification_records: None,
+        email_verification_records: None,
+        email_provider: EmailProvider::default(),
+        custom_smtp_config: None,
     }
 }
 

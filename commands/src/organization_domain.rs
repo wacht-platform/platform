@@ -67,7 +67,7 @@ impl CreateOrganizationDomainCommand {
             ..self
         }
         .execute_with_db(deps.db_router().writer())
-            .await
+        .await
     }
 
     pub async fn execute_with_db<'e, E>(

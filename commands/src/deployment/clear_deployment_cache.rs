@@ -24,7 +24,10 @@ impl ClearDeploymentCacheCommand {
         .fetch_one(writer)
         .await?;
 
-        let mut redis_conn = deps.redis_client().get_multiplexed_tokio_connection().await?;
+        let mut redis_conn = deps
+            .redis_client()
+            .get_multiplexed_tokio_connection()
+            .await?;
 
         let cache_key = format!("deployment:{}", deployment_row.backend_host);
         let _: () = redis_conn.del(cache_key).await?;

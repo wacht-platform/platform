@@ -32,7 +32,11 @@ impl ToolExecutor {
 
         let embeddings = commands::GenerateEmbeddingsCommand::new(vec![params.content.clone()])
             .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-            .execute_with_deps(commands::EmbeddingApiDeps { client: &gemini_client, api_key: &gemini_api_key, model: &gemini_model })
+            .execute_with_deps(commands::EmbeddingApiDeps {
+                client: &gemini_client,
+                api_key: &gemini_api_key,
+                model: &gemini_model,
+            })
             .await?;
 
         if embeddings.is_empty() {
@@ -128,7 +132,11 @@ impl ToolExecutor {
             let new_embeddings =
                 commands::GenerateEmbeddingsCommand::new(vec![final_content.clone()])
                     .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-                    .execute_with_deps(commands::EmbeddingApiDeps { client: &gemini_client, api_key: &gemini_api_key, model: &gemini_model })
+                    .execute_with_deps(commands::EmbeddingApiDeps {
+                        client: &gemini_client,
+                        api_key: &gemini_api_key,
+                        model: &gemini_model,
+                    })
                     .await?;
             new_embeddings
                 .first()

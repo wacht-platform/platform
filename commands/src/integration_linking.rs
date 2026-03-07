@@ -116,7 +116,10 @@ impl ValidateLinkCodeCommand {
         self
     }
 
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<ValidateLinkCodeResponse, AppError>
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<ValidateLinkCodeResponse, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {

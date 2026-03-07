@@ -136,8 +136,5 @@ pub async fn create_session_ticket(
         command = command.expires_in(expires_in);
     }
 
-    command
-        .build()?
-        .execute_with_deps(app_state)
-        .await
+    command.build()?.execute_with_deps(app_state).await
 }

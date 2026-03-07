@@ -308,9 +308,7 @@ pub async fn execute_agent_async(
                 agent_name.clone(),
                 conversation_id,
             );
-            publish_command
-                .execute_with_deps(app_state)
-                .await?;
+            publish_command.execute_with_deps(app_state).await?;
 
             info!(
                 "Published new_message execution for context {} (conversation_id: {})",
@@ -350,9 +348,7 @@ pub async fn execute_agent_async(
                 agent_name.clone(),
                 conversation_id,
             );
-            publish_command
-                .execute_with_deps(app_state)
-                .await?;
+            publish_command.execute_with_deps(app_state).await?;
 
             info!(
                 "Published user_input_response execution for context {} (conversation_id: {})",
@@ -374,9 +370,7 @@ pub async fn execute_agent_async(
                 platform_function_result.execution_id.clone(),
                 platform_function_result.result,
             );
-            publish_command
-                .execute_with_deps(app_state)
-                .await?;
+            publish_command.execute_with_deps(app_state).await?;
 
             info!(
                 "Published platform_function_result execution for context {} (execution_id: {})",

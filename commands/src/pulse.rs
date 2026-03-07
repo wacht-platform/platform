@@ -259,10 +259,7 @@ impl DeductPulseCreditsCommand {
         self
     }
 
-    pub async fn execute_with_deps<D>(
-        self,
-        deps: &D,
-    ) -> Result<PulseTransaction, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<PulseTransaction, AppError>
     where
         D: HasDbRouter + HasNatsClient + HasIdGenerator,
     {

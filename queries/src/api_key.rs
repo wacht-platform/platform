@@ -2,6 +2,45 @@ use common::error::AppError;
 use models::api_key::{ApiAuthApp, ApiKey, ApiKeyWithIdentifers};
 use sqlx::Row;
 
+fn api_auth_app_base_query(where_clause: &str, order_clause: &str) -> String {
+    format!(
+        r#"
+        SELECT
+            a.deployment_id, a.user_id, a.organization_id, a.workspace_id, a.app_slug,
+            a.name, a.key_prefix, a.description, a.is_active, a.rate_limit_scheme_slug,
+            a.permissions, a.resources, a.created_at, a.updated_at, a.deleted_at,
+            COALESCE(rls.rules, '[]'::json) AS rate_limits
+        FROM api_auth_apps a
+        LEFT JOIN rate_limit_schemes rls
+          ON rls.deployment_id = a.deployment_id
+         AND rls.slug = a.rate_limit_scheme_slug
+        WHERE {where_clause}
+        {order_clause}
+        "#
+    )
+}
+
+fn api_key_base_query(where_clause: &str, order_clause: &str) -> String {
+    format!(
+        r#"
+        SELECT
+            k.id, k.deployment_id, k.app_slug, k.name, k.key_prefix, k.key_suffix, k.key_hash,
+            k.permissions, k.metadata, k.rate_limit_scheme_slug, k.owner_user_id,
+            k.organization_id, k.workspace_id, k.organization_membership_id, k.workspace_membership_id,
+            k.org_role_permissions, k.workspace_role_permissions,
+            k.expires_at, k.last_used_at, k.is_active, k.created_at, k.updated_at,
+            k.revoked_at, k.revoked_reason,
+            COALESCE(rls.rules, '[]'::json) AS rate_limits
+        FROM api_keys k
+        LEFT JOIN rate_limit_schemes rls
+          ON rls.deployment_id = k.deployment_id
+         AND rls.slug = k.rate_limit_scheme_slug
+        WHERE {where_clause}
+        {order_clause}
+        "#
+    )
+}
+
 fn map_api_auth_app(row: &sqlx::postgres::PgRow) -> ApiAuthApp {
     let permissions: Option<serde_json::Value> = row.get("permissions");
     let resources: Option<serde_json::Value> = row.get("resources");
@@ -37,7 +76,8 @@ fn map_api_key(row: &sqlx::postgres::PgRow) -> ApiKey {
     let permissions: Option<serde_json::Value> = row.get("permissions");
     let metadata: Option<serde_json::Value> = row.get("metadata");
     let org_role_permissions: Option<serde_json::Value> = row.get("org_role_permissions");
-    let workspace_role_permissions: Option<serde_json::Value> = row.get("workspace_role_permissions");
+    let workspace_role_permissions: Option<serde_json::Value> =
+        row.get("workspace_role_permissions");
     let rate_limits: serde_json::Value = row.get("rate_limits");
 
     ApiKey {
@@ -102,23 +142,10 @@ impl GetApiAuthAppsQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let rows = sqlx::query(
-            r#"
-            SELECT
-                a.deployment_id, a.user_id, a.organization_id, a.workspace_id, a.app_slug,
-                a.name, a.key_prefix, a.description, a.is_active, a.rate_limit_scheme_slug,
-                a.permissions, a.resources, a.created_at, a.updated_at, a.deleted_at,
-                COALESCE(rls.rules, '[]'::json) AS rate_limits
-            FROM api_auth_apps a
-            LEFT JOIN rate_limit_schemes rls
-              ON rls.deployment_id = a.deployment_id
-             AND rls.slug = a.rate_limit_scheme_slug
-            WHERE a.deployment_id = $1
-              AND a.deleted_at IS NULL
-              AND ($2 OR a.is_active = true)
-            ORDER BY a.created_at DESC
-            "#,
-        )
+        let rows = sqlx::query(&api_auth_app_base_query(
+            "a.deployment_id = $1 AND a.deleted_at IS NULL AND ($2 OR a.is_active = true)",
+            "ORDER BY a.created_at DESC",
+        ))
         .bind(self.deployment_id)
         .bind(self.include_inactive)
         .fetch_all(executor)
@@ -145,20 +172,10 @@ impl GetApiAuthAppBySlugQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(
-            r#"
-            SELECT
-                a.deployment_id, a.user_id, a.organization_id, a.workspace_id, a.app_slug,
-                a.name, a.key_prefix, a.description, a.is_active, a.rate_limit_scheme_slug,
-                a.permissions, a.resources, a.created_at, a.updated_at, a.deleted_at,
-                COALESCE(rls.rules, '[]'::json) AS rate_limits
-            FROM api_auth_apps a
-            LEFT JOIN rate_limit_schemes rls
-              ON rls.deployment_id = a.deployment_id
-             AND rls.slug = a.rate_limit_scheme_slug
-            WHERE a.deployment_id = $1 AND a.app_slug = $2 AND a.deleted_at IS NULL
-            "#,
-        )
+        let row = sqlx::query(&api_auth_app_base_query(
+            "a.deployment_id = $1 AND a.app_slug = $2 AND a.deleted_at IS NULL",
+            "",
+        ))
         .bind(self.deployment_id)
         .bind(&self.app_slug)
         .fetch_optional(executor)
@@ -185,20 +202,10 @@ impl GetApiAuthAppByNameQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(
-            r#"
-            SELECT
-                a.deployment_id, a.user_id, a.organization_id, a.workspace_id, a.app_slug,
-                a.name, a.key_prefix, a.description, a.is_active, a.rate_limit_scheme_slug,
-                a.permissions, a.resources, a.created_at, a.updated_at, a.deleted_at,
-                COALESCE(rls.rules, '[]'::json) AS rate_limits
-            FROM api_auth_apps a
-            LEFT JOIN rate_limit_schemes rls
-              ON rls.deployment_id = a.deployment_id
-             AND rls.slug = a.rate_limit_scheme_slug
-            WHERE a.deployment_id = $1 AND a.name = $2 AND a.deleted_at IS NULL
-            "#,
-        )
+        let row = sqlx::query(&api_auth_app_base_query(
+            "a.deployment_id = $1 AND a.name = $2 AND a.deleted_at IS NULL",
+            "",
+        ))
         .bind(self.deployment_id)
         .bind(&self.name)
         .fetch_optional(executor)
@@ -232,26 +239,10 @@ impl GetApiKeysByAppQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let rows = sqlx::query(
-            r#"
-            SELECT
-                k.id, k.deployment_id, k.app_slug, k.name, k.key_prefix, k.key_suffix, k.key_hash,
-                k.permissions, k.metadata, k.rate_limit_scheme_slug, k.owner_user_id,
-                k.organization_id, k.workspace_id, k.organization_membership_id, k.workspace_membership_id,
-                k.org_role_permissions, k.workspace_role_permissions,
-                k.expires_at, k.last_used_at, k.is_active, k.created_at, k.updated_at,
-                k.revoked_at, k.revoked_reason,
-                COALESCE(rls.rules, '[]'::json) AS rate_limits
-            FROM api_keys k
-            LEFT JOIN rate_limit_schemes rls
-              ON rls.deployment_id = k.deployment_id
-             AND rls.slug = k.rate_limit_scheme_slug
-            WHERE k.app_slug = $1
-              AND k.deployment_id = $2
-              AND ($3 OR k.is_active = true)
-            ORDER BY k.created_at DESC
-            "#,
-        )
+        let rows = sqlx::query(&api_key_base_query(
+            "k.app_slug = $1 AND k.deployment_id = $2 AND ($3 OR k.is_active = true)",
+            "ORDER BY k.created_at DESC",
+        ))
         .bind(&self.app_slug)
         .bind(self.deployment_id)
         .bind(self.include_inactive)
@@ -275,23 +266,10 @@ impl GetApiKeyByHashQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(
-            r#"
-            SELECT
-                k.id, k.deployment_id, k.app_slug, k.name, k.key_prefix, k.key_suffix, k.key_hash,
-                k.permissions, k.metadata, k.rate_limit_scheme_slug, k.owner_user_id,
-                k.organization_id, k.workspace_id, k.organization_membership_id, k.workspace_membership_id,
-                k.org_role_permissions, k.workspace_role_permissions,
-                k.expires_at, k.last_used_at, k.is_active, k.created_at, k.updated_at,
-                k.revoked_at, k.revoked_reason,
-                COALESCE(rls.rules, '[]'::json) AS rate_limits
-            FROM api_keys k
-            LEFT JOIN rate_limit_schemes rls
-              ON rls.deployment_id = k.deployment_id
-             AND rls.slug = k.rate_limit_scheme_slug
-            WHERE k.key_hash = $1 AND k.is_active = true
-            "#,
-        )
+        let row = sqlx::query(&api_key_base_query(
+            "k.key_hash = $1 AND k.is_active = true",
+            "",
+        ))
         .bind(&self.key_hash)
         .fetch_optional(executor)
         .await?;

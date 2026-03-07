@@ -157,6 +157,15 @@ impl DodoClient {
         self.handle_response(response).await
     }
 
+    pub async fn list_customers(
+        &self,
+        params: ListCustomersParams<'_>,
+    ) -> DodoResult<ListCustomersResponse> {
+        let url = format!("{}/customers", self.base_url);
+        let response = self.client.get(&url).query(&params).send().await?;
+        self.handle_response(response).await
+    }
+
     pub async fn update_customer(
         &self,
         customer_id: &str,
@@ -425,6 +434,27 @@ pub struct Customer {
     pub metadata: Option<JsonValue>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListCustomersParams<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_number: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at_gte: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at_lte: Option<&'a str>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListCustomersResponse {
+    pub items: Vec<Customer>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

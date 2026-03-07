@@ -5,13 +5,14 @@ use commands::billing::{
 };
 use common::{
     dodo::{
-        ChangePlanParams, CheckoutCustomer, CreateCheckoutParams, CreateCustomerParams, DodoClient,
-        ProductCartItem, UpdateCustomerParams,
+        ChangePlanParams, CheckoutCustomer, CreateCheckoutParams, CreateCustomerParams, Customer,
+        DodoClient, ListCustomersParams, ProductCartItem, UpdateCustomerParams,
     },
     error::AppError,
 };
 use models::billing::BillingAccountWithSubscription;
 use queries::billing::{DodoProduct, GetBillingAccountQuery, GetDodoProductQuery};
+use std::time::Duration as StdDuration;
 use tracing::error;
 
 use crate::application::AppState;
@@ -126,18 +127,179 @@ async fn get_pulse_product_or_500(state: &AppState) -> Result<DodoProduct, AppEr
         .ok_or_else(|| AppError::Internal("Pulse product configuration missing".to_string()))
 }
 
+async fn set_provider_customer_id_with_retry(
+    state: &AppState,
+    owner_id: &str,
+    provider_customer_id: &str,
+) -> Result<(), AppError> {
+    let max_attempts = 3;
+    let mut last_err: Option<AppError> = None;
+
+    for attempt in 1..=max_attempts {
+        let result = async {
+            let mut tx = state.db_router.writer().begin().await?;
+            SetProviderCustomerIdCommand::new(
+                owner_id.to_string(),
+                provider_customer_id.to_string(),
+            )
+            .execute_with_db(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            Ok::<(), AppError>(())
+        }
+        .await;
+
+        match result {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                last_err = Some(err);
+                if attempt < max_attempts {
+                    tokio::time::sleep(StdDuration::from_millis((attempt * 100) as u64)).await;
+                }
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| {
+        AppError::Internal("Failed to persist provider customer id".to_string())
+    }))
+}
+
 async fn mark_checkout_session_created(
     state: &AppState,
     owner_id: &str,
     checkout_session_id: &str,
 ) -> Result<(), AppError> {
-    MarkCheckoutSessionCreatedCommand::new(
-        owner_id.to_string(),
-        checkout_session_id.to_string(),
-    )
-    .execute_with_db(state.db_router.writer())
-    .await?;
+    let mut tx = state.db_router.writer().begin().await?;
+    MarkCheckoutSessionCreatedCommand::new(owner_id.to_string(), checkout_session_id.to_string())
+        .execute_with_db(&mut *tx)
+        .await?;
+    tx.commit().await?;
     Ok(())
+}
+
+fn customer_belongs_to_owner(customer: &Customer, owner_id: &str) -> bool {
+    customer
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("owner_id"))
+        .and_then(|v| v.as_str())
+        .map(|v| v == owner_id)
+        .unwrap_or(false)
+}
+
+async fn find_existing_customer_id_by_owner_and_email(
+    dodo: &DodoClient,
+    owner_id: &str,
+    email: &str,
+) -> Result<Option<String>, AppError> {
+    const PAGE_SIZE: i32 = 100;
+    const MAX_PAGES: i32 = 5;
+
+    for page_number in 0..MAX_PAGES {
+        let page = dodo
+            .list_customers(ListCustomersParams {
+                page_size: Some(PAGE_SIZE),
+                page_number: Some(page_number),
+                email: Some(email),
+                name: None,
+                created_at_gte: None,
+                created_at_lte: None,
+            })
+            .await
+            .map_err(|e| {
+                error!(
+                    "Failed listing Dodo customers for owner {} and email {}: {}",
+                    owner_id, email, e
+                );
+                AppError::Internal("Failed to reconcile customer".to_string())
+            })?;
+
+        if page.items.is_empty() {
+            return Ok(None);
+        }
+
+        if let Some(customer) = page
+            .items
+            .iter()
+            .find(|c| customer_belongs_to_owner(c, owner_id))
+        {
+            return Ok(Some(customer.customer_id.clone()));
+        }
+
+        if page.items.len() < PAGE_SIZE as usize {
+            break;
+        }
+    }
+
+    Ok(None)
+}
+
+async fn ensure_provider_customer_id(
+    state: &AppState,
+    dodo: &DodoClient,
+    owner_id: &str,
+    legal_name: &str,
+    billing_email: &str,
+    existing_provider_customer_id: Option<&str>,
+) -> Result<String, AppError> {
+    if let Some(cid) = existing_provider_customer_id.filter(|v| !v.is_empty()) {
+        let _ = dodo
+            .update_customer(
+                cid,
+                UpdateCustomerParams {
+                    email: Some(billing_email.to_string()),
+                    name: Some(legal_name.to_string()),
+                    metadata: None,
+                },
+            )
+            .await;
+
+        return Ok(cid.to_string());
+    }
+
+    if let Some(recovered_customer_id) =
+        find_existing_customer_id_by_owner_and_email(dodo, owner_id, billing_email).await?
+    {
+        set_provider_customer_id_with_retry(state, owner_id, &recovered_customer_id).await?;
+
+        let _ = dodo
+            .update_customer(
+                &recovered_customer_id,
+                UpdateCustomerParams {
+                    email: Some(billing_email.to_string()),
+                    name: Some(legal_name.to_string()),
+                    metadata: None,
+                },
+            )
+            .await;
+
+        return Ok(recovered_customer_id);
+    }
+
+    let customer = dodo
+        .create_customer(CreateCustomerParams {
+            email: billing_email.to_string(),
+            name: Some(legal_name.to_string()),
+            metadata: Some(serde_json::json!({ "owner_id": owner_id })),
+        })
+        .await
+        .map_err(|e| {
+            error!("Failed to create Dodo customer: {}", e);
+            AppError::Internal("Failed to create customer".to_string())
+        })?;
+
+    set_provider_customer_id_with_retry(state, owner_id, &customer.customer_id)
+        .await
+        .map_err(|err| {
+            error!(
+                "Created Dodo customer {} but failed to persist mapping for owner {}: {}",
+                customer.customer_id, owner_id, err
+            );
+            AppError::Internal("Failed to persist customer mapping".to_string())
+        })?;
+
+    Ok(customer.customer_id)
 }
 
 pub async fn get_billing_account(
@@ -168,8 +330,8 @@ pub async fn update_billing_account(
         .with_state(req.state)
         .with_postal_code(req.postal_code)
         .with_country(req.country)
-    .execute_with_db(state.db_router.writer())
-    .await?;
+        .execute_with_db(state.db_router.writer())
+        .await?;
 
     Ok(())
 }
@@ -268,47 +430,29 @@ pub async fn create_checkout(
     let dodo = DodoClient::new().map_err(|e| AppError::Internal(e.to_string()))?;
 
     let provider_customer_id = if let Some(ref account) = existing {
-        UpdateBillingAccountCommand::new(account.billing_account.id)
-            .with_legal_name(Some(req.legal_name.clone()))
-            .with_billing_email(Some(req.billing_email.clone()))
-            .with_billing_phone(req.billing_phone.clone())
-            .with_tax_id(req.tax_id.clone())
-        .execute_with_db(state.db_router.writer())
-        .await?;
-
-        if let Some(ref cid) = account.billing_account.provider_customer_id {
-            let _ = dodo
-                .update_customer(
-                    cid,
-                    UpdateCustomerParams {
-                        email: Some(req.billing_email.clone()),
-                        name: Some(req.legal_name.clone()),
-                        metadata: None,
-                    },
-                )
-                .await;
-
-            cid.clone()
-        } else {
-            let customer = dodo
-                .create_customer(CreateCustomerParams {
-                    email: req.billing_email.clone(),
-                    name: Some(req.legal_name.clone()),
-                    metadata: Some(serde_json::json!({ "owner_id": owner_id })),
-                })
-                .await
-                .map_err(|e| {
-                    error!("Failed to create Dodo customer: {}", e);
-                    AppError::Internal("Failed to create customer".to_string())
-                })?;
-
-            SetProviderCustomerIdCommand::new(owner_id.to_string(), customer.customer_id.clone())
-            .execute_with_db(state.db_router.writer())
-            .await?;
-
-            customer.customer_id
+        {
+            let mut tx = state.db_router.writer().begin().await?;
+            UpdateBillingAccountCommand::new(account.billing_account.id)
+                .with_legal_name(Some(req.legal_name.clone()))
+                .with_billing_email(Some(req.billing_email.clone()))
+                .with_billing_phone(req.billing_phone.clone())
+                .with_tax_id(req.tax_id.clone())
+                .execute_with_db(&mut *tx)
+                .await?;
+            tx.commit().await?;
         }
+
+        ensure_provider_customer_id(
+            state,
+            &dodo,
+            owner_id,
+            &req.legal_name,
+            &req.billing_email,
+            account.billing_account.provider_customer_id.as_deref(),
+        )
+        .await?
     } else {
+        let mut tx = state.db_router.writer().begin().await?;
         CreateBillingAccountCommand::new(
             state.sf.next_id()? as i64,
             owner_id.to_string(),
@@ -318,31 +462,25 @@ pub async fn create_checkout(
         )
         .with_billing_phone(req.billing_phone.clone())
         .with_tax_id(req.tax_id.clone())
-        .execute_with_db(state.db_router.writer())
+        .execute_with_db(&mut *tx)
         .await?;
+        tx.commit().await?;
 
-        let customer = dodo
-            .create_customer(CreateCustomerParams {
-                email: req.billing_email.clone(),
-                name: Some(req.legal_name.clone()),
-                metadata: Some(serde_json::json!({ "owner_id": owner_id })),
-            })
-            .await
-            .map_err(|e| {
-                error!("Failed to create Dodo customer: {}", e);
-                AppError::Internal("Failed to create customer".to_string())
-            })?;
-
-        SetProviderCustomerIdCommand::new(owner_id.to_string(), customer.customer_id.clone())
-        .execute_with_db(state.db_router.writer())
-        .await?;
-
-        customer.customer_id
+        ensure_provider_customer_id(
+            state,
+            &dodo,
+            owner_id,
+            &req.legal_name,
+            &req.billing_email,
+            None,
+        )
+        .await?
     };
 
     if is_starter_plan {
+        let mut tx = state.db_router.writer().begin().await?;
         let starter_product_id = GetDodoProductQuery::new("starter")
-            .execute_with_db(state.db_router.writer())
+            .execute_with_db(&mut *tx)
             .await?
             .map(|p| p.product_id)
             .unwrap_or_else(|| STARTER_PRODUCT_ID_FALLBACK.to_string());
@@ -356,12 +494,14 @@ pub async fn create_checkout(
         )
         .with_product_id(Some(starter_product_id))
         .with_previous_billing_date(Some(Utc::now()))
-        .execute_with_db(state.db_router.writer())
+        .execute_with_db(&mut *tx)
         .await?;
 
         UpdateBillingAccountStatusCommand::new(owner_id.to_string(), "active".to_string())
-        .execute_with_db(state.db_router.writer())
-        .await?;
+            .execute_with_db(&mut *tx)
+            .await?;
+
+        tx.commit().await?;
 
         return Ok(CheckoutOutcome {
             requires_checkout: false,

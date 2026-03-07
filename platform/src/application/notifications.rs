@@ -206,12 +206,7 @@ pub async fn create_notification(
             expires_hours,
         );
 
-        created.push(
-            command
-                .build()?
-                .execute_with_deps(state)
-                .await?,
-        );
+        created.push(command.build()?.execute_with_deps(state).await?);
     }
 
     Ok(created.into())

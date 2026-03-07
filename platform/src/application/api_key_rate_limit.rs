@@ -69,8 +69,8 @@ pub async fn update_rate_limit_scheme(
         .with_name(request.name)
         .with_description(request.description)
         .with_rules(request.rules)
-    .execute_with_db(writer)
-    .await?;
+        .execute_with_db(writer)
+        .await?;
 
     Ok(scheme)
 }

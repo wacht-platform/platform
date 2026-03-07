@@ -10,7 +10,10 @@ impl GetDeploymentInvitationQuery {
         Self { invitation_id }
     }
 
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<DeploymentInvitation, AppError>
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<DeploymentInvitation, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {

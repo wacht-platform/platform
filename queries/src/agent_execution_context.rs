@@ -17,7 +17,7 @@ impl GetExecutionContextQuery {
         }
     }
 
-    pub async fn execute_with_deps<'e, E>(
+    pub async fn execute_with_db<'e, E>(
         &self,
         executor: E,
     ) -> Result<AgentExecutionContext, AppError>
@@ -65,13 +65,6 @@ impl GetExecutionContextQuery {
             parent_context_id: context.parent_context_id,
             completion_summary: context.completion_summary,
         })
-    }
-
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<AgentExecutionContext, AppError>
-    where
-        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    {
-        self.execute_with_deps(executor).await
     }
 }
 
@@ -323,7 +316,10 @@ impl GetStatusUpdatesQuery {
         self
     }
 
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<AgentStatusUpdate>, AppError>
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<AgentStatusUpdate>, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -380,26 +376,28 @@ impl GetLatestStatusUpdatesForContextsQuery {
         if self.context_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let rows = sqlx::query(
+        let rows = sqlx::query!(
             r#"
-            SELECT DISTINCT ON (context_id) context_id, status_update, created_at
+            SELECT DISTINCT ON (context_id)
+                context_id,
+                status_update,
+                COALESCE(created_at, NOW()) as "created_at!"
             FROM agent_status_updates
             WHERE context_id = ANY($1::bigint[])
             ORDER BY context_id, created_at DESC
             "#,
+            &self.context_ids
         )
-        .bind(&self.context_ids)
         .fetch_all(executor)
         .await
         .map_err(AppError::Database)?;
 
-        use sqlx::Row;
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
             result.push(LatestStatusUpdate {
-                context_id: row.get("context_id"),
-                status_update: row.get("status_update"),
-                created_at: row.get("created_at"),
+                context_id: row.context_id,
+                status_update: row.status_update,
+                created_at: row.created_at,
             });
         }
 
@@ -428,8 +426,7 @@ impl GetParentContextQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-
-        let ctx = sqlx::query(
+        let ctx = sqlx::query!(
             r#"
             SELECT id, created_at, updated_at, deployment_id,
                    title, context_group, system_instructions, last_activity_at, completed_at,
@@ -443,38 +440,37 @@ impl GetParentContextQuery {
             )
               AND deployment_id = $2
             "#,
+            self.context_id,
+            self.deployment_id
         )
-        .bind(self.context_id)
-        .bind(self.deployment_id)
         .fetch_optional(executor)
-        .await?;
+        .await
+        .map_err(AppError::Database)?;
 
         if let Some(ctx) = ctx {
-            use sqlx::Row;
-            let status_str: String = ctx.get("status");
-            let status = ExecutionContextStatus::from_str(&status_str).unwrap_or_default();
-            let execution_state: Option<serde_json::Value> = ctx.get("execution_state");
-            let execution_state = execution_state
+            let status = ExecutionContextStatus::from_str(&ctx.status).unwrap_or_default();
+            let execution_state = ctx
+                .execution_state
                 .as_ref()
                 .and_then(|s| serde_json::from_value::<AgentExecutionState>(s.clone()).ok());
 
             return Ok(Some(AgentExecutionContext {
-                id: ctx.get("id"),
-                created_at: ctx.get("created_at"),
-                updated_at: ctx.get("updated_at"),
-                deployment_id: ctx.get("deployment_id"),
-                title: ctx.get("title"),
-                context_group: ctx.get("context_group"),
-                system_instructions: ctx.get("system_instructions"),
-                last_activity_at: ctx.get("last_activity_at"),
-                completed_at: ctx.get("completed_at"),
+                id: ctx.id,
+                created_at: ctx.created_at,
+                updated_at: ctx.updated_at,
+                deployment_id: ctx.deployment_id,
+                title: ctx.title,
+                context_group: ctx.context_group,
+                system_instructions: ctx.system_instructions,
+                last_activity_at: ctx.last_activity_at,
+                completed_at: ctx.completed_at,
                 execution_state,
                 status,
-                source: ctx.get("source"),
-                external_context_id: ctx.get("external_context_id"),
-                external_resource_metadata: ctx.get("external_resource_metadata"),
-                parent_context_id: ctx.get("parent_context_id"),
-                completion_summary: ctx.get("completion_summary"),
+                source: ctx.source,
+                external_context_id: ctx.external_context_id,
+                external_resource_metadata: ctx.external_resource_metadata,
+                parent_context_id: ctx.parent_context_id,
+                completion_summary: ctx.completion_summary,
             }));
         }
 

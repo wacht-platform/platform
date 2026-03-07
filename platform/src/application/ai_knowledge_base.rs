@@ -1,7 +1,8 @@
 use commands::{
     AttachKnowledgeBaseToAgentCommand, CreateAiKnowledgeBaseCommand, DeleteAiKnowledgeBaseCommand,
-    DeleteKnowledgeBaseDocumentCommand, DetachKnowledgeBaseFromAgentCommand, KnowledgeBaseStorageDeps,
-    UpdateAiKnowledgeBaseCommand, UploadKnowledgeBaseDocumentCommand, UploadKnowledgeBaseDocumentDeps,
+    DeleteKnowledgeBaseDocumentCommand, DetachKnowledgeBaseFromAgentCommand,
+    KnowledgeBaseStorageDeps, UpdateAiKnowledgeBaseCommand, UploadKnowledgeBaseDocumentCommand,
+    UploadKnowledgeBaseDocumentDeps,
 };
 use common::ReadConsistency;
 use common::error::AppError;

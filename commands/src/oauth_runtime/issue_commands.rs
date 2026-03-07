@@ -28,7 +28,10 @@ impl IssueOAuthAuthorizationCode {
         self
     }
 
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<OAuthAuthorizationCodeIssued, AppError>
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<OAuthAuthorizationCodeIssued, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {

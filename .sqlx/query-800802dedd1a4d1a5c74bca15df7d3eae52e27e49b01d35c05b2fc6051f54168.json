@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM ai_agent_mcp_servers ams\n            WHERE ams.agent_id = $1\n              AND ams.mcp_server_id = $2\n              AND ams.deployment_id = $3\n              AND EXISTS (\n                SELECT 1\n                FROM ai_agents a\n                JOIN mcp_servers m ON m.id = ams.mcp_server_id\n                WHERE a.id = ams.agent_id\n                  AND a.deployment_id = $3\n                  AND m.deployment_id = $3\n              )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "800802dedd1a4d1a5c74bca15df7d3eae52e27e49b01d35c05b2fc6051f54168"
+}

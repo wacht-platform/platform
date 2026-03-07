@@ -93,10 +93,7 @@ impl UpsertInvoiceCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
-        self,
-        executor: A,
-    ) -> Result<BillingInvoice, AppError>
+    pub async fn execute_with_db<'a, A>(self, executor: A) -> Result<BillingInvoice, AppError>
     where
         A: sqlx::Executor<'a, Database = sqlx::Postgres>,
     {
@@ -260,7 +257,9 @@ impl UpsertInvoiceCommand {
         .await?;
 
         if !row.account_exists {
-            return Err(AppError::Validation("Billing account not found".to_string()));
+            return Err(AppError::Validation(
+                "Billing account not found".to_string(),
+            ));
         }
 
         let parsed_status: InvoiceStatus = row

@@ -40,10 +40,7 @@ pub struct SyncOAuthGrantLastUsedBatch {
 }
 
 impl SyncOAuthGrantLastUsedBatch {
-    pub async fn execute_with_deps<D>(
-        self,
-        deps: &D,
-    ) -> Result<usize, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<usize, AppError>
     where
         D: HasRedis + HasDbRouter,
     {

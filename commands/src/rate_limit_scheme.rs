@@ -248,7 +248,10 @@ pub struct DeleteRateLimitSchemeCommand {
 
 impl DeleteRateLimitSchemeCommand {
     pub fn new(deployment_id: i64, slug: String) -> Self {
-        Self { deployment_id, slug }
+        Self {
+            deployment_id,
+            slug,
+        }
     }
 }
 
@@ -297,7 +300,9 @@ impl DeleteRateLimitSchemeCommand {
         .await?;
 
         if !result.scheme_exists {
-            return Err(AppError::NotFound("Rate limit scheme not found".to_string()));
+            return Err(AppError::NotFound(
+                "Rate limit scheme not found".to_string(),
+            ));
         }
         if result.app_ref_count > 0 {
             return Err(AppError::BadRequest(

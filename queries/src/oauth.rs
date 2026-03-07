@@ -166,7 +166,10 @@ impl GetOAuthAppBySlugQuery {
         }
     }
 
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Option<OAuthAppData>, AppError>
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Option<OAuthAppData>, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -227,7 +230,10 @@ impl ListOAuthClientsByOAuthAppQuery {
         }
     }
 
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<OAuthClientData>, AppError>
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<OAuthClientData>, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {

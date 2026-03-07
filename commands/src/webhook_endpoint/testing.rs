@@ -10,6 +10,7 @@ use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
 use dto::json::nats::NatsTaskMessage;
 use models::WebhookEndpoint;
+use queries::GetWebhookSubscriptionFilterRulesQuery;
 
 pub struct TestWebhookEndpointDeps<'a, A> {
     pub acquirer: A,
@@ -98,18 +99,13 @@ impl TestWebhookEndpointCommand {
             &self.test_payload,
         );
 
-        let test_subscription = query!(
-            r#"
-            SELECT filter_rules
-            FROM webhook_endpoint_subscriptions
-            WHERE endpoint_id = $1 AND deployment_id = $2 AND app_slug = $3 AND event_name = $4
-            "#,
+        let test_filter_rules = GetWebhookSubscriptionFilterRulesQuery::new(
             self.endpoint_id,
             self.deployment_id,
-            app_slug,
-            "test.webhook"
+            app_slug.clone(),
+            "test.webhook".to_string(),
         )
-        .fetch_optional(&mut *tx)
+        .execute_with_db(&mut *tx)
         .await?;
 
         query!(
@@ -124,7 +120,7 @@ impl TestWebhookEndpointCommand {
             app_slug,
             "test.webhook",
             self.test_payload.clone(),
-            test_subscription.and_then(|s| s.filter_rules),
+            test_filter_rules,
             payload_size,
             webhook_id,
             webhook_timestamp,

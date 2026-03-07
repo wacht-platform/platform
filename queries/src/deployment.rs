@@ -80,7 +80,10 @@ impl GetDeploymentWithSettingsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<DeploymentWithSettings, AppError>
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<DeploymentWithSettings, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {

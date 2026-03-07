@@ -1,3 +1,4 @@
+use crate::dynamic_update_set::DynamicUpdateSet;
 use chrono::Utc;
 use common::error::AppError;
 use models::{McpServer, McpServerConfig};
@@ -34,33 +35,32 @@ impl CreateMcpServerCommand {
         let config_json = serde_json::to_value(&self.config)
             .map_err(|e| AppError::Serialization(e.to_string()))?;
 
-        let row = sqlx::query(
+        let row = sqlx::query!(
             r#"
             INSERT INTO mcp_servers (id, created_at, updated_at, deployment_id, name, config)
             VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, created_at, updated_at, deployment_id, name, config
+            RETURNING id, created_at, updated_at, deployment_id, name, config as "config!: serde_json::Value"
             "#,
+            self.id,
+            now,
+            now,
+            self.deployment_id,
+            self.name,
+            config_json
         )
-        .bind(self.id)
-        .bind(now)
-        .bind(now)
-        .bind(self.deployment_id)
-        .bind(self.name)
-        .bind(config_json)
         .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
-        let config_value: serde_json::Value = row.get("config");
-        let config: McpServerConfig = serde_json::from_value(config_value)
+        let config: McpServerConfig = serde_json::from_value(row.config)
             .map_err(|e| AppError::Serialization(e.to_string()))?;
 
         Ok(McpServer {
-            id: row.get("id"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-            deployment_id: row.get("deployment_id"),
-            name: row.get("name"),
+            id: row.id,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            deployment_id: row.deployment_id,
+            name: row.name,
             config,
         })
     }
@@ -105,17 +105,10 @@ impl UpdateMcpServerCommand {
             }
         }
 
-        let mut set_parts = vec!["updated_at = $1".to_string()];
-        let mut param_count = 2;
-
-        if self.name.is_some() {
-            set_parts.push(format!("name = ${}", param_count));
-            param_count += 1;
-        }
-        if self.config.is_some() {
-            set_parts.push(format!("config = ${}", param_count));
-            param_count += 1;
-        }
+        let mut update_set = DynamicUpdateSet::with_updated_at();
+        update_set.push_if_present("name", &self.name);
+        update_set.push_if_present("config", &self.config);
+        let (id_param, deployment_param) = update_set.where_indexes();
 
         let query = format!(
             r#"
@@ -124,9 +117,9 @@ impl UpdateMcpServerCommand {
             WHERE id = ${} AND deployment_id = ${}
             RETURNING id, created_at, updated_at, deployment_id, name, config
             "#,
-            set_parts.join(", "),
-            param_count,
-            param_count + 1,
+            update_set.set_clause(),
+            id_param,
+            deployment_param,
         );
 
         let mut builder = sqlx::query(&query).bind(Utc::now());
@@ -177,12 +170,14 @@ impl DeleteMcpServerCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        sqlx::query("DELETE FROM mcp_servers WHERE id = $1 AND deployment_id = $2")
-            .bind(self.mcp_server_id)
-            .bind(self.deployment_id)
-            .execute(executor)
-            .await
-            .map_err(AppError::Database)?;
+        sqlx::query!(
+            "DELETE FROM mcp_servers WHERE id = $1 AND deployment_id = $2",
+            self.mcp_server_id,
+            self.deployment_id
+        )
+        .execute(executor)
+        .await
+        .map_err(AppError::Database)?;
 
         Ok(())
     }
@@ -207,7 +202,7 @@ impl AttachMcpServerToAgentCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let result = sqlx::query(
+        let result = sqlx::query!(
             r#"
             WITH
                 agent AS (
@@ -233,19 +228,19 @@ impl AttachMcpServerToAgentCommand {
                 EXISTS(SELECT 1 FROM server) AS "server_exists!",
                 EXISTS(SELECT 1 FROM ins) AS "inserted!"
             "#,
+            self.deployment_id,
+            self.agent_id,
+            self.mcp_server_id
         )
-        .bind(self.deployment_id)
-        .bind(self.agent_id)
-        .bind(self.mcp_server_id)
         .fetch_one(executor)
         .await
         .map_err(AppError::Database)?;
 
-        if !result.try_get::<bool, _>("agent_exists").unwrap_or(false) {
+        if !result.agent_exists {
             return Err(AppError::NotFound("Agent not found".to_string()));
         }
 
-        if !result.try_get::<bool, _>("server_exists").unwrap_or(false) {
+        if !result.server_exists {
             return Err(AppError::NotFound("MCP server not found".to_string()));
         }
 
@@ -272,7 +267,7 @@ impl DetachMcpServerFromAgentCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        sqlx::query(
+        sqlx::query!(
             r#"
             DELETE FROM ai_agent_mcp_servers ams
             WHERE ams.agent_id = $1
@@ -287,10 +282,10 @@ impl DetachMcpServerFromAgentCommand {
                   AND m.deployment_id = $3
               )
             "#,
+            self.agent_id,
+            self.mcp_server_id,
+            self.deployment_id
         )
-        .bind(self.agent_id)
-        .bind(self.mcp_server_id)
-        .bind(self.deployment_id)
         .execute(executor)
         .await
         .map_err(AppError::Database)?;

@@ -1,3 +1,4 @@
+use crate::ai_knowledge_base_document_status::MarkKnowledgeBaseDocumentFailedCommand;
 use chrono::Utc;
 use common::error::AppError;
 use std::future::Future;
@@ -68,35 +69,19 @@ impl ProcessDocumentCommand {
             .into_bytes()
             .to_vec();
 
-        let text =
-            deps.text_processing_service
-                .extract_text_from_file(&file_content, &document.file_type)?;
+        let text = deps
+            .text_processing_service
+            .extract_text_from_file(&file_content, &document.file_type)?;
         let cleaned_text = deps.text_processing_service.clean_text(&text);
         let chunks = deps
             .text_processing_service
             .chunk_text(&cleaned_text, 2000, 200)?;
 
         if chunks.is_empty() {
-            let _ = sqlx::query!(
-                r#"
-                UPDATE ai_knowledge_base_documents 
-                SET processing_metadata = jsonb_set(
-                    jsonb_set(
-                        COALESCE(processing_metadata, '{}'),
-                        '{status}',
-                        '"failed"'
-                    ),
-                    '{error}',
-                    '"No chunks were created"'::jsonb
-                ),
-                updated_at = $1
-                WHERE id = $2
-                "#,
-                now,
-                document.id
-            )
-            .execute(&mut *tx)
-            .await;
+            let _ = MarkKnowledgeBaseDocumentFailedCommand::new(document.id)
+                .with_error("No chunks were created")
+                .execute_with_db(&mut *tx)
+                .await;
             tx.commit().await.map_err(AppError::Database)?;
             return Ok("No chunks created from document".to_string());
         }
@@ -143,26 +128,13 @@ impl ProcessDocumentCommand {
         .execute(&mut *tx)
         .await;
 
-        if let Err(e) =
-            (deps.dispatch_batch)(self.deployment_id, self.knowledge_base_id, 100).await
+        if let Err(e) = (deps.dispatch_batch)(self.deployment_id, self.knowledge_base_id, 100).await
         {
             tracing::error!("Failed to dispatch embedding processing task: {}", e);
-            let _ = sqlx::query!(
-                r#"
-                UPDATE ai_knowledge_base_documents 
-                SET processing_metadata = jsonb_set(
-                    COALESCE(processing_metadata, '{}'),
-                    '{status}',
-                    '"failed"'
-                ),
-                updated_at = $1
-                WHERE id = $2
-                "#,
-                now,
-                document.id
-            )
-            .execute(&mut *tx)
-            .await;
+            let _ = MarkKnowledgeBaseDocumentFailedCommand::new(document.id)
+                .with_error(format!("Failed to dispatch embedding batch: {}", e))
+                .execute_with_db(&mut *tx)
+                .await;
         }
 
         tx.commit().await.map_err(AppError::Database)?;

@@ -1,10 +1,10 @@
 use chrono::{Duration, Utc};
 
+use crate::SendEmailCommand;
 use common::{
     HasDbRouter, HasEncryptionService, HasIdGenerator, HasPostmarkService, HasTemplateRenderer,
     db_router::ReadConsistency, error::AppError,
 };
-use crate::SendEmailCommand;
 use dto::json::InviteUserRequest;
 use models::DeploymentInvitation;
 
@@ -28,16 +28,17 @@ impl InviteUserCommand {
         self
     }
 
-    pub async fn execute_with_deps<D>(
-        self,
-        deps: &D,
-    ) -> Result<DeploymentInvitation, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<DeploymentInvitation, AppError>
     where
-        D: HasDbRouter + HasTemplateRenderer + HasPostmarkService + HasEncryptionService + HasIdGenerator,
+        D: HasDbRouter
+            + HasTemplateRenderer
+            + HasPostmarkService
+            + HasEncryptionService
+            + HasIdGenerator,
     {
-        let invitation_id =
-            self.invitation_id
-                .unwrap_or(deps.id_generator().next_id()? as i64);
+        let invitation_id = self
+            .invitation_id
+            .unwrap_or(deps.id_generator().next_id()? as i64);
         let reader = deps.reader_pool(ReadConsistency::Strong);
 
         let writer_pool = deps.writer_pool();
@@ -150,16 +151,17 @@ impl ApproveWaitlistUserCommand {
         self
     }
 
-    pub async fn execute_with_deps<D>(
-        self,
-        deps: &D,
-    ) -> Result<DeploymentInvitation, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<DeploymentInvitation, AppError>
     where
-        D: HasDbRouter + HasTemplateRenderer + HasPostmarkService + HasEncryptionService + HasIdGenerator,
+        D: HasDbRouter
+            + HasTemplateRenderer
+            + HasPostmarkService
+            + HasEncryptionService
+            + HasIdGenerator,
     {
-        let invitation_id =
-            self.invitation_id
-                .unwrap_or(deps.id_generator().next_id()? as i64);
+        let invitation_id = self
+            .invitation_id
+            .unwrap_or(deps.id_generator().next_id()? as i64);
         let reader = deps.reader_pool(ReadConsistency::Strong);
 
         let mut tx = deps.writer_pool().begin().await?;

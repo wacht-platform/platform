@@ -112,8 +112,7 @@ impl CreateProductionDeploymentCommand {
             ));
         }
 
-        let (public_key, private_key, saml_public_key, saml_private_key) =
-            generate_deployment_key_pairs().await?;
+        let key_material = generate_deployment_key_material().await?;
 
         let project = ProjectForProductionQuery::builder()
             .project_id(self.project_id)
@@ -123,12 +122,7 @@ impl CreateProductionDeploymentCommand {
                 AppError::NotFound(format!("Project with id {} not found", self.project_id))
             })?;
 
-        if project.status != "active" {
-            return Err(AppError::Validation(format!(
-                "Cannot create deployment. Billing account status is {}",
-                project.status
-            )));
-        }
+        ensure_billing_status_active(&project.status, "deployment")?;
 
         if ExistingProductionDeploymentQuery::builder()
             .project_id(self.project_id)
@@ -152,27 +146,21 @@ impl CreateProductionDeploymentCommand {
             )));
         }
 
-        let backend_host = format!("frontend.{}", self.custom_domain);
-        let frontend_host = format!("accounts.{}", self.custom_domain);
-        let mail_from_host = format!("wcmail.{}", self.custom_domain);
+        let hosts = build_production_deployment_hosts(&self.custom_domain);
 
         let domain_verification_records = deps
             .cloudflare_service
-            .generate_domain_verification_records(&frontend_host, &backend_host);
+            .generate_domain_verification_records(&hosts.frontend_host, &hosts.backend_host);
 
         let empty_email_verification_records = EmailVerificationRecords::default();
-
-        let mut publishable_key = String::from("pk_live_");
-        let base64_backend_host = BASE64_STANDARD.encode(format!("https://{}", backend_host));
-        publishable_key.push_str(&base64_backend_host);
 
         let deployment_row = ProductionDeploymentInsert::builder()
             .id(deps.ids.next_id()?)
             .project_id(self.project_id)
-            .backend_host(backend_host)
-            .frontend_host(frontend_host.clone())
-            .publishable_key(publishable_key)
-            .mail_from_host(mail_from_host.clone())
+            .backend_host(hosts.backend_host.clone())
+            .frontend_host(hosts.frontend_host.clone())
+            .publishable_key(hosts.publishable_key)
+            .mail_from_host(hosts.mail_from_host.clone())
             .domain_verification_records(
                 serde_json::to_value(&domain_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
@@ -184,81 +172,26 @@ impl CreateProductionDeploymentCommand {
             .execute_with_db(tx.as_mut())
             .await?;
 
-        let auth_settings = build_auth_settings(&self.auth_methods, deployment_row.id);
-        DeploymentAuthSettingsInsert::builder()
-            .id(deps.ids.next_id()?)
-            .auth_settings(auth_settings)
-            .build()?
-            .execute_with_db(tx.as_mut())
-            .await?;
+        let waitlist_url = format!("{}/waitlist", hosts.frontend_host);
+        bootstrap_deployment_defaults(
+            tx.as_mut(),
+            deps.ids,
+            DeploymentBootstrapInput {
+                deployment_id: deployment_row.id,
+                frontend_host: &hosts.frontend_host,
+                app_name: project.name.clone(),
+                auth_methods: &self.auth_methods,
+                waitlist_page_url: waitlist_url,
+                support_page_url: "",
+                key_material,
+            },
+        )
+        .await?;
 
-        let ui_settings =
-            build_ui_settings(deployment_row.id, &frontend_host, project.name.clone());
-        let b2b_settings = build_b2b_settings(deployment_row.id);
-        let restrictions = build_restrictions(deployment_row.id);
-        let email_templates = build_email_templates(deployment_row.id);
-        let sms_templates = build_sms_templates(deployment_row.id);
-        DeploymentKeyPairsInsert::builder()
-            .id(deps.ids.next_id()?)
-            .deployment_id(deployment_row.id)
-            .public_key(public_key)
-            .private_key(private_key)
-            .saml_public_key(saml_public_key)
-            .saml_private_key(saml_private_key)
-            .build()?
-            .execute_with_db(tx.as_mut())
+        let postmark_domain = deps
+            .postmark_service
+            .create_domain(&hosts.mail_from_host)
             .await?;
-
-        let waitlist_url = format!("{}/waitlist", frontend_host);
-        DeploymentUiSettingsInsert::builder()
-            .id(deps.ids.next_id()?)
-            .ui_settings(ui_settings)
-            .waitlist_page_url(waitlist_url)
-            .support_page_url("")
-            .build()?
-            .execute_with_db(tx.as_mut())
-            .await?;
-
-        DeploymentB2bBootstrapInsert::builder()
-            .settings_row_id(deps.ids.next_id()?)
-            .workspace_creator_role_id(deps.ids.next_id()?)
-            .workspace_member_role_id(deps.ids.next_id()?)
-            .org_creator_role_id(deps.ids.next_id()?)
-            .org_member_role_id(deps.ids.next_id()?)
-            .b2b_settings(b2b_settings)
-            .build()?
-            .execute_with_deps(tx.as_mut())
-            .await?;
-
-        DeploymentRestrictionsInsert::builder()
-            .id(deps.ids.next_id()?)
-            .restrictions(restrictions)
-            .build()?
-            .execute_with_db(tx.as_mut())
-            .await?;
-
-        DeploymentEmailTemplatesInsert::builder()
-            .id(deps.ids.next_id()?)
-            .email_templates(email_templates)
-            .build()?
-            .execute_with_db(tx.as_mut())
-            .await?;
-
-        DeploymentSmsTemplatesInsert::builder()
-            .id(deps.ids.next_id()?)
-            .sms_templates(sms_templates)
-            .build()?
-            .execute_with_db(tx.as_mut())
-            .await?;
-
-        DeploymentAiSettingsInsert::builder()
-            .id(deps.ids.next_id()?)
-            .deployment_id(deployment_row.id)
-            .build()?
-            .execute_with_db(tx.as_mut())
-            .await?;
-
-        let postmark_domain = deps.postmark_service.create_domain(&mail_from_host).await?;
         let postmark_domain_id = postmark_domain.id;
         let email_verification_records = deps
             .postmark_service
@@ -345,16 +278,6 @@ impl CreateProductionDeploymentCommand {
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
             .execute_with_db(tx.as_mut())
-            .await?;
-
-        let console_id = console_deployment_id()?;
-
-        ConsoleAppBootstrapInsert::builder()
-            .console_deployment_id(console_id)
-            .target_deployment_id(deployment_row.id)
-            .event_catalog_slug(DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG)
-            .build()?
-            .execute_with_deps(tx.as_mut())
             .await?;
 
         tracing::info!(

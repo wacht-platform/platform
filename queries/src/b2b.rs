@@ -389,7 +389,8 @@ impl GetOrganizationDetailsQuery {
         .await?
         .ok_or_else(|| AppError::NotFound("Organization not found".to_string()))?;
 
-        let roles: Vec<OrganizationRole> = serde_json::from_value(row.get("roles")).unwrap_or_default();
+        let roles: Vec<OrganizationRole> =
+            serde_json::from_value(row.get("roles")).unwrap_or_default();
         let workspaces: Vec<Workspace> =
             serde_json::from_value(row.get("workspaces")).unwrap_or_default();
         let segments: Vec<models::Segment> =
@@ -401,7 +402,9 @@ impl GetOrganizationDetailsQuery {
             updated_at: row.get("updated_at"),
             name: row.get("name"),
             image_url: row.get("image_url"),
-            description: row.get::<Option<String>, _>("description").unwrap_or_default(),
+            description: row
+                .get::<Option<String>, _>("description")
+                .unwrap_or_default(),
             member_count: row.get("member_count"),
             public_metadata: row.get("public_metadata"),
             private_metadata: row.get("private_metadata"),
@@ -480,7 +483,8 @@ impl GetWorkspaceDetailsQuery {
         .await?
         .ok_or_else(|| AppError::NotFound("Workspace not found".to_string()))?;
 
-        let roles: Vec<WorkspaceRole> = serde_json::from_value(row.get("roles")).unwrap_or_default();
+        let roles: Vec<WorkspaceRole> =
+            serde_json::from_value(row.get("roles")).unwrap_or_default();
         let segments: Vec<models::Segment> =
             serde_json::from_value(row.get("segments")).unwrap_or_default();
 

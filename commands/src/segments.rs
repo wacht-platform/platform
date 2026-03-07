@@ -25,10 +25,7 @@ impl CreateSegmentCommand {
 }
 
 impl CreateSegmentCommand {
-    pub async fn execute_with_db<'e, E>(
-        self,
-        executor: E,
-    ) -> Result<Segment, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<Segment, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {

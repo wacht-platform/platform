@@ -238,7 +238,11 @@ impl AgentExecutor {
 
         let embeddings = match GenerateEmbeddingsCommand::new(memory_contents.clone())
             .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-            .execute_with_deps(commands::EmbeddingApiDeps { client: &gemini_client, api_key: &gemini_api_key, model: &gemini_model })
+            .execute_with_deps(commands::EmbeddingApiDeps {
+                client: &gemini_client,
+                api_key: &gemini_api_key,
+                model: &gemini_model,
+            })
             .await
         {
             Ok(e) => e,

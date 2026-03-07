@@ -419,7 +419,7 @@ async fn publish_stream_event(
         subject
     );
 
-    use commands::{TriggerWebhookEventCommand, webhook_trigger::TriggerWebhookEventDeps};
+    use commands::{webhook_trigger::TriggerWebhookEventDeps, TriggerWebhookEventCommand};
 
     let webhook_payload = serde_json::json!({
         "context_id": context_key,
@@ -539,7 +539,9 @@ async fn mark_context_cancelled(app_state: &AppState, context_id: i64, deploymen
             metrics: None,
         },
     );
-    let _ = summary_cmd.execute_with_db(app_state.db_router.writer()).await;
+    let _ = summary_cmd
+        .execute_with_db(app_state.db_router.writer())
+        .await;
 }
 
 async fn subscribe_spawn_control(

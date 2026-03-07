@@ -4,8 +4,8 @@ mod validation;
 
 pub use endpoint_commands::{
     CreateWebhookEndpointCommand, CreateWebhookEndpointDeps, DeleteWebhookEndpointCommand,
-    UpdateEndpointSubscriptionsCommand, UpdateEndpointSubscriptionsDeps, UpdateWebhookEndpointCommand,
-    UpdateWebhookEndpointDeps,
+    UpdateEndpointSubscriptionsCommand, UpdateEndpointSubscriptionsDeps,
+    UpdateWebhookEndpointCommand, UpdateWebhookEndpointDeps,
 };
 pub use testing::{
     ReactivateEndpointCommand, ReactivateEndpointDeps, TestWebhookEndpointCommand,

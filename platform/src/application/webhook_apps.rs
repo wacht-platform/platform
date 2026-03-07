@@ -172,7 +172,9 @@ pub async fn delete_webhook_app(
     app_slug: String,
 ) -> Result<(), AppError> {
     let command = DeleteWebhookAppCommand::new(deployment_id, app_slug);
-    command.execute_with_db(app_state.db_router.writer()).await?;
+    command
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
     Ok(())
 }
 

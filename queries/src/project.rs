@@ -190,6 +190,7 @@ impl GetProjectsWithDeploymentQuery {
     where
         C: HasDbRouter + ?Sized,
     {
-        self.execute_with_db(deps.reader_pool(self.consistency)).await
+        self.execute_with_db(deps.reader_pool(self.consistency))
+            .await
     }
 }

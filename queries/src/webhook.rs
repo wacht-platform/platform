@@ -5,9 +5,7 @@ use common::{HasClickHouseService, HasDbRouter, error::AppError};
 use dto::json::webhook_requests::{
     WebhookEndpoint, WebhookEndpointSubscription as WebhookEndpointSubscriptionDTO,
 };
-use models::webhook::{
-    PendingDeliveryRow, WebhookApp, WebhookEndpoint as ModelWebhookEndpoint,
-};
+use models::webhook::{PendingDeliveryRow, WebhookApp, WebhookEndpoint as ModelWebhookEndpoint};
 
 #[derive(Debug, Deserialize)]
 pub struct GetWebhookAppsQuery {
@@ -252,7 +250,10 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
         self
     }
 
-    pub async fn execute_with_db<'e, E>(&self, executor: E) -> Result<Vec<WebhookEndpoint>, AppError>
+    pub async fn execute_with_db<'e, E>(
+        &self,
+        executor: E,
+    ) -> Result<Vec<WebhookEndpoint>, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -339,6 +340,49 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
         }
 
         Ok(out)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetWebhookSubscriptionFilterRulesQuery {
+    endpoint_id: i64,
+    deployment_id: i64,
+    app_slug: String,
+    event_name: String,
+}
+
+impl GetWebhookSubscriptionFilterRulesQuery {
+    pub fn new(endpoint_id: i64, deployment_id: i64, app_slug: String, event_name: String) -> Self {
+        Self {
+            endpoint_id,
+            deployment_id,
+            app_slug,
+            event_name,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<Option<serde_json::Value>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let row = query!(
+            r#"
+            SELECT filter_rules
+            FROM webhook_endpoint_subscriptions
+            WHERE endpoint_id = $1 AND deployment_id = $2 AND app_slug = $3 AND event_name = $4
+            "#,
+            self.endpoint_id,
+            self.deployment_id,
+            self.app_slug,
+            self.event_name
+        )
+        .fetch_optional(executor)
+        .await?;
+
+        Ok(row.and_then(|r| r.filter_rules))
     }
 }
 

@@ -1,5 +1,9 @@
 use common::error::AppError;
 use models::api_key::ApiAuthApp;
+use queries::api_key::{
+    GetApiAuthAppBySlugQuery, GetOrganizationMembershipIdByUserAndOrganizationQuery,
+    GetWorkspaceMembershipIdByUserAndWorkspaceQuery,
+};
 
 async fn ensure_user_exists(
     conn: &mut sqlx::PgConnection,
@@ -89,22 +93,12 @@ async fn ensure_user_in_organization(
     user_id: i64,
     organization_id: i64,
 ) -> Result<(), AppError> {
-    let membership = sqlx::query!(
-        r#"
-        SELECT id
-        FROM organization_memberships
-        WHERE user_id = $1
-          AND organization_id = $2
-          AND deleted_at IS NULL
-        LIMIT 1
-        "#,
-        user_id,
-        organization_id
-    )
-    .fetch_optional(&mut *conn)
-    .await?;
+    let membership_id =
+        GetOrganizationMembershipIdByUserAndOrganizationQuery::new(user_id, organization_id)
+            .execute_with_db(conn)
+            .await?;
 
-    if membership.is_none() {
+    if membership_id.is_none() {
         return Err(AppError::Validation(
             "user_id is not a member of organization_id".to_string(),
         ));
@@ -118,22 +112,11 @@ async fn ensure_user_in_workspace(
     user_id: i64,
     workspace_id: i64,
 ) -> Result<(), AppError> {
-    let membership = sqlx::query!(
-        r#"
-        SELECT id
-        FROM workspace_memberships
-        WHERE user_id = $1
-          AND workspace_id = $2
-          AND deleted_at IS NULL
-        LIMIT 1
-        "#,
-        user_id,
-        workspace_id
-    )
-    .fetch_optional(&mut *conn)
-    .await?;
+    let membership_id = GetWorkspaceMembershipIdByUserAndWorkspaceQuery::new(user_id, workspace_id)
+        .execute_with_db(conn)
+        .await?;
 
-    if membership.is_none() {
+    if membership_id.is_none() {
         return Err(AppError::Validation(
             "user_id is not a member of workspace_id".to_string(),
         ));
@@ -311,18 +294,10 @@ impl UpdateApiAuthAppCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut tx = acquirer.begin().await?;
-        let current = sqlx::query!(
-            r#"
-            SELECT user_id, organization_id, workspace_id
-            FROM api_auth_apps
-            WHERE app_slug = $1 AND deployment_id = $2
-            "#,
-            self.app_slug,
-            self.deployment_id
-        )
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(|| AppError::NotFound("API auth app not found".to_string()))?;
+        let current = GetApiAuthAppBySlugQuery::new(self.deployment_id, self.app_slug.clone())
+            .execute_with_db(&mut *tx)
+            .await?
+            .ok_or_else(|| AppError::NotFound("API auth app not found".to_string()))?;
 
         let mut next_organization_id = self.organization_id.or(current.organization_id);
         let next_workspace_id = self.workspace_id.or(current.workspace_id);
@@ -487,23 +462,12 @@ impl EnsureUserApiAuthAppCommand {
 
         let expected_slug = format!("oauth_{}", self.user_id);
 
-        let existing = sqlx::query!(
-            r#"
-            SELECT app_slug as "app_slug!"
-            FROM api_auth_apps
-            WHERE deployment_id = $1
-              AND app_slug = $2
-              AND deleted_at IS NULL
-            LIMIT 1
-            "#,
-            self.deployment_id,
-            expected_slug
-        )
-        .fetch_optional(&mut *tx)
-        .await?;
+        let existing = GetApiAuthAppBySlugQuery::new(self.deployment_id, expected_slug.clone())
+            .execute_with_db(&mut *tx)
+            .await?;
 
-        if let Some(row) = existing {
-            return Ok(row.app_slug);
+        if let Some(app) = existing {
+            return Ok(app.app_slug);
         }
 
         let create_result = CreateApiAuthAppCommand::new(

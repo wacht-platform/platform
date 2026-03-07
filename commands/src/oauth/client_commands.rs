@@ -514,7 +514,10 @@ pub struct UpdateOAuthClientSettings {
 }
 
 impl UpdateOAuthClientSettings {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<Option<OAuthClientData>, AppError>
+    pub async fn execute_with_db<'a, A>(
+        self,
+        acquirer: A,
+    ) -> Result<Option<OAuthClientData>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

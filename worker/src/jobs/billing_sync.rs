@@ -343,10 +343,7 @@ async fn sync_deployment(
                 transaction_type,
                 reference_id: Some(app_state.sf.next_id().unwrap().to_string()),
             };
-            match deduct_pulse_command
-                .execute_with_deps(app_state)
-                .await
-            {
+            match deduct_pulse_command.execute_with_deps(app_state).await {
                 Ok(_) => {
                     info!(
                         "[BILLING SYNC] Deducted {} Pulse cents for {} from deployment {}",

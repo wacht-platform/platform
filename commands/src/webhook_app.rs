@@ -75,7 +75,9 @@ impl CreateWebhookAppCommand {
             slug
         } else {
             self.generated_slug.ok_or_else(|| {
-                AppError::Validation("generated_slug is required when app_slug is missing".to_string())
+                AppError::Validation(
+                    "generated_slug is required when app_slug is missing".to_string(),
+                )
             })?
         };
 

@@ -1,6 +1,11 @@
 use chrono::{DateTime, Utc};
 use common::error::AppError;
 use models::api_key::{ApiKey, ApiKeyWithSecret};
+use queries::api_key::{
+    GetApiAuthAppBySlugQuery, GetOrganizationMembershipIdByUserAndOrganizationQuery,
+    GetOrganizationMembershipPermissionsQuery, GetWorkspaceMembershipIdByUserAndWorkspaceQuery,
+    GetWorkspaceMembershipPermissionsQuery,
+};
 use sha2::{Digest, Sha256};
 
 pub struct CreateApiKeyCommand {
@@ -266,10 +271,7 @@ impl RotateApiKeyCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
-        self,
-        acquirer: A,
-    ) -> Result<ApiKeyWithSecret, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<ApiKeyWithSecret, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -343,18 +345,14 @@ impl RotateApiKeyCommand {
             revoked_reason: None,
         };
 
-        let app_context = sqlx::query!(
-            r#"
-            SELECT user_id, organization_id, workspace_id
-            FROM api_auth_apps
-            WHERE deployment_id = $1 AND app_slug = $2 AND deleted_at IS NULL AND is_active = true
-            "#,
-            self.deployment_id,
-            existing_key.app_slug.clone()
-        )
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(|| AppError::NotFound("API key app not found or inactive".to_string()))?;
+        let app_context =
+            GetApiAuthAppBySlugQuery::new(self.deployment_id, existing_key.app_slug.clone())
+                .execute_with_db(&mut *tx)
+                .await?
+                .filter(|app| app.is_active)
+                .ok_or_else(|| {
+                    AppError::NotFound("API key app not found or inactive".to_string())
+                })?;
 
         if app_context.user_id.is_none()
             && (app_context.organization_id.is_some() || app_context.workspace_id.is_some())
@@ -370,22 +368,12 @@ impl RotateApiKeyCommand {
         if let (Some(user_id), Some(organization_id)) =
             (app_context.user_id, app_context.organization_id)
         {
-            let org_membership = sqlx::query!(
-                r#"
-                SELECT id
-                FROM organization_memberships
-                WHERE user_id = $1
-                  AND organization_id = $2
-                  AND deleted_at IS NULL
-                LIMIT 1
-                "#,
+            org_membership_id = GetOrganizationMembershipIdByUserAndOrganizationQuery::new(
                 user_id,
-                organization_id
+                organization_id,
             )
-            .fetch_optional(&mut *tx)
+            .execute_with_db(&mut *tx)
             .await?;
-
-            org_membership_id = org_membership.map(|r| r.id);
             if org_membership_id.is_none() {
                 return Err(AppError::BadRequest(
                     "user is not a member of the org".to_string(),
@@ -395,22 +383,10 @@ impl RotateApiKeyCommand {
 
         if let (Some(user_id), Some(workspace_id)) = (app_context.user_id, app_context.workspace_id)
         {
-            let workspace_membership = sqlx::query!(
-                r#"
-                SELECT id
-                FROM workspace_memberships
-                WHERE user_id = $1
-                  AND workspace_id = $2
-                  AND deleted_at IS NULL
-                LIMIT 1
-                "#,
-                user_id,
-                workspace_id
-            )
-            .fetch_optional(&mut *tx)
-            .await?;
-
-            workspace_membership_id = workspace_membership.map(|r| r.id);
+            workspace_membership_id =
+                GetWorkspaceMembershipIdByUserAndWorkspaceQuery::new(user_id, workspace_id)
+                    .execute_with_db(&mut *tx)
+                    .await?;
             if workspace_membership_id.is_none() {
                 return Err(AppError::BadRequest(
                     "user is not a member of the org".to_string(),
@@ -424,58 +400,25 @@ impl RotateApiKeyCommand {
         let mut workspace_role_permissions: Vec<String> = vec![];
 
         if let Some(org_membership_id) = org_membership_id {
-            let org_perm = sqlx::query!(
-                r#"
-                SELECT
-                    om.organization_id,
-                    COALESCE(
-                        jsonb_agg(DISTINCT perm) FILTER (WHERE perm IS NOT NULL),
-                        '[]'::jsonb
-                    ) as "permissions: serde_json::Value"
-                FROM organization_memberships om
-                LEFT JOIN organization_membership_roles omr ON omr.organization_membership_id = om.id
-                LEFT JOIN organization_roles orole ON omr.organization_role_id = orole.id
-                LEFT JOIN LATERAL unnest(COALESCE(orole.permissions, ARRAY[]::text[])) perm ON true
-                WHERE om.id = $1 AND om.deleted_at IS NULL
-                GROUP BY om.organization_id
-                "#,
-                org_membership_id
-            )
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Organization membership not found".to_string()))?;
+            let org_perm = GetOrganizationMembershipPermissionsQuery::new(org_membership_id)
+                .execute_with_db(&mut *tx)
+                .await?
+                .ok_or_else(|| {
+                    AppError::NotFound("Organization membership not found".to_string())
+                })?;
 
             organization_id = Some(org_perm.organization_id);
-            org_role_permissions = serde_json::from_value(
-                org_perm
-                    .permissions
-                    .unwrap_or_else(|| serde_json::json!([])),
-            )
-            .unwrap_or_default();
+            org_role_permissions = org_perm.permissions;
         }
 
         if let Some(workspace_membership_id) = workspace_membership_id {
-            let workspace_perm = sqlx::query!(
-                r#"
-                SELECT
-                    wm.organization_id,
-                    wm.workspace_id,
-                    COALESCE(
-                        jsonb_agg(DISTINCT perm) FILTER (WHERE perm IS NOT NULL),
-                        '[]'::jsonb
-                    ) as "permissions: serde_json::Value"
-                FROM workspace_memberships wm
-                LEFT JOIN workspace_membership_roles wmr ON wmr.workspace_membership_id = wm.id
-                LEFT JOIN workspace_roles wrole ON wmr.workspace_role_id = wrole.id
-                LEFT JOIN LATERAL unnest(COALESCE(wrole.permissions, ARRAY[]::text[])) perm ON true
-                WHERE wm.id = $1 AND wm.deleted_at IS NULL
-                GROUP BY wm.organization_id, wm.workspace_id
-                "#,
-                workspace_membership_id
-            )
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Workspace membership not found".to_string()))?;
+            let workspace_perm =
+                GetWorkspaceMembershipPermissionsQuery::new(workspace_membership_id)
+                    .execute_with_db(&mut *tx)
+                    .await?
+                    .ok_or_else(|| {
+                        AppError::NotFound("Workspace membership not found".to_string())
+                    })?;
 
             if let Some(existing_org_id) = organization_id {
                 if existing_org_id != workspace_perm.organization_id {
@@ -488,12 +431,7 @@ impl RotateApiKeyCommand {
 
             organization_id = Some(workspace_perm.organization_id);
             workspace_id = Some(workspace_perm.workspace_id);
-            workspace_role_permissions = serde_json::from_value(
-                workspace_perm
-                    .permissions
-                    .unwrap_or_else(|| serde_json::json!([])),
-            )
-            .unwrap_or_default();
+            workspace_role_permissions = workspace_perm.permissions;
         }
 
         // Revoke the old key

@@ -80,10 +80,7 @@ impl GenerateEmbeddingCommand {
         self
     }
 
-    pub async fn execute_with_deps(
-        self,
-        deps: EmbeddingApiDeps<'_>,
-    ) -> Result<Vec<f32>, AppError> {
+    pub async fn execute_with_deps(self, deps: EmbeddingApiDeps<'_>) -> Result<Vec<f32>, AppError> {
         let request = EmbedContentRequest {
             model: deps.model.to_string(),
             content: Content {

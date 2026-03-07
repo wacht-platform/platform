@@ -81,7 +81,10 @@ pub async fn process_webhook_delivery(
     app_state: &AppState,
 ) -> Result<DeliveryResult> {
     let command = GetActiveDeliveryCommand { delivery_id };
-    let delivery = match command.execute_with_db(app_state.db_router.writer()).await? {
+    let delivery = match command
+        .execute_with_db(app_state.db_router.writer())
+        .await?
+    {
         Some(d) => d,
         None => {
             warn!("Webhook delivery {} not found", delivery_id);

@@ -197,7 +197,9 @@ impl GetSessionWithSignInsQuery {
                         row.get("last_active_at"),
                         Utc,
                     ),
-                    ip_address: row.get::<Option<String>, _>("ip_address").unwrap_or_default(),
+                    ip_address: row
+                        .get::<Option<String>, _>("ip_address")
+                        .unwrap_or_default(),
                     browser: row.get::<Option<String>, _>("browser").unwrap_or_default(),
                     device: row.get::<Option<String>, _>("device").unwrap_or_default(),
                     city: row.get::<Option<String>, _>("city").unwrap_or_default(),

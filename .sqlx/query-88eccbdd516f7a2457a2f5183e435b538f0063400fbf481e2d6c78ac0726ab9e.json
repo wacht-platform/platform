@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM mcp_servers WHERE id = $1 AND deployment_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "88eccbdd516f7a2457a2f5183e435b538f0063400fbf481e2d6c78ac0726ab9e"
+}
