@@ -14,8 +14,23 @@ COPY common/Cargo.toml common/Cargo.toml
 COPY platform/Cargo.toml platform/Cargo.toml
 COPY worker/Cargo.toml worker/Cargo.toml
 COPY agent-engine/Cargo.toml agent-engine/Cargo.toml
-COPY agent-engine/src/lib.rs agent-engine/src/lib.rs
 COPY oauth-relay/Cargo.toml oauth-relay/Cargo.toml
+
+# Ensure cargo metadata sees at least one target per workspace member.
+COPY models/src/lib.rs models/src/lib.rs
+COPY dto/src/lib.rs dto/src/lib.rs
+COPY commands/src/lib.rs commands/src/lib.rs
+COPY queries/src/lib.rs queries/src/lib.rs
+COPY common/src/lib.rs common/src/lib.rs
+COPY platform/src/lib.rs platform/src/lib.rs
+COPY platform/src/bin/backend-api.rs platform/src/bin/backend-api.rs
+COPY platform/src/bin/console-api.rs platform/src/bin/console-api.rs
+COPY platform/src/bin/oauth-api.rs platform/src/bin/oauth-api.rs
+COPY platform/src/bin/gateway-api.rs platform/src/bin/gateway-api.rs
+COPY platform/src/bin/realtime-api.rs platform/src/bin/realtime-api.rs
+COPY worker/src/main.rs worker/src/main.rs
+COPY agent-engine/src/lib.rs agent-engine/src/lib.rs
+COPY oauth-relay/src/lib.rs oauth-relay/src/lib.rs
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
