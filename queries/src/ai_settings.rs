@@ -20,7 +20,7 @@ impl GetDeploymentAiSettingsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<DeploymentAiSettings>, AppError>

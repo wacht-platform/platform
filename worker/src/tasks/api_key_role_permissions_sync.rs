@@ -72,7 +72,7 @@ pub async fn sync_org_membership(
 ) -> Result<String, TaskError> {
     let writer = app_state.db_router.writer();
     let updated = SyncApiKeyOrgRolePermissionsForMembershipsQuery::new(vec![payload.membership_id])
-        .execute_with(writer)
+        .execute_with_db(writer)
         .await
         .map_err(|e| TaskError::Permanent(format!("Failed to sync org membership: {}", e)))?;
 
@@ -86,7 +86,7 @@ pub async fn sync_workspace_membership(
     let writer = app_state.db_router.writer();
     let updated =
         SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery::new(vec![payload.membership_id])
-            .execute_with(writer)
+            .execute_with_db(writer)
             .await
             .map_err(|e| {
                 TaskError::Permanent(format!("Failed to sync workspace membership: {}", e))
@@ -101,7 +101,7 @@ pub async fn sync_org_role(
 ) -> Result<String, TaskError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let mut membership_ids = GetOrganizationMembershipIdsByRoleQuery::new(payload.role_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| TaskError::Permanent(format!("Failed to load org memberships: {}", e)))?;
 
@@ -116,7 +116,7 @@ pub async fn sync_org_role(
     for batch in chunk_ids(membership_ids) {
         let writer = app_state.db_router.writer();
         let updated = SyncApiKeyOrgRolePermissionsForMembershipsQuery::new(batch)
-            .execute_with(writer)
+            .execute_with_db(writer)
             .await
             .map_err(|e| TaskError::Permanent(format!("Failed to sync org role: {}", e)))?;
         total_updated += updated.len();
@@ -141,7 +141,7 @@ pub async fn sync_workspace_role(
 ) -> Result<String, TaskError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let mut membership_ids = GetWorkspaceMembershipIdsByRoleQuery::new(payload.role_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| {
             TaskError::Permanent(format!("Failed to load workspace memberships: {}", e))
@@ -158,7 +158,7 @@ pub async fn sync_workspace_role(
     for batch in chunk_ids(membership_ids) {
         let writer = app_state.db_router.writer();
         let updated = SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery::new(batch)
-            .execute_with(writer)
+            .execute_with_db(writer)
             .await
             .map_err(|e| TaskError::Permanent(format!("Failed to sync workspace role: {}", e)))?;
         total_updated += updated.len();

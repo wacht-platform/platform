@@ -685,7 +685,7 @@ async fn mcp_oauth_client_name(
 ) -> Result<String, common::error::AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let app_name = GetDeploymentWithSettingsQuery::new(deployment_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
         .ui_settings
         .and_then(|ui| {

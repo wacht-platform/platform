@@ -37,7 +37,7 @@ impl GetAiAgentsQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<AiAgentWithDetails>, AppError>
@@ -157,7 +157,7 @@ impl GetAiAgentByIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiAgentWithDetails, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiAgentWithDetails, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -216,7 +216,7 @@ impl GetAiAgentsByIdsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<AiAgentWithDetails>, AppError>
@@ -290,7 +290,7 @@ impl GetAiAgentByNameQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiAgent, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiAgent, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -342,7 +342,7 @@ impl GetAiAgentByNameWithFeatures {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiAgentWithFeatures, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiAgentWithFeatures, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -470,7 +470,7 @@ impl GetAiAgentByIdWithFeatures {
         Self { agent_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiAgentWithFeatures, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiAgentWithFeatures, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

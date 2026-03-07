@@ -39,7 +39,7 @@ impl AgentExecutor {
             message_type,
         );
         command
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await
     }
 
@@ -86,7 +86,7 @@ impl AgentExecutor {
             ConversationMessageType::UserMessage,
         );
         let conversation = command
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
 
         let _ = self

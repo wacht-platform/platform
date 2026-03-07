@@ -156,7 +156,7 @@ impl ResolveOAuthAppByFqdnQuery {
         Self { fqdn }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<RuntimeOAuthAppData>, AppError>
@@ -198,7 +198,7 @@ impl GetRuntimeDeploymentHostsByIdQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<RuntimeDeploymentHostsData>, AppError>
@@ -238,7 +238,7 @@ impl ResolveApiAuthAppSlugByApiKeyHashQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -277,7 +277,7 @@ impl GetRuntimeApiAuthAppSlugByUserIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -315,7 +315,7 @@ impl GetRuntimeOAuthClientByClientIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<RuntimeOAuthClientData>, AppError>
@@ -403,7 +403,7 @@ impl ListActiveRuntimeOAuthGrantsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<RuntimeOAuthGrantData>, AppError>
@@ -454,7 +454,7 @@ impl GetRuntimeAuthorizationCodeForExchangeQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<RuntimeAuthorizationCodeData>, AppError>
@@ -517,7 +517,7 @@ impl GetRuntimeRefreshTokenForExchangeQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<RuntimeRefreshTokenData>, AppError>
@@ -603,7 +603,7 @@ impl ResolveRuntimeOAuthGrantQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<RuntimeOAuthGrantResolution, AppError>
@@ -681,7 +681,7 @@ impl GetRuntimeApiAuthUserIdByAppSlugQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -727,7 +727,7 @@ impl ValidateRuntimeResourceEntitlementQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<bool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -845,7 +845,7 @@ impl GetRuntimeAccessTokenByHashQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<RuntimeAccessTokenData>, AppError>
@@ -907,7 +907,7 @@ impl GetRuntimeIntrospectionDataQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<RuntimeIntrospectionData>, AppError>
@@ -1122,7 +1122,7 @@ impl GetGatewayOAuthAccessTokenByHashQuery {
         Self { token_hash }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<GatewayOAuthAccessTokenData>, AppError>

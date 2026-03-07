@@ -79,7 +79,7 @@ pub async fn get_ai_knowledge_bases(
     }
 
     let knowledge_bases = query_builder
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
     let paginated = paginate_results(knowledge_bases, limit as i32, Some(offset as i64));
 
@@ -103,7 +103,7 @@ pub async fn create_ai_knowledge_base(
     )
     .with_knowledge_base_id(app_state.sf.next_id()? as i64);
     create_command
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -113,7 +113,7 @@ pub async fn get_ai_knowledge_base_by_id(
     kb_id: i64,
 ) -> Result<AiKnowledgeBaseWithDetails, AppError> {
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
 }
 
@@ -123,7 +123,7 @@ pub async fn get_agent_knowledge_bases(
     agent_id: i64,
 ) -> Result<PaginatedResponse<AiKnowledgeBaseWithDetails>, AppError> {
     let knowledge_bases = GetAgentKnowledgeBasesQuery::new(deployment_id, agent_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
     Ok(PaginatedResponse::from(knowledge_bases))
 }
@@ -135,7 +135,7 @@ pub async fn attach_knowledge_base_to_agent(
     kb_id: i64,
 ) -> Result<(), AppError> {
     AttachKnowledgeBaseToAgentCommand::new(deployment_id, agent_id, kb_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -147,7 +147,7 @@ pub async fn detach_knowledge_base_from_agent(
     kb_id: i64,
 ) -> Result<(), AppError> {
     DetachKnowledgeBaseFromAgentCommand::new(deployment_id, agent_id, kb_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -170,7 +170,7 @@ pub async fn update_ai_knowledge_base(
         command = command.with_configuration(configuration);
     }
 
-    command.execute_with(app_state.db_router.writer()).await
+    command.execute_with_db(app_state.db_router.writer()).await
 }
 
 pub async fn delete_ai_knowledge_base(
@@ -222,7 +222,7 @@ pub async fn upload_knowledge_base_document(
     }
 
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await
         .map_err(|_| knowledge_base_not_found_error())?;
 
@@ -261,14 +261,14 @@ pub async fn get_knowledge_base_documents(
     query: GetDocumentsQuery,
 ) -> Result<PaginatedResponse<AiKnowledgeBaseDocument>, ApiErrorResponse> {
     GetAiKnowledgeBaseByIdQuery::new(deployment_id, kb_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await
         .map_err(|_| knowledge_base_not_found_error())?;
 
     let limit = query.limit.unwrap_or(20);
     let offset = query.offset.unwrap_or(0);
     let documents = GetKnowledgeBaseDocumentsQuery::new(kb_id, limit + 1, offset)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(paginate_results(

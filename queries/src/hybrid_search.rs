@@ -13,7 +13,7 @@ pub struct HybridSearchKnowledgeBaseQuery {
 }
 
 impl HybridSearchKnowledgeBaseQuery {
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<HybridSearchKbResult>, AppError>
@@ -141,7 +141,7 @@ pub struct HybridSearchMemoriesQuery {
 }
 
 impl HybridSearchMemoriesQuery {
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<HybridSearchMemoryResult>, AppError>
@@ -209,7 +209,7 @@ pub struct FullTextSearchKnowledgeBaseQuery {
 }
 
 impl FullTextSearchKnowledgeBaseQuery {
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<FullTextSearchResult>, AppError>

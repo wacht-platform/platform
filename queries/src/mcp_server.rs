@@ -27,7 +27,7 @@ impl GetMcpServersQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<Vec<McpServer>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<Vec<McpServer>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -85,7 +85,7 @@ impl GetMcpServerByIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<McpServer, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<McpServer, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -132,7 +132,7 @@ impl GetAgentMcpServersQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<Vec<McpServer>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<Vec<McpServer>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -211,7 +211,7 @@ impl GetActiveAgentMcpServerIdsForContextQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<Vec<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<Vec<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -240,7 +240,7 @@ impl GetActiveAgentMcpServerIdsForContextQuery {
 }
 
 impl GetActiveAgentMcpServerConnectionMetadataQuery {
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> StdResult<Option<McpConnectionMetadata>, AppError>

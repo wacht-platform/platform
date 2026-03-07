@@ -214,7 +214,7 @@ impl AgentExecutor {
                 ConversationMessageType::ExecutionSummary,
             );
             command
-                .execute_with(self.ctx.app_state.db_router.writer())
+                .execute_with_db(self.ctx.app_state.db_router.writer())
                 .await?;
         }
 
@@ -276,7 +276,7 @@ impl AgentExecutor {
                     initial_importance: importance,
                 };
                 let _ = create_cmd
-                    .execute_with(self.ctx.app_state.db_router.writer())
+                    .execute_with_db(self.ctx.app_state.db_router.writer())
                     .await;
             }
         }

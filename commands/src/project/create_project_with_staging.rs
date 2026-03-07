@@ -63,7 +63,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             .ok_or_else(|| AppError::Validation("Project must have an owner".to_string()))?;
         let billing_account = BillingAccountForOwnerLockQuery::builder()
             .owner_id(owner_id)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?
             .ok_or_else(|| AppError::Validation("No billing account found".to_string()))?;
 
@@ -83,7 +83,7 @@ impl CreateProjectWithStagingDeploymentCommand {
         let billing_account_id = billing_account.id;
         let project_count = ProjectsCountByBillingAccountQuery::builder()
             .billing_account_id(billing_account_id)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         if project_count >= MAX_PROJECTS_PER_BILLING_ACCOUNT {
@@ -98,7 +98,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             .name(self.name.clone())
             .owner_id_fragment(self.owner_id_fragment()?)
             .billing_account_id(billing_account_id)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let hostname = generate_nanoid();
@@ -117,7 +117,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             .frontend_host(frontend_host)
             .publishable_key(publishable_key)
             .mail_from_host("staging.wacht.services")
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let auth_settings = build_auth_settings(&self.auth_methods, deployment_row.id);
@@ -125,7 +125,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             .id(ids.next_id()?)
             .auth_settings(auth_settings)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let ui_settings = build_ui_settings(
@@ -140,7 +140,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             .waitlist_page_url(waitlist_url)
             .support_page_url("")
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let restrictions = build_restrictions(deployment_row.id);
@@ -149,7 +149,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             .id(ids.next_id()?)
             .restrictions(restrictions)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let b2b_settings = build_b2b_settings(deployment_row.id);
@@ -160,7 +160,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             .id(ids.next_id()?)
             .sms_templates(sms_templates)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeploymentKeyPairsInsert::builder()
@@ -171,7 +171,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             .saml_public_key(saml_public_key)
             .saml_private_key(saml_private_key)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let email_templates = build_email_templates(deployment_row.id);
@@ -180,7 +180,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             .id(ids.next_id()?)
             .email_templates(email_templates)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeploymentB2bBootstrapInsert::builder()
@@ -201,7 +201,7 @@ impl CreateProjectWithStagingDeploymentCommand {
                 || ids.next_id(),
             )?
         {
-            social_connections_insert.execute_with(tx.as_mut()).await?;
+            social_connections_insert.execute_with_db(tx.as_mut()).await?;
         }
 
         let console_id = console_deployment_id()?;
@@ -218,7 +218,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             .id(ids.next_id()?)
             .deployment_id(deployment_row.id)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let deployment = Deployment {

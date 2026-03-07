@@ -44,7 +44,7 @@ impl ListOrganizationDomainsQuery {
 }
 
 impl ListOrganizationDomainsQuery {
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<OrganizationDomain>, AppError>
@@ -149,7 +149,7 @@ impl ListEnterpriseConnectionsQuery {
 }
 
 impl ListEnterpriseConnectionsQuery {
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<EnterpriseConnection>, AppError>
@@ -240,7 +240,7 @@ impl GetScimTokenQuery {
 }
 
 impl GetScimTokenQuery {
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<models::scim_token::ScimToken>, AppError>

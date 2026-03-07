@@ -26,7 +26,7 @@ pub async fn get_api_auth_app_by_slug(
 ) -> Result<ApiAuthApp, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetApiAuthAppBySlugQuery::new(deployment_id, app_slug)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
         .ok_or_else(|| AppError::NotFound("API key app not found".to_string()))
 }
@@ -40,7 +40,7 @@ pub async fn ensure_api_key_exists_for_app(
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let keys = GetApiKeysByAppQuery::new(app_slug.to_string(), deployment_id)
         .with_inactive(true)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     if keys.iter().any(|key| key.id == key_id) {
@@ -60,7 +60,7 @@ pub async fn resolve_api_key_membership_context(
     if let (Some(user_id), Some(organization_id)) = (app.user_id, app.organization_id) {
         context.organization_membership_id =
             GetOrganizationMembershipIdByUserAndOrganizationQuery::new(user_id, organization_id)
-                .execute_with(reader)
+                .execute_with_db(reader)
                 .await?;
 
         if context.organization_membership_id.is_none() {
@@ -73,7 +73,7 @@ pub async fn resolve_api_key_membership_context(
     if let (Some(user_id), Some(workspace_id)) = (app.user_id, app.workspace_id) {
         context.workspace_membership_id =
             GetWorkspaceMembershipIdByUserAndWorkspaceQuery::new(user_id, workspace_id)
-                .execute_with(reader)
+                .execute_with_db(reader)
                 .await?;
 
         if context.workspace_membership_id.is_none() {
@@ -86,7 +86,7 @@ pub async fn resolve_api_key_membership_context(
     if let Some(organization_membership_id) = context.organization_membership_id {
         let organization_permissions =
             GetOrganizationMembershipPermissionsQuery::new(organization_membership_id)
-                .execute_with(reader)
+                .execute_with_db(reader)
                 .await?
                 .ok_or_else(|| {
                     AppError::NotFound("Organization membership not found".to_string())
@@ -99,7 +99,7 @@ pub async fn resolve_api_key_membership_context(
     if let Some(workspace_membership_id) = context.workspace_membership_id {
         let workspace_permissions =
             GetWorkspaceMembershipPermissionsQuery::new(workspace_membership_id)
-                .execute_with(reader)
+                .execute_with_db(reader)
                 .await?
                 .ok_or_else(|| AppError::NotFound("Workspace membership not found".to_string()))?;
 

@@ -5,7 +5,7 @@ pub struct UpdateApiKeyLastUsedCommand {
 }
 
 impl UpdateApiKeyLastUsedCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

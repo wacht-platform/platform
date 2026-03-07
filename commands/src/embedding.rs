@@ -231,7 +231,7 @@ impl SearchKnowledgeBaseEmbeddingsCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         self,
         acquirer: A,
     ) -> Result<Vec<DocumentChunkSearchResult>, AppError>

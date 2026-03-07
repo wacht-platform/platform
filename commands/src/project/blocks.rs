@@ -15,7 +15,7 @@ impl DeploymentAuthSettingsInsert {
         DeploymentAuthSettingsInsertBuilder::default()
     }
 
-    pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -118,7 +118,7 @@ impl DeploymentUiSettingsInsert {
         DeploymentUiSettingsInsertBuilder::default()
     }
 
-    pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -218,7 +218,7 @@ impl DeploymentRestrictionsInsert {
         DeploymentRestrictionsInsertBuilder::default()
     }
 
-    pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -308,7 +308,7 @@ impl DeploymentSmsTemplatesInsert {
         DeploymentSmsTemplatesInsertBuilder::default()
     }
 
-    pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -383,7 +383,7 @@ impl DeploymentEmailTemplatesInsert {
         DeploymentEmailTemplatesInsertBuilder::default()
     }
 
-    pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -486,7 +486,7 @@ impl DeploymentAiSettingsInsert {
         DeploymentAiSettingsInsertBuilder::default()
     }
 
-    pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -556,7 +556,7 @@ impl DeploymentKeyPairsInsert {
         DeploymentKeyPairsInsertBuilder::default()
     }
 
-    pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -679,7 +679,7 @@ impl DeploymentB2bBootstrapInsert {
     }
 
     #[allow(dead_code)]
-    pub(super) async fn execute_with<'a, A>(&self, acquirer: A) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -934,7 +934,7 @@ impl ConsoleAppBootstrapInsert {
     }
 
     #[allow(dead_code)]
-    pub(super) async fn execute_with<'a, A>(&self, acquirer: A) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -1098,7 +1098,7 @@ impl DeploymentSocialConnectionsBulkInsert {
         }))
     }
 
-    pub(super) async fn execute_with<'e, E>(&self, executor: E) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
@@ -1151,7 +1151,7 @@ impl BillingAccountForOwnerLockQuery {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<Option<BillingAccountLockResult>, AppError> {
@@ -1190,7 +1190,7 @@ impl ProjectsCountByBillingAccountQuery {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<i64, AppError> {
@@ -1256,7 +1256,7 @@ impl ProjectInsert {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<ProjectInsertedRow, AppError> {
@@ -1362,7 +1362,7 @@ impl StagingDeploymentInsert {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<StagingDeploymentInsertedRow, AppError> {
@@ -1455,7 +1455,7 @@ impl ProjectWithBillingForStagingQuery {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<Option<ProjectWithBillingForStagingRow>, AppError> {
@@ -1498,7 +1498,7 @@ impl StagingDeploymentCountByProjectQuery {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<i64, AppError> {
@@ -1537,7 +1537,7 @@ impl ProjectForProductionQuery {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<Option<ProjectForProductionRow>, AppError> {
@@ -1547,7 +1547,7 @@ impl ProjectForProductionQuery {
 
         let row = ProjectWithBillingForStagingQuery::builder()
             .project_id(project_id)
-            .execute_with(conn)
+            .execute_with_db(conn)
             .await?;
 
         Ok(row.map(|r| ProjectForProductionRow {
@@ -1572,7 +1572,7 @@ impl ExistingProductionDeploymentQuery {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<Option<i64>, AppError> {
@@ -1610,7 +1610,7 @@ impl ExistingDomainDeploymentQuery {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<Option<ExistingDomainDeploymentRow>, AppError> {
@@ -1710,7 +1710,7 @@ impl ProductionDeploymentInsert {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<ProductionDeploymentInsertedRow, AppError> {
@@ -1825,7 +1825,7 @@ impl DeploymentEmailVerificationUpdate {
         self
     }
 
-    pub(super) async fn execute_with(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
         let deployment_id = self
             .deployment_id
             .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
@@ -1875,7 +1875,7 @@ impl DeploymentDomainVerificationUpdate {
         self
     }
 
-    pub(super) async fn execute_with(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
         let deployment_id = self
             .deployment_id
             .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
@@ -1934,7 +1934,7 @@ impl DeploymentByIdQuery {
     }
 
     #[allow(dead_code)]
-    pub(super) async fn execute_with<'a, A>(
+    pub(super) async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<DeploymentByIdRow, AppError>
@@ -2022,7 +2022,7 @@ impl DeploymentDnsRecordsUpdate {
     }
 
     #[allow(dead_code)]
-    pub(super) async fn execute_with<'a, A>(&self, acquirer: A) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -2081,7 +2081,7 @@ impl ActiveDeploymentIdsByProjectQuery {
         self
     }
 
-    pub(super) async fn execute_with(
+    pub(super) async fn execute_with_db(
         &self,
         conn: &mut sqlx::PgConnection,
     ) -> Result<Vec<i64>, AppError> {
@@ -2118,7 +2118,7 @@ impl DeleteDeploymentSocialConnectionsByIds {
         self
     }
 
-    pub(super) async fn execute_with(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
             .as_ref()
@@ -2157,7 +2157,7 @@ impl DeleteDeploymentAuthSettingsByIds {
         self
     }
 
-    pub(super) async fn execute_with(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
             .as_ref()
@@ -2196,7 +2196,7 @@ impl DeleteDeploymentUiSettingsByIds {
         self
     }
 
-    pub(super) async fn execute_with(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
             .as_ref()
@@ -2235,7 +2235,7 @@ impl DeleteDeploymentB2bSettingsByIds {
         self
     }
 
-    pub(super) async fn execute_with(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
         let deployment_ids = self
             .deployment_ids
             .as_ref()
@@ -2274,7 +2274,7 @@ impl DeleteDeploymentsByProject {
         self
     }
 
-    pub(super) async fn execute_with(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
         let project_id = self
             .project_id
             .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?;
@@ -2308,7 +2308,7 @@ impl DeleteProjectById {
         self
     }
 
-    pub(super) async fn execute_with(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
+    pub(super) async fn execute_with_db(&self, conn: &mut sqlx::PgConnection) -> Result<(), AppError> {
         let project_id = self
             .project_id
             .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?;

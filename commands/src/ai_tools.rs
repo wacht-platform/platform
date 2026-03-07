@@ -73,7 +73,7 @@ impl CreateAiToolCommand {
         Ok(())
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiTool, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiTool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -210,7 +210,7 @@ impl UpdateAiToolCommand {
         Ok(())
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiTool, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiTool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -307,7 +307,7 @@ impl DeleteAiToolCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

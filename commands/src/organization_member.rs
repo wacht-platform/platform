@@ -28,7 +28,7 @@ impl AddOrganizationMemberCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OrganizationMemberDetails, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OrganizationMemberDetails, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -186,7 +186,7 @@ pub struct UpdateOrganizationMemberCommand {
 }
 
 impl UpdateOrganizationMemberCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -250,7 +250,7 @@ pub struct RemoveOrganizationMemberCommand {
 }
 
 impl RemoveOrganizationMemberCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

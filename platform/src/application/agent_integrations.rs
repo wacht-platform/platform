@@ -68,7 +68,7 @@ pub async fn list_agent_integrations(
         .limit(Some(limit as u32 + 1))
         .offset(offset.map(|o| o as u32))
         .build()?
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(integrations
@@ -94,7 +94,7 @@ pub async fn create_agent_integration(
         .name(name)
         .config(config)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -109,7 +109,7 @@ pub async fn get_agent_integration_by_id(
         .agent_id(agent_id)
         .integration_id(integration_id)
         .build()?
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
 }
 
@@ -136,7 +136,7 @@ pub async fn update_agent_integration(
 
     builder
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -149,6 +149,6 @@ pub async fn delete_agent_integration(
         .deployment_id(deployment_id)
         .integration_id(integration_id)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }

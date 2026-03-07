@@ -5,7 +5,7 @@ pub struct RevokeOAuthRefreshTokenById {
 }
 
 impl RevokeOAuthRefreshTokenById {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -31,7 +31,7 @@ pub struct SetOAuthRefreshTokenReplacement {
 }
 
 impl SetOAuthRefreshTokenReplacement {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -58,7 +58,7 @@ pub struct RevokeOAuthAccessTokenByHash {
 }
 
 impl RevokeOAuthAccessTokenByHash {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -89,7 +89,7 @@ pub struct RevokeOAuthRefreshTokenByHash {
 }
 
 impl RevokeOAuthRefreshTokenByHash {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -120,7 +120,7 @@ pub struct RevokeOAuthRefreshTokenFamily {
 }
 
 impl RevokeOAuthRefreshTokenFamily {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<u64, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<u64, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -165,7 +165,7 @@ pub struct RevokeOAuthTokensByGrant {
 }
 
 impl RevokeOAuthTokensByGrant {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

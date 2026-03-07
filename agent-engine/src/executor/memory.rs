@@ -118,7 +118,7 @@ impl AgentExecutor {
             context_id: self.ctx.context_id,
             limit: limit as i64,
         }
-        .execute_with(self.ctx.app_state.db_router.writer())
+        .execute_with_db(self.ctx.app_state.db_router.writer())
         .await
     }
 
@@ -137,7 +137,7 @@ impl AgentExecutor {
                 memory_id: *memory_id,
             };
             if let Err(e) = command
-                .execute_with(self.ctx.app_state.db_router.writer())
+                .execute_with_db(self.ctx.app_state.db_router.writer())
                 .await
             {
                 tracing::warn!("Failed to reinforce memory {}: {}", memory_id, e);
@@ -161,7 +161,7 @@ impl AgentExecutor {
                 agent_id: None,
                 categories: Some(directive.categories.clone()),
             }
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
 
             Ok(results.into_iter().map(|r| r.memory).collect())
@@ -171,7 +171,7 @@ impl AgentExecutor {
                 categories: Some(directive.categories.clone()),
                 limit,
             }
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await
         }
     }
@@ -190,7 +190,7 @@ impl AgentExecutor {
                 agent_id: Some(self.ctx.agent.id),
                 categories: Some(directive.categories.clone()),
             }
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
 
             Ok(results.into_iter().map(|r| r.memory).collect())
@@ -200,7 +200,7 @@ impl AgentExecutor {
                 categories: Some(directive.categories.clone()),
                 limit,
             }
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await
         }
     }
@@ -219,7 +219,7 @@ impl AgentExecutor {
                 agent_id: Some(self.ctx.agent.id),
                 categories: Some(directive.categories.clone()),
             }
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
 
             Ok(results.into_iter().map(|r| r.memory).collect())
@@ -249,7 +249,7 @@ impl AgentExecutor {
         let records = GetLLMConversationHistoryQuery {
             context_id: self.ctx.context_id,
         }
-        .execute_with(self.ctx.app_state.db_router.writer())
+        .execute_with_db(self.ctx.app_state.db_router.writer())
         .await?;
 
         let context = self.ctx.get_context().await?;
@@ -270,7 +270,7 @@ impl AgentExecutor {
         }
 
         let parent_records = GetLLMConversationHistoryQuery::new(parent_context_id)
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
 
         let mut merged: Vec<models::ConversationRecord> = parent_records

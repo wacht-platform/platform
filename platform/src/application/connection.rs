@@ -14,7 +14,7 @@ pub async fn get_deployment_social_connections(
     GetDeploymentSocialConnectionsQuery::builder()
         .deployment_id(deployment_id)
         .build()?
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
 }
 

@@ -13,7 +13,7 @@ impl GetSignInQuery {
         Self { signin_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<SignIn, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<SignIn, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -65,7 +65,7 @@ impl GetSessionWithActiveContextQuery {
         Self { session_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<SessionContext, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<SessionContext, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -131,7 +131,7 @@ impl GetSessionWithSignInsQuery {
         Self { session_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<SessionWithSignIns, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<SessionWithSignIns, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

@@ -10,7 +10,7 @@ impl GetSmsPricingQuery {
         Self { country_code }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<Decimal>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<Decimal>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

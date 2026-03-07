@@ -174,7 +174,7 @@ async fn resolve_webhook_app_slug(
     app_slug: String,
 ) -> Result<String, ApiErrorResponse> {
     let app = queries::GetWebhookAppByNameQuery::new(deployment_id, app_slug)
-        .execute_with(
+        .execute_with_db(
             app_state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Strong),
@@ -190,7 +190,7 @@ async fn ensure_webhook_app_exists(
     app_slug: String,
 ) -> Result<(), ApiErrorResponse> {
     let exists = queries::GetWebhookAppByNameQuery::new(deployment_id, app_slug)
-        .execute_with(
+        .execute_with_db(
             app_state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Strong),

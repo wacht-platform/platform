@@ -107,7 +107,7 @@ impl AgentExecutor {
 
     async fn run_inner(&mut self, request: ConverseRequest) -> Result<(), AppError> {
         let conversation = queries::GetConversationByIdQuery::new(request.conversation_id)
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
 
         let user_message = match &conversation.content {
@@ -543,7 +543,7 @@ impl AgentExecutor {
                             metrics: None,
                         },
                     )
-                    .execute_with(self.ctx.app_state.db_router.writer())
+                    .execute_with_db(self.ctx.app_state.db_router.writer())
                     .await?;
                 } else {
                     UpdateExecutionContextQuery::new(
@@ -794,7 +794,7 @@ impl AgentExecutor {
                     self.ctx.agent.deployment_id,
                     sub_agent_ids.clone(),
                 )
-                .execute_with(self.ctx.app_state.db_router.writer())
+                .execute_with_db(self.ctx.app_state.db_router.writer())
                 .await
                 .map(|agents| {
                     agents
@@ -1485,7 +1485,7 @@ impl AgentExecutor {
                     metrics: None,
                 },
             )
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
         } else {
             UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)

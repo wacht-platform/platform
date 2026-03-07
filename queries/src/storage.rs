@@ -3,7 +3,7 @@ use common::error::AppError;
 pub struct GetDirtyStorageDeploymentsQuery;
 
 impl GetDirtyStorageDeploymentsQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<(i64, i64)>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<(i64, i64)>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

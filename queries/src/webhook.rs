@@ -39,7 +39,7 @@ impl GetWebhookAppsQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<WebhookApp>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<WebhookApp>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -129,7 +129,7 @@ impl GetWebhookEndpointsQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<ModelWebhookEndpoint>, AppError>
@@ -255,7 +255,7 @@ impl GetWebhookEndpointsWithSubscriptionsQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<WebhookEndpoint>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<WebhookEndpoint>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -408,7 +408,7 @@ impl GetWebhookAppByNameQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<WebhookApp>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<WebhookApp>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -454,7 +454,7 @@ impl GetWebhookEventsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<models::webhook::WebhookEventDefinition>, AppError>
@@ -586,7 +586,7 @@ impl GetPendingWebhookDeliveryQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<dto::clickhouse::webhook::WebhookLog, AppError>

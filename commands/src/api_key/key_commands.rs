@@ -113,7 +113,7 @@ impl CreateApiKeyCommand {
 }
 
 impl CreateApiKeyCommand {
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         self,
         acquirer: A,
     ) -> Result<ApiKeyWithSecret, AppError>
@@ -234,7 +234,7 @@ pub struct RevokeApiKeyCommand {
 }
 
 impl RevokeApiKeyCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -285,7 +285,7 @@ impl RotateApiKeyCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         self,
         acquirer: A,
     ) -> Result<ApiKeyWithSecret, AppError>

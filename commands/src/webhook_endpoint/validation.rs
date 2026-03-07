@@ -197,7 +197,7 @@ async fn load_event_schema_map(
 ) -> Result<HashMap<String, (bool, Option<HashSet<String>>)>, AppError> {
     let reader = db_router.reader(ReadConsistency::Strong);
     let events = GetWebhookEventsQuery::new(deployment_id, app_slug.to_string())
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     let mut event_map: HashMap<String, (bool, Option<HashSet<String>>)> =

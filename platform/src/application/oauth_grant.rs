@@ -37,7 +37,7 @@ pub async fn list_oauth_grants(
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
 
     let grants = ListOAuthGrantsByClientQuery::new(deployment_id, oauth_client_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
         .into_iter()
         .map(map_oauth_grant_response)
@@ -62,7 +62,7 @@ pub async fn revoke_oauth_grant(
         oauth_client_id,
         grant_id,
     }
-    .execute_with(writer)
+    .execute_with_db(writer)
     .await?;
 
     Ok(())

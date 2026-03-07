@@ -83,7 +83,7 @@ pub async fn create_organization(
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(Into::into)
 }
@@ -131,7 +131,7 @@ pub async fn create_workspace_for_organization(
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(Into::into)
 }
@@ -172,7 +172,7 @@ pub async fn update_workspace(
     }
 
     command
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(Into::into)
 }
@@ -207,7 +207,7 @@ pub async fn update_organization(
         data.public_metadata,
         data.private_metadata,
     )
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(Into::into)
 }
@@ -218,7 +218,7 @@ pub async fn delete_organization(
     organization_id: i64,
 ) -> Result<(), AppError> {
     DeleteOrganizationCommand::new(deployment_id, organization_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -229,7 +229,7 @@ pub async fn delete_workspace(
     workspace_id: i64,
 ) -> Result<(), AppError> {
     DeleteWorkspaceCommand::new(deployment_id, workspace_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }

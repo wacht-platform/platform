@@ -73,7 +73,7 @@ pub async fn get_ai_agents(
         .with_limit(Some(query_limit + 1))
         .with_offset(offset.map(|o| o as u32))
         .with_search(query.search)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(paginate_results(agents, limit, offset))
@@ -107,7 +107,7 @@ pub async fn create_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command.execute_with(app_state.db_router.writer()).await
+    command.execute_with_db(app_state.db_router.writer()).await
 }
 
 pub async fn get_ai_agent_by_id(
@@ -116,7 +116,7 @@ pub async fn get_ai_agent_by_id(
     agent_id: i64,
 ) -> Result<AiAgentWithDetails, AppError> {
     GetAiAgentByIdQuery::new(deployment_id, agent_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
 }
 
@@ -126,11 +126,11 @@ pub async fn get_ai_agent_details(
     agent_id: i64,
 ) -> Result<AgentDetailsResponse, AppError> {
     let agent = GetAiAgentByIdQuery::new(deployment_id, agent_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     let integrations = GetAgentIntegrationsQuery::new(deployment_id, agent_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
         .unwrap_or_default();
 
@@ -215,7 +215,7 @@ pub async fn update_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command.execute_with(app_state.db_router.writer()).await
+    command.execute_with_db(app_state.db_router.writer()).await
 }
 
 pub async fn delete_ai_agent(
@@ -224,7 +224,7 @@ pub async fn delete_ai_agent(
     agent_id: i64,
 ) -> Result<(), AppError> {
     DeleteAiAgentCommand::new(deployment_id, agent_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -235,12 +235,12 @@ pub async fn get_agent_sub_agents(
     agent_id: i64,
 ) -> Result<PaginatedResponse<AiAgentWithDetails>, AppError> {
     let parent_agent = GetAiAgentByIdQuery::new(deployment_id, agent_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     let sub_agent_ids = parent_agent.sub_agents.unwrap_or_default();
     let sub_agents = GetAiAgentsByIdsQuery::new(deployment_id, sub_agent_ids)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(PaginatedResponse::from(sub_agents))
@@ -253,7 +253,7 @@ pub async fn attach_sub_agent_to_agent(
     sub_agent_id: i64,
 ) -> Result<(), AppError> {
     AttachSubAgentToAgentCommand::new(deployment_id, agent_id, sub_agent_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -265,7 +265,7 @@ pub async fn detach_sub_agent_from_agent(
     sub_agent_id: i64,
 ) -> Result<(), AppError> {
     DetachSubAgentFromAgentCommand::new(deployment_id, agent_id, sub_agent_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -276,7 +276,7 @@ pub async fn get_agent_integrations(
     agent_id: i64,
 ) -> Result<IntegrationsResponse, AppError> {
     let integrations = GetAgentIntegrationsQuery::new(deployment_id, agent_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     let base_url = "https://agentlink.wacht.services".to_string();

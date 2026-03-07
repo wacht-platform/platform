@@ -148,7 +148,7 @@ async fn publish_conversation_webhook(
 ) {
     let conversation_query = queries::GetConversationByIdQuery::new(conversation_id);
     if let Ok(conversation) = conversation_query
-        .execute_with(
+        .execute_with_db(
             app_state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Strong),
@@ -203,7 +203,7 @@ pub async fn process_agent_execution(
         AgentResolutionStrategy::AgentId(agent_id) => {
             let by_id_query = GetAiAgentByIdWithFeatures::new(*agent_id);
             by_id_query
-                .execute_with(
+                .execute_with_db(
                     app_state
                         .db_router
                         .reader(common::db_router::ReadConsistency::Strong),
@@ -217,7 +217,7 @@ pub async fn process_agent_execution(
                 agent_name.clone(),
             );
             by_name_query
-                .execute_with(
+                .execute_with_db(
                     app_state
                         .db_router
                         .reader(common::db_router::ReadConsistency::Strong),

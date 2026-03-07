@@ -47,7 +47,7 @@ impl DeploymentActiveUserListQuery {
         Self { search, ..self }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<UserWithIdentifiers>, AppError>
@@ -200,7 +200,7 @@ impl DeploymentInvitationQuery {
         Self { search, ..self }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<DeploymentInvitation>, AppError>
@@ -319,7 +319,7 @@ impl DeploymentWaitlistQuery {
         Self { search, ..self }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<DeploymentWaitlistUser>, AppError>
@@ -407,7 +407,7 @@ impl GetUserDetailsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<UserDetails, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<UserDetails, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -592,7 +592,7 @@ impl GetUserAuthenticatorQuery {
         Self { user_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<models::UserAuthenticator, AppError>

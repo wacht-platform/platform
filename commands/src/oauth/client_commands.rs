@@ -450,7 +450,7 @@ pub struct SetOAuthClientRegistrationAccessToken {
 }
 
 impl SetOAuthClientRegistrationAccessToken {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -488,7 +488,7 @@ pub struct DeactivateOAuthClient {
 }
 
 impl DeactivateOAuthClient {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -542,7 +542,7 @@ pub struct UpdateOAuthClientSettings {
 }
 
 impl UpdateOAuthClientSettings {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Option<OAuthClientData>, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<Option<OAuthClientData>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

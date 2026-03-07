@@ -28,7 +28,7 @@ pub async fn get_active_user_list(
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .search(params.search.clone())
-        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
 
     Ok(paginate_results(users, limit, Some(offset)))
@@ -41,7 +41,7 @@ pub async fn get_user_details(
 ) -> Result<UserDetails, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetUserDetailsQuery::new(deployment_id, user_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
 }
 
@@ -66,7 +66,7 @@ pub async fn create_user(
         .await?;
 
         UpdateUserProfileImageCommand::new(deployment_id, user.id, url)
-            .execute_with(app_state.db_router.writer())
+            .execute_with_db(app_state.db_router.writer())
             .await?;
     }
 
@@ -87,12 +87,12 @@ pub async fn update_user(
 
     if remove_profile_image {
         UpdateUserProfileImageCommand::new(deployment_id, user_id, String::new())
-            .execute_with(app_state.db_router.writer())
+            .execute_with_db(app_state.db_router.writer())
             .await?;
 
         let reader = app_state.db_router.reader(ReadConsistency::Strong);
         return GetUserDetailsQuery::new(deployment_id, user_id)
-            .execute_with(reader)
+            .execute_with_db(reader)
             .await;
     }
 
@@ -107,12 +107,12 @@ pub async fn update_user(
         .await?;
 
         UpdateUserProfileImageCommand::new(deployment_id, user_id, url)
-            .execute_with(app_state.db_router.writer())
+            .execute_with_db(app_state.db_router.writer())
             .await?;
 
         let reader = app_state.db_router.reader(ReadConsistency::Strong);
         return GetUserDetailsQuery::new(deployment_id, user_id)
-            .execute_with(reader)
+            .execute_with_db(reader)
             .await;
     }
 
@@ -141,7 +141,7 @@ pub async fn delete_user(
     user_id: i64,
 ) -> Result<(), AppError> {
     DeleteUserCommand::new(deployment_id, user_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -152,7 +152,7 @@ pub async fn impersonate_user(
     user_id: i64,
 ) -> Result<commands::GenerateImpersonationTokenResponse, AppError> {
     GenerateImpersonationTokenCommand::new(deployment_id, user_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 

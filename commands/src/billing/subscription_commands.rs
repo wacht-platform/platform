@@ -27,7 +27,7 @@ impl CreateSubscriptionCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         self,
         acquirer: A,
     ) -> Result<Subscription, AppError>
@@ -67,7 +67,7 @@ pub struct UpdateSubscriptionStatusCommand {
 }
 
 impl UpdateSubscriptionStatusCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Subscription, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<Subscription, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -131,7 +131,7 @@ impl UpsertSubscriptionCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         self,
         acquirer: A,
     ) -> Result<Subscription, AppError>

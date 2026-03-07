@@ -84,7 +84,7 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
     info!("[BILLING SYNC] Starting sync for current billing cycles");
 
     let sync_run_id = CreateBillingSyncRunCommand { from_event_id: 0 }
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
 
     let dirty_key = format!(
@@ -106,7 +106,7 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
             events_processed: 0,
             deployments_affected: 0,
         }
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
         return Ok("No dirty deployments".to_string());
     }
@@ -157,7 +157,7 @@ pub async fn sync_redis_to_postgres_and_dodo(app_state: &AppState) -> Result<Str
         events_processed: total_units_synced,
         deployments_affected: dirty.len() as i32,
     }
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await?;
 
     info!(
@@ -181,7 +181,7 @@ async fn sync_deployment(
     dodo_client: Option<&DodoClient>,
 ) -> Result<i64> {
     let subscription_info = GetDeploymentProviderSubscriptionQuery::new(*deployment_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await?
         .ok_or_else(|| {
             anyhow::anyhow!(

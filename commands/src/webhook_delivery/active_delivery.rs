@@ -71,7 +71,7 @@ impl GetActiveDeliveryCommand {
         }))
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         self,
         acquirer: A,
     ) -> Result<Option<ActiveDeliveryInfo>, AppError>
@@ -126,7 +126,7 @@ impl DeleteActiveDeliveryCommand {
         Ok(())
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = Postgres>,
     {
@@ -163,7 +163,7 @@ impl UpdateDeliveryAttemptsCommand {
         Ok(())
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = Postgres>,
     {
@@ -202,7 +202,7 @@ impl DeactivateEndpointCommand {
         Ok(())
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = Postgres>,
     {

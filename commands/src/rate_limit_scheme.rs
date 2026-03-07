@@ -89,7 +89,7 @@ impl CreateRateLimitSchemeCommand {
 }
 
 impl CreateRateLimitSchemeCommand {
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<RateLimitSchemeData, AppError> {
@@ -170,7 +170,7 @@ impl UpdateRateLimitSchemeCommand {
 }
 
 impl UpdateRateLimitSchemeCommand {
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<RateLimitSchemeData, AppError> {
@@ -230,7 +230,7 @@ impl DeleteRateLimitSchemeCommand {
 }
 
 impl DeleteRateLimitSchemeCommand {
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<(), AppError> {

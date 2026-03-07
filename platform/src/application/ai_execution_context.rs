@@ -97,7 +97,7 @@ async fn ensure_pulse_usage_if_needed(
 ) -> Result<(), AppError> {
     if !has_custom_gemini_key {
         EnsurePulseUsageAllowedForDeploymentCommand::new(deployment_id)
-            .execute_with(app_state.db_router.writer())
+            .execute_with_db(app_state.db_router.writer())
             .await?;
     }
     Ok(())
@@ -123,7 +123,7 @@ pub async fn create_execution_context(
 ) -> Result<AgentExecutionContext, AppError> {
     let context_id = app_state.sf.next_id()? as i64;
     build_create_execution_context_command(context_id, deployment_id, request)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -147,7 +147,7 @@ pub async fn get_execution_contexts(
     }
 
     let contexts = query
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
     Ok(paginate_results(
         contexts,
@@ -163,7 +163,7 @@ pub async fn update_execution_context(
     request: UpdateExecutionContextRequest,
 ) -> Result<AgentExecutionContext, AppError> {
     build_update_execution_context_command(context_id, deployment_id, request)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -177,7 +177,7 @@ pub async fn execute_agent_async(
     use models::{ConversationContent, ConversationMessageType};
 
     let context = GetExecutionContextQuery::new(context_id, deployment_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
     let has_running_execution = matches!(context.status, ExecutionContextStatus::Running);
 
@@ -204,7 +204,7 @@ pub async fn execute_agent_async(
     if cancel.is_none() {
         let has_ai_access =
             CheckDeploymentFeatureAccessQuery::new(deployment_id, PlanFeature::AiAgents)
-                .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+                .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
                 .await
                 .map_err(|e| {
                     AppError::Internal(format!("Failed to check AI feature access: {}", e))
@@ -219,7 +219,7 @@ pub async fn execute_agent_async(
 
     let has_custom_gemini_key = if cancel.is_none() {
         GetDeploymentAiSettingsQuery::new(deployment_id)
-            .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+            .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
             .await?
             .and_then(|s| s.gemini_api_key)
             .is_some()
@@ -295,7 +295,7 @@ pub async fn execute_agent_async(
                 },
                 ConversationMessageType::UserMessage,
             )
-            .execute_with(app_state.db_router.writer())
+            .execute_with_db(app_state.db_router.writer())
             .await?;
 
             cancel_running_execution_if_needed(app_state, context_id, has_running_execution)
@@ -337,7 +337,7 @@ pub async fn execute_agent_async(
                 },
                 ConversationMessageType::UserMessage,
             )
-            .execute_with(app_state.db_router.writer())
+            .execute_with_db(app_state.db_router.writer())
             .await?;
 
             cancel_running_execution_if_needed(app_state, context_id, has_running_execution)

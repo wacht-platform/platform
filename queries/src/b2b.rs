@@ -16,7 +16,7 @@ impl GetDeploymentWorkspaceRolesQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<DeploymentWorkspaceRole>, AppError>
@@ -46,7 +46,7 @@ impl GetDeploymentOrganizationRolesQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<DeploymentOrganizationRole>, AppError>
@@ -112,7 +112,7 @@ impl DeploymentOrganizationListQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<Organization>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<Organization>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -225,7 +225,7 @@ impl DeploymentWorkspaceListQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<WorkspaceWithOrganizationName>, AppError>
@@ -322,7 +322,7 @@ impl GetOrganizationDetailsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<OrganizationDetails, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<OrganizationDetails, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -441,7 +441,7 @@ impl GetWorkspaceDetailsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<WorkspaceDetails, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<WorkspaceDetails, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -566,7 +566,7 @@ impl GetOrganizationMembersQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<(Vec<OrganizationMemberDetails>, bool), AppError>
@@ -763,7 +763,7 @@ impl GetWorkspaceMembersQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<(Vec<WorkspaceMemberDetails>, bool), AppError>

@@ -13,7 +13,7 @@ pub struct GetMRUMemoriesQuery {
 }
 
 impl GetMRUMemoriesQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -55,7 +55,7 @@ impl GetRecentConversationsQuery {
         Self { context_id, limit }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<ConversationRecord>, AppError>
@@ -95,7 +95,7 @@ impl GetConversationByIdQuery {
         Self { conversation_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<ConversationRecord, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<ConversationRecord, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -131,7 +131,7 @@ impl GetLLMConversationHistoryQuery {
         Self { context_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<ConversationRecord>, AppError>
@@ -215,7 +215,7 @@ pub struct MemoryWithScore {
 }
 
 impl SearchMemoriesWithDecayQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryWithScore>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryWithScore>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -313,7 +313,7 @@ pub struct SimilarMemory {
 }
 
 impl FindSimilarMemoriesQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<SimilarMemory>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<SimilarMemory>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -356,7 +356,7 @@ pub struct GetMemoryByIdQuery {
 }
 
 impl GetMemoryByIdQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<MemoryRecord, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<MemoryRecord, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -389,7 +389,7 @@ pub struct SearchConversationsQuery {
 }
 
 impl SearchConversationsQuery {
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<ConversationRecord>, AppError>
@@ -422,7 +422,7 @@ impl SearchConversationsQuery {
 pub struct GetAllMemoryBoundariesQuery;
 
 impl GetAllMemoryBoundariesQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryBoundaries>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryBoundaries>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -474,7 +474,7 @@ pub struct GetSessionMemoriesQuery {
 }
 
 impl GetSessionMemoriesQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -519,7 +519,7 @@ pub struct GetAgentMemoriesQuery {
 }
 
 impl GetAgentMemoriesQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -566,7 +566,7 @@ pub struct GetAgentImportantMemoriesQuery {
 }
 
 impl GetAgentImportantMemoriesQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<MemoryRecord>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -607,7 +607,7 @@ impl GetAgentImportantMemoriesQuery {
 }
 
 impl GetMemoryBoundariesQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<MemoryBoundaries, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<MemoryBoundaries, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

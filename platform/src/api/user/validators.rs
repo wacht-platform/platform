@@ -11,7 +11,7 @@ async fn get_deployment_auth_settings(
 ) -> Result<models::DeploymentAuthSettings, (StatusCode, String)> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentAuthSettingsQuery::new(deployment_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| {
             (

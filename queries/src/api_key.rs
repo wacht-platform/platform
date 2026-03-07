@@ -37,7 +37,7 @@ impl GetApiAuthAppsQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<ApiAuthApp>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<ApiAuthApp>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -102,7 +102,7 @@ impl GetApiAuthAppBySlugQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<ApiAuthApp>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<ApiAuthApp>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -162,7 +162,7 @@ impl GetApiAuthAppByNameQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<ApiAuthApp>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<ApiAuthApp>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -229,7 +229,7 @@ impl GetApiKeysByAppQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<ApiKey>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<ApiKey>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -395,7 +395,7 @@ impl GetApiKeyByHashQuery {
         Self { key_hash }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<ApiKey>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<ApiKey>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -488,7 +488,7 @@ impl GetApiKeyIdentifiersByHashQuery {
         Self { key_hash }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<ApiKeyWithIdentifers>, AppError>
@@ -560,7 +560,7 @@ impl SyncApiKeyRateLimitsForSchemeQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -616,7 +616,7 @@ impl GetOrganizationMembershipPermissionsQuery {
         Self { membership_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<OrganizationMembershipPermissions>, AppError>
@@ -663,7 +663,7 @@ impl GetWorkspaceMembershipPermissionsQuery {
         Self { membership_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<WorkspaceMembershipPermissions>, AppError>
@@ -716,7 +716,7 @@ impl GetOrganizationMembershipIdByUserAndOrganizationQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -753,7 +753,7 @@ impl GetWorkspaceMembershipIdByUserAndWorkspaceQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -786,7 +786,7 @@ impl GetOrganizationMembershipIdsByRoleQuery {
         Self { role_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -815,7 +815,7 @@ impl GetWorkspaceMembershipIdsByRoleQuery {
         Self { role_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -844,7 +844,7 @@ impl SyncApiKeyOrgRolePermissionsForMembershipsQuery {
         Self { membership_ids }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -892,7 +892,7 @@ impl SyncApiKeyWorkspaceRolePermissionsForMembershipsQuery {
         Self { membership_ids }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

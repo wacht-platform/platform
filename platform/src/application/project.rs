@@ -29,7 +29,7 @@ pub async fn get_projects(
 ) -> Result<Vec<ProjectWithDeployments>, AppError> {
     GetProjectsWithDeploymentQuery::for_user_or_organization(input.user_id, input.organization_id)
         .with_consistency(ReadConsistency::Eventual)
-        .execute_with(&app_state.db_router)
+        .execute_with_deps(&app_state.db_router)
         .await
 }
 
@@ -157,6 +157,6 @@ pub async fn delete_project(
     let command = DeleteProjectCommand::builder()
         .id(input.project_id)
         .build()?;
-    command.execute_with(app_state.db_router.writer()).await?;
+    command.execute_with_db(app_state.db_router.writer()).await?;
     Ok(())
 }

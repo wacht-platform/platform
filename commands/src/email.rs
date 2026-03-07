@@ -47,7 +47,7 @@ impl SendEmailCommand {
         D: HasDbRouter + HasEncryptionService + HasPostmarkService + HasTemplateRenderer,
     {
         let template = GetEmailTemplateByNameQuery::new(self.deployment_id, self.template_name)
-            .execute_with(deps.reader_pool(ReadConsistency::Strong))
+            .execute_with_db(deps.reader_pool(ReadConsistency::Strong))
             .await?;
 
         let deployment = sqlx::query!(

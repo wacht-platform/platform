@@ -53,7 +53,7 @@ impl UpdateWorkspaceCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Workspace, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<Workspace, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

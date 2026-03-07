@@ -367,7 +367,7 @@ async fn mcp_auth_token_for_server(
                 context_group.to_string(),
                 server.id,
             )
-            .execute_with(execution_context.app_state.db_router.writer())
+            .execute_with_db(execution_context.app_state.db_router.writer())
             .await?
             .ok_or_else(|| {
                 AppError::BadRequest(format!(
@@ -482,7 +482,7 @@ async fn build_context_group_mcp_tools(
         execution_context.agent.deployment_id,
         execution_context.agent.id,
     )
-    .execute_with(execution_context.app_state.db_router.writer())
+    .execute_with_db(execution_context.app_state.db_router.writer())
     .await?;
 
     let Some(context_group) = context.context_group.as_ref() else {
@@ -494,7 +494,7 @@ async fn build_context_group_mcp_tools(
         execution_context.agent.id,
         context_group.clone(),
     )
-    .execute_with(execution_context.app_state.db_router.writer())
+    .execute_with_db(execution_context.app_state.db_router.writer())
     .await?;
 
     let active_id_set: HashSet<i64> = active_server_ids.into_iter().collect();

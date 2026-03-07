@@ -103,7 +103,7 @@ impl ListOAuthAppsByDeploymentQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<OAuthAppData>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<OAuthAppData>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -167,7 +167,7 @@ impl GetOAuthAppBySlugQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<OAuthAppData>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<OAuthAppData>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -229,7 +229,7 @@ impl ListOAuthClientsByOAuthAppQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<OAuthClientData>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<OAuthClientData>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -320,7 +320,7 @@ impl GetOAuthClientByIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<OAuthClientData>, AppError>
@@ -410,7 +410,7 @@ impl ListOAuthGrantsByClientQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<OAuthClientGrantData>, AppError>

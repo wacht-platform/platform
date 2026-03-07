@@ -25,7 +25,7 @@ impl GetAiKnowledgeBasesQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<AiKnowledgeBaseWithDetails>, AppError>
@@ -103,7 +103,7 @@ impl GetAiKnowledgeBaseByIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<AiKnowledgeBaseWithDetails, AppError>
@@ -162,7 +162,7 @@ impl GetAgentKnowledgeBasesQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<AiKnowledgeBaseWithDetails>, AppError>
@@ -226,7 +226,7 @@ impl GetKnowledgeBaseDocumentsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<AiKnowledgeBaseDocument>, AppError>
@@ -285,7 +285,7 @@ impl GetAiKnowledgeBasesByIdsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<AiKnowledgeBase>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AiKnowledgeBase>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -365,7 +365,7 @@ impl GetDocumentChunksQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<DocumentChunk>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<DocumentChunk>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

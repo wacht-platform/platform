@@ -14,7 +14,7 @@ pub async fn get_ai_settings(
     let settings = GetDeploymentAiSettingsQuery::builder()
         .deployment_id(deployment_id)
         .build()?
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(match settings {
@@ -36,7 +36,7 @@ pub async fn update_ai_settings(
         .deployment_id(deployment_id)
         .feature(PlanFeature::AiAgents)
         .build()?
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
         .map_err(|e| AppError::Internal(format!("Failed to check AI feature access: {}", e)))?;
 

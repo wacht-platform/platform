@@ -281,7 +281,7 @@ impl MarkNotificationReadCommand {
         MarkNotificationReadCommandBuilder::default()
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -345,7 +345,7 @@ impl MarkAllNotificationsReadCommand {
         MarkAllNotificationsReadCommandBuilder::default()
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<i64, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -412,7 +412,7 @@ impl ArchiveNotificationCommand {
         ArchiveNotificationCommandBuilder::default()
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -483,7 +483,7 @@ impl DeleteNotificationCommand {
         DeleteNotificationCommandBuilder::default()
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -524,7 +524,7 @@ impl DeleteNotificationCommandBuilder {
 pub struct CleanupExpiredNotificationsCommand;
 
 impl CleanupExpiredNotificationsCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<i64, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

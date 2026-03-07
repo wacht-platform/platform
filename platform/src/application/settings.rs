@@ -29,7 +29,7 @@ pub async fn get_deployment_with_settings(
 ) -> Result<DeploymentWithSettings, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentWithSettingsQuery::new(deployment_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
 }
 
@@ -72,7 +72,7 @@ pub async fn get_deployment_jwt_templates(
 ) -> Result<Vec<DeploymentJwtTemplate>, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentJwtTemplatesQuery::new(deployment_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
 }
 
@@ -116,7 +116,7 @@ pub async fn get_deployment_email_template(
 ) -> Result<EmailTemplate, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentEmailTemplateQuery::new(deployment_id, template_name)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
 }
 

@@ -206,7 +206,7 @@ impl ToolExecutor {
     async fn active_mcp_servers_for_context(&self) -> Result<Vec<models::McpServer>, AppError> {
         let attached_servers =
             queries::GetAgentMcpServersQuery::new(self.ctx.agent.deployment_id, self.ctx.agent.id)
-                .execute_with(self.ctx.app_state.db_router.writer())
+                .execute_with_db(self.ctx.app_state.db_router.writer())
                 .await?;
 
         let context = self.ctx.get_context().await?;
@@ -219,7 +219,7 @@ impl ToolExecutor {
             self.ctx.agent.id,
             context_group,
         )
-        .execute_with(self.ctx.app_state.db_router.writer())
+        .execute_with_db(self.ctx.app_state.db_router.writer())
         .await?;
 
         Ok(attached_servers
@@ -297,7 +297,7 @@ impl ToolExecutor {
                     context_group,
                     server.id,
                 )
-                .execute_with(self.ctx.app_state.db_router.writer())
+                .execute_with_db(self.ctx.app_state.db_router.writer())
                 .await?
                 .ok_or_else(|| {
                     AppError::BadRequest(format!(
@@ -1026,7 +1026,7 @@ impl ToolExecutor {
             .with_context_group_filter(context_group.clone())
             .with_limit(limit)
             .with_offset(offset)
-            .execute_with(self.ctx.app_state.db_router.writer())
+            .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
 
         let result: Vec<serde_json::Value> = contexts

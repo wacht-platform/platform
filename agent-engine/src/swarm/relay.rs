@@ -144,13 +144,13 @@ async fn execute_relay(
                 .with_task_type("spawn_context_execution".to_string())
                 .with_context_id(app_state.sf.next_id()? as i64);
         let child_context = create_child_command
-            .execute_with(app_state.db_router.writer())
+            .execute_with_db(app_state.db_router.writer())
             .await?;
 
         // Child context inherits parent conversation up to this point (without copying rows).
         let history_query = queries::GetLLMConversationHistoryQuery::new(current_context_id);
         let parent_history = history_query
-            .execute_with(
+            .execute_with_db(
                 app_state
                     .db_router
                     .reader(common::db_router::ReadConsistency::Strong),
@@ -201,7 +201,7 @@ async fn execute_relay(
         models::ConversationMessageType::UserMessage,
     );
     create_conversation_command
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
 
     if request.execute {
@@ -292,7 +292,7 @@ async fn resolve_execution_agent_name(
 
     let candidates =
         queries::GetAiAgentsByIdsQuery::new(current_agent.deployment_id, sub_agent_ids)
-            .execute_with(
+            .execute_with_db(
                 execution_context
                     .app_state
                     .db_router

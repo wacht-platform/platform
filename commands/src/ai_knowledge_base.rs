@@ -35,7 +35,7 @@ impl CreateAiKnowledgeBaseCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiKnowledgeBase, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiKnowledgeBase, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -110,7 +110,7 @@ impl UpdateAiKnowledgeBaseCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiKnowledgeBase, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiKnowledgeBase, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -475,7 +475,7 @@ impl DeleteKnowledgeBaseDocumentCommand {
         deps: KnowledgeBaseStorageDeps<'_>,
     ) -> Result<(), AppError> {
         let _kb = GetAiKnowledgeBaseByIdQuery::new(self.deployment_id, self.knowledge_base_id)
-            .execute_with(deps.db_router.writer())
+            .execute_with_db(deps.db_router.writer())
             .await
             .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
 

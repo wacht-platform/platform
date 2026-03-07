@@ -17,7 +17,7 @@ pub async fn list_rate_limit_schemes(
 ) -> Result<ListRateLimitSchemesResponse<RateLimitSchemeData>, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let schemes = ListRateLimitSchemesQuery::new(deployment_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     Ok(ListRateLimitSchemesResponse {
@@ -33,7 +33,7 @@ pub async fn get_rate_limit_scheme(
 ) -> Result<RateLimitSchemeData, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetRateLimitSchemeQuery::new(deployment_id, slug)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
         .ok_or_else(|| AppError::NotFound("Rate limit scheme not found".to_string()))
 }
@@ -52,7 +52,7 @@ pub async fn create_rate_limit_scheme(
         request.rules,
     )
     .with_description(request.description)
-    .execute_with(writer)
+    .execute_with_db(writer)
     .await?;
 
     Ok(scheme)
@@ -69,7 +69,7 @@ pub async fn update_rate_limit_scheme(
         .with_name(request.name)
         .with_description(request.description)
         .with_rules(request.rules)
-    .execute_with(writer)
+    .execute_with_db(writer)
     .await?;
 
     Ok(scheme)
@@ -82,7 +82,7 @@ pub async fn delete_rate_limit_scheme(
 ) -> Result<(), AppError> {
     let writer = app_state.db_router.writer();
     DeleteRateLimitSchemeCommand::new(deployment_id, slug)
-        .execute_with(writer)
+        .execute_with_db(writer)
         .await?;
 
     Ok(())

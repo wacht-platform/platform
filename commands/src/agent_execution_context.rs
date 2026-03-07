@@ -48,7 +48,7 @@ impl CreateExecutionContextCommand {
 }
 
 impl CreateExecutionContextCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -233,7 +233,7 @@ impl UpdateExecutionContextQuery {
                     ConversationMessageType::SystemDecision,
                 );
 
-                if let Ok(conversation) = cancel_command.execute_with(deps.writer_pool()).await {
+                if let Ok(conversation) = cancel_command.execute_with_db(deps.writer_pool()).await {
                     let subject = format!("agent_execution_stream.context:{}", self.context_id);
                     let mut headers = async_nats::HeaderMap::new();
                     headers.insert("message_type", "conversation_message");
@@ -400,7 +400,7 @@ impl UpdateExecutionContextCommand {
 }
 
 impl UpdateExecutionContextCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -481,7 +481,7 @@ impl PostStatusUpdateCommand {
 }
 
 impl PostStatusUpdateCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AgentStatusUpdate, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AgentStatusUpdate, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -560,7 +560,7 @@ impl CreateChildContextCommand {
 }
 
 impl CreateChildContextCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AgentExecutionContext, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -736,7 +736,7 @@ impl StoreCompletionSummaryEnhancedCommand {
 }
 
 impl StoreCompletionSummaryEnhancedCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

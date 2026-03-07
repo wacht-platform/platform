@@ -21,14 +21,14 @@ pub async fn get_segment_data(
     app_state: &AppState,
     query: GetSegmentDataQuery,
 ) -> Result<Vec<AnalyzedEntity>, AppError> {
-    query.execute_with(app_state.db_router.writer()).await
+    query.execute_with_db(app_state.db_router.writer()).await
 }
 
 pub async fn list_segments(
     app_state: &AppState,
     query: GetSegmentsQuery,
 ) -> Result<Vec<Segment>, AppError> {
-    query.execute_with(app_state.db_router.writer()).await
+    query.execute_with_db(app_state.db_router.writer()).await
 }
 
 pub async fn create_segment(
@@ -44,7 +44,7 @@ pub async fn create_segment(
         .name(name)
         .segment_type(segment_type)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -59,7 +59,7 @@ pub async fn update_segment(
         .deployment_id(deployment_id)
         .name(name)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -72,7 +72,7 @@ pub async fn delete_segment(
         .id(id)
         .deployment_id(deployment_id)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -87,7 +87,7 @@ pub async fn assign_segment(
         .deployment_id(deployment_id)
         .entity_id(entity_id)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -102,6 +102,6 @@ pub async fn remove_segment(
         .deployment_id(deployment_id)
         .entity_id(entity_id)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }

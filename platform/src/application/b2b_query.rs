@@ -41,7 +41,7 @@ pub async fn get_deployment_workspace_roles(
 ) -> Result<PaginatedResponse<DeploymentWorkspaceRole>, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let roles = GetDeploymentWorkspaceRolesQuery::new(deployment_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
     Ok(PaginatedResponse::from(roles))
 }
@@ -52,7 +52,7 @@ pub async fn get_deployment_org_roles(
 ) -> Result<PaginatedResponse<DeploymentOrganizationRole>, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let roles = GetDeploymentOrganizationRolesQuery::new(deployment_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
     Ok(PaginatedResponse::from(roles))
 }
@@ -83,7 +83,7 @@ pub async fn get_organization_list(
         .sort_key(query_params.sort_key)
         .sort_order(query_params.sort_order)
         .search(query_params.search)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     Ok(paginate_results(organizations, limit, Some(offset)))
@@ -104,7 +104,7 @@ pub async fn get_workspace_list(
         .sort_key(query_params.sort_key)
         .sort_order(query_params.sort_order)
         .search(query_params.search)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     Ok(paginate_results(workspaces, limit, Some(offset)))
@@ -117,7 +117,7 @@ pub async fn get_organization_details(
 ) -> Result<OrganizationDetails, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetOrganizationDetailsQuery::new(deployment_id, organization_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
 }
 
@@ -128,7 +128,7 @@ pub async fn get_workspace_details(
 ) -> Result<WorkspaceDetails, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetWorkspaceDetailsQuery::new(deployment_id, workspace_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
 }
 
@@ -148,7 +148,7 @@ pub async fn get_organization_members(
         .search(search)
         .sort_key(sort_key)
         .sort_order(sort_order)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     Ok(paginated_with_has_more(members, has_more, limit, offset))
@@ -170,7 +170,7 @@ pub async fn get_workspace_members(
         .search(search)
         .sort_key(sort_key)
         .sort_order(sort_order)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     Ok(paginated_with_has_more(members, has_more, limit, offset))

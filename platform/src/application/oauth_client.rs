@@ -25,7 +25,7 @@ pub async fn list_oauth_clients(
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
 
     let clients = ListOAuthClientsByOAuthAppQuery::new(deployment_id, oauth_app.id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
         .into_iter()
         .map(map_oauth_client_response)
@@ -102,7 +102,7 @@ pub async fn update_oauth_client(
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
     }
-    .execute_with(writer)
+    .execute_with_db(writer)
     .await?
     .ok_or_else(|| AppError::NotFound("OAuth client not found or inactive".to_string()))?;
 
@@ -124,7 +124,7 @@ pub async fn deactivate_oauth_client(
         oauth_app_id: oauth_app.id,
         client_id: client.client_id,
     }
-    .execute_with(writer)
+    .execute_with_db(writer)
     .await?;
 
     if !updated {

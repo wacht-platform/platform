@@ -12,7 +12,7 @@ pub struct GetSegmentsQuery {
 }
 
 impl GetSegmentsQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<Segment>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<Segment>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -87,7 +87,7 @@ pub struct GetSegmentDataQuery {
 }
 
 impl GetSegmentDataQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<AnalyzedEntity>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AnalyzedEntity>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

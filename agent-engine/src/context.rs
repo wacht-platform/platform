@@ -198,7 +198,7 @@ impl ContextOrchestrator {
                 }
 
                 if let Ok(chunks) = query_builder
-                    .execute_with(self.app_state().db_router.writer())
+                    .execute_with_db(self.app_state().db_router.writer())
                     .await
                 {
                     for chunk in chunks {
@@ -345,7 +345,7 @@ impl ContextOrchestrator {
             deployment_id: self.agent().deployment_id,
             max_results: max_results as i32,
         }
-        .execute_with(self.app_state().db_router.writer())
+        .execute_with_db(self.app_state().db_router.writer())
         .await?;
 
         Ok(results
@@ -381,7 +381,7 @@ impl ContextOrchestrator {
             query_embedding.to_vec(),
             max_results as u64,
         )
-        .execute_with(self.app_state().db_router.writer())
+        .execute_with_db(self.app_state().db_router.writer())
         .await?;
 
         Ok(results
@@ -430,7 +430,7 @@ impl ContextOrchestrator {
             deployment_id: self.agent().deployment_id,
             max_results: max_results as i32,
         }
-        .execute_with(self.app_state().db_router.writer())
+        .execute_with_db(self.app_state().db_router.writer())
         .await?;
 
         Ok(results

@@ -49,7 +49,7 @@ pub async fn list_oauth_apps(
 ) -> Result<ListOAuthAppsResponse, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let apps = ListOAuthAppsByDeploymentQuery::new(deployment_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
         .into_iter()
         .map(map_oauth_app_response)
@@ -113,7 +113,7 @@ pub async fn update_oauth_app(
         allow_dynamic_client_registration: request.allow_dynamic_client_registration,
         is_active: request.is_active,
     }
-    .execute_with(writer)
+    .execute_with_db(writer)
     .await?;
 
     Ok(map_oauth_app_response(updated))

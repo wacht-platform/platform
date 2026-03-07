@@ -52,7 +52,7 @@ pub async fn list_domains(
         .limit(input.limit)
         .offset(input.offset)
         .build()?
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
 }
 
@@ -67,7 +67,7 @@ pub async fn create_domain(
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -80,7 +80,7 @@ pub async fn delete_domain(
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -107,7 +107,7 @@ pub async fn list_connections(
         .limit(input.limit)
         .offset(input.offset)
         .build()?
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
 }
 
@@ -122,7 +122,7 @@ pub async fn create_connection(
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -135,7 +135,7 @@ pub async fn update_connection(
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -148,7 +148,7 @@ pub async fn delete_connection(
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -163,7 +163,7 @@ pub async fn get_scim_token(
         .organization_id(organization_id)
         .connection_id(connection_id)
         .build()?
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await
 }
 
@@ -178,7 +178,7 @@ pub async fn generate_scim_token(
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -191,6 +191,6 @@ pub async fn revoke_scim_token(
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }

@@ -85,7 +85,7 @@ pub async fn agent_sse_stream_handler(
 
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let (deployment_id, public_key) = match GetDeploymentWithKeyPairQuery::new(host.clone())
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
     {
         Ok(result) => result,
@@ -122,7 +122,7 @@ pub async fn agent_sse_stream_handler(
 
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let agent_session = match GetAgentSessionQuery::new(session_id, deployment_id as i64)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
     {
         Ok(Some(session)) if session.is_active() => session,
@@ -150,7 +150,7 @@ pub async fn agent_sse_stream_handler(
     };
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let execution_context = match GetExecutionContextQuery::new(context_id, deployment_id as i64)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
     {
         Ok(context) => context,

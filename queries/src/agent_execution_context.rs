@@ -67,7 +67,7 @@ impl GetExecutionContextQuery {
         })
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AgentExecutionContext, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AgentExecutionContext, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -129,7 +129,7 @@ impl ListExecutionContextsQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<AgentExecutionContext>, AppError>
@@ -240,7 +240,7 @@ impl GetChildContextsQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<AgentExecutionContext>, AppError>
@@ -326,7 +326,7 @@ impl GetStatusUpdatesQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<AgentStatusUpdate>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AgentStatusUpdate>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -374,7 +374,7 @@ impl GetLatestStatusUpdatesForContextsQuery {
         Self { context_ids }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<LatestStatusUpdate>, AppError>
@@ -426,7 +426,7 @@ impl GetParentContextQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<AgentExecutionContext>, AppError>
@@ -511,7 +511,7 @@ impl GetChildCompletionSummaryQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<serde_json::Value>, AppError>
@@ -568,7 +568,7 @@ impl GetChildrenCompletionSummariesQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<ChildCompletionSummary>, AppError>

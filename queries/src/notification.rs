@@ -23,7 +23,7 @@ impl GetOrganizationNotificationRecipientUserIdsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -93,7 +93,7 @@ impl GetWorkspaceNotificationRecipientUserIdsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<i64>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

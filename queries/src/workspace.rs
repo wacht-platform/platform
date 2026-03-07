@@ -9,7 +9,7 @@ impl GetWorkspaceNameQuery {
         Self { workspace_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<String, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<String, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

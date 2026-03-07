@@ -40,7 +40,7 @@ impl AgentHandler {
         let kv = self.get_key_value_store().await?;
 
         let deployment_ai_settings = queries::GetDeploymentAiSettingsQuery::new(deployment_id)
-            .execute_with(self.app_state.db_router.writer())
+            .execute_with_db(self.app_state.db_router.writer())
             .await
             .ok()
             .flatten();
@@ -123,7 +123,7 @@ impl AgentHandler {
                     metrics: None,
                 },
             )
-            .execute_with(self.app_state.db_router.writer())
+            .execute_with_db(self.app_state.db_router.writer())
             .await;
         }
 
@@ -514,7 +514,7 @@ async fn mark_context_failed_due_to_parent_abort(
         },
     );
     summary_cmd
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
 
     Ok(())
@@ -539,7 +539,7 @@ async fn mark_context_cancelled(app_state: &AppState, context_id: i64, deploymen
             metrics: None,
         },
     );
-    let _ = summary_cmd.execute_with(app_state.db_router.writer()).await;
+    let _ = summary_cmd.execute_with_db(app_state.db_router.writer()).await;
 }
 
 async fn subscribe_spawn_control(
@@ -599,7 +599,7 @@ async fn apply_spawn_control_params(
     params: Value,
 ) -> Result<(), AppError> {
     let context = queries::GetExecutionContextQuery::new(context_id, deployment_id)
-        .execute_with(
+        .execute_with_db(
             app_state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Strong),
@@ -631,7 +631,7 @@ async fn apply_spawn_control_params(
     )
     .with_status_update_id(app_state.sf.next_id()? as i64);
     status_cmd
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
 
     Ok(())
@@ -649,7 +649,7 @@ async fn record_spawn_control_restart(
     )
     .with_status_update_id(app_state.sf.next_id()? as i64);
     status_cmd
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }

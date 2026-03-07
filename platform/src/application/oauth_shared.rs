@@ -13,7 +13,7 @@ pub async fn get_oauth_app_by_slug(
 ) -> Result<OAuthAppData, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetOAuthAppBySlugQuery::new(deployment_id, oauth_app_slug)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
         .ok_or_else(|| AppError::NotFound("OAuth app not found".to_string()))
 }
@@ -26,7 +26,7 @@ pub async fn get_oauth_client_by_id(
 ) -> Result<OAuthClientData, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetOAuthClientByIdQuery::new(deployment_id, oauth_app_id, oauth_client_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
         .ok_or_else(|| AppError::NotFound("OAuth client not found".to_string()))
 }

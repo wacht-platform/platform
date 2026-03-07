@@ -52,7 +52,7 @@ impl ListRateLimitSchemesQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<RateLimitSchemeData>, AppError>
@@ -104,7 +104,7 @@ impl GetRateLimitSchemeQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<RateLimitSchemeData>, AppError>

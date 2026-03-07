@@ -35,7 +35,7 @@ impl GetAiToolsQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<AiToolWithDetails>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AiToolWithDetails>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -126,7 +126,7 @@ impl GetAiToolByIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiToolWithDetails, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiToolWithDetails, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -182,7 +182,7 @@ impl GetAgentToolsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<AiTool>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AiTool>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -235,7 +235,7 @@ impl GetToolByIdQuery {
         Self { tool_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<AiTool, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<AiTool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -295,7 +295,7 @@ impl GetAiToolsByIdsQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<AiTool>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<AiTool>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

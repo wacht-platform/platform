@@ -8,7 +8,7 @@ pub struct CheckEndpointFailuresCommand {
 }
 
 impl CheckEndpointFailuresCommand {
-    pub async fn execute_with<C>(self, deps: &C) -> Result<EndpointFailureInfo, AppError>
+    pub async fn execute_with_deps<C>(self, deps: &C) -> Result<EndpointFailureInfo, AppError>
     where
         C: HasRedis + ?Sized,
     {
@@ -42,7 +42,7 @@ pub struct IncrementEndpointFailuresCommand {
 }
 
 impl IncrementEndpointFailuresCommand {
-    pub async fn execute_with<C>(self, deps: &C) -> Result<i64, AppError>
+    pub async fn execute_with_deps<C>(self, deps: &C) -> Result<i64, AppError>
     where
         C: HasRedis + ?Sized,
     {
@@ -77,7 +77,7 @@ pub struct ClearEndpointFailuresCommand {
 }
 
 impl ClearEndpointFailuresCommand {
-    pub async fn execute_with<C>(self, deps: &C) -> Result<(), AppError>
+    pub async fn execute_with_deps<C>(self, deps: &C) -> Result<(), AppError>
     where
         C: HasRedis + ?Sized,
     {

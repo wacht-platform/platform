@@ -64,7 +64,7 @@ impl CreateWebhookAppCommand {
 }
 
 impl CreateWebhookAppCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -166,7 +166,7 @@ impl UpdateWebhookAppCommand {
 }
 
 impl UpdateWebhookAppCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -229,7 +229,7 @@ impl DeleteWebhookAppCommand {
 }
 
 impl DeleteWebhookAppCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -269,7 +269,7 @@ impl RotateWebhookSecretCommand {
 }
 
 impl RotateWebhookSecretCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookApp, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

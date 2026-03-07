@@ -231,7 +231,7 @@ impl ReactivateEndpointCommand {
         ClearEndpointFailuresCommand {
             endpoint_id: self.endpoint_id,
         }
-        .execute_with(deps.redis_deps)
+        .execute_with_deps(deps.redis_deps)
         .await?;
 
         Ok(endpoint)

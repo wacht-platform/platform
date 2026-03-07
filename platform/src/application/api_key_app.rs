@@ -23,7 +23,7 @@ pub async fn list_api_auth_apps(
 
     let apps = GetApiAuthAppsQuery::new(deployment_id)
         .with_inactive(include_inactive)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     Ok(ListApiAuthAppsResponse {
@@ -47,7 +47,7 @@ pub async fn create_api_auth_app(
 ) -> Result<ApiAuthApp, AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let plan_tier = GetDeploymentPlanTierQuery::new(deployment_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     if !matches!(plan_tier, Some(PlanTier::Growth)) {
@@ -82,7 +82,7 @@ pub async fn create_api_auth_app(
     command = command.with_permissions(request.permissions.unwrap_or_default());
     command = command.with_resources(request.resources.unwrap_or_default());
 
-    let created = command.execute_with(app_state.db_router.writer()).await?;
+    let created = command.execute_with_db(app_state.db_router.writer()).await?;
     get_api_auth_app_by_slug(app_state, deployment_id, created.app_slug).await
 }
 
@@ -115,7 +115,7 @@ pub async fn update_api_auth_app(
         resources: request.resources.clone(),
     };
 
-    let updated = command.execute_with(app_state.db_router.writer()).await?;
+    let updated = command.execute_with_db(app_state.db_router.writer()).await?;
     get_api_auth_app_by_slug(app_state, deployment_id, updated.app_slug).await
 }
 
@@ -130,7 +130,7 @@ pub async fn delete_api_auth_app(
         app_slug: app.app_slug.clone(),
         deployment_id,
     };
-    command.execute_with(app_state.db_router.writer()).await?;
+    command.execute_with_db(app_state.db_router.writer()).await?;
 
     Ok(())
 }

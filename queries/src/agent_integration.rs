@@ -41,7 +41,7 @@ impl GetAgentIntegrationsQuery {
         self
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> StdResult<Vec<AgentIntegration>, AppError>
@@ -153,7 +153,7 @@ impl GetAgentIntegrationByIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<AgentIntegration, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<AgentIntegration, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -232,7 +232,7 @@ impl GetActiveIntegrationsForContextQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> StdResult<Vec<AgentIntegration>, AppError>
@@ -286,7 +286,7 @@ impl GetClickUpTokenQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> StdResult<String, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> StdResult<String, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

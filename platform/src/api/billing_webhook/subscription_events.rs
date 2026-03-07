@@ -56,7 +56,7 @@ pub(super) async fn handle_subscription_active(
         )
         .with_product_id(product_id)
         .with_previous_billing_date(previous_billing_date)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to upsert subscription: {}", e);
@@ -64,7 +64,7 @@ pub(super) async fn handle_subscription_active(
     })?;
 
     UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to update billing account status: {}", e);
@@ -72,7 +72,7 @@ pub(super) async fn handle_subscription_active(
     })?;
 
     MarkSubscriptionActivatedCommand::new(owner_id.clone(), "subscription.active".to_string())
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to update checkout flow state: {}", e);
@@ -112,7 +112,7 @@ pub(super) async fn handle_subscription_renewed(
         )
         .with_product_id(product_id)
         .with_previous_billing_date(previous_billing_date)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription on renewal: {}", e);
@@ -120,7 +120,7 @@ pub(super) async fn handle_subscription_renewed(
         })?;
 
         MarkSubscriptionActivatedCommand::new(owner_id.clone(), "subscription.renewed".to_string())
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -167,7 +167,7 @@ pub(super) async fn handle_subscription_plan_changed(
         )
         .with_product_id(Some(new_product_id.to_string()))
         .with_previous_billing_date(previous_billing_date)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription on plan change: {}", e);
@@ -175,7 +175,7 @@ pub(super) async fn handle_subscription_plan_changed(
         })?;
 
         MarkSubscriptionActivatedCommand::new(owner_id.clone(), "subscription.plan_changed".to_string())
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -219,7 +219,7 @@ pub(super) async fn handle_subscription_cancelled(
         )
         .with_product_id(product_id)
         .with_previous_billing_date(previous_billing_date)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
@@ -227,7 +227,7 @@ pub(super) async fn handle_subscription_cancelled(
         })?;
 
         UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
@@ -235,7 +235,7 @@ pub(super) async fn handle_subscription_cancelled(
         })?;
 
         MarkCheckoutFlowFailedCommand::new(owner_id.clone(), "subscription.cancelled".to_string(), status.to_string())
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -278,7 +278,7 @@ pub(super) async fn handle_subscription_on_hold(
         )
         .with_product_id(product_id)
         .with_previous_billing_date(previous_billing_date)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
@@ -286,7 +286,7 @@ pub(super) async fn handle_subscription_on_hold(
         })?;
 
         UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
@@ -294,7 +294,7 @@ pub(super) async fn handle_subscription_on_hold(
         })?;
 
         MarkCheckoutFlowFailedCommand::new(owner_id.clone(), "subscription.on_hold".to_string(), status.to_string())
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -342,7 +342,7 @@ pub(super) async fn handle_subscription_failed(
         )
         .with_product_id(product_id)
         .with_previous_billing_date(previous_billing_date)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
@@ -350,7 +350,7 @@ pub(super) async fn handle_subscription_failed(
         })?;
 
         UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
@@ -358,7 +358,7 @@ pub(super) async fn handle_subscription_failed(
         })?;
 
         MarkCheckoutFlowFailedCommand::new(owner_id.clone(), "subscription.failed".to_string(), status.to_string())
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -401,7 +401,7 @@ pub(super) async fn handle_subscription_expired(
         )
         .with_product_id(product_id)
         .with_previous_billing_date(previous_billing_date)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update subscription status: {}", e);
@@ -409,7 +409,7 @@ pub(super) async fn handle_subscription_expired(
         })?;
 
         UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update billing account status: {}", e);
@@ -417,7 +417,7 @@ pub(super) async fn handle_subscription_expired(
         })?;
 
         MarkCheckoutFlowFailedCommand::new(owner_id.clone(), "subscription.expired".to_string(), status.to_string())
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);

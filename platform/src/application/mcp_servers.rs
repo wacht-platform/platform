@@ -20,7 +20,7 @@ pub async fn get_mcp_servers(
     let servers = GetMcpServersQuery::new(deployment_id)
         .with_limit(Some(limit as u32 + 1))
         .with_offset(offset.map(|o| o as u32))
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     Ok(paginate_results(servers, limit as i32, offset))
@@ -33,7 +33,7 @@ pub async fn create_mcp_server(
     config: McpServerConfig,
 ) -> Result<McpServer, common::error::AppError> {
     CreateMcpServerCommand::new(app_state.sf.next_id()? as i64, deployment_id, name, config)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -44,7 +44,7 @@ pub async fn get_mcp_server_by_id(
 ) -> Result<McpServer, common::error::AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetMcpServerByIdQuery::new(deployment_id, mcp_server_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
 }
 
@@ -64,7 +64,7 @@ pub async fn update_mcp_server(
         command = command.with_config(config);
     }
 
-    command.execute_with(app_state.db_router.writer()).await
+    command.execute_with_db(app_state.db_router.writer()).await
 }
 
 pub async fn delete_mcp_server(
@@ -73,7 +73,7 @@ pub async fn delete_mcp_server(
     mcp_server_id: i64,
 ) -> Result<(), common::error::AppError> {
     DeleteMcpServerCommand::new(deployment_id, mcp_server_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -85,7 +85,7 @@ pub async fn get_agent_mcp_servers(
 ) -> Result<PaginatedResponse<McpServer>, common::error::AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let servers = GetAgentMcpServersQuery::new(deployment_id, agent_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
     Ok(PaginatedResponse::from(servers))
 }
@@ -97,7 +97,7 @@ pub async fn attach_mcp_server_to_agent(
     mcp_server_id: i64,
 ) -> Result<(), common::error::AppError> {
     AttachMcpServerToAgentCommand::new(deployment_id, agent_id, mcp_server_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -109,7 +109,7 @@ pub async fn detach_mcp_server_from_agent(
     mcp_server_id: i64,
 ) -> Result<(), common::error::AppError> {
     DetachMcpServerFromAgentCommand::new(deployment_id, agent_id, mcp_server_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }

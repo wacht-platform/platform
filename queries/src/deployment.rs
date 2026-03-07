@@ -20,7 +20,7 @@ impl GetDeploymentIdByBackendHostQuery {
         Self { backend_host }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<i64, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<i64, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -46,7 +46,7 @@ impl GetDeploymentWithKeyPairQuery {
         Self { backend_host }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<(i64, String), AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(i64, String), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -82,7 +82,7 @@ impl GetDeploymentWithSettingsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<DeploymentWithSettings, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<DeploymentWithSettings, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -514,7 +514,7 @@ impl GetDeploymentSocialConnectionsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<DeploymentSocialConnection>, AppError>
@@ -581,7 +581,7 @@ impl GetDeploymentJwtTemplatesQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<DeploymentJwtTemplate>, AppError>
@@ -643,7 +643,7 @@ impl GetDeploymentEmailTemplateQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<EmailTemplate, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<EmailTemplate, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -813,7 +813,7 @@ impl GetEmailTemplateByNameQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<EmailTemplate, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<EmailTemplate, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -866,7 +866,7 @@ impl GetDeploymentAuthSettingsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<models::DeploymentAuthSettings, AppError>
@@ -960,7 +960,7 @@ impl GetDeploymentWithProjectQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<DeploymentWithProject>, AppError>
@@ -1006,7 +1006,7 @@ impl GetDeploymentChargebeeSubscriptionIdQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

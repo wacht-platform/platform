@@ -49,7 +49,7 @@ impl ToolExecutor {
             threshold: 0.70,
             limit: 5,
         }
-        .execute_with(self.app_state().db_router.writer())
+        .execute_with_db(self.app_state().db_router.writer())
         .await?;
 
         let exact_dupe = similar.iter().find(|m| m.similarity > 0.95);
@@ -114,7 +114,7 @@ impl ToolExecutor {
 
             for id in &consolidated_ids {
                 if let Ok(mem) = (queries::GetMemoryByIdQuery { memory_id: *id })
-                    .execute_with(self.app_state().db_router.writer())
+                    .execute_with_db(self.app_state().db_router.writer())
                     .await
                 {
                     _total_access_count += mem.access_count;
@@ -149,14 +149,14 @@ impl ToolExecutor {
             initial_importance: importance,
         };
         let memory = create_cmd
-            .execute_with(self.app_state().db_router.writer())
+            .execute_with_db(self.app_state().db_router.writer())
             .await?;
 
         if !consolidated_ids.is_empty() {
             commands::DeleteMemoriesCommand {
                 memory_ids: consolidated_ids.clone(),
             }
-            .execute_with(self.app_state().db_router.writer())
+            .execute_with_db(self.app_state().db_router.writer())
             .await
             .ok();
         }

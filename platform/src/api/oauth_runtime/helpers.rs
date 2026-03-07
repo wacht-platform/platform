@@ -49,7 +49,7 @@ pub(crate) async fn resolve_oauth_app_from_host(
 
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     ResolveOAuthAppByFqdnQuery::new(host.to_string())
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
         .ok_or_else(|| AppError::NotFound("OAuth app not found for host".to_string()))
 }
@@ -68,7 +68,7 @@ pub(crate) async fn authenticate_client(
         .ok_or(AppError::Unauthorized)?;
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let client = GetRuntimeOAuthClientByClientIdQuery::new(oauth_app_id, client_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
         .ok_or(AppError::Unauthorized)?;
     if !client.is_active {
@@ -166,7 +166,7 @@ pub(crate) async fn validate_grant_and_entitlement(
     let grant = if let Some(grant_id) = oauth_grant_id {
         let reader = app_state.db_router.reader(ReadConsistency::Strong);
         ResolveRuntimeOAuthGrantQuery::by_grant_id(deployment_id, oauth_client_id, grant_id)
-            .execute_with(reader)
+            .execute_with_db(reader)
             .await?
     } else {
         let reader = app_state.db_router.reader(ReadConsistency::Strong);
@@ -177,7 +177,7 @@ pub(crate) async fn validate_grant_and_entitlement(
             scopes.clone(),
             resource.clone(),
         )
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?
     };
 
@@ -197,7 +197,7 @@ pub(crate) async fn validate_grant_and_entitlement(
 
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let user_id = GetRuntimeApiAuthUserIdByAppSlugQuery::new(deployment_id, app_slug)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
     let Some(user_id) = user_id else {
         return Ok(GrantValidationResult::MissingOrInsufficient);
@@ -210,7 +210,7 @@ pub(crate) async fn validate_grant_and_entitlement(
         resource,
         required_permissions,
     )
-    .execute_with(reader)
+    .execute_with_db(reader)
     .await?;
     if entitled {
         Ok(GrantValidationResult::Active)
@@ -236,7 +236,7 @@ pub(crate) async fn ensure_or_create_grant_coverage(
         scopes.clone(),
         Some(resource.clone()),
     )
-    .execute_with(reader)
+    .execute_with_db(reader)
     .await?;
     if let Some(grant_id) = resolved.active_grant_id {
         return Ok(grant_id);
@@ -263,7 +263,7 @@ pub(crate) async fn ensure_or_create_grant_coverage(
         granted_by_user_id: Some(user_id),
         expires_at: None,
     }
-    .execute_with(writer)
+    .execute_with_db(writer)
     .await?;
     Ok(created.id)
 }

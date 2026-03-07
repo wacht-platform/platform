@@ -26,7 +26,7 @@ impl GetBillingAccountQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<BillingAccountWithSubscription>, AppError>
@@ -95,7 +95,7 @@ impl GetSubscriptionByProviderIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<BillingAccountWithSubscription>, AppError>
@@ -172,7 +172,7 @@ impl GetDeploymentProviderSubscriptionQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<ProviderSubscriptionInfo>, AppError>
@@ -227,7 +227,7 @@ impl GetDeploymentUsageQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<UsageSnapshot>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<UsageSnapshot>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -271,7 +271,7 @@ impl GetBillingAccountUsageQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<UsageSnapshot>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<UsageSnapshot>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -325,7 +325,7 @@ impl GetDodoProductQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<DodoProduct>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<DodoProduct>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -364,7 +364,7 @@ impl GetBillingAccountByProviderCustomerIdQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -383,7 +383,7 @@ impl GetBillingAccountByProviderCustomerIdQuery {
 pub struct GetAllDodoProductsQuery;
 
 impl GetAllDodoProductsQuery {
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Vec<DodoProduct>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Vec<DodoProduct>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -423,7 +423,7 @@ impl GetOwnerIdByDeploymentIdQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<String>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -454,7 +454,7 @@ impl ListPulseTransactionsQuery {
         Self { billing_account_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<models::pulse_transaction::PulseTransaction>, AppError>
@@ -487,7 +487,7 @@ impl ListBillingInvoicesQuery {
         Self { billing_account_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Vec<models::billing_invoice::BillingInvoice>, AppError>

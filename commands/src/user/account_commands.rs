@@ -43,7 +43,7 @@ impl CreateUserCommand {
         let user_id = ids.0;
 
         let auth_settings = GetDeploymentAuthSettingsQuery::new(self.deployment_id)
-            .execute_with(
+            .execute_with_db(
                 deps.db_router()
                     .reader(common::db_router::ReadConsistency::Strong),
             )
@@ -286,7 +286,7 @@ impl UpdateUserCommand {
 
         let details_query = GetUserDetailsQuery::new(self.deployment_id, self.user_id);
         let user_details = details_query
-            .execute_with(
+            .execute_with_db(
                 deps.db_router()
                     .reader(common::db_router::ReadConsistency::Strong),
             )
@@ -314,7 +314,7 @@ impl UpdateUserProfileImageCommand {
 }
 
 impl UpdateUserProfileImageCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -361,7 +361,7 @@ impl UpdateUserPasswordCommand {
     {
         if !self.skip_password_check {
             let auth_settings = GetDeploymentAuthSettingsQuery::new(self.deployment_id)
-                .execute_with(
+                .execute_with_db(
                     deps.db_router()
                         .reader(common::db_router::ReadConsistency::Strong),
                 )
@@ -410,7 +410,7 @@ impl DeleteUserCommand {
 }
 
 impl DeleteUserCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

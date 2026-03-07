@@ -22,7 +22,7 @@ pub async fn get_invited_user_list(
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .search(params.search.clone())
-        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
 
     Ok(paginate_results(invitations, limit, Some(offset)))
@@ -42,7 +42,7 @@ pub async fn get_user_waitlist(
         .sort_key(params.sort_key.as_ref().map(ToString::to_string))
         .sort_order(params.sort_order.as_ref().map(ToString::to_string))
         .search(params.search.clone())
-        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
 
     Ok(paginate_results(waitlist, limit, Some(offset)))
@@ -66,7 +66,7 @@ pub async fn delete_invitation(
 ) -> Result<(), AppError> {
     let writer = app_state.db_router.writer();
     DeleteInvitationCommand::new(deployment_id, invitation_id)
-        .execute_with(writer)
+        .execute_with_db(writer)
         .await?;
     Ok(())
 }

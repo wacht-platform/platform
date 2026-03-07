@@ -66,7 +66,7 @@ pub async fn get_child_status(
         include_completed: request.include_completed,
     };
     let children = child_contexts_query
-        .execute_with(
+        .execute_with_db(
             app_state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Strong),
@@ -77,7 +77,7 @@ pub async fn get_child_status(
     let latest_updates_query =
         queries::GetLatestStatusUpdatesForContextsQuery::new(child_context_ids);
     let latest_updates = latest_updates_query
-        .execute_with(
+        .execute_with_db(
             app_state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Strong),
@@ -157,7 +157,7 @@ pub async fn completion_summary(
             queries::GetChildCompletionSummaryQuery::new(child_context_id.0, deployment_id)
                 .with_parent_context(parent_context_id);
         let summary = summary_query
-            .execute_with(
+            .execute_with_db(
                 app_state
                     .db_router
                     .reader(common::db_router::ReadConsistency::Strong),
@@ -190,7 +190,7 @@ pub async fn completion_summary(
     let summaries_query =
         queries::GetChildrenCompletionSummariesQuery::new(parent_context_id, deployment_id);
     let summaries = summaries_query
-        .execute_with(
+        .execute_with_db(
             app_state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Strong),

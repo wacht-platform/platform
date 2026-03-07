@@ -16,7 +16,7 @@ pub struct CreateMemoryCommand {
 }
 
 impl CreateMemoryCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<MemoryRecord, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<MemoryRecord, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -75,7 +75,7 @@ pub struct UpdateMemoryAccessCommand {
 }
 
 impl UpdateMemoryAccessCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -102,7 +102,7 @@ pub struct DeleteMemoriesCommand {
 }
 
 impl DeleteMemoriesCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<u64, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<u64, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

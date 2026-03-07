@@ -142,7 +142,7 @@ impl RateLimiter {
             .api_key_cache
             .try_get_with(key_hash, async move {
                 match GetApiKeyGatewayDataQuery::new(key_hash_clone)
-                    .execute_with(app_state_clone.db_router.writer())
+                    .execute_with_db(app_state_clone.db_router.writer())
                     .await
                 {
                     Ok(Some(data)) => Ok(Arc::new(CachedApiKeyData {
@@ -184,7 +184,7 @@ impl RateLimiter {
             .rate_limit_scheme_cache
             .try_get_with(cache_key, async move {
                 match GetRateLimitSchemeQuery::new(deployment_id, slug_clone)
-                    .execute_with(app_state_clone.db_router.writer())
+                    .execute_with_db(app_state_clone.db_router.writer())
                     .await
                 {
                     Ok(Some(scheme)) => Ok(Arc::new(CachedRateLimitSchemeData {

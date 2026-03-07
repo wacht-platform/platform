@@ -49,7 +49,7 @@ async fn cleanup_rotating_token(
         i64::try_from(rotating_token_id).map_err(|_| "rotating_token_id overflow".to_string())?;
 
     let deleted = CleanupRotatingTokenCommand { rotating_token_id }
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| e.to_string())?;
 
@@ -69,7 +69,7 @@ async fn cleanup_session(session_id: u64, app_state: &AppState) -> Result<(), St
     let session_id = i64::try_from(session_id).map_err(|_| "session_id overflow".to_string())?;
 
     let deleted = CleanupOrphanSessionCommand { session_id }
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| e.to_string())?;
 

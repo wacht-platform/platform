@@ -20,7 +20,7 @@ async fn ensure_webhook_app_exists(
 ) -> Result<(), AppError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let app = queries::GetWebhookAppByNameQuery::new(deployment_id, app_slug)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
     if app.is_some() {
         Ok(())
@@ -44,7 +44,7 @@ pub async fn get_webhook_delivery_details(
     let delivery = if status == Some("pending") {
         let reader = app_state.db_router.reader(ReadConsistency::Strong);
         queries::webhook::GetPendingWebhookDeliveryQuery::new(deployment_id, delivery_id)
-            .execute_with(reader)
+            .execute_with_db(reader)
             .await?
     } else {
         app_state

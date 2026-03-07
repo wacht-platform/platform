@@ -21,7 +21,7 @@ pub async fn spawn_control(
     let child_context_query =
         queries::GetExecutionContextQuery::new(request.child_context_id.0, deployment_id);
     let child_context = child_context_query
-        .execute_with(
+        .execute_with_db(
             app_state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Strong),

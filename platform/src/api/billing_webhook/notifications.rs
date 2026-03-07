@@ -29,7 +29,7 @@ pub(super) async fn send_billing_change_email(app_state: &AppState, owner_id: &s
     };
 
     let account = match GetBillingAccountQuery::new(owner_id.to_string())
-        .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
+        .execute_with_db(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
         .await
     {
         Ok(Some(account)) => account,
@@ -121,7 +121,7 @@ pub(super) async fn extract_owner_id(
     if !customer_id.is_empty() {
         let owner_query = GetBillingAccountByProviderCustomerIdQuery::new(customer_id);
         if let Ok(Some(owner_id)) = owner_query
-            .execute_with(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
+            .execute_with_db(app_state.db_router.reader(common::db_router::ReadConsistency::Strong))
             .await
         {
             return owner_id;

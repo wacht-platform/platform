@@ -94,7 +94,7 @@ impl CreateAgentIntegrationCommand {
         })
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<AgentIntegration, AppError> {
@@ -199,7 +199,7 @@ impl UpdateAgentIntegrationCommand {
 }
 
 impl UpdateAgentIntegrationCommand {
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<AgentIntegration, AppError> {
@@ -326,7 +326,7 @@ impl DeleteAgentIntegrationCommand {
 }
 
 impl DeleteAgentIntegrationCommand {
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<(), AppError> {

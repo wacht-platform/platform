@@ -65,7 +65,7 @@ impl ExecutionContext {
         }
 
         let ctx = GetExecutionContextQuery::new(self.context_id, self.agent.deployment_id)
-            .execute_with(self.app_state.db_router.writer())
+            .execute_with_db(self.app_state.db_router.writer())
             .await?;
 
         {
@@ -100,7 +100,7 @@ impl ExecutionContext {
 
         let attached_mcp_servers =
             GetAgentMcpServersQuery::new(self.agent.deployment_id, self.agent.id)
-                .execute_with(self.app_state.db_router.writer())
+                .execute_with_db(self.app_state.db_router.writer())
                 .await?;
 
         if let Some(context_group) = &context.context_group {
@@ -109,7 +109,7 @@ impl ExecutionContext {
                 self.agent.id,
                 context_group.clone(),
             )
-            .execute_with(self.app_state.db_router.writer())
+            .execute_with_db(self.app_state.db_router.writer())
             .await?;
 
             status.teams_enabled = active_integrations
@@ -125,7 +125,7 @@ impl ExecutionContext {
                 self.agent.id,
                 context_group.clone(),
             )
-            .execute_with(self.app_state.db_router.writer())
+            .execute_with_db(self.app_state.db_router.writer())
             .await?;
 
             status.mcp_enabled = attached_mcp_servers.iter().any(|server| {
@@ -197,7 +197,7 @@ impl ExecutionContext {
         context_id: i64,
     ) -> Result<AgentExecutionContext, AppError> {
         GetExecutionContextQuery::new(context_id, self.agent.deployment_id)
-            .execute_with(self.app_state.db_router.writer())
+            .execute_with_db(self.app_state.db_router.writer())
             .await
     }
 
@@ -209,7 +209,7 @@ impl ExecutionContext {
 
         let access_token =
             queries::GetClickUpTokenQuery::new(self.agent.deployment_id, context_group)
-                .execute_with(self.app_state.db_router.writer())
+                .execute_with_db(self.app_state.db_router.writer())
                 .await?;
 
         Ok(crate::clickup::ClickUpClient::new(access_token))

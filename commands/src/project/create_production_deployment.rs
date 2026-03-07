@@ -107,7 +107,7 @@ impl CreateProductionDeploymentCommand {
 
         let project = ProjectForProductionQuery::builder()
             .project_id(self.project_id)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?
             .ok_or_else(|| {
                 AppError::NotFound(format!("Project with id {} not found", self.project_id))
@@ -122,7 +122,7 @@ impl CreateProductionDeploymentCommand {
 
         if ExistingProductionDeploymentQuery::builder()
             .project_id(self.project_id)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?
             .is_some()
         {
@@ -133,7 +133,7 @@ impl CreateProductionDeploymentCommand {
 
         if let Some(existing) = ExistingDomainDeploymentQuery::builder()
             .custom_domain(&self.custom_domain)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?
         {
             return Err(AppError::BadRequest(format!(
@@ -171,7 +171,7 @@ impl CreateProductionDeploymentCommand {
                 serde_json::to_value(&empty_email_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let auth_settings = build_auth_settings(&self.auth_methods, deployment_row.id);
@@ -179,7 +179,7 @@ impl CreateProductionDeploymentCommand {
             .id(deps.ids.next_id()?)
             .auth_settings(auth_settings)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let ui_settings =
@@ -196,7 +196,7 @@ impl CreateProductionDeploymentCommand {
             .saml_public_key(saml_public_key)
             .saml_private_key(saml_private_key)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let waitlist_url = format!("{}/waitlist", frontend_host);
@@ -206,7 +206,7 @@ impl CreateProductionDeploymentCommand {
             .waitlist_page_url(waitlist_url)
             .support_page_url("")
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeploymentB2bBootstrapInsert::builder()
@@ -224,28 +224,28 @@ impl CreateProductionDeploymentCommand {
             .id(deps.ids.next_id()?)
             .restrictions(restrictions)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeploymentEmailTemplatesInsert::builder()
             .id(deps.ids.next_id()?)
             .email_templates(email_templates)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeploymentSmsTemplatesInsert::builder()
             .id(deps.ids.next_id()?)
             .sms_templates(sms_templates)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeploymentAiSettingsInsert::builder()
             .id(deps.ids.next_id()?)
             .deployment_id(deployment_row.id)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let postmark_domain = deps.postmark_service.create_domain(&mail_from_host).await?;
@@ -260,7 +260,7 @@ impl CreateProductionDeploymentCommand {
                 serde_json::to_value(&email_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let frontend_hostname = format!("accounts.{}", self.custom_domain);
@@ -334,7 +334,7 @@ impl CreateProductionDeploymentCommand {
                 serde_json::to_value(&updated_domain_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let console_id = console_deployment_id()?;

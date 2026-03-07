@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use common::{capabilities::HasDbRouter, db_router::ReadConsistency, error::AppError};
 use models::{Deployment, ProjectWithDeployments};
-use sqlx::{Executor, Postgres, Row, query};
+use sqlx::{Row, query};
 
 #[allow(dead_code)]
 pub struct GetProjectsWithDeploymentQuery {
@@ -105,13 +105,14 @@ impl GetProjectsWithDeploymentQuery {
         }
     }
 
-    async fn execute_with_deps<'e, E>(
+    pub async fn execute_with_db<'a, A>(
         &self,
-        executor: E,
+        acquirer: A,
     ) -> Result<Vec<ProjectWithDeployments>, AppError>
     where
-        E: Executor<'e, Database = Postgres>,
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
+        let mut conn = acquirer.acquire().await?;
         let mut query_str = r#"
             SELECT
                 p.id, p.created_at, p.updated_at, p.name, p.image_url,
@@ -139,11 +140,11 @@ impl GetProjectsWithDeploymentQuery {
         query_str.push_str(" ORDER BY p.id DESC");
 
         let rows = if self.owner_ids.is_empty() {
-            query(&query_str).fetch_all(executor).await?
+            query(&query_str).fetch_all(&mut *conn).await?
         } else {
             query(&query_str)
                 .bind(&self.owner_ids)
-                .fetch_all(executor)
+                .fetch_all(&mut *conn)
                 .await?
         };
 
@@ -183,11 +184,13 @@ impl GetProjectsWithDeploymentQuery {
         Ok(projects_map.values().cloned().collect())
     }
 
-    pub async fn execute_with<C>(&self, deps: &C) -> Result<Vec<ProjectWithDeployments>, AppError>
+    pub async fn execute_with_deps<C>(
+        &self,
+        deps: &C,
+    ) -> Result<Vec<ProjectWithDeployments>, AppError>
     where
         C: HasDbRouter + ?Sized,
     {
-        self.execute_with_deps(deps.reader_pool(self.consistency))
-            .await
+        self.execute_with_db(deps.reader_pool(self.consistency)).await
     }
 }

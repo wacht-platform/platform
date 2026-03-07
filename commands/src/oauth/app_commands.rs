@@ -213,7 +213,7 @@ impl VerifyOAuthAppDomainCommand {
 }
 
 impl UpdateOAuthAppCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OAuthAppData, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OAuthAppData, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

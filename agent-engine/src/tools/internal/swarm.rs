@@ -148,7 +148,7 @@ impl ToolExecutor {
             status_update: params.status,
             metadata: params.metadata,
         }
-        .execute_with(self.app_state().db_router.writer())
+        .execute_with_db(self.app_state().db_router.writer())
         .await?;
 
         Ok(serde_json::json!({
@@ -198,7 +198,7 @@ impl ToolExecutor {
             content,
             models::ConversationMessageType::UserMessage,
         )
-        .execute_with(self.app_state().db_router.writer())
+        .execute_with_db(self.app_state().db_router.writer())
         .await?;
 
         let mailbox_message = SwarmMailboxMessage {

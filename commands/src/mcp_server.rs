@@ -20,7 +20,7 @@ impl CreateMcpServerCommand {
         }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<McpServer, AppError> {
@@ -94,7 +94,7 @@ impl UpdateMcpServerCommand {
         self
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<McpServer, AppError> {
@@ -175,7 +175,7 @@ impl DeleteMcpServerCommand {
         }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<(), AppError> {
@@ -206,7 +206,7 @@ impl AttachMcpServerToAgentCommand {
         }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<(), AppError> {
@@ -270,7 +270,7 @@ impl DetachMcpServerFromAgentCommand {
         }
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<(), AppError> {

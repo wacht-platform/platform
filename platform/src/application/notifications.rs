@@ -62,7 +62,7 @@ async fn add_organization_recipients(
         .deployment_id(deployment_id)
         .organization_id(org_id)
         .build()?
-        .execute_with(
+        .execute_with_db(
             state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Eventual),
@@ -87,7 +87,7 @@ async fn add_workspace_recipients(
         .deployment_id(deployment_id)
         .workspace_id(ws_id)
         .build()?
-        .execute_with(
+        .execute_with_db(
             state
                 .db_router
                 .reader(common::db_router::ReadConsistency::Eventual),

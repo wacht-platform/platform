@@ -35,7 +35,7 @@ impl CreateStagingDeploymentCommand {
 
         let project = ProjectWithBillingForStagingQuery::builder()
             .project_id(self.project_id)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?
             .ok_or_else(|| {
                 AppError::NotFound(format!("Project with id {} not found", self.project_id))
@@ -56,7 +56,7 @@ impl CreateStagingDeploymentCommand {
 
         let staging_count = StagingDeploymentCountByProjectQuery::builder()
             .project_id(self.project_id)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         if staging_count >= 3 {
@@ -80,7 +80,7 @@ impl CreateStagingDeploymentCommand {
             .frontend_host(frontend_host)
             .publishable_key(publishable_key)
             .mail_from_host("staging.wacht.services")
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let auth_settings = build_auth_settings(&self.auth_methods, deployment_row.id);
@@ -88,7 +88,7 @@ impl CreateStagingDeploymentCommand {
             .id(ids.next_id()?)
             .auth_settings(auth_settings)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let ui_settings = build_ui_settings(
@@ -103,7 +103,7 @@ impl CreateStagingDeploymentCommand {
             .waitlist_page_url(waitlist_url)
             .support_page_url("")
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let b2b_settings = build_b2b_settings(deployment_row.id);
@@ -125,7 +125,7 @@ impl CreateStagingDeploymentCommand {
             .id(ids.next_id()?)
             .restrictions(restrictions)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let sms_templates = build_sms_templates(deployment_row.id);
@@ -134,14 +134,14 @@ impl CreateStagingDeploymentCommand {
             .id(ids.next_id()?)
             .sms_templates(sms_templates)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeploymentAiSettingsInsert::builder()
             .id(ids.next_id()?)
             .deployment_id(deployment_row.id)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeploymentKeyPairsInsert::builder()
@@ -152,7 +152,7 @@ impl CreateStagingDeploymentCommand {
             .saml_public_key(saml_public_key)
             .saml_private_key(saml_private_key)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         let email_templates = build_email_templates(deployment_row.id);
@@ -161,7 +161,7 @@ impl CreateStagingDeploymentCommand {
             .id(ids.next_id()?)
             .email_templates(email_templates)
             .build()?
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         if let Some(social_connections_insert) =
@@ -171,7 +171,7 @@ impl CreateStagingDeploymentCommand {
                 || ids.next_id(),
             )?
         {
-            social_connections_insert.execute_with(tx.as_mut()).await?;
+            social_connections_insert.execute_with_db(tx.as_mut()).await?;
         }
 
         let console_id = console_deployment_id()?;

@@ -100,7 +100,7 @@ async fn enrich_user_payload(
 ) -> Result<Value, TaskError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let user_details = GetUserDetailsQuery::new(deployment_id, user_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| TaskError::Permanent(format!("Failed to load user {}: {}", user_id, e)))?;
 
@@ -124,7 +124,7 @@ async fn enrich_organization_payload(
 ) -> Result<Value, TaskError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let org_details = GetOrganizationDetailsQuery::new(deployment_id, org_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| {
             TaskError::Permanent(format!("Failed to load organization {}: {}", org_id, e))
@@ -150,7 +150,7 @@ async fn enrich_workspace_payload(
 ) -> Result<Value, TaskError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let workspace_details = GetWorkspaceDetailsQuery::new(deployment_id, workspace_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| {
             TaskError::Permanent(format!("Failed to load workspace {}: {}", workspace_id, e))
@@ -175,7 +175,7 @@ async fn enrich_session_payload(
 ) -> Result<Value, TaskError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let session_data = GetSessionWithSignInsQuery::new(session_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| {
             TaskError::Permanent(format!("Failed to load session {}: {}", session_id, e))
@@ -200,7 +200,7 @@ async fn enrich_authenticator_payload(
 ) -> Result<Value, TaskError> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let authenticator = GetUserAuthenticatorQuery::new(user_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| {
             TaskError::Permanent(format!(

@@ -81,7 +81,7 @@ impl CreateBillingAccountCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<i64, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<i64, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -232,7 +232,7 @@ pub struct UpdateBillingAccountFromWebhookCommand {
 }
 
 impl UpdateBillingAccountCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -357,7 +357,7 @@ fn normalize_billing_account_status(status: &str) -> &'static str {
 }
 
 impl UpdateBillingAccountStatusCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -395,7 +395,7 @@ impl SetProviderCustomerIdCommand {
 }
 
 impl SetProviderCustomerIdCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -431,7 +431,7 @@ impl MarkCheckoutSessionCreatedCommand {
 }
 
 impl MarkCheckoutSessionCreatedCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -475,7 +475,7 @@ impl MarkPaymentSucceededCommand {
 }
 
 impl MarkPaymentSucceededCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -519,7 +519,7 @@ impl MarkSubscriptionActivatedCommand {
 }
 
 impl MarkSubscriptionActivatedCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -565,7 +565,7 @@ impl MarkCheckoutFlowFailedCommand {
 }
 
 impl MarkCheckoutFlowFailedCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -592,7 +592,7 @@ impl MarkCheckoutFlowFailedCommand {
 }
 
 impl UpdateBillingAccountFromWebhookCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

@@ -27,7 +27,7 @@ impl AddUserEmailCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<UserEmailAddress, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<UserEmailAddress, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -117,7 +117,7 @@ impl UpdateUserEmailCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<UserEmailAddress, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<UserEmailAddress, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -226,7 +226,7 @@ impl DeleteUserEmailCommand {
         Self { user_id, email_id }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -277,7 +277,7 @@ impl AddUserPhoneCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<UserPhoneNumber, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<UserPhoneNumber, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -349,7 +349,7 @@ impl UpdateUserPhoneCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<UserPhoneNumber, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<UserPhoneNumber, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -466,7 +466,7 @@ impl DeleteUserPhoneCommand {
         Self { user_id, phone_id }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -496,7 +496,7 @@ impl DeleteUserSocialConnectionCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

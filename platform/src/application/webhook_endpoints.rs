@@ -52,7 +52,7 @@ pub async fn ensure_endpoint_belongs_to_app(
     let endpoints = GetWebhookEndpointsQuery::new(deployment_id)
         .for_app(app_slug)
         .with_inactive(true)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await?;
     if endpoints.iter().any(|endpoint| endpoint.id == endpoint_id) {
         Ok(())
@@ -75,7 +75,7 @@ pub async fn list_webhook_endpoints(
         .with_inactive(include_inactive)
         .for_app(app_slug)
         .with_pagination(Some(limit + 1), Some(offset))
-        .execute_with(app_state.db_router.reader(ReadConsistency::Eventual))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
     Ok(paginate_results(endpoints, limit, Some(offset as i64)))
@@ -140,7 +140,7 @@ pub async fn delete_webhook_endpoint(
     endpoint_id: i64,
 ) -> Result<(), AppError> {
     let command = DeleteWebhookEndpointCommand::new(endpoint_id, deployment_id);
-    command.execute_with(app_state.db_router.writer()).await?;
+    command.execute_with_db(app_state.db_router.writer()).await?;
     Ok(())
 }
 

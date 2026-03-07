@@ -98,7 +98,7 @@ async fn send_billing_change_email(app_state: &AppState, owner_id: &str, message
 
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let account = match GetBillingAccountQuery::new(owner_id.to_string())
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
     {
         Ok(Some(account)) => account,
@@ -185,7 +185,7 @@ async fn extract_owner_id(
     if !customer_id.is_empty() {
         let reader = app_state.db_router.reader(ReadConsistency::Strong);
         if let Ok(Some(owner_id)) = GetBillingAccountByProviderCustomerIdQuery::new(customer_id)
-            .execute_with(reader)
+            .execute_with_db(reader)
             .await
         {
             return owner_id;
@@ -216,7 +216,7 @@ async fn handle_payment_succeeded(
         if !is_pulse_purchase {
             let reader = app_state.db_router.reader(ReadConsistency::Strong);
             let status = match GetBillingAccountQuery::new(owner_id.clone())
-                .execute_with(reader)
+                .execute_with_db(reader)
                 .await
             {
                 Ok(Some(account))
@@ -239,7 +239,7 @@ async fn handle_payment_succeeded(
             };
 
             UpdateBillingAccountStatusCommand::new(owner_id.clone(), status.to_string())
-            .execute_with(app_state.db_router.writer())
+            .execute_with_db(app_state.db_router.writer())
             .await
             .map_err(|e| {
                 error!(
@@ -253,7 +253,7 @@ async fn handle_payment_succeeded(
                 owner_id.clone(),
                 "payment.succeeded".to_string(),
             )
-            .execute_with(app_state.db_router.writer())
+            .execute_with_db(app_state.db_router.writer())
             .await
             .map_err(|e| {
                 error!("Failed to update checkout flow state: {}", e);
@@ -280,7 +280,7 @@ async fn handle_payment_succeeded(
         )))
         .with_paid_at(Some(chrono::Utc::now()))
         .with_metadata(serde_json::json!({}))
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to upsert invoice: {}", e);
@@ -305,7 +305,7 @@ async fn handle_payment_succeeded(
                         error!("Failed to generate pulse transaction id: {}", e);
                         StatusCode::INTERNAL_SERVER_ERROR
                     })? as i64)
-                    .execute_with(app_state.db_router.writer())
+                    .execute_with_db(app_state.db_router.writer())
                     .await
                     .map_err(|e| {
                         error!("Failed to add Pulse credits from webhook: {}", e);
@@ -335,7 +335,7 @@ async fn handle_payment_failed(
 
     if !owner_id.is_empty() {
         UpdateBillingAccountStatusCommand::new(owner_id.clone(), "payment_failed".to_string())
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!(
@@ -350,7 +350,7 @@ async fn handle_payment_failed(
             "payment.failed".to_string(),
             "payment_failed".to_string(),
         )
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -392,7 +392,7 @@ async fn upsert_subscription_and_status(
     )
     .with_product_id(product_id)
     .with_previous_billing_date(previous_billing_date)
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to update subscription status: {}", e);
@@ -400,7 +400,7 @@ async fn upsert_subscription_and_status(
     })?;
 
     UpdateBillingAccountStatusCommand::new(owner_id.to_string(), status.to_string())
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(|e| {
         error!("Failed to update billing account status: {}", e);
@@ -409,7 +409,7 @@ async fn upsert_subscription_and_status(
 
     if status == "active" {
         MarkSubscriptionActivatedCommand::new(owner_id.to_string(), webhook_event.to_string())
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);
@@ -421,7 +421,7 @@ async fn upsert_subscription_and_status(
             webhook_event.to_string(),
             status.to_string(),
         )
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
         .map_err(|e| {
             error!("Failed to update checkout flow state: {}", e);

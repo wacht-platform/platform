@@ -49,7 +49,7 @@ pub async fn deployment_access_middleware(
         .clone();
 
     let deployment_with_project = GetDeploymentWithProjectQuery::new(params.deployment_id)
-        .execute_with(app_state.db_router.reader(ReadConsistency::Strong))
+        .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await
         .map_err(|e| {
             warn!("Failed to get deployment: {}", e);

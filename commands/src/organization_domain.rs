@@ -124,7 +124,7 @@ impl CreateOrganizationDomainCommand {
         })
     }
 
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<CreateOrganizationDomainResponse, AppError> {
@@ -195,7 +195,7 @@ impl DeleteOrganizationDomainCommand {
 }
 
 impl DeleteOrganizationDomainCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

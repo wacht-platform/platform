@@ -8,7 +8,7 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
     info!("[STORAGE SYNC] Starting storage sync to Dodo");
 
     let dirty_deployments = GetDirtyStorageDeploymentsQuery
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
 
     if dirty_deployments.is_empty() {
@@ -33,7 +33,7 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
 
     for (deployment_id, total_bytes) in dirty_deployments {
         let subscription_info = match GetDeploymentProviderSubscriptionQuery::new(deployment_id)
-            .execute_with(
+            .execute_with_db(
                 app_state
                     .db_router
                     .reader(common::db_router::ReadConsistency::Strong),
@@ -87,7 +87,7 @@ pub async fn sync_storage_to_dodo(app_state: &AppState) -> Result<String> {
                 );
 
                 MarkStorageAsCleanCommand { deployment_id }
-                    .execute_with(app_state.db_router.writer())
+                    .execute_with_db(app_state.db_router.writer())
                     .await?;
 
                 synced_count += 1;

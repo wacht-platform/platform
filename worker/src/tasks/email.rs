@@ -502,7 +502,7 @@ pub async fn send_deployment_invite_impl(
 ) -> Result<String, String> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let inviter_details = GetUserDetailsQuery::new(deployment_id as i64, inviter_user_id as i64)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| format!("Failed to fetch inviter user details: {}", e))?;
 
@@ -618,7 +618,7 @@ pub async fn send_waitlist_approval_impl(
 async fn fetch_signin_details(app_state: &AppState, signin_id: u64) -> Result<SignIn, String> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetSignInQuery::new(signin_id as i64)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| format!("Failed to fetch signin details: {}", e))
 }
@@ -629,7 +629,7 @@ async fn fetch_deployment_settings(
 ) -> Result<DeploymentWithSettings, String> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentWithSettingsQuery::new(deployment_id as i64)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| format!("Failed to fetch deployment settings: {}", e))
 }
@@ -640,7 +640,7 @@ async fn fetch_deployment_invitation(
 ) -> Result<DeploymentInvitation, String> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetDeploymentInvitationQuery::new(deployment_invitation_id as i64)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| format!("Failed to fetch deployment invitation: {}", e))
 }
@@ -648,7 +648,7 @@ async fn fetch_deployment_invitation(
 async fn fetch_workspace_name(app_state: &AppState, workspace_id: u64) -> Result<String, String> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetWorkspaceNameQuery::new(workspace_id as i64)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| format!("Failed to fetch workspace name: {}", e))
 }
@@ -660,7 +660,7 @@ async fn fetch_user_details(
 ) -> Result<UserDetails, String> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     GetUserDetailsQuery::new(deployment_id as i64, user_id as i64)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await
         .map_err(|e| format!("Failed to fetch user details: {}", e))
 }

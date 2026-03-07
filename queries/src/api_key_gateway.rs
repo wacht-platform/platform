@@ -31,7 +31,7 @@ impl GetApiKeyGatewayDataQuery {
         Self { key_hash }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         &self,
         acquirer: A,
     ) -> Result<Option<ApiKeyGatewayData>, AppError>

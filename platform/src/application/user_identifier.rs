@@ -15,7 +15,7 @@ pub async fn add_user_email(
 ) -> Result<UserEmailAddress, AppError> {
     AddUserEmailCommand::new(deployment_id, user_id, request)
         .with_email_id(app_state.sf.next_id()? as i64)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -27,7 +27,7 @@ pub async fn update_user_email(
     request: UpdateEmailRequest,
 ) -> Result<UserEmailAddress, AppError> {
     UpdateUserEmailCommand::new(deployment_id, user_id, email_id, request)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -37,7 +37,7 @@ pub async fn delete_user_email(
     email_id: i64,
 ) -> Result<(), AppError> {
     DeleteUserEmailCommand::new(user_id, email_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -50,7 +50,7 @@ pub async fn add_user_phone(
 ) -> Result<UserPhoneNumber, AppError> {
     AddUserPhoneCommand::new(deployment_id, user_id, request)
         .with_phone_id(app_state.sf.next_id()? as i64)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -61,7 +61,7 @@ pub async fn update_user_phone(
     request: UpdatePhoneRequest,
 ) -> Result<UserPhoneNumber, AppError> {
     UpdateUserPhoneCommand::new(user_id, phone_id, request)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await
 }
 
@@ -71,7 +71,7 @@ pub async fn delete_user_phone(
     phone_id: i64,
 ) -> Result<(), AppError> {
     DeleteUserPhoneCommand::new(user_id, phone_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }
@@ -82,7 +82,7 @@ pub async fn delete_user_social_connection(
     connection_id: i64,
 ) -> Result<(), AppError> {
     DeleteUserSocialConnectionCommand::new(user_id, connection_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
     Ok(())
 }

@@ -24,7 +24,7 @@ impl CheckDeploymentFeatureAccessQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<bool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -114,7 +114,7 @@ impl GetDeploymentPlanTierQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(&self, acquirer: A) -> Result<Option<PlanTier>, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<Option<PlanTier>, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

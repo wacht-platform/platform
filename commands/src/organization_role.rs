@@ -35,7 +35,7 @@ impl CreateOrganizationRoleCommand {
 }
 
 impl CreateOrganizationRoleCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OrganizationRole, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OrganizationRole, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -128,7 +128,7 @@ impl UpdateOrganizationRoleCommand {
 }
 
 impl UpdateOrganizationRoleCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OrganizationRole, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OrganizationRole, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -217,7 +217,7 @@ impl DeleteOrganizationRoleCommand {
 }
 
 impl DeleteOrganizationRoleCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

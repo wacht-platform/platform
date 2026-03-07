@@ -207,7 +207,7 @@ impl CreateApiAuthAppCommand {
 }
 
 impl CreateApiAuthAppCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<ApiAuthApp, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<ApiAuthApp, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -312,7 +312,7 @@ pub struct UpdateApiAuthAppCommand {
 }
 
 impl UpdateApiAuthAppCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<ApiAuthApp, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<ApiAuthApp, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -447,7 +447,7 @@ pub struct DeleteApiAuthAppCommand {
 }
 
 impl DeleteApiAuthAppCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -494,7 +494,7 @@ impl EnsureUserApiAuthAppCommand {
 }
 
 impl EnsureUserApiAuthAppCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<String, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<String, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

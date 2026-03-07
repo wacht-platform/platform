@@ -25,7 +25,7 @@ pub async fn list_api_keys(
     let include_inactive = params.include_inactive.unwrap_or(false);
     let keys = GetApiKeysByAppQuery::new(app.app_slug.clone(), deployment_id)
         .with_inactive(include_inactive)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     Ok(ListApiKeysResponse { keys })
@@ -72,7 +72,7 @@ pub async fn create_api_key(
 
     command
         .with_key_id(app_state.sf.next_id()? as i64)
-        .execute_with(writer)
+        .execute_with_db(writer)
         .await
 }
 
@@ -92,7 +92,7 @@ pub async fn revoke_api_key(
         deployment_id,
         reason: request.reason,
     };
-    command.execute_with(writer).await?;
+    command.execute_with_db(writer).await?;
 
     Ok(())
 }
@@ -113,7 +113,7 @@ pub async fn revoke_api_key_for_app(
         deployment_id,
         reason: request.reason,
     };
-    command.execute_with(writer).await?;
+    command.execute_with_db(writer).await?;
 
     Ok(())
 }
@@ -131,7 +131,7 @@ pub async fn rotate_api_key(
     };
     command
         .with_new_key_id(app_state.sf.next_id()? as i64)
-        .execute_with(writer)
+        .execute_with_db(writer)
         .await
 }
 
@@ -152,6 +152,6 @@ pub async fn rotate_api_key_for_app(
     };
     command
         .with_new_key_id(app_state.sf.next_id()? as i64)
-        .execute_with(writer)
+        .execute_with_db(writer)
         .await
 }

@@ -26,7 +26,7 @@ impl CreateSegmentCommand {
 }
 
 impl CreateSegmentCommand {
-    pub async fn execute_with(
+    pub async fn execute_with_db(
         self,
         acquirer: impl for<'a> sqlx::Acquire<'a, Database = sqlx::Postgres>,
     ) -> Result<Segment, AppError> {
@@ -111,7 +111,7 @@ impl UpdateSegmentCommand {
 }
 
 impl UpdateSegmentCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<Segment, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<Segment, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -198,7 +198,7 @@ impl DeleteSegmentCommand {
 }
 
 impl DeleteSegmentCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -283,7 +283,7 @@ impl AssignSegmentCommand {
 }
 
 impl AssignSegmentCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -431,7 +431,7 @@ impl RemoveSegmentCommand {
 }
 
 impl RemoveSegmentCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<serde_json::Value, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

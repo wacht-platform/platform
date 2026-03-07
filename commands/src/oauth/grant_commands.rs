@@ -23,7 +23,7 @@ impl CreateOAuthClientGrantCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OAuthClientGrantCreated, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OAuthClientGrantCreated, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -143,7 +143,7 @@ pub struct RevokeOAuthClientGrantCommand {
 }
 
 impl RevokeOAuthClientGrantCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

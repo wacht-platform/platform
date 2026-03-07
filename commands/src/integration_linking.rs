@@ -49,7 +49,7 @@ impl CreateIntegrationLinkCodeCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<LinkCodeResponse, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<LinkCodeResponse, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -117,7 +117,7 @@ impl ValidateLinkCodeCommand {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<ValidateLinkCodeResponse, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<ValidateLinkCodeResponse, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -195,7 +195,7 @@ impl GetActiveIntegrationCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         self,
         acquirer: A,
     ) -> Result<Option<ActiveAgentIntegration>, AppError>

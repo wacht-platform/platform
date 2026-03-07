@@ -28,7 +28,7 @@ impl IssueOAuthAuthorizationCode {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OAuthAuthorizationCodeIssued, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OAuthAuthorizationCodeIssued, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -99,7 +99,7 @@ pub struct ConsumeOAuthAuthorizationCode {
 }
 
 impl ConsumeOAuthAuthorizationCode {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<bool, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<bool, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -149,7 +149,7 @@ impl IssueOAuthTokenPair {
         self
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<OAuthTokenPairIssued, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<OAuthTokenPairIssued, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

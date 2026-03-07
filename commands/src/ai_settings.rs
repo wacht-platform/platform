@@ -32,7 +32,7 @@ impl CreateDeploymentAiSettingsCommand {
 }
 
 impl CreateDeploymentAiSettingsCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<DeploymentAiSettings, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<DeploymentAiSettings, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -240,7 +240,7 @@ impl ClearDeploymentAiKeyCommandBuilder {
 }
 
 impl ClearDeploymentAiKeyCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

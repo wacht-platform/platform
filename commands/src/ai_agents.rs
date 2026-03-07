@@ -57,7 +57,7 @@ impl CreateAiAgentCommand {
 }
 
 impl CreateAiAgentCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiAgent, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiAgent, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -192,7 +192,7 @@ impl UpdateAiAgentCommand {
 }
 
 impl UpdateAiAgentCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<AiAgent, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<AiAgent, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -280,7 +280,7 @@ impl AttachToolToAgentCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -321,7 +321,7 @@ impl DetachToolFromAgentCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -363,7 +363,7 @@ impl AttachKnowledgeBaseToAgentCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -404,7 +404,7 @@ impl DetachKnowledgeBaseFromAgentCommand {
         }
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -448,7 +448,7 @@ impl AttachSubAgentToAgentCommand {
 }
 
 impl AttachSubAgentToAgentCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -537,7 +537,7 @@ impl DetachSubAgentFromAgentCommand {
 }
 
 impl DetachSubAgentFromAgentCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -593,7 +593,7 @@ impl DeleteAiAgentCommand {
 }
 
 impl DeleteAiAgentCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

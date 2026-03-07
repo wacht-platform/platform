@@ -72,7 +72,7 @@ impl CreateConversationCommand {
 }
 
 impl CreateConversationCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<ConversationRecord, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<ConversationRecord, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

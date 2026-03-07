@@ -44,7 +44,7 @@ pub async fn add_organization_member(
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await?;
 
     publish_task(
@@ -75,7 +75,7 @@ pub async fn update_organization_member(
         role_ids: request.role_ids,
         public_metadata: request.public_metadata,
     }
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await?;
 
     publish_task(
@@ -101,7 +101,7 @@ pub async fn remove_organization_member(
         organization_id,
         membership_id,
     }
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await?;
     Ok(())
 }
@@ -124,7 +124,7 @@ pub async fn create_organization_role(
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(Into::into)
 }
@@ -143,7 +143,7 @@ pub async fn update_organization_role(
         request.name,
         request.permissions,
     )
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await?;
 
     publish_task(
@@ -166,11 +166,11 @@ pub async fn delete_organization_role(
 ) -> Result<(), ApiErrorResponse> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let membership_ids = GetOrganizationMembershipIdsByRoleQuery::new(role_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     DeleteOrganizationRoleCommand::new(deployment_id, organization_id, role_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
 
     for membership_id in membership_ids {
@@ -205,7 +205,7 @@ pub async fn create_workspace_role(
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await
     .map_err(Into::into)
 }
@@ -224,7 +224,7 @@ pub async fn update_workspace_role(
         request.name,
         request.permissions,
     )
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await?;
 
     publish_task(
@@ -247,11 +247,11 @@ pub async fn delete_workspace_role(
 ) -> Result<(), ApiErrorResponse> {
     let reader = app_state.db_router.reader(ReadConsistency::Strong);
     let membership_ids = GetWorkspaceMembershipIdsByRoleQuery::new(role_id)
-        .execute_with(reader)
+        .execute_with_db(reader)
         .await?;
 
     DeleteWorkspaceRoleCommand::new(deployment_id, workspace_id, role_id)
-        .execute_with(app_state.db_router.writer())
+        .execute_with_db(app_state.db_router.writer())
         .await?;
 
     for membership_id in membership_ids {
@@ -292,7 +292,7 @@ pub async fn add_workspace_member(
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await?;
 
     publish_task(
@@ -323,7 +323,7 @@ pub async fn update_workspace_member(
         role_ids: request.role_ids,
         public_metadata: request.public_metadata,
     }
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await?;
 
     publish_task(
@@ -349,7 +349,7 @@ pub async fn remove_workspace_member(
         workspace_id,
         membership_id,
     }
-    .execute_with(app_state.db_router.writer())
+    .execute_with_db(app_state.db_router.writer())
     .await?;
     Ok(())
 }

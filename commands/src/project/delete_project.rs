@@ -25,43 +25,43 @@ impl DeleteProjectCommand {
     ) -> Result<(), AppError> {
         let deployment_ids = ActiveDeploymentIdsByProjectQuery::builder()
             .project_id(self.id)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeleteDeploymentSocialConnectionsByIds::builder()
             .deployment_ids(deployment_ids.clone())
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeleteDeploymentAuthSettingsByIds::builder()
             .deployment_ids(deployment_ids.clone())
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeleteDeploymentUiSettingsByIds::builder()
             .deployment_ids(deployment_ids.clone())
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeleteDeploymentB2bSettingsByIds::builder()
             .deployment_ids(deployment_ids)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeleteDeploymentsByProject::builder()
             .project_id(self.id)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         DeleteProjectById::builder()
             .project_id(self.id)
-            .execute_with(tx.as_mut())
+            .execute_with_db(tx.as_mut())
             .await?;
 
         Ok(())
     }
 
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

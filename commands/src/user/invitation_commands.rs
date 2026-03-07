@@ -76,7 +76,7 @@ impl InviteUserCommand {
 
         let deployment_settings =
             queries::deployment::GetDeploymentWithSettingsQuery::new(self.deployment_id)
-                .execute_with(reader)
+                .execute_with_db(reader)
                 .await
                 .map_err(|e| {
                     AppError::Internal(format!("Failed to fetch deployment settings: {}", e))
@@ -216,7 +216,7 @@ impl ApproveWaitlistUserCommand {
 
         let deployment_settings =
             queries::deployment::GetDeploymentWithSettingsQuery::new(self.deployment_id)
-                .execute_with(reader)
+                .execute_with_db(reader)
                 .await
                 .map_err(|e| {
                     AppError::Internal(format!("Failed to fetch deployment settings: {}", e))
@@ -288,7 +288,7 @@ impl DeleteInvitationCommand {
 }
 
 impl DeleteInvitationCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {

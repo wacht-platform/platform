@@ -37,7 +37,7 @@ impl CreateEventCatalogCommand {
 }
 
 impl CreateEventCatalogCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -101,7 +101,7 @@ impl UpdateEventCatalogCommand {
 }
 
 impl UpdateEventCatalogCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -153,7 +153,7 @@ impl AppendEventsToCatalogCommand {
 }
 
 impl AppendEventsToCatalogCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -247,7 +247,7 @@ impl ArchiveEventInCatalogCommand {
 }
 
 impl ArchiveEventInCatalogCommand {
-    pub async fn execute_with<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
     where
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
@@ -341,7 +341,7 @@ impl GetEventCatalogQuery {
         }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         self,
         acquirer: A,
     ) -> Result<Option<WebhookEventCatalog>, AppError>
@@ -382,7 +382,7 @@ impl ListEventCatalogsQuery {
         Self { deployment_id }
     }
 
-    pub async fn execute_with<'a, A>(
+    pub async fn execute_with_db<'a, A>(
         self,
         acquirer: A,
     ) -> Result<Vec<WebhookEventCatalog>, AppError>
