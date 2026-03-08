@@ -2,7 +2,7 @@ use chrono::Utc;
 use serde::de::DeserializeOwned;
 use sqlx::Row;
 
-use common::{HasDbRouter, HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedisProvider, error::AppError};
 use dto::json::{NewDeploymentJwtTemplate, PartialDeploymentJwtTemplate};
 use models::DeploymentJwtTemplate;
 
@@ -36,7 +36,7 @@ impl CreateDeploymentJwtTemplateCommand {
 impl CreateDeploymentJwtTemplateCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<DeploymentJwtTemplate, AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
         let template_id = self
@@ -101,7 +101,7 @@ impl UpdateDeploymentJwtTemplateCommand {
 impl UpdateDeploymentJwtTemplateCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<DeploymentJwtTemplate, AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
         let mut query_builder =
@@ -190,7 +190,7 @@ impl DeleteDeploymentJwtTemplateCommand {
 impl DeleteDeploymentJwtTemplateCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
         let result = sqlx::query!(

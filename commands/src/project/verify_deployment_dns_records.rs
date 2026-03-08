@@ -19,7 +19,7 @@ impl VerifyDeploymentDnsRecordsCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Deployment, AppError>
     where
-        D: common::HasDbRouter + common::HasCloudflareService + common::HasDnsVerificationService,
+        D: common::HasDbRouter + common::HasCloudflareProvider + common::HasDnsVerificationProvider,
     {
         // Get current deployment with DNS records
         let deployment_row = queries::DeploymentByIdQuery::builder()
@@ -46,7 +46,7 @@ impl VerifyDeploymentDnsRecordsCommand {
                 AppError::Internal(format!("Invalid domain_verification_records JSON: {}", e))
             })?
             .unwrap_or_else(|| {
-                deps.cloudflare_service()
+                deps.cloudflare_provider()
                     .generate_domain_verification_records(
                         &deployment_row.frontend_host,
                         &deployment_row.backend_host,
@@ -62,8 +62,8 @@ impl VerifyDeploymentDnsRecordsCommand {
             })?
             .unwrap_or_default();
 
-        deps.dns_verification_service()
-            .verify_domain_records(&mut domain_verification_records, deps.cloudflare_service())
+        deps.dns_verification_provider()
+            .verify_domain_records(&mut domain_verification_records, deps.cloudflare_provider())
             .await
             .map_err(|e| {
                 tracing::warn!("Failed to verify domain records: {}", e);
@@ -71,7 +71,7 @@ impl VerifyDeploymentDnsRecordsCommand {
             })
             .unwrap_or(());
 
-        deps.dns_verification_service()
+        deps.dns_verification_provider()
             .verify_email_records(&mut email_verification_records)
             .await
             .map_err(|e| {
@@ -83,10 +83,10 @@ impl VerifyDeploymentDnsRecordsCommand {
         tracing::info!("DNS verification completed for domain: {}", domain);
 
         let domain_verified = deps
-            .dns_verification_service()
+            .dns_verification_provider()
             .are_domain_records_verified(&domain_verification_records);
         let email_verified = deps
-            .dns_verification_service()
+            .dns_verification_provider()
             .are_email_records_verified(&email_verification_records);
 
         let verification_status = if domain_verified && email_verified {

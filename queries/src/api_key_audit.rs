@@ -9,7 +9,7 @@ use dto::json::api_key::{
 use serde::Deserialize;
 use serde_json::Value;
 
-use common::{HasClickHouseService, error::AppError};
+use common::{HasClickHouseProvider, error::AppError};
 
 #[derive(Debug, Clone)]
 enum AuditBind {
@@ -46,9 +46,9 @@ pub struct GetApiAuditLogsQuery {
 impl GetApiAuditLogsQuery {
     pub async fn execute_with_deps<D>(&self, deps: &D) -> Result<ApiAuditLogsResponse, AppError>
     where
-        D: HasClickHouseService + ?Sized,
+        D: HasClickHouseProvider + ?Sized,
     {
-        let client = &deps.clickhouse_service().client;
+        let client = &deps.clickhouse_provider().client;
         let limit = self.limit.clamp(1, 1000) as usize;
         let (mut where_parts, mut where_binds) = base_where(
             self.deployment_id,
@@ -163,9 +163,9 @@ impl GetApiAuditAnalyticsQuery {
         deps: &D,
     ) -> Result<ApiAuditAnalyticsResponse, AppError>
     where
-        D: HasClickHouseService + ?Sized,
+        D: HasClickHouseProvider + ?Sized,
     {
-        let client = &deps.clickhouse_service().client;
+        let client = &deps.clickhouse_provider().client;
         let top_limit = self.top_limit.clamp(1, 50);
         let (mut where_parts, mut where_binds) = base_where(
             self.deployment_id,
@@ -375,9 +375,9 @@ impl GetApiAuditTimeseriesQuery {
         deps: &D,
     ) -> Result<ApiAuditTimeseriesResponse, AppError>
     where
-        D: HasClickHouseService + ?Sized,
+        D: HasClickHouseProvider + ?Sized,
     {
-        let client = &deps.clickhouse_service().client;
+        let client = &deps.clickhouse_provider().client;
         let interval_fn = match self.interval.as_str() {
             "minute" => "toStartOfMinute",
             "day" => "toStartOfDay",

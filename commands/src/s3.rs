@@ -1,5 +1,5 @@
 use aws_sdk_s3::primitives::{ByteStream, SdkBody};
-use common::{HasS3Client, error::AppError};
+use common::{HasS3Provider, error::AppError};
 use serde_json::json;
 
 pub struct UploadToCdnCommand {
@@ -16,9 +16,9 @@ impl UploadToCdnCommand {
 impl UploadToCdnCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<String, AppError>
     where
-        D: HasS3Client + ?Sized,
+        D: HasS3Provider + ?Sized,
     {
-        deps.s3_client()
+        deps.s3_provider()
             .put_object()
             .bucket(std::env::var("R2_CDN_BUCKET").expect("R2_CDN_BUCKET must be set"))
             .key(&self.file_path)
@@ -58,9 +58,9 @@ impl UploadToKnowledgeBaseBucketCommand {
 impl UploadToKnowledgeBaseBucketCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<String, AppError>
     where
-        D: HasS3Client + ?Sized,
+        D: HasS3Provider + ?Sized,
     {
-        deps.s3_client()
+        deps.s3_provider()
             .put_object()
             .bucket("wacht-knowledge-base")
             .key(&self.file_path)

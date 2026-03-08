@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use common::{HasDbRouter, HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedisProvider, error::AppError};
 
 pub struct SyncBillingMetricsCommand {
     pub deployment_id: i64,
@@ -12,10 +12,10 @@ pub struct SyncBillingMetricsCommand {
 impl SyncBillingMetricsCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Vec<(String, i64)>, AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
-        let redis_client = deps.redis_client();
+        let redis_client = deps.redis_provider();
 
         for (metric_name, quantity) in &self.metrics {
             sqlx::query!(

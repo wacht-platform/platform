@@ -1,5 +1,5 @@
 use crate::notification::CreateNotificationCommand;
-use common::{HasDbRouter, HasIdGenerator, HasNatsClient, error::AppError};
+use common::{HasDbRouter, HasIdProvider, HasNatsProvider, error::AppError};
 use models::notification::NotificationSeverity;
 use models::pulse_transaction::{PulseTransaction, PulseTransactionType};
 use tracing::warn;
@@ -72,7 +72,7 @@ async fn create_pulse_threshold_notifications<D>(
     transition: &PulseTransition,
 ) -> Result<(), AppError>
 where
-    D: HasDbRouter + HasNatsClient,
+    D: HasDbRouter + HasNatsProvider,
 {
     let Some(user_id) = parse_user_id_from_owner_id(owner_id) else {
         return Ok(());
@@ -261,11 +261,11 @@ impl DeductPulseCreditsCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<PulseTransaction, AppError>
     where
-        D: HasDbRouter + HasNatsClient + HasIdGenerator,
+        D: HasDbRouter + HasNatsProvider + HasIdProvider,
     {
         let transaction_id = self
             .transaction_id
-            .unwrap_or(deps.id_generator().next_id()? as i64);
+            .unwrap_or(deps.id_provider().next_id()? as i64);
         if self.amount_pulse_cents <= 0 {
             return Err(AppError::BadRequest(
                 "amount_pulse_cents must be greater than zero".to_string(),

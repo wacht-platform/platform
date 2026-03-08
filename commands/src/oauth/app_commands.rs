@@ -1,4 +1,4 @@
-use common::{HasCloudflareService, HasDbRouter, error::AppError};
+use common::{HasCloudflareProvider, HasDbRouter, error::AppError};
 use models::api_key::OAuthScopeDefinition;
 use queries::oauth::OAuthAppData;
 use serde::de::DeserializeOwned;
@@ -28,13 +28,13 @@ impl CreateOAuthAppCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<OAuthAppData, AppError>
     where
-        D: HasDbRouter + HasCloudflareService,
+        D: HasDbRouter + HasCloudflareProvider,
     {
         let writer = deps.db_router().writer();
         let oauth_app_id = self
             .oauth_app_id
             .ok_or_else(|| AppError::Validation("oauth_app_id is required".to_string()))?;
-        let cloudflare_service = deps.cloudflare_service();
+        let cloudflare_service = deps.cloudflare_provider();
         let deployment = sqlx::query!(
             r#"
             SELECT mode
@@ -168,10 +168,10 @@ impl VerifyOAuthAppDomainCommand {
         deps: &D,
     ) -> Result<VerifyOAuthAppDomainResult, AppError>
     where
-        D: HasDbRouter + HasCloudflareService,
+        D: HasDbRouter + HasCloudflareProvider,
     {
         let writer = deps.db_router().writer();
-        let cloudflare_service = deps.cloudflare_service();
+        let cloudflare_service = deps.cloudflare_provider();
         let oauth_app = sqlx::query!(
             r#"
             SELECT fqdn

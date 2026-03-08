@@ -1,6 +1,6 @@
 use crate::ai_knowledge_base_document_status::MarkKnowledgeBaseDocumentFailedCommand;
 use crate::{DispatchDocumentProcessingTaskCommand, WriteToAgentStorageCommand};
-use common::{HasAgentStorageClient, HasDbRouter, HasNatsClient, error::AppError};
+use common::{HasAgentStorageProvider, HasDbRouter, HasNatsProvider, error::AppError};
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument};
 use queries::GetAiKnowledgeBaseByIdQuery;
 
@@ -223,7 +223,7 @@ impl DeleteAiKnowledgeBaseCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasAgentStorageClient + ?Sized,
+        D: HasDbRouter + HasAgentStorageProvider + ?Sized,
     {
         let dependent_tools = sqlx::query!(
             r#"
@@ -282,7 +282,7 @@ impl DeleteAiKnowledgeBaseCommand {
             "{}/knowledge-bases/{}/",
             self.deployment_id, self.knowledge_base_id
         );
-        let storage_client = deps.agent_storage_client()?;
+        let storage_client = deps.agent_storage_provider()?;
         if let Err(e) = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix)
             .execute_with_deps(storage_client)
             .await
@@ -359,7 +359,7 @@ impl UploadKnowledgeBaseDocumentCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<AiKnowledgeBaseDocument, AppError>
     where
-        D: HasDbRouter + HasAgentStorageClient + HasNatsClient + ?Sized,
+        D: HasDbRouter + HasAgentStorageProvider + HasNatsProvider + ?Sized,
     {
         let document_id = self
             .document_id
@@ -379,7 +379,7 @@ impl UploadKnowledgeBaseDocumentCommand {
             "{}/knowledge-bases/{}/{}",
             deployment_id, self.knowledge_base_id, self.file_name
         );
-        let storage_client = deps.agent_storage_client()?;
+        let storage_client = deps.agent_storage_provider()?;
         let file_url = WriteToAgentStorageCommand::new(file_path, self.file_content.clone())
             .with_content_type(self.file_type.clone())
             .execute_with_deps(storage_client)
@@ -462,7 +462,7 @@ impl DeleteKnowledgeBaseDocumentCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasAgentStorageClient + ?Sized,
+        D: HasDbRouter + HasAgentStorageProvider + ?Sized,
     {
         let _kb = GetAiKnowledgeBaseByIdQuery::new(self.deployment_id, self.knowledge_base_id)
             .execute_with_db(deps.db_router().writer())
@@ -483,7 +483,7 @@ impl DeleteKnowledgeBaseDocumentCommand {
             "{}/knowledge-bases/{}/{}",
             self.deployment_id, self.knowledge_base_id, doc.file_name
         );
-        let storage_client = deps.agent_storage_client()?;
+        let storage_client = deps.agent_storage_provider()?;
         if let Err(e) = crate::DeleteFromAgentStorageCommand::new(storage_key)
             .execute_with_deps(storage_client)
             .await

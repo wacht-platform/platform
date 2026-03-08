@@ -5,7 +5,7 @@ use sqlx::{query, query_as};
 
 use crate::webhook_delivery::ClearEndpointFailuresCommand;
 use common::{
-    HasClickHouseService, HasDbRouter, HasIdGenerator, HasNatsClient, HasRedis, error::AppError,
+    HasClickHouseProvider, HasDbRouter, HasIdProvider, HasNatsProvider, HasRedisProvider, error::AppError,
 };
 use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
@@ -31,10 +31,10 @@ impl TestWebhookEndpointCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<TestWebhookResult, AppError>
     where
-        D: HasDbRouter + HasClickHouseService + HasNatsClient + HasIdGenerator + ?Sized,
+        D: HasDbRouter + HasClickHouseProvider + HasNatsProvider + HasIdProvider + ?Sized,
     {
         let mut tx = deps.writer_pool().begin().await?;
-        let delivery_id = deps.id_generator().next_id()? as i64;
+        let delivery_id = deps.id_provider().next_id()? as i64;
         let endpoint = query!(
             r#"
             SELECT e.url, e.headers, e.timeout_seconds, e.app_slug, a.signing_secret
@@ -73,7 +73,7 @@ impl TestWebhookEndpointCommand {
             timestamp: now,
         };
 
-        if let Err(e) = deps.clickhouse_service().insert_webhook_log(&log).await {
+        if let Err(e) = deps.clickhouse_provider().insert_webhook_log(&log).await {
             tracing::warn!("Failed to log test event to Tinybird: {}", e);
         }
 
@@ -127,7 +127,7 @@ impl TestWebhookEndpointCommand {
             }),
         };
 
-        deps.nats_client()
+        deps.nats_provider()
             .publish(
                 "worker.tasks.webhook.deliver",
                 serde_json::to_vec(&task_message)?.into(),
@@ -176,7 +176,7 @@ impl ReactivateEndpointCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<WebhookEndpoint, AppError>
     where
-        D: HasDbRouter + HasRedis + ?Sized,
+        D: HasDbRouter + HasRedisProvider + ?Sized,
     {
         let mut tx = deps.writer_pool().begin().await?;
         let endpoint = query_as!(

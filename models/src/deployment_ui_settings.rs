@@ -102,9 +102,9 @@ pub struct LightModeSettings {
 impl Default for LightModeSettings {
     fn default() -> Self {
         Self {
-            primary_color: Some("#6366F1".to_string()),
-            background_color: Some("#FFFFFF".to_string()),
-            text_color: Some("#000000".to_string()),
+            primary_color: Some("oklch(0.205 0 0)".to_string()),
+            background_color: Some("oklch(1 0 0)".to_string()),
+            text_color: Some("oklch(0.145 0 0)".to_string()),
             token_overrides: None,
         }
     }
@@ -122,9 +122,9 @@ pub struct DarkModeSettings {
 impl Default for DarkModeSettings {
     fn default() -> Self {
         Self {
-            primary_color: Some("#2A2A2A".to_string()),
-            background_color: Some("#8B94FF".to_string()),
-            text_color: Some("#FFFFFF".to_string()),
+            primary_color: Some("oklch(0.87 0 0)".to_string()),
+            background_color: Some("oklch(0.145 0 0)".to_string()),
+            text_color: Some("oklch(0.985 0 0)".to_string()),
             token_overrides: None,
         }
     }

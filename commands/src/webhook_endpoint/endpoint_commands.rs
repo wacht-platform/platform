@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{query, query_as};
 
-use common::{HasDbRouter, HasIdGenerator, error::AppError};
+use common::{HasDbRouter, HasIdProvider, error::AppError};
 use common::utils::ssrf::validate_webhook_url;
 use models::WebhookEndpoint;
 
@@ -107,7 +107,7 @@ impl CreateWebhookEndpointCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<WebhookEndpoint, AppError>
     where
-        D: HasDbRouter + HasIdGenerator + ?Sized,
+        D: HasDbRouter + HasIdProvider + ?Sized,
     {
         url::Url::parse(&self.url)
             .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
@@ -128,7 +128,7 @@ impl CreateWebhookEndpointCommand {
         validate_endpoint_max_retries(endpoint_max_retries, max_allowed_retries)?;
 
         let mut tx = deps.writer_pool().begin().await?;
-        let endpoint_id = deps.id_generator().next_id()? as i64;
+        let endpoint_id = deps.id_provider().next_id()? as i64;
 
         let headers_json = self.headers.unwrap_or_else(|| serde_json::json!({}));
 

@@ -1,5 +1,5 @@
 use chrono::Utc;
-use common::{HasDbRouter, HasEmbeddingProvider, HasEncryptionService, error::AppError};
+use common::{HasDbRouter, HasEmbeddingProvider, HasEncryptionProvider, error::AppError};
 use pgvector::HalfVector;
 use tracing::{error, info};
 
@@ -24,7 +24,7 @@ impl ProcessDocumentBatchCommand {
 impl ProcessDocumentBatchCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<String, AppError>
     where
-        D: HasDbRouter + HasEmbeddingProvider + HasEncryptionService + ?Sized,
+        D: HasDbRouter + HasEmbeddingProvider + HasEncryptionProvider + ?Sized,
     {
         let mut tx = deps.writer_pool().begin().await?;
         info!(

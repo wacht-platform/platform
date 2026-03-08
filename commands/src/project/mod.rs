@@ -1,6 +1,6 @@
 use common::error::AppError;
 use common::validators::ProjectValidator;
-use common::HasIdGenerator;
+use common::HasIdProvider;
 use models::{
     AuthFactorsEnabled, CustomSmtpConfig, DarkModeSettings, Deployment, DeploymentAuthSettings,
     DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate, DeploymentMode,
@@ -18,9 +18,9 @@ use std::str::FromStr;
 
 fn next_id_from<D>(deps: &D) -> Result<i64, AppError>
 where
-    D: HasIdGenerator + ?Sized,
+    D: HasIdProvider + ?Sized,
 {
-    Ok(deps.id_generator().next_id()? as i64)
+    Ok(deps.id_provider().next_id()? as i64)
 }
 
 const DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG: &str = "default";
@@ -367,7 +367,7 @@ async fn bootstrap_deployment_defaults<D>(
     input: DeploymentBootstrapInput<'_>,
 ) -> Result<(), AppError>
 where
-    D: HasIdGenerator + ?Sized,
+    D: HasIdProvider + ?Sized,
 {
     let auth_settings = build_auth_settings(input.auth_methods, input.deployment_id);
     DeploymentAuthSettingsInsert::builder()
@@ -474,7 +474,7 @@ async fn insert_staging_deployment_with_defaults<D>(
     key_material: DeploymentKeyMaterial,
 ) -> Result<StagingDeploymentInsertedRow, AppError>
 where
-    D: HasIdGenerator + ?Sized,
+    D: HasIdProvider + ?Sized,
 {
     let hosts = build_staging_deployment_hosts();
 
@@ -516,7 +516,7 @@ async fn create_staging_deployment_for_project<D>(
     pulse_usage_disabled: bool,
 ) -> Result<StagingDeploymentInsertedRow, AppError>
 where
-    D: HasIdGenerator + ?Sized,
+    D: HasIdProvider + ?Sized,
 {
     ProjectValidator::validate_auth_methods(auth_methods)?;
     ensure_phone_auth_allowed(auth_methods, pulse_usage_disabled)?;

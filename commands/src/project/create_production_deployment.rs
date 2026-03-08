@@ -142,10 +142,10 @@ impl CreateProductionDeploymentCommand {
         postmark_domain_id: i64,
     ) -> Result<(Option<String>, Option<String>), AppError>
     where
-        D: common::HasCloudflareService + common::HasPostmarkService,
+        D: common::HasCloudflareProvider + common::HasPostmarkProvider,
     {
         let frontend_hostname_result = app_deps
-            .cloudflare_service()
+            .cloudflare_provider()
             .create_custom_hostname(frontend_hostname, "accounts.wacht.services")
             .await;
 
@@ -167,7 +167,7 @@ impl CreateProductionDeploymentCommand {
         };
 
         let backend_hostname_result = app_deps
-            .cloudflare_service()
+            .cloudflare_provider()
             .create_custom_hostname(backend_hostname, "frontend.wacht.services")
             .await;
 
@@ -182,8 +182,8 @@ impl CreateProductionDeploymentCommand {
             Err(e) => {
                 tracing::error!("Failed to create backend custom hostname: {}", e);
                 self.cleanup_external_resources_on_failure(
-                    app_deps.cloudflare_service(),
-                    app_deps.postmark_service(),
+                    app_deps.cloudflare_provider(),
+                    app_deps.postmark_provider(),
                     frontend_hostname,
                     backend_hostname,
                     &self.custom_domain,
@@ -209,12 +209,12 @@ impl CreateProductionDeploymentCommand {
         mail_from_host: &str,
     ) -> Result<(i64, EmailVerificationRecords), AppError>
     where
-        D: common::HasPostmarkService,
+        D: common::HasPostmarkProvider,
     {
-        let postmark_domain = app_deps.postmark_service().create_domain(mail_from_host).await?;
+        let postmark_domain = app_deps.postmark_provider().create_domain(mail_from_host).await?;
         let postmark_domain_id = postmark_domain.id;
         let email_verification_records = app_deps
-            .postmark_service()
+            .postmark_provider()
             .generate_email_verification_records(&postmark_domain);
 
         DeploymentEmailVerificationUpdate::builder()
@@ -232,9 +232,9 @@ impl CreateProductionDeploymentCommand {
     pub async fn execute_with_deps<D>(self, app_deps: &D) -> Result<Deployment, AppError>
     where
         D: common::HasDbRouter
-            + common::HasIdGenerator
-            + common::HasCloudflareService
-            + common::HasPostmarkService
+            + common::HasIdProvider
+            + common::HasCloudflareProvider
+            + common::HasPostmarkProvider
             + Sync,
     {
         let mut tx = app_deps.db_router().writer().begin().await?;
@@ -251,7 +251,7 @@ impl CreateProductionDeploymentCommand {
         let hosts = build_production_deployment_hosts(&self.custom_domain);
 
         let domain_verification_records = app_deps
-            .cloudflare_service()
+            .cloudflare_provider()
             .generate_domain_verification_records(&hosts.frontend_host, &hosts.backend_host);
 
         let empty_email_verification_records = EmailVerificationRecords::default();

@@ -40,7 +40,7 @@ impl CreateProjectWithStagingDeploymentCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<ProjectWithDeployments, AppError>
     where
-        D: common::HasDbRouter + common::HasIdGenerator + Sync,
+        D: common::HasDbRouter + common::HasIdProvider + Sync,
     {
         let mut tx = deps.db_router().writer().begin().await?;
         ProjectValidator::validate_project_name(&self.name)?;

@@ -1,5 +1,5 @@
 use chrono::Utc;
-use common::{HasIdGenerator, HasRedis, error::AppError};
+use common::{HasIdProvider, HasRedisProvider, error::AppError};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 
@@ -127,10 +127,10 @@ impl GenerateSessionTicketCommand {
         deps: &D,
     ) -> Result<GenerateSessionTicketResponse, AppError>
     where
-        D: HasRedis + HasIdGenerator,
+        D: HasRedisProvider + HasIdProvider,
     {
         let ticket_id = deps
-            .id_generator()
+            .id_provider()
             .next_id()
             .map_err(|e| AppError::Internal(format!("Failed to generate ticket ID: {}", e)))?
             as i64;
@@ -204,7 +204,7 @@ impl GenerateSessionTicketCommand {
         let redis_key = format!("session:ticket:{}", ticket);
 
         let mut conn = deps
-            .redis_client()
+            .redis_provider()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to connect to Redis: {}", e)))?;

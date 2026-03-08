@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 
-use common::{capabilities::HasRedis, error::AppError};
+use common::{capabilities::HasRedisProvider, error::AppError};
 
 #[derive(Debug)]
 pub struct CheckEndpointFailuresCommand {
@@ -8,14 +8,14 @@ pub struct CheckEndpointFailuresCommand {
 }
 
 impl CheckEndpointFailuresCommand {
-    pub async fn execute_with_deps<C>(self, deps: &C) -> Result<EndpointFailureInfo, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<EndpointFailureInfo, AppError>
     where
-        C: HasRedis + ?Sized,
+        D: HasRedisProvider + ?Sized,
     {
         use redis::AsyncCommands;
 
         let mut redis_conn = deps
-            .redis_client()
+            .redis_provider()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
@@ -42,14 +42,14 @@ pub struct IncrementEndpointFailuresCommand {
 }
 
 impl IncrementEndpointFailuresCommand {
-    pub async fn execute_with_deps<C>(self, deps: &C) -> Result<i64, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<i64, AppError>
     where
-        C: HasRedis + ?Sized,
+        D: HasRedisProvider + ?Sized,
     {
         use redis::AsyncCommands;
 
         let mut redis_conn = deps
-            .redis_client()
+            .redis_provider()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;
@@ -77,14 +77,14 @@ pub struct ClearEndpointFailuresCommand {
 }
 
 impl ClearEndpointFailuresCommand {
-    pub async fn execute_with_deps<C>(self, deps: &C) -> Result<(), AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        C: HasRedis + ?Sized,
+        D: HasRedisProvider + ?Sized,
     {
         use redis::AsyncCommands;
 
         let mut redis_conn = deps
-            .redis_client()
+            .redis_provider()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Redis connection failed: {}", e)))?;

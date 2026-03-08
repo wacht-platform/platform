@@ -1,4 +1,4 @@
-use common::{HasDbRouter, HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedisProvider, error::AppError};
 use dto::params::deployment::DeploymentNameParams;
 use models::EmailTemplate;
 use scraper::{Html, Selector};
@@ -50,7 +50,7 @@ impl UpdateDeploymentEmailTemplateCommand {
 impl UpdateDeploymentEmailTemplateCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<EmailTemplate, AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
         let column_name = match self.template_name {

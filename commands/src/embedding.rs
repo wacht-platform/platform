@@ -1,5 +1,5 @@
 use common::{
-    HasDbRouter, HasEmbeddingProvider, HasEncryptionService,
+    HasDbRouter, HasEmbeddingProvider, HasEncryptionProvider,
     db_router::ReadConsistency,
     error::AppError,
 };
@@ -13,7 +13,7 @@ async fn resolve_deployment_gemini_api_key<D>(
     deployment_id: i64,
 ) -> Result<Option<String>, AppError>
 where
-    D: HasDbRouter + HasEncryptionService + ?Sized,
+    D: HasDbRouter + HasEncryptionProvider + ?Sized,
 {
     let reader = deps.db_router().reader(ReadConsistency::Strong);
     let settings = queries::GetDeploymentAiSettingsQuery::new(deployment_id)
@@ -22,7 +22,7 @@ where
 
     match settings.and_then(|s| s.gemini_api_key) {
         Some(encrypted) if !encrypted.is_empty() => {
-            Ok(Some(deps.encryption_service().decrypt(&encrypted)?))
+            Ok(Some(deps.encryption_provider().decrypt(&encrypted)?))
         }
         _ => Ok(None),
     }
@@ -56,7 +56,7 @@ impl GenerateEmbeddingCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Vec<f32>, AppError>
     where
-        D: HasEmbeddingProvider + HasDbRouter + HasEncryptionService + ?Sized,
+        D: HasEmbeddingProvider + HasDbRouter + HasEncryptionProvider + ?Sized,
     {
         let api_key_override = if let Some(deployment_id) = self.deployment_id {
             resolve_deployment_gemini_api_key(deps, deployment_id).await?
@@ -103,7 +103,7 @@ impl GenerateEmbeddingsCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Vec<Vec<f32>>, AppError>
     where
-        D: HasEmbeddingProvider + HasDbRouter + HasEncryptionService + ?Sized,
+        D: HasEmbeddingProvider + HasDbRouter + HasEncryptionProvider + ?Sized,
     {
         let api_key_override = if let Some(deployment_id) = self.deployment_id {
             resolve_deployment_gemini_api_key(deps, deployment_id).await?

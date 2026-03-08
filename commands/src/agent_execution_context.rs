@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use common::{HasDbRouter, HasIdGenerator, HasNatsJetStream, error::AppError};
+use common::{HasDbRouter, HasIdProvider, HasNatsJetStreamProvider, error::AppError};
 use models::{
     AgentExecutionContext, AgentExecutionState, AgentStatusUpdate, ExecutionContextStatus,
 };
@@ -156,10 +156,10 @@ impl UpdateExecutionContextStateCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasNatsJetStream + HasIdGenerator,
+        D: HasDbRouter + HasNatsJetStreamProvider + HasIdProvider,
     {
         let now = Utc::now();
-        let cancellation_message_id = deps.id_generator().next_id()? as i64;
+        let cancellation_message_id = deps.id_provider().next_id()? as i64;
 
         if let Some(ref system_instructions) = self.system_instructions {
             sqlx::query!(
@@ -242,7 +242,7 @@ impl UpdateExecutionContextStateCommand {
 
                     if let Ok(payload) = serde_json::to_vec(&conversation) {
                         let _ = deps
-                            .nats_jetstream()
+                            .nats_jetstream_provider()
                             .publish_with_headers(subject, headers, payload.into())
                             .await;
                     }
@@ -295,7 +295,7 @@ impl CancelDescendantExecutionsCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<usize, AppError>
     where
-        D: HasDbRouter + HasNatsJetStream,
+        D: HasDbRouter + HasNatsJetStreamProvider,
     {
         let mut cancelled_count = 0usize;
         let mut queue = VecDeque::from([self.parent_context_id]);
@@ -680,7 +680,7 @@ impl PublishSpawnControlCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasNatsJetStream + ?Sized,
+        D: HasNatsJetStreamProvider + ?Sized,
     {
         let (action_type, action_value) = match &self.action {
             SpawnControlAction::Stop => ("stop".to_string(), serde_json::Value::Null),
@@ -702,7 +702,7 @@ impl PublishSpawnControlCommand {
             AppError::Internal(format!("Failed to serialize control message: {}", e))
         })?;
 
-        deps.nats_jetstream()
+        deps.nats_jetstream_provider()
             .publish(self.subject(), payload_bytes.into())
             .await
             .map_err(|e| AppError::Internal(format!("Failed to publish spawn control: {}", e)))?;

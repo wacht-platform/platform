@@ -1,6 +1,6 @@
 use common::EncryptionService;
 use common::smtp::{SmtpConfig, SmtpService};
-use common::{HasDbRouter, HasEncryptionService, HasRedis, error::AppError};
+use common::{HasDbRouter, HasEncryptionProvider, HasRedisProvider, error::AppError};
 use models::{CustomSmtpConfig, EmailProvider};
 
 pub trait SmtpConfigEncryptor: Send + Sync {
@@ -98,10 +98,10 @@ impl UpdateDeploymentSmtpConfigCommand {
 impl UpdateDeploymentSmtpConfigCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<CustomSmtpConfig, AppError>
     where
-        D: HasDbRouter + HasEncryptionService,
+        D: HasDbRouter + HasEncryptionProvider,
     {
         let writer = deps.db_router().writer();
-        let encryptor = deps.encryption_service();
+        let encryptor = deps.encryption_provider();
         let encrypted_password = encryptor.encrypt(&self.password)?;
 
         let config = CustomSmtpConfig {
@@ -171,7 +171,7 @@ impl RemoveDeploymentSmtpConfigCommand {
 impl RemoveDeploymentSmtpConfigCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
         sqlx::query!(

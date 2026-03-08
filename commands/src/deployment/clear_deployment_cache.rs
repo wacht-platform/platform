@@ -1,4 +1,4 @@
-use common::{HasDbRouter, HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedisProvider, error::AppError};
 use redis::AsyncCommands;
 
 pub struct ClearDeploymentCacheCommand {
@@ -14,7 +14,7 @@ impl ClearDeploymentCacheCommand {
 impl ClearDeploymentCacheCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
         let deployment_row = sqlx::query!(
@@ -25,7 +25,7 @@ impl ClearDeploymentCacheCommand {
         .await?;
 
         let mut redis_conn = deps
-            .redis_client()
+            .redis_provider()
             .get_multiplexed_tokio_connection()
             .await?;
 

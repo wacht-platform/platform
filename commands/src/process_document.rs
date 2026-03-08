@@ -3,7 +3,7 @@ use crate::{
 };
 use chrono::Utc;
 use common::{
-    HasAgentStorageClient, HasDbRouter, HasNatsClient, HasTextProcessingService, error::AppError,
+    HasAgentStorageProvider, HasDbRouter, HasNatsProvider, HasTextProcessingProvider, error::AppError,
 };
 
 pub struct ProcessDocumentCommand {
@@ -23,7 +23,7 @@ impl ProcessDocumentCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<String, AppError>
     where
-        D: HasDbRouter + HasAgentStorageClient + HasTextProcessingService + HasNatsClient + ?Sized,
+        D: HasDbRouter + HasAgentStorageProvider + HasTextProcessingProvider + HasNatsProvider + ?Sized,
     {
         let mut tx = deps.writer_pool().begin().await?;
         let now = Utc::now();
@@ -42,7 +42,7 @@ impl ProcessDocumentCommand {
         .map_err(AppError::Database)?;
 
         let response = deps
-            .agent_storage_client()?
+            .agent_storage_provider()?
             .get_object()
             .bucket("wacht-agents")
             .key(&document.file_url)
@@ -61,11 +61,11 @@ impl ProcessDocumentCommand {
             .to_vec();
 
         let text = deps
-            .text_processing_service()
+            .text_processing_provider()
             .extract_text_from_file(&file_content, &document.file_type)?;
-        let cleaned_text = deps.text_processing_service().clean_text(&text);
+        let cleaned_text = deps.text_processing_provider().clean_text(&text);
         let chunks = deps
-            .text_processing_service()
+            .text_processing_provider()
             .chunk_text(&cleaned_text, 2000, 200)?;
 
         if chunks.is_empty() {

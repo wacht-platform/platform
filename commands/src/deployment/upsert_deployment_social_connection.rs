@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use chrono::Utc;
 
-use common::{HasDbRouter, HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedisProvider, error::AppError};
 use dto::json::DeploymentSocialConnectionUpsert;
 use models::{DeploymentSocialConnection, OauthCredentials, SocialConnectionProvider};
 
@@ -41,7 +41,7 @@ impl UpsertDeploymentSocialConnectionCommand {
         deps: &D,
     ) -> Result<DeploymentSocialConnection, AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
         let social_connection_id = self

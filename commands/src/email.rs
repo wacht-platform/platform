@@ -1,6 +1,6 @@
 use common::smtp::{SmtpConfig, SmtpService};
 use common::{
-    HasDbRouter, HasEncryptionService, HasPostmarkService, HasTemplateRenderer,
+    HasDbRouter, HasEncryptionProvider, HasPostmarkProvider, HasTemplateRenderer,
     db_router::ReadConsistency, error::AppError,
 };
 use models::{CustomSmtpConfig, EmailProvider};
@@ -44,7 +44,7 @@ impl SendEmailCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasEncryptionService + HasPostmarkService + HasTemplateRenderer,
+        D: HasDbRouter + HasEncryptionProvider + HasPostmarkProvider + HasTemplateRenderer,
     {
         let template = GetEmailTemplateByNameQuery::new(self.deployment_id, self.template_name)
             .execute_with_db(deps.reader_pool(ReadConsistency::Strong))
@@ -91,7 +91,7 @@ impl SendEmailCommand {
             if let Some(config) = &smtp_config {
                 if config.verified {
                     let decrypted_password = deps
-                        .encryption_service()
+                        .encryption_provider()
                         .decrypt(&config.password)
                         .map_err(|e| {
                             tracing::error!("Failed to decrypt SMTP password: {}", e);
@@ -140,7 +140,7 @@ impl SendEmailCommand {
         }
 
         match deps
-            .postmark_service()
+            .postmark_provider()
             .send_email(
                 &from_email,
                 &self.to_email,
@@ -200,7 +200,7 @@ impl SendRawEmailCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasEncryptionService + HasPostmarkService,
+        D: HasDbRouter + HasEncryptionProvider + HasPostmarkProvider,
     {
         let deployment = sqlx::query!(
             r#"
@@ -236,7 +236,7 @@ impl SendRawEmailCommand {
             if let Some(config) = &smtp_config {
                 if config.verified {
                     let decrypted_password = deps
-                        .encryption_service()
+                        .encryption_provider()
                         .decrypt(&config.password)
                         .map_err(|e| {
                             tracing::error!("Failed to decrypt SMTP password: {}", e);
@@ -285,7 +285,7 @@ impl SendRawEmailCommand {
         }
 
         match deps
-            .postmark_service()
+            .postmark_provider()
             .send_email(
                 &from_email,
                 &self.to_email,

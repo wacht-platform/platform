@@ -3,7 +3,7 @@ use serde_json::json;
 use sqlx::Execute;
 
 use common::utils::{security::PasswordHasher, validation::UserValidator};
-use common::{HasDbRouter, HasIdGenerator, error::AppError};
+use common::{HasDbRouter, HasIdProvider, error::AppError};
 use dto::json::{CreateUserRequest, UpdateUserRequest};
 use models::{UserDetails, UserWithIdentifiers};
 use queries::{GetDeploymentAuthSettingsQuery, GetUserDetailsQuery};
@@ -23,20 +23,20 @@ impl CreateUserCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<UserWithIdentifiers, AppError>
     where
-        D: HasDbRouter + HasIdGenerator,
+        D: HasDbRouter + HasIdProvider,
     {
         let now = Utc::now();
         let ids = (
-            deps.id_generator().next_id()? as i64,
+            deps.id_provider().next_id()? as i64,
             self.request
                 .email_address
                 .as_ref()
-                .map(|_| deps.id_generator().next_id().map(|id| id as i64))
+                .map(|_| deps.id_provider().next_id().map(|id| id as i64))
                 .transpose()?,
             self.request
                 .phone_number
                 .as_ref()
-                .map(|_| deps.id_generator().next_id().map(|id| id as i64))
+                .map(|_| deps.id_provider().next_id().map(|id| id as i64))
                 .transpose()?,
         );
         let user_id = ids.0;

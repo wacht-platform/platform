@@ -611,12 +611,12 @@ impl GetProjectsWithDeploymentQuery {
         Ok(projects_map.values().cloned().collect())
     }
 
-    pub async fn execute_with_deps<C>(
+    pub async fn execute_with_deps<D>(
         &self,
-        deps: &C,
+        deps: &D,
     ) -> Result<Vec<ProjectWithDeployments>, AppError>
     where
-        C: HasDbRouter + ?Sized,
+        D: HasDbRouter + ?Sized,
     {
         self.execute_with_db(deps.reader_pool(self.consistency))
             .await

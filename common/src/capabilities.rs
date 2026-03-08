@@ -88,6 +88,90 @@ pub trait HasEmbeddingProvider {
     fn embedding_provider(&self) -> &EmbeddingProvider;
 }
 
+pub trait HasRedisProvider: HasRedis {
+    fn redis_provider(&self) -> &RedisClient {
+        self.redis_client()
+    }
+}
+impl<T> HasRedisProvider for T where T: HasRedis + ?Sized {}
+
+pub trait HasNatsProvider: HasNatsClient {
+    fn nats_provider(&self) -> &NatsClient {
+        self.nats_client()
+    }
+}
+impl<T> HasNatsProvider for T where T: HasNatsClient + ?Sized {}
+
+pub trait HasNatsJetStreamProvider: HasNatsJetStream {
+    fn nats_jetstream_provider(&self) -> &NatsJetStream {
+        self.nats_jetstream()
+    }
+}
+impl<T> HasNatsJetStreamProvider for T where T: HasNatsJetStream + ?Sized {}
+
+pub trait HasIdProvider: HasIdGenerator {
+    fn id_provider(&self) -> &sonyflake::Sonyflake {
+        self.id_generator()
+    }
+}
+impl<T> HasIdProvider for T where T: HasIdGenerator + ?Sized {}
+
+pub trait HasEncryptionProvider: HasEncryptionService {
+    fn encryption_provider(&self) -> &EncryptionService {
+        self.encryption_service()
+    }
+}
+impl<T> HasEncryptionProvider for T where T: HasEncryptionService + ?Sized {}
+
+pub trait HasPostmarkProvider: HasPostmarkService {
+    fn postmark_provider(&self) -> &PostmarkService {
+        self.postmark_service()
+    }
+}
+impl<T> HasPostmarkProvider for T where T: HasPostmarkService + ?Sized {}
+
+pub trait HasClickHouseProvider: HasClickHouseService {
+    fn clickhouse_provider(&self) -> &ClickHouseService {
+        self.clickhouse_service()
+    }
+}
+impl<T> HasClickHouseProvider for T where T: HasClickHouseService + ?Sized {}
+
+pub trait HasCloudflareProvider: HasCloudflareService {
+    fn cloudflare_provider(&self) -> &CloudflareService {
+        self.cloudflare_service()
+    }
+}
+impl<T> HasCloudflareProvider for T where T: HasCloudflareService + ?Sized {}
+
+pub trait HasDnsVerificationProvider: HasDnsVerificationService {
+    fn dns_verification_provider(&self) -> &DnsVerificationService {
+        self.dns_verification_service()
+    }
+}
+impl<T> HasDnsVerificationProvider for T where T: HasDnsVerificationService + ?Sized {}
+
+pub trait HasS3Provider: HasS3Client {
+    fn s3_provider(&self) -> &S3Client {
+        self.s3_client()
+    }
+}
+impl<T> HasS3Provider for T where T: HasS3Client + ?Sized {}
+
+pub trait HasAgentStorageProvider: HasAgentStorageClient {
+    fn agent_storage_provider(&self) -> Result<&S3Client, AppError> {
+        self.agent_storage_client()
+    }
+}
+impl<T> HasAgentStorageProvider for T where T: HasAgentStorageClient + ?Sized {}
+
+pub trait HasTextProcessingProvider: HasTextProcessingService {
+    fn text_processing_provider(&self) -> &TextProcessingService {
+        self.text_processing_service()
+    }
+}
+impl<T> HasTextProcessingProvider for T where T: HasTextProcessingService + ?Sized {}
+
 impl HasDbRouter for AppState {
     fn db_router(&self) -> &DbRouter {
         &self.db_router

@@ -1,4 +1,4 @@
-use common::{EncryptionService, HasDbRouter, HasEncryptionService, error::AppError};
+use common::{EncryptionService, HasDbRouter, HasEncryptionProvider, error::AppError};
 use models::api_key::JwksDocument;
 use queries::oauth::OAuthClientData;
 use serde::de::DeserializeOwned;
@@ -218,13 +218,13 @@ impl CreateOAuthClientCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<OAuthClientWithSecret, AppError>
     where
-        D: HasDbRouter + HasEncryptionService,
+        D: HasDbRouter + HasEncryptionProvider,
     {
         let writer = deps.db_router().writer();
         let client_record_id = self
             .client_record_id
             .ok_or_else(|| AppError::Validation("client_record_id is required".to_string()))?;
-        let encryptor = deps.encryption_service();
+        let encryptor = deps.encryption_provider();
         self.validate()?;
 
         let client_id = Self::generate_client_id();
@@ -941,10 +941,10 @@ impl RotateOAuthClientSecret {
 impl RotateOAuthClientSecret {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Option<String>, AppError>
     where
-        D: HasDbRouter + HasEncryptionService,
+        D: HasDbRouter + HasEncryptionProvider,
     {
         let writer = deps.db_router().writer();
-        let encryptor = deps.encryption_service();
+        let encryptor = deps.encryption_provider();
         let client = sqlx::query!(
             r#"
             SELECT client_auth_method

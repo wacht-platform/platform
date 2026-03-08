@@ -1,4 +1,4 @@
-use common::{EncryptionService, HasDbRouter, HasEncryptionService, error::AppError};
+use common::{EncryptionService, HasDbRouter, HasEncryptionProvider, error::AppError};
 use models::{DeploymentAiSettings, UpdateDeploymentAiSettingsRequest};
 
 pub trait AiSettingsEncryptor: Send + Sync {
@@ -117,10 +117,10 @@ impl UpdateDeploymentAiSettingsCommandBuilder {
 impl UpdateDeploymentAiSettingsCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<DeploymentAiSettings, AppError>
     where
-        D: HasDbRouter + HasEncryptionService,
+        D: HasDbRouter + HasEncryptionProvider,
     {
         let writer = deps.db_router().writer();
-        let encryptor = deps.encryption_service();
+        let encryptor = deps.encryption_provider();
         // Encrypt API keys before storing
         let encrypted_gemini = self
             .updates

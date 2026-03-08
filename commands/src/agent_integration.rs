@@ -1,6 +1,6 @@
 use crate::dynamic_update_set::DynamicUpdateSet;
 use chrono::Utc;
-use common::{HasDbRouter, HasIdGenerator, error::AppError};
+use common::{HasDbRouter, HasIdProvider, error::AppError};
 use models::{AgentIntegration, IntegrationType};
 use sqlx::Row;
 use std::str::FromStr;
@@ -50,9 +50,9 @@ impl CreateAgentIntegrationCommand {
 impl CreateAgentIntegrationCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<AgentIntegration, AppError>
     where
-        D: HasDbRouter + HasIdGenerator,
+        D: HasDbRouter + HasIdProvider,
     {
-        let id = self.id.unwrap_or(deps.id_generator().next_id()? as i64);
+        let id = self.id.unwrap_or(deps.id_provider().next_id()? as i64);
         CreateAgentIntegrationCommand {
             id: Some(id),
             ..self

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use common::{HasDbRouter, HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedisProvider, error::AppError};
 use dto::json::DeploymentB2bSettingsUpdates;
 use models::DeploymentPermissionCatalogEntry;
 use serde_json::Value;
@@ -57,7 +57,7 @@ fn active_permissions_from_catalog(entries: &[DeploymentPermissionCatalogEntry])
 impl UpdateDeploymentB2bSettingsCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
         let existing_catalogs = sqlx::query_as::<_, (Option<Value>, Option<Value>)>(

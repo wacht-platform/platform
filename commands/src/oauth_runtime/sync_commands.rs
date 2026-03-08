@@ -1,5 +1,5 @@
 use chrono::Utc;
-use common::{HasDbRouter, HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedisProvider, error::AppError};
 use redis::AsyncCommands;
 
 const OAUTH_GRANT_LAST_USED_DIRTY_KEY: &str = "oauth:grant:last_used:dirty";
@@ -13,10 +13,10 @@ pub struct EnqueueOAuthGrantLastUsed {
 impl EnqueueOAuthGrantLastUsed {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasRedis,
+        D: HasRedisProvider,
     {
         let mut redis_conn = deps
-            .redis_client()
+            .redis_provider()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to connect redis: {}", e)))?;
@@ -46,12 +46,12 @@ pub struct SyncOAuthGrantLastUsedBatch {
 impl SyncOAuthGrantLastUsedBatch {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<usize, AppError>
     where
-        D: HasRedis + HasDbRouter,
+        D: HasRedisProvider + HasDbRouter,
     {
         let batch_size = self.batch_size.max(1);
 
         let mut redis_conn = deps
-            .redis_client()
+            .redis_provider()
             .get_multiplexed_async_connection()
             .await
             .map_err(|e| AppError::Internal(format!("Failed to connect redis: {}", e)))?;

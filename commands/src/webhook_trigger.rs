@@ -4,7 +4,7 @@ use serde_json::Value;
 use sqlx::query;
 
 use common::{
-    HasClickHouseService, HasDbRouter, HasIdGenerator, HasNatsClient, HasRedis, error::AppError,
+    HasClickHouseProvider, HasDbRouter, HasIdProvider, HasNatsProvider, HasRedisProvider, error::AppError,
 };
 use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
@@ -43,7 +43,7 @@ impl TriggerWebhookEventCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<TriggerWebhookEventResult, AppError>
     where
-        D: HasDbRouter + HasRedis + HasClickHouseService + HasNatsClient + HasIdGenerator + ?Sized,
+        D: HasDbRouter + HasRedisProvider + HasClickHouseProvider + HasNatsProvider + HasIdProvider + ?Sized,
     {
         let pool = deps.db_router().writer();
         let app_info = query!(
@@ -85,7 +85,7 @@ impl TriggerWebhookEventCommand {
                 }
             }
 
-            let delivery_id = deps.id_generator().next_id()? as i64;
+            let delivery_id = deps.id_provider().next_id()? as i64;
             let webhook_id = format!("msg_{}", delivery_id);
             let webhook_timestamp = Utc::now().timestamp();
             let signature = generate_webhook_signature(
@@ -140,7 +140,7 @@ impl TriggerWebhookEventCommand {
                 timestamp: Utc::now(),
             };
 
-            if let Err(e) = deps.clickhouse_service().insert_webhook_log(&ch_log).await {
+            if let Err(e) = deps.clickhouse_provider().insert_webhook_log(&ch_log).await {
                 tracing::warn!("Failed to log pending delivery to Tinybird: {}", e);
             }
 
@@ -153,7 +153,7 @@ impl TriggerWebhookEventCommand {
                 }),
             };
 
-            deps.nats_client()
+            deps.nats_provider()
                 .publish(
                     "worker.tasks.webhook.deliver",
                     serde_json::to_vec(&task_message)
@@ -190,7 +190,7 @@ pub struct ReplayWebhookDeliveryCommand {
 impl ReplayWebhookDeliveryCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<i64, AppError>
     where
-        D: HasDbRouter + HasClickHouseService + HasNatsClient + HasIdGenerator + ?Sized,
+        D: HasDbRouter + HasClickHouseProvider + HasNatsProvider + HasIdProvider + ?Sized,
     {
         let pool = deps.db_router().writer();
         tracing::info!(
@@ -219,7 +219,7 @@ impl ReplayWebhookDeliveryCommand {
         }
 
         let replay_source = deps
-            .clickhouse_service()
+            .clickhouse_provider()
             .get_webhook_replay_source(self.deployment_id, self.delivery_id)
             .await?;
 
@@ -301,7 +301,7 @@ impl ReplayWebhookDeliveryCommand {
             )
         })?;
 
-        let new_delivery_id = deps.id_generator().next_id()? as i64;
+        let new_delivery_id = deps.id_provider().next_id()? as i64;
         let webhook_id = format!("msg_{}", new_delivery_id);
         let webhook_timestamp = Utc::now().timestamp();
         let signature = Some(generate_webhook_signature(
@@ -354,7 +354,7 @@ impl ReplayWebhookDeliveryCommand {
             }),
         };
 
-        deps.nats_client()
+        deps.nats_provider()
             .publish(
                 "worker.tasks.webhook.deliver",
                 serde_json::to_vec(&task_message)?.into(),

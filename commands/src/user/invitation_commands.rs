@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 
 use crate::SendEmailCommand;
 use common::{
-    HasDbRouter, HasEncryptionService, HasIdGenerator, HasPostmarkService, HasTemplateRenderer,
+    HasDbRouter, HasEncryptionProvider, HasIdProvider, HasPostmarkProvider, HasTemplateRenderer,
     db_router::ReadConsistency, error::AppError,
 };
 use dto::json::InviteUserRequest;
@@ -32,13 +32,13 @@ impl InviteUserCommand {
     where
         D: HasDbRouter
             + HasTemplateRenderer
-            + HasPostmarkService
-            + HasEncryptionService
-            + HasIdGenerator,
+            + HasPostmarkProvider
+            + HasEncryptionProvider
+            + HasIdProvider,
     {
         let invitation_id = self
             .invitation_id
-            .unwrap_or(deps.id_generator().next_id()? as i64);
+            .unwrap_or(deps.id_provider().next_id()? as i64);
         let reader = deps.reader_pool(ReadConsistency::Strong);
 
         let writer_pool = deps.writer_pool();
@@ -155,13 +155,13 @@ impl ApproveWaitlistUserCommand {
     where
         D: HasDbRouter
             + HasTemplateRenderer
-            + HasPostmarkService
-            + HasEncryptionService
-            + HasIdGenerator,
+            + HasPostmarkProvider
+            + HasEncryptionProvider
+            + HasIdProvider,
     {
         let invitation_id = self
             .invitation_id
-            .unwrap_or(deps.id_generator().next_id()? as i64);
+            .unwrap_or(deps.id_provider().next_id()? as i64);
         let reader = deps.reader_pool(ReadConsistency::Strong);
 
         let mut tx = deps.writer_pool().begin().await?;

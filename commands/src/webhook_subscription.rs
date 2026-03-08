@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::query;
 
-use common::{HasDbRouter, HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedisProvider, error::AppError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EndpointWithRules {
@@ -34,14 +34,14 @@ impl GetSubscribedEndpointsCommand {
 
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Vec<EndpointWithRules>, AppError>
     where
-        D: HasDbRouter + HasRedis + ?Sized,
+        D: HasDbRouter + HasRedisProvider + ?Sized,
     {
         let cache_key = format!(
             "webhook:subs:{}:{}:{}",
             self.deployment_id, self.app_slug, self.event_name
         );
 
-        if let Ok(mut redis_conn) = deps.redis_client().get_multiplexed_async_connection().await {
+        if let Ok(mut redis_conn) = deps.redis_provider().get_multiplexed_async_connection().await {
             if let Ok(cached) = redis_conn.get::<_, String>(&cache_key).await {
                 if let Ok(endpoints) = serde_json::from_str::<Vec<EndpointWithRules>>(&cached) {
                     return Ok(endpoints);
@@ -89,7 +89,7 @@ impl GetSubscribedEndpointsCommand {
             .collect();
 
         if let Ok(json) = serde_json::to_string(&endpoints) {
-            if let Ok(mut redis_conn) = deps.redis_client().get_multiplexed_async_connection().await
+            if let Ok(mut redis_conn) = deps.redis_provider().get_multiplexed_async_connection().await
             {
                 let _: Result<(), _> = redis_conn.set_ex(&cache_key, json, 300).await;
             }
@@ -110,9 +110,9 @@ pub struct InvalidateEndpointCacheCommand {
 impl InvalidateEndpointCacheCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasRedis,
+        D: HasRedisProvider,
     {
-        if let Ok(mut redis_conn) = deps.redis_client().get_multiplexed_async_connection().await {
+        if let Ok(mut redis_conn) = deps.redis_provider().get_multiplexed_async_connection().await {
             for event_name in self.event_names {
                 let cache_key = format!(
                     "webhook:subs:{}:{}:{}",

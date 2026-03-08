@@ -1,4 +1,4 @@
-use common::{HasDbRouter, HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedisProvider, error::AppError};
 use dto::json::DeploymentRestrictionsUpdates;
 
 use super::ClearDeploymentCacheCommand;
@@ -20,7 +20,7 @@ impl UpdateDeploymentRestrictionsCommand {
 impl UpdateDeploymentRestrictionsCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
         let mut query_builder =

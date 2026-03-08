@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use sqlx::{Row, query, query_as};
 
-use common::{HasClickHouseService, HasDbRouter, error::AppError};
+use common::{HasClickHouseProvider, HasDbRouter, error::AppError};
 use dto::json::webhook_requests::{
     WebhookEndpoint, WebhookEndpointSubscription as WebhookEndpointSubscriptionDTO,
 };
@@ -612,7 +612,7 @@ impl GetWebhookStatsQuery {
 
     pub async fn execute_with_deps<D>(&self, deps: &D) -> Result<dto::json::WebhookStats, AppError>
     where
-        D: HasDbRouter + HasClickHouseService,
+        D: HasDbRouter + HasClickHouseProvider,
     {
         use dto::json::WebhookStats;
 
@@ -627,7 +627,7 @@ impl GetWebhookStatsQuery {
         .unwrap_or(0);
 
         let delivery_stats = deps
-            .clickhouse_service()
+            .clickhouse_provider()
             .get_webhook_delivery_stats(
                 self.deployment_id,
                 Some(self.app_slug.clone()),
@@ -646,7 +646,7 @@ impl GetWebhookStatsQuery {
         };
 
         let recent_stats = deps
-            .clickhouse_service()
+            .clickhouse_provider()
             .get_webhook_delivery_stats(
                 self.deployment_id,
                 Some(self.app_slug.clone()),

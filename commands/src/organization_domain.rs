@@ -1,5 +1,5 @@
 use chrono::Utc;
-use common::{HasDbRouter, HasDnsVerificationService, HasIdGenerator, error::AppError};
+use common::{HasDbRouter, HasDnsVerificationProvider, HasIdProvider, error::AppError};
 use models::DnsRecord;
 use models::organization_domain::OrganizationDomain;
 use serde::{Deserialize, Serialize};
@@ -57,11 +57,11 @@ impl CreateOrganizationDomainCommand {
         deps: &D,
     ) -> Result<CreateOrganizationDomainResponse, AppError>
     where
-        D: HasDbRouter + HasIdGenerator,
+        D: HasDbRouter + HasIdProvider + ?Sized,
     {
         let domain_id = self
             .domain_id
-            .unwrap_or(deps.id_generator().next_id()? as i64);
+            .unwrap_or(deps.id_provider().next_id()? as i64);
         CreateOrganizationDomainCommand {
             domain_id: Some(domain_id),
             ..self
@@ -281,10 +281,10 @@ impl VerifyOrganizationDomainCommand {
         deps: &D,
     ) -> Result<VerifyOrganizationDomainResponse, AppError>
     where
-        D: HasDbRouter + HasDnsVerificationService,
+        D: HasDbRouter + HasDnsVerificationProvider + ?Sized,
     {
         let writer = deps.db_router().writer();
-        let dns_verification_service = deps.dns_verification_service();
+        let dns_verification_service = deps.dns_verification_provider();
         // Fetch the domain
         let domain = sqlx::query_as!(
             OrganizationDomain,

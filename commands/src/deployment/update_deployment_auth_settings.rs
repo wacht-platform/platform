@@ -1,4 +1,4 @@
-use common::{HasDbRouter, HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedisProvider, error::AppError};
 use dto::json::DeploymentAuthSettingsUpdates;
 use serde_json::{Map, Value, json};
 
@@ -55,7 +55,7 @@ fn build_partial_json<T: serde::Serialize>(data: Option<&T>) -> Option<Value> {
 impl UpdateDeploymentAuthSettingsCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasDbRouter + HasRedis,
+        D: HasDbRouter + HasRedisProvider,
     {
         let writer = deps.db_router().writer();
         if enables_phone_auth(&self.updates) {
