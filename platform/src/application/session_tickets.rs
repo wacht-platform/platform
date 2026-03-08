@@ -3,7 +3,7 @@ use commands::session_ticket::{AgentSessionIdentifier, SessionTicketType};
 use dto::json::session_ticket::{AgentSessionIdentifierDto, CreateSessionTicketRequest};
 
 use crate::application::{AppError, AppState};
-use crate::application::deps;
+use common::deps;
 
 fn parse_ticket_type(ticket_type: &str) -> Result<SessionTicketType, AppError> {
     match ticket_type {

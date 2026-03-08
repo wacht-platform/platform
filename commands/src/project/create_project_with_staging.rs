@@ -30,12 +30,7 @@ impl CreateProjectWithStagingDeploymentCommand {
         self
     }
 
-    fn owner_id_fragment(&self) -> Result<&str, AppError> {
-        let owner_id = self
-            .owner_id
-            .as_deref()
-            .ok_or_else(|| AppError::Validation("Project must have an owner".to_string()))?;
-
+    fn owner_id_fragment(owner_id: &str) -> Result<&str, AppError> {
         owner_id
             .split('_')
             .next_back()
@@ -48,30 +43,27 @@ impl CreateProjectWithStagingDeploymentCommand {
         D: common::HasDbRouter + common::HasIdGenerator + Sync,
     {
         let mut tx = deps.db_router().writer().begin().await?;
-        let ids = DepsIdGeneratorAdapter::new(deps);
         let validator = ProjectValidator::new();
         validator.validate_project_name(&self.name)?;
         validator.validate_auth_methods(&self.auth_methods)?;
 
-        let project_id = ids.next_id()?;
-
-        let key_material = generate_deployment_key_material().await?;
+        let project_id = next_id_from(deps)?;
 
         let owner_id = self
             .owner_id
             .as_deref()
             .ok_or_else(|| AppError::Validation("Project must have an owner".to_string()))?;
-        let billing_account = BillingAccountForOwnerLockQuery::builder()
+        let owner_id_fragment = Self::owner_id_fragment(owner_id)?;
+        let billing_account = queries::BillingAccountForOwnerLockQuery::builder()
             .owner_id(owner_id)
             .execute_with_db(tx.as_mut())
             .await?
             .ok_or_else(|| AppError::Validation("No billing account found".to_string()))?;
 
         ensure_billing_status_active(&billing_account.status, "project")?;
-        ensure_phone_auth_allowed(&self.auth_methods, billing_account.pulse_usage_disabled)?;
 
         let billing_account_id = billing_account.id;
-        let project_count = ProjectsCountByBillingAccountQuery::builder()
+        let project_count = queries::ProjectsCountByBillingAccountQuery::builder()
             .billing_account_id(billing_account_id)
             .execute_with_db(tx.as_mut())
             .await?;
@@ -86,18 +78,18 @@ impl CreateProjectWithStagingDeploymentCommand {
         let project_row = ProjectInsert::builder()
             .id(project_id)
             .name(self.name.clone())
-            .owner_id_fragment(self.owner_id_fragment()?)
+            .owner_id_fragment(owner_id_fragment)
             .billing_account_id(billing_account_id)
             .execute_with_db(tx.as_mut())
             .await?;
 
-        let deployment_row = insert_staging_deployment_with_defaults(
+        let deployment_row = create_staging_deployment_for_project(
             tx.as_mut(),
-            &ids,
+            deps,
             project_row.id,
             self.name.clone(),
             &self.auth_methods,
-            key_material,
+            billing_account.pulse_usage_disabled,
         )
         .await?;
 

@@ -23,7 +23,7 @@ use models::{
 use queries::{GetScimTokenQuery, ListEnterpriseConnectionsQuery, ListOrganizationDomainsQuery};
 
 use crate::application::{AppError, AppState};
-use crate::application::deps;
+use common::deps;
 
 pub struct ListInput {
     deployment_id: i64,

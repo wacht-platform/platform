@@ -1,4 +1,4 @@
-use common::error::AppError;
+use common::{HasNatsClient, error::AppError};
 use dto::json::nats::NatsTaskMessage;
 use serde_json;
 
@@ -19,7 +19,10 @@ impl DispatchDocumentProcessingTaskCommand {
 }
 
 impl DispatchDocumentProcessingTaskCommand {
-    pub async fn execute_with_deps(self, nats_client: &async_nats::Client) -> Result<(), AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasNatsClient + ?Sized,
+    {
         let task_message = NatsTaskMessage {
             task_type: "document.process".to_string(),
             task_id: format!(
@@ -33,7 +36,7 @@ impl DispatchDocumentProcessingTaskCommand {
             }),
         };
 
-        nats_client
+        deps.nats_client()
             .publish(
                 "worker.tasks.document.process",
                 serde_json::to_vec(&task_message)
@@ -69,7 +72,10 @@ impl DispatchDocumentBatchTaskCommand {
 }
 
 impl DispatchDocumentBatchTaskCommand {
-    pub async fn execute_with_deps(self, nats_client: &async_nats::Client) -> Result<(), AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasNatsClient + ?Sized,
+    {
         let task_message = NatsTaskMessage {
             task_type: "embedding.process_batch".to_string(),
             task_id: format!(
@@ -83,7 +89,7 @@ impl DispatchDocumentBatchTaskCommand {
             }),
         };
 
-        nats_client
+        deps.nats_client()
             .publish(
                 "worker.tasks.embedding.process_batch",
                 serde_json::to_vec(&task_message)

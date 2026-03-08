@@ -99,7 +99,7 @@ impl CreateExecutionContextCommand {
     }
 }
 
-pub struct UpdateExecutionContextQuery {
+pub struct UpdateExecutionContextStateCommand {
     pub context_id: i64,
     pub deployment_id: i64,
     pub system_instructions: Option<String>,
@@ -110,7 +110,7 @@ pub struct UpdateExecutionContextQuery {
     pub external_resource_metadata: Option<serde_json::Value>,
 }
 
-impl UpdateExecutionContextQuery {
+impl UpdateExecutionContextStateCommand {
     pub fn new(context_id: i64, deployment_id: i64) -> Self {
         Self {
             context_id,
@@ -348,9 +348,7 @@ impl CancelDescendantExecutionsCommand {
                     self.deployment_id,
                     SpawnControlAction::Stop,
                 );
-                let _ = publish_spawn_control_command
-                    .execute_with_deps(deps.nats_jetstream())
-                    .await;
+                let _ = publish_spawn_control_command.execute_with_deps(deps).await;
                 cancelled_count += 1;
             }
         }
@@ -680,10 +678,10 @@ impl PublishSpawnControlCommand {
         format!("agent_spawn_control.context:{}", self.child_context_id)
     }
 
-    pub async fn execute_with_deps(
-        self,
-        nats_jetstream: &async_nats::jetstream::Context,
-    ) -> Result<(), AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasNatsJetStream + ?Sized,
+    {
         let (action_type, action_value) = match &self.action {
             SpawnControlAction::Stop => ("stop".to_string(), serde_json::Value::Null),
             SpawnControlAction::Restart => ("restart".to_string(), serde_json::Value::Null),
@@ -704,7 +702,7 @@ impl PublishSpawnControlCommand {
             AppError::Internal(format!("Failed to serialize control message: {}", e))
         })?;
 
-        nats_jetstream
+        deps.nats_jetstream()
             .publish(self.subject(), payload_bytes.into())
             .await
             .map_err(|e| AppError::Internal(format!("Failed to publish spawn control: {}", e)))?;

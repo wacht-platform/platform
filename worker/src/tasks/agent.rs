@@ -1,5 +1,5 @@
 use agent_engine::{AgentHandler, ExecutionRequest};
-use commands::webhook_trigger::{TriggerWebhookEventCommand, TriggerWebhookEventDeps};
+use commands::webhook_trigger::TriggerWebhookEventCommand;
 use common::state::AppState;
 use dto::json::{AgentExecutionRequest, AgentExecutionType, AgentStreamMessageType};
 use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures};
@@ -125,13 +125,7 @@ async fn trigger_execution_webhook(
     );
 
     if let Err(error) = trigger_command
-        .execute_with_deps(TriggerWebhookEventDeps {
-            db_router: &app_state.db_router,
-            redis_client: &app_state.redis_client,
-            clickhouse_service: &app_state.clickhouse_service,
-            nats_client: &app_state.nats_client,
-            id_gen: || Ok(app_state.sf.next_id()? as i64),
-        })
+        .execute_with_deps(&common::deps::from_app(app_state).db().redis().nats().id())
         .await
     {
         tracing::error!("Failed to trigger {} webhook: {}", error_context, error);

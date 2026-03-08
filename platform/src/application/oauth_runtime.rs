@@ -50,7 +50,7 @@ use crate::{
     },
     application::response::ApiErrorResponse,
 };
-use crate::application::deps;
+use common::deps;
 
 fn enqueue_grant_last_used(
     app_state: AppState,

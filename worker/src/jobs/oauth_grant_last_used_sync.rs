@@ -5,7 +5,7 @@ use tracing::info;
 
 pub async fn sync_oauth_grant_last_used(app_state: &AppState) -> Result<String> {
     let sync_command = SyncOAuthGrantLastUsedBatch { batch_size: 100 };
-    let synced = sync_command.execute_with_deps(app_state).await?;
+    let synced = sync_command.execute_with_deps(&common::deps::from_app(app_state).db().redis()).await?;
     if synced == 0 {
         return Ok("No dirty oauth grant last_used entries".to_string());
     }

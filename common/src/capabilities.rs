@@ -1,4 +1,5 @@
 use async_nats::{Client as NatsClient, jetstream::Context as NatsJetStream};
+use aws_sdk_s3::Client as S3Client;
 use redis::Client as RedisClient;
 use sqlx::PgPool;
 
@@ -69,6 +70,14 @@ pub trait HasTemplateRenderer {
     ) -> Result<String, AppError>;
 }
 
+pub trait HasS3Client {
+    fn s3_client(&self) -> &S3Client;
+}
+
+pub trait HasAgentStorageClient {
+    fn agent_storage_client(&self) -> Result<&S3Client, AppError>;
+}
+
 impl HasDbRouter for AppState {
     fn db_router(&self) -> &DbRouter {
         &self.db_router
@@ -77,6 +86,12 @@ impl HasDbRouter for AppState {
 
 impl HasDbRouter for DbRouter {
     fn db_router(&self) -> &DbRouter {
+        self
+    }
+}
+
+impl HasNatsClient for NatsClient {
+    fn nats_client(&self) -> &NatsClient {
         self
     }
 }
@@ -150,5 +165,25 @@ impl HasTemplateRenderer for AppState {
         self.handlebars
             .render_template(template, variables)
             .map_err(|e| AppError::BadRequest(format!("Failed to render template: {}", e)))
+    }
+}
+
+impl HasS3Client for AppState {
+    fn s3_client(&self) -> &S3Client {
+        &self.s3_client
+    }
+}
+
+impl HasS3Client for S3Client {
+    fn s3_client(&self) -> &S3Client {
+        self
+    }
+}
+
+impl HasAgentStorageClient for AppState {
+    fn agent_storage_client(&self) -> Result<&S3Client, AppError> {
+        self.agent_storage_client
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))
     }
 }

@@ -12,7 +12,7 @@ use models::error::AppError;
 use queries::oauth::ListOAuthAppsByDeploymentQuery;
 
 use super::oauth_shared::map_oauth_app_response;
-use crate::application::deps;
+use common::deps;
 
 pub struct CreateOAuthAppInput {
     pub slug: String,
@@ -71,7 +71,7 @@ pub async fn create_oauth_app(
         );
         Some(
             UploadToCdnCommand::new(file_path, image_buffer)
-                .execute_with_deps(&app_state.s3_client)
+                .execute_with_deps(&deps::from_app(app_state).s3())
                 .await
                 .map_err(|e| AppError::Internal(e.to_string()))?,
         )

@@ -15,7 +15,7 @@ use super::oauth_shared::{
     get_oauth_app_by_slug, get_oauth_client_by_id, map_oauth_client_response,
     map_oauth_client_response_with_secret,
 };
-use crate::application::deps;
+use common::deps;
 
 pub async fn list_oauth_clients(
     app_state: &AppState,

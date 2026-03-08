@@ -1,6 +1,6 @@
 use crate::ai_knowledge_base_document_status::MarkKnowledgeBaseDocumentFailedCommand;
 use crate::{DispatchDocumentProcessingTaskCommand, WriteToAgentStorageCommand};
-use common::error::AppError;
+use common::{HasAgentStorageClient, HasDbRouter, HasNatsClient, error::AppError};
 use models::{AiKnowledgeBase, AiKnowledgeBaseDocument};
 use queries::GetAiKnowledgeBaseByIdQuery;
 
@@ -213,11 +213,6 @@ pub struct DeleteAiKnowledgeBaseCommand {
     pub knowledge_base_id: i64,
 }
 
-pub struct KnowledgeBaseStorageDeps<'a> {
-    pub db_router: &'a common::DbRouter,
-    pub storage_client: &'a aws_sdk_s3::Client,
-}
-
 impl DeleteAiKnowledgeBaseCommand {
     pub fn new(deployment_id: i64, knowledge_base_id: i64) -> Self {
         Self {
@@ -226,10 +221,10 @@ impl DeleteAiKnowledgeBaseCommand {
         }
     }
 
-    pub async fn execute_with_deps(
-        self,
-        deps: KnowledgeBaseStorageDeps<'_>,
-    ) -> Result<(), AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasDbRouter + HasAgentStorageClient + ?Sized,
+    {
         let dependent_tools = sqlx::query!(
             r#"
             SELECT t.id, t.name
@@ -241,7 +236,7 @@ impl DeleteAiKnowledgeBaseCommand {
             self.deployment_id,
             self.knowledge_base_id.to_string()
         )
-        .fetch_all(deps.db_router.writer())
+        .fetch_all(deps.db_router().writer())
         .await
         .map_err(AppError::Database)?;
 
@@ -268,7 +263,7 @@ impl DeleteAiKnowledgeBaseCommand {
             self.deployment_id,
             self.knowledge_base_id
         )
-        .fetch_all(deps.db_router.writer())
+        .fetch_all(deps.db_router().writer())
         .await
         .map_err(AppError::Database)?;
 
@@ -287,8 +282,9 @@ impl DeleteAiKnowledgeBaseCommand {
             "{}/knowledge-bases/{}/",
             self.deployment_id, self.knowledge_base_id
         );
+        let storage_client = deps.agent_storage_client()?;
         if let Err(e) = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix)
-            .execute_with_deps(deps.storage_client)
+            .execute_with_deps(storage_client)
             .await
         {
             tracing::warn!(
@@ -299,7 +295,7 @@ impl DeleteAiKnowledgeBaseCommand {
         }
 
         let mut tx = deps
-            .db_router
+            .db_router()
             .writer()
             .begin()
             .await
@@ -361,10 +357,10 @@ impl UploadKnowledgeBaseDocumentCommand {
         self
     }
 
-    pub async fn execute_with_deps(
-        self,
-        deps: UploadKnowledgeBaseDocumentDeps<'_>,
-    ) -> Result<AiKnowledgeBaseDocument, AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<AiKnowledgeBaseDocument, AppError>
+    where
+        D: HasDbRouter + HasAgentStorageClient + HasNatsClient + ?Sized,
+    {
         let document_id = self
             .document_id
             .ok_or_else(|| AppError::Validation("document_id is required".to_string()))?;
@@ -375,7 +371,7 @@ impl UploadKnowledgeBaseDocumentCommand {
             "SELECT deployment_id FROM ai_knowledge_bases WHERE id = $1",
             self.knowledge_base_id
         )
-        .fetch_one(deps.db_router.writer())
+        .fetch_one(deps.db_router().writer())
         .await?;
         let deployment_id = kb_query.deployment_id;
 
@@ -383,9 +379,10 @@ impl UploadKnowledgeBaseDocumentCommand {
             "{}/knowledge-bases/{}/{}",
             deployment_id, self.knowledge_base_id, self.file_name
         );
+        let storage_client = deps.agent_storage_client()?;
         let file_url = WriteToAgentStorageCommand::new(file_path, self.file_content.clone())
             .with_content_type(self.file_type.clone())
-            .execute_with_deps(deps.storage_client)
+            .execute_with_deps(storage_client)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -408,7 +405,7 @@ impl UploadKnowledgeBaseDocumentCommand {
             self.knowledge_base_id,
             serde_json::json!({"status": "processing"})
         )
-        .fetch_one(deps.db_router.writer())
+        .fetch_one(deps.db_router().writer())
         .await
         .map_err(AppError::Database)?;
 
@@ -419,7 +416,7 @@ impl UploadKnowledgeBaseDocumentCommand {
         );
 
         if let Err(e) = dispatch_processing_task
-            .execute_with_deps(deps.nats_client)
+            .execute_with_deps(deps)
             .await
         {
             tracing::error!("Failed to dispatch document processing task: {}", e);
@@ -428,7 +425,7 @@ impl UploadKnowledgeBaseDocumentCommand {
                     "Failed to dispatch document processing task: {}",
                     e
                 ))
-                .execute_with_db(deps.db_router.writer())
+                .execute_with_db(deps.db_router().writer())
                 .await;
         }
 
@@ -463,12 +460,12 @@ impl DeleteKnowledgeBaseDocumentCommand {
         }
     }
 
-    pub async fn execute_with_deps(
-        self,
-        deps: KnowledgeBaseStorageDeps<'_>,
-    ) -> Result<(), AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasDbRouter + HasAgentStorageClient + ?Sized,
+    {
         let _kb = GetAiKnowledgeBaseByIdQuery::new(self.deployment_id, self.knowledge_base_id)
-            .execute_with_db(deps.db_router.writer())
+            .execute_with_db(deps.db_router().writer())
             .await
             .map_err(|_| AppError::NotFound("Knowledge base not found".to_string()))?;
 
@@ -477,7 +474,7 @@ impl DeleteKnowledgeBaseDocumentCommand {
             self.document_id,
             self.knowledge_base_id
         )
-        .fetch_optional(deps.db_router.writer())
+        .fetch_optional(deps.db_router().writer())
         .await
         .map_err(AppError::Database)?
         .ok_or(AppError::NotFound("Document not found".to_string()))?;
@@ -486,8 +483,9 @@ impl DeleteKnowledgeBaseDocumentCommand {
             "{}/knowledge-bases/{}/{}",
             self.deployment_id, self.knowledge_base_id, doc.file_name
         );
+        let storage_client = deps.agent_storage_client()?;
         if let Err(e) = crate::DeleteFromAgentStorageCommand::new(storage_key)
-            .execute_with_deps(deps.storage_client)
+            .execute_with_deps(storage_client)
             .await
         {
             tracing::warn!("Failed to delete file from storage: {}", e);
@@ -498,16 +496,10 @@ impl DeleteKnowledgeBaseDocumentCommand {
             self.document_id,
             self.knowledge_base_id
         )
-        .execute(deps.db_router.writer())
+        .execute(deps.db_router().writer())
         .await
         .map_err(AppError::Database)?;
 
         Ok(())
     }
-}
-
-pub struct UploadKnowledgeBaseDocumentDeps<'a> {
-    pub db_router: &'a common::DbRouter,
-    pub storage_client: &'a aws_sdk_s3::Client,
-    pub nats_client: &'a async_nats::Client,
 }

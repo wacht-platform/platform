@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::query;
 
-use common::error::AppError;
+use common::{
+    HasClickHouseService, HasDbRouter, HasIdGenerator, HasNatsClient, HasRedis, error::AppError,
+};
 use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
 use dto::json::nats::NatsTaskMessage;
@@ -13,21 +15,6 @@ use super::{
     GetSubscribedEndpointsCommand,
     webhook_subscription::{GetSubscribedEndpointsDeps, evaluate_filter},
 };
-
-pub struct TriggerWebhookEventDeps<'a, IdFn> {
-    pub db_router: &'a common::DbRouter,
-    pub redis_client: &'a redis::Client,
-    pub clickhouse_service: &'a common::ClickHouseService,
-    pub nats_client: &'a async_nats::Client,
-    pub id_gen: IdFn,
-}
-
-pub struct ReplayWebhookDeliveryDeps<'a, IdFn> {
-    pub db_router: &'a common::DbRouter,
-    pub clickhouse_service: &'a common::ClickHouseService,
-    pub nats_client: &'a async_nats::Client,
-    pub id_gen: IdFn,
-}
 
 #[derive(Debug, Deserialize)]
 pub struct TriggerWebhookEventCommand {
@@ -54,14 +41,11 @@ impl TriggerWebhookEventCommand {
         self
     }
 
-    pub async fn execute_with_deps<IdFn>(
-        self,
-        deps: TriggerWebhookEventDeps<'_, IdFn>,
-    ) -> Result<TriggerWebhookEventResult, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<TriggerWebhookEventResult, AppError>
     where
-        IdFn: Fn() -> Result<i64, AppError> + Copy,
+        D: HasDbRouter + HasRedis + HasClickHouseService + HasNatsClient + HasIdGenerator + ?Sized,
     {
-        let pool = deps.db_router.writer();
+        let pool = deps.db_router().writer();
         let app_info = query!(
             r#"
             SELECT app_slug, name
@@ -89,7 +73,7 @@ impl TriggerWebhookEventCommand {
         )
         .execute_with_deps(GetSubscribedEndpointsDeps {
             executor: pool,
-            redis_client: deps.redis_client,
+            redis_client: deps.redis_client(),
         })
         .await?;
 
@@ -104,7 +88,7 @@ impl TriggerWebhookEventCommand {
                 }
             }
 
-            let delivery_id = (deps.id_gen)()?;
+            let delivery_id = deps.id_generator().next_id()? as i64;
             let webhook_id = format!("msg_{}", delivery_id);
             let webhook_timestamp = Utc::now().timestamp();
             let signature = generate_webhook_signature(
@@ -159,7 +143,7 @@ impl TriggerWebhookEventCommand {
                 timestamp: Utc::now(),
             };
 
-            if let Err(e) = deps.clickhouse_service.insert_webhook_log(&ch_log).await {
+            if let Err(e) = deps.clickhouse_service().insert_webhook_log(&ch_log).await {
                 tracing::warn!("Failed to log pending delivery to Tinybird: {}", e);
             }
 
@@ -172,7 +156,7 @@ impl TriggerWebhookEventCommand {
                 }),
             };
 
-            deps.nats_client
+            deps.nats_client()
                 .publish(
                     "worker.tasks.webhook.deliver",
                     serde_json::to_vec(&task_message)
@@ -207,14 +191,11 @@ pub struct ReplayWebhookDeliveryCommand {
 }
 
 impl ReplayWebhookDeliveryCommand {
-    pub async fn execute_with_deps<IdFn>(
-        self,
-        deps: ReplayWebhookDeliveryDeps<'_, IdFn>,
-    ) -> Result<i64, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<i64, AppError>
     where
-        IdFn: Fn() -> Result<i64, AppError> + Copy,
+        D: HasDbRouter + HasClickHouseService + HasNatsClient + HasIdGenerator + ?Sized,
     {
-        let pool = deps.db_router.writer();
+        let pool = deps.db_router().writer();
         tracing::info!(
             "Starting replay for delivery_id: {}, deployment_id: {}",
             self.delivery_id,
@@ -241,7 +222,7 @@ impl ReplayWebhookDeliveryCommand {
         }
 
         let replay_source = deps
-            .clickhouse_service
+            .clickhouse_service()
             .get_webhook_replay_source(self.deployment_id, self.delivery_id)
             .await?;
 
@@ -323,7 +304,7 @@ impl ReplayWebhookDeliveryCommand {
             )
         })?;
 
-        let new_delivery_id = (deps.id_gen)()?;
+        let new_delivery_id = deps.id_generator().next_id()? as i64;
         let webhook_id = format!("msg_{}", new_delivery_id);
         let webhook_timestamp = Utc::now().timestamp();
         let signature = Some(generate_webhook_signature(
@@ -376,7 +357,7 @@ impl ReplayWebhookDeliveryCommand {
             }),
         };
 
-        deps.nats_client
+        deps.nats_client()
             .publish(
                 "worker.tasks.webhook.deliver",
                 serde_json::to_vec(&task_message)?.into(),

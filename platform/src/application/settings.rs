@@ -4,6 +4,7 @@ use commands::{
     UpdateDeploymentDisplaySettingsCommand, UpdateDeploymentEmailTemplateCommand,
     UpdateDeploymentJwtTemplateCommand, UpdateDeploymentRestrictionsCommand,
     UpdateDeploymentSmtpConfigCommand, VerifySmtpConnectionCommand,
+    VerifySmtpConnectionDeps,
 };
 use common::db_router::ReadConsistency;
 use common::error::AppError;
@@ -22,7 +23,7 @@ use queries::{
 };
 
 use crate::application::AppState;
-use crate::application::deps;
+use common::deps;
 
 pub async fn get_deployment_with_settings(
     app_state: &AppState,
@@ -143,7 +144,7 @@ pub async fn verify_smtp_connection(
         config.from_email,
         config.use_tls,
     )
-    .execute_with_deps()
+    .execute_with_deps(VerifySmtpConnectionDeps)
     .await?;
 
     Ok(SmtpVerifyResponse {
@@ -165,7 +166,7 @@ pub async fn update_smtp_config(
         config.from_email.clone(),
         config.use_tls,
     )
-    .execute_with_deps()
+    .execute_with_deps(VerifySmtpConnectionDeps)
     .await?;
 
     let result = UpdateDeploymentSmtpConfigCommand::new(

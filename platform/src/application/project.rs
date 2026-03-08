@@ -1,14 +1,13 @@
 use commands::{
     CreateProductionDeploymentCommand, CreateProjectWithStagingDeploymentCommand,
-    CreateStagingDeploymentCommand, DeleteProjectCommand, VerifyDeploymentDnsDeps,
-    VerifyDeploymentDnsRecordsCommand,
+    CreateStagingDeploymentCommand, DeleteProjectCommand, VerifyDeploymentDnsRecordsCommand,
 };
 use common::{
     db_router::ReadConsistency,
 };
 
 use crate::application::{AppError, AppState};
-use crate::application::deps;
+use common::deps;
 use models::{Deployment, ProjectWithDeployments};
 use queries::GetProjectsWithDeploymentQuery;
 
@@ -155,15 +154,10 @@ pub async fn verify_deployment_dns_records(
     app_state: &AppState,
     input: VerifyDeploymentDnsRecordsInput,
 ) -> Result<Deployment, AppError> {
-    let deps = VerifyDeploymentDnsDeps {
-        db_router: &app_state.db_router,
-        cloudflare_service: &app_state.cloudflare_service,
-        dns_verification_service: &app_state.dns_verification_service,
-    };
     VerifyDeploymentDnsRecordsCommand::builder()
         .deployment_id(input.deployment_id)
         .build()?
-        .execute_with_deps(&deps)
+        .execute_with_deps(&deps::from_app(app_state).db().cloudflare().dns())
         .await
 }
 

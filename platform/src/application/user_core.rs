@@ -13,7 +13,7 @@ use models::{UserDetails, UserWithIdentifiers};
 use queries::{DeploymentActiveUserListQuery, GetUserDetailsQuery};
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
-use crate::application::deps;
+use common::deps;
 
 pub async fn get_active_user_list(
     app_state: &AppState,
@@ -172,6 +172,6 @@ async fn upload_user_profile_image(
     );
 
     UploadToCdnCommand::new(file_path, image_buffer)
-        .execute_with_deps(&app_state.s3_client)
+        .execute_with_deps(&deps::from_app(app_state).s3())
         .await
 }

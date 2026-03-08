@@ -678,26 +678,16 @@ impl DeploymentB2bBootstrapInsert {
         DeploymentB2bBootstrapInsertBuilder::default()
     }
 
-    #[allow(dead_code)]
     pub(super) async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres> + Send,
     {
         let mut tx = acquirer.begin().await?;
-        self.execute_with_deps(tx.as_mut()).await?;
-        tx.commit().await?;
-        Ok(())
-    }
-
-    pub(super) async fn execute_with_deps(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<(), AppError> {
         let now = chrono::Utc::now();
         let deployment_id = self.b2b_settings.settings.deployment_id;
 
         self.insert_workspace_role(
-            conn,
+            tx.as_mut(),
             self.workspace_creator_role_id,
             deployment_id,
             &self.b2b_settings.default_workspace_creator_role,
@@ -705,7 +695,7 @@ impl DeploymentB2bBootstrapInsert {
         )
         .await?;
         self.insert_workspace_role(
-            conn,
+            tx.as_mut(),
             self.workspace_member_role_id,
             deployment_id,
             &self.b2b_settings.default_workspace_member_role,
@@ -713,7 +703,7 @@ impl DeploymentB2bBootstrapInsert {
         )
         .await?;
         self.insert_organization_role(
-            conn,
+            tx.as_mut(),
             self.org_creator_role_id,
             deployment_id,
             &self.b2b_settings.default_org_creator_role,
@@ -721,7 +711,7 @@ impl DeploymentB2bBootstrapInsert {
         )
         .await?;
         self.insert_organization_role(
-            conn,
+            tx.as_mut(),
             self.org_member_role_id,
             deployment_id,
             &self.b2b_settings.default_org_member_role,
@@ -782,9 +772,10 @@ impl DeploymentB2bBootstrapInsert {
             now,
             now,
         )
-        .execute(&mut *conn)
+        .execute(tx.as_mut())
         .await?;
 
+        tx.commit().await?;
         Ok(())
     }
 
@@ -935,21 +926,11 @@ impl ConsoleAppBootstrapInsert {
         ConsoleAppBootstrapInsertBuilder::default()
     }
 
-    #[allow(dead_code)]
     pub(super) async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres> + Send,
     {
         let mut tx = acquirer.begin().await?;
-        self.execute_with_deps(tx.as_mut()).await?;
-        tx.commit().await?;
-        Ok(())
-    }
-
-    pub(super) async fn execute_with_deps(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<(), AppError> {
         let app_name = self.target_deployment_id.to_string();
         let now = chrono::Utc::now();
 
@@ -965,7 +946,7 @@ impl ConsoleAppBootstrapInsert {
             now,
             now,
         )
-        .execute(&mut *conn)
+        .execute(tx.as_mut())
         .await?;
 
         let signing_secret = generate_signing_secret();
@@ -984,9 +965,10 @@ impl ConsoleAppBootstrapInsert {
             now,
             format!("wh_{}", self.target_deployment_id)
         )
-        .execute(&mut *conn)
+        .execute(tx.as_mut())
         .await?;
 
+        tx.commit().await?;
         Ok(())
     }
 }
@@ -1131,90 +1113,6 @@ impl DeploymentSocialConnectionsBulkInsert {
         .await?;
 
         Ok(())
-    }
-}
-
-pub(super) struct BillingAccountLockResult {
-    pub(super) id: i64,
-    pub(super) status: String,
-    pub(super) pulse_usage_disabled: bool,
-}
-
-#[derive(Default)]
-pub(super) struct BillingAccountForOwnerLockQuery {
-    owner_id: Option<String>,
-}
-
-impl BillingAccountForOwnerLockQuery {
-    pub(super) fn builder() -> Self {
-        Self::default()
-    }
-
-    pub(super) fn owner_id(mut self, owner_id: impl Into<String>) -> Self {
-        self.owner_id = Some(owner_id.into());
-        self
-    }
-
-    pub(super) async fn execute_with_db(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<Option<BillingAccountLockResult>, AppError> {
-        let owner_id = self
-            .owner_id
-            .as_deref()
-            .ok_or_else(|| AppError::Validation("owner_id is required".to_string()))?;
-
-        let row = sqlx::query!(
-            "SELECT id, status, COALESCE(pulse_usage_disabled, false) AS \"pulse_usage_disabled!\" FROM billing_accounts WHERE owner_id = $1 FOR UPDATE",
-            owner_id
-        )
-        .fetch_optional(conn)
-        .await?;
-
-        Ok(row.map(|r| BillingAccountLockResult {
-            id: r.id,
-            status: r.status,
-            pulse_usage_disabled: r.pulse_usage_disabled,
-        }))
-    }
-}
-
-#[derive(Default)]
-pub(super) struct ProjectsCountByBillingAccountQuery {
-    billing_account_id: Option<i64>,
-}
-
-impl ProjectsCountByBillingAccountQuery {
-    pub(super) fn builder() -> Self {
-        Self::default()
-    }
-
-    pub(super) fn billing_account_id(mut self, billing_account_id: i64) -> Self {
-        self.billing_account_id = Some(billing_account_id);
-        self
-    }
-
-    pub(super) async fn execute_with_db(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<i64, AppError> {
-        let billing_account_id = self
-            .billing_account_id
-            .ok_or_else(|| AppError::Validation("billing_account_id is required".to_string()))?;
-
-        let row = sqlx::query!(
-            r#"
-            SELECT COUNT(*)::BIGINT as "count!"
-            FROM projects
-            WHERE billing_account_id = $1
-              AND deleted_at IS NULL
-            "#,
-            billing_account_id
-        )
-        .fetch_one(conn)
-        .await?;
-
-        Ok(row.count)
     }
 }
 
@@ -1435,204 +1333,6 @@ impl StagingDeploymentInsert {
             mode: row.mode,
             mail_from_host: row.mail_from_host,
         })
-    }
-}
-
-pub(super) struct ProjectWithBillingForStagingRow {
-    pub(super) name: String,
-    pub(super) status: String,
-    pub(super) pulse_usage_disabled: bool,
-}
-
-#[derive(Default)]
-pub(super) struct ProjectWithBillingForStagingQuery {
-    project_id: Option<i64>,
-}
-
-impl ProjectWithBillingForStagingQuery {
-    pub(super) fn builder() -> Self {
-        Self::default()
-    }
-
-    pub(super) fn project_id(mut self, project_id: i64) -> Self {
-        self.project_id = Some(project_id);
-        self
-    }
-
-    pub(super) async fn execute_with_db(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<Option<ProjectWithBillingForStagingRow>, AppError> {
-        let project_id = self
-            .project_id
-            .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?;
-
-        let row = sqlx::query!(
-            r#"
-            SELECT p.name, ba.status, COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!"
-            FROM projects p
-            JOIN billing_accounts ba ON p.billing_account_id = ba.id
-            WHERE p.id = $1 AND p.deleted_at IS NULL
-            "#,
-            project_id
-        )
-        .fetch_optional(conn)
-        .await?;
-
-        Ok(row.map(|r| ProjectWithBillingForStagingRow {
-            name: r.name,
-            status: r.status,
-            pulse_usage_disabled: r.pulse_usage_disabled,
-        }))
-    }
-}
-
-#[derive(Default)]
-pub(super) struct StagingDeploymentCountByProjectQuery {
-    project_id: Option<i64>,
-}
-
-impl StagingDeploymentCountByProjectQuery {
-    pub(super) fn builder() -> Self {
-        Self::default()
-    }
-
-    pub(super) fn project_id(mut self, project_id: i64) -> Self {
-        self.project_id = Some(project_id);
-        self
-    }
-
-    pub(super) async fn execute_with_db(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<i64, AppError> {
-        let project_id = self
-            .project_id
-            .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?;
-
-        let row = sqlx::query!(
-            "SELECT COUNT(*) as count FROM deployments WHERE project_id = $1 AND mode = 'staging' AND deleted_at IS NULL",
-            project_id
-        )
-        .fetch_one(conn)
-        .await?;
-
-        Ok(row.count.unwrap_or(0))
-    }
-}
-
-pub(super) struct ProjectForProductionRow {
-    pub(super) name: String,
-    pub(super) status: String,
-}
-
-#[derive(Default)]
-pub(super) struct ProjectForProductionQuery {
-    project_id: Option<i64>,
-}
-
-impl ProjectForProductionQuery {
-    pub(super) fn builder() -> Self {
-        Self::default()
-    }
-
-    pub(super) fn project_id(mut self, project_id: i64) -> Self {
-        self.project_id = Some(project_id);
-        self
-    }
-
-    pub(super) async fn execute_with_db(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<Option<ProjectForProductionRow>, AppError> {
-        let project_id = self
-            .project_id
-            .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?;
-
-        let row = ProjectWithBillingForStagingQuery::builder()
-            .project_id(project_id)
-            .execute_with_db(conn)
-            .await?;
-
-        Ok(row.map(|r| ProjectForProductionRow {
-            name: r.name,
-            status: r.status,
-        }))
-    }
-}
-
-#[derive(Default)]
-pub(super) struct ExistingProductionDeploymentQuery {
-    project_id: Option<i64>,
-}
-
-impl ExistingProductionDeploymentQuery {
-    pub(super) fn builder() -> Self {
-        Self::default()
-    }
-
-    pub(super) fn project_id(mut self, project_id: i64) -> Self {
-        self.project_id = Some(project_id);
-        self
-    }
-
-    pub(super) async fn execute_with_db(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<Option<i64>, AppError> {
-        let project_id = self
-            .project_id
-            .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?;
-
-        let row = sqlx::query!(
-            "SELECT id FROM deployments WHERE project_id = $1 AND mode = 'production' AND deleted_at IS NULL",
-            project_id
-        )
-        .fetch_optional(conn)
-        .await?;
-
-        Ok(row.map(|r| r.id))
-    }
-}
-
-pub(super) struct ExistingDomainDeploymentRow {
-    pub(super) id: i64,
-}
-
-#[derive(Default)]
-pub(super) struct ExistingDomainDeploymentQuery {
-    custom_domain: Option<String>,
-}
-
-impl ExistingDomainDeploymentQuery {
-    pub(super) fn builder() -> Self {
-        Self::default()
-    }
-
-    pub(super) fn custom_domain(mut self, custom_domain: impl Into<String>) -> Self {
-        self.custom_domain = Some(custom_domain.into());
-        self
-    }
-
-    pub(super) async fn execute_with_db(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<Option<ExistingDomainDeploymentRow>, AppError> {
-        let custom_domain = self
-            .custom_domain
-            .as_deref()
-            .ok_or_else(|| AppError::Validation("custom_domain is required".to_string()))?;
-
-        let row = sqlx::query!(
-            "SELECT id FROM deployments WHERE (backend_host = $1 OR frontend_host = $2 OR mail_from_host = $3) AND deleted_at IS NULL",
-            format!("frontend.{}", custom_domain),
-            format!("accounts.{}", custom_domain),
-            custom_domain
-        )
-        .fetch_optional(conn)
-        .await?;
-
-        Ok(row.map(|r| ExistingDomainDeploymentRow { id: r.id }))
     }
 }
 
@@ -1911,95 +1611,6 @@ impl DeploymentDomainVerificationUpdate {
     }
 }
 
-pub(super) struct DeploymentByIdRow {
-    pub(super) id: i64,
-    pub(super) created_at: chrono::DateTime<chrono::Utc>,
-    pub(super) updated_at: chrono::DateTime<chrono::Utc>,
-    pub(super) maintenance_mode: bool,
-    pub(super) backend_host: String,
-    pub(super) frontend_host: String,
-    pub(super) publishable_key: String,
-    pub(super) project_id: i64,
-    pub(super) mode: String,
-    pub(super) mail_from_host: String,
-    pub(super) domain_verification_records: Option<serde_json::Value>,
-    pub(super) email_verification_records: Option<serde_json::Value>,
-    pub(super) email_provider: String,
-    pub(super) custom_smtp_config: Option<serde_json::Value>,
-}
-
-#[derive(Default)]
-pub(super) struct DeploymentByIdQuery {
-    deployment_id: Option<i64>,
-}
-
-impl DeploymentByIdQuery {
-    pub(super) fn builder() -> Self {
-        Self::default()
-    }
-
-    pub(super) fn deployment_id(mut self, deployment_id: i64) -> Self {
-        self.deployment_id = Some(deployment_id);
-        self
-    }
-
-    #[allow(dead_code)]
-    pub(super) async fn execute_with_db<'a, A>(
-        &self,
-        acquirer: A,
-    ) -> Result<DeploymentByIdRow, AppError>
-    where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-    {
-        let mut tx = acquirer.begin().await?;
-        let row = self.execute_with_deps(tx.as_mut()).await?;
-        tx.commit().await?;
-        Ok(row)
-    }
-
-    pub(super) async fn execute_with_deps(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<DeploymentByIdRow, AppError> {
-        let deployment_id = self
-            .deployment_id
-            .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
-
-        let row = sqlx::query!(
-            r#"
-            SELECT id, created_at, updated_at, deleted_at,
-                   maintenance_mode, backend_host, frontend_host, publishable_key,
-                   project_id, mode, mail_from_host,
-                   domain_verification_records::jsonb as domain_verification_records,
-                   email_verification_records::jsonb as email_verification_records,
-                   email_provider, custom_smtp_config::jsonb as custom_smtp_config
-            FROM deployments
-            WHERE id = $1 AND deleted_at IS NULL
-            "#,
-            deployment_id
-        )
-        .fetch_one(&mut *conn)
-        .await?;
-
-        Ok(DeploymentByIdRow {
-            id: row.id,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            maintenance_mode: row.maintenance_mode,
-            backend_host: row.backend_host,
-            frontend_host: row.frontend_host,
-            publishable_key: row.publishable_key,
-            project_id: row.project_id,
-            mode: row.mode,
-            mail_from_host: row.mail_from_host,
-            domain_verification_records: row.domain_verification_records,
-            email_verification_records: row.email_verification_records,
-            email_provider: row.email_provider,
-            custom_smtp_config: row.custom_smtp_config,
-        })
-    }
-}
-
 #[derive(Default)]
 pub(super) struct DeploymentDnsRecordsUpdate {
     deployment_id: Option<i64>,
@@ -2033,21 +1644,10 @@ impl DeploymentDnsRecordsUpdate {
         self
     }
 
-    #[allow(dead_code)]
-    pub(super) async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(), AppError>
+    pub(super) async fn execute_with_db<'e, E>(&self, executor: E) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let mut tx = acquirer.begin().await?;
-        self.execute_with_deps(tx.as_mut()).await?;
-        tx.commit().await?;
-        Ok(())
-    }
-
-    pub(super) async fn execute_with_deps(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<(), AppError> {
         let deployment_id = self
             .deployment_id
             .ok_or_else(|| AppError::Validation("deployment_id is required".to_string()))?;
@@ -2073,47 +1673,10 @@ impl DeploymentDnsRecordsUpdate {
             chrono::Utc::now(),
             deployment_id
         )
-        .execute(&mut *conn)
+        .execute(executor)
         .await?;
 
         Ok(())
-    }
-}
-
-#[derive(Default)]
-pub(super) struct ActiveDeploymentIdsByProjectQuery {
-    project_id: Option<i64>,
-}
-
-impl ActiveDeploymentIdsByProjectQuery {
-    pub(super) fn builder() -> Self {
-        Self::default()
-    }
-
-    pub(super) fn project_id(mut self, project_id: i64) -> Self {
-        self.project_id = Some(project_id);
-        self
-    }
-
-    pub(super) async fn execute_with_db(
-        &self,
-        conn: &mut sqlx::PgConnection,
-    ) -> Result<Vec<i64>, AppError> {
-        let project_id = self
-            .project_id
-            .ok_or_else(|| AppError::Validation("project_id is required".to_string()))?;
-
-        let rows = sqlx::query!(
-            r#"
-            SELECT id FROM deployments
-            WHERE project_id = $1 AND deleted_at IS NULL
-            "#,
-            project_id
-        )
-        .fetch_all(conn)
-        .await?;
-
-        Ok(rows.into_iter().map(|r| r.id).collect())
     }
 }
 

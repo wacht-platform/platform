@@ -1,5 +1,5 @@
 use aws_sdk_s3::primitives::ByteStream;
-use common::error::AppError;
+use common::{HasS3Client, error::AppError};
 use tracing::{debug, error, info};
 
 pub struct WriteToAgentStorageCommand {
@@ -24,7 +24,10 @@ impl WriteToAgentStorageCommand {
 }
 
 impl WriteToAgentStorageCommand {
-    pub async fn execute_with_deps(self, client: &aws_sdk_s3::Client) -> Result<String, AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<String, AppError>
+    where
+        D: HasS3Client + ?Sized,
+    {
         info!("[AgentStorage] Starting file upload to agent storage");
         debug!(
             "[AgentStorage] Upload details - key: {}, content_type: {:?}, body_size: {} bytes",
@@ -38,7 +41,8 @@ impl WriteToAgentStorageCommand {
         let bucket = "wacht-agents";
         debug!("[AgentStorage] Target bucket: {}", bucket);
 
-        let mut request = client
+        let mut request = deps
+            .s3_client()
             .put_object()
             .bucket(bucket)
             .key(&self.key)
@@ -105,8 +109,11 @@ impl DeleteFromAgentStorageCommand {
 }
 
 impl DeleteFromAgentStorageCommand {
-    pub async fn execute_with_deps(self, client: &aws_sdk_s3::Client) -> Result<(), AppError> {
-        client
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasS3Client + ?Sized,
+    {
+        deps.s3_client()
             .delete_object()
             .bucket("wacht-agents")
             .key(&self.key)
@@ -129,8 +136,12 @@ impl DeletePrefixFromAgentStorageCommand {
 }
 
 impl DeletePrefixFromAgentStorageCommand {
-    pub async fn execute_with_deps(self, client: &aws_sdk_s3::Client) -> Result<(), AppError> {
-        let list_result = client
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
+    where
+        D: HasS3Client + ?Sized,
+    {
+        let list_result = deps
+            .s3_client()
             .list_objects_v2()
             .bucket("wacht-agents")
             .prefix(&self.prefix)
@@ -141,7 +152,7 @@ impl DeletePrefixFromAgentStorageCommand {
         if let Some(objects) = list_result.contents {
             for obj in objects {
                 if let Some(key) = obj.key {
-                    client
+                    deps.s3_client()
                         .delete_object()
                         .bucket("wacht-agents")
                         .key(&key)

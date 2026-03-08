@@ -16,7 +16,7 @@ use common::{
 use models::pulse_transaction::PulseTransactionType;
 use queries::billing::{GetBillingAccountByProviderCustomerIdQuery, GetBillingAccountQuery};
 use tracing::{error, info, warn};
-use crate::application::deps;
+use common::deps;
 
 pub async fn handle_dodo_webhook(
     app_state: &AppState,

@@ -17,7 +17,7 @@ use dto::json::webhook_requests::{
 use models::webhook::WebhookApp;
 use queries::{
     GetWebhookAppByNameQuery,
-    webhook::{GetWebhookAppsQuery, GetWebhookEventsQuery},
+    webhook::{GetEventCatalogQuery, GetWebhookAppsQuery, GetWebhookEventsQuery, ListEventCatalogsQuery},
 };
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
@@ -68,7 +68,7 @@ pub async fn list_event_catalogs(
     deployment_id: i64,
 ) -> Result<PaginatedResponse<models::webhook::WebhookEventCatalog>, AppError> {
     let catalogs: Vec<models::webhook::WebhookEventCatalog> =
-        commands::webhook_event_catalog::ListEventCatalogsQuery::new(deployment_id)
+        ListEventCatalogsQuery::new(deployment_id)
             .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
             .await?;
 
@@ -92,7 +92,7 @@ pub async fn get_event_catalog(
     slug: String,
 ) -> Result<models::webhook::WebhookEventCatalog, AppError> {
     let catalog: Option<models::webhook::WebhookEventCatalog> =
-        commands::webhook_event_catalog::GetEventCatalogQuery::new(deployment_id, slug)
+        GetEventCatalogQuery::new(deployment_id, slug)
             .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
             .await?;
 
@@ -223,7 +223,7 @@ pub async fn get_webhook_catalog(
         .ok_or_else(|| AppError::NotFound("No catalog assigned to this app".to_string()))?;
 
     let catalog =
-        commands::webhook_event_catalog::GetEventCatalogQuery::new(deployment_id, catalog_slug)
+        GetEventCatalogQuery::new(deployment_id, catalog_slug)
             .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
             .await?
             .ok_or_else(|| AppError::NotFound("Event catalog not found".to_string()))?;

@@ -23,7 +23,7 @@ impl DeleteProjectCommand {
         A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut tx = acquirer.begin().await?;
-        let deployment_ids = ActiveDeploymentIdsByProjectQuery::builder()
+        let deployment_ids = queries::ActiveDeploymentIdsByProjectQuery::builder()
             .project_id(self.id)
             .execute_with_db(tx.as_mut())
             .await?;

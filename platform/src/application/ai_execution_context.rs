@@ -5,7 +5,7 @@ use commands::agent_execution::{
 use commands::{
     CreateConversationCommand, CreateExecutionContextCommand,
     EnsurePulseUsageAllowedForDeploymentCommand, UpdateExecutionContextCommand,
-    UpdateExecutionContextQuery,
+    UpdateExecutionContextStateCommand,
 };
 use common::ReadConsistency;
 use common::error::AppError;
@@ -23,8 +23,9 @@ use tracing::{error, info};
 
 use crate::{
     api::pagination::paginate_results,
-    application::{AppState, deps, response::PaginatedResponse},
+    application::{AppState, response::PaginatedResponse},
 };
+use common::deps;
 
 const EXECUTION_VARIANT_VALIDATION_ERROR: &str =
     "Exactly one execution_type variant must be provided";
@@ -388,7 +389,7 @@ pub async fn execute_agent_async(
                 .await?;
 
             let update_context_command =
-                UpdateExecutionContextQuery::new(context_id, deployment_id)
+                UpdateExecutionContextStateCommand::new(context_id, deployment_id)
                     .with_status(ExecutionContextStatus::Failed)
                     .mark_status_as_cancellation();
             let update_deps = deps::from_app(app_state).db().nats().id();

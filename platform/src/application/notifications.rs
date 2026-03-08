@@ -10,7 +10,7 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeSet;
 
 use crate::application::AppState;
-use crate::application::deps;
+use common::deps;
 use crate::application::response::ApiResult;
 
 #[derive(Debug, Deserialize)]

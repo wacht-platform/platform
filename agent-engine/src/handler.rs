@@ -108,9 +108,9 @@ impl AgentHandler {
         };
 
         if let Err(error) = &execution_result {
-            let _ = commands::UpdateExecutionContextQuery::new(context.id, deployment_id)
+            let _ = commands::UpdateExecutionContextStateCommand::new(context.id, deployment_id)
                 .with_status(models::ExecutionContextStatus::Failed)
-                .execute_with_deps(&self.app_state)
+                .execute_with_deps(&common::deps::from_app(&self.app_state).db().nats().id())
                 .await;
 
             let _ = commands::StoreCompletionSummaryEnhancedCommand::new(
@@ -419,7 +419,7 @@ async fn publish_stream_event(
         subject
     );
 
-    use commands::{webhook_trigger::TriggerWebhookEventDeps, TriggerWebhookEventCommand};
+    use commands::webhook_trigger::TriggerWebhookEventCommand;
 
     let webhook_payload = serde_json::json!({
         "context_id": context_key,
@@ -441,13 +441,7 @@ async fn publish_stream_event(
     );
 
     if let Err(e) = trigger_command
-        .execute_with_deps(TriggerWebhookEventDeps {
-            db_router: &app_state.db_router,
-            redis_client: &app_state.redis_client,
-            clickhouse_service: &app_state.clickhouse_service,
-            nats_client: &app_state.nats_client,
-            id_gen: || Ok(app_state.sf.next_id()? as i64),
-        })
+        .execute_with_deps(&common::deps::from_app(app_state).db().redis().nats().id())
         .await
     {
         tracing::warn!(
@@ -496,9 +490,9 @@ async fn mark_context_failed_due_to_parent_abort(
     deployment_id: i64,
     parent_context_id: i64,
 ) -> Result<(), AppError> {
-    let fail_context_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
+    let fail_context_cmd = commands::UpdateExecutionContextStateCommand::new(context_id, deployment_id)
         .with_status(ExecutionContextStatus::Failed);
-    fail_context_cmd.execute_with_deps(app_state).await?;
+    fail_context_cmd.execute_with_deps(&common::deps::from_app(app_state).db().nats().id()).await?;
 
     let summary_cmd = commands::StoreCompletionSummaryEnhancedCommand::new(
         context_id,
@@ -524,10 +518,10 @@ async fn mark_context_failed_due_to_parent_abort(
 /// Setting status to Failed triggers CancelDescendantExecutionsCommand internally,
 /// which BFS-walks all descendants and sends NATS stop signals.
 async fn mark_context_cancelled(app_state: &AppState, context_id: i64, deployment_id: i64) {
-    let cancel_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
+    let cancel_cmd = commands::UpdateExecutionContextStateCommand::new(context_id, deployment_id)
         .with_status(ExecutionContextStatus::Failed)
         .mark_status_as_cancellation();
-    let _ = cancel_cmd.execute_with_deps(app_state).await;
+    let _ = cancel_cmd.execute_with_deps(&common::deps::from_app(app_state).db().nats().id()).await;
 
     let summary_cmd = commands::StoreCompletionSummaryEnhancedCommand::new(
         context_id,
@@ -622,9 +616,9 @@ async fn apply_spawn_control_params(
         );
     }
 
-    let update_context_cmd = commands::UpdateExecutionContextQuery::new(context_id, deployment_id)
+    let update_context_cmd = commands::UpdateExecutionContextStateCommand::new(context_id, deployment_id)
         .with_external_resource_metadata(metadata);
-    update_context_cmd.execute_with_deps(app_state).await?;
+    update_context_cmd.execute_with_deps(&common::deps::from_app(app_state).db().nats().id()).await?;
 
     let status_cmd = commands::PostStatusUpdateCommand::new(
         context_id,

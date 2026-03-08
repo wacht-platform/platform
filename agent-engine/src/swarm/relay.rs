@@ -1,4 +1,4 @@
-use commands::{CreateChildContextCommand, UpdateExecutionContextQuery};
+use commands::{CreateChildContextCommand, UpdateExecutionContextStateCommand};
 use common::error::AppError;
 use models::AgentExecutionContext;
 use serde::Serialize;
@@ -159,12 +159,12 @@ async fn execute_relay(
             .unwrap_or_default();
         let inherit_until = parent_history.last().map(|c| c.id).unwrap_or(0);
         let update_context_command =
-            UpdateExecutionContextQuery::new(child_context.id, current_agent.deployment_id)
+            UpdateExecutionContextStateCommand::new(child_context.id, current_agent.deployment_id)
                 .with_external_resource_metadata(serde_json::json!({
                     "inherit_parent_context_id": current_context_id,
                     "inherit_parent_until_conversation_id": inherit_until,
                 }));
-        update_context_command.execute_with_deps(app_state).await?;
+        update_context_command.execute_with_deps(&common::deps::from_app(app_state).db().nats().id()).await?;
 
         (child_context, true)
     };
@@ -212,7 +212,7 @@ async fn execute_relay(
             Some(resolved_agent_name.clone()),
             conversation_id,
         );
-        publish_command.execute_with_deps(app_state).await?;
+        publish_command.execute_with_deps(&common::deps::from_app(app_state).nats().id()).await?;
     }
 
     response::success(

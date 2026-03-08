@@ -17,7 +17,7 @@ use queries::{
 use queries::{GetDeploymentOrganizationRolesQuery, GetDeploymentWorkspaceRolesQuery};
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
-use crate::application::deps;
+use common::deps;
 
 fn paginated_with_has_more<T>(
     data: Vec<T>,

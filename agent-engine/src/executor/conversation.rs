@@ -1,6 +1,6 @@
 use super::core::AgentExecutor;
 
-use commands::{CreateConversationCommand, UpdateExecutionContextQuery};
+use commands::{CreateConversationCommand, UpdateExecutionContextStateCommand};
 use common::error::AppError;
 use dto::json::StreamEvent;
 use models::{
@@ -396,10 +396,10 @@ impl AgentExecutor {
             pending_input_request: Some(user_input_state),
         };
 
-        UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
+        UpdateExecutionContextStateCommand::new(self.ctx.context_id, self.ctx.agent.deployment_id)
             .with_execution_state(execution_state)
             .with_status(ExecutionContextStatus::WaitingForInput)
-            .execute_with_deps(&self.ctx.app_state)
+            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
             .await?;
 
         Ok(())

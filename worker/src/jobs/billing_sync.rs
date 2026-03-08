@@ -335,7 +335,7 @@ async fn sync_deployment(
                 transaction_type,
                 reference_id: Some(app_state.sf.next_id().unwrap().to_string()),
             };
-            match deduct_pulse_command.execute_with_deps(app_state).await {
+            match deduct_pulse_command.execute_with_deps(&common::deps::from_app(app_state).db().nats().id()).await {
                 Ok(_) => {
                     info!(
                         "[BILLING SYNC] Deducted {} Pulse cents for {} from deployment {}",
@@ -403,7 +403,7 @@ async fn sync_deployment(
             metrics: metrics_to_sync,
             redis_prefix: current_prefix.clone(),
         }
-        .execute_with_deps(app_state)
+        .execute_with_deps(&common::deps::from_app(app_state).db().redis())
         .await?
     } else {
         Vec::new()

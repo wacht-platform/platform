@@ -17,7 +17,7 @@ use crate::{
     api::pagination::paginate_results,
     application::{AppState, response::PaginatedResponse},
 };
-use crate::application::deps;
+use common::deps;
 
 #[derive(serde::Serialize)]
 pub struct IntegrationWithUrl {

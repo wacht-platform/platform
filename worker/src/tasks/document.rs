@@ -37,7 +37,7 @@ pub async fn process_document_impl(
             text_processing_service: &app_state.text_processing_service,
             dispatch_batch: |dep_id, kb_id, batch_size| async move {
                 commands::DispatchDocumentBatchTaskCommand::new(dep_id, kb_id, batch_size)
-                    .execute_with_deps(&app_state.nats_client)
+                    .execute_with_deps(&common::deps::from_app(app_state).nats())
                     .await
             },
         })

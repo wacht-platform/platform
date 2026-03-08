@@ -17,14 +17,14 @@ impl VerifyDeploymentDnsRecordsCommand {
         Self { deployment_id }
     }
 
-    pub async fn execute_with_deps(
-        self,
-        deps: &VerifyDeploymentDnsDeps<'_>,
-    ) -> Result<Deployment, AppError> {
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Deployment, AppError>
+    where
+        D: common::HasDbRouter + common::HasCloudflareService + common::HasDnsVerificationService,
+    {
         // Get current deployment with DNS records
-        let deployment_row = DeploymentByIdQuery::builder()
+        let deployment_row = queries::DeploymentByIdQuery::builder()
             .deployment_id(self.deployment_id)
-            .execute_with_db(deps.db_router.writer())
+            .execute_with_db(deps.writer_pool())
             .await?;
 
         // Extract domain from backend host for email verification
@@ -46,7 +46,7 @@ impl VerifyDeploymentDnsRecordsCommand {
                 AppError::Internal(format!("Invalid domain_verification_records JSON: {}", e))
             })?
             .unwrap_or_else(|| {
-                deps.cloudflare_service
+                deps.cloudflare_service()
                     .generate_domain_verification_records(
                         &deployment_row.frontend_host,
                         &deployment_row.backend_host,
@@ -62,8 +62,8 @@ impl VerifyDeploymentDnsRecordsCommand {
             })?
             .unwrap_or_default();
 
-        deps.dns_verification_service
-            .verify_domain_records(&mut domain_verification_records, deps.cloudflare_service)
+        deps.dns_verification_service()
+            .verify_domain_records(&mut domain_verification_records, deps.cloudflare_service())
             .await
             .map_err(|e| {
                 tracing::warn!("Failed to verify domain records: {}", e);
@@ -71,7 +71,7 @@ impl VerifyDeploymentDnsRecordsCommand {
             })
             .unwrap_or(());
 
-        deps.dns_verification_service
+        deps.dns_verification_service()
             .verify_email_records(&mut email_verification_records)
             .await
             .map_err(|e| {
@@ -83,10 +83,10 @@ impl VerifyDeploymentDnsRecordsCommand {
         tracing::info!("DNS verification completed for domain: {}", domain);
 
         let domain_verified = deps
-            .dns_verification_service
+            .dns_verification_service()
             .are_domain_records_verified(&domain_verification_records);
         let email_verified = deps
-            .dns_verification_service
+            .dns_verification_service()
             .are_email_records_verified(&email_verification_records);
 
         let verification_status = if domain_verified && email_verified {
@@ -105,7 +105,7 @@ impl VerifyDeploymentDnsRecordsCommand {
                 serde_json::to_value(&email_verification_records)
                     .map_err(|e| AppError::Serialization(e.to_string()))?,
             )
-            .execute_with_db(deps.db_router.writer())
+            .execute_with_db(deps.writer_pool())
             .await?;
 
         let _final_verification_status = match verification_status {
@@ -122,7 +122,7 @@ impl VerifyDeploymentDnsRecordsCommand {
             verification_status
         );
 
-        Ok(Deployment {
+        build_production_deployment_model(ProductionDeploymentModelInput {
             id: deployment_row.id,
             created_at: deployment_row.created_at,
             updated_at: deployment_row.updated_at,
@@ -131,22 +131,12 @@ impl VerifyDeploymentDnsRecordsCommand {
             frontend_host: deployment_row.frontend_host,
             publishable_key: deployment_row.publishable_key,
             project_id: deployment_row.project_id,
-            mode: DeploymentMode::from(deployment_row.mode),
+            mode: deployment_row.mode,
             mail_from_host: deployment_row.mail_from_host,
             domain_verification_records: Some(domain_verification_records),
             email_verification_records: Some(email_verification_records),
-            email_provider: EmailProvider::from(deployment_row.email_provider),
-            custom_smtp_config: deployment_row
-                .custom_smtp_config
-                .map(|v| serde_json::from_value(v))
-                .transpose()
-                .map_err(|e| {
-                    AppError::Internal(format!("Invalid custom_smtp_config JSON: {}", e))
-                })?
-                .map(|mut c: CustomSmtpConfig| {
-                    c.password = String::new();
-                    c
-                }),
+            email_provider: deployment_row.email_provider,
+            custom_smtp_config: deployment_row.custom_smtp_config,
         })
     }
 }

@@ -1,5 +1,5 @@
 use chrono::{Datelike, Utc};
-use commands::webhook_trigger::{TriggerWebhookEventCommand, TriggerWebhookEventDeps};
+use commands::webhook_trigger::TriggerWebhookEventCommand;
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::webhook_requests::{TriggerWebhookEventRequest, TriggerWebhookEventResponse};
@@ -21,15 +21,8 @@ pub async fn trigger_webhook_event(
         command = command.with_filter_context(context);
     }
 
-    let result = command
-        .execute_with_deps(TriggerWebhookEventDeps {
-            db_router: &app_state.db_router,
-            redis_client: &app_state.redis_client,
-            clickhouse_service: &app_state.clickhouse_service,
-            nats_client: &app_state.nats_client,
-            id_gen: || Ok(app_state.sf.next_id()? as i64),
-        })
-        .await?;
+    let app_deps = common::deps::from_app(app_state).db().redis().nats().id();
+    let result = command.execute_with_deps(&app_deps).await?;
 
     tokio::spawn({
         let redis = app_state.redis_client.clone();

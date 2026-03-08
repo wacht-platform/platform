@@ -1,12 +1,13 @@
 use common::error::AppError;
 use common::validators::ProjectValidator;
-use common::{CloudflareService, DnsVerificationService, HasIdGenerator, PostmarkService};
+use common::HasIdGenerator;
 use models::{
     AuthFactorsEnabled, CustomSmtpConfig, DarkModeSettings, Deployment, DeploymentAuthSettings,
     DeploymentB2bSettings, DeploymentB2bSettingsWithRoles, DeploymentEmailTemplate, DeploymentMode,
     DeploymentOrganizationRole, DeploymentRestrictions, DeploymentSmsTemplate,
     DeploymentUISettings, DeploymentWorkspaceRole, EmailProvider, EmailSettings,
     EmailVerificationRecords, FirstFactor, IndividualAuthSettings, LightModeSettings,
+    DomainVerificationRecords,
     OauthCredentials, PasswordSettings, PhoneSettings, ProjectWithDeployments, SecondFactorPolicy,
     SocialConnectionProvider, UsernameSettings, VerificationPolicy, VerificationStatus,
 };
@@ -15,49 +16,16 @@ use base64::{Engine, engine::general_purpose::STANDARD, prelude::BASE64_STANDARD
 use std::env;
 use std::str::FromStr;
 
-pub trait IdGenerator: Send + Sync {
-    fn next_id(&self) -> Result<i64, AppError>;
-}
-
-pub struct DepsIdGeneratorAdapter<'a, D>
+fn next_id_from<D>(deps: &D) -> Result<i64, AppError>
 where
-    D: HasIdGenerator + Sync,
+    D: HasIdGenerator + ?Sized,
 {
-    deps: &'a D,
-}
-
-impl<'a, D> DepsIdGeneratorAdapter<'a, D>
-where
-    D: HasIdGenerator + Sync,
-{
-    pub fn new(deps: &'a D) -> Self {
-        Self { deps }
-    }
-}
-
-impl<D> IdGenerator for DepsIdGeneratorAdapter<'_, D>
-where
-    D: HasIdGenerator + Sync,
-{
-    fn next_id(&self) -> Result<i64, AppError> {
-        Ok(self.deps.id_generator().next_id()? as i64)
-    }
-}
-
-pub struct ProductionDeploymentDeps<'a> {
-    pub ids: &'a dyn IdGenerator,
-    pub cloudflare_service: &'a CloudflareService,
-    pub postmark_service: &'a PostmarkService,
-}
-
-pub struct VerifyDeploymentDnsDeps<'a> {
-    pub db_router: &'a common::DbRouter,
-    pub cloudflare_service: &'a CloudflareService,
-    pub dns_verification_service: &'a DnsVerificationService,
+    Ok(deps.id_generator().next_id()? as i64)
 }
 
 const DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG: &str = "default";
 const MAX_PROJECTS_PER_BILLING_ACCOUNT: i64 = 5;
+const MAX_STAGING_DEPLOYMENTS_PER_PROJECT: i64 = 3;
 const SOCIAL_AUTH_METHODS: &[&str] = &[
     "google",
     "apple",
@@ -393,14 +361,17 @@ struct DeploymentBootstrapInput<'a> {
     key_material: DeploymentKeyMaterial,
 }
 
-async fn bootstrap_deployment_defaults(
+async fn bootstrap_deployment_defaults<D>(
     conn: &mut sqlx::PgConnection,
-    ids: &dyn IdGenerator,
+    deps: &D,
     input: DeploymentBootstrapInput<'_>,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    D: HasIdGenerator + ?Sized,
+{
     let auth_settings = build_auth_settings(input.auth_methods, input.deployment_id);
     DeploymentAuthSettingsInsert::builder()
-        .id(ids.next_id()?)
+        .id(next_id_from(deps)?)
         .auth_settings(auth_settings)
         .build()?
         .execute_with_db(&mut *conn)
@@ -408,7 +379,7 @@ async fn bootstrap_deployment_defaults(
 
     let ui_settings = build_ui_settings(input.deployment_id, input.frontend_host, input.app_name);
     DeploymentUiSettingsInsert::builder()
-        .id(ids.next_id()?)
+        .id(next_id_from(deps)?)
         .ui_settings(ui_settings)
         .waitlist_page_url(input.waitlist_page_url)
         .support_page_url(input.support_page_url)
@@ -418,19 +389,19 @@ async fn bootstrap_deployment_defaults(
 
     let b2b_settings = build_b2b_settings(input.deployment_id);
     DeploymentB2bBootstrapInsert::builder()
-        .settings_row_id(ids.next_id()?)
-        .workspace_creator_role_id(ids.next_id()?)
-        .workspace_member_role_id(ids.next_id()?)
-        .org_creator_role_id(ids.next_id()?)
-        .org_member_role_id(ids.next_id()?)
+        .settings_row_id(next_id_from(deps)?)
+        .workspace_creator_role_id(next_id_from(deps)?)
+        .workspace_member_role_id(next_id_from(deps)?)
+        .org_creator_role_id(next_id_from(deps)?)
+        .org_member_role_id(next_id_from(deps)?)
         .b2b_settings(b2b_settings)
         .build()?
-        .execute_with_deps(&mut *conn)
+        .execute_with_db(&mut *conn)
         .await?;
 
     let restrictions = build_restrictions(input.deployment_id);
     DeploymentRestrictionsInsert::builder()
-        .id(ids.next_id()?)
+        .id(next_id_from(deps)?)
         .restrictions(restrictions)
         .build()?
         .execute_with_db(&mut *conn)
@@ -438,7 +409,7 @@ async fn bootstrap_deployment_defaults(
 
     let sms_templates = build_sms_templates(input.deployment_id);
     DeploymentSmsTemplatesInsert::builder()
-        .id(ids.next_id()?)
+        .id(next_id_from(deps)?)
         .sms_templates(sms_templates)
         .build()?
         .execute_with_db(&mut *conn)
@@ -446,14 +417,14 @@ async fn bootstrap_deployment_defaults(
 
     let email_templates = build_email_templates(input.deployment_id);
     DeploymentEmailTemplatesInsert::builder()
-        .id(ids.next_id()?)
+        .id(next_id_from(deps)?)
         .email_templates(email_templates)
         .build()?
         .execute_with_db(&mut *conn)
         .await?;
 
     DeploymentKeyPairsInsert::builder()
-        .id(ids.next_id()?)
+        .id(next_id_from(deps)?)
         .deployment_id(input.deployment_id)
         .public_key(input.key_material.public_key)
         .private_key(input.key_material.private_key)
@@ -467,7 +438,7 @@ async fn bootstrap_deployment_defaults(
         DeploymentSocialConnectionsBulkInsert::from_auth_methods(
             input.deployment_id,
             input.auth_methods,
-            || ids.next_id(),
+            || next_id_from(deps),
         )?
     {
         social_connections_insert
@@ -481,11 +452,11 @@ async fn bootstrap_deployment_defaults(
         .target_deployment_id(input.deployment_id)
         .event_catalog_slug(DEFAULT_WEBHOOK_EVENT_CATALOG_SLUG)
         .build()?
-        .execute_with_deps(&mut *conn)
+        .execute_with_db(&mut *conn)
         .await?;
 
     DeploymentAiSettingsInsert::builder()
-        .id(ids.next_id()?)
+        .id(next_id_from(deps)?)
         .deployment_id(input.deployment_id)
         .build()?
         .execute_with_db(&mut *conn)
@@ -494,18 +465,21 @@ async fn bootstrap_deployment_defaults(
     Ok(())
 }
 
-async fn insert_staging_deployment_with_defaults(
+async fn insert_staging_deployment_with_defaults<D>(
     conn: &mut sqlx::PgConnection,
-    ids: &dyn IdGenerator,
+    deps: &D,
     project_id: i64,
     app_name: String,
     auth_methods: &[String],
     key_material: DeploymentKeyMaterial,
-) -> Result<StagingDeploymentInsertedRow, AppError> {
+) -> Result<StagingDeploymentInsertedRow, AppError>
+where
+    D: HasIdGenerator + ?Sized,
+{
     let hosts = build_staging_deployment_hosts();
 
     let deployment_row = StagingDeploymentInsert::builder()
-        .id(ids.next_id()?)
+        .id(next_id_from(deps)?)
         .project_id(project_id)
         .backend_host(hosts.backend_host)
         .frontend_host(hosts.frontend_host)
@@ -517,7 +491,7 @@ async fn insert_staging_deployment_with_defaults(
     let waitlist_url = format!("https://{}/waitlist", deployment_row.frontend_host);
     bootstrap_deployment_defaults(
         conn,
-        ids,
+        deps,
         DeploymentBootstrapInput {
             deployment_id: deployment_row.id,
             frontend_host: &deployment_row.frontend_host,
@@ -531,6 +505,44 @@ async fn insert_staging_deployment_with_defaults(
     .await?;
 
     Ok(deployment_row)
+}
+
+async fn create_staging_deployment_for_project<D>(
+    conn: &mut sqlx::PgConnection,
+    deps: &D,
+    project_id: i64,
+    app_name: String,
+    auth_methods: &[String],
+    pulse_usage_disabled: bool,
+) -> Result<StagingDeploymentInsertedRow, AppError>
+where
+    D: HasIdGenerator + ?Sized,
+{
+    ensure_phone_auth_allowed(auth_methods, pulse_usage_disabled)?;
+
+    let staging_count = queries::StagingDeploymentCountByProjectQuery::builder()
+        .project_id(project_id)
+        .execute_with_db(conn.as_mut())
+        .await?;
+
+    if staging_count >= MAX_STAGING_DEPLOYMENTS_PER_PROJECT {
+        return Err(AppError::BadRequest(format!(
+            "Maximum of {} staging deployments allowed per project",
+            MAX_STAGING_DEPLOYMENTS_PER_PROJECT
+        )));
+    }
+
+    let key_material = generate_deployment_key_material().await?;
+
+    insert_staging_deployment_with_defaults(
+        conn,
+        deps,
+        project_id,
+        app_name,
+        auth_methods,
+        key_material,
+    )
+    .await
 }
 
 fn build_staging_deployment_model(deployment_row: StagingDeploymentInsertedRow) -> Deployment {
@@ -550,6 +562,59 @@ fn build_staging_deployment_model(deployment_row: StagingDeploymentInsertedRow) 
         email_provider: EmailProvider::default(),
         custom_smtp_config: None,
     }
+}
+
+struct ProductionDeploymentModelInput {
+    id: i64,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+    maintenance_mode: bool,
+    backend_host: String,
+    frontend_host: String,
+    publishable_key: String,
+    project_id: i64,
+    mode: String,
+    mail_from_host: String,
+    email_provider: String,
+    custom_smtp_config: Option<serde_json::Value>,
+    domain_verification_records: Option<DomainVerificationRecords>,
+    email_verification_records: Option<EmailVerificationRecords>,
+}
+
+fn build_production_deployment_model(
+    input: ProductionDeploymentModelInput,
+) -> Result<Deployment, AppError> {
+    Ok(Deployment {
+        id: input.id,
+        created_at: input.created_at,
+        updated_at: input.updated_at,
+        maintenance_mode: input.maintenance_mode,
+        backend_host: input.backend_host,
+        frontend_host: input.frontend_host,
+        publishable_key: input.publishable_key,
+        project_id: input.project_id,
+        mode: DeploymentMode::from(input.mode),
+        mail_from_host: input.mail_from_host,
+        domain_verification_records: input.domain_verification_records,
+        email_verification_records: input.email_verification_records,
+        email_provider: EmailProvider::from(input.email_provider),
+        custom_smtp_config: decode_public_custom_smtp_config(input.custom_smtp_config)?,
+    })
+}
+
+fn decode_public_custom_smtp_config(
+    raw: Option<serde_json::Value>,
+) -> Result<Option<CustomSmtpConfig>, AppError> {
+    let decoded = raw
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| AppError::Internal(format!("Invalid custom_smtp_config JSON: {}", e)))?
+        .map(|mut config: CustomSmtpConfig| {
+            config.password = String::new();
+            config
+        });
+
+    Ok(decoded)
 }
 
 fn json_value<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, AppError> {

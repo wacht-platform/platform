@@ -16,7 +16,6 @@ pub mod b2b_query;
 pub mod billing;
 pub mod billing_webhook;
 pub mod connection;
-pub mod deps;
 pub mod enterprise_sso;
 mod error;
 pub mod mcp_servers;

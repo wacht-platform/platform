@@ -1,5 +1,5 @@
 use chrono::{Datelike, Utc};
-use commands::webhook_trigger::{TriggerWebhookEventCommand, TriggerWebhookEventDeps};
+use commands::webhook_trigger::TriggerWebhookEventCommand;
 use common::{db_router::ReadConsistency, state::AppState};
 use queries::{
     b2b::{GetOrganizationDetailsQuery, GetWorkspaceDetailsQuery},
@@ -44,14 +44,9 @@ pub async fn trigger_webhook_event(
         enriched_payload,
     );
 
+    let app_deps = common::deps::from_app(app_state).db().redis().nats().id();
     trigger_command
-        .execute_with_deps(TriggerWebhookEventDeps {
-            db_router: &app_state.db_router,
-            redis_client: &app_state.redis_client,
-            clickhouse_service: &app_state.clickhouse_service,
-            nats_client: &app_state.nats_client,
-            id_gen: || Ok(app_state.sf.next_id()? as i64),
-        })
+        .execute_with_deps(&app_deps)
         .await
         .map_err(|e| TaskError::Permanent(format!("Failed to trigger webhook event: {}", e)))?;
 

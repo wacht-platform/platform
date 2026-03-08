@@ -4,7 +4,7 @@ use crate::template::{render_template_with_prompt, AgentTemplates};
 
 use commands::{
     CompletionStatus, CompletionSummary, StoreCompletionSummaryEnhancedCommand,
-    UpdateExecutionContextQuery,
+    UpdateExecutionContextStateCommand,
 };
 use common::error::AppError;
 use dto::json::agent_executor::{
@@ -77,9 +77,9 @@ impl AgentExecutor {
             }
         }
 
-        UpdateExecutionContextQuery::new(context_id, deployment_id)
+        UpdateExecutionContextStateCommand::new(context_id, deployment_id)
             .with_status(ExecutionContextStatus::Running)
-            .execute_with_deps(&app_state)
+            .execute_with_deps(&common::deps::from_app(&app_state).db().nats().id())
             .await?;
 
         self.repl().await
@@ -121,9 +121,9 @@ impl AgentExecutor {
 
         self.user_request = user_message;
 
-        UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
+        UpdateExecutionContextStateCommand::new(self.ctx.context_id, self.ctx.agent.deployment_id)
             .with_status(ExecutionContextStatus::Running)
-            .execute_with_deps(&self.ctx.app_state)
+            .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
             .await?;
 
         let _ = self
@@ -425,22 +425,22 @@ impl AgentExecutor {
                         }
                     }
 
-                    UpdateExecutionContextQuery::new(
+                    UpdateExecutionContextStateCommand::new(
                         self.ctx.context_id,
                         self.ctx.agent.deployment_id,
                     )
                     .with_execution_state(self.build_execution_state_snapshot(None))
-                    .execute_with_deps(&self.ctx.app_state)
+                    .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
                     .await?;
 
                     if any_pending {
-                        UpdateExecutionContextQuery::new(
+                        UpdateExecutionContextStateCommand::new(
                             self.ctx.context_id,
                             self.ctx.agent.deployment_id,
                         )
                         .with_execution_state(self.build_execution_state_snapshot(None))
                         .with_status(ExecutionContextStatus::WaitingForInput)
-                        .execute_with_deps(&self.ctx.app_state)
+                        .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
                         .await?;
                     }
 
@@ -546,12 +546,12 @@ impl AgentExecutor {
                     .execute_with_db(self.ctx.app_state.db_router.writer())
                     .await?;
                 } else {
-                    UpdateExecutionContextQuery::new(
+                    UpdateExecutionContextStateCommand::new(
                         self.ctx.context_id,
                         self.ctx.agent.deployment_id,
                     )
                     .with_status(ExecutionContextStatus::Idle)
-                    .execute_with_deps(&self.ctx.app_state)
+                    .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
                     .await?;
                 }
                 Ok(false)
@@ -1488,9 +1488,9 @@ impl AgentExecutor {
             .execute_with_db(self.ctx.app_state.db_router.writer())
             .await?;
         } else {
-            UpdateExecutionContextQuery::new(self.ctx.context_id, self.ctx.agent.deployment_id)
+            UpdateExecutionContextStateCommand::new(self.ctx.context_id, self.ctx.agent.deployment_id)
                 .with_status(ExecutionContextStatus::Idle)
-                .execute_with_deps(&self.ctx.app_state)
+                .execute_with_deps(&common::deps::from_app(&self.ctx.app_state).db().nats().id())
                 .await?;
         }
 

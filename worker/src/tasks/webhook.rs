@@ -518,7 +518,7 @@ async fn handle_delivery_failure(
 
         if new_attempts >= max_attempts {
             let failure_count = IncrementEndpointFailuresCommand { endpoint_id }
-                .execute_with_deps(&app_state.redis_client)
+                .execute_with_deps(&common::deps::from_app(app_state).redis())
                 .await?;
 
             const DEACTIVATION_THRESHOLD: i64 = 10;
@@ -533,7 +533,7 @@ async fn handle_delivery_failure(
                     .await?;
 
                 ClearEndpointFailuresCommand { endpoint_id }
-                    .execute_with_deps(&app_state.redis_client)
+                    .execute_with_deps(&common::deps::from_app(app_state).redis())
                     .await?;
 
                 if let Ok(log_id) = app_state.sf.next_id() {
@@ -683,7 +683,7 @@ async fn send_webhook_failure_notification(
             recipient_email.clone(),
             variables,
         );
-        if let Err(e) = send_email_command.execute_with_deps(app_state).await {
+        if let Err(e) = send_email_command.execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template()).await {
             error!(
                 deployment_id,
                 app_slug,
@@ -769,7 +769,7 @@ pub async fn process_webhook_retry(
     deployment_id: i64,
     app_state: &AppState,
 ) -> Result<String> {
-    use commands::webhook_trigger::{ReplayWebhookDeliveryCommand, ReplayWebhookDeliveryDeps};
+    use commands::webhook_trigger::ReplayWebhookDeliveryCommand;
 
     info!(
         "Processing webhook retry for delivery {} in deployment {}",
@@ -781,12 +781,7 @@ pub async fn process_webhook_retry(
         deployment_id,
     };
     let new_delivery_id = replay_command
-        .execute_with_deps(ReplayWebhookDeliveryDeps {
-            db_router: &app_state.db_router,
-            clickhouse_service: &app_state.clickhouse_service,
-            nats_client: &app_state.nats_client,
-            id_gen: || Ok(app_state.sf.next_id()? as i64),
-        })
+        .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
         .await
         .map_err(|e| anyhow::anyhow!("Failed to replay webhook delivery: {}", e))?;
 

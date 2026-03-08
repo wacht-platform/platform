@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use commands::email::SendRawEmailCommand;
 use common::state::AppState;
+use common::deps;
 use queries::{
     billing::{GetBillingAccountByProviderCustomerIdQuery, GetBillingAccountQuery},
 };
@@ -90,7 +91,7 @@ pub(super) async fn send_billing_change_email(app_state: &AppState, owner_id: &s
             Some(body_text.clone()),
         );
         if let Err(e) = send_email_command
-            .execute_with_deps(app_state)
+            .execute_with_deps(&deps::from_app(app_state).nats())
             .await
         {
             warn!(

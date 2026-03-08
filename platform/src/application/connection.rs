@@ -5,7 +5,7 @@ use models::DeploymentSocialConnection;
 use queries::deployment::GetDeploymentSocialConnectionsQuery;
 
 use crate::application::{AppError, AppState};
-use crate::application::deps;
+use common::deps;
 
 pub async fn get_deployment_social_connections(
     app_state: &AppState,

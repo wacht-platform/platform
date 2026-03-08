@@ -5,7 +5,9 @@ use common::{HasClickHouseService, HasDbRouter, error::AppError};
 use dto::json::webhook_requests::{
     WebhookEndpoint, WebhookEndpointSubscription as WebhookEndpointSubscriptionDTO,
 };
-use models::webhook::{PendingDeliveryRow, WebhookApp, WebhookEndpoint as ModelWebhookEndpoint};
+use models::webhook::{
+    PendingDeliveryRow, WebhookApp, WebhookEndpoint as ModelWebhookEndpoint, WebhookEventCatalog,
+};
 
 fn parse_endpoint_subscriptions(
     value: serde_json::Value,
@@ -149,6 +151,90 @@ impl GetWebhookAppsQuery {
         };
 
         Ok(apps)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetEventCatalogQuery {
+    pub deployment_id: i64,
+    pub slug: String,
+}
+
+impl GetEventCatalogQuery {
+    pub fn new(deployment_id: i64, slug: String) -> Self {
+        Self {
+            deployment_id,
+            slug,
+        }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<Option<WebhookEventCatalog>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let catalog = query_as!(
+            WebhookEventCatalog,
+            r#"
+            SELECT deployment_id as "deployment_id!",
+                   slug as "slug!",
+                   name as "name!",
+                   description,
+                   events as "events!",
+                   created_at as "created_at!",
+                   updated_at as "updated_at!"
+            FROM webhook_event_catalogs
+            WHERE deployment_id = $1 AND slug = $2
+            "#,
+            self.deployment_id,
+            self.slug
+        )
+        .fetch_optional(executor)
+        .await?;
+
+        Ok(catalog)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListEventCatalogsQuery {
+    pub deployment_id: i64,
+}
+
+impl ListEventCatalogsQuery {
+    pub fn new(deployment_id: i64) -> Self {
+        Self { deployment_id }
+    }
+
+    pub async fn execute_with_db<'e, E>(
+        self,
+        executor: E,
+    ) -> Result<Vec<WebhookEventCatalog>, AppError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        let catalogs = query_as!(
+            WebhookEventCatalog,
+            r#"
+            SELECT deployment_id as "deployment_id!",
+                   slug as "slug!",
+                   name as "name!",
+                   description,
+                   events as "events!",
+                   created_at as "created_at!",
+                   updated_at as "updated_at!"
+            FROM webhook_event_catalogs
+            WHERE deployment_id = $1
+            ORDER BY name ASC
+            "#,
+            self.deployment_id
+        )
+        .fetch_all(executor)
+        .await?;
+
+        Ok(catalogs)
     }
 }
 

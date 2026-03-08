@@ -3,7 +3,7 @@ use common::error::AppError;
 use dto::json::{DeploymentDisplaySettingsUpdates, UploadResult};
 
 use crate::application::AppState;
-use crate::application::deps;
+use common::deps;
 
 fn build_upload_target(
     deployment_id: i64,
@@ -85,7 +85,7 @@ pub async fn upload_image(
     let (file_path, updates) = build_upload_target(deployment_id, image_type, file_extension)?;
 
     let url = UploadToCdnCommand::new(file_path, image_buffer)
-        .execute_with_deps(&app_state.s3_client)
+        .execute_with_deps(&deps::from_app(app_state).s3())
         .await?;
 
     UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)

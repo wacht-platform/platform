@@ -5,6 +5,7 @@ use commands::{
 };
 use common::error::AppError;
 use common::state::AppState;
+use common::deps;
 use models::{Organization, Workspace};
 use serde_json::Value;
 
@@ -36,7 +37,7 @@ async fn upload_entity_image(
         deployment_id, entity_kind, entity_id, file_extension
     );
     let url = UploadToCdnCommand::new(file_path, image_buffer)
-        .execute_with_deps(&app_state.s3_client)
+        .execute_with_deps(&deps::from_app(app_state).s3())
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Some(url))

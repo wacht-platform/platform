@@ -22,6 +22,9 @@ pub struct VerifySmtpConnectionCommand {
     pub use_tls: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct VerifySmtpConnectionDeps;
+
 impl VerifySmtpConnectionCommand {
     pub fn new(
         host: String,
@@ -43,7 +46,7 @@ impl VerifySmtpConnectionCommand {
 }
 
 impl VerifySmtpConnectionCommand {
-    pub async fn execute_with_deps(self) -> Result<(), AppError> {
+    pub async fn execute_with_deps(self, _deps: VerifySmtpConnectionDeps) -> Result<(), AppError> {
         let config = SmtpConfig {
             host: self.host,
             port: self.port,

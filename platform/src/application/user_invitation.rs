@@ -7,7 +7,7 @@ use models::{DeploymentInvitation, DeploymentWaitlistUser};
 use queries::{DeploymentInvitationQuery, DeploymentWaitlistQuery};
 
 use crate::{api::pagination::paginate_results, application::response::PaginatedResponse};
-use crate::application::deps;
+use common::deps;
 
 pub async fn get_invited_user_list(
     app_state: &AppState,
