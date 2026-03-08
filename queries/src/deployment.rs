@@ -8,6 +8,7 @@ use models::{
     DeploymentJwtTemplate, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
     DeploymentRestrictionsSignUpMode, DeploymentSocialConnection, DeploymentUISettings,
     DeploymentWithSettings, DeploymentWorkspaceRole, EmailTemplate, FirstFactor,
+    OauthCredentials,
     SecondFactorPolicy,
 };
 use sqlx::{Row, query};
@@ -697,8 +698,12 @@ impl GetDeploymentSocialConnectionsQuery {
                     enabled: row.enabled,
                     credentials: row
                         .credentials
-                        .map(|v| parse_json(v, "credentials"))
-                        .transpose()?,
+                        .map(|v| serde_json::from_value::<Option<OauthCredentials>>(v))
+                        .transpose()
+                        .map_err(|e| {
+                            AppError::Internal(format!("Invalid credentials JSON: {}", e))
+                        })?
+                        .flatten(),
                 })
             })
             .collect()
