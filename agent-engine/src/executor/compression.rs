@@ -228,21 +228,10 @@ impl AgentExecutor {
             .map(String::from)
             .collect();
 
-        let gemini_api_key = match std::env::var("GEMINI_API_KEY") {
-            Ok(value) => value,
-            Err(_) => return,
-        };
-        let gemini_model = std::env::var("GEMINI_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
-        let gemini_client = reqwest::Client::new();
-
         let embeddings = match GenerateEmbeddingsCommand::new(memory_contents.clone())
             .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-            .execute_with_deps(commands::EmbeddingApiDeps {
-                client: &gemini_client,
-                api_key: &gemini_api_key,
-                model: &gemini_model,
-            })
+            .for_deployment(self.ctx.agent.deployment_id)
+            .execute_with_deps(&self.ctx.app_state)
             .await
         {
             Ok(e) => e,

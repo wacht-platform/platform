@@ -8,14 +8,17 @@ use crate::{
     HasAgentStorageClient, HasClickHouseService, HasCloudflareService, HasDbRouter,
     HasDnsVerificationService, HasEncryptionService, HasIdGenerator, HasNatsClient,
     HasNatsJetStream, HasPostmarkService, HasRedis, HasS3Client, HasTemplateRenderer,
+    HasTextProcessingService, HasEmbeddingProvider,
     clickhouse::ClickHouseService,
     cloudflare::CloudflareService,
     db_router::DbRouter,
     dns_verification::DnsVerificationService,
+    embedding::EmbeddingProvider,
     encryption::EncryptionService,
     error::AppError,
     postmark::PostmarkService,
     state::AppState,
+    text_processing::TextProcessingService,
 };
 
 pub struct Missing;
@@ -230,5 +233,21 @@ impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasClickHouseService
 {
     fn clickhouse_service(&self) -> &ClickHouseService {
         &self.app.clickhouse_service
+    }
+}
+
+impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasTextProcessingService
+    for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl>
+{
+    fn text_processing_service(&self) -> &TextProcessingService {
+        &self.app.text_processing_service
+    }
+}
+
+impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasEmbeddingProvider
+    for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl>
+{
+    fn embedding_provider(&self) -> &EmbeddingProvider {
+        &self.app.embedding_provider
     }
 }

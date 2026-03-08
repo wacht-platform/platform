@@ -13,8 +13,8 @@ use std::error::Error;
 use wacht::{WachtClient, WachtConfig};
 
 use crate::{
-    ClickHouseService, CloudflareService, DbRouter, DnsVerificationService, EncryptionService,
-    PostmarkService, TextProcessingService,
+    ClickHouseService, CloudflareService, DbRouter, DnsVerificationService, EmbeddingProvider,
+    EncryptionService, PostmarkService, TextProcessingService,
 };
 
 #[derive(Clone)]
@@ -32,6 +32,7 @@ pub struct AppState {
     pub clickhouse_service: ClickHouseService,
     pub nats_client: NatsClient,
     pub nats_jetstream: NatsJetStream,
+    pub embedding_provider: EmbeddingProvider,
     pub encryption_service: EncryptionService,
     pub wacht_client: Option<WachtClient>,
 }
@@ -129,6 +130,11 @@ impl AppState {
             async_nats::ConnectOptions::new().request_timeout(Some(Duration::from_secs(10000)));
         let nats_client = async_nats::connect_with_options(env("NATS_HOST")?, nats_options).await?;
         let nats_jetstream = jetstream::new(nats_client.clone());
+        let embedding_provider = EmbeddingProvider::new(
+            env("GEMINI_API_KEY").unwrap_or_default(),
+            env("GEMINI_EMBEDDING_MODEL")
+                .unwrap_or_else(|_| "models/gemini-embedding-001".to_string()),
+        );
 
         let encryption_service = EncryptionService::new(&env("ENCRYPTION_KEY")?)?;
 
@@ -174,6 +180,7 @@ impl AppState {
             clickhouse_service,
             nats_client,
             nats_jetstream,
+            embedding_provider,
             encryption_service,
             wacht_client,
         })

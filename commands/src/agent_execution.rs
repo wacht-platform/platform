@@ -1,4 +1,4 @@
-use common::{HasIdGenerator, HasNatsJetStream, error::AppError};
+use common::{HasAgentStorageClient, HasIdGenerator, HasNatsJetStream, error::AppError};
 use dto::json::{AgentExecutionRequest, AgentExecutionType, NatsTaskMessage};
 use models::{FileData, ImageData};
 
@@ -51,12 +51,9 @@ impl UploadImagesToS3Command {
 }
 
 impl UploadImagesToS3Command {
-    pub async fn execute_with_deps<IdFn>(
-        self,
-        deps: UploadImagesToS3Deps<'_, IdFn>,
-    ) -> Result<Option<Vec<ImageData>>, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Option<Vec<ImageData>>, AppError>
     where
-        IdFn: Fn() -> Result<i64, AppError> + Copy,
+        D: HasAgentStorageClient + HasIdGenerator + ?Sized,
     {
         use base64::{Engine, engine::general_purpose::STANDARD};
 
@@ -74,7 +71,7 @@ impl UploadImagesToS3Command {
 
             // Get file extension from mime type
             let file_extension = img.mime_type.split('/').next_back().unwrap_or("png");
-            let filename = format!("{}.{}", (deps.id_gen)()?, file_extension);
+            let filename = format!("{}.{}", deps.id_generator().next_id()? as i64, file_extension);
 
             // S3 key: {deployment}/persistent/{context}/uploads/{filename}
             let key = format!(
@@ -85,8 +82,9 @@ impl UploadImagesToS3Command {
             // Upload to S3 via agent storage command
             let write_image_command = WriteToAgentStorageCommand::new(key, bytes.clone())
                 .with_content_type(img.mime_type.clone());
+            let storage_client = deps.agent_storage_client()?;
             write_image_command
-                .execute_with_deps(deps.storage_client)
+                .execute_with_deps(storage_client)
                 .await?;
 
             uploaded.push(ImageData {
@@ -127,12 +125,9 @@ impl UploadFilesToS3Command {
 }
 
 impl UploadFilesToS3Command {
-    pub async fn execute_with_deps<IdFn>(
-        self,
-        deps: UploadFilesToS3Deps<'_, IdFn>,
-    ) -> Result<Option<Vec<FileData>>, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Option<Vec<FileData>>, AppError>
     where
-        IdFn: Fn() -> Result<i64, AppError> + Copy,
+        D: HasAgentStorageClient + HasIdGenerator + ?Sized,
     {
         use base64::{Engine, engine::general_purpose::STANDARD};
 
@@ -150,7 +145,11 @@ impl UploadFilesToS3Command {
 
             // Generate unique filename with original name preserved
             let safe_filename = sanitize_upload_filename(&file.filename)?;
-            let filename = format!("{}_{}", (deps.id_gen)()?, safe_filename);
+            let filename = format!(
+                "{}_{}",
+                deps.id_generator().next_id()? as i64,
+                safe_filename
+            );
 
             // S3 key: {deployment}/persistent/{context}/uploads/{filename}
             let key = format!(
@@ -161,8 +160,9 @@ impl UploadFilesToS3Command {
             // Upload to S3 via agent storage command
             let write_file_command = WriteToAgentStorageCommand::new(key, bytes.clone())
                 .with_content_type(file.mime_type.clone());
+            let storage_client = deps.agent_storage_client()?;
             write_file_command
-                .execute_with_deps(deps.storage_client)
+                .execute_with_deps(storage_client)
                 .await?;
 
             uploaded.push(FileData {
@@ -356,14 +356,4 @@ impl PublishAgentExecutionCommand {
 
         Ok(())
     }
-}
-
-pub struct UploadImagesToS3Deps<'a, IdFn> {
-    pub storage_client: &'a aws_sdk_s3::Client,
-    pub id_gen: IdFn,
-}
-
-pub struct UploadFilesToS3Deps<'a, IdFn> {
-    pub storage_client: &'a aws_sdk_s3::Client,
-    pub id_gen: IdFn,
 }

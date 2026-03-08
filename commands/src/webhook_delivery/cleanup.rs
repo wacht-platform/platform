@@ -8,7 +8,7 @@ pub struct CleanupExpiredDeliveriesCommand {
 }
 
 impl CleanupExpiredDeliveriesCommand {
-    async fn execute_with_deps<'e, E>(self, executor: E) -> Result<i64, AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<i64, AppError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -24,12 +24,5 @@ impl CleanupExpiredDeliveriesCommand {
         .await?;
 
         Ok(result.rows_affected() as i64)
-    }
-
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<i64, AppError>
-    where
-        E: Executor<'e, Database = Postgres>,
-    {
-        self.execute_with_deps(executor).await
     }
 }

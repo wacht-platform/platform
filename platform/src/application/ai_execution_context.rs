@@ -1,6 +1,5 @@
 use commands::agent_execution::{
     PublishAgentExecutionCommand, SignalAgentExecutionCancellationCommand, UploadFilesToS3Command,
-    UploadFilesToS3Deps,
 };
 use commands::{
     CreateConversationCommand, CreateExecutionContextCommand,
@@ -253,14 +252,8 @@ pub async fn execute_agent_async(
 
             let upload_files_command =
                 UploadFilesToS3Command::new(deployment_id, context_id, new_message.files);
-            let storage_client = app_state.agent_storage_client.as_ref().ok_or_else(|| {
-                AppError::Internal("Agent storage client not configured".to_string())
-            })?;
             let model_files = match upload_files_command
-                .execute_with_deps(UploadFilesToS3Deps {
-                    storage_client,
-                    id_gen: || Ok(app_state.sf.next_id()? as i64),
-                })
+                .execute_with_deps(&deps::from_app(app_state).id())
                 .await
             {
                 Ok(files) => files,

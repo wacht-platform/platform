@@ -13,7 +13,7 @@ use queries::GetWebhookSubscriptionFilterRulesQuery;
 
 use super::{
     GetSubscribedEndpointsCommand,
-    webhook_subscription::{GetSubscribedEndpointsDeps, evaluate_filter},
+    webhook_subscription::evaluate_filter,
 };
 
 #[derive(Debug, Deserialize)]
@@ -71,10 +71,7 @@ impl TriggerWebhookEventCommand {
             app_slug.clone(),
             self.event_name.clone(),
         )
-        .execute_with_deps(GetSubscribedEndpointsDeps {
-            executor: pool,
-            redis_client: deps.redis_client(),
-        })
+        .execute_with_deps(deps)
         .await?;
 
         let mut delivery_ids = Vec::new();

@@ -1,8 +1,9 @@
 use chrono::Utc;
-use common::error::AppError;
+use common::{HasDbRouter, HasEmbeddingProvider, HasEncryptionService, error::AppError};
 use pgvector::HalfVector;
-use std::future::Future;
 use tracing::{error, info};
+
+use crate::GenerateEmbeddingsCommand;
 
 pub struct ProcessDocumentBatchCommand {
     pub deployment_id: i64,
@@ -20,22 +21,12 @@ impl ProcessDocumentBatchCommand {
     }
 }
 
-pub struct ProcessDocumentBatchDeps<A, GenerateEmbeddingsFn> {
-    pub acquirer: A,
-    pub generate_embeddings: GenerateEmbeddingsFn,
-}
-
 impl ProcessDocumentBatchCommand {
-    pub async fn execute_with_deps<'a, A, GenerateEmbeddingsFn, GenerateEmbeddingsFut>(
-        self,
-        deps: ProcessDocumentBatchDeps<A, GenerateEmbeddingsFn>,
-    ) -> Result<String, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<String, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        GenerateEmbeddingsFn: Fn(Vec<String>) -> GenerateEmbeddingsFut + Copy,
-        GenerateEmbeddingsFut: Future<Output = Result<Vec<Vec<f32>>, AppError>>,
+        D: HasDbRouter + HasEmbeddingProvider + HasEncryptionService + ?Sized,
     {
-        let mut tx = deps.acquirer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
         info!(
             "Processing embeddings for up to {} chunks in knowledge base {} (deployment {})",
             self.batch_size, self.knowledge_base_id, self.deployment_id
@@ -76,7 +67,11 @@ impl ProcessDocumentBatchCommand {
                 .map(|chunk| chunk.content.clone())
                 .collect();
 
-            let embeddings = match (deps.generate_embeddings)(chunk_texts).await {
+            let embeddings = match GenerateEmbeddingsCommand::new(chunk_texts)
+                .for_deployment(self.deployment_id)
+                .execute_with_deps(deps)
+                .await
+            {
                 Ok(embeddings) => embeddings,
                 Err(e) => {
                     error!("Failed to generate embeddings for batch: {}", e);

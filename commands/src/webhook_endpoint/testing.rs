@@ -4,25 +4,14 @@ use serde_json::Value;
 use sqlx::{query, query_as};
 
 use crate::webhook_delivery::ClearEndpointFailuresCommand;
-use common::capabilities::HasRedis;
-use common::error::AppError;
+use common::{
+    HasClickHouseService, HasDbRouter, HasIdGenerator, HasNatsClient, HasRedis, error::AppError,
+};
 use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
 use dto::json::nats::NatsTaskMessage;
 use models::WebhookEndpoint;
 use queries::GetWebhookSubscriptionFilterRulesQuery;
-
-pub struct TestWebhookEndpointDeps<'a, A> {
-    pub acquirer: A,
-    pub clickhouse_service: &'a common::ClickHouseService,
-    pub nats_client: &'a async_nats::Client,
-    pub delivery_id: i64,
-}
-
-pub struct ReactivateEndpointDeps<'a, A, C: ?Sized> {
-    pub acquirer: A,
-    pub redis_deps: &'a C,
-}
 
 #[derive(Debug, Deserialize)]
 pub struct TestWebhookEndpointCommand {
@@ -40,14 +29,12 @@ impl TestWebhookEndpointCommand {
         }
     }
 
-    pub async fn execute_with_deps<'a, A>(
-        self,
-        deps: TestWebhookEndpointDeps<'a, A>,
-    ) -> Result<TestWebhookResult, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<TestWebhookResult, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasClickHouseService + HasNatsClient + HasIdGenerator + ?Sized,
     {
-        let mut tx = deps.acquirer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
+        let delivery_id = deps.id_generator().next_id()? as i64;
         let endpoint = query!(
             r#"
             SELECT e.url, e.headers, e.timeout_seconds, e.app_slug, a.signing_secret
@@ -69,7 +56,7 @@ impl TestWebhookEndpointCommand {
 
         let log = WebhookLog {
             deployment_id: self.deployment_id,
-            delivery_id: deps.delivery_id,
+            delivery_id,
             app_slug: app_slug.clone(),
             endpoint_id: self.endpoint_id,
             event_name: "test.webhook".to_string(),
@@ -86,11 +73,11 @@ impl TestWebhookEndpointCommand {
             timestamp: now,
         };
 
-        if let Err(e) = deps.clickhouse_service.insert_webhook_log(&log).await {
+        if let Err(e) = deps.clickhouse_service().insert_webhook_log(&log).await {
             tracing::warn!("Failed to log test event to Tinybird: {}", e);
         }
 
-        let webhook_id = format!("msg_{}", deps.delivery_id);
+        let webhook_id = format!("msg_{}", delivery_id);
         let webhook_timestamp = now.timestamp();
         let signature = generate_webhook_signature(
             &endpoint.signing_secret,
@@ -114,7 +101,7 @@ impl TestWebhookEndpointCommand {
             (id, endpoint_id, deployment_id, app_slug, event_name, payload, filter_rules, payload_size_bytes, webhook_id, webhook_timestamp, signature, max_attempts, attempts)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1, 0)
             "#,
-            deps.delivery_id,
+            delivery_id,
             self.endpoint_id,
             self.deployment_id,
             app_slug,
@@ -133,14 +120,14 @@ impl TestWebhookEndpointCommand {
 
         let task_message = NatsTaskMessage {
             task_type: "webhook.deliver".to_string(),
-            task_id: format!("webhook-test-{}", deps.delivery_id),
+            task_id: format!("webhook-test-{}", delivery_id),
             payload: serde_json::json!({
-                "delivery_id": deps.delivery_id,
+                "delivery_id": delivery_id,
                 "deployment_id": self.deployment_id
             }),
         };
 
-        deps.nats_client
+        deps.nats_client()
             .publish(
                 "worker.tasks.webhook.deliver",
                 serde_json::to_vec(&task_message)?.into(),
@@ -149,7 +136,7 @@ impl TestWebhookEndpointCommand {
             .map_err(|e| AppError::Internal(format!("Failed to publish test webhook: {}", e)))?;
 
         Ok(TestWebhookResult {
-            delivery_id: Some(deps.delivery_id),
+            delivery_id: Some(delivery_id),
             success: true,
             status_code: 202,
             response_time_ms: 0,
@@ -187,15 +174,11 @@ impl ReactivateEndpointCommand {
         }
     }
 
-    pub async fn execute_with_deps<'a, A, C>(
-        self,
-        deps: ReactivateEndpointDeps<'a, A, C>,
-    ) -> Result<WebhookEndpoint, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<WebhookEndpoint, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        C: HasRedis + ?Sized,
+        D: HasDbRouter + HasRedis + ?Sized,
     {
-        let mut tx = deps.acquirer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
         let endpoint = query_as!(
             WebhookEndpoint,
             r#"
@@ -231,7 +214,7 @@ impl ReactivateEndpointCommand {
         ClearEndpointFailuresCommand {
             endpoint_id: self.endpoint_id,
         }
-        .execute_with_deps(deps.redis_deps)
+        .execute_with_deps(deps)
         .await?;
 
         Ok(endpoint)

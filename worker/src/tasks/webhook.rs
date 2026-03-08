@@ -51,6 +51,49 @@ const STATUS_TOO_MANY_REQUESTS: u16 = 429;
 const STATUS_INTERNAL_SERVER_ERROR: u16 = 500;
 const WEBHOOK_FAILURE_EMAIL_COOLDOWN_SECONDS: u64 = 3600;
 
+fn build_webhook_log(
+    deployment_id: i64,
+    delivery_id: i64,
+    app_slug: &str,
+    endpoint_id: i64,
+    event_name: &str,
+    status: &str,
+    http_status_code: Option<i32>,
+    response_time_ms: Option<i32>,
+    attempt_number: i32,
+    max_attempts: i32,
+    payload: Option<String>,
+    response_body: Option<String>,
+    request_headers: Option<String>,
+) -> WebhookLog {
+    let payload_size_bytes = payload.as_ref().map_or(0, |p| p.len() as i32);
+
+    WebhookLog {
+        deployment_id,
+        delivery_id,
+        app_slug: app_slug.to_string(),
+        endpoint_id,
+        event_name: event_name.to_string(),
+        status: status.to_string(),
+        http_status_code,
+        response_time_ms,
+        attempt_number,
+        max_attempts,
+        payload,
+        payload_size_bytes,
+        response_body,
+        response_headers: None,
+        request_headers,
+        timestamp: Utc::now(),
+    }
+}
+
+async fn insert_webhook_log_safe(app_state: &AppState, log: &WebhookLog, label: &str) {
+    if let Err(e) = app_state.clickhouse_service.insert_webhook_log(log).await {
+        warn!("Failed to log {} to ClickHouse: {}", label, e);
+    }
+}
+
 fn parse_retry_after_header(
     value: Option<&reqwest::header::HeaderValue>,
 ) -> Option<std::time::Duration> {
@@ -122,32 +165,23 @@ pub async fn process_webhook_delivery(
 
         if !filter_match {
             let payload_json = serde_json::to_string(&outbound_payload).unwrap_or_default();
-            let ch_delivery = WebhookLog {
+            let ch_delivery = build_webhook_log(
                 deployment_id,
                 delivery_id,
-                app_slug: delivery.app_slug.clone(),
-                endpoint_id: delivery.endpoint_id,
-                event_name: delivery.event_name.clone(),
-                status: "filtered".to_string(),
-                http_status_code: None,
-                response_time_ms: None,
-                attempt_number: delivery.attempts,
-                max_attempts: delivery.max_attempts,
-                payload: Some(payload_json.clone()),
-                payload_size_bytes: payload_json.len() as i32,
-                response_body: None,
-                response_headers: None,
-                request_headers: None,
-                timestamp: Utc::now(),
-            };
+                &delivery.app_slug,
+                delivery.endpoint_id,
+                &delivery.event_name,
+                "filtered",
+                None,
+                None,
+                delivery.attempts,
+                delivery.max_attempts,
+                Some(payload_json),
+                None,
+                None,
+            );
 
-            if let Err(e) = app_state
-                .clickhouse_service
-                .insert_webhook_log(&ch_delivery)
-                .await
-            {
-                warn!("Failed to log filtered delivery to Tinybird: {}", e);
-            }
+            insert_webhook_log_safe(app_state, &ch_delivery, "filtered delivery").await;
 
             DeleteActiveDeliveryCommand { delivery_id }
                 .execute_with_db(app_state.db_router.writer())
@@ -256,32 +290,23 @@ pub async fn process_webhook_delivery(
                     delivery.url
                 );
 
-                let ch_delivery = WebhookLog {
+                let ch_delivery = build_webhook_log(
                     deployment_id,
                     delivery_id,
-                    app_slug: delivery.app_slug.clone(),
-                    endpoint_id: delivery.endpoint_id,
-                    event_name: delivery.event_name.clone(),
-                    status: "endpoint_disabled".to_string(),
-                    http_status_code: Some(410),
-                    response_time_ms: Some(duration.as_millis() as i32),
-                    attempt_number: delivery.attempts + 1,
-                    max_attempts: delivery.max_attempts,
-                    payload: Some(payload_json.clone()),
-                    payload_size_bytes: payload_json.len() as i32,
-                    response_body: response_body.clone(),
-                    response_headers: None,
-                    request_headers: request_headers_json.clone(),
-                    timestamp: Utc::now(),
-                };
+                    &delivery.app_slug,
+                    delivery.endpoint_id,
+                    &delivery.event_name,
+                    "endpoint_disabled",
+                    Some(410),
+                    Some(duration.as_millis() as i32),
+                    delivery.attempts + 1,
+                    delivery.max_attempts,
+                    Some(payload_json.clone()),
+                    response_body.clone(),
+                    request_headers_json.clone(),
+                );
 
-                if let Err(e) = app_state
-                    .clickhouse_service
-                    .insert_webhook_log(&ch_delivery)
-                    .await
-                {
-                    warn!("Failed to log 410 Gone delivery to ClickHouse: {}", e);
-                }
+                insert_webhook_log_safe(app_state, &ch_delivery, "410 Gone delivery").await;
 
                 DeleteActiveDeliveryCommand { delivery_id }
                     .execute_with_db(app_state.db_router.writer())
@@ -317,32 +342,23 @@ pub async fn process_webhook_delivery(
             }
 
             if status.is_success() {
-                let ch_delivery = WebhookLog {
+                let ch_delivery = build_webhook_log(
                     deployment_id,
                     delivery_id,
-                    app_slug: delivery.app_slug.clone(),
-                    endpoint_id: delivery.endpoint_id,
-                    event_name: delivery.event_name.clone(),
-                    status: "success".to_string(),
-                    http_status_code: Some(status_code as i32),
-                    response_time_ms: Some(duration.as_millis() as i32),
-                    attempt_number: delivery.attempts + 1,
-                    max_attempts: delivery.max_attempts,
-                    payload: Some(payload_json.clone()),
-                    payload_size_bytes: payload_json.len() as i32,
-                    response_body: response_body.clone(),
-                    response_headers: None,
-                    request_headers: request_headers_json.clone(),
-                    timestamp: Utc::now(),
-                };
+                    &delivery.app_slug,
+                    delivery.endpoint_id,
+                    &delivery.event_name,
+                    "success",
+                    Some(status_code as i32),
+                    Some(duration.as_millis() as i32),
+                    delivery.attempts + 1,
+                    delivery.max_attempts,
+                    Some(payload_json.clone()),
+                    response_body.clone(),
+                    request_headers_json.clone(),
+                );
 
-                if let Err(e) = app_state
-                    .clickhouse_service
-                    .insert_webhook_log(&ch_delivery)
-                    .await
-                {
-                    warn!("Failed to log successful delivery to ClickHouse: {}", e);
-                }
+                insert_webhook_log_safe(app_state, &ch_delivery, "successful delivery").await;
 
                 DeleteActiveDeliveryCommand { delivery_id }
                     .execute_with_db(app_state.db_router.writer())
@@ -358,36 +374,27 @@ pub async fn process_webhook_delivery(
                 let will_retry = (delivery.attempts + 1) < delivery.max_attempts
                     && (status_code >= 500 || status_code == 408 || status_code == 429);
 
-                let ch_delivery = WebhookLog {
+                let ch_delivery = build_webhook_log(
                     deployment_id,
                     delivery_id,
-                    app_slug: delivery.app_slug.clone(),
-                    endpoint_id: delivery.endpoint_id,
-                    event_name: delivery.event_name.clone(),
-                    status: if will_retry {
-                        "failed".to_string()
+                    &delivery.app_slug,
+                    delivery.endpoint_id,
+                    &delivery.event_name,
+                    if will_retry {
+                        "failed"
                     } else {
-                        "permanently_failed".to_string()
+                        "permanently_failed"
                     },
-                    http_status_code: Some(status_code as i32),
-                    response_time_ms: Some(duration.as_millis() as i32),
-                    attempt_number: delivery.attempts + 1,
-                    max_attempts: delivery.max_attempts,
-                    payload: Some(payload_json.clone()),
-                    payload_size_bytes: payload_json.len() as i32,
-                    response_body: response_body.clone(),
-                    response_headers: None,
-                    request_headers: request_headers_json.clone(),
-                    timestamp: Utc::now(),
-                };
+                    Some(status_code as i32),
+                    Some(duration.as_millis() as i32),
+                    delivery.attempts + 1,
+                    delivery.max_attempts,
+                    Some(payload_json.clone()),
+                    response_body.clone(),
+                    request_headers_json.clone(),
+                );
 
-                if let Err(e) = app_state
-                    .clickhouse_service
-                    .insert_webhook_log(&ch_delivery)
-                    .await
-                {
-                    warn!("Failed to log failed delivery to ClickHouse: {}", e);
-                }
+                insert_webhook_log_safe(app_state, &ch_delivery, "failed delivery").await;
 
                 let result = handle_delivery_failure(
                     delivery_id,
@@ -408,36 +415,27 @@ pub async fn process_webhook_delivery(
         }
         Err(_e) => {
             let will_retry = (delivery.attempts + 1) < delivery.max_attempts;
-            let ch_delivery = WebhookLog {
+            let ch_delivery = build_webhook_log(
                 deployment_id,
                 delivery_id,
-                app_slug: delivery.app_slug.clone(),
-                endpoint_id: delivery.endpoint_id,
-                event_name: delivery.event_name.clone(),
-                status: if will_retry {
-                    "failed".to_string()
+                &delivery.app_slug,
+                delivery.endpoint_id,
+                &delivery.event_name,
+                if will_retry {
+                    "failed"
                 } else {
-                    "permanently_failed".to_string()
+                    "permanently_failed"
                 },
-                http_status_code: None,
-                response_time_ms: None,
-                attempt_number: delivery.attempts + 1,
-                max_attempts: delivery.max_attempts,
-                payload: Some(payload_json.clone()),
-                payload_size_bytes: payload_json.len() as i32,
-                response_body: None,
-                response_headers: None,
-                request_headers: request_headers_json.clone(),
-                timestamp: Utc::now(),
-            };
+                None,
+                None,
+                delivery.attempts + 1,
+                delivery.max_attempts,
+                Some(payload_json.clone()),
+                None,
+                request_headers_json.clone(),
+            );
 
-            if let Err(e) = app_state
-                .clickhouse_service
-                .insert_webhook_log(&ch_delivery)
-                .await
-            {
-                warn!("Failed to log error delivery to ClickHouse: {}", e);
-            }
+            insert_webhook_log_safe(app_state, &ch_delivery, "error delivery").await;
 
             let result = handle_delivery_failure(
                 delivery_id,
@@ -537,32 +535,24 @@ async fn handle_delivery_failure(
                     .await?;
 
                 if let Ok(log_id) = app_state.sf.next_id() {
-                    let ch_delivery = WebhookLog {
+                    let ch_delivery = build_webhook_log(
                         deployment_id,
-                        delivery_id: log_id as i64,
-                        app_slug: app_slug.clone(),
+                        log_id as i64,
+                        &app_slug,
                         endpoint_id,
-                        event_name: "endpoint.deactivated".to_string(),
-                        status: "deactivated".to_string(),
-                        http_status_code: None,
-                        response_time_ms: None,
-                        attempt_number: 0,
-                        max_attempts: 0,
-                        payload: None,
-                        payload_size_bytes: 0,
-                        response_body: None,
-                        response_headers: None,
-                        request_headers: None,
-                        timestamp: Utc::now(),
-                    };
+                        "endpoint.deactivated",
+                        "deactivated",
+                        None,
+                        None,
+                        0,
+                        0,
+                        None,
+                        None,
+                        None,
+                    );
 
-                    if let Err(e) = app_state
-                        .clickhouse_service
-                        .insert_webhook_log(&ch_delivery)
-                        .await
-                    {
-                        warn!("Failed to log endpoint deactivation to ClickHouse: {}", e);
-                    }
+                    insert_webhook_log_safe(app_state, &ch_delivery, "endpoint deactivation")
+                        .await;
                 } else {
                     warn!("Failed to generate snowflake id for endpoint deactivation log");
                 }
@@ -769,19 +759,14 @@ pub async fn process_webhook_retry(
     deployment_id: i64,
     app_state: &AppState,
 ) -> Result<String> {
-    use commands::webhook_trigger::ReplayWebhookDeliveryCommand;
+    use crate::tasks::webhook_replay::replay_webhook_delivery;
 
     info!(
         "Processing webhook retry for delivery {} in deployment {}",
         delivery_id, deployment_id
     );
 
-    let replay_command = ReplayWebhookDeliveryCommand {
-        delivery_id,
-        deployment_id,
-    };
-    let new_delivery_id = replay_command
-        .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
+    let new_delivery_id = replay_webhook_delivery(app_state, delivery_id, deployment_id)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to replay webhook delivery: {}", e))?;
 

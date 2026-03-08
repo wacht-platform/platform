@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-use common::error::AppError;
+use common::{HasClickHouseService, error::AppError};
 use models::webhook_analytics::{
     EndpointPerformance, EventCount, FailureReason, TimeseriesInterval, TimeseriesPoint,
     WebhookAnalyticsResult, WebhookTimeseriesResult,
@@ -43,10 +43,11 @@ impl GetWebhookAnalyticsQuery {
         self
     }
 
-    pub async fn execute_with_deps(
-        &self,
-        clickhouse_service: &common::ClickHouseService,
-    ) -> Result<WebhookAnalyticsResult, AppError> {
+    pub async fn execute_with_deps<D>(&self, deps: &D) -> Result<WebhookAnalyticsResult, AppError>
+    where
+        D: HasClickHouseService + ?Sized,
+    {
+        let clickhouse_service = deps.clickhouse_service();
         let start_date = self
             .start_date
             .unwrap_or_else(|| Utc::now() - chrono::Duration::days(30));
@@ -203,10 +204,11 @@ impl GetWebhookTimeseriesQuery {
         self
     }
 
-    pub async fn execute_with_deps(
-        &self,
-        clickhouse_service: &common::ClickHouseService,
-    ) -> Result<WebhookTimeseriesResult, AppError> {
+    pub async fn execute_with_deps<D>(&self, deps: &D) -> Result<WebhookTimeseriesResult, AppError>
+    where
+        D: HasClickHouseService + ?Sized,
+    {
+        let clickhouse_service = deps.clickhouse_service();
         let start_date = self
             .start_date
             .unwrap_or_else(|| Utc::now() - chrono::Duration::days(7));

@@ -43,9 +43,7 @@ impl CreateProjectWithStagingDeploymentCommand {
         D: common::HasDbRouter + common::HasIdGenerator + Sync,
     {
         let mut tx = deps.db_router().writer().begin().await?;
-        let validator = ProjectValidator::new();
-        validator.validate_project_name(&self.name)?;
-        validator.validate_auth_methods(&self.auth_methods)?;
+        ProjectValidator::validate_project_name(&self.name)?;
 
         let project_id = next_id_from(deps)?;
 

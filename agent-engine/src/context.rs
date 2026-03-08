@@ -321,19 +321,10 @@ impl ContextOrchestrator {
     }
 
     async fn generate_embedding(&self, query: &str) -> Result<Vec<f32>, AppError> {
-        let gemini_api_key = std::env::var("GEMINI_API_KEY")
-            .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
-        let gemini_model = std::env::var("GEMINI_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
-        let gemini_client = reqwest::Client::new();
-
         GenerateEmbeddingCommand::new(query.to_string())
             .with_task_type("RETRIEVAL_QUERY".to_string())
-            .execute_with_deps(commands::EmbeddingApiDeps {
-                client: &gemini_client,
-                api_key: &gemini_api_key,
-                model: &gemini_model,
-            })
+            .for_deployment(self.agent().deployment_id)
+            .execute_with_deps(self.app_state())
             .await
     }
 

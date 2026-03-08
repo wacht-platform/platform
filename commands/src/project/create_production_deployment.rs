@@ -238,9 +238,8 @@ impl CreateProductionDeploymentCommand {
             + Sync,
     {
         let mut tx = app_deps.db_router().writer().begin().await?;
-        let validator = ProjectValidator::new();
-        validator.validate_domain_format(&self.custom_domain)?;
-        validator.validate_auth_methods(&self.auth_methods)?;
+        ProjectValidator::validate_domain_format(&self.custom_domain)?;
+        ProjectValidator::validate_auth_methods(&self.auth_methods)?;
         self.ensure_no_social_methods_requested()?;
 
         let key_material = generate_deployment_key_material().await?;

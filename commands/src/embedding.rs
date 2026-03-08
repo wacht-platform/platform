@@ -1,70 +1,38 @@
-use common::error::AppError;
+use common::{
+    HasDbRouter, HasEmbeddingProvider, HasEncryptionService,
+    db_router::ReadConsistency,
+    error::AppError,
+};
 use models::ai_knowledge_base::DocumentChunkSearchResult;
 
 use pgvector::HalfVector;
-use serde::{Deserialize, Serialize};
 use sqlx::Row;
 
-#[derive(Serialize)]
-struct EmbedContentRequest {
-    model: String,
-    content: Content,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    task_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    output_dimensionality: Option<i32>,
-}
+async fn resolve_deployment_gemini_api_key<D>(
+    deps: &D,
+    deployment_id: i64,
+) -> Result<Option<String>, AppError>
+where
+    D: HasDbRouter + HasEncryptionService + ?Sized,
+{
+    let reader = deps.db_router().reader(ReadConsistency::Strong);
+    let settings = queries::GetDeploymentAiSettingsQuery::new(deployment_id)
+        .execute_with_db(reader)
+        .await?;
 
-#[derive(Serialize)]
-struct BatchEmbedContentsRequest {
-    requests: Vec<EmbedContentRequestItem>,
-}
-
-#[derive(Serialize)]
-struct EmbedContentRequestItem {
-    model: String,
-    content: Content,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    task_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    output_dimensionality: Option<i32>,
-}
-
-#[derive(Serialize)]
-struct Content {
-    parts: Vec<Part>,
-}
-
-#[derive(Serialize)]
-struct Part {
-    text: String,
-}
-
-#[derive(Deserialize)]
-struct EmbedContentResponse {
-    embedding: Embedding,
-}
-
-#[derive(Deserialize)]
-struct BatchEmbedContentsResponse {
-    embeddings: Vec<Embedding>,
-}
-
-#[derive(Deserialize)]
-struct Embedding {
-    values: Vec<f32>,
-}
-
-pub struct EmbeddingApiDeps<'a> {
-    pub client: &'a reqwest::Client,
-    pub api_key: &'a str,
-    pub model: &'a str,
+    match settings.and_then(|s| s.gemini_api_key) {
+        Some(encrypted) if !encrypted.is_empty() => {
+            Ok(Some(deps.encryption_service().decrypt(&encrypted)?))
+        }
+        _ => Ok(None),
+    }
 }
 
 #[derive(Clone)]
 pub struct GenerateEmbeddingCommand {
     pub text: String,
     pub task_type: Option<String>,
+    pub deployment_id: Option<i64>,
 }
 
 impl GenerateEmbeddingCommand {
@@ -72,6 +40,7 @@ impl GenerateEmbeddingCommand {
         Self {
             text,
             task_type: None,
+            deployment_id: None,
         }
     }
 
@@ -80,44 +49,29 @@ impl GenerateEmbeddingCommand {
         self
     }
 
-    pub async fn execute_with_deps(self, deps: EmbeddingApiDeps<'_>) -> Result<Vec<f32>, AppError> {
-        let request = EmbedContentRequest {
-            model: deps.model.to_string(),
-            content: Content {
-                parts: vec![Part { text: self.text }],
-            },
-            task_type: self.task_type.or(Some("RETRIEVAL_DOCUMENT".to_string())),
-            output_dimensionality: Some(3072),
+    pub fn for_deployment(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
+
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Vec<f32>, AppError>
+    where
+        D: HasEmbeddingProvider + HasDbRouter + HasEncryptionService + ?Sized,
+    {
+        let api_key_override = if let Some(deployment_id) = self.deployment_id {
+            resolve_deployment_gemini_api_key(deps, deployment_id).await?
+        } else {
+            None
         };
 
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/{}:embedContent",
-            deps.model
-        );
-
-        let response = deps
-            .client
-            .post(&url)
-            .header("x-goog-api-key", deps.api_key)
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
+        deps.embedding_provider()
+            .embed_content(
+                self.text,
+                self.task_type.or(Some("RETRIEVAL_DOCUMENT".to_string())),
+                Some(3072),
+                api_key_override.as_deref(),
+            )
             .await
-            .map_err(|e| AppError::Internal(format!("Failed to send embedding request: {}", e)))?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(AppError::Internal(format!(
-                "Embedding API error: {}",
-                error_text
-            )));
-        }
-
-        let embed_response: EmbedContentResponse = response.json().await.map_err(|e| {
-            AppError::Internal(format!("Failed to parse embedding response: {}", e))
-        })?;
-
-        Ok(embed_response.embedding.values)
     }
 }
 
@@ -125,6 +79,7 @@ impl GenerateEmbeddingCommand {
 pub struct GenerateEmbeddingsCommand {
     pub texts: Vec<String>,
     pub task_type: Option<String>,
+    pub deployment_id: Option<i64>,
 }
 
 impl GenerateEmbeddingsCommand {
@@ -132,6 +87,7 @@ impl GenerateEmbeddingsCommand {
         Self {
             texts,
             task_type: None,
+            deployment_id: None,
         }
     }
 
@@ -140,75 +96,29 @@ impl GenerateEmbeddingsCommand {
         self
     }
 
-    pub async fn execute_with_deps(
-        self,
-        deps: EmbeddingApiDeps<'_>,
-    ) -> Result<Vec<Vec<f32>>, AppError> {
-        if self.texts.is_empty() {
-            return Ok(vec![]);
-        }
+    pub fn for_deployment(mut self, deployment_id: i64) -> Self {
+        self.deployment_id = Some(deployment_id);
+        self
+    }
 
-        const BATCH_SIZE: usize = 100;
-        let mut all_embeddings = Vec::new();
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Vec<Vec<f32>>, AppError>
+    where
+        D: HasEmbeddingProvider + HasDbRouter + HasEncryptionService + ?Sized,
+    {
+        let api_key_override = if let Some(deployment_id) = self.deployment_id {
+            resolve_deployment_gemini_api_key(deps, deployment_id).await?
+        } else {
+            None
+        };
 
-        for chunk in self.texts.chunks(BATCH_SIZE) {
-            let requests: Vec<EmbedContentRequestItem> = chunk
-                .iter()
-                .map(|text| EmbedContentRequestItem {
-                    model: deps.model.to_string(),
-                    content: Content {
-                        parts: vec![Part { text: text.clone() }],
-                    },
-                    task_type: self
-                        .task_type
-                        .clone()
-                        .or(Some("RETRIEVAL_DOCUMENT".to_string())),
-                    output_dimensionality: Some(3072),
-                })
-                .collect();
-
-            let batch_request = BatchEmbedContentsRequest { requests };
-            let url = format!(
-                "https://generativelanguage.googleapis.com/v1/{}:batchEmbedContents",
-                deps.model
-            );
-
-            let response = deps
-                .client
-                .post(&url)
-                .header("x-goog-api-key", deps.api_key)
-                .header("Content-Type", "application/json")
-                .json(&batch_request)
-                .send()
-                .await
-                .map_err(|e| {
-                    AppError::Internal(format!("Failed to send batch embedding request: {}", e))
-                })?;
-
-            if !response.status().is_success() {
-                let status = response.status();
-                let error_text = response.text().await.unwrap_or_default();
-                tracing::error!(
-                    "Batch embedding API error - Status: {}, URL: {}, Error: {}",
-                    status,
-                    url,
-                    error_text
-                );
-                return Err(AppError::Internal(format!(
-                    "Batch embedding API error ({}): {}",
-                    status, error_text
-                )));
-            }
-
-            let batch_response: BatchEmbedContentsResponse =
-                response.json().await.map_err(|e| {
-                    AppError::Internal(format!("Failed to parse batch embedding response: {}", e))
-                })?;
-
-            all_embeddings.extend(batch_response.embeddings.into_iter().map(|e| e.values));
-        }
-
-        Ok(all_embeddings)
+        deps.embedding_provider()
+            .batch_embed_contents(
+                self.texts,
+                self.task_type.or(Some("RETRIEVAL_DOCUMENT".to_string())),
+                Some(3072),
+                api_key_override.as_deref(),
+            )
+            .await
     }
 }
 

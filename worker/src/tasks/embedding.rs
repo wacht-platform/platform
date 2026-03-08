@@ -16,7 +16,7 @@ pub async fn process_document_batch_impl(
     batch_size: usize,
     app_state: &AppState,
 ) -> Result<String> {
-    use commands::{ProcessDocumentBatchCommand, ProcessDocumentBatchDeps};
+    use commands::ProcessDocumentBatchCommand;
 
     info!(
         "Processing batch of up to {} pending documents for knowledge base {} in deployment {}",
@@ -26,24 +26,7 @@ pub async fn process_document_batch_impl(
     let command = ProcessDocumentBatchCommand::new(deployment_id, knowledge_base_id, batch_size);
 
     command
-        .execute_with_deps(ProcessDocumentBatchDeps {
-            acquirer: app_state.db_router.writer(),
-            generate_embeddings: |texts| async move {
-                let client = reqwest::Client::new();
-                let api_key = std::env::var("GEMINI_API_KEY").map_err(|_| {
-                    common::error::AppError::Internal("GEMINI_API_KEY is not set".to_string())
-                })?;
-                let model = std::env::var("GEMINI_EMBEDDING_MODEL")
-                    .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
-                commands::GenerateEmbeddingsCommand::new(texts)
-                    .execute_with_deps(commands::EmbeddingApiDeps {
-                        client: &client,
-                        api_key: &api_key,
-                        model: &model,
-                    })
-                    .await
-            },
-        })
+        .execute_with_deps(app_state)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to process document batch: {}", e))
 }

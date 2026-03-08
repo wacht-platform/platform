@@ -24,19 +24,10 @@ impl ToolExecutor {
         let category = dto::json::agent_memory::MemoryCategory::from_str(category_str)
             .unwrap_or(dto::json::agent_memory::MemoryCategory::Working);
 
-        let gemini_api_key = std::env::var("GEMINI_API_KEY")
-            .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
-        let gemini_model = std::env::var("GEMINI_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
-        let gemini_client = reqwest::Client::new();
-
         let embeddings = commands::GenerateEmbeddingsCommand::new(vec![params.content.clone()])
             .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-            .execute_with_deps(commands::EmbeddingApiDeps {
-                client: &gemini_client,
-                api_key: &gemini_api_key,
-                model: &gemini_model,
-            })
+            .for_deployment(self.agent().deployment_id)
+            .execute_with_deps(self.app_state())
             .await?;
 
         if embeddings.is_empty() {
@@ -132,11 +123,8 @@ impl ToolExecutor {
             let new_embeddings =
                 commands::GenerateEmbeddingsCommand::new(vec![final_content.clone()])
                     .with_task_type("RETRIEVAL_DOCUMENT".to_string())
-                    .execute_with_deps(commands::EmbeddingApiDeps {
-                        client: &gemini_client,
-                        api_key: &gemini_api_key,
-                        model: &gemini_model,
-                    })
+                    .for_deployment(self.agent().deployment_id)
+                    .execute_with_deps(self.app_state())
                     .await?;
             new_embeddings
                 .first()

@@ -64,18 +64,10 @@ impl AgentExecutor {
         );
 
         let embedding = if !directive.focus.is_empty() {
-            let gemini_api_key = std::env::var("GEMINI_API_KEY")
-                .map_err(|_| AppError::Internal("GEMINI_API_KEY is not set".to_string()))?;
-            let gemini_model = std::env::var("GEMINI_EMBEDDING_MODEL")
-                .unwrap_or_else(|_| "models/gemini-embedding-001".to_string());
-            let gemini_client = reqwest::Client::new();
             match GenerateEmbeddingsCommand::new(vec![directive.focus.clone()])
                 .with_task_type("RETRIEVAL_QUERY".to_string())
-                .execute_with_deps(commands::EmbeddingApiDeps {
-                    client: &gemini_client,
-                    api_key: &gemini_api_key,
-                    model: &gemini_model,
-                })
+                .for_deployment(self.ctx.agent.deployment_id)
+                .execute_with_deps(&self.ctx.app_state)
                 .await
             {
                 Ok(embeddings) if !embeddings.is_empty() => Some(embeddings[0].clone()),

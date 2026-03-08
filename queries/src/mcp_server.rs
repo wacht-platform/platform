@@ -267,11 +267,12 @@ impl GetActiveAgentMcpServerConnectionMetadataQuery {
 
         let metadata = row
             .and_then(|r| r.connection_metadata)
-            .map(serde_json::from_value::<McpConnectionMetadata>)
+            .map(serde_json::from_value::<Option<McpConnectionMetadata>>)
             .transpose()
             .map_err(|e| {
                 AppError::Internal(format!("Failed to decode MCP connection metadata: {}", e))
-            })?;
+            })?
+            .flatten();
 
         Ok(metadata)
     }

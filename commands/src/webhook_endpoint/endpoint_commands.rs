@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{query, query_as};
 
-use common::error::AppError;
+use common::{HasDbRouter, HasIdGenerator, error::AppError};
 use common::utils::ssrf::validate_webhook_url;
 use models::WebhookEndpoint;
 
@@ -10,22 +10,6 @@ use super::validation::{
     EventSubscriptionData, MAX_ENDPOINT_RETRY_WINDOW_SECONDS, max_attempts_for_retry_window,
     validate_endpoint_max_retries, validate_event_subscriptions,
 };
-
-pub struct CreateWebhookEndpointDeps<'a, A> {
-    pub acquirer: A,
-    pub db_router: &'a common::DbRouter,
-    pub endpoint_id: i64,
-}
-
-pub struct UpdateWebhookEndpointDeps<'a, A> {
-    pub acquirer: A,
-    pub db_router: &'a common::DbRouter,
-}
-
-pub struct UpdateEndpointSubscriptionsDeps<'a, A> {
-    pub acquirer: A,
-    pub db_router: &'a common::DbRouter,
-}
 
 async fn replace_endpoint_subscriptions(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -121,12 +105,9 @@ impl CreateWebhookEndpointCommand {
         self
     }
 
-    pub async fn execute_with_deps<'a, A>(
-        self,
-        deps: CreateWebhookEndpointDeps<'a, A>,
-    ) -> Result<WebhookEndpoint, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<WebhookEndpoint, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasIdGenerator + ?Sized,
     {
         url::Url::parse(&self.url)
             .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
@@ -135,7 +116,7 @@ impl CreateWebhookEndpointCommand {
             .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
 
         validate_event_subscriptions(
-            deps.db_router,
+            deps.db_router(),
             self.deployment_id,
             &self.app_slug,
             &self.subscriptions,
@@ -146,7 +127,8 @@ impl CreateWebhookEndpointCommand {
         let endpoint_max_retries = self.max_retries.unwrap_or(max_allowed_retries);
         validate_endpoint_max_retries(endpoint_max_retries, max_allowed_retries)?;
 
-        let mut tx = deps.acquirer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
+        let endpoint_id = deps.id_generator().next_id()? as i64;
 
         let headers_json = self.headers.unwrap_or_else(|| serde_json::json!({}));
 
@@ -172,7 +154,7 @@ impl CreateWebhookEndpointCommand {
                       created_at as "created_at!",
                       updated_at as "updated_at!"
             "#,
-            deps.endpoint_id,
+            endpoint_id,
             self.deployment_id,
             self.app_slug,
             self.url,
@@ -276,12 +258,9 @@ impl UpdateWebhookEndpointCommand {
         self
     }
 
-    pub async fn execute_with_deps<'a, A>(
-        self,
-        deps: UpdateWebhookEndpointDeps<'a, A>,
-    ) -> Result<WebhookEndpoint, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<WebhookEndpoint, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + ?Sized,
     {
         if let Some(ref url) = self.url {
             url::Url::parse(url)
@@ -296,7 +275,7 @@ impl UpdateWebhookEndpointCommand {
             validate_endpoint_max_retries(max_retries, max_allowed_retries)?;
         }
 
-        let mut tx = deps.acquirer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
 
         let endpoint = query_as!(
             WebhookEndpoint,
@@ -343,7 +322,7 @@ impl UpdateWebhookEndpointCommand {
 
         if let Some(subscriptions) = self.subscriptions {
             validate_event_subscriptions(
-                deps.db_router,
+                deps.db_router(),
                 self.deployment_id,
                 &endpoint.app_slug,
                 &subscriptions,
@@ -388,14 +367,11 @@ impl UpdateEndpointSubscriptionsCommand {
         self
     }
 
-    pub async fn execute_with_deps<'a, A>(
-        self,
-        deps: UpdateEndpointSubscriptionsDeps<'a, A>,
-    ) -> Result<Vec<String>, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Vec<String>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + ?Sized,
     {
-        let mut tx = deps.acquirer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
 
         let app_slug = query!(
             r#"
@@ -421,7 +397,7 @@ impl UpdateEndpointSubscriptionsCommand {
             .collect::<Vec<_>>();
 
         validate_event_subscriptions(
-            deps.db_router,
+            deps.db_router(),
             self.deployment_id,
             &app_slug,
             &subscriptions_for_validation,

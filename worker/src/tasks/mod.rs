@@ -8,4 +8,5 @@ pub mod embedding;
 pub mod token;
 pub mod webhook;
 pub mod webhook_event;
+pub mod webhook_replay;
 pub mod webhook_replay_batch;

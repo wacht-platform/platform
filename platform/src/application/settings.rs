@@ -4,7 +4,6 @@ use commands::{
     UpdateDeploymentDisplaySettingsCommand, UpdateDeploymentEmailTemplateCommand,
     UpdateDeploymentJwtTemplateCommand, UpdateDeploymentRestrictionsCommand,
     UpdateDeploymentSmtpConfigCommand, VerifySmtpConnectionCommand,
-    VerifySmtpConnectionDeps,
 };
 use common::db_router::ReadConsistency;
 use common::error::AppError;
@@ -144,7 +143,7 @@ pub async fn verify_smtp_connection(
         config.from_email,
         config.use_tls,
     )
-    .execute_with_deps(VerifySmtpConnectionDeps)
+    .execute_with_deps(&())
     .await?;
 
     Ok(SmtpVerifyResponse {
@@ -166,7 +165,7 @@ pub async fn update_smtp_config(
         config.from_email.clone(),
         config.use_tls,
     )
-    .execute_with_deps(VerifySmtpConnectionDeps)
+    .execute_with_deps(&())
     .await?;
 
     let result = UpdateDeploymentSmtpConfigCommand::new(

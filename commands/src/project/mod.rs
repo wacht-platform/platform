@@ -518,6 +518,7 @@ async fn create_staging_deployment_for_project<D>(
 where
     D: HasIdGenerator + ?Sized,
 {
+    ProjectValidator::validate_auth_methods(auth_methods)?;
     ensure_phone_auth_allowed(auth_methods, pulse_usage_disabled)?;
 
     let staging_count = queries::StagingDeploymentCountByProjectQuery::builder()

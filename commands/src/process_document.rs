@@ -1,19 +1,15 @@
-use crate::ai_knowledge_base_document_status::MarkKnowledgeBaseDocumentFailedCommand;
+use crate::{
+    DispatchDocumentBatchTaskCommand, ai_knowledge_base_document_status::MarkKnowledgeBaseDocumentFailedCommand,
+};
 use chrono::Utc;
-use common::error::AppError;
-use std::future::Future;
+use common::{
+    HasAgentStorageClient, HasDbRouter, HasNatsClient, HasTextProcessingService, error::AppError,
+};
 
 pub struct ProcessDocumentCommand {
     pub deployment_id: i64,
     pub knowledge_base_id: i64,
     pub document_id: i64,
-}
-
-pub struct ProcessDocumentDeps<'a, A, DispatchFn> {
-    pub acquirer: A,
-    pub storage_client: &'a aws_sdk_s3::Client,
-    pub text_processing_service: &'a common::TextProcessingService,
-    pub dispatch_batch: DispatchFn,
 }
 
 impl ProcessDocumentCommand {
@@ -25,16 +21,11 @@ impl ProcessDocumentCommand {
         }
     }
 
-    pub async fn execute_with_deps<'a, A, DispatchFn, DispatchFut>(
-        self,
-        deps: ProcessDocumentDeps<'a, A, DispatchFn>,
-    ) -> Result<String, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<String, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
-        DispatchFn: Fn(i64, i64, usize) -> DispatchFut,
-        DispatchFut: Future<Output = Result<(), AppError>>,
+        D: HasDbRouter + HasAgentStorageClient + HasTextProcessingService + HasNatsClient + ?Sized,
     {
-        let mut tx = deps.acquirer.begin().await?;
+        let mut tx = deps.writer_pool().begin().await?;
         let now = Utc::now();
 
         let document = sqlx::query!(
@@ -51,7 +42,7 @@ impl ProcessDocumentCommand {
         .map_err(AppError::Database)?;
 
         let response = deps
-            .storage_client
+            .agent_storage_client()?
             .get_object()
             .bucket("wacht-agents")
             .key(&document.file_url)
@@ -70,11 +61,11 @@ impl ProcessDocumentCommand {
             .to_vec();
 
         let text = deps
-            .text_processing_service
+            .text_processing_service()
             .extract_text_from_file(&file_content, &document.file_type)?;
-        let cleaned_text = deps.text_processing_service.clean_text(&text);
+        let cleaned_text = deps.text_processing_service().clean_text(&text);
         let chunks = deps
-            .text_processing_service
+            .text_processing_service()
             .chunk_text(&cleaned_text, 2000, 200)?;
 
         if chunks.is_empty() {
@@ -128,7 +119,10 @@ impl ProcessDocumentCommand {
         .execute(&mut *tx)
         .await;
 
-        if let Err(e) = (deps.dispatch_batch)(self.deployment_id, self.knowledge_base_id, 100).await
+        if let Err(e) =
+            DispatchDocumentBatchTaskCommand::new(self.deployment_id, self.knowledge_base_id, 100)
+                .execute_with_deps(deps)
+                .await
         {
             tracing::error!("Failed to dispatch embedding processing task: {}", e);
             let _ = MarkKnowledgeBaseDocumentFailedCommand::new(document.id)

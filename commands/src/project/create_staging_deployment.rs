@@ -27,8 +27,6 @@ impl CreateStagingDeploymentCommand {
         D: common::HasDbRouter + common::HasIdGenerator + Sync,
     {
         let mut tx = deps.db_router().writer().begin().await?;
-        let validator = ProjectValidator::new();
-        validator.validate_auth_methods(&self.auth_methods)?;
 
         let project = queries::ProjectWithBillingForStagingQuery::builder()
             .project_id(self.project_id)

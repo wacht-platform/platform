@@ -3,11 +3,7 @@ use crate::error::AppError;
 pub struct ProjectValidator;
 
 impl ProjectValidator {
-    pub fn new() -> Self {
-        Self
-    }
-
-    pub fn validate_domain_format(&self, domain: &str) -> Result<(), AppError> {
+    pub fn validate_domain_format(domain: &str) -> Result<(), AppError> {
         if domain.is_empty() || domain.len() > 253 {
             return Err(AppError::BadRequest(
                 "Domain must be between 1 and 253 characters".to_string(),
@@ -57,7 +53,7 @@ impl ProjectValidator {
         Ok(())
     }
 
-    pub fn validate_auth_methods(&self, auth_methods: &[String]) -> Result<(), AppError> {
+    pub fn validate_auth_methods(auth_methods: &[String]) -> Result<(), AppError> {
         if auth_methods.is_empty() {
             return Err(AppError::BadRequest(
                 "At least one authentication method must be specified".to_string(),
@@ -91,7 +87,7 @@ impl ProjectValidator {
         Ok(())
     }
 
-    pub fn validate_project_name(&self, name: &str) -> Result<(), AppError> {
+    pub fn validate_project_name(name: &str) -> Result<(), AppError> {
         if name.is_empty() {
             return Err(AppError::BadRequest(
                 "Project name cannot be empty".to_string(),

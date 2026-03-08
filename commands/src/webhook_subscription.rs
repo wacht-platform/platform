@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::query;
 
-use common::{HasRedis, error::AppError};
+use common::{HasDbRouter, HasRedis, error::AppError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EndpointWithRules {
@@ -23,11 +23,6 @@ pub struct GetSubscribedEndpointsCommand {
     pub event_name: String,
 }
 
-pub struct GetSubscribedEndpointsDeps<'a, E> {
-    pub executor: E,
-    pub redis_client: &'a redis::Client,
-}
-
 impl GetSubscribedEndpointsCommand {
     pub fn new(deployment_id: i64, app_slug: String, event_name: String) -> Self {
         Self {
@@ -37,19 +32,16 @@ impl GetSubscribedEndpointsCommand {
         }
     }
 
-    pub async fn execute_with_deps<'a, E>(
-        self,
-        deps: GetSubscribedEndpointsDeps<'a, E>,
-    ) -> Result<Vec<EndpointWithRules>, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Vec<EndpointWithRules>, AppError>
     where
-        E: sqlx::Executor<'a, Database = sqlx::Postgres>,
+        D: HasDbRouter + HasRedis + ?Sized,
     {
         let cache_key = format!(
             "webhook:subs:{}:{}:{}",
             self.deployment_id, self.app_slug, self.event_name
         );
 
-        if let Ok(mut redis_conn) = deps.redis_client.get_multiplexed_async_connection().await {
+        if let Ok(mut redis_conn) = deps.redis_client().get_multiplexed_async_connection().await {
             if let Ok(cached) = redis_conn.get::<_, String>(&cache_key).await {
                 if let Ok(endpoints) = serde_json::from_str::<Vec<EndpointWithRules>>(&cached) {
                     return Ok(endpoints);
@@ -80,7 +72,7 @@ impl GetSubscribedEndpointsCommand {
             self.event_name,
             self.deployment_id
         )
-        .fetch_all(deps.executor)
+        .fetch_all(deps.db_router().writer())
         .await?;
 
         let endpoints: Vec<EndpointWithRules> = endpoints
@@ -97,7 +89,8 @@ impl GetSubscribedEndpointsCommand {
             .collect();
 
         if let Ok(json) = serde_json::to_string(&endpoints) {
-            if let Ok(mut redis_conn) = deps.redis_client.get_multiplexed_async_connection().await {
+            if let Ok(mut redis_conn) = deps.redis_client().get_multiplexed_async_connection().await
+            {
                 let _: Result<(), _> = redis_conn.set_ex(&cache_key, json, 300).await;
             }
         }

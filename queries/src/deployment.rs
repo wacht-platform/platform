@@ -18,6 +18,17 @@ fn parse_json<T: DeserializeOwned>(value: serde_json::Value, field: &str) -> Res
         .map_err(|e| AppError::Internal(format!("Invalid {} JSON: {}", field, e)))
 }
 
+fn parse_optional_json<T: DeserializeOwned>(
+    value: Option<serde_json::Value>,
+    field: &str,
+) -> Result<Option<T>, AppError> {
+    match value {
+        Some(v) => serde_json::from_value::<Option<T>>(v)
+            .map_err(|e| AppError::Internal(format!("Invalid {} JSON: {}", field, e))),
+        None => Ok(None),
+    }
+}
+
 fn parse_json_or_default<T: DeserializeOwned + Default>(
     value: Option<serde_json::Value>,
     field: &str,
@@ -478,14 +489,14 @@ impl GetDeploymentWithSettingsQuery {
                 )?;
                 let max_orgs_per_user =
                     require_opt(row.b2b_settings_max_orgs_per_user, "b2b_settings_max_orgs_per_user")?;
-                let workspace_permission_catalog = row
-                    .b2b_settings_workspace_permission_catalog
-                    .map(|v| parse_json(v, "b2b_settings_workspace_permission_catalog"))
-                    .transpose()?;
-                let organization_permission_catalog = row
-                    .b2b_settings_organization_permission_catalog
-                    .map(|v| parse_json(v, "b2b_settings_organization_permission_catalog"))
-                    .transpose()?;
+                let workspace_permission_catalog = parse_optional_json(
+                    row.b2b_settings_workspace_permission_catalog,
+                    "b2b_settings_workspace_permission_catalog",
+                )?;
+                let organization_permission_catalog = parse_optional_json(
+                    row.b2b_settings_organization_permission_catalog,
+                    "b2b_settings_organization_permission_catalog",
+                )?;
                 let ip_allowlist_per_workspace_enabled = require_opt(
                     row.b2b_settings_ip_allowlist_per_workspace_enabled,
                     "b2b_settings_ip_allowlist_per_workspace_enabled",
@@ -614,19 +625,16 @@ impl GetDeploymentWithSettingsQuery {
             } else {
                 None
             },
-            domain_verification_records: row
-                .domain_verification_records
-                .map(|v| parse_json(v, "domain_verification_records"))
-                .transpose()?,
-            email_verification_records: row
-                .email_verification_records
-                .map(|v| parse_json(v, "email_verification_records"))
-                .transpose()?,
+            domain_verification_records: parse_optional_json(
+                row.domain_verification_records,
+                "domain_verification_records",
+            )?,
+            email_verification_records: parse_optional_json(
+                row.email_verification_records,
+                "email_verification_records",
+            )?,
             email_provider: models::EmailProvider::from(row.email_provider),
-            custom_smtp_config: row
-                .custom_smtp_config
-                .map(|v| parse_json(v, "custom_smtp_config"))
-                .transpose()?
+            custom_smtp_config: parse_optional_json(row.custom_smtp_config, "custom_smtp_config")?
                 .map(|mut c: models::CustomSmtpConfig| {
                     c.password = String::new();
                     c
@@ -772,10 +780,10 @@ impl GetDeploymentJwtTemplatesQuery {
                     name: row.name,
                     token_lifetime: row.token_lifetime,
                     allowed_clock_skew: row.allowed_clock_skew,
-                    custom_signing_key: row
-                        .custom_signing_key
-                        .map(|v| parse_json(v, "custom_signing_key"))
-                        .transpose()?,
+                    custom_signing_key: parse_optional_json(
+                        row.custom_signing_key,
+                        "custom_signing_key",
+                    )?,
                     template: row.template,
                 })
             })

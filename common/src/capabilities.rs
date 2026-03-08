@@ -8,10 +8,12 @@ use crate::{
     cloudflare::CloudflareService,
     db_router::{DbRouter, ReadConsistency},
     dns_verification::DnsVerificationService,
+    embedding::EmbeddingProvider,
     encryption::EncryptionService,
     error::AppError,
     postmark::PostmarkService,
     state::AppState,
+    text_processing::TextProcessingService,
 };
 
 pub trait HasDbRouter {
@@ -76,6 +78,14 @@ pub trait HasS3Client {
 
 pub trait HasAgentStorageClient {
     fn agent_storage_client(&self) -> Result<&S3Client, AppError>;
+}
+
+pub trait HasTextProcessingService {
+    fn text_processing_service(&self) -> &TextProcessingService;
+}
+
+pub trait HasEmbeddingProvider {
+    fn embedding_provider(&self) -> &EmbeddingProvider;
 }
 
 impl HasDbRouter for AppState {
@@ -185,5 +195,17 @@ impl HasAgentStorageClient for AppState {
         self.agent_storage_client
             .as_ref()
             .ok_or_else(|| AppError::Internal("Agent storage client not configured".to_string()))
+    }
+}
+
+impl HasTextProcessingService for AppState {
+    fn text_processing_service(&self) -> &TextProcessingService {
+        &self.text_processing_service
+    }
+}
+
+impl HasEmbeddingProvider for AppState {
+    fn embedding_provider(&self) -> &EmbeddingProvider {
+        &self.embedding_provider
     }
 }

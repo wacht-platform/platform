@@ -1,5 +1,4 @@
 use anyhow::Result;
-use commands::webhook_trigger::ReplayWebhookDeliveryCommand;
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::nats::WebhookReplayBatchPayload;
@@ -8,6 +7,8 @@ use redis::Script;
 use serde_json::Value;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
+
+use crate::tasks::webhook_replay::replay_webhook_delivery;
 
 pub async fn handle_webhook_replay_batch(app_state: &AppState, payload: Value) -> Result<String> {
     const MAX_ATTEMPTS_PER_DELIVERY: u8 = 3;
@@ -258,13 +259,7 @@ pub async fn handle_webhook_replay_batch(app_state: &AppState, payload: Value) -
         let mut last_error = String::new();
 
         for attempt in 1..=MAX_ATTEMPTS_PER_DELIVERY {
-            let replay_command = ReplayWebhookDeliveryCommand {
-                delivery_id: *delivery_id,
-                deployment_id,
-            };
-            let result = replay_command
-                .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
-                .await;
+            let result = replay_webhook_delivery(app_state, *delivery_id, deployment_id).await;
 
             match result {
                 Ok(new_id) => {

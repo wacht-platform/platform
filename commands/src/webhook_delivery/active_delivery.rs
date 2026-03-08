@@ -10,7 +10,7 @@ pub struct GetActiveDeliveryCommand {
 }
 
 impl GetActiveDeliveryCommand {
-    async fn execute_with_deps<'e, E>(
+    pub async fn execute_with_db<'e, E>(
         self,
         executor: E,
     ) -> Result<Option<ActiveDeliveryInfo>, AppError>
@@ -70,16 +70,6 @@ impl GetActiveDeliveryCommand {
             rate_limit_config: d.rate_limit_config,
         }))
     }
-
-    pub async fn execute_with_db<'e, E>(
-        self,
-        executor: E,
-    ) -> Result<Option<ActiveDeliveryInfo>, AppError>
-    where
-        E: Executor<'e, Database = Postgres>,
-    {
-        self.execute_with_deps(executor).await
-    }
 }
 
 #[derive(Debug)]
@@ -111,7 +101,7 @@ pub struct DeleteActiveDeliveryCommand {
 }
 
 impl DeleteActiveDeliveryCommand {
-    async fn execute_with_deps<'e, E>(self, executor: E) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -124,13 +114,6 @@ impl DeleteActiveDeliveryCommand {
 
         Ok(())
     }
-
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
-    where
-        E: Executor<'e, Database = Postgres>,
-    {
-        self.execute_with_deps(executor).await
-    }
 }
 
 #[derive(Debug)]
@@ -141,7 +124,7 @@ pub struct UpdateDeliveryAttemptsCommand {
 }
 
 impl UpdateDeliveryAttemptsCommand {
-    async fn execute_with_deps<'e, E>(self, executor: E) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -160,13 +143,6 @@ impl UpdateDeliveryAttemptsCommand {
 
         Ok(())
     }
-
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
-    where
-        E: Executor<'e, Database = Postgres>,
-    {
-        self.execute_with_deps(executor).await
-    }
 }
 
 #[derive(Debug)]
@@ -180,7 +156,7 @@ pub struct DeactivateEndpointCommand {
 }
 
 impl DeactivateEndpointCommand {
-    async fn execute_with_deps<'e, E>(self, executor: E) -> Result<(), AppError>
+    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
     where
         E: Executor<'e, Database = Postgres>,
     {
@@ -197,12 +173,5 @@ impl DeactivateEndpointCommand {
         .await?;
 
         Ok(())
-    }
-
-    pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<(), AppError>
-    where
-        E: Executor<'e, Database = Postgres>,
-    {
-        self.execute_with_deps(executor).await
     }
 }
