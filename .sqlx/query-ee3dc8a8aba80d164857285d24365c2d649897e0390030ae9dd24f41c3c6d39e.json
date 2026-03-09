@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                status,\n                COALESCE(pulse_usage_disabled, false) AS \"pulse_usage_disabled!\",\n                COALESCE((to_jsonb(billing_accounts) ->> 'max_projects_per_account')::BIGINT, 10) AS \"max_projects_per_account!\",\n                COALESCE((to_jsonb(billing_accounts) ->> 'max_staging_deployments_per_project')::BIGINT, 3) AS \"max_staging_deployments_per_project!\"\n            FROM billing_accounts\n            WHERE owner_id = $1\n            FOR UPDATE\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "pulse_usage_disabled!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "max_projects_per_account!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "max_staging_deployments_per_project!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ee3dc8a8aba80d164857285d24365c2d649897e0390030ae9dd24f41c3c6d39e"
+}

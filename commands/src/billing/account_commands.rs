@@ -14,6 +14,8 @@ pub struct CreateBillingAccountCommand {
     state: Option<String>,
     postal_code: Option<String>,
     country: Option<String>,
+    max_projects_per_account: Option<i64>,
+    max_staging_deployments_per_project: Option<i64>,
 }
 
 impl CreateBillingAccountCommand {
@@ -38,6 +40,8 @@ impl CreateBillingAccountCommand {
             state: None,
             postal_code: None,
             country: None,
+            max_projects_per_account: None,
+            max_staging_deployments_per_project: None,
         }
     }
 
@@ -81,10 +85,37 @@ impl CreateBillingAccountCommand {
         self
     }
 
+    pub fn with_max_projects_per_account(mut self, limit: Option<i64>) -> Self {
+        self.max_projects_per_account = limit;
+        self
+    }
+
+    pub fn with_max_staging_deployments_per_project(mut self, limit: Option<i64>) -> Self {
+        self.max_staging_deployments_per_project = limit;
+        self
+    }
+
     pub async fn execute_with_db<'e, E>(self, executor: E) -> Result<i64, AppError>
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
+        let max_projects_per_account = self
+            .max_projects_per_account
+            .map(i32::try_from)
+            .transpose()
+            .map_err(|_| {
+                AppError::Validation("max_projects_per_account is out of range".to_string())
+            })?;
+        let max_staging_deployments_per_project = self
+            .max_staging_deployments_per_project
+            .map(i32::try_from)
+            .transpose()
+            .map_err(|_| {
+                AppError::Validation(
+                    "max_staging_deployments_per_project is out of range".to_string(),
+                )
+            })?;
+
         sqlx::query!(
             r#"
             INSERT INTO billing_accounts (
@@ -105,13 +136,15 @@ impl CreateBillingAccountCommand {
                 currency,
                 locale,
                 pulse_balance_cents,
+                max_projects_per_account,
+                max_staging_deployments_per_project,
                 pulse_usage_disabled,
                 pulse_notified_below_five,
                 pulse_notified_below_zero,
                 pulse_notified_disabled,
                 created_at,
                 updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'USD', 'en-US', 0, true, false, false, false, NOW(), NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'USD', 'en-US', 0, COALESCE($14, 10), COALESCE($15, 3), true, false, false, false, NOW(), NOW())
             "#,
             self.id,
             self.owner_id,
@@ -125,7 +158,9 @@ impl CreateBillingAccountCommand {
             self.city.as_deref().unwrap_or(""),
             self.state,
             self.postal_code.as_deref().unwrap_or(""),
-            self.country.as_deref().unwrap_or("US")
+            self.country.as_deref().unwrap_or("US"),
+            max_projects_per_account,
+            max_staging_deployments_per_project
         )
         .execute(executor)
         .await?;
@@ -146,6 +181,8 @@ pub struct UpdateBillingAccountCommand {
     pub state: Option<String>,
     pub postal_code: Option<String>,
     pub country: Option<String>,
+    pub max_projects_per_account: Option<i64>,
+    pub max_staging_deployments_per_project: Option<i64>,
 }
 
 impl UpdateBillingAccountCommand {
@@ -162,6 +199,8 @@ impl UpdateBillingAccountCommand {
             state: None,
             postal_code: None,
             country: None,
+            max_projects_per_account: None,
+            max_staging_deployments_per_project: None,
         }
     }
 
@@ -214,6 +253,16 @@ impl UpdateBillingAccountCommand {
         self.country = country;
         self
     }
+
+    pub fn with_max_projects_per_account(mut self, limit: Option<i64>) -> Self {
+        self.max_projects_per_account = limit;
+        self
+    }
+
+    pub fn with_max_staging_deployments_per_project(mut self, limit: Option<i64>) -> Self {
+        self.max_staging_deployments_per_project = limit;
+        self
+    }
 }
 
 pub struct UpdateBillingAccountFromWebhookCommand {
@@ -253,6 +302,23 @@ impl UpdateBillingAccountCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
+        let max_projects_per_account = self
+            .max_projects_per_account
+            .map(i32::try_from)
+            .transpose()
+            .map_err(|_| {
+                AppError::Validation("max_projects_per_account is out of range".to_string())
+            })?;
+        let max_staging_deployments_per_project = self
+            .max_staging_deployments_per_project
+            .map(i32::try_from)
+            .transpose()
+            .map_err(|_| {
+                AppError::Validation(
+                    "max_staging_deployments_per_project is out of range".to_string(),
+                )
+            })?;
+
         sqlx::query(
             r#"
             UPDATE billing_accounts
@@ -267,8 +333,10 @@ impl UpdateBillingAccountCommand {
                 state = COALESCE($8, state),
                 postal_code = COALESCE($9, postal_code),
                 country = COALESCE($10, country),
+                max_projects_per_account = COALESCE($11, max_projects_per_account),
+                max_staging_deployments_per_project = COALESCE($12, max_staging_deployments_per_project),
                 updated_at = NOW()
-            WHERE id = $11
+            WHERE id = $13
             "#,
         )
         .bind(self.legal_name)
@@ -281,6 +349,8 @@ impl UpdateBillingAccountCommand {
         .bind(self.state)
         .bind(self.postal_code)
         .bind(self.country)
+        .bind(max_projects_per_account)
+        .bind(max_staging_deployments_per_project)
         .bind(self.id)
         .execute(executor)
         .await?;

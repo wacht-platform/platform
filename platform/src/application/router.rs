@@ -538,10 +538,7 @@ fn api_auth_routes() -> Router<AppState> {
 
 fn billing_routes() -> Router<AppState> {
     Router::new()
-        .route(
-            "/billing",
-            get(api::billing::get_billing_account).patch(api::billing::update_billing_account),
-        )
+        .route("/billing", get(api::billing::get_billing_account))
         .route("/billing/checkout", post(api::billing::create_checkout))
         .route(
             "/billing/pulse/buy",

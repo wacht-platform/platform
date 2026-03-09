@@ -61,15 +61,20 @@ impl CreateProjectWithStagingDeploymentCommand {
         ensure_billing_status_active(&billing_account.status, "project")?;
 
         let billing_account_id = billing_account.id;
+        let max_projects_per_account = if billing_account.max_projects_per_account > 0 {
+            billing_account.max_projects_per_account
+        } else {
+            MAX_PROJECTS_PER_BILLING_ACCOUNT
+        };
         let project_count = queries::ProjectsCountByBillingAccountQuery::builder()
             .billing_account_id(billing_account_id)
             .execute_with_db(tx.as_mut())
             .await?;
 
-        if project_count >= MAX_PROJECTS_PER_BILLING_ACCOUNT {
+        if project_count >= max_projects_per_account {
             return Err(AppError::Validation(format!(
                 "Project limit reached. You can create up to {} projects.",
-                MAX_PROJECTS_PER_BILLING_ACCOUNT
+                max_projects_per_account
             )));
         }
 
@@ -88,6 +93,7 @@ impl CreateProjectWithStagingDeploymentCommand {
             self.name.clone(),
             &self.auth_methods,
             billing_account.pulse_usage_disabled,
+            billing_account.max_staging_deployments_per_project,
         )
         .await?;
 

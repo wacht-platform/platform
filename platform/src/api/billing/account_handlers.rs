@@ -1,11 +1,11 @@
-use axum::{extract::State, response::Json};
+use axum::extract::State;
 
 use crate::application::{billing as billing_app, response::ApiResult};
 
 use common::state::AppState;
 use wacht::middleware::RequireAuth;
 
-use super::types::{PortalResponse, UpdateBillingAccountRequest, owner_id_from_auth};
+use super::types::{PortalResponse, owner_id_from_auth};
 
 pub async fn get_billing_account(
     State(state): State<AppState>,
@@ -15,34 +15,6 @@ pub async fn get_billing_account(
     let account = billing_app::get_billing_account(&state, &owner_id).await?;
 
     Ok(account.into())
-}
-
-pub async fn update_billing_account(
-    State(state): State<AppState>,
-    RequireAuth(auth): RequireAuth,
-    Json(req): Json<UpdateBillingAccountRequest>,
-) -> ApiResult<()> {
-    let owner_id = owner_id_from_auth(&auth);
-
-    billing_app::update_billing_account(
-        &state,
-        &owner_id,
-        billing_app::UpdateBillingAccountInput {
-            legal_name: req.legal_name,
-            billing_email: req.billing_email,
-            billing_phone: req.billing_phone,
-            tax_id: req.tax_id,
-            address_line1: req.address_line1,
-            address_line2: req.address_line2,
-            city: req.city,
-            state: req.state,
-            postal_code: req.postal_code,
-            country: req.country,
-        },
-    )
-    .await?;
-
-    Ok(().into())
 }
 
 pub async fn get_portal_url(

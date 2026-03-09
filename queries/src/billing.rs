@@ -15,6 +15,8 @@ SELECT
     ba.country AS ba_country, ba.status AS ba_status,
     ba.payment_method_status AS ba_payment_method_status, ba.currency AS ba_currency,
     ba.locale AS ba_locale, ba.pulse_balance_cents AS ba_pulse_balance_cents,
+    ba.max_projects_per_account AS ba_max_projects_per_account,
+    ba.max_staging_deployments_per_project AS ba_max_staging_deployments_per_project,
     COALESCE(ba.pulse_usage_disabled, false) AS ba_pulse_usage_disabled,
     COALESCE(ba.pulse_notified_below_five, false) AS ba_pulse_notified_below_five,
     COALESCE(ba.pulse_notified_below_zero, false) AS ba_pulse_notified_below_zero,
@@ -56,6 +58,9 @@ fn map_billing_account_with_prefix(row: &sqlx::postgres::PgRow, prefix: &str) ->
         currency: row.get(format!("{prefix}currency").as_str()),
         locale: row.get(format!("{prefix}locale").as_str()),
         pulse_balance_cents: row.get(format!("{prefix}pulse_balance_cents").as_str()),
+        max_projects_per_account: row.get(format!("{prefix}max_projects_per_account").as_str()),
+        max_staging_deployments_per_project: row
+            .get(format!("{prefix}max_staging_deployments_per_project").as_str()),
         pulse_usage_disabled: row.get(format!("{prefix}pulse_usage_disabled").as_str()),
         pulse_notified_below_five: row.get(format!("{prefix}pulse_notified_below_five").as_str()),
         pulse_notified_below_zero: row.get(format!("{prefix}pulse_notified_below_zero").as_str()),

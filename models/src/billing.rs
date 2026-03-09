@@ -23,6 +23,8 @@ pub struct BillingAccount {
     pub currency: String,
     pub locale: String,
     pub pulse_balance_cents: i64,
+    pub max_projects_per_account: i64,
+    pub max_staging_deployments_per_project: i64,
     pub pulse_usage_disabled: bool,
     pub pulse_notified_below_five: bool,
     pub pulse_notified_below_zero: bool,

@@ -45,6 +45,7 @@ impl CreateStagingDeploymentCommand {
             project.name.clone(),
             &self.auth_methods,
             project.pulse_usage_disabled,
+            project.max_staging_deployments_per_project,
         )
         .await?;
 

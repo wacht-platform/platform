@@ -152,6 +152,7 @@ pub(in crate::project) async fn create_staging_deployment_for_project<D>(
     app_name: String,
     auth_methods: &[String],
     pulse_usage_disabled: bool,
+    max_staging_deployments_per_project: i64,
 ) -> Result<StagingDeploymentInsertedRow, AppError>
 where
     D: HasIdProvider + ?Sized,
@@ -164,10 +165,16 @@ where
         .execute_with_db(conn.as_mut())
         .await?;
 
-    if staging_count >= MAX_STAGING_DEPLOYMENTS_PER_PROJECT {
+    let max_staging_deployments = if max_staging_deployments_per_project > 0 {
+        max_staging_deployments_per_project
+    } else {
+        MAX_STAGING_DEPLOYMENTS_PER_PROJECT
+    };
+
+    if staging_count >= max_staging_deployments {
         return Err(AppError::BadRequest(format!(
             "Maximum of {} staging deployments allowed per project",
-            MAX_STAGING_DEPLOYMENTS_PER_PROJECT
+            max_staging_deployments
         )));
     }
 

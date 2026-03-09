@@ -25,20 +25,6 @@ pub struct PortalResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct UpdateBillingAccountRequest {
-    pub legal_name: Option<String>,
-    pub billing_email: Option<String>,
-    pub billing_phone: Option<String>,
-    pub tax_id: Option<String>,
-    pub address_line1: Option<String>,
-    pub address_line2: Option<String>,
-    pub city: Option<String>,
-    pub state: Option<String>,
-    pub postal_code: Option<String>,
-    pub country: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct ChangePlanRequest {
     pub plan_name: String,
     pub proration_mode: Option<String>,

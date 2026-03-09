@@ -29,6 +29,8 @@ pub struct UpdateBillingAccountInput {
     pub state: Option<String>,
     pub postal_code: Option<String>,
     pub country: Option<String>,
+    pub max_projects_per_account: Option<i64>,
+    pub max_staging_deployments_per_project: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +86,26 @@ fn owner_type_from_owner_id(owner_id: &str) -> &'static str {
     } else {
         "user"
     }
+}
+
+fn validate_billing_limits(input: &UpdateBillingAccountInput) -> Result<(), AppError> {
+    if let Some(limit) = input.max_projects_per_account
+        && limit <= 0
+    {
+        return Err(AppError::Validation(
+            "max_projects_per_account must be greater than 0".to_string(),
+        ));
+    }
+
+    if let Some(limit) = input.max_staging_deployments_per_project
+        && limit <= 0
+    {
+        return Err(AppError::Validation(
+            "max_staging_deployments_per_project must be greater than 0".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 fn is_local_starter_subscription(subscription: &models::billing::Subscription) -> bool {
@@ -316,6 +338,8 @@ pub async fn update_billing_account(
     owner_id: &str,
     req: UpdateBillingAccountInput,
 ) -> Result<(), AppError> {
+    validate_billing_limits(&req)?;
+
     let existing = get_billing_account_or_404(state, owner_id).await?;
     enforce_checkout_cooldown(&existing)?;
 
@@ -330,6 +354,8 @@ pub async fn update_billing_account(
         .with_state(req.state)
         .with_postal_code(req.postal_code)
         .with_country(req.country)
+        .with_max_projects_per_account(req.max_projects_per_account)
+        .with_max_staging_deployments_per_project(req.max_staging_deployments_per_project)
         .execute_with_db(state.db_router.writer())
         .await?;
 

@@ -3,6 +3,8 @@ pub struct BillingAccountForOwnerLockResult {
     pub id: i64,
     pub status: String,
     pub pulse_usage_disabled: bool,
+    pub max_projects_per_account: i64,
+    pub max_staging_deployments_per_project: i64,
 }
 
 #[derive(Default)]
@@ -33,7 +35,17 @@ impl BillingAccountForOwnerLockQuery {
             .ok_or_else(|| AppError::Validation("owner_id is required".to_string()))?;
 
         let row = sqlx::query!(
-            "SELECT id, status, COALESCE(pulse_usage_disabled, false) AS \"pulse_usage_disabled!\" FROM billing_accounts WHERE owner_id = $1 FOR UPDATE",
+            r#"
+            SELECT
+                id,
+                status,
+                COALESCE(pulse_usage_disabled, false) AS "pulse_usage_disabled!",
+                COALESCE((to_jsonb(billing_accounts) ->> 'max_projects_per_account')::BIGINT, 10) AS "max_projects_per_account!",
+                COALESCE((to_jsonb(billing_accounts) ->> 'max_staging_deployments_per_project')::BIGINT, 3) AS "max_staging_deployments_per_project!"
+            FROM billing_accounts
+            WHERE owner_id = $1
+            FOR UPDATE
+            "#,
             owner_id
         )
         .fetch_optional(executor)
@@ -43,6 +55,8 @@ impl BillingAccountForOwnerLockQuery {
             id: r.id,
             status: r.status,
             pulse_usage_disabled: r.pulse_usage_disabled,
+            max_projects_per_account: r.max_projects_per_account,
+            max_staging_deployments_per_project: r.max_staging_deployments_per_project,
         }))
     }
 }
@@ -90,6 +104,7 @@ pub struct ProjectWithBillingForStagingRow {
     pub name: String,
     pub status: String,
     pub pulse_usage_disabled: bool,
+    pub max_staging_deployments_per_project: i64,
 }
 
 #[derive(Default)]
@@ -120,7 +135,11 @@ impl ProjectWithBillingForStagingQuery {
 
         let row = sqlx::query!(
             r#"
-            SELECT p.name, ba.status, COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!"
+            SELECT
+                p.name,
+                ba.status,
+                COALESCE(ba.pulse_usage_disabled, false) AS "pulse_usage_disabled!",
+                COALESCE((to_jsonb(ba) ->> 'max_staging_deployments_per_project')::BIGINT, 3) AS "max_staging_deployments_per_project!"
             FROM projects p
             JOIN billing_accounts ba ON p.billing_account_id = ba.id
             WHERE p.id = $1 AND p.deleted_at IS NULL
@@ -134,6 +153,7 @@ impl ProjectWithBillingForStagingQuery {
             name: r.name,
             status: r.status,
             pulse_usage_disabled: r.pulse_usage_disabled,
+            max_staging_deployments_per_project: r.max_staging_deployments_per_project,
         }))
     }
 }
@@ -292,4 +312,3 @@ impl ExistingDomainDeploymentQuery {
         Ok(row.map(|r| ExistingDomainDeploymentRow { id: r.id }))
     }
 }
-
