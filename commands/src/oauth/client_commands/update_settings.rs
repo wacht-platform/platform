@@ -21,14 +21,14 @@ pub struct UpdateOAuthClientSettings {
 }
 
 impl UpdateOAuthClientSettings {
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'a, Db>(
         self,
-        acquirer: A,
+        db: Db,
     ) -> Result<Option<OAuthClientData>, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut tx = acquirer.begin().await?;
+        let mut tx = db.begin().await?;
         if let Some(grant_types) = &self.grant_types {
             validate_oauth_client_grant_types(grant_types)?;
         }

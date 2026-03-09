@@ -13,11 +13,11 @@ impl GetUserDetailsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<UserDetails, AppError>
+    pub async fn execute_with_db<'a, Db>(&self, db: Db) -> Result<UserDetails, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut tx = acquirer.begin().await?;
+        let mut conn = db.acquire().await?;
         let user_row = sqlx::query!(
             r#"
             SELECT
@@ -39,7 +39,7 @@ impl GetUserDetailsQuery {
             self.deployment_id,
             self.user_id
         )
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut *conn)
         .await?;
 
         let email_rows = sqlx::query!(
@@ -53,7 +53,7 @@ impl GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut *conn)
         .await?;
 
         let email_addresses = email_rows
@@ -91,7 +91,7 @@ impl GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut *conn)
         .await?;
 
         let phone_numbers = phone_rows
@@ -118,7 +118,7 @@ impl GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut *conn)
         .await?;
 
         let social_connections = social_rows
@@ -148,7 +148,7 @@ impl GetUserDetailsQuery {
             "#,
             self.user_id
         )
-        .fetch_all(&mut *tx)
+        .fetch_all(&mut *conn)
         .await?;
 
         let user_details = UserDetails {
@@ -190,8 +190,6 @@ impl GetUserDetailsQuery {
             has_backup_codes: user_row.backup_codes.is_some()
                 && !user_row.backup_codes.unwrap_or_default().is_empty(),
         };
-        tx.commit().await?;
-
         Ok(user_details)
     }
 }

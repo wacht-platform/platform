@@ -23,11 +23,11 @@ impl DeploymentB2bBootstrapInsert {
         DeploymentB2bBootstrapInsertBuilder::default()
     }
 
-    pub(in crate::project) async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'a, Db>(&self, db: Db) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres> + Send,
+        Db: sqlx::Acquire<'a, Database = sqlx::Postgres> + Send,
     {
-        let mut tx = acquirer.begin().await?;
+        let mut tx = db.begin().await?;
         let now = chrono::Utc::now();
         let deployment_id = self.b2b_settings.settings.deployment_id;
 
@@ -252,4 +252,3 @@ impl DeploymentB2bBootstrapInsertBuilder {
         })
     }
 }
-

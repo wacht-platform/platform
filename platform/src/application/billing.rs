@@ -17,22 +17,6 @@ use tracing::error;
 
 use crate::application::AppState;
 
-#[derive(Debug, Clone, Default)]
-pub struct UpdateBillingAccountInput {
-    pub legal_name: Option<String>,
-    pub billing_email: Option<String>,
-    pub billing_phone: Option<String>,
-    pub tax_id: Option<String>,
-    pub address_line1: Option<String>,
-    pub address_line2: Option<String>,
-    pub city: Option<String>,
-    pub state: Option<String>,
-    pub postal_code: Option<String>,
-    pub country: Option<String>,
-    pub max_projects_per_account: Option<i64>,
-    pub max_staging_deployments_per_project: Option<i64>,
-}
-
 #[derive(Debug, Clone)]
 pub struct CreateCheckoutInput {
     pub plan_name: String,
@@ -86,26 +70,6 @@ fn owner_type_from_owner_id(owner_id: &str) -> &'static str {
     } else {
         "user"
     }
-}
-
-fn validate_billing_limits(input: &UpdateBillingAccountInput) -> Result<(), AppError> {
-    if let Some(limit) = input.max_projects_per_account
-        && limit <= 0
-    {
-        return Err(AppError::Validation(
-            "max_projects_per_account must be greater than 0".to_string(),
-        ));
-    }
-
-    if let Some(limit) = input.max_staging_deployments_per_project
-        && limit <= 0
-    {
-        return Err(AppError::Validation(
-            "max_staging_deployments_per_project must be greater than 0".to_string(),
-        ));
-    }
-
-    Ok(())
 }
 
 fn is_local_starter_subscription(subscription: &models::billing::Subscription) -> bool {
@@ -331,35 +295,6 @@ pub async fn get_billing_account(
     GetBillingAccountQuery::new(owner_id.to_string())
         .execute_with_db(state.db_router.writer())
         .await
-}
-
-pub async fn update_billing_account(
-    state: &AppState,
-    owner_id: &str,
-    req: UpdateBillingAccountInput,
-) -> Result<(), AppError> {
-    validate_billing_limits(&req)?;
-
-    let existing = get_billing_account_or_404(state, owner_id).await?;
-    enforce_checkout_cooldown(&existing)?;
-
-    UpdateBillingAccountCommand::new(existing.billing_account.id)
-        .with_legal_name(req.legal_name)
-        .with_billing_email(req.billing_email)
-        .with_billing_phone(req.billing_phone)
-        .with_tax_id(req.tax_id)
-        .with_address_line1(req.address_line1)
-        .with_address_line2(req.address_line2)
-        .with_city(req.city)
-        .with_state(req.state)
-        .with_postal_code(req.postal_code)
-        .with_country(req.country)
-        .with_max_projects_per_account(req.max_projects_per_account)
-        .with_max_staging_deployments_per_project(req.max_staging_deployments_per_project)
-        .execute_with_db(state.db_router.writer())
-        .await?;
-
-    Ok(())
 }
 
 pub async fn get_portal_url(state: &AppState, owner_id: &str) -> Result<String, AppError> {

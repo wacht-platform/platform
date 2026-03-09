@@ -35,12 +35,12 @@ impl AddWorkspaceMemberCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'a, Db>(
         self,
-        acquirer: A,
+        db: Db,
     ) -> Result<WorkspaceMemberDetails, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let workspace_membership_id = self.workspace_membership_id.ok_or_else(|| {
             AppError::Validation("workspace_membership_id is required".to_string())
@@ -48,7 +48,7 @@ impl AddWorkspaceMemberCommand {
         let implicit_org_membership_id = self.implicit_org_membership_id.ok_or_else(|| {
             AppError::Validation("implicit_org_membership_id is required".to_string())
         })?;
-        let mut tx = acquirer.begin().await?;
+        let mut tx = db.begin().await?;
 
         let workspace = sqlx::query!(
             "SELECT id, organization_id FROM workspaces WHERE id = $1 AND deployment_id = $2",

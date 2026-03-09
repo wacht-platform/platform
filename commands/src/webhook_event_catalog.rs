@@ -150,11 +150,11 @@ impl AppendEventsToCatalogCommand {
 }
 
 impl AppendEventsToCatalogCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
+    pub async fn execute_with_db<'a, Db>(self, db: Db) -> Result<WebhookEventCatalog, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut tx = acquirer.begin().await?;
+        let mut tx = db.begin().await?;
 
         let catalog = query_as!(
             WebhookEventCatalog,
@@ -243,11 +243,11 @@ impl ArchiveEventInCatalogCommand {
 }
 
 impl ArchiveEventInCatalogCommand {
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<WebhookEventCatalog, AppError>
+    pub async fn execute_with_db<'a, Db>(self, db: Db) -> Result<WebhookEventCatalog, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut tx = acquirer.begin().await?;
+        let mut tx = db.begin().await?;
 
         let catalog = query_as!(
             WebhookEventCatalog,

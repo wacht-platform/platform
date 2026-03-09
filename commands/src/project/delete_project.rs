@@ -18,11 +18,11 @@ impl DeleteProjectCommand {
         Self { id }
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<(), AppError>
+    pub async fn execute_with_db<'a, Db>(self, db: Db) -> Result<(), AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut tx = acquirer.begin().await?;
+        let mut tx = db.begin().await?;
         let deployment_ids = queries::ActiveDeploymentIdsByProjectQuery::builder()
             .project_id(self.id)
             .execute_with_db(tx.as_mut())

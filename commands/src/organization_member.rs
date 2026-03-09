@@ -29,14 +29,14 @@ impl AddOrganizationMemberCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(
+    pub async fn execute_with_db<'a, Db>(
         self,
-        acquirer: A,
+        db: Db,
     ) -> Result<OrganizationMemberDetails, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut tx = acquirer.begin().await?;
+        let mut tx = db.begin().await?;
         let membership_id = self
             .membership_id
             .ok_or_else(|| AppError::Validation("membership_id is required".to_string()))?;

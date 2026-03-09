@@ -152,9 +152,9 @@ impl AddPulseCreditsCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<PulseTransaction, AppError>
+    pub async fn execute_with_db<'a, Db>(self, db: Db) -> Result<PulseTransaction, AppError>
     where
-        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         if self.amount_pulse_cents <= 0 {
             return Err(AppError::BadRequest(
@@ -165,7 +165,7 @@ impl AddPulseCreditsCommand {
             .transaction_id
             .ok_or_else(|| AppError::Validation("transaction_id is required".to_string()))?;
 
-        let mut tx = acquirer.begin().await?;
+        let mut tx = db.begin().await?;
 
         let row = sqlx::query!(
             r#"
