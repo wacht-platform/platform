@@ -97,14 +97,8 @@ impl VerifyDeploymentDnsRecordsCommand {
 
         DeploymentDnsRecordsUpdate::builder()
             .deployment_id(self.deployment_id)
-            .domain_verification_records(
-                serde_json::to_value(&domain_verification_records)
-                    .map_err(|e| AppError::Serialization(e.to_string()))?,
-            )
-            .email_verification_records(
-                serde_json::to_value(&email_verification_records)
-                    .map_err(|e| AppError::Serialization(e.to_string()))?,
-            )
+            .domain_verification_records(json_value(&domain_verification_records)?)
+            .email_verification_records(json_value(&email_verification_records)?)
             .execute_with_db(deps.writer_pool())
             .await?;
 

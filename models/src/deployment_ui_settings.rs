@@ -4,6 +4,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct TokenOverrides {
     pub space_unit: Option<String>,
+    pub card: Option<String>,
+    pub card_foreground: Option<String>,
+    pub popover: Option<String>,
+    pub popover_foreground: Option<String>,
+    pub primary_foreground: Option<String>,
+    pub secondary: Option<String>,
+    pub secondary_foreground: Option<String>,
+    pub accent: Option<String>,
+    pub accent_foreground: Option<String>,
+    pub ring: Option<String>,
     pub foreground: Option<String>,
     pub foreground_inverse: Option<String>,
     pub secondary_text: Option<String>,
@@ -123,7 +133,7 @@ impl Default for DarkModeSettings {
     fn default() -> Self {
         Self {
             primary_color: Some("oklch(0.87 0 0)".to_string()),
-            background_color: Some("oklch(0.145 0 0)".to_string()),
+            background_color: Some("oklch(0.205 0 0)".to_string()),
             text_color: Some("oklch(0.985 0 0)".to_string()),
             token_overrides: None,
         }

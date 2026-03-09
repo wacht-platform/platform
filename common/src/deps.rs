@@ -5,10 +5,10 @@ use aws_sdk_s3::Client as S3Client;
 use redis::Client as RedisClient;
 
 use crate::{
-    HasAgentStorageClient, HasClickHouseService, HasCloudflareService, HasDbRouter,
-    HasDnsVerificationService, HasEncryptionService, HasIdGenerator, HasNatsClient,
-    HasNatsJetStream, HasPostmarkService, HasRedis, HasS3Client, HasTemplateRenderer,
-    HasTextProcessingService, HasEmbeddingProvider,
+    HasAgentStorageProvider, HasClickHouseProvider, HasCloudflareProvider, HasDbRouter,
+    HasDnsVerificationProvider, HasEmbeddingProvider, HasEncryptionProvider, HasIdProvider,
+    HasNatsJetStreamProvider, HasNatsProvider, HasPostmarkProvider, HasRedisProvider,
+    HasS3Provider, HasTemplateRenderer, HasTextProcessingProvider,
     clickhouse::ClickHouseService,
     cloudflare::CloudflareService,
     db_router::DbRouter,
@@ -130,42 +130,42 @@ impl<Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasDbRouter
     }
 }
 
-impl<Db, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasRedis
+impl<Db, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasRedisProvider
     for AppDeps<'_, Db, Present, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl>
 {
-    fn redis_client(&self) -> &RedisClient {
+    fn redis_provider(&self) -> &RedisClient {
         &self.app.redis_client
     }
 }
 
-impl<Db, Redis, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasEncryptionService
+impl<Db, Redis, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasEncryptionProvider
     for AppDeps<'_, Db, Redis, Present, Cf, Pm, Dns, Nats, S3, Id, Tpl>
 {
-    fn encryption_service(&self) -> &EncryptionService {
+    fn encryption_provider(&self) -> &EncryptionService {
         &self.app.encryption_service
     }
 }
 
-impl<Db, Redis, Enc, Pm, Dns, Nats, S3, Id, Tpl> HasCloudflareService
+impl<Db, Redis, Enc, Pm, Dns, Nats, S3, Id, Tpl> HasCloudflareProvider
     for AppDeps<'_, Db, Redis, Enc, Present, Pm, Dns, Nats, S3, Id, Tpl>
 {
-    fn cloudflare_service(&self) -> &CloudflareService {
+    fn cloudflare_provider(&self) -> &CloudflareService {
         &self.app.cloudflare_service
     }
 }
 
-impl<Db, Redis, Enc, Cf, Dns, Nats, S3, Id, Tpl> HasPostmarkService
+impl<Db, Redis, Enc, Cf, Dns, Nats, S3, Id, Tpl> HasPostmarkProvider
     for AppDeps<'_, Db, Redis, Enc, Cf, Present, Dns, Nats, S3, Id, Tpl>
 {
-    fn postmark_service(&self) -> &PostmarkService {
+    fn postmark_provider(&self) -> &PostmarkService {
         &self.app.postmark_service
     }
 }
 
-impl<Db, Redis, Enc, Cf, Pm, Nats, S3, Id, Tpl> HasDnsVerificationService
+impl<Db, Redis, Enc, Cf, Pm, Nats, S3, Id, Tpl> HasDnsVerificationProvider
     for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Present, Nats, S3, Id, Tpl>
 {
-    fn dns_verification_service(&self) -> &DnsVerificationService {
+    fn dns_verification_provider(&self) -> &DnsVerificationService {
         &self.app.dns_verification_service
     }
 }
@@ -185,42 +185,42 @@ impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id> HasTemplateRenderer
     }
 }
 
-impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Tpl> HasIdGenerator
+impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Tpl> HasIdProvider
     for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Present, Tpl>
 {
-    fn id_generator(&self) -> &sonyflake::Sonyflake {
+    fn id_provider(&self) -> &sonyflake::Sonyflake {
         &self.app.sf
     }
 }
 
-impl<Db, Redis, Enc, Cf, Pm, Dns, S3, Id, Tpl> HasNatsClient
+impl<Db, Redis, Enc, Cf, Pm, Dns, S3, Id, Tpl> HasNatsProvider
     for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Dns, Present, S3, Id, Tpl>
 {
-    fn nats_client(&self) -> &NatsClient {
+    fn nats_provider(&self) -> &NatsClient {
         &self.app.nats_client
     }
 }
 
-impl<Db, Redis, Enc, Cf, Pm, Dns, S3, Id, Tpl> HasNatsJetStream
+impl<Db, Redis, Enc, Cf, Pm, Dns, S3, Id, Tpl> HasNatsJetStreamProvider
     for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Dns, Present, S3, Id, Tpl>
 {
-    fn nats_jetstream(&self) -> &NatsJetStream {
+    fn nats_jetstream_provider(&self) -> &NatsJetStream {
         &self.app.nats_jetstream
     }
 }
 
-impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, Id, Tpl> HasS3Client
+impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, Id, Tpl> HasS3Provider
     for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Dns, Nats, Present, Id, Tpl>
 {
-    fn s3_client(&self) -> &S3Client {
+    fn s3_provider(&self) -> &S3Client {
         &self.app.s3_client
     }
 }
 
-impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasAgentStorageClient
+impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasAgentStorageProvider
     for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl>
 {
-    fn agent_storage_client(&self) -> Result<&S3Client, AppError> {
+    fn agent_storage_provider(&self) -> Result<&S3Client, AppError> {
         self.app
             .agent_storage_client
             .as_ref()
@@ -228,18 +228,18 @@ impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasAgentStorageClient
     }
 }
 
-impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasClickHouseService
+impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasClickHouseProvider
     for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl>
 {
-    fn clickhouse_service(&self) -> &ClickHouseService {
+    fn clickhouse_provider(&self) -> &ClickHouseService {
         &self.app.clickhouse_service
     }
 }
 
-impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasTextProcessingService
+impl<Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl> HasTextProcessingProvider
     for AppDeps<'_, Db, Redis, Enc, Cf, Pm, Dns, Nats, S3, Id, Tpl>
 {
-    fn text_processing_service(&self) -> &TextProcessingService {
+    fn text_processing_provider(&self) -> &TextProcessingService {
         &self.app.text_processing_service
     }
 }

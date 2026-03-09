@@ -219,10 +219,7 @@ impl CreateProductionDeploymentCommand {
 
         DeploymentEmailVerificationUpdate::builder()
             .deployment_id(deployment_id)
-            .email_verification_records(
-                serde_json::to_value(&email_verification_records)
-                    .map_err(|e| AppError::Serialization(e.to_string()))?,
-            )
+            .email_verification_records(json_value(&email_verification_records)?)
             .execute_with_db(conn)
             .await?;
 
@@ -249,10 +246,12 @@ impl CreateProductionDeploymentCommand {
         self.ensure_production_deployment_is_unique(tx.as_mut()).await?;
 
         let hosts = build_production_deployment_hosts(&self.custom_domain);
+        let frontend_hostname = hosts.frontend_host.clone();
+        let backend_hostname = hosts.backend_host.clone();
 
         let domain_verification_records = app_deps
             .cloudflare_provider()
-            .generate_domain_verification_records(&hosts.frontend_host, &hosts.backend_host);
+            .generate_domain_verification_records(&frontend_hostname, &backend_hostname);
 
         let empty_email_verification_records = EmailVerificationRecords::default();
 
@@ -263,18 +262,12 @@ impl CreateProductionDeploymentCommand {
             .frontend_host(hosts.frontend_host.clone())
             .publishable_key(hosts.publishable_key)
             .mail_from_host(hosts.mail_from_host.clone())
-            .domain_verification_records(
-                serde_json::to_value(&domain_verification_records)
-                    .map_err(|e| AppError::Serialization(e.to_string()))?,
-            )
-            .email_verification_records(
-                serde_json::to_value(&empty_email_verification_records)
-                    .map_err(|e| AppError::Serialization(e.to_string()))?,
-            )
+            .domain_verification_records(json_value(&domain_verification_records)?)
+            .email_verification_records(json_value(&empty_email_verification_records)?)
             .execute_with_db(tx.as_mut())
             .await?;
 
-        let waitlist_url = format!("{}/waitlist", hosts.frontend_host);
+        let waitlist_url = format!("https://{}/waitlist", hosts.frontend_host);
         bootstrap_deployment_defaults(
             tx.as_mut(),
             app_deps,
@@ -299,8 +292,6 @@ impl CreateProductionDeploymentCommand {
             )
             .await?;
 
-        let frontend_hostname = format!("accounts.{}", self.custom_domain);
-        let backend_hostname = format!("frontend.{}", self.custom_domain);
         let (frontend_hostname_id, backend_hostname_id) = self
             .provision_custom_hostnames(
                 app_deps,
@@ -320,10 +311,7 @@ impl CreateProductionDeploymentCommand {
         updated_domain_verification_records.backend_hostname_id = backend_hostname_id;
         DeploymentDomainVerificationUpdate::builder()
             .deployment_id(deployment_row.id)
-            .domain_verification_records(
-                serde_json::to_value(&updated_domain_verification_records)
-                    .map_err(|e| AppError::Serialization(e.to_string()))?,
-            )
+            .domain_verification_records(json_value(&updated_domain_verification_records)?)
             .execute_with_db(tx.as_mut())
             .await?;
 
