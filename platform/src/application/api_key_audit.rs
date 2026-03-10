@@ -1,4 +1,5 @@
 use base64::Engine;
+use common::deps;
 use common::state::AppState;
 use dto::json::api_key::{
     ApiAuditAnalyticsResponse, ApiAuditLogsResponse, ApiAuditTimeseriesResponse,
@@ -63,7 +64,7 @@ pub async fn get_api_audit_logs(
         start_date: params.start_date,
         end_date: params.end_date,
     }
-    .execute_with_deps(app_state)
+    .execute_with_deps(&deps::from_app(app_state).db())
     .await
 }
 
@@ -87,7 +88,7 @@ pub async fn get_api_audit_analytics(
         include_rate_limits: params.include_rate_limits.unwrap_or(false),
         top_limit: params.top_limit.unwrap_or(10),
     }
-    .execute_with_deps(app_state)
+    .execute_with_deps(&deps::from_app(app_state).db())
     .await
 }
 
@@ -113,6 +114,6 @@ pub async fn get_api_audit_timeseries(
         interval: normalized_interval,
         key_id: params.key_id.map(|v| v.get()),
     }
-    .execute_with_deps(app_state)
+    .execute_with_deps(&deps::from_app(app_state).db())
     .await
 }

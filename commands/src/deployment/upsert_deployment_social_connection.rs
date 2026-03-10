@@ -36,6 +36,33 @@ impl UpsertDeploymentSocialConnectionCommand {
 }
 
 impl UpsertDeploymentSocialConnectionCommand {
+    fn validate_production_enablement(
+        is_production: bool,
+        is_enabling: bool,
+        credentials: Option<&OauthCredentials>,
+    ) -> Result<(), AppError> {
+        if !(is_production && is_enabling) {
+            return Ok(());
+        }
+
+        let credentials_ref = credentials.ok_or_else(|| {
+            AppError::Validation(
+                "Custom credentials are required to enable social login in production".to_string(),
+            )
+        })?;
+
+        if credentials_ref.client_id.trim().is_empty()
+            || credentials_ref.client_secret.trim().is_empty()
+            || credentials_ref.redirect_uri.trim().is_empty()
+        {
+            return Err(AppError::Validation(
+                "Custom credentials are required to enable social login in production".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     pub async fn execute_with_deps<D>(
         self,
         deps: &D,
@@ -65,25 +92,7 @@ impl UpsertDeploymentSocialConnectionCommand {
 
         let is_production = deployment.mode.eq_ignore_ascii_case("production");
         let is_enabling = enabled.unwrap_or(false);
-
-        if is_production && is_enabling {
-            let credentials_ref = credentials.as_ref().ok_or_else(|| {
-                AppError::Validation(
-                    "Custom credentials are required to enable social login in production"
-                        .to_string(),
-                )
-            })?;
-
-            if credentials_ref.client_id.trim().is_empty()
-                || credentials_ref.client_secret.trim().is_empty()
-                || credentials_ref.redirect_uri.trim().is_empty()
-            {
-                return Err(AppError::Validation(
-                    "Custom credentials are required to enable social login in production"
-                        .to_string(),
-                ));
-            }
-        }
+        Self::validate_production_enablement(is_production, is_enabling, credentials.as_ref())?;
 
         if let (Some(provider_ref), Some(credentials_ref)) =
             (provider.as_ref(), credentials.as_mut())

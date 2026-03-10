@@ -8,11 +8,11 @@ use common::{
 };
 use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
-use dto::json::nats::NatsTaskMessage;
 use queries::GetWebhookSubscriptionFilterRulesQuery;
 
 use super::{
     GetSubscribedEndpointsCommand,
+    webhook_delivery::EnqueueWebhookDeliveryCommand,
     webhook_subscription::evaluate_filter,
 };
 
@@ -63,13 +63,15 @@ impl TriggerWebhookEventCommand {
             None => return Err(AppError::NotFound("Webhook app not found".to_string())),
         };
 
-        let payload_size = self.payload.to_string().len() as i32;
+        let payload_json = self.payload.to_string();
+        let payload_size = payload_json.len() as i32;
         let app_slug = app_info.app_slug.clone();
+        let event_name = self.event_name.clone();
 
         let endpoints = GetSubscribedEndpointsCommand::new(
             self.deployment_id,
             app_slug.clone(),
-            self.event_name.clone(),
+            event_name.clone(),
         )
         .execute_with_deps(deps)
         .await?;
@@ -106,10 +108,10 @@ impl TriggerWebhookEventCommand {
                 endpoint.id,
                 self.deployment_id,
                 app_slug.clone(),
-                self.event_name,
+                event_name.clone(),
                 self.payload.clone(),
                 endpoint.filter_rules.clone(),
-                self.payload.to_string().len() as i32,
+                payload_size,
                 webhook_id,
                 webhook_timestamp,
                 signature,
@@ -120,19 +122,18 @@ impl TriggerWebhookEventCommand {
 
             delivery_ids.push(delivery.id);
 
-            let payload_json = self.payload.to_string();
             let ch_log = WebhookLog {
                 deployment_id: self.deployment_id,
                 delivery_id: delivery.id,
                 app_slug: app_slug.clone(),
                 endpoint_id: endpoint.id,
-                event_name: self.event_name.clone(),
+                event_name: event_name.clone(),
                 status: "pending".to_string(),
                 http_status_code: None,
                 response_time_ms: None,
                 attempt_number: 0,
                 max_attempts: endpoint.max_retries,
-                payload: Some(payload_json),
+                payload: Some(payload_json.clone()),
                 payload_size_bytes: payload_size,
                 response_body: None,
                 response_headers: None,
@@ -144,26 +145,13 @@ impl TriggerWebhookEventCommand {
                 tracing::warn!("Failed to log pending delivery to Tinybird: {}", e);
             }
 
-            let task_message = NatsTaskMessage {
-                task_type: "webhook.deliver".to_string(),
-                task_id: format!("webhook-{}-{}", delivery.id, self.deployment_id),
-                payload: serde_json::json!({
-                    "delivery_id": delivery.id,
-                    "deployment_id": self.deployment_id
-                }),
-            };
-
-            deps.nats_provider()
-                .publish(
-                    "worker.tasks.webhook.deliver",
-                    serde_json::to_vec(&task_message)
-                        .map_err(|e| {
-                            AppError::Internal(format!("Failed to serialize task: {}", e))
-                        })?
-                        .into(),
-                )
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to publish to NATS: {}", e)))?;
+            EnqueueWebhookDeliveryCommand::new(
+                format!("webhook-{}-{}", delivery.id, self.deployment_id),
+                delivery.id,
+                self.deployment_id,
+            )
+            .execute_with_deps(deps)
+            .await?;
         }
 
         Ok(TriggerWebhookEventResult {
@@ -345,22 +333,13 @@ impl ReplayWebhookDeliveryCommand {
         .fetch_one(pool)
         .await?;
 
-        let task_message = NatsTaskMessage {
-            task_type: "webhook.deliver".to_string(),
-            task_id: format!("webhook-replay-{}", new_delivery.id),
-            payload: serde_json::json!({
-                "delivery_id": new_delivery.id,
-                "deployment_id": self.deployment_id
-            }),
-        };
-
-        deps.nats_provider()
-            .publish(
-                "worker.tasks.webhook.deliver",
-                serde_json::to_vec(&task_message)?.into(),
-            )
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to publish replay to NATS: {}", e)))?;
+        EnqueueWebhookDeliveryCommand::new(
+            format!("webhook-replay-{}", new_delivery.id),
+            new_delivery.id,
+            self.deployment_id,
+        )
+        .execute_with_deps(deps)
+        .await?;
 
         Ok(new_delivery.id)
     }

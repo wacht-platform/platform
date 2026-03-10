@@ -13,6 +13,18 @@ fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
     serde_json::from_value(value).unwrap_or_default()
 }
 
+fn json_option_default(value: Option<serde_json::Value>, default: serde_json::Value) -> serde_json::Value {
+    value.unwrap_or(default)
+}
+
+fn json_vec_default(value: serde_json::Value) -> Vec<String> {
+    if value.is_null() {
+        Vec::new()
+    } else {
+        json_default(value)
+    }
+}
+
 pub struct CreateApiKeyCommand {
     pub key_id: Option<i64>,
     pub app_slug: String,
@@ -183,11 +195,11 @@ impl CreateApiKeyCommand {
             key_prefix: rec.key_prefix,
             key_suffix: rec.key_suffix,
             key_hash: rec.key_hash,
-            permissions: json_default(rec.permissions.clone().unwrap_or_else(|| serde_json::json!([]))),
-            metadata: rec
-                .metadata
-                .clone()
-                .unwrap_or_else(|| serde_json::json!({})),
+            permissions: json_default(json_option_default(
+                rec.permissions.clone(),
+                serde_json::json!([]),
+            )),
+            metadata: json_option_default(rec.metadata.clone(), serde_json::json!({})),
             rate_limits: vec![],
             rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
             owner_user_id: rec.owner_user_id,
@@ -195,16 +207,8 @@ impl CreateApiKeyCommand {
             workspace_id: rec.workspace_id,
             organization_membership_id: rec.organization_membership_id,
             workspace_membership_id: rec.workspace_membership_id,
-            org_role_permissions: if rec.org_role_permissions.is_null() {
-                vec![]
-            } else {
-                json_default(rec.org_role_permissions.clone())
-            },
-            workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
-                vec![]
-            } else {
-                json_default(rec.workspace_role_permissions.clone())
-            },
+            org_role_permissions: json_vec_default(rec.org_role_permissions.clone()),
+            workspace_role_permissions: json_vec_default(rec.workspace_role_permissions.clone()),
             expires_at: rec.expires_at,
             last_used_at: rec.last_used_at,
             is_active: rec.is_active.unwrap_or(true),
@@ -309,11 +313,11 @@ impl RotateApiKeyCommand {
             key_prefix: rec.key_prefix,
             key_suffix: rec.key_suffix,
             key_hash: String::new(), // Not needed for rotation
-            permissions: json_default(rec.permissions.clone().unwrap_or_else(|| serde_json::json!([]))),
-            metadata: rec
-                .metadata
-                .clone()
-                .unwrap_or_else(|| serde_json::json!({})),
+            permissions: json_default(json_option_default(
+                rec.permissions.clone(),
+                serde_json::json!([]),
+            )),
+            metadata: json_option_default(rec.metadata.clone(), serde_json::json!({})),
             rate_limits: vec![],
             rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
             owner_user_id: rec.owner_user_id,
@@ -321,16 +325,8 @@ impl RotateApiKeyCommand {
             workspace_id: rec.workspace_id,
             organization_membership_id: rec.organization_membership_id,
             workspace_membership_id: rec.workspace_membership_id,
-            org_role_permissions: if rec.org_role_permissions.is_null() {
-                vec![]
-            } else {
-                json_default(rec.org_role_permissions.clone())
-            },
-            workspace_role_permissions: if rec.workspace_role_permissions.is_null() {
-                vec![]
-            } else {
-                json_default(rec.workspace_role_permissions.clone())
-            },
+            org_role_permissions: json_vec_default(rec.org_role_permissions.clone()),
+            workspace_role_permissions: json_vec_default(rec.workspace_role_permissions.clone()),
             expires_at: rec.expires_at,
             last_used_at: None,
             is_active: true,

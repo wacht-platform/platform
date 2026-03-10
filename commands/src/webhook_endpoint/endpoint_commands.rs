@@ -18,32 +18,62 @@ async fn replace_endpoint_subscriptions(
     app_slug: &str,
     subscriptions: &[EventSubscriptionData],
 ) -> Result<(), AppError> {
-    query(
+    sqlx::query!(
         r#"
         DELETE FROM webhook_endpoint_subscriptions
         WHERE endpoint_id = $1
         "#,
+        endpoint_id
     )
-    .bind(endpoint_id)
     .execute(&mut **tx)
     .await?;
 
     for subscription in subscriptions {
-        query(
+        sqlx::query!(
             r#"
             INSERT INTO webhook_endpoint_subscriptions (endpoint_id, deployment_id, app_slug, event_name, filter_rules)
             VALUES ($1, $2, $3, $4, $5)
             "#,
+            endpoint_id,
+            deployment_id,
+            app_slug,
+            &subscription.event_name,
+            subscription
+                .filter_rules
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({}))
         )
-        .bind(endpoint_id)
-        .bind(deployment_id)
-        .bind(app_slug)
-        .bind(&subscription.event_name)
-        .bind(&subscription.filter_rules)
         .execute(&mut **tx)
         .await?;
     }
 
+    Ok(())
+}
+
+fn build_event_subscriptions(
+    subscribe_to_events: &[String],
+    filter_rules: Option<Value>,
+) -> Vec<EventSubscriptionData> {
+    subscribe_to_events
+        .iter()
+        .map(|event_name| EventSubscriptionData {
+            event_name: event_name.clone(),
+            filter_rules: filter_rules.clone(),
+        })
+        .collect()
+}
+
+fn validate_endpoint_url(url: &str) -> Result<(), AppError> {
+    url::Url::parse(url).map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
+    validate_webhook_url(url).map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
+    Ok(())
+}
+
+fn validate_requested_max_retries(max_retries: Option<i32>) -> Result<(), AppError> {
+    let max_allowed_retries = max_attempts_for_retry_window(MAX_ENDPOINT_RETRY_WINDOW_SECONDS);
+    if let Some(value) = max_retries {
+        validate_endpoint_max_retries(value, max_allowed_retries)?;
+    }
     Ok(())
 }
 
@@ -109,11 +139,7 @@ impl CreateWebhookEndpointCommand {
     where
         D: HasDbRouter + HasIdProvider + ?Sized,
     {
-        url::Url::parse(&self.url)
-            .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
-
-        validate_webhook_url(&self.url)
-            .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
+        validate_endpoint_url(&self.url)?;
 
         validate_event_subscriptions(
             deps.db_router(),
@@ -123,7 +149,8 @@ impl CreateWebhookEndpointCommand {
         )
         .await?;
 
-        let max_allowed_retries = max_attempts_for_retry_window(MAX_ENDPOINT_RETRY_WINDOW_SECONDS);
+        let max_allowed_retries =
+            max_attempts_for_retry_window(MAX_ENDPOINT_RETRY_WINDOW_SECONDS);
         let endpoint_max_retries = self.max_retries.unwrap_or(max_allowed_retries);
         validate_endpoint_max_retries(endpoint_max_retries, max_allowed_retries)?;
 
@@ -167,21 +194,14 @@ impl CreateWebhookEndpointCommand {
         .fetch_one(&mut *tx)
         .await?;
 
-        for subscription in self.subscriptions {
-            query!(
-                r#"
-                INSERT INTO webhook_endpoint_subscriptions (endpoint_id, deployment_id, app_slug, event_name, filter_rules)
-                VALUES ($1, $2, $3, $4, $5)
-                "#,
-                endpoint.id,
-                self.deployment_id,
-                self.app_slug,
-                subscription.event_name,
-                subscription.filter_rules
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
+        replace_endpoint_subscriptions(
+            &mut tx,
+            endpoint.id,
+            self.deployment_id,
+            &endpoint.app_slug,
+            &self.subscriptions,
+        )
+        .await?;
 
         tx.commit().await?;
         Ok(endpoint)
@@ -263,17 +283,10 @@ impl UpdateWebhookEndpointCommand {
         D: HasDbRouter + ?Sized,
     {
         if let Some(ref url) = self.url {
-            url::Url::parse(url)
-                .map_err(|_| AppError::BadRequest("Invalid webhook URL".to_string()))?;
-
-            validate_webhook_url(url)
-                .map_err(|e| AppError::BadRequest(format!("Invalid webhook URL: {}", e)))?;
+            validate_endpoint_url(url)?;
         }
 
-        let max_allowed_retries = max_attempts_for_retry_window(MAX_ENDPOINT_RETRY_WINDOW_SECONDS);
-        if let Some(max_retries) = self.max_retries {
-            validate_endpoint_max_retries(max_retries, max_allowed_retries)?;
-        }
+        validate_requested_max_retries(self.max_retries)?;
 
         let mut tx = deps.writer_pool().begin().await?;
 
@@ -387,31 +400,16 @@ impl UpdateEndpointSubscriptionsCommand {
         .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?
         .app_slug;
 
-        let subscriptions_for_validation = self
-            .subscribe_to_events
-            .iter()
-            .map(|event_name| EventSubscriptionData {
-                event_name: event_name.clone(),
-                filter_rules: self.filter_rules.clone(),
-            })
-            .collect::<Vec<_>>();
+        let subscriptions =
+            build_event_subscriptions(&self.subscribe_to_events, self.filter_rules.clone());
 
         validate_event_subscriptions(
             deps.db_router(),
             self.deployment_id,
             &app_slug,
-            &subscriptions_for_validation,
+            &subscriptions,
         )
         .await?;
-
-        let subscriptions = self
-            .subscribe_to_events
-            .iter()
-            .map(|event_name| EventSubscriptionData {
-                event_name: event_name.clone(),
-                filter_rules: self.filter_rules.clone(),
-            })
-            .collect::<Vec<_>>();
 
         replace_endpoint_subscriptions(
             &mut tx,
@@ -423,7 +421,7 @@ impl UpdateEndpointSubscriptionsCommand {
         .await?;
 
         tx.commit().await?;
-        Ok(self.subscribe_to_events)
+        Ok(subscriptions.into_iter().map(|s| s.event_name).collect())
     }
 }
 

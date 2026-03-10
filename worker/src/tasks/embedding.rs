@@ -1,4 +1,5 @@
 use anyhow::Result;
+use common::deps;
 use common::state::AppState;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -26,7 +27,7 @@ pub async fn process_document_batch_impl(
     let command = ProcessDocumentBatchCommand::new(deployment_id, knowledge_base_id, batch_size);
 
     command
-        .execute_with_deps(app_state)
+        .execute_with_deps(&deps::from_app(app_state).db().enc())
         .await
         .map_err(|e| anyhow::anyhow!("Failed to process document batch: {}", e))
 }

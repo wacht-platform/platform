@@ -3,13 +3,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{query, query_as};
 
-use crate::webhook_delivery::ClearEndpointFailuresCommand;
+use crate::webhook_delivery::{ClearEndpointFailuresCommand, EnqueueWebhookDeliveryCommand};
 use common::{
     HasClickHouseProvider, HasDbRouter, HasIdProvider, HasNatsProvider, HasRedisProvider, error::AppError,
 };
 use common::utils::webhook::generate_webhook_signature;
 use dto::clickhouse::webhook::WebhookLog;
-use dto::json::nats::NatsTaskMessage;
 use models::WebhookEndpoint;
 use queries::GetWebhookSubscriptionFilterRulesQuery;
 
@@ -118,22 +117,13 @@ impl TestWebhookEndpointCommand {
 
         tx.commit().await?;
 
-        let task_message = NatsTaskMessage {
-            task_type: "webhook.deliver".to_string(),
-            task_id: format!("webhook-test-{}", delivery_id),
-            payload: serde_json::json!({
-                "delivery_id": delivery_id,
-                "deployment_id": self.deployment_id
-            }),
-        };
-
-        deps.nats_provider()
-            .publish(
-                "worker.tasks.webhook.deliver",
-                serde_json::to_vec(&task_message)?.into(),
-            )
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to publish test webhook: {}", e)))?;
+        EnqueueWebhookDeliveryCommand::new(
+            format!("webhook-test-{}", delivery_id),
+            delivery_id,
+            self.deployment_id,
+        )
+        .execute_with_deps(deps)
+        .await?;
 
         Ok(TestWebhookResult {
             delivery_id: Some(delivery_id),

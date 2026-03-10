@@ -88,6 +88,34 @@ async fn resolve_workspace_organization(
     })
 }
 
+async fn resolve_scope_organization(
+    conn: &mut sqlx::PgConnection,
+    deployment_id: i64,
+    organization_id: Option<i64>,
+    workspace_id: Option<i64>,
+) -> Result<Option<i64>, AppError> {
+    let mut resolved_organization_id = organization_id;
+
+    if let Some(workspace_id) = workspace_id {
+        let workspace_org_id =
+            resolve_workspace_organization(conn, deployment_id, workspace_id).await?;
+        if let Some(explicit_org_id) = resolved_organization_id
+            && explicit_org_id != workspace_org_id
+        {
+            return Err(AppError::Validation(
+                "workspace_id does not belong to organization_id".to_string(),
+            ));
+        }
+        resolved_organization_id = Some(workspace_org_id);
+    }
+
+    if let Some(org_id) = resolved_organization_id {
+        ensure_organization_exists(conn, deployment_id, org_id).await?;
+    }
+
+    Ok(resolved_organization_id)
+}
+
 async fn ensure_user_in_organization(
     conn: &mut sqlx::PgConnection,
     user_id: i64,
@@ -195,25 +223,13 @@ impl CreateApiAuthAppCommand {
         Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         let mut tx = db.begin().await?;
-        let mut organization_id = self.organization_id;
-
-        if let Some(workspace_id) = self.workspace_id {
-            let workspace_org_id =
-                resolve_workspace_organization(tx.as_mut(), self.deployment_id, workspace_id)
-                    .await?;
-            if let Some(explicit_org_id) = organization_id {
-                if explicit_org_id != workspace_org_id {
-                    return Err(AppError::Validation(
-                        "workspace_id does not belong to organization_id".to_string(),
-                    ));
-                }
-            }
-            organization_id = Some(workspace_org_id);
-        }
-
-        if let Some(org_id) = organization_id {
-            ensure_organization_exists(tx.as_mut(), self.deployment_id, org_id).await?;
-        }
+        let organization_id = resolve_scope_organization(
+            tx.as_mut(),
+            self.deployment_id,
+            self.organization_id,
+            self.workspace_id,
+        )
+        .await?;
 
         if let Some(user_id) = self.user_id {
             ensure_user_exists(tx.as_mut(), self.deployment_id, user_id).await?;
@@ -299,26 +315,15 @@ impl UpdateApiAuthAppCommand {
             .await?
             .ok_or_else(|| AppError::NotFound("API auth app not found".to_string()))?;
 
-        let mut next_organization_id = self.organization_id.or(current.organization_id);
+        let next_organization_id = self.organization_id.or(current.organization_id);
         let next_workspace_id = self.workspace_id.or(current.workspace_id);
-
-        if let Some(workspace_id) = next_workspace_id {
-            let workspace_org_id =
-                resolve_workspace_organization(tx.as_mut(), self.deployment_id, workspace_id)
-                    .await?;
-            if let Some(explicit_org_id) = next_organization_id {
-                if explicit_org_id != workspace_org_id {
-                    return Err(AppError::Validation(
-                        "workspace_id does not belong to organization_id".to_string(),
-                    ));
-                }
-            }
-            next_organization_id = Some(workspace_org_id);
-        }
-
-        if let Some(org_id) = next_organization_id {
-            ensure_organization_exists(tx.as_mut(), self.deployment_id, org_id).await?;
-        }
+        let next_organization_id = resolve_scope_organization(
+            tx.as_mut(),
+            self.deployment_id,
+            next_organization_id,
+            next_workspace_id,
+        )
+        .await?;
 
         if let Some(user_id) = current.user_id {
             if let Some(org_id) = next_organization_id {

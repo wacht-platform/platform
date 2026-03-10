@@ -1,5 +1,5 @@
 use aws_sdk_s3::primitives::ByteStream;
-use common::{HasS3Provider, error::AppError};
+use common::{HasAgentStorageProvider, error::AppError};
 use tracing::{debug, error, info};
 
 pub struct WriteToAgentStorageCommand {
@@ -26,7 +26,7 @@ impl WriteToAgentStorageCommand {
 impl WriteToAgentStorageCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<String, AppError>
     where
-        D: HasS3Provider + ?Sized,
+        D: HasAgentStorageProvider + ?Sized,
     {
         info!("[AgentStorage] Starting file upload to agent storage");
         debug!(
@@ -42,7 +42,7 @@ impl WriteToAgentStorageCommand {
         debug!("[AgentStorage] Target bucket: {}", bucket);
 
         let mut request = deps
-            .s3_provider()
+            .agent_storage_provider()?
             .put_object()
             .bucket(bucket)
             .key(&self.key)
@@ -111,9 +111,9 @@ impl DeleteFromAgentStorageCommand {
 impl DeleteFromAgentStorageCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasS3Provider + ?Sized,
+        D: HasAgentStorageProvider + ?Sized,
     {
-        deps.s3_provider()
+        deps.agent_storage_provider()?
             .delete_object()
             .bucket("wacht-agents")
             .key(&self.key)
@@ -138,10 +138,10 @@ impl DeletePrefixFromAgentStorageCommand {
 impl DeletePrefixFromAgentStorageCommand {
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<(), AppError>
     where
-        D: HasS3Provider + ?Sized,
+        D: HasAgentStorageProvider + ?Sized,
     {
         let list_result = deps
-            .s3_provider()
+            .agent_storage_provider()?
             .list_objects_v2()
             .bucket("wacht-agents")
             .prefix(&self.prefix)
@@ -152,7 +152,7 @@ impl DeletePrefixFromAgentStorageCommand {
         if let Some(objects) = list_result.contents {
             for obj in objects {
                 if let Some(key) = obj.key {
-                    deps.s3_provider()
+                    deps.agent_storage_provider()?
                         .delete_object()
                         .bucket("wacht-agents")
                         .key(&key)

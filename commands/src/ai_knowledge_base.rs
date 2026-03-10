@@ -282,9 +282,8 @@ impl DeleteAiKnowledgeBaseCommand {
             "{}/knowledge-bases/{}/",
             self.deployment_id, self.knowledge_base_id
         );
-        let storage_client = deps.agent_storage_provider()?;
         if let Err(e) = crate::DeletePrefixFromAgentStorageCommand::new(storage_prefix)
-            .execute_with_deps(storage_client)
+            .execute_with_deps(deps)
             .await
         {
             tracing::warn!(
@@ -379,10 +378,9 @@ impl UploadKnowledgeBaseDocumentCommand {
             "{}/knowledge-bases/{}/{}",
             deployment_id, self.knowledge_base_id, self.file_name
         );
-        let storage_client = deps.agent_storage_provider()?;
         let file_url = WriteToAgentStorageCommand::new(file_path, self.file_content.clone())
             .with_content_type(self.file_type.clone())
-            .execute_with_deps(storage_client)
+            .execute_with_deps(deps)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -483,9 +481,8 @@ impl DeleteKnowledgeBaseDocumentCommand {
             "{}/knowledge-bases/{}/{}",
             self.deployment_id, self.knowledge_base_id, doc.file_name
         );
-        let storage_client = deps.agent_storage_provider()?;
         if let Err(e) = crate::DeleteFromAgentStorageCommand::new(storage_key)
-            .execute_with_deps(storage_client)
+            .execute_with_deps(deps)
             .await
         {
             tracing::warn!("Failed to delete file from storage: {}", e);

@@ -36,7 +36,9 @@ impl CreateProductionDeploymentCommand {
     ) {
         tracing::warn!("Cleaning up external resources for domain: {}", domain);
 
-        if let Err(e) = cloudflare_service.delete_custom_hostname(frontend_hostname).await
+        if let Err(e) = cloudflare_service
+            .delete_custom_hostname(frontend_hostname)
+            .await
         {
             tracing::error!(
                 "Failed to cleanup frontend hostname {}: {}",
@@ -50,7 +52,9 @@ impl CreateProductionDeploymentCommand {
             );
         }
 
-        if let Err(e) = cloudflare_service.delete_custom_hostname(backend_hostname).await
+        if let Err(e) = cloudflare_service
+            .delete_custom_hostname(backend_hostname)
+            .await
         {
             tracing::error!(
                 "Failed to cleanup backend hostname {}: {}",
@@ -134,9 +138,42 @@ impl CreateProductionDeploymentCommand {
         Ok(())
     }
 
+    async fn create_custom_hostname<D>(
+        &self,
+        deps: &D,
+        hostname: &str,
+        target: &str,
+        kind: &str,
+    ) -> Result<String, AppError>
+    where
+        D: common::HasCloudflareProvider,
+    {
+        match deps
+            .cloudflare_provider()
+            .create_custom_hostname(hostname, target)
+            .await
+        {
+            Ok(custom_hostname) => {
+                tracing::info!(
+                    "Successfully created {} custom hostname: {}",
+                    kind,
+                    hostname
+                );
+                Ok(custom_hostname.id)
+            }
+            Err(e) => {
+                tracing::error!("Failed to create {} custom hostname: {}", kind, e);
+                Err(AppError::External(format!(
+                    "Failed to create {} custom hostname: {}",
+                    kind, e
+                )))
+            }
+        }
+    }
+
     async fn provision_custom_hostnames<D>(
         &self,
-        app_deps: &D,
+        deps: &D,
         frontend_hostname: &str,
         backend_hostname: &str,
         postmark_domain_id: i64,
@@ -144,46 +181,31 @@ impl CreateProductionDeploymentCommand {
     where
         D: common::HasCloudflareProvider + common::HasPostmarkProvider,
     {
-        let frontend_hostname_result = app_deps
-            .cloudflare_provider()
-            .create_custom_hostname(frontend_hostname, "accounts.wacht.services")
-            .await;
+        let frontend_hostname_id = self
+            .create_custom_hostname(
+                deps,
+                frontend_hostname,
+                "accounts.wacht.services",
+                "frontend",
+            )
+            .await
+            .map(Some)
+            .map_err(|e| {
+                AppError::External(format!(
+                    "{}. Deployment has been cleaned up.",
+                    e.to_string()
+                ))
+            })?;
 
-        let frontend_hostname_id = match frontend_hostname_result {
-            Ok(custom_hostname) => {
-                tracing::info!(
-                    "Successfully created frontend custom hostname: {}",
-                    frontend_hostname
-                );
-                Some(custom_hostname.id)
-            }
+        let backend_hostname_id = match self
+            .create_custom_hostname(deps, backend_hostname, "frontend.wacht.services", "backend")
+            .await
+        {
+            Ok(id) => Some(id),
             Err(e) => {
-                tracing::error!("Failed to create frontend custom hostname: {}", e);
-                return Err(AppError::External(format!(
-                    "Failed to create frontend custom hostname: {}. Deployment has been cleaned up.",
-                    e
-                )));
-            }
-        };
-
-        let backend_hostname_result = app_deps
-            .cloudflare_provider()
-            .create_custom_hostname(backend_hostname, "frontend.wacht.services")
-            .await;
-
-        let backend_hostname_id = match backend_hostname_result {
-            Ok(custom_hostname) => {
-                tracing::info!(
-                    "Successfully created backend custom hostname: {}",
-                    backend_hostname
-                );
-                Some(custom_hostname.id)
-            }
-            Err(e) => {
-                tracing::error!("Failed to create backend custom hostname: {}", e);
                 self.cleanup_external_resources_on_failure(
-                    app_deps.cloudflare_provider(),
-                    app_deps.postmark_provider(),
+                    deps.cloudflare_provider(),
+                    deps.postmark_provider(),
                     frontend_hostname,
                     backend_hostname,
                     &self.custom_domain,
@@ -192,7 +214,7 @@ impl CreateProductionDeploymentCommand {
                 .await;
 
                 return Err(AppError::External(format!(
-                    "Failed to create backend custom hostname: {}. Resources have been cleaned up.",
+                    "{}. Resources have been cleaned up.",
                     e
                 )));
             }
@@ -203,7 +225,7 @@ impl CreateProductionDeploymentCommand {
 
     async fn setup_postmark_email_verification<D>(
         &self,
-        app_deps: &D,
+        deps: &D,
         conn: &mut sqlx::PgConnection,
         deployment_id: i64,
         mail_from_host: &str,
@@ -211,9 +233,12 @@ impl CreateProductionDeploymentCommand {
     where
         D: common::HasPostmarkProvider,
     {
-        let postmark_domain = app_deps.postmark_provider().create_domain(mail_from_host).await?;
+        let postmark_domain = deps
+            .postmark_provider()
+            .create_domain(mail_from_host)
+            .await?;
         let postmark_domain_id = postmark_domain.id;
-        let email_verification_records = app_deps
+        let email_verification_records = deps
             .postmark_provider()
             .generate_email_verification_records(&postmark_domain);
 
@@ -226,7 +251,7 @@ impl CreateProductionDeploymentCommand {
         Ok((postmark_domain_id, email_verification_records))
     }
 
-    pub async fn execute_with_deps<D>(self, app_deps: &D) -> Result<Deployment, AppError>
+    pub async fn execute_with_deps<D>(self, deps: &D) -> Result<Deployment, AppError>
     where
         D: common::HasDbRouter
             + common::HasIdProvider
@@ -234,7 +259,7 @@ impl CreateProductionDeploymentCommand {
             + common::HasPostmarkProvider
             + Sync,
     {
-        let mut tx = app_deps.db_router().writer().begin().await?;
+        let mut tx = deps.db_router().writer().begin().await?;
         ProjectValidator::validate_domain_format(&self.custom_domain)?;
         ProjectValidator::validate_auth_methods(&self.auth_methods)?;
         self.ensure_no_social_methods_requested()?;
@@ -243,20 +268,21 @@ impl CreateProductionDeploymentCommand {
         let project = self.load_project_for_production(tx.as_mut()).await?;
 
         ensure_billing_status_active(&project.status, "deployment")?;
-        self.ensure_production_deployment_is_unique(tx.as_mut()).await?;
+        self.ensure_production_deployment_is_unique(tx.as_mut())
+            .await?;
 
         let hosts = build_production_deployment_hosts(&self.custom_domain);
         let frontend_hostname = hosts.frontend_host.clone();
         let backend_hostname = hosts.backend_host.clone();
 
-        let domain_verification_records = app_deps
+        let domain_verification_records = deps
             .cloudflare_provider()
             .generate_domain_verification_records(&frontend_hostname, &backend_hostname);
 
         let empty_email_verification_records = EmailVerificationRecords::default();
 
         let deployment_row = ProductionDeploymentInsert::builder()
-            .id(next_id_from(app_deps)?)
+            .id(next_id_from(deps)?)
             .project_id(self.project_id)
             .backend_host(hosts.backend_host.clone())
             .frontend_host(hosts.frontend_host.clone())
@@ -270,7 +296,7 @@ impl CreateProductionDeploymentCommand {
         let waitlist_url = format!("https://{}/waitlist", hosts.frontend_host);
         bootstrap_deployment_defaults(
             tx.as_mut(),
-            app_deps,
+            deps,
             DeploymentBootstrapInput {
                 deployment_id: deployment_row.id,
                 frontend_host: &hosts.frontend_host,
@@ -285,7 +311,7 @@ impl CreateProductionDeploymentCommand {
 
         let (postmark_domain_id, email_verification_records) = self
             .setup_postmark_email_verification(
-                app_deps,
+                deps,
                 tx.as_mut(),
                 deployment_row.id,
                 &hosts.mail_from_host,
@@ -294,7 +320,7 @@ impl CreateProductionDeploymentCommand {
 
         let (frontend_hostname_id, backend_hostname_id) = self
             .provision_custom_hostnames(
-                app_deps,
+                deps,
                 &frontend_hostname,
                 &backend_hostname,
                 postmark_domain_id,

@@ -1,3 +1,4 @@
+use common::deps;
 use common::error::AppError;
 use common::state::AppState;
 use dto::json::webhook_requests::{WebhookAnalyticsQuery, WebhookTimeseriesQuery};
@@ -20,7 +21,7 @@ pub async fn get_webhook_analytics(
         query = query.with_date_range(start, end);
     }
 
-    query.execute_with_deps(app_state).await
+    query.execute_with_deps(&deps::from_app(app_state).db()).await
 }
 
 pub async fn get_webhook_timeseries(
@@ -40,5 +41,5 @@ pub async fn get_webhook_timeseries(
         query = query.with_date_range(start, end);
     }
 
-    query.execute_with_deps(app_state).await
+    query.execute_with_deps(&deps::from_app(app_state).db()).await
 }

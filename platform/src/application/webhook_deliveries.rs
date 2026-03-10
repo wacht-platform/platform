@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use axum::http::StatusCode;
+use common::deps;
 use common::db_router::ReadConsistency;
 use common::error::AppError;
 use common::state::AppState;
@@ -95,7 +96,7 @@ pub async fn get_webhook_stats(
     app_slug: String,
 ) -> Result<WebhookAnalyticsResult, AppError> {
     let query = GetWebhookAnalyticsQuery::new(deployment_id).with_app_slug(app_slug);
-    query.execute_with_deps(app_state).await
+    query.execute_with_deps(&deps::from_app(app_state).db()).await
 }
 
 pub async fn get_app_webhook_deliveries(

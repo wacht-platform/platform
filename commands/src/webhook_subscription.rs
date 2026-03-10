@@ -23,6 +23,10 @@ pub struct GetSubscribedEndpointsCommand {
     pub event_name: String,
 }
 
+fn subscription_cache_key(deployment_id: i64, app_slug: &str, event_name: &str) -> String {
+    format!("webhook:subs:{deployment_id}:{app_slug}:{event_name}")
+}
+
 impl GetSubscribedEndpointsCommand {
     pub fn new(deployment_id: i64, app_slug: String, event_name: String) -> Self {
         Self {
@@ -36,10 +40,7 @@ impl GetSubscribedEndpointsCommand {
     where
         D: HasDbRouter + HasRedisProvider + ?Sized,
     {
-        let cache_key = format!(
-            "webhook:subs:{}:{}:{}",
-            self.deployment_id, self.app_slug, self.event_name
-        );
+        let cache_key = subscription_cache_key(self.deployment_id, &self.app_slug, &self.event_name);
 
         if let Ok(mut redis_conn) = deps.redis_provider().get_multiplexed_async_connection().await {
             if let Ok(cached) = redis_conn.get::<_, String>(&cache_key).await {
@@ -114,10 +115,8 @@ impl InvalidateEndpointCacheCommand {
     {
         if let Ok(mut redis_conn) = deps.redis_provider().get_multiplexed_async_connection().await {
             for event_name in self.event_names {
-                let cache_key = format!(
-                    "webhook:subs:{}:{}:{}",
-                    self.deployment_id, self.app_slug, event_name
-                );
+                let cache_key =
+                    subscription_cache_key(self.deployment_id, &self.app_slug, &event_name);
                 let _: Result<(), _> = redis_conn.del(&cache_key).await;
             }
         }

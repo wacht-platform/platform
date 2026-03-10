@@ -82,9 +82,8 @@ impl UploadImagesToS3Command {
             // Upload to S3 via agent storage command
             let write_image_command = WriteToAgentStorageCommand::new(key, bytes.clone())
                 .with_content_type(img.mime_type.clone());
-            let storage_client = deps.agent_storage_provider()?;
             write_image_command
-                .execute_with_deps(storage_client)
+                .execute_with_deps(deps)
                 .await?;
 
             uploaded.push(ImageData {
@@ -160,9 +159,8 @@ impl UploadFilesToS3Command {
             // Upload to S3 via agent storage command
             let write_file_command = WriteToAgentStorageCommand::new(key, bytes.clone())
                 .with_content_type(file.mime_type.clone());
-            let storage_client = deps.agent_storage_provider()?;
             write_file_command
-                .execute_with_deps(storage_client)
+                .execute_with_deps(deps)
                 .await?;
 
             uploaded.push(FileData {
