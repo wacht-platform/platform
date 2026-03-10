@@ -4,16 +4,21 @@ use dto::clickhouse::ApiKeyVerificationEvent;
 use dto::clickhouse::webhook::{WebhookLog, WebhookLogLight};
 use reqwest::Client;
 use serde::Serialize;
+use std::sync::OnceLock;
 
 const TINYBIRD_EVENTS_URL: &str = "https://api.us-east.aws.tinybird.co/v0/events";
 
+fn tinybird_http_client() -> &'static Client {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    CLIENT.get_or_init(Client::new)
+}
+
 pub async fn insert_event<T: Serialize>(data_source: &str, event: &T) -> Result<(), AppError> {
-    let client = Client::new();
     let token = std::env::var("TINYBIRD_TOKEN")
         .map_err(|_| AppError::Internal("TINYBIRD_TOKEN not set".to_string()))?;
 
     let url = format!("{}?name={}", TINYBIRD_EVENTS_URL, data_source);
-    let response = client
+    let response = tinybird_http_client()
         .post(&url)
         .header("Authorization", format!("Bearer {}", token))
         .json(event)
@@ -41,12 +46,11 @@ pub async fn insert_events_batch<T: Serialize>(
         return Ok(());
     }
 
-    let client = Client::new();
     let token = std::env::var("TINYBIRD_TOKEN")
         .map_err(|_| AppError::Internal("TINYBIRD_TOKEN not set".to_string()))?;
 
     let url = format!("{}?name={}", TINYBIRD_EVENTS_URL, data_source);
-    let response = client
+    let response = tinybird_http_client()
         .post(&url)
         .header("Authorization", format!("Bearer {}", token))
         .json(events)
