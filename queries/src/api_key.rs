@@ -14,7 +14,7 @@ fn api_auth_app_base_query(where_clause: &str, order_clause: &str) -> String {
             a.deployment_id, a.user_id, a.organization_id, a.workspace_id, a.app_slug,
             a.name, a.key_prefix, a.description, a.is_active, a.rate_limit_scheme_slug,
             a.permissions, a.resources, a.created_at, a.updated_at, a.deleted_at,
-            COALESCE(rls.rules, '[]'::json) AS rate_limits
+            COALESCE(rls.rules, '[]'::jsonb) AS rate_limits
         FROM api_auth_apps a
         LEFT JOIN rate_limit_schemes rls
           ON rls.deployment_id = a.deployment_id
@@ -35,7 +35,7 @@ fn api_key_base_query(where_clause: &str, order_clause: &str) -> String {
             k.org_role_permissions, k.workspace_role_permissions,
             k.expires_at, k.last_used_at, k.is_active, k.created_at, k.updated_at,
             k.revoked_at, k.revoked_reason,
-            COALESCE(rls.rules, '[]'::json) AS rate_limits
+            COALESCE(rls.rules, '[]'::jsonb) AS rate_limits
         FROM api_keys k
         LEFT JOIN rate_limit_schemes rls
           ON rls.deployment_id = k.deployment_id
