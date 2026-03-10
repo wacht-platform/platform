@@ -1,4 +1,5 @@
 use crate::membership_role::insert_organization_membership_role;
+use crate::member_common::{ensure_membership_exists, username_or_none};
 use common::error::AppError;
 use models::OrganizationMemberDetails;
 
@@ -164,11 +165,7 @@ impl AddOrganizationMemberCommand {
             roles,
             first_name: member_details.first_name,
             last_name: member_details.last_name,
-            username: if member_details.username.is_empty() {
-                None
-            } else {
-                Some(member_details.username)
-            },
+            username: username_or_none(member_details.username),
             primary_email_address: member_details.primary_email_address,
             primary_phone_number: member_details.primary_phone_number,
             user_created_at: member_details.user_created_at,
@@ -240,13 +237,7 @@ impl UpdateOrganizationMemberCommand {
         .fetch_one(executor)
         .await?;
 
-        if !result.membership_exists {
-            return Err(AppError::NotFound(
-                "Organization membership not found".to_string(),
-            ));
-        }
-
-        Ok(())
+        ensure_membership_exists(result.membership_exists, "Organization membership")
     }
 }
 
@@ -309,12 +300,6 @@ impl RemoveOrganizationMemberCommand {
         .fetch_one(executor)
         .await?;
 
-        if !result.membership_exists {
-            return Err(AppError::NotFound(
-                "Organization membership not found".to_string(),
-            ));
-        }
-
-        Ok(())
+        ensure_membership_exists(result.membership_exists, "Organization membership")
     }
 }

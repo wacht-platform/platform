@@ -22,6 +22,7 @@ pub mod embedding;
 pub mod embedding_task;
 pub mod enterprise_connection;
 pub mod integration_linking;
+mod member_common;
 pub mod mcp_server;
 mod membership_role;
 pub mod notification;

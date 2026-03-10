@@ -1,4 +1,5 @@
 use crate::membership_role::insert_organization_membership_role;
+use crate::member_common::{ensure_membership_exists, username_or_none};
 use common::error::AppError;
 use models::WorkspaceMemberDetails;
 use serde::{Deserialize, Serialize};
@@ -247,11 +248,7 @@ impl AddWorkspaceMemberCommand {
             public_metadata: member.public_metadata.clone(),
             first_name: member.first_name,
             last_name: member.last_name,
-            username: if member.username.is_empty() {
-                None
-            } else {
-                Some(member.username)
-            },
+            username: username_or_none(member.username),
             primary_email_address: member.primary_email_address,
             primary_phone_number: member.primary_phone_number,
             user_created_at: member.user_created_at,
@@ -330,13 +327,7 @@ impl UpdateWorkspaceMemberCommand {
         .fetch_one(executor)
         .await?;
 
-        if !result.membership_exists {
-            return Err(AppError::NotFound(
-                "Workspace membership not found".to_string(),
-            ));
-        }
-
-        Ok(())
+        ensure_membership_exists(result.membership_exists, "Workspace membership")
     }
 }
 
@@ -387,12 +378,6 @@ impl RemoveWorkspaceMemberCommand {
         .fetch_one(executor)
         .await?;
 
-        if !result.membership_exists {
-            return Err(AppError::NotFound(
-                "Workspace membership not found".to_string(),
-            ));
-        }
-
-        Ok(())
+        ensure_membership_exists(result.membership_exists, "Workspace membership")
     }
 }
