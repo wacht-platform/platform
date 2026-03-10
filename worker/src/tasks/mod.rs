@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod analytics;
+pub mod api_audit;
 pub mod api_key_role_permissions_sync;
 pub mod billing;
 pub mod document;

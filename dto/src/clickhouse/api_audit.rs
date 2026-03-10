@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A single rate limit state for logging
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RateLimitState {
     pub rule: String,
     pub remaining: i32,
@@ -10,7 +10,7 @@ pub struct RateLimitState {
 }
 
 /// API key verification event for Tinybird audit logs
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKeyVerificationEvent {
     pub request_id: String,
     pub deployment_id: i64,

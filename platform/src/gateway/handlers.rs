@@ -7,8 +7,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
-use common::tinybird::insert_api_audit_log_async;
 use dto::clickhouse::{ApiKeyVerificationEvent, RateLimitState};
+use dto::json::NatsTaskMessage;
 use models::api_key::{OAuthScopeDefinition, RateLimit, RateLimitMode};
 use queries::GetGatewayOAuthAccessTokenByHashQuery;
 use serde::{Deserialize, Serialize};
@@ -18,10 +18,59 @@ use std::{
     net::SocketAddr,
     time::Instant,
 };
+use tracing::warn;
 
 use super::validation::{check_permissions, is_valid_api_key_format};
 
 const ALLOWED_HTTP_METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+
+async fn enqueue_api_audit_log(
+    app_state: &common::state::AppState,
+    request_id: &str,
+    event: &ApiKeyVerificationEvent,
+) {
+    let payload = match serde_json::to_value(event) {
+        Ok(payload) => payload,
+        Err(e) => {
+            warn!(
+                error = %e,
+                request_id = request_id,
+                "Failed to serialize API audit event payload"
+            );
+            return;
+        }
+    };
+
+    let task_message = NatsTaskMessage {
+        task_type: "audit.api_key_verification".to_string(),
+        task_id: format!("api_audit_{}", request_id),
+        payload,
+    };
+
+    let task_bytes = match serde_json::to_vec(&task_message) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            warn!(
+                error = %e,
+                request_id = request_id,
+                "Failed to encode API audit task message"
+            );
+            return;
+        }
+    };
+
+    if let Err(e) = app_state
+        .nats_client
+        .publish("worker.tasks.audit.api_key_verification", task_bytes.into())
+        .await
+    {
+        warn!(
+            error = %e,
+            request_id = request_id,
+            "Failed to publish API audit task"
+        );
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -120,6 +169,17 @@ fn normalize_resource_path(resource: &str) -> Option<String> {
     } else {
         Some(format!("/{}", normalized))
     }
+}
+
+fn default_rate_limits() -> Vec<RateLimit> {
+    vec![RateLimit {
+        unit: models::api_key::RateLimitUnit::Minute,
+        duration: 1,
+        max_requests: 1000,
+        mode: Some(RateLimitMode::PerApp),
+        endpoints: None,
+        priority: 0,
+    }]
 }
 
 fn resource_type(resource: &str) -> &'static str {
@@ -420,10 +480,10 @@ pub async fn check_authz(
                 matching_rules.sort_by_key(|r| r.priority);
                 matching_rules.into_iter().cloned().collect()
             } else {
-                vec![]
+                default_rate_limits()
             }
         } else {
-            vec![]
+            default_rate_limits()
         };
 
         let mut limits = Vec::new();
@@ -547,7 +607,7 @@ pub async fn check_authz(
         audit_event = audit_event.with_blocked_by(rule);
     }
 
-    insert_api_audit_log_async(audit_event);
+    enqueue_api_audit_log(app_state, &request_id, &audit_event).await;
 
     let reason = if all_allowed {
         None
@@ -750,10 +810,10 @@ async fn check_authz_oauth_access_token(
                 matching_rules.sort_by_key(|r| r.priority);
                 matching_rules.into_iter().cloned().collect()
             } else {
-                token_data.rate_limits.clone()
+                default_rate_limits()
             }
         } else {
-            token_data.rate_limits.clone()
+            default_rate_limits()
         };
 
         let mut limits = Vec::new();
@@ -878,7 +938,7 @@ async fn check_authz_oauth_access_token(
     if let Some(rule) = blocked_by_rule.clone() {
         audit_event = audit_event.with_blocked_by(rule);
     }
-    insert_api_audit_log_async(audit_event);
+    enqueue_api_audit_log(app_state, &request_id, &audit_event).await;
 
     let reason = if all_allowed {
         None

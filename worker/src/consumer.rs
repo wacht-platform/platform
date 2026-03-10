@@ -9,8 +9,8 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 
 use crate::tasks::{
-    agent, analytics, api_key_role_permissions_sync, billing, document, email, embedding, token,
-    webhook, webhook_event, webhook_replay_batch,
+    agent, analytics, api_audit, api_key_role_permissions_sync, billing, document, email, embedding,
+    token, webhook, webhook_event, webhook_replay_batch,
 };
 
 #[derive(Debug)]
@@ -77,6 +77,8 @@ enum WorkerTask {
     WebhookEvent(webhook_event::WebhookEventTask),
     #[serde(rename = "analytics.event")]
     AnalyticsEvent(analytics::AnalyticsEventTask),
+    #[serde(rename = "audit.api_key_verification")]
+    ApiAuditEvent(dto::clickhouse::ApiKeyVerificationEvent),
     #[serde(rename = "billing.event")]
     BillingEvent(billing::BillingEventTask),
     #[serde(rename = "api_key.sync_org_membership_permissions")]
@@ -115,6 +117,7 @@ impl WorkerTask {
             Self::EmbeddingProcessBatch(_) => "embedding.process_batch",
             Self::WebhookEvent(_) => "webhook.event",
             Self::AnalyticsEvent(_) => "analytics.event",
+            Self::ApiAuditEvent(_) => "audit.api_key_verification",
             Self::BillingEvent(_) => "billing.event",
             Self::ApiKeySyncOrgMembershipPermissions(_) => {
                 "api_key.sync_org_membership_permissions"
@@ -353,6 +356,11 @@ impl NatsConsumer {
             }
             WorkerTask::AnalyticsEvent(task) => {
                 analytics::store_analytics_event_impl(task, &self.app_state)
+                    .await
+                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::ApiAuditEvent(task) => {
+                api_audit::store_api_audit_event_impl(task, &self.app_state)
                     .await
                     .map_err(|e| TaskError::Permanent(e.to_string()))?;
             }
