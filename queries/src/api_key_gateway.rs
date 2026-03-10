@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use serde::de::DeserializeOwned;
+use common::json_utils::json_default;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,10 +25,6 @@ pub struct ApiKeyGatewayData {
 
 pub struct GetApiKeyGatewayDataQuery {
     pub key_hash: String,
-}
-
-fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
-    serde_json::from_value(value).unwrap_or_default()
 }
 
 impl GetApiKeyGatewayDataQuery {

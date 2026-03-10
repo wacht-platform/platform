@@ -1,9 +1,10 @@
 use anyhow::Result;
 use async_nats::jetstream::{self, AckKind, consumer};
 use common::state::AppState;
+use dto::json::NatsTaskMessage;
 use futures::StreamExt;
-use serde_json;
-use std::collections::HashMap;
+use serde::Deserialize;
+use serde_json::Value;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
@@ -11,7 +12,6 @@ use crate::tasks::{
     agent, analytics, api_key_role_permissions_sync, billing, document, email, embedding, token,
     webhook, webhook_event, webhook_replay_batch,
 };
-use dto::json::NatsTaskMessage;
 
 #[derive(Debug)]
 pub enum TaskError {
@@ -25,553 +25,358 @@ impl From<anyhow::Error> for TaskError {
     }
 }
 
+#[derive(Deserialize)]
+struct IncomingTaskMessage {
+    task_id: String,
+    #[serde(flatten)]
+    task: WorkerTask,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "task_type", content = "payload")]
+enum WorkerTask {
+    #[serde(rename = "email.send_verification")]
+    EmailSendVerification(email::VerificationEmailTask),
+    #[serde(rename = "email.send_password_reset")]
+    EmailSendPasswordReset(email::PasswordResetEmailTask),
+    #[serde(rename = "email.send_magic_link")]
+    EmailSendMagicLink(email::MagicLinkEmailTask),
+    #[serde(rename = "email.send_signin_notification")]
+    EmailSendSignInNotification(email::SignInNotificationTask),
+    #[serde(rename = "email.send_email_change_notification")]
+    EmailSendEmailChangeNotification(email::EmailChangeNotificationTask),
+    #[serde(rename = "email.send_password_change_notification")]
+    EmailSendPasswordChangeNotification(email::PasswordChangeNotificationTask),
+    #[serde(rename = "email.send_password_remove_notification")]
+    EmailSendPasswordRemoveNotification(email::PasswordRemoveNotificationTask),
+    #[serde(rename = "email.send_waitlist_signup")]
+    EmailSendWaitlistSignup(email::WaitlistSignupTask),
+    #[serde(rename = "email.send_organization_membership_invite")]
+    EmailSendOrganizationMembershipInvite(email::OrganizationMembershipInviteTask),
+    #[serde(rename = "email.send_deployment_invite")]
+    EmailSendDeploymentInvite(email::DeploymentInviteTask),
+    #[serde(rename = "email.send_waitlist_approval")]
+    EmailSendWaitlistApproval(email::WaitlistApprovalTask),
+    #[serde(rename = "token.clean")]
+    TokenClean(token::TokenCleanupTask),
+    #[serde(rename = "webhook.deliver")]
+    WebhookDeliver(webhook::WebhookDeliveryTask),
+    #[serde(rename = "webhook.batch")]
+    WebhookBatch(webhook::WebhookBatchDeliveryTask),
+    #[serde(rename = "webhook.retry")]
+    WebhookRetry(webhook::WebhookRetryTask),
+    #[serde(rename = "webhook.replay_batch")]
+    WebhookReplayBatch(Value),
+    #[serde(rename = "document.process")]
+    DocumentProcess(document::ProcessDocumentTask),
+    #[serde(rename = "agent.execution_request")]
+    AgentExecutionRequest(dto::json::AgentExecutionRequest),
+    #[serde(rename = "embedding.process_batch")]
+    EmbeddingProcessBatch(embedding::ProcessDocumentBatchTask),
+    #[serde(rename = "webhook.event")]
+    WebhookEvent(webhook_event::WebhookEventTask),
+    #[serde(rename = "analytics.event")]
+    AnalyticsEvent(analytics::AnalyticsEventTask),
+    #[serde(rename = "billing.event")]
+    BillingEvent(billing::BillingEventTask),
+    #[serde(rename = "api_key.sync_org_membership_permissions")]
+    ApiKeySyncOrgMembershipPermissions(dto::json::nats::ApiKeyOrgMembershipSyncPayload),
+    #[serde(rename = "api_key.sync_workspace_membership_permissions")]
+    ApiKeySyncWorkspaceMembershipPermissions(dto::json::nats::ApiKeyWorkspaceMembershipSyncPayload),
+    #[serde(rename = "api_key.sync_org_role_permissions")]
+    ApiKeySyncOrgRolePermissions(dto::json::nats::ApiKeyOrgRoleSyncPayload),
+    #[serde(rename = "api_key.sync_workspace_role_permissions")]
+    ApiKeySyncWorkspaceRolePermissions(dto::json::nats::ApiKeyWorkspaceRoleSyncPayload),
+}
+
+impl WorkerTask {
+    fn task_type(&self) -> &'static str {
+        match self {
+            Self::EmailSendVerification(_) => "email.send_verification",
+            Self::EmailSendPasswordReset(_) => "email.send_password_reset",
+            Self::EmailSendMagicLink(_) => "email.send_magic_link",
+            Self::EmailSendSignInNotification(_) => "email.send_signin_notification",
+            Self::EmailSendEmailChangeNotification(_) => "email.send_email_change_notification",
+            Self::EmailSendPasswordChangeNotification(_) => "email.send_password_change_notification",
+            Self::EmailSendPasswordRemoveNotification(_) => "email.send_password_remove_notification",
+            Self::EmailSendWaitlistSignup(_) => "email.send_waitlist_signup",
+            Self::EmailSendOrganizationMembershipInvite(_) => {
+                "email.send_organization_membership_invite"
+            }
+            Self::EmailSendDeploymentInvite(_) => "email.send_deployment_invite",
+            Self::EmailSendWaitlistApproval(_) => "email.send_waitlist_approval",
+            Self::TokenClean(_) => "token.clean",
+            Self::WebhookDeliver(_) => "webhook.deliver",
+            Self::WebhookBatch(_) => "webhook.batch",
+            Self::WebhookRetry(_) => "webhook.retry",
+            Self::WebhookReplayBatch(_) => "webhook.replay_batch",
+            Self::DocumentProcess(_) => "document.process",
+            Self::AgentExecutionRequest(_) => "agent.execution_request",
+            Self::EmbeddingProcessBatch(_) => "embedding.process_batch",
+            Self::WebhookEvent(_) => "webhook.event",
+            Self::AnalyticsEvent(_) => "analytics.event",
+            Self::BillingEvent(_) => "billing.event",
+            Self::ApiKeySyncOrgMembershipPermissions(_) => {
+                "api_key.sync_org_membership_permissions"
+            }
+            Self::ApiKeySyncWorkspaceMembershipPermissions(_) => {
+                "api_key.sync_workspace_membership_permissions"
+            }
+            Self::ApiKeySyncOrgRolePermissions(_) => "api_key.sync_org_role_permissions",
+            Self::ApiKeySyncWorkspaceRolePermissions(_) => "api_key.sync_workspace_role_permissions",
+        }
+    }
+}
+
 pub struct NatsConsumer {
     jetstream: jetstream::Context,
-    task_handlers: HashMap<String, TaskHandler>,
     app_state: AppState,
 }
 
-type TaskHandler = Box<
-    dyn Fn(
-            serde_json::Value,
-            AppState,
-        )
-            -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, TaskError>> + Send>>
-        + Send
-        + Sync,
->;
-
 impl NatsConsumer {
     pub async fn new(app_state: AppState) -> Result<Self> {
-        let mut task_handlers: HashMap<String, TaskHandler> = HashMap::new();
-
-        task_handlers.insert(
-            "email.send_verification".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::VerificationEmailTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_verification_email_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        &task.verification_code,
-                        &task.ip_address,
-                        &task.user_agent,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "email.send_password_reset".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::PasswordResetEmailTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_password_reset_email_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        task.user_id,
-                        &task.reset_code,
-                        &task.ip_address,
-                        &task.user_agent,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "email.send_magic_link".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::MagicLinkEmailTask =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_magic_link_email_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        task.user_id,
-                        &task.magic_link,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "email.send_signin_notification".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::SignInNotificationTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_signin_notification_email_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        task.user_id,
-                        task.signin_id,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "email.send_email_change_notification".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::EmailChangeNotificationTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_email_change_notification_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        task.user_id,
-                        &task.old_email,
-                        &task.new_email,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "email.send_password_change_notification".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::PasswordChangeNotificationTask =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_password_change_notification_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        task.user_id,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "email.send_password_remove_notification".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::PasswordRemoveNotificationTask =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_password_remove_notification_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        task.user_id,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "email.send_waitlist_signup".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::WaitlistSignupTask =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_waitlist_signup_email_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        &task.first_name,
-                        &task.last_name,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "email.send_organization_membership_invite".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::OrganizationMembershipInviteTask =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_organization_membership_invite_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        &task.inviter_name,
-                        &task.organization_name,
-                        &task.invite_link,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "email.send_deployment_invite".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::DeploymentInviteTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_deployment_invite_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        task.inviter_user_id,
-                        task.deployment_invitation_id,
-                        task.workspace_id,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "email.send_waitlist_approval".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: email::WaitlistApprovalTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    email::send_waitlist_approval_impl(
-                        task.deployment_id,
-                        &task.recipient,
-                        task.deployment_invitation_id,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "token.clean".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: token::TokenCleanupTask =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-                    token::cleanup_rotating_token_and_session(
-                        task.rotating_token_id,
-                        task.session_id,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "webhook.deliver".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: webhook::WebhookDeliveryTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize task: {}", e))
-                        })?;
-
-                    let result = webhook::process_webhook_delivery(
-                        task.delivery_id,
-                        task.deployment_id,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
-
-                    match result {
-                        webhook::DeliveryResult::RetryAfter(duration) => {
-                            Err(TaskError::RetryWithDelay(duration))
-                        }
-                        _ => Ok(format!("{:?}", result)),
-                    }
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "webhook.batch".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: webhook::WebhookBatchDeliveryTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                        TaskError::Permanent(format!("Failed to deserialize batch task: {}", e))
-                    })?;
-                    webhook::process_webhook_batch(
-                        task.delivery_ids,
-                        task.deployment_id,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "webhook.retry".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: webhook::WebhookRetryTask =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!("Failed to deserialize retry task: {}", e))
-                        })?;
-                    webhook::process_webhook_retry(task.delivery_id, task.deployment_id, &app_state)
-                        .await
-                        .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "webhook.replay_batch".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    webhook_replay_batch::handle_webhook_replay_batch(&app_state, payload)
-                        .await
-                        .map_err(|e| {
-                            let msg = e.to_string();
-                            if msg.contains("Failed to deserialize webhook replay payload") {
-                                TaskError::Permanent(msg)
-                            } else {
-                                TaskError::RetryWithDelay(Duration::from_secs(30))
-                            }
-                        })
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "document.process".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: document::ProcessDocumentTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize document processing task: {}",
-                                e
-                            ))
-                        })?;
-                    document::process_document_impl(
-                        task.deployment_id,
-                        task.knowledge_base_id,
-                        task.document_id,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| {
-                        let error_str = e.to_string().to_lowercase();
-                        if error_str.contains("query_wait_timeout")
-                            || error_str.contains("pool timed out while waiting")
-                            || error_str.contains("timeout")
-                        {
-                            TaskError::RetryWithDelay(Duration::from_secs(10))
-                        } else {
-                            TaskError::Permanent(e.to_string())
-                        }
-                    })
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "agent.execution_request".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let request: dto::json::AgentExecutionRequest = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize agent execution request: {}",
-                                e
-                            ))
-                        })?;
-                    agent::process_agent_execution(&app_state, request)
-                        .await
-                        .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "embedding.process_batch".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: embedding::ProcessDocumentBatchTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize embedding batch task: {}",
-                                e
-                            ))
-                        })?;
-                    embedding::process_document_batch_impl(
-                        task.deployment_id,
-                        task.knowledge_base_id,
-                        task.batch_size,
-                        &app_state,
-                    )
-                    .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "webhook.event".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: webhook_event::WebhookEventTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize webhook event task: {}",
-                                e
-                            ))
-                        })?;
-                    webhook_event::trigger_webhook_event(task, &app_state).await
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "analytics.event".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: analytics::AnalyticsEventTask = serde_json::from_value(payload)
-                        .map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize analytics event task: {}",
-                                e
-                            ))
-                        })?;
-                    analytics::store_analytics_event_impl(task, &app_state)
-                        .await
-                        .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "billing.event".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: billing::BillingEventTask =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize billing event task: {}",
-                                e
-                            ))
-                        })?;
-                    billing::process_billing_event(task, &app_state)
-                        .await
-                        .map_err(|e| TaskError::Permanent(e.to_string()))
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "api_key.sync_org_membership_permissions".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: dto::json::nats::ApiKeyOrgMembershipSyncPayload =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize org membership sync task: {}",
-                                e
-                            ))
-                        })?;
-                    api_key_role_permissions_sync::sync_org_membership(task, &app_state).await
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "api_key.sync_workspace_membership_permissions".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: dto::json::nats::ApiKeyWorkspaceMembershipSyncPayload =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize workspace membership sync task: {}",
-                                e
-                            ))
-                        })?;
-                    api_key_role_permissions_sync::sync_workspace_membership(task, &app_state).await
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "api_key.sync_org_role_permissions".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: dto::json::nats::ApiKeyOrgRoleSyncPayload =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize org role sync task: {}",
-                                e
-                            ))
-                        })?;
-                    api_key_role_permissions_sync::sync_org_role(task, &app_state).await
-                })
-            }),
-        );
-
-        task_handlers.insert(
-            "api_key.sync_workspace_role_permissions".to_string(),
-            Box::new(|payload, app_state| {
-                Box::pin(async move {
-                    let task: dto::json::nats::ApiKeyWorkspaceRoleSyncPayload =
-                        serde_json::from_value(payload).map_err(|e| {
-                            TaskError::Permanent(format!(
-                                "Failed to deserialize workspace role sync task: {}",
-                                e
-                            ))
-                        })?;
-                    api_key_role_permissions_sync::sync_workspace_role(task, &app_state).await
-                })
-            }),
-        );
-
         Ok(Self {
             jetstream: app_state.nats_jetstream.clone(),
-            task_handlers,
             app_state,
         })
+    }
+
+    async fn execute_task(&self, task_id: &str, task: WorkerTask) -> Result<(), TaskError> {
+        match task {
+            WorkerTask::EmailSendVerification(task) => {
+                email::send_verification_email_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    &task.verification_code,
+                    &task.ip_address,
+                    &task.user_agent,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmailSendPasswordReset(task) => {
+                email::send_password_reset_email_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    task.user_id,
+                    &task.reset_code,
+                    &task.ip_address,
+                    &task.user_agent,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmailSendMagicLink(task) => {
+                email::send_magic_link_email_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    task.user_id,
+                    &task.magic_link,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmailSendSignInNotification(task) => {
+                email::send_signin_notification_email_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    task.user_id,
+                    task.signin_id,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmailSendEmailChangeNotification(task) => {
+                email::send_email_change_notification_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    task.user_id,
+                    &task.old_email,
+                    &task.new_email,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmailSendPasswordChangeNotification(task) => {
+                email::send_password_change_notification_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    task.user_id,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmailSendPasswordRemoveNotification(task) => {
+                email::send_password_remove_notification_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    task.user_id,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmailSendWaitlistSignup(task) => {
+                email::send_waitlist_signup_email_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    &task.first_name,
+                    &task.last_name,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmailSendOrganizationMembershipInvite(task) => {
+                email::send_organization_membership_invite_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    &task.inviter_name,
+                    &task.organization_name,
+                    &task.invite_link,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmailSendDeploymentInvite(task) => {
+                email::send_deployment_invite_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    task.inviter_user_id,
+                    task.deployment_invitation_id,
+                    task.workspace_id,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmailSendWaitlistApproval(task) => {
+                email::send_waitlist_approval_impl(
+                    task.deployment_id,
+                    &task.recipient,
+                    task.deployment_invitation_id,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::TokenClean(task) => {
+                token::cleanup_rotating_token_and_session(
+                    task.rotating_token_id,
+                    task.session_id,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::WebhookDeliver(task) => {
+                let result =
+                    webhook::process_webhook_delivery(task.delivery_id, task.deployment_id, &self.app_state)
+                        .await
+                        .map_err(|e| TaskError::Permanent(e.to_string()))?;
+                if let webhook::DeliveryResult::RetryAfter(duration) = result {
+                    return Err(TaskError::RetryWithDelay(duration));
+                }
+            }
+            WorkerTask::WebhookBatch(task) => {
+                webhook::process_webhook_batch(task.delivery_ids, task.deployment_id, &self.app_state)
+                    .await
+                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::WebhookRetry(task) => {
+                webhook::process_webhook_retry(task.delivery_id, task.deployment_id, &self.app_state)
+                    .await
+                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::WebhookReplayBatch(mut payload) => {
+                if let Some(obj) = payload.as_object_mut() {
+                    obj.insert(
+                        "__task_id".to_string(),
+                        serde_json::Value::String(task_id.to_string()),
+                    );
+                }
+                webhook_replay_batch::handle_webhook_replay_batch(&self.app_state, payload)
+                    .await
+                    .map_err(|e| {
+                        let msg = e.to_string();
+                        if msg.contains("Failed to deserialize webhook replay payload") {
+                            TaskError::Permanent(msg)
+                        } else {
+                            TaskError::RetryWithDelay(Duration::from_secs(30))
+                        }
+                    })?;
+            }
+            WorkerTask::DocumentProcess(task) => {
+                document::process_document_impl(
+                    task.deployment_id,
+                    task.knowledge_base_id,
+                    task.document_id,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| {
+                    let error_str = e.to_string().to_lowercase();
+                    if error_str.contains("query_wait_timeout")
+                        || error_str.contains("pool timed out while waiting")
+                        || error_str.contains("timeout")
+                    {
+                        TaskError::RetryWithDelay(Duration::from_secs(10))
+                    } else {
+                        TaskError::Permanent(e.to_string())
+                    }
+                })?;
+            }
+            WorkerTask::AgentExecutionRequest(request) => {
+                agent::process_agent_execution(&self.app_state, request)
+                    .await
+                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::EmbeddingProcessBatch(task) => {
+                embedding::process_document_batch_impl(
+                    task.deployment_id,
+                    task.knowledge_base_id,
+                    task.batch_size,
+                    &self.app_state,
+                )
+                .await
+                .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::WebhookEvent(task) => {
+                webhook_event::trigger_webhook_event(task, &self.app_state).await?;
+            }
+            WorkerTask::AnalyticsEvent(task) => {
+                analytics::store_analytics_event_impl(task, &self.app_state)
+                    .await
+                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::BillingEvent(task) => {
+                billing::process_billing_event(task, &self.app_state)
+                    .await
+                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+            }
+            WorkerTask::ApiKeySyncOrgMembershipPermissions(task) => {
+                api_key_role_permissions_sync::sync_org_membership(task, &self.app_state).await?;
+            }
+            WorkerTask::ApiKeySyncWorkspaceMembershipPermissions(task) => {
+                api_key_role_permissions_sync::sync_workspace_membership(task, &self.app_state)
+                    .await?;
+            }
+            WorkerTask::ApiKeySyncOrgRolePermissions(task) => {
+                api_key_role_permissions_sync::sync_org_role(task, &self.app_state).await?;
+            }
+            WorkerTask::ApiKeySyncWorkspaceRolePermissions(task) => {
+                api_key_role_permissions_sync::sync_workspace_role(task, &self.app_state).await?;
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn start_consuming(&self) -> Result<()> {
@@ -613,18 +418,23 @@ impl NatsConsumer {
     }
 
     async fn handle_message(&self, message: async_nats::jetstream::Message) -> Result<()> {
-        // Debug log: show raw payload for troubleshooting
         let raw_payload = String::from_utf8_lossy(&message.payload);
 
-        let task_message: NatsTaskMessage = match serde_json::from_slice(&message.payload) {
+        let task_message: IncomingTaskMessage = match serde_json::from_slice(&message.payload) {
             Ok(msg) => msg,
             Err(e) => {
-                error!(
-                    "Failed to deserialize NatsTaskMessage: {}. Raw payload (first 500 chars): {}",
-                    e,
-                    raw_payload.chars().take(500).collect::<String>()
-                );
-                // Ack to prevent infinite redelivery of malformed messages
+                if let Ok(raw_msg) = serde_json::from_slice::<NatsTaskMessage>(&message.payload) {
+                    warn!(
+                        "Unknown or invalid task type '{}' (ID: {})",
+                        raw_msg.task_type, raw_msg.task_id
+                    );
+                } else {
+                    error!(
+                        "Failed to deserialize worker task message: {}. Raw payload (first 500 chars): {}",
+                        e,
+                        raw_payload.chars().take(500).collect::<String>()
+                    );
+                }
                 if let Err(ack_err) = message.ack().await {
                     error!("Failed to ack malformed message: {}", ack_err);
                 }
@@ -634,60 +444,40 @@ impl NatsConsumer {
 
         info!(
             "Received JetStream task: {} (ID: {})",
-            task_message.task_type, task_message.task_id
+            task_message.task.task_type(),
+            task_message.task_id
         );
 
-        if let Some(handler) = self.task_handlers.get(&task_message.task_type) {
-            let mut payload = task_message.payload;
-            if task_message.task_type == "webhook.replay_batch" {
-                if let Some(obj) = payload.as_object_mut() {
-                    obj.insert(
-                        "__task_id".to_string(),
-                        serde_json::Value::String(task_message.task_id.clone()),
-                    );
+        match self
+            .execute_task(&task_message.task_id, task_message.task)
+            .await
+        {
+            Ok(_) => {
+                info!("Task {} completed successfully", task_message.task_id);
+                if let Err(e) = message.ack().await {
+                    error!("Failed to acknowledge task {}: {}", task_message.task_id, e);
                 }
             }
-
-            match handler(payload, self.app_state.clone()).await {
-                Ok(_) => {
-                    info!("Task {} completed successfully", task_message.task_id);
-                    if let Err(e) = message.ack().await {
-                        error!("Failed to acknowledge task {}: {}", task_message.task_id, e);
-                    }
-                }
-                Err(TaskError::RetryWithDelay(duration)) => {
-                    info!(
-                        "Task {} will retry after {:?}",
-                        task_message.task_id, duration
-                    );
-                    if let Err(e) = message.ack_with(AckKind::Nak(Some(duration))).await {
-                        error!(
-                            "Failed to NAK with delay for task {}: {}",
-                            task_message.task_id, e
-                        );
-                    }
-                }
-                Err(TaskError::Permanent(error_msg)) => {
-                    error!(
-                        "Task {} permanently failed: {}",
-                        task_message.task_id, error_msg
-                    );
-                    // ACK permanent failures to remove from queue
-                    if let Err(e) = message.ack().await {
-                        error!(
-                            "Failed to acknowledge failed task {}: {}",
-                            task_message.task_id, e
-                        );
-                    }
-                }
-            }
-        } else {
-            warn!("Unknown task type: {}", task_message.task_type);
-            if let Err(e) = message.ack().await {
-                error!(
-                    "Failed to acknowledge unknown task {}: {}",
-                    task_message.task_id, e
+            Err(TaskError::RetryWithDelay(duration)) => {
+                info!(
+                    "Task {} will retry after {:?}",
+                    task_message.task_id, duration
                 );
+                if let Err(e) = message.ack_with(AckKind::Nak(Some(duration))).await {
+                    error!(
+                        "Failed to NAK with delay for task {}: {}",
+                        task_message.task_id, e
+                    );
+                }
+            }
+            Err(TaskError::Permanent(error_msg)) => {
+                error!("Task {} permanently failed: {}", task_message.task_id, error_msg);
+                if let Err(e) = message.ack().await {
+                    error!(
+                        "Failed to acknowledge failed task {}: {}",
+                        task_message.task_id, e
+                    );
+                }
             }
         }
 

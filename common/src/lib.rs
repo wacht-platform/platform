@@ -7,6 +7,7 @@ pub mod dns_verification;
 pub mod dodo;
 pub mod embedding;
 pub mod encryption;
+pub mod json_utils;
 pub mod postmark;
 pub mod smtp;
 pub mod state;

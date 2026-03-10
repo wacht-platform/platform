@@ -1,11 +1,7 @@
 use common::{HasCloudflareProvider, HasDbRouter, error::AppError};
+use common::json_utils::json_default;
 use models::api_key::OAuthScopeDefinition;
 use queries::oauth::OAuthAppData;
-use serde::de::DeserializeOwned;
-
-fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
-    serde_json::from_value(value).unwrap_or_default()
-}
 
 fn normalize_supported_scopes(scopes: Vec<String>) -> Vec<String> {
     let mut out: Vec<String> = scopes

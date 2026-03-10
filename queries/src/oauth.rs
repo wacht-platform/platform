@@ -1,12 +1,8 @@
 use chrono::{DateTime, Utc};
 use common::error::AppError;
+use common::json_utils::json_default;
 use models::api_key::{JwksDocument, OAuthScopeDefinition};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-
-fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
-    serde_json::from_value(value).unwrap_or_default()
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthAppData {

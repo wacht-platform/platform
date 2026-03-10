@@ -1,17 +1,9 @@
 use common::state::AppState;
 use platform::application;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenvy::dotenv_override().ok();
-
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new("info"))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    platform::bootstrap::init_runtime_override_env_with_rustls();
 
     let app_state = AppState::new_from_env().await?;
     let app = application::oauth_router(app_state).await;

@@ -1,11 +1,7 @@
 use common::error::AppError;
+use common::json_utils::json_default;
 use models::api_key::{ApiAuthApp, ApiKey, ApiKeyWithIdentifers};
-use serde::de::DeserializeOwned;
 use sqlx::Row;
-
-fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
-    serde_json::from_value(value).unwrap_or_default()
-}
 
 fn api_auth_app_base_query(where_clause: &str, order_clause: &str) -> String {
     format!(

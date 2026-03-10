@@ -1,12 +1,8 @@
 use common::{EncryptionService, HasDbRouter, HasEncryptionProvider, error::AppError};
+use common::json_utils::json_default;
 use models::api_key::JwksDocument;
 use queries::oauth::OAuthClientData;
-use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
-
-fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
-    serde_json::from_value(value).unwrap_or_default()
-}
 
 pub trait OAuthClientSecretEncryptor: Send + Sync {
     fn encrypt(&self, plaintext: &str) -> Result<String, AppError>;

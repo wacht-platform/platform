@@ -1,10 +1,6 @@
 use chrono::{DateTime, Utc};
 use common::error::AppError;
-use serde::de::DeserializeOwned;
-
-fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
-    serde_json::from_value(value).unwrap_or_default()
-}
+use common::json_utils::json_default;
 
 mod create_grant;
 mod revoke_grant;

@@ -1,16 +1,8 @@
 use common::error::AppError;
+use common::json_utils::{json_default, json_optional};
 use models::api_key::{JwksDocument, OAuthScopeDefinition, RateLimit};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-
-fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
-    serde_json::from_value(value).unwrap_or_default()
-}
-
-fn json_optional<T: DeserializeOwned>(value: Option<serde_json::Value>) -> Option<T> {
-    value.and_then(|v| serde_json::from_value(v).ok())
-}
 
 fn normalize_permissions(permissions: &[String]) -> Vec<String> {
     permissions

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use common::error::AppError;
+use common::json_utils::{json_default, json_option_default, json_vec_default};
 use models::api_key::{ApiKey, ApiKeyWithSecret};
-use serde::de::DeserializeOwned;
 use queries::api_key::{
     GetApiAuthAppBySlugQuery, GetOrganizationMembershipIdByUserAndOrganizationQuery,
     GetOrganizationMembershipPermissionsQuery, GetWorkspaceMembershipIdByUserAndWorkspaceQuery,
@@ -9,19 +9,59 @@ use queries::api_key::{
 };
 use sha2::{Digest, Sha256};
 
-fn json_default<T: DeserializeOwned + Default>(value: serde_json::Value) -> T {
-    serde_json::from_value(value).unwrap_or_default()
-}
-
-fn json_option_default(value: Option<serde_json::Value>, default: serde_json::Value) -> serde_json::Value {
-    value.unwrap_or(default)
-}
-
-fn json_vec_default(value: serde_json::Value) -> Vec<String> {
-    if value.is_null() {
-        Vec::new()
-    } else {
-        json_default(value)
+#[allow(clippy::too_many_arguments)]
+fn build_api_key_model(
+    id: i64,
+    deployment_id: i64,
+    app_slug: String,
+    name: String,
+    key_prefix: String,
+    key_suffix: String,
+    key_hash: String,
+    permissions: Option<serde_json::Value>,
+    metadata: Option<serde_json::Value>,
+    rate_limit_scheme_slug: Option<String>,
+    owner_user_id: Option<i64>,
+    organization_id: Option<i64>,
+    workspace_id: Option<i64>,
+    organization_membership_id: Option<i64>,
+    workspace_membership_id: Option<i64>,
+    org_role_permissions: serde_json::Value,
+    workspace_role_permissions: serde_json::Value,
+    expires_at: Option<DateTime<Utc>>,
+    last_used_at: Option<DateTime<Utc>>,
+    is_active: Option<bool>,
+    created_at: Option<DateTime<Utc>>,
+    updated_at: Option<DateTime<Utc>>,
+    revoked_at: Option<DateTime<Utc>>,
+    revoked_reason: Option<String>,
+) -> ApiKey {
+    ApiKey {
+        id,
+        deployment_id,
+        app_slug,
+        name,
+        key_prefix,
+        key_suffix,
+        key_hash,
+        permissions: json_default(json_option_default(permissions, serde_json::json!([]))),
+        metadata: json_option_default(metadata, serde_json::json!({})),
+        rate_limits: vec![],
+        rate_limit_scheme_slug,
+        owner_user_id,
+        organization_id,
+        workspace_id,
+        organization_membership_id,
+        workspace_membership_id,
+        org_role_permissions: json_vec_default(org_role_permissions),
+        workspace_role_permissions: json_vec_default(workspace_role_permissions),
+        expires_at,
+        last_used_at,
+        is_active: is_active.unwrap_or(true),
+        created_at: created_at.unwrap_or_else(chrono::Utc::now),
+        updated_at: updated_at.unwrap_or_else(chrono::Utc::now),
+        revoked_at,
+        revoked_reason,
     }
 }
 
@@ -187,36 +227,32 @@ impl CreateApiKeyCommand {
         .fetch_one(executor)
         .await?;
 
-        let key = ApiKey {
-            id: rec.id,
-            deployment_id: rec.deployment_id,
-            app_slug: rec.app_slug,
-            name: rec.name,
-            key_prefix: rec.key_prefix,
-            key_suffix: rec.key_suffix,
-            key_hash: rec.key_hash,
-            permissions: json_default(json_option_default(
-                rec.permissions.clone(),
-                serde_json::json!([]),
-            )),
-            metadata: json_option_default(rec.metadata.clone(), serde_json::json!({})),
-            rate_limits: vec![],
-            rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
-            owner_user_id: rec.owner_user_id,
-            organization_id: rec.organization_id,
-            workspace_id: rec.workspace_id,
-            organization_membership_id: rec.organization_membership_id,
-            workspace_membership_id: rec.workspace_membership_id,
-            org_role_permissions: json_vec_default(rec.org_role_permissions.clone()),
-            workspace_role_permissions: json_vec_default(rec.workspace_role_permissions.clone()),
-            expires_at: rec.expires_at,
-            last_used_at: rec.last_used_at,
-            is_active: rec.is_active.unwrap_or(true),
-            created_at: rec.created_at.unwrap_or_else(chrono::Utc::now),
-            updated_at: rec.updated_at.unwrap_or_else(chrono::Utc::now),
-            revoked_at: rec.revoked_at,
-            revoked_reason: rec.revoked_reason,
-        };
+        let key = build_api_key_model(
+            rec.id,
+            rec.deployment_id,
+            rec.app_slug,
+            rec.name,
+            rec.key_prefix,
+            rec.key_suffix,
+            rec.key_hash,
+            rec.permissions.clone(),
+            rec.metadata.clone(),
+            rec.rate_limit_scheme_slug,
+            rec.owner_user_id,
+            rec.organization_id,
+            rec.workspace_id,
+            rec.organization_membership_id,
+            rec.workspace_membership_id,
+            rec.org_role_permissions.clone(),
+            rec.workspace_role_permissions.clone(),
+            rec.expires_at,
+            rec.last_used_at,
+            rec.is_active,
+            rec.created_at,
+            rec.updated_at,
+            rec.revoked_at,
+            rec.revoked_reason,
+        );
 
         Ok(ApiKeyWithSecret {
             key,
@@ -305,36 +341,32 @@ impl RotateApiKeyCommand {
         .await?
         .ok_or_else(|| AppError::NotFound("API key not found or inactive".to_string()))?;
 
-        let existing_key = ApiKey {
-            id: rec.id,
-            deployment_id: rec.deployment_id,
-            app_slug: rec.app_slug,
-            name: rec.name,
-            key_prefix: rec.key_prefix,
-            key_suffix: rec.key_suffix,
-            key_hash: String::new(), // Not needed for rotation
-            permissions: json_default(json_option_default(
-                rec.permissions.clone(),
-                serde_json::json!([]),
-            )),
-            metadata: json_option_default(rec.metadata.clone(), serde_json::json!({})),
-            rate_limits: vec![],
-            rate_limit_scheme_slug: rec.rate_limit_scheme_slug,
-            owner_user_id: rec.owner_user_id,
-            organization_id: rec.organization_id,
-            workspace_id: rec.workspace_id,
-            organization_membership_id: rec.organization_membership_id,
-            workspace_membership_id: rec.workspace_membership_id,
-            org_role_permissions: json_vec_default(rec.org_role_permissions.clone()),
-            workspace_role_permissions: json_vec_default(rec.workspace_role_permissions.clone()),
-            expires_at: rec.expires_at,
-            last_used_at: None,
-            is_active: true,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            revoked_at: None,
-            revoked_reason: None,
-        };
+        let existing_key = build_api_key_model(
+            rec.id,
+            rec.deployment_id,
+            rec.app_slug,
+            rec.name,
+            rec.key_prefix,
+            rec.key_suffix,
+            String::new(), // Not needed for rotation
+            rec.permissions.clone(),
+            rec.metadata.clone(),
+            rec.rate_limit_scheme_slug,
+            rec.owner_user_id,
+            rec.organization_id,
+            rec.workspace_id,
+            rec.organization_membership_id,
+            rec.workspace_membership_id,
+            rec.org_role_permissions.clone(),
+            rec.workspace_role_permissions.clone(),
+            rec.expires_at,
+            None,
+            Some(true),
+            None,
+            None,
+            None,
+            None,
+        );
 
         let app_context =
             GetApiAuthAppBySlugQuery::new(self.deployment_id, existing_key.app_slug.clone())

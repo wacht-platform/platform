@@ -3,21 +3,14 @@ use axum::{
     routing::{get, post},
 };
 use common::state::AppState;
-use dotenvy::dotenv;
 use platform::gateway::handlers::{check_authz, health};
 use platform::gateway::{GatewayState, RateLimiter};
 use std::net::SocketAddr;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    dotenv().ok();
-
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new("error"))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    platform::bootstrap::init_runtime_default_env();
 
     let app_state = AppState::new_from_env()
         .await

@@ -1,10 +1,7 @@
 use common::error::AppError;
+use common::json_utils::json_default;
 use models::api_key::RateLimit;
 use queries::rate_limit_scheme::RateLimitSchemeData;
-
-fn json_default<T: serde::de::DeserializeOwned + Default>(value: serde_json::Value) -> T {
-    serde_json::from_value(value).unwrap_or_default()
-}
 
 fn validate_rules(rules: &[RateLimit]) -> Result<(), AppError> {
     if rules.is_empty() {
