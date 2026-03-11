@@ -11,6 +11,7 @@ pub async fn get_webhook_analytics(
     app_slug: String,
     params: WebhookAnalyticsQuery,
 ) -> Result<WebhookAnalyticsResult, AppError> {
+    let deps = deps::from_app(app_state).db();
     let mut query = GetWebhookAnalyticsQuery::new(deployment_id).with_app_slug(app_slug);
 
     if let Some(endpoint_id) = params.endpoint_id {
@@ -21,7 +22,7 @@ pub async fn get_webhook_analytics(
         query = query.with_date_range(start, end);
     }
 
-    query.execute_with_deps(&deps::from_app(app_state).db()).await
+    query.execute_with_deps(&deps).await
 }
 
 pub async fn get_webhook_timeseries(
@@ -30,6 +31,7 @@ pub async fn get_webhook_timeseries(
     app_slug: String,
     params: WebhookTimeseriesQuery,
 ) -> Result<WebhookTimeseriesResult, AppError> {
+    let deps = deps::from_app(app_state).db();
     let mut query =
         GetWebhookTimeseriesQuery::new(deployment_id, params.interval).with_app_slug(app_slug);
 
@@ -41,5 +43,5 @@ pub async fn get_webhook_timeseries(
         query = query.with_date_range(start, end);
     }
 
-    query.execute_with_deps(&deps::from_app(app_state).db()).await
+    query.execute_with_deps(&deps).await
 }

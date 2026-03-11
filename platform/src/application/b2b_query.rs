@@ -63,8 +63,9 @@ pub async fn update_deployment_b2b_settings(
     deployment_id: i64,
     settings: DeploymentB2bSettingsUpdates,
 ) -> Result<(), AppError> {
+    let deps = deps::from_app(app_state).db().redis();
     UpdateDeploymentB2bSettingsCommand::new(deployment_id, settings)
-        .execute_with_deps(&deps::from_app(app_state).db().redis())
+        .execute_with_deps(&deps)
         .await?;
     Ok(())
 }

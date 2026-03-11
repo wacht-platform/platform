@@ -36,8 +36,9 @@ async fn upload_entity_image(
         "deployments/{}/{}/{}/logo.{}",
         deployment_id, entity_kind, entity_id, file_extension
     );
+    let s3_deps = deps::from_app(app_state).s3();
     let url = UploadToCdnCommand::new(file_path, image_buffer)
-        .execute_with_deps(&deps::from_app(app_state).s3())
+        .execute_with_deps(&s3_deps)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Some(url))

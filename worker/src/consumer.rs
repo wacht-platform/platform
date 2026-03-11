@@ -13,6 +13,8 @@ use crate::tasks::{
     token, webhook, webhook_event, webhook_replay_batch,
 };
 
+const AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS: u64 = 30;
+
 #[derive(Debug)]
 pub enum TaskError {
     RetryWithDelay(Duration),
@@ -339,7 +341,16 @@ impl NatsConsumer {
             WorkerTask::AgentExecutionRequest(request) => {
                 agent::process_agent_execution(&self.app_state, request)
                     .await
-                    .map_err(|e| TaskError::Permanent(e.to_string()))?;
+                    .map_err(|e| {
+                        match e {
+                            agent::AgentExecutionError::ExecutionBusy { .. } => {
+                                TaskError::RetryWithDelay(Duration::from_secs(
+                                    AGENT_EXECUTION_BUSY_RETRY_DELAY_SECONDS,
+                                ))
+                            }
+                            other => TaskError::Permanent(other.to_string()),
+                        }
+                    })?;
             }
             WorkerTask::EmbeddingProcessBatch(task) => {
                 embedding::process_document_batch_impl(

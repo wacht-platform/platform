@@ -4,6 +4,7 @@ use common::state::AppState;
 use dto::json::{AgentExecutionRequest, AgentExecutionType, AgentStreamMessageType};
 use queries::{GetAiAgentByIdWithFeatures, GetAiAgentByNameWithFeatures};
 use redis::Script;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
 use tokio::time::{Duration, interval, sleep};
 
@@ -13,6 +14,53 @@ const IDEMPOTENCY_TTL_SECONDS: i64 = 600;
 const CONTEXT_LOCK_TTL_SECONDS: i64 = 3600;
 const EXECUTION_SLOT_HEARTBEAT_SECONDS: u64 = 120;
 const CONTEXT_LOCK_HEARTBEAT_SECONDS: u64 = 300;
+const MAX_LOCK_WAIT_SECONDS: u64 = 300; // 5 minutes
+const DEPLOYMENT_SLOT_BACKOFF_MIN_MS: u64 = 250;
+const DEPLOYMENT_SLOT_BACKOFF_MAX_MS: u64 = 5_000;
+const CONTEXT_LOCK_BACKOFF_MIN_MS: u64 = 100;
+const CONTEXT_LOCK_BACKOFF_MAX_MS: u64 = 2_000;
+const BACKOFF_JITTER_MAX_MS: u64 = 250;
+
+#[derive(Debug)]
+pub enum AgentExecutionError {
+    ExecutionBusy {
+        resource: &'static str,
+        identifier: i64,
+        max_wait_seconds: u64,
+    },
+    Other(anyhow::Error),
+}
+
+impl std::fmt::Display for AgentExecutionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExecutionBusy {
+                resource,
+                identifier,
+                max_wait_seconds,
+            } => write!(
+                f,
+                "ExecutionBusy: timed out waiting for {} lock (id={}, max_wait_seconds={})",
+                resource, identifier, max_wait_seconds
+            ),
+            Self::Other(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for AgentExecutionError {}
+
+impl From<anyhow::Error> for AgentExecutionError {
+    fn from(value: anyhow::Error) -> Self {
+        Self::Other(value)
+    }
+}
+
+impl From<redis::RedisError> for AgentExecutionError {
+    fn from(value: redis::RedisError) -> Self {
+        Self::Other(value.into())
+    }
+}
 
 #[derive(Debug, Clone)]
 enum AgentResolutionStrategy {
@@ -170,7 +218,7 @@ async fn publish_conversation_webhook(
 pub async fn process_agent_execution(
     app_state: &AppState,
     request: AgentExecutionRequest,
-) -> Result<String, anyhow::Error> {
+) -> Result<String, AgentExecutionError> {
     let execution_envelope = AgentExecutionEnvelope::try_from(request)?;
     if !register_execution_idempotency(app_state, &execution_envelope).await? {
         return Ok(format!(
@@ -203,7 +251,13 @@ pub async fn process_agent_execution(
                         .reader(common::db_router::ReadConsistency::Strong),
                 )
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to get agent by ID {}: {}", agent_id, e))?
+                .map_err(|e| {
+                    AgentExecutionError::Other(anyhow::anyhow!(
+                        "Failed to get agent by ID {}: {}",
+                        agent_id,
+                        e
+                    ))
+                })?
         }
         AgentResolutionStrategy::AgentName(agent_name) => {
             let by_name_query = GetAiAgentByNameWithFeatures::new(
@@ -217,7 +271,9 @@ pub async fn process_agent_execution(
                         .reader(common::db_router::ReadConsistency::Strong),
                 )
                 .await
-                .map_err(|_| anyhow::anyhow!("Agent '{}' not found", agent_name))?
+                .map_err(|_| {
+                    AgentExecutionError::Other(anyhow::anyhow!("Agent '{}' not found", agent_name))
+                })?
         }
     };
 
@@ -309,7 +365,7 @@ pub async fn process_agent_execution(
 
     drop(context_guard);
     drop(concurrency_guard);
-    result.map_err(|e| anyhow::anyhow!("Agent execution failed: {}", e))?;
+    result.map_err(|e| AgentExecutionError::Other(anyhow::anyhow!("Agent execution failed: {}", e)))?;
 
     Ok(format!(
         "Agent '{}' execution completed for context {}",
@@ -495,7 +551,7 @@ return 0
 async fn acquire_deployment_execution_slot(
     app_state: &AppState,
     deployment_id: i64,
-) -> Result<DeploymentExecutionGuard, anyhow::Error> {
+) -> Result<DeploymentExecutionGuard, AgentExecutionError> {
     let key = format!("agent:deployment_active_executions:{}", deployment_id);
     let script = Script::new(
         r#"
@@ -512,7 +568,19 @@ return current
 "#,
     );
 
+    let started_at = tokio::time::Instant::now();
+    let max_wait = Duration::from_secs(MAX_LOCK_WAIT_SECONDS);
+    let mut attempt = 0u32;
+
     loop {
+        if started_at.elapsed() >= max_wait {
+            return Err(AgentExecutionError::ExecutionBusy {
+                resource: "deployment_execution_slot",
+                identifier: deployment_id,
+                max_wait_seconds: MAX_LOCK_WAIT_SECONDS,
+            });
+        }
+
         let mut conn = app_state
             .redis_client
             .get_multiplexed_async_connection()
@@ -531,14 +599,21 @@ return current
                 heartbeat_stop: Some(heartbeat_stop),
             });
         }
-        sleep(Duration::from_millis(250)).await;
+
+        attempt = attempt.saturating_add(1);
+        let backoff_ms = jittered_exponential_backoff_ms(
+            attempt,
+            DEPLOYMENT_SLOT_BACKOFF_MIN_MS,
+            DEPLOYMENT_SLOT_BACKOFF_MAX_MS,
+        );
+        sleep(Duration::from_millis(backoff_ms)).await;
     }
 }
 
 async fn acquire_context_execution_lock(
     app_state: &AppState,
     context_id: i64,
-) -> Result<ContextExecutionLockGuard, anyhow::Error> {
+) -> Result<ContextExecutionLockGuard, AgentExecutionError> {
     let key = format!("agent:context_execution_lock:{}", context_id);
     let token = format!(
         "{}:{}",
@@ -555,7 +630,19 @@ return 0
 "#,
     );
 
+    let started_at = tokio::time::Instant::now();
+    let max_wait = Duration::from_secs(MAX_LOCK_WAIT_SECONDS);
+    let mut attempt = 0u32;
+
     loop {
+        if started_at.elapsed() >= max_wait {
+            return Err(AgentExecutionError::ExecutionBusy {
+                resource: "context_execution",
+                identifier: context_id,
+                max_wait_seconds: MAX_LOCK_WAIT_SECONDS,
+            });
+        }
+
         let mut conn = app_state
             .redis_client
             .get_multiplexed_async_connection()
@@ -576,8 +663,36 @@ return 0
                 heartbeat_stop: Some(heartbeat_stop),
             });
         }
-        sleep(Duration::from_millis(100)).await;
+
+        attempt = attempt.saturating_add(1);
+        let backoff_ms = jittered_exponential_backoff_ms(
+            attempt,
+            CONTEXT_LOCK_BACKOFF_MIN_MS,
+            CONTEXT_LOCK_BACKOFF_MAX_MS,
+        );
+        sleep(Duration::from_millis(backoff_ms)).await;
     }
+}
+
+fn jittered_exponential_backoff_ms(attempt: u32, base_ms: u64, max_ms: u64) -> u64 {
+    let growth_factor = 1u64
+        .checked_shl(attempt.min(8))
+        .unwrap_or(256);
+    let exponential = base_ms.saturating_mul(growth_factor).min(max_ms);
+    let jitter = time_jitter_ms(BACKOFF_JITTER_MAX_MS);
+    exponential.saturating_add(jitter).min(max_ms)
+}
+
+fn time_jitter_ms(max_jitter_ms: u64) -> u64 {
+    if max_jitter_ms == 0 {
+        return 0;
+    }
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let nanos = now.subsec_nanos() as u64;
+    nanos % (max_jitter_ms + 1)
 }
 
 async fn register_execution_idempotency(

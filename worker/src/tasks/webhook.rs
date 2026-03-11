@@ -632,6 +632,7 @@ async fn send_webhook_failure_notification(
         .redis_client
         .get_multiplexed_async_connection()
         .await?;
+    let email_deps = common::deps::from_app(app_state).db().enc().postmark().template();
 
     for recipient_email in recipient_emails {
         let dedupe_key = format!(
@@ -674,7 +675,7 @@ async fn send_webhook_failure_notification(
             recipient_email.clone(),
             variables,
         );
-        if let Err(e) = send_email_command.execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template()).await {
+        if let Err(e) = send_email_command.execute_with_deps(&email_deps).await {
             error!(
                 deployment_id,
                 app_slug,

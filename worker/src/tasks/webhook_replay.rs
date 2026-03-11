@@ -7,10 +7,11 @@ pub async fn replay_webhook_delivery(
     delivery_id: i64,
     deployment_id: i64,
 ) -> Result<i64, AppError> {
+    let deps = common::deps::from_app(app_state).db().nats().id();
     ReplayWebhookDeliveryCommand {
         delivery_id,
         deployment_id,
     }
-    .execute_with_deps(&common::deps::from_app(app_state).db().nats().id())
+    .execute_with_deps(&deps)
     .await
 }

@@ -54,16 +54,15 @@ pub async fn invite_user(
     deployment_id: i64,
     request: InviteUserRequest,
 ) -> Result<DeploymentInvitation, AppError> {
+    let deps = deps::from_app(app_state)
+        .db()
+        .id()
+        .template()
+        .postmark()
+        .enc();
     InviteUserCommand::new(deployment_id, request)
         .with_invitation_id(app_state.sf.next_id()? as i64)
-        .execute_with_deps(
-            &deps::from_app(app_state)
-                .db()
-                .id()
-                .template()
-                .postmark()
-                .enc(),
-        )
+        .execute_with_deps(&deps)
         .await
 }
 
@@ -84,15 +83,14 @@ pub async fn approve_waitlist_user(
     deployment_id: i64,
     waitlist_user_id: i64,
 ) -> Result<DeploymentInvitation, AppError> {
+    let deps = deps::from_app(app_state)
+        .db()
+        .id()
+        .template()
+        .postmark()
+        .enc();
     ApproveWaitlistUserCommand::new(deployment_id, waitlist_user_id)
         .with_invitation_id(app_state.sf.next_id()? as i64)
-        .execute_with_deps(
-            &deps::from_app(app_state)
-                .db()
-                .id()
-                .template()
-                .postmark()
-                .enc(),
-        )
+        .execute_with_deps(&deps)
         .await
 }
