@@ -1,5 +1,9 @@
 use common::error::AppError;
 
+const DEFAULT_BILLING_COUNTRY: &str = "US";
+const DEFAULT_MAX_PROJECTS_PER_ACCOUNT: i64 = 10;
+const DEFAULT_MAX_STAGING_DEPLOYMENTS_PER_PROJECT: i64 = 3;
+
 fn normalize_limit(value: Option<i64>, field: &'static str) -> Result<Option<i64>, AppError> {
     if let Some(v) = value
         && v < 0
@@ -7,6 +11,19 @@ fn normalize_limit(value: Option<i64>, field: &'static str) -> Result<Option<i64
         return Err(AppError::Validation(format!("{field} cannot be negative")));
     }
     Ok(value)
+}
+
+fn normalize_billing_limits(
+    max_projects_per_account: Option<i64>,
+    max_staging_deployments_per_project: Option<i64>,
+) -> Result<(Option<i64>, Option<i64>), AppError> {
+    Ok((
+        normalize_limit(max_projects_per_account, "max_projects_per_account")?,
+        normalize_limit(
+            max_staging_deployments_per_project,
+            "max_staging_deployments_per_project",
+        )?,
+    ))
 }
 
 pub struct CreateBillingAccountCommand {
@@ -108,12 +125,11 @@ impl CreateBillingAccountCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let max_projects_per_account =
-            normalize_limit(self.max_projects_per_account, "max_projects_per_account")?;
-        let max_staging_deployments_per_project = normalize_limit(
-            self.max_staging_deployments_per_project,
-            "max_staging_deployments_per_project",
-        )?;
+        let (max_projects_per_account, max_staging_deployments_per_project) =
+            normalize_billing_limits(
+                self.max_projects_per_account,
+                self.max_staging_deployments_per_project,
+            )?;
 
         sqlx::query!(
             r#"
@@ -143,7 +159,7 @@ impl CreateBillingAccountCommand {
                 pulse_notified_disabled,
                 created_at,
                 updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'USD', 'en-US', 0, COALESCE($14::BIGINT, 10::BIGINT), COALESCE($15::BIGINT, 3::BIGINT), true, false, false, false, NOW(), NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'USD', 'en-US', 0, COALESCE($14::BIGINT, $16::BIGINT), COALESCE($15::BIGINT, $17::BIGINT), true, false, false, false, NOW(), NOW())
             "#,
             self.id,
             self.owner_id,
@@ -157,9 +173,11 @@ impl CreateBillingAccountCommand {
             self.city.as_deref().unwrap_or(""),
             self.state,
             self.postal_code.as_deref().unwrap_or(""),
-            self.country.as_deref().unwrap_or("US"),
+            self.country.as_deref().unwrap_or(DEFAULT_BILLING_COUNTRY),
             max_projects_per_account,
-            max_staging_deployments_per_project
+            max_staging_deployments_per_project,
+            DEFAULT_MAX_PROJECTS_PER_ACCOUNT,
+            DEFAULT_MAX_STAGING_DEPLOYMENTS_PER_PROJECT
         )
         .execute(executor)
         .await?;
@@ -301,12 +319,11 @@ impl UpdateBillingAccountCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let max_projects_per_account =
-            normalize_limit(self.max_projects_per_account, "max_projects_per_account")?;
-        let max_staging_deployments_per_project = normalize_limit(
-            self.max_staging_deployments_per_project,
-            "max_staging_deployments_per_project",
-        )?;
+        let (max_projects_per_account, max_staging_deployments_per_project) =
+            normalize_billing_limits(
+                self.max_projects_per_account,
+                self.max_staging_deployments_per_project,
+            )?;
 
         sqlx::query!(
             r#"

@@ -1,8 +1,21 @@
 use super::*;
-pub(in crate::project) async fn bootstrap_deployment_defaults<D>(
+
+fn next_b2b_role_ids<D>(deps: &D) -> Result<(i64, i64, i64, i64), AppError>
+where
+    D: HasIdProvider + ?Sized,
+{
+    Ok((
+        next_id_from(deps)?,
+        next_id_from(deps)?,
+        next_id_from(deps)?,
+        next_id_from(deps)?,
+    ))
+}
+
+async fn insert_core_default_settings<D>(
     conn: &mut sqlx::PgConnection,
     deps: &D,
-    input: DeploymentBootstrapInput<'_>,
+    input: &DeploymentBootstrapInput<'_>,
 ) -> Result<(), AppError>
 where
     D: HasIdProvider + ?Sized,
@@ -15,24 +28,16 @@ where
         .execute_with_db(&mut *conn)
         .await?;
 
-    let ui_settings = build_ui_settings(input.deployment_id, input.frontend_host, input.app_name);
+    let ui_settings = build_ui_settings(
+        input.deployment_id,
+        input.frontend_host,
+        input.app_name.clone(),
+    );
     DeploymentUiSettingsInsert::builder()
         .id(next_id_from(deps)?)
         .ui_settings(ui_settings)
-        .waitlist_page_url(input.waitlist_page_url)
+        .waitlist_page_url(input.waitlist_page_url.clone())
         .support_page_url(input.support_page_url)
-        .build()?
-        .execute_with_db(&mut *conn)
-        .await?;
-
-    let b2b_settings = build_b2b_settings(input.deployment_id);
-    DeploymentB2bBootstrapInsert::builder()
-        .settings_row_id(next_id_from(deps)?)
-        .workspace_creator_role_id(next_id_from(deps)?)
-        .workspace_member_role_id(next_id_from(deps)?)
-        .org_creator_role_id(next_id_from(deps)?)
-        .org_member_role_id(next_id_from(deps)?)
-        .b2b_settings(b2b_settings)
         .build()?
         .execute_with_db(&mut *conn)
         .await?;
@@ -64,10 +69,46 @@ where
     DeploymentKeyPairsInsert::builder()
         .id(next_id_from(deps)?)
         .deployment_id(input.deployment_id)
-        .public_key(input.key_material.public_key)
-        .private_key(input.key_material.private_key)
-        .saml_public_key(input.key_material.saml_public_key)
-        .saml_private_key(input.key_material.saml_private_key)
+        .public_key(input.key_material.public_key.clone())
+        .private_key(input.key_material.private_key.clone())
+        .saml_public_key(input.key_material.saml_public_key.clone())
+        .saml_private_key(input.key_material.saml_private_key.clone())
+        .build()?
+        .execute_with_db(&mut *conn)
+        .await?;
+
+    DeploymentAiSettingsInsert::builder()
+        .id(next_id_from(deps)?)
+        .deployment_id(input.deployment_id)
+        .build()?
+        .execute_with_db(&mut *conn)
+        .await?;
+
+    Ok(())
+}
+
+async fn insert_external_default_bootstraps<D>(
+    conn: &mut sqlx::PgConnection,
+    deps: &D,
+    input: &DeploymentBootstrapInput<'_>,
+) -> Result<(), AppError>
+where
+    D: HasIdProvider + ?Sized,
+{
+    let b2b_settings = build_b2b_settings(input.deployment_id);
+    let (
+        workspace_creator_role_id,
+        workspace_member_role_id,
+        org_creator_role_id,
+        org_member_role_id,
+    ) = next_b2b_role_ids(deps)?;
+    DeploymentB2bBootstrapInsert::builder()
+        .settings_row_id(next_id_from(deps)?)
+        .workspace_creator_role_id(workspace_creator_role_id)
+        .workspace_member_role_id(workspace_member_role_id)
+        .org_creator_role_id(org_creator_role_id)
+        .org_member_role_id(org_member_role_id)
+        .b2b_settings(b2b_settings)
         .build()?
         .execute_with_db(&mut *conn)
         .await?;
@@ -93,12 +134,19 @@ where
         .execute_with_db(&mut *conn)
         .await?;
 
-    DeploymentAiSettingsInsert::builder()
-        .id(next_id_from(deps)?)
-        .deployment_id(input.deployment_id)
-        .build()?
-        .execute_with_db(&mut *conn)
-        .await?;
+    Ok(())
+}
+
+pub(in crate::project) async fn bootstrap_deployment_defaults<D>(
+    conn: &mut sqlx::PgConnection,
+    deps: &D,
+    input: DeploymentBootstrapInput<'_>,
+) -> Result<(), AppError>
+where
+    D: HasIdProvider + ?Sized,
+{
+    insert_core_default_settings(conn, deps, &input).await?;
+    insert_external_default_bootstraps(conn, deps, &input).await?;
 
     Ok(())
 }
@@ -165,11 +213,10 @@ where
         .execute_with_db(conn.as_mut())
         .await?;
 
-    let max_staging_deployments = if max_staging_deployments_per_project > 0 {
-        max_staging_deployments_per_project
-    } else {
-        MAX_STAGING_DEPLOYMENTS_PER_PROJECT
-    };
+    let max_staging_deployments = positive_or_default(
+        max_staging_deployments_per_project,
+        MAX_STAGING_DEPLOYMENTS_PER_PROJECT,
+    );
 
     if staging_count >= max_staging_deployments {
         return Err(AppError::BadRequest(format!(
@@ -191,7 +238,9 @@ where
     .await
 }
 
-pub(in crate::project) fn build_staging_deployment_model(deployment_row: StagingDeploymentInsertedRow) -> Deployment {
+pub(in crate::project) fn build_staging_deployment_model(
+    deployment_row: StagingDeploymentInsertedRow,
+) -> Deployment {
     Deployment {
         id: deployment_row.id,
         created_at: deployment_row.created_at,
@@ -263,7 +312,9 @@ pub(in crate::project) fn decode_public_custom_smtp_config(
     Ok(decoded)
 }
 
-pub(in crate::project) fn json_value<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, AppError> {
+pub(in crate::project) fn json_value<T: serde::Serialize>(
+    value: &T,
+) -> Result<serde_json::Value, AppError> {
     serde_json::to_value(value).map_err(|e| AppError::Serialization(e.to_string()))
 }
 

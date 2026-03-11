@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT graph_id, from_node_id, to_node_id, created_at\n            FROM execution_task_edges\n            WHERE graph_id = $1\n            ORDER BY created_at ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "graph_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "from_node_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "to_node_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1bea9e566577e766b602e4f599b820414ccbb7beae69841f9621c5be2061afc3"
+}

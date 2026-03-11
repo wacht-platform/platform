@@ -25,6 +25,8 @@ pub struct StepDecisionContext {
     pub supervisor_mode_active: bool,
     #[serde(default)]
     pub supervisor_task_board: Vec<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_graph_view: Option<String>,
     #[serde(default)]
     pub is_child_context: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

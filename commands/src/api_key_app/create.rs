@@ -71,11 +71,11 @@ impl CreateApiAuthAppCommand {
 }
 
 impl CreateApiAuthAppCommand {
-    pub async fn execute_with_db<'a, Db>(self, db: Db) -> Result<ApiAuthApp, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<ApiAuthApp, AppError>
     where
-        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut tx = db.begin().await?;
+        let mut tx = acquirer.begin().await?;
         let organization_id = resolve_scope_organization(
             tx.as_mut(),
             self.deployment_id,

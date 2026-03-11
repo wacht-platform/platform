@@ -70,7 +70,7 @@ pub(super) async fn load_project_for_production(
         .project_id(project_id)
         .execute_with_db(&mut *conn)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Project with id {} not found", project_id)))
+        .ok_or_else(|| project_not_found(project_id))
 }
 
 pub(super) async fn ensure_production_deployment_is_unique(

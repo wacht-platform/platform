@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT deployment_id as \"deployment_id!\",\n                       app_slug as \"app_slug!\",\n                       name as \"name!\",\n                       description,\n                       signing_secret as \"signing_secret!\",\n                       failure_notification_emails,\n                       event_catalog_slug,\n                       is_active as \"is_active!\",\n                       created_at as \"created_at!\",\n                       updated_at as \"updated_at!\"\n                FROM webhook_apps\n                WHERE deployment_id = $1\n                ORDER BY created_at DESC\n                LIMIT $2 OFFSET $3\n                ",
+  "query": "\n            SELECT deployment_id as \"deployment_id!\",\n                   app_slug as \"app_slug!\",\n                   name as \"name!\",\n                   description,\n                   signing_secret as \"signing_secret!\",\n                   failure_notification_emails,\n                   event_catalog_slug,\n                   is_active as \"is_active!\",\n                   created_at as \"created_at!\",\n                   updated_at as \"updated_at!\"\n            FROM webhook_apps\n            WHERE deployment_id = $1\n              AND ($2::bool OR is_active = true)\n            ORDER BY created_at DESC\n            LIMIT $3 OFFSET $4\n            ",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,7 @@
     "parameters": {
       "Left": [
         "Int8",
+        "Bool",
         "Int8",
         "Int8"
       ]
@@ -74,5 +75,5 @@
       true
     ]
   },
-  "hash": "0f1a503e0c5d87caf0cfb123ab43971ec7b8f982f97dd4b540eacb909adef452"
+  "hash": "1808747bf97d618f7d015edeb38c5786b7c2121168ac9d2ee02054dc13caf3eb"
 }

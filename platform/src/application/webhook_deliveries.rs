@@ -95,8 +95,9 @@ pub async fn get_webhook_stats(
     deployment_id: i64,
     app_slug: String,
 ) -> Result<WebhookAnalyticsResult, AppError> {
+    let db_deps = deps::from_app(app_state).db();
     let query = GetWebhookAnalyticsQuery::new(deployment_id).with_app_slug(app_slug);
-    query.execute_with_deps(&deps::from_app(app_state).db()).await
+    query.execute_with_deps(&db_deps).await
 }
 
 pub async fn get_app_webhook_deliveries(

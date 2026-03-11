@@ -1,6 +1,7 @@
 use common::error::AppError;
 use common::json_utils::json_default;
 use models::api_key::{ApiAuthApp, ApiKey, ApiKeyWithIdentifers};
+use serde::de::DeserializeOwned;
 use sqlx::Row;
 
 fn api_auth_app_base_query(where_clause: &str, order_clause: &str) -> String {
@@ -42,6 +43,40 @@ fn api_key_base_query(where_clause: &str, order_clause: &str) -> String {
     )
 }
 
+async fn fetch_api_auth_app_optional<'e, E>(
+    executor: E,
+    query_sql: String,
+    deployment_id: i64,
+    value: &str,
+) -> Result<Option<ApiAuthApp>, AppError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    let row = sqlx::query(&query_sql)
+        .bind(deployment_id)
+        .bind(value)
+        .fetch_optional(executor)
+        .await?;
+
+    Ok(row.as_ref().map(map_api_auth_app))
+}
+
+async fn fetch_api_key_optional<'e, E>(
+    executor: E,
+    query_sql: String,
+    value: &str,
+) -> Result<Option<ApiKey>, AppError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    let row = sqlx::query(&query_sql)
+        .bind(value)
+        .fetch_optional(executor)
+        .await?;
+
+    Ok(row.as_ref().map(map_api_key))
+}
+
 fn map_api_auth_app(row: &sqlx::postgres::PgRow) -> ApiAuthApp {
     let permissions: Option<serde_json::Value> = row.get("permissions");
     let resources: Option<serde_json::Value> = row.get("resources");
@@ -57,10 +92,8 @@ fn map_api_auth_app(row: &sqlx::postgres::PgRow) -> ApiAuthApp {
         description: row.get("description"),
         is_active: row.get::<Option<bool>, _>("is_active").unwrap_or(true),
         key_prefix: row.get("key_prefix"),
-        permissions: serde_json::from_value(permissions.unwrap_or_else(|| serde_json::json!([])))
-            .unwrap_or_default(),
-        resources: serde_json::from_value(resources.unwrap_or_else(|| serde_json::json!([])))
-            .unwrap_or_default(),
+        permissions: parse_json_array(permissions),
+        resources: parse_json_array(resources),
         rate_limits: json_default(rate_limits),
         rate_limit_scheme_slug: row.get("rate_limit_scheme_slug"),
         created_at: row
@@ -89,8 +122,7 @@ fn map_api_key(row: &sqlx::postgres::PgRow) -> ApiKey {
         key_prefix: row.get("key_prefix"),
         key_suffix: row.get("key_suffix"),
         key_hash: row.get("key_hash"),
-        permissions: serde_json::from_value(permissions.unwrap_or_else(|| serde_json::json!([])))
-            .unwrap_or_default(),
+        permissions: parse_json_array(permissions),
         metadata: metadata.unwrap_or_else(|| serde_json::json!({})),
         rate_limits: json_default(rate_limits),
         rate_limit_scheme_slug: row.get("rate_limit_scheme_slug"),
@@ -99,14 +131,8 @@ fn map_api_key(row: &sqlx::postgres::PgRow) -> ApiKey {
         workspace_id: row.get("workspace_id"),
         organization_membership_id: row.get("organization_membership_id"),
         workspace_membership_id: row.get("workspace_membership_id"),
-        org_role_permissions: serde_json::from_value(
-            org_role_permissions.unwrap_or_else(|| serde_json::json!([])),
-        )
-        .unwrap_or_default(),
-        workspace_role_permissions: serde_json::from_value(
-            workspace_role_permissions.unwrap_or_else(|| serde_json::json!([])),
-        )
-        .unwrap_or_default(),
+        org_role_permissions: parse_json_array(org_role_permissions),
+        workspace_role_permissions: parse_json_array(workspace_role_permissions),
         expires_at: row.get("expires_at"),
         last_used_at: row.get("last_used_at"),
         is_active: row.get::<Option<bool>, _>("is_active").unwrap_or(true),
@@ -119,6 +145,10 @@ fn map_api_key(row: &sqlx::postgres::PgRow) -> ApiKey {
         revoked_at: row.get("revoked_at"),
         revoked_reason: row.get("revoked_reason"),
     }
+}
+
+fn parse_json_array<T: DeserializeOwned>(value: Option<serde_json::Value>) -> Vec<T> {
+    serde_json::from_value(value.unwrap_or_else(|| serde_json::json!([]))).unwrap_or_default()
 }
 
 pub struct GetApiAuthAppsQuery {
@@ -173,16 +203,16 @@ impl GetApiAuthAppBySlugQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(&api_auth_app_base_query(
-            "a.deployment_id = $1 AND a.app_slug = $2 AND a.deleted_at IS NULL",
-            "",
-        ))
-        .bind(self.deployment_id)
-        .bind(&self.app_slug)
-        .fetch_optional(executor)
-        .await?;
-
-        Ok(row.as_ref().map(map_api_auth_app))
+        fetch_api_auth_app_optional(
+            executor,
+            api_auth_app_base_query(
+                "a.deployment_id = $1 AND a.app_slug = $2 AND a.deleted_at IS NULL",
+                "",
+            ),
+            self.deployment_id,
+            &self.app_slug,
+        )
+        .await
     }
 }
 
@@ -203,16 +233,16 @@ impl GetApiAuthAppByNameQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(&api_auth_app_base_query(
-            "a.deployment_id = $1 AND a.name = $2 AND a.deleted_at IS NULL",
-            "",
-        ))
-        .bind(self.deployment_id)
-        .bind(&self.name)
-        .fetch_optional(executor)
-        .await?;
-
-        Ok(row.as_ref().map(map_api_auth_app))
+        fetch_api_auth_app_optional(
+            executor,
+            api_auth_app_base_query(
+                "a.deployment_id = $1 AND a.name = $2 AND a.deleted_at IS NULL",
+                "",
+            ),
+            self.deployment_id,
+            &self.name,
+        )
+        .await
     }
 }
 
@@ -267,15 +297,12 @@ impl GetApiKeyByHashQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let row = sqlx::query(&api_key_base_query(
-            "k.key_hash = $1 AND k.is_active = true",
-            "",
-        ))
-        .bind(&self.key_hash)
-        .fetch_optional(executor)
-        .await?;
-
-        Ok(row.as_ref().map(map_api_key))
+        fetch_api_key_optional(
+            executor,
+            api_key_base_query("k.key_hash = $1 AND k.is_active = true", ""),
+            &self.key_hash,
+        )
+        .await
     }
 }
 
@@ -316,7 +343,11 @@ impl GetApiKeyIdentifiersByHashQuery {
         Ok(rec.map(|rec| ApiKeyWithIdentifers {
             id: rec.id,
             app_slug: rec.app_slug,
-            permissions: json_default(rec.permissions.clone().unwrap_or_else(|| serde_json::json!([]))),
+            permissions: json_default(
+                rec.permissions
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!([])),
+            ),
             org_role_permissions: if rec.org_role_permissions.is_null() {
                 vec![]
             } else {
@@ -438,10 +469,7 @@ impl GetOrganizationMembershipPermissionsQuery {
 
         Ok(rec.map(|r| OrganizationMembershipPermissions {
             organization_id: r.organization_id,
-            permissions: serde_json::from_value(
-                r.permissions.unwrap_or_else(|| serde_json::json!([])),
-            )
-            .unwrap_or_default(),
+            permissions: parse_json_array(r.permissions),
         }))
     }
 }
@@ -486,10 +514,7 @@ impl GetWorkspaceMembershipPermissionsQuery {
         Ok(rec.map(|r| WorkspaceMembershipPermissions {
             organization_id: r.organization_id,
             workspace_id: r.workspace_id,
-            permissions: serde_json::from_value(
-                r.permissions.unwrap_or_else(|| serde_json::json!([])),
-            )
-            .unwrap_or_default(),
+            permissions: parse_json_array(r.permissions),
         }))
     }
 }

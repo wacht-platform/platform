@@ -5,6 +5,7 @@ pub async fn oauth_register_client(
     headers: &HeaderMap,
     request: OAuthDynamicClientRegistrationRequest,
 ) -> Result<OAuthDynamicClientRegistrationResponse, ApiErrorResponse> {
+    let create_deps = deps::from_app(app_state).db().enc();
     let oauth_app = resolve_oauth_app_from_host(app_state, headers).await?;
     if !oauth_app.allow_dynamic_client_registration {
         return Err((
@@ -52,7 +53,7 @@ pub async fn oauth_register_client(
         jwks: request.jwks,
         public_key_pem: request.public_key_pem,
     }
-    .execute_with_deps(&deps::from_app(app_state).db().enc())
+    .execute_with_deps(&create_deps)
     .await?;
 
     let registration_access_token = generate_registration_access_token();
@@ -222,4 +223,3 @@ fn map_runtime_client_registration_response(
         registration_access_token: None,
     }
 }
-

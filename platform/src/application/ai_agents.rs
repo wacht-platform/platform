@@ -123,6 +123,7 @@ pub async fn create_ai_agent(
     deployment_id: i64,
     request: CreateAgentRequest,
 ) -> Result<AiAgent, AppError> {
+    let db_deps = deps::from_app(app_state).db();
     let configuration = request.configuration.unwrap_or(serde_json::json!({}));
     let agent_id = app_state.sf.next_id()? as i64;
     let mut command = CreateAiAgentCommand::new(
@@ -146,9 +147,7 @@ pub async fn create_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command
-        .execute_with_deps(&deps::from_app(app_state).db())
-        .await
+    command.execute_with_deps(&db_deps).await
 }
 
 pub async fn get_ai_agent_by_id(
@@ -201,6 +200,7 @@ pub async fn update_ai_agent(
     agent_id: i64,
     request: UpdateAgentRequest,
 ) -> Result<AiAgent, AppError> {
+    let db_deps = deps::from_app(app_state).db();
     let mut command = UpdateAiAgentCommand::new(deployment_id, agent_id);
 
     if let Some(name) = request.name {
@@ -225,9 +225,7 @@ pub async fn update_ai_agent(
         command = command.with_spawn_config(spawn_config);
     }
 
-    command
-        .execute_with_deps(&deps::from_app(app_state).db())
-        .await
+    command.execute_with_deps(&db_deps).await
 }
 
 pub async fn delete_ai_agent(
@@ -235,8 +233,9 @@ pub async fn delete_ai_agent(
     deployment_id: i64,
     agent_id: i64,
 ) -> Result<(), AppError> {
+    let db_deps = deps::from_app(app_state).db();
     DeleteAiAgentCommand::new(deployment_id, agent_id)
-        .execute_with_deps(&deps::from_app(app_state).db())
+        .execute_with_deps(&db_deps)
         .await?;
     Ok(())
 }
@@ -264,8 +263,9 @@ pub async fn attach_sub_agent_to_agent(
     agent_id: i64,
     sub_agent_id: i64,
 ) -> Result<(), AppError> {
+    let db_deps = deps::from_app(app_state).db();
     AttachSubAgentToAgentCommand::new(deployment_id, agent_id, sub_agent_id)
-        .execute_with_deps(&deps::from_app(app_state).db())
+        .execute_with_deps(&db_deps)
         .await?;
     Ok(())
 }
@@ -276,8 +276,9 @@ pub async fn detach_sub_agent_from_agent(
     agent_id: i64,
     sub_agent_id: i64,
 ) -> Result<(), AppError> {
+    let db_deps = deps::from_app(app_state).db();
     DetachSubAgentFromAgentCommand::new(deployment_id, agent_id, sub_agent_id)
-        .execute_with_deps(&deps::from_app(app_state).db())
+        .execute_with_deps(&db_deps)
         .await?;
     Ok(())
 }

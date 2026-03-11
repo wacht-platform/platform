@@ -153,6 +153,7 @@ pub async fn create_notification(
     deployment_id: i64,
     request: CreateNotificationRequest,
 ) -> ApiResult<Vec<Notification>> {
+    let command_deps = deps::from_app(state).db().nats();
     let CreateNotificationRequest {
         user_id,
         user_ids,
@@ -210,7 +211,7 @@ pub async fn create_notification(
         created.push(
             command
                 .build()?
-                .execute_with_deps(&deps::from_app(state).db().nats())
+                .execute_with_deps(&command_deps)
                 .await?,
         );
     }

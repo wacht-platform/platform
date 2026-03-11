@@ -98,57 +98,32 @@ impl GetWebhookAppsQuery {
         let limit = self.limit.unwrap_or(50);
         let offset = self.offset.unwrap_or(0);
 
-        let apps = if self.include_inactive {
-            query_as!(
-                WebhookApp,
-                r#"
-                SELECT deployment_id as "deployment_id!",
-                       app_slug as "app_slug!",
-                       name as "name!",
-                       description,
-                       signing_secret as "signing_secret!",
-                       failure_notification_emails,
-                       event_catalog_slug,
-                       is_active as "is_active!",
-                       created_at as "created_at!",
-                       updated_at as "updated_at!"
-                FROM webhook_apps
-                WHERE deployment_id = $1
-                ORDER BY created_at DESC
-                LIMIT $2 OFFSET $3
-                "#,
-                self.deployment_id,
-                limit + 1,
-                offset
-            )
-            .fetch_all(executor)
-            .await?
-        } else {
-            query_as!(
-                WebhookApp,
-                r#"
-                SELECT deployment_id as "deployment_id!",
-                       app_slug as "app_slug!",
-                       name as "name!",
-                       description,
-                       signing_secret as "signing_secret!",
-                       failure_notification_emails,
-                       event_catalog_slug,
-                       is_active as "is_active!",
-                       created_at as "created_at!",
-                       updated_at as "updated_at!"
-                FROM webhook_apps
-                WHERE deployment_id = $1 AND is_active = true
-                ORDER BY created_at DESC
-                LIMIT $2 OFFSET $3
-                "#,
-                self.deployment_id,
-                limit + 1,
-                offset
-            )
-            .fetch_all(executor)
-            .await?
-        };
+        let apps = query_as!(
+            WebhookApp,
+            r#"
+            SELECT deployment_id as "deployment_id!",
+                   app_slug as "app_slug!",
+                   name as "name!",
+                   description,
+                   signing_secret as "signing_secret!",
+                   failure_notification_emails,
+                   event_catalog_slug,
+                   is_active as "is_active!",
+                   created_at as "created_at!",
+                   updated_at as "updated_at!"
+            FROM webhook_apps
+            WHERE deployment_id = $1
+              AND ($2::bool OR is_active = true)
+            ORDER BY created_at DESC
+            LIMIT $3 OFFSET $4
+            "#,
+            self.deployment_id,
+            self.include_inactive,
+            limit + 1,
+            offset
+        )
+        .fetch_all(executor)
+        .await?;
 
         Ok(apps)
     }
@@ -271,83 +246,27 @@ impl GetWebhookEndpointsQuery {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let endpoints = match (&self.app_slug, self.include_inactive) {
-            (Some(app_slug), true) => {
-                query_as!(
-                    ModelWebhookEndpoint,
-                    r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
-                           e.url as "url!", e.description, e.headers,
-                           e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
-                           e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
-                           e.rate_limit_config,
-                           e.created_at as "created_at!", e.updated_at as "updated_at!"
-                    FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1 AND e.app_slug = $2
-                    ORDER BY e.created_at DESC
-                    "#,
-                    self.deployment_id,
-                    app_slug
-                )
-                .fetch_all(executor)
-                .await?
-            }
-            (Some(app_slug), false) => {
-                query_as!(
-                    ModelWebhookEndpoint,
-                    r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
-                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
-                           e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
-                           e.rate_limit_config,
-                           e.created_at as "created_at!", e.updated_at as "updated_at!"
-                    FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1 AND e.app_slug = $2 AND e.is_active = true
-                    ORDER BY e.created_at DESC
-                    "#,
-                    self.deployment_id,
-                    app_slug
-                )
-                .fetch_all(executor)
-                .await?
-            }
-            (None, true) => {
-                query_as!(
-                    ModelWebhookEndpoint,
-                    r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
-                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
-                           e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
-                           e.rate_limit_config,
-                           e.created_at as "created_at!", e.updated_at as "updated_at!"
-                    FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1
-                    ORDER BY e.created_at DESC
-                    "#,
-                    self.deployment_id
-                )
-                .fetch_all(executor)
-                .await?
-            }
-            (None, false) => {
-                query_as!(
-                    ModelWebhookEndpoint,
-                    r#"
-                    SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
-                           e.url as "url!", e.description, e.headers,                            e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
-                           e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
-                           e.rate_limit_config,
-                           e.created_at as "created_at!", e.updated_at as "updated_at!"
-                    FROM webhook_endpoints e
-                    WHERE e.deployment_id = $1 AND e.is_active = true
-                    ORDER BY e.created_at DESC
-                    "#,
-                    self.deployment_id
-                )
-                .fetch_all(executor)
-                .await?
-            }
-        };
+        let endpoints = query_as!(
+            ModelWebhookEndpoint,
+            r#"
+            SELECT e.id as "id!", e.deployment_id as "deployment_id!", e.app_slug as "app_slug!",
+                   e.url as "url!", e.description, e.headers,
+                   e.max_retries as "max_retries!", e.timeout_seconds as "timeout_seconds!", e.is_active as "is_active!",
+                   e.failure_count as "failure_count!", e.last_failure_at, e.auto_disabled as "auto_disabled!", e.auto_disabled_at,
+                   e.rate_limit_config,
+                   e.created_at as "created_at!", e.updated_at as "updated_at!"
+            FROM webhook_endpoints e
+            WHERE e.deployment_id = $1
+              AND ($2::text IS NULL OR e.app_slug = $2)
+              AND ($3::bool OR e.is_active = true)
+            ORDER BY e.created_at DESC
+            "#,
+            self.deployment_id,
+            self.app_slug.as_deref(),
+            self.include_inactive
+        )
+        .fetch_all(executor)
+        .await?;
 
         Ok(endpoints)
     }
@@ -715,7 +634,9 @@ impl GetPendingWebhookDeliveryQuery {
             .payload
             .map(|p| serde_json::to_string(&p))
             .transpose()
-            .map_err(|e| AppError::Internal(format!("Failed to serialize webhook payload: {}", e)))?;
+            .map_err(|e| {
+                AppError::Internal(format!("Failed to serialize webhook payload: {}", e))
+            })?;
         Ok(dto::clickhouse::webhook::WebhookLog {
             deployment_id: row.deployment_id,
             delivery_id: row.delivery_id,

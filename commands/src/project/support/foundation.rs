@@ -65,6 +65,14 @@ pub(in crate::project) fn ensure_phone_auth_allowed(
     Ok(())
 }
 
+pub(in crate::project) fn project_not_found(project_id: i64) -> AppError {
+    AppError::NotFound(format!("Project with id {} not found", project_id))
+}
+
+pub(in crate::project) fn positive_or_default(value: i64, default: i64) -> i64 {
+    if value > 0 { value } else { default }
+}
+
 pub(in crate::project) fn social_credentials_with_default_scopes(
     provider: &SocialConnectionProvider,
 ) -> Result<serde_json::Value, AppError> {

@@ -14,34 +14,6 @@ pub fn internal_tools() -> Vec<(
 )> {
     vec![
         (
-            "read_file",
-            "Read file content. Supports line ranges. Returns total_lines for navigation.",
-            InternalToolType::ReadFile,
-            vec![
-                SchemaField {
-                    name: "path".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("Path to the file".to_string()),
-                    required: true,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "start_line".to_string(),
-                    field_type: "INTEGER".to_string(),
-                    description: Some("Start line (1-indexed, optional)".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "end_line".to_string(),
-                    field_type: "INTEGER".to_string(),
-                    description: Some("End line (inclusive, optional)".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
-            ],
-        ),
-        (
             "read_image",
             "Read an image file and return mime metadata plus base64 payload for one-time vision analysis.",
             InternalToolType::ReadImage,
@@ -55,7 +27,7 @@ pub fn internal_tools() -> Vec<(
         ),
         (
             "write_file",
-            "Write to file. For partial writes (with start_line/end_line), must read_file first.",
+            "Write to file. For partial writes (with start_line/end_line), inspect the target first with execute_command.",
             InternalToolType::WriteFile,
             vec![
                 SchemaField {
@@ -75,47 +47,14 @@ pub fn internal_tools() -> Vec<(
                 SchemaField {
                     name: "start_line".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Replace from this line (1-indexed). Requires prior read_file.".to_string()),
+                    description: Some("Replace from this line (1-indexed). Inspect target first with execute_command.".to_string()),
                     required: false,
                     ..Default::default()
                 },
                 SchemaField {
                     name: "end_line".to_string(),
                     field_type: "INTEGER".to_string(),
-                    description: Some("Replace up to this line (inclusive). Requires prior read_file.".to_string()),
-                    required: false,
-                    ..Default::default()
-                },
-            ],
-        ),
-        (
-            "list_directory",
-            "List files and directories at a path.",
-            InternalToolType::ListDirectory,
-            vec![SchemaField {
-                name: "path".to_string(),
-                field_type: "STRING".to_string(),
-                description: Some("Directory path (default: '/')".to_string()),
-                required: false,
-                ..Default::default()
-            }],
-        ),
-        (
-            "search_files",
-            "Search for text patterns in files.",
-            InternalToolType::SearchFiles,
-            vec![
-                SchemaField {
-                    name: "query".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("Text or regex to search for".to_string()),
-                    required: true,
-                    ..Default::default()
-                },
-                SchemaField {
-                    name: "path".to_string(),
-                    field_type: "STRING".to_string(),
-                    description: Some("Directory to search (default: '/')".to_string()),
+                    description: Some("Replace up to this line (inclusive). Inspect target first with execute_command.".to_string()),
                     required: false,
                     ..Default::default()
                 },
@@ -328,6 +267,42 @@ pub fn internal_tools() -> Vec<(
             "Retrieve messages sent by your child agents via notify_parent. Call this during your supervisor polling loop to check if any children have sent you messages. Only returns messages received since your current execution started.",
             InternalToolType::GetChildMessages,
             vec![],
+        ),
+        (
+            "task_graph_add_node",
+            "Add a node to the execution task graph.",
+            InternalToolType::TaskGraphAddNode,
+            task_graph_add_node_schema(),
+        ),
+        (
+            "task_graph_add_dependency",
+            "Add a dependency edge between two graph nodes (from_node -> to_node).",
+            InternalToolType::TaskGraphAddDependency,
+            task_graph_add_dependency_schema(),
+        ),
+        (
+            "task_graph_mark_in_progress",
+            "Mark a graph node in progress when you begin actively working on it.",
+            InternalToolType::TaskGraphMarkInProgress,
+            task_graph_mark_in_progress_schema(),
+        ),
+        (
+            "task_graph_complete_node",
+            "Mark a graph node completed.",
+            InternalToolType::TaskGraphCompleteNode,
+            task_graph_complete_node_schema(),
+        ),
+        (
+            "task_graph_fail_node",
+            "Mark a graph node failed (auto-retries if budget remains).",
+            InternalToolType::TaskGraphFailNode,
+            task_graph_fail_node_schema(),
+        ),
+        (
+            "task_graph_mark_completed",
+            "Mark the graph completed after writing a required next-step handoff file to /workspace/.",
+            InternalToolType::TaskGraphMarkCompleted,
+            task_graph_mark_completed_schema(),
         ),
     ]
 }
@@ -1033,4 +1008,116 @@ pub fn get_completion_summary_schema() -> Vec<SchemaField> {
             ..Default::default()
         },
     ]
+}
+
+fn task_graph_add_node_schema() -> Vec<SchemaField> {
+    vec![
+        SchemaField {
+            name: "title".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Task node title.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "description".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Optional node description.".to_string()),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "max_retries".to_string(),
+            field_type: "INTEGER".to_string(),
+            description: Some("Maximum retries for this node (default 2).".to_string()),
+            required: false,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "input".to_string(),
+            field_type: "OBJECT".to_string(),
+            description: Some("Optional structured input payload.".to_string()),
+            required: false,
+            ..Default::default()
+        },
+    ]
+}
+
+fn task_graph_add_dependency_schema() -> Vec<SchemaField> {
+    vec![
+        SchemaField {
+            name: "from_node_id".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Dependency source node id.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "to_node_id".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Dependency target node id.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+    ]
+}
+
+fn task_graph_mark_in_progress_schema() -> Vec<SchemaField> {
+    vec![
+        SchemaField {
+            name: "node_id".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Target node id.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+    ]
+}
+
+fn task_graph_complete_node_schema() -> Vec<SchemaField> {
+    vec![
+        SchemaField {
+            name: "node_id".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Target node id.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "output".to_string(),
+            field_type: "OBJECT".to_string(),
+            description: Some("Optional completion payload.".to_string()),
+            required: false,
+            ..Default::default()
+        },
+    ]
+}
+
+fn task_graph_fail_node_schema() -> Vec<SchemaField> {
+    vec![
+        SchemaField {
+            name: "node_id".to_string(),
+            field_type: "STRING".to_string(),
+            description: Some("Target node id.".to_string()),
+            required: true,
+            ..Default::default()
+        },
+        SchemaField {
+            name: "error".to_string(),
+            field_type: "OBJECT".to_string(),
+            description: Some("Failure details.".to_string()),
+            required: false,
+            ..Default::default()
+        },
+    ]
+}
+
+fn task_graph_mark_completed_schema() -> Vec<SchemaField> {
+    vec![SchemaField {
+        name: "handoff_path".to_string(),
+        field_type: "STRING".to_string(),
+        description: Some("Required /workspace/ path to the handoff file that must exist before graph completion.".to_string()),
+        required: true,
+        ..Default::default()
+    }]
 }

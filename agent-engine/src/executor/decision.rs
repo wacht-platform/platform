@@ -467,6 +467,8 @@ impl AgentExecutor {
                     )
                     .await?;
 
+                    self.invalidate_task_graph_snapshot();
+
                     if any_pending {
                         return Ok(false);
                     }
@@ -811,6 +813,9 @@ impl AgentExecutor {
             Vec::new()
         };
 
+        let task_graph = self.ensure_task_graph_snapshot().await?;
+        let task_graph_view = Self::render_task_graph_view(&task_graph);
+
         let context = StepDecisionContext {
             current_datetime_utc: chrono::Utc::now()
                 .format("%Y-%m-%d %H:%M:%S UTC")
@@ -834,6 +839,7 @@ impl AgentExecutor {
                 .collect(),
             available_tools: self
                 .available_tools_for_mode()
+                .await
                 .iter()
                 .map(|t| serde_json::to_value(t).unwrap())
                 .collect(),
@@ -846,7 +852,12 @@ impl AgentExecutor {
                 .collect(),
             available_sub_agents,
             supervisor_mode_active: self.supervisor_mode_active,
-            supervisor_task_board: self.supervisor_task_board.clone(),
+            supervisor_task_board: if self.supervisor_mode_active {
+                self.supervisor_task_board.clone()
+            } else {
+                Vec::new()
+            },
+            task_graph_view: Some(task_graph_view),
             is_child_context: exec_context.parent_context_id.is_some(),
             parent_context_id: exec_context.parent_context_id,
             iteration_info: dto::json::IterationInfo {
@@ -1155,9 +1166,36 @@ impl AgentExecutor {
         )
     }
 
-    fn available_tools_for_mode(&self) -> Vec<models::AiTool> {
+    async fn available_tools_for_mode(&self) -> Vec<models::AiTool> {
+        let maybe_graph = queries::GetExecutionTaskGraphByContextQuery::new(
+            self.ctx.agent.deployment_id,
+            self.ctx.context_id,
+        )
+        .execute_with_db(self.ctx.app_state.db_router.writer())
+        .await
+        .ok()
+        .flatten();
+        let graph_terminal = maybe_graph
+            .as_ref()
+            .map(|g| {
+                matches!(
+                    g.status.as_str(),
+                    models::execution_task_graph::status::GRAPH_COMPLETED
+                        | models::execution_task_graph::status::GRAPH_CANCELLED
+                        | models::execution_task_graph::status::GRAPH_FAILED
+                )
+            })
+            .unwrap_or(false);
+
         if !self.supervisor_mode_active {
-            return self.ctx.agent.tools.clone();
+            return self
+                .ctx
+                .agent
+                .tools
+                .iter()
+                .filter(|t| !graph_terminal || !Self::is_task_graph_tool(&t.name))
+                .cloned()
+                .collect();
         }
 
         self.ctx
@@ -1165,8 +1203,21 @@ impl AgentExecutor {
             .tools
             .iter()
             .filter(|t| Self::supervisor_allowed_tool(&t.name))
+            .filter(|t| !graph_terminal || !Self::is_task_graph_tool(&t.name))
             .cloned()
             .collect()
+    }
+
+    fn is_task_graph_tool(tool_name: &str) -> bool {
+        matches!(
+            tool_name,
+            "task_graph_add_node"
+                | "task_graph_add_dependency"
+                | "task_graph_mark_in_progress"
+                | "task_graph_complete_node"
+                | "task_graph_fail_node"
+                | "task_graph_mark_completed"
+        )
     }
 
     fn enter_supervisor_mode(&mut self, reason: &str) {

@@ -6,6 +6,7 @@ pub mod prelude {
 pub mod b2b;
 pub mod deployment;
 pub mod enterprise_sso;
+pub mod execution_task_graph;
 pub mod invitation;
 pub mod notification;
 pub mod oauth;
@@ -35,6 +36,7 @@ pub use b2b::*;
 pub use billing::*;
 pub use deployment::*;
 pub use enterprise_sso::*;
+pub use execution_task_graph::*;
 pub use invitation::*;
 pub use notification::*;
 pub use oauth::*;

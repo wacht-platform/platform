@@ -117,8 +117,9 @@ async fn cancel_running_execution_if_needed(
     has_running_execution: bool,
 ) -> Result<(), AppError> {
     if has_running_execution {
+        let execution_deps = deps::from_app(app_state).nats().id();
         SignalAgentExecutionCancellationCommand::new(context_id)
-            .execute_with_deps(&deps::from_app(app_state).nats().id())
+            .execute_with_deps(&execution_deps)
             .await?;
     }
     Ok(())
@@ -259,8 +260,9 @@ pub async fn execute_agent_async(
 
             let upload_files_command =
                 UploadFilesToS3Command::new(deployment_id, context_id, new_message.files);
+            let upload_deps = deps::from_app(app_state).id();
             let model_files = match upload_files_command
-                .execute_with_deps(&deps::from_app(app_state).id())
+                .execute_with_deps(&upload_deps)
                 .await
             {
                 Ok(files) => files,

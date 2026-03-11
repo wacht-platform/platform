@@ -17,6 +17,7 @@ pub async fn process_document_impl(
     app_state: &AppState,
 ) -> Result<String> {
     use commands::ProcessDocumentCommand;
+    let command_deps = common::deps::from_app(app_state).db().nats();
 
     info!(
         "Processing document {} in knowledge base {} for deployment {}",
@@ -26,7 +27,7 @@ pub async fn process_document_impl(
     let command = ProcessDocumentCommand::new(deployment_id, knowledge_base_id, document_id);
 
     command
-        .execute_with_deps(&common::deps::from_app(app_state).db().nats())
+        .execute_with_deps(&command_deps)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to process document: {}", e))
 }

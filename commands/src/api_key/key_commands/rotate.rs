@@ -23,11 +23,11 @@ impl RotateApiKeyCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, Db>(self, db: Db) -> Result<ApiKeyWithSecret, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<ApiKeyWithSecret, AppError>
     where
-        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut tx = db.begin().await?;
+        let mut tx = acquirer.begin().await?;
         let new_key_id = self
             .new_key_id
             .ok_or_else(|| AppError::Validation("new_key_id is required".to_string()))?;

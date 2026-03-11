@@ -24,11 +24,8 @@ pub(super) async fn ensure_project_limit_not_reached(
     max_projects_per_account: i64,
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
 ) -> Result<(), AppError> {
-    let max_projects_per_account = if max_projects_per_account > 0 {
-        max_projects_per_account
-    } else {
-        MAX_PROJECTS_PER_BILLING_ACCOUNT
-    };
+    let max_projects_per_account =
+        positive_or_default(max_projects_per_account, MAX_PROJECTS_PER_BILLING_ACCOUNT);
 
     let project_count = queries::ProjectsCountByBillingAccountQuery::builder()
         .billing_account_id(billing_account_id)

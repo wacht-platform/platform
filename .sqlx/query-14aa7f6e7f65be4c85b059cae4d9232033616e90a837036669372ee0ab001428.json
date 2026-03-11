@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id, graph_id, title, description, status, retry_count, max_retries,\n                input, output, error, completed_at, created_at, updated_at\n            FROM execution_task_nodes\n            WHERE graph_id = $1 AND id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "graph_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "retry_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_retries",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "input",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "output",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 9,
+        "name": "error",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "completed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "14aa7f6e7f65be4c85b059cae4d9232033616e90a837036669372ee0ab001428"
+}

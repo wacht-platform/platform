@@ -22,11 +22,11 @@ pub struct UpdateApiAuthAppCommand {
 }
 
 impl UpdateApiAuthAppCommand {
-    pub async fn execute_with_db<'a, Db>(self, db: Db) -> Result<ApiAuthApp, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<ApiAuthApp, AppError>
     where
-        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut tx = db.begin().await?;
+        let mut tx = acquirer.begin().await?;
         let current = GetApiAuthAppBySlugQuery::new(self.deployment_id, self.app_slug.clone())
             .execute_with_db(&mut *tx)
             .await?

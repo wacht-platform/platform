@@ -164,14 +164,14 @@ impl AddPulseCreditsCommand {
         self
     }
 
-    pub async fn execute_with_db<'a, Db>(self, db: Db) -> Result<PulseTransaction, AppError>
+    pub async fn execute_with_db<'a, A>(self, acquirer: A) -> Result<PulseTransaction, AppError>
     where
-        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
         require_positive_amount(self.amount_pulse_cents)?;
         let transaction_id = require_transaction_id(self.transaction_id)?;
 
-        let mut tx = db.begin().await?;
+        let mut tx = acquirer.begin().await?;
 
         let row = sqlx::query!(
             r#"

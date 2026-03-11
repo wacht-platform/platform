@@ -119,6 +119,7 @@ pub async fn create_session_ticket(
     deployment_id: i64,
     mut request: CreateSessionTicketRequest,
 ) -> Result<commands::session_ticket::GenerateSessionTicketResponse, AppError> {
+    let session_deps = deps::from_app(app_state).redis().id();
     let ticket_type = parse_ticket_type(&request.ticket_type)?;
     let console_deployment_id = parse_console_deployment_id()?;
     let command_deployment_id =
@@ -139,6 +140,6 @@ pub async fn create_session_ticket(
 
     command
         .build()?
-        .execute_with_deps(&deps::from_app(app_state).redis().id())
+        .execute_with_deps(&session_deps)
         .await
 }

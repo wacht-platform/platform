@@ -8,5 +8,5 @@ pub(super) async fn load_project_with_billing_for_staging(
         .project_id(project_id)
         .execute_with_db(executor)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("Project with id {} not found", project_id)))
+        .ok_or_else(|| project_not_found(project_id))
 }

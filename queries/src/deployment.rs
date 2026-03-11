@@ -2,15 +2,14 @@ use std::str::FromStr;
 
 use common::error::AppError;
 use dto::params::deployment::DeploymentNameParams;
-use serde::de::DeserializeOwned;
 use models::{
     DeploymentAuthSettings, DeploymentB2bSettings, DeploymentB2bSettingsWithRoles,
     DeploymentJwtTemplate, DeploymentMode, DeploymentOrganizationRole, DeploymentRestrictions,
-    DeploymentRestrictionsSignUpMode, DeploymentSocialConnection, DeploymentUISettings,
-    DeploymentWithSettings, DeploymentWorkspaceRole, EmailTemplate, FirstFactor,
-    OauthCredentials,
+    DeploymentSocialConnection, DeploymentUISettings,
+    DeploymentWithSettings, DeploymentWorkspaceRole, EmailTemplate, FirstFactor, OauthCredentials,
     SecondFactorPolicy,
 };
+use serde::de::DeserializeOwned;
 use sqlx::{Row, query};
 
 fn parse_json<T: DeserializeOwned>(value: serde_json::Value, field: &str) -> Result<T, AppError> {
@@ -38,6 +37,13 @@ fn parse_json_or_default<T: DeserializeOwned + Default>(
 
 fn require_opt<T>(value: Option<T>, field: &str) -> Result<T, AppError> {
     value.ok_or_else(|| AppError::Internal(format!("Missing required field: {}", field)))
+}
+
+fn parse_enum<T>(value: &str, field: &str) -> Result<T, AppError>
+where
+    T: FromStr,
+{
+    T::from_str(value).map_err(|_| AppError::Internal(format!("Invalid {field}: {value}")))
 }
 
 pub struct GetDeploymentIdByBackendHostQuery {
@@ -297,22 +303,15 @@ impl GetDeploymentWithSettingsQuery {
                 first_name: parse_json(row.first_name, "first_name")?,
                 last_name: parse_json(row.last_name, "last_name")?,
                 password: parse_json(row.password, "password")?,
-                auth_factors_enabled: parse_json(
-                    row.auth_factors_enabled,
-                    "auth_factors_enabled",
-                )?,
+                auth_factors_enabled: parse_json(row.auth_factors_enabled, "auth_factors_enabled")?,
                 verification_policy: parse_json(row.verification_policy, "verification_policy")?,
                 passkey: parse_json(row.passkey, "passkey")?,
                 magic_link: parse_json(row.magic_link, "magic_link")?,
-                second_factor_policy: FromStr::from_str(&row.second_factor_policy).map_err(|_| {
-                    AppError::Internal(format!(
-                        "Invalid second_factor_policy: {}",
-                        row.second_factor_policy
-                    ))
-                })?,
-                first_factor: FromStr::from_str(&row.first_factor).map_err(|_| {
-                    AppError::Internal(format!("Invalid first_factor: {}", row.first_factor))
-                })?,
+                second_factor_policy: parse_enum(
+                    &row.second_factor_policy,
+                    "second_factor_policy",
+                )?,
+                first_factor: parse_enum(&row.first_factor, "first_factor")?,
                 deployment_id: self.deployment_id,
                 multi_session_support: parse_json(
                     row.multi_session_support,
@@ -382,10 +381,7 @@ impl GetDeploymentWithSettingsQuery {
                 banned_keywords: row.banned_keywords,
                 allowlisted_resources: row.allowlisted_resources,
                 blocklisted_resources: row.blocklisted_resources,
-                sign_up_mode: DeploymentRestrictionsSignUpMode::from_str(&row.sign_up_mode)
-                    .map_err(|_| {
-                        AppError::Internal(format!("Invalid sign_up_mode: {}", row.sign_up_mode))
-                    })?,
+                sign_up_mode: parse_enum(&row.sign_up_mode, "sign_up_mode")?,
                 waitlist_collect_names: row.waitlist_collect_names,
             })
         } else {
@@ -407,14 +403,10 @@ impl GetDeploymentWithSettingsQuery {
             restrictions,
             b2b_settings: if row.b2b_settings_id.is_some() {
                 let b2b_settings_id = require_opt(row.b2b_settings_id, "b2b_settings_id")?;
-                let b2b_settings_created_at = require_opt(
-                    row.b2b_settings_created_at,
-                    "b2b_settings_created_at",
-                )?;
-                let b2b_settings_updated_at = require_opt(
-                    row.b2b_settings_updated_at,
-                    "b2b_settings_updated_at",
-                )?;
+                let b2b_settings_created_at =
+                    require_opt(row.b2b_settings_created_at, "b2b_settings_created_at")?;
+                let b2b_settings_updated_at =
+                    require_opt(row.b2b_settings_updated_at, "b2b_settings_updated_at")?;
                 let organizations_enabled = require_opt(
                     row.b2b_settings_organizations_enabled,
                     "b2b_settings_organizations_enabled",
@@ -487,8 +479,10 @@ impl GetDeploymentWithSettingsQuery {
                     row.b2b_settings_allow_users_to_create_orgs,
                     "b2b_settings_allow_users_to_create_orgs",
                 )?;
-                let max_orgs_per_user =
-                    require_opt(row.b2b_settings_max_orgs_per_user, "b2b_settings_max_orgs_per_user")?;
+                let max_orgs_per_user = require_opt(
+                    row.b2b_settings_max_orgs_per_user,
+                    "b2b_settings_max_orgs_per_user",
+                )?;
                 let workspace_permission_catalog = parse_optional_json(
                     row.b2b_settings_workspace_permission_catalog,
                     "b2b_settings_workspace_permission_catalog",

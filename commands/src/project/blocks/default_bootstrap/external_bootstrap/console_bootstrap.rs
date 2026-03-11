@@ -17,11 +17,11 @@ impl ConsoleAppBootstrapInsert {
         ConsoleAppBootstrapInsertBuilder::default()
     }
 
-    pub(in crate::project) async fn execute_with_db<'a, Db>(&self, db: Db) -> Result<(), AppError>
+    pub(in crate::project) async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<(), AppError>
     where
-        Db: sqlx::Acquire<'a, Database = sqlx::Postgres> + Send,
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres> + Send,
     {
-        let mut tx = db.begin().await?;
+        let mut tx = acquirer.begin().await?;
         let app_name = self.target_deployment_id.to_string();
         let now = chrono::Utc::now();
 

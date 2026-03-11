@@ -90,11 +90,12 @@ pub async fn verify_domain(
     deployment_id: i64,
     request: VerifyOrganizationDomainRequest,
 ) -> Result<VerifyOrganizationDomainResponse, AppError> {
+    let verify_deps = deps::from_app(app_state).db().dns();
     VerifyOrganizationDomainCommand::builder()
         .deployment_id(deployment_id)
         .request(request)
         .build()?
-        .execute_with_deps(&deps::from_app(app_state).db().dns())
+        .execute_with_deps(&verify_deps)
         .await
 }
 

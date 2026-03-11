@@ -18,6 +18,7 @@ pub async fn process_document_batch_impl(
     app_state: &AppState,
 ) -> Result<String> {
     use commands::ProcessDocumentBatchCommand;
+    let command_deps = deps::from_app(app_state).db().enc();
 
     info!(
         "Processing batch of up to {} pending documents for knowledge base {} in deployment {}",
@@ -27,7 +28,7 @@ pub async fn process_document_batch_impl(
     let command = ProcessDocumentBatchCommand::new(deployment_id, knowledge_base_id, batch_size);
 
     command
-        .execute_with_deps(&deps::from_app(app_state).db().enc())
+        .execute_with_deps(&command_deps)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to process document batch: {}", e))
 }

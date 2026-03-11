@@ -65,24 +65,14 @@ impl StagingDeploymentInsert {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let id = self
-            .id
-            .ok_or_else(|| AppError::Validation("staging deployment id is required".to_string()))?;
-        let project_id = self.project_id.ok_or_else(|| {
-            AppError::Validation("staging deployment project_id is required".to_string())
-        })?;
-        let backend_host = self.backend_host.as_deref().ok_or_else(|| {
-            AppError::Validation("staging deployment backend_host is required".to_string())
-        })?;
-        let frontend_host = self.frontend_host.as_deref().ok_or_else(|| {
-            AppError::Validation("staging deployment frontend_host is required".to_string())
-        })?;
-        let publishable_key = self.publishable_key.as_deref().ok_or_else(|| {
-            AppError::Validation("staging deployment publishable_key is required".to_string())
-        })?;
-        let mail_from_host = self.mail_from_host.as_deref().ok_or_else(|| {
-            AppError::Validation("staging deployment mail_from_host is required".to_string())
-        })?;
+        const SCOPE: &str = "staging deployment";
+        let id = required_i64(self.id, SCOPE, "id")?;
+        let project_id = required_i64(self.project_id, SCOPE, "project_id")?;
+        let backend_host = required_str(self.backend_host.as_ref(), SCOPE, "backend_host")?;
+        let frontend_host = required_str(self.frontend_host.as_ref(), SCOPE, "frontend_host")?;
+        let publishable_key =
+            required_str(self.publishable_key.as_ref(), SCOPE, "publishable_key")?;
+        let mail_from_host = required_str(self.mail_from_host.as_ref(), SCOPE, "mail_from_host")?;
 
         let now = chrono::Utc::now();
 

@@ -93,11 +93,8 @@ pub struct SchemaField {
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum InternalToolType {
-    ReadFile,
     ReadImage,
     WriteFile,
-    ListDirectory,
-    SearchFiles,
     ExecuteCommand,
     Sleep,
     SwitchExecutionMode,
@@ -111,6 +108,12 @@ pub enum InternalToolType {
     GetCompletionSummary,
     NotifyParent,
     GetChildMessages,
+    TaskGraphAddNode,
+    TaskGraphAddDependency,
+    TaskGraphMarkInProgress,
+    TaskGraphCompleteNode,
+    TaskGraphFailNode,
+    TaskGraphMarkCompleted,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

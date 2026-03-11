@@ -1,6 +1,7 @@
 mod filesystem;
 mod memory;
 mod swarm;
+mod task_graph;
 
 use super::ToolExecutor;
 use common::error::AppError;
@@ -24,11 +25,8 @@ impl ToolExecutor {
         );
 
         match config.tool_type {
-            InternalToolType::ReadFile
-            | InternalToolType::ReadImage
+            InternalToolType::ReadImage
             | InternalToolType::WriteFile
-            | InternalToolType::ListDirectory
-            | InternalToolType::SearchFiles
             | InternalToolType::ExecuteCommand => {
                 self.execute_filesystem_tool(
                     tool,
@@ -46,6 +44,29 @@ impl ToolExecutor {
             InternalToolType::UpdateStatus => {
                 self.execute_update_status_tool(tool, execution_params)
                     .await
+            }
+            InternalToolType::TaskGraphAddNode => {
+                self.execute_task_graph_add_node_tool(tool, execution_params)
+                    .await
+            }
+            InternalToolType::TaskGraphAddDependency => {
+                self.execute_task_graph_add_dependency_tool(tool, execution_params)
+                    .await
+            }
+            InternalToolType::TaskGraphMarkInProgress => {
+                self.execute_task_graph_mark_in_progress_tool(tool, execution_params)
+                    .await
+            }
+            InternalToolType::TaskGraphCompleteNode => {
+                self.execute_task_graph_complete_node_tool(tool, execution_params)
+                    .await
+            }
+            InternalToolType::TaskGraphFailNode => {
+                self.execute_task_graph_fail_node_tool(tool, execution_params)
+                    .await
+            }
+            InternalToolType::TaskGraphMarkCompleted => {
+                self.execute_task_graph_mark_completed_tool(tool).await
             }
             InternalToolType::GetChildStatus
             | InternalToolType::SpawnContext

@@ -1,6 +1,7 @@
 use crate::filesystem::{shell::ShellExecutor, AgentFilesystem};
 use crate::tools::ToolExecutor;
 
+use commands::EnsureExecutionTaskGraphCommand;
 use common::error::AppError;
 use dto::json::agent_executor::{ConversationInsights, ObjectiveDefinition};
 use dto::json::StreamEvent;
@@ -8,6 +9,9 @@ use models::{AgentExecutionState, ConversationRecord, ExecutionContextStatus, Me
 use models::{
     AiTool, AiToolConfiguration, AiToolType, InternalToolConfiguration,
     UseExternalServiceToolConfiguration, UseExternalServiceToolType,
+};
+use queries::{
+    ListExecutionTaskEdgesQuery, ListExecutionTaskNodesQuery, ListReadyExecutionTaskNodesQuery,
 };
 use rmcp::{
     model::{ClientCapabilities, ClientInfo, Implementation},
@@ -42,6 +46,7 @@ pub struct AgentExecutor {
     pub(super) deep_think_used: usize,
     pub(super) supervisor_mode_active: bool,
     pub(super) supervisor_task_board: Vec<serde_json::Value>,
+    pub(super) task_graph_snapshot: Option<serde_json::Value>,
     pub(super) last_decision_signature: Option<String>,
     pub(super) repeated_decision_count: usize,
 }
@@ -223,6 +228,7 @@ impl AgentExecutorBuilder {
             deep_think_used: 0,
             supervisor_mode_active: false,
             supervisor_task_board: Vec::new(),
+            task_graph_snapshot: None,
             last_decision_signature: None,
             repeated_decision_count: 0,
         };
@@ -235,7 +241,155 @@ impl AgentExecutorBuilder {
             }
         }
 
+        executor.ensure_task_graph_snapshot().await?;
+
         Ok(executor)
+    }
+}
+
+impl AgentExecutor {
+    pub(super) fn invalidate_task_graph_snapshot(&mut self) {
+        self.task_graph_snapshot = None;
+    }
+
+    pub(super) fn render_task_graph_view(snapshot: &serde_json::Value) -> String {
+        let graph_status = snapshot
+            .get("graph")
+            .and_then(|graph| graph.get("status"))
+            .and_then(|status| status.as_str())
+            .unwrap_or("unknown");
+
+        let nodes = snapshot
+            .get("nodes")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let edges = snapshot
+            .get("edges")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let ready_node_ids = snapshot
+            .get("ready_node_ids")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|value| value.as_str().map(|s| s.to_string()))
+            .collect::<std::collections::HashSet<_>>();
+
+        let mut dependency_map: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        for edge in edges {
+            let Some(to_node_id) = edge.get("to_node_id").and_then(|value| value.as_str()) else {
+                continue;
+            };
+            let Some(from_node_id) = edge.get("from_node_id").and_then(|value| value.as_str()) else {
+                continue;
+            };
+            dependency_map
+                .entry(to_node_id.to_string())
+                .or_default()
+                .push(from_node_id.to_string());
+        }
+
+        let mut lines = vec![format!("Graph status: {graph_status}")];
+
+        let ready_lines = nodes
+            .iter()
+            .filter_map(|node| {
+                let id = node.get("id")?.as_str()?;
+                if !ready_node_ids.contains(id) {
+                    return None;
+                }
+                let title = node
+                    .get("title")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("Untitled");
+                Some(format!("- {id} {title}"))
+            })
+            .collect::<Vec<_>>();
+
+        if ready_lines.is_empty() {
+            lines.push("Ready nodes: none".to_string());
+        } else {
+            lines.push("Ready nodes:".to_string());
+            lines.extend(ready_lines);
+        }
+
+        lines.push("All nodes:".to_string());
+
+        for node in nodes {
+            let id = node
+                .get("id")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown");
+            let title = node
+                .get("title")
+                .and_then(|value| value.as_str())
+                .unwrap_or("Untitled");
+            let status = node
+                .get("status")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown");
+
+            lines.push(format!("- {id} {title} [{status}]"));
+
+            if let Some(depends_on) = dependency_map.get(id) {
+                if !depends_on.is_empty() {
+                    lines.push(format!("  depends_on: {}", depends_on.join(", ")));
+                }
+            }
+        }
+
+        lines.join("\n")
+    }
+
+    pub(super) async fn ensure_task_graph_snapshot(&mut self) -> Result<serde_json::Value, AppError> {
+        if let Some(snapshot) = &self.task_graph_snapshot {
+            let graph_status = snapshot
+                .get("graph")
+                .and_then(|graph| graph.get("status"))
+                .and_then(|status| status.as_str());
+
+            if !matches!(graph_status, Some("completed" | "failed" | "cancelled")) {
+                return Ok(snapshot.clone());
+            }
+
+            self.task_graph_snapshot = None;
+        }
+
+        let graph = EnsureExecutionTaskGraphCommand::new(
+            self.ctx.app_state.sf.next_id()? as i64,
+            self.ctx.agent.deployment_id,
+            self.ctx.context_id,
+        )
+        .execute_with_db(self.ctx.app_state.db_router.writer())
+        .await?;
+
+        let nodes = ListExecutionTaskNodesQuery::new(graph.id)
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?;
+        let edges = ListExecutionTaskEdgesQuery::new(graph.id)
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?;
+        let ready_nodes = ListReadyExecutionTaskNodesQuery::new(graph.id)
+            .execute_with_db(self.ctx.app_state.db_router.writer())
+            .await?;
+
+        let snapshot = serde_json::json!({
+            "graph": graph,
+            "nodes": nodes,
+            "edges": edges,
+            "ready_node_ids": ready_nodes
+                .iter()
+                .map(|node| node.id.to_string())
+                .collect::<Vec<_>>(),
+        });
+
+        self.task_graph_snapshot = Some(snapshot.clone());
+
+        Ok(snapshot)
     }
 }
 

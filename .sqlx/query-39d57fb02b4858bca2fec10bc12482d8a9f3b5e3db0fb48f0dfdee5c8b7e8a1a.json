@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE webhook_event_catalogs\n            SET events = $3, updated_at = NOW()\n            WHERE deployment_id = $1 AND slug = $2\n            RETURNING deployment_id as \"deployment_id!\",\n                      slug as \"slug!\",\n                      name as \"name!\",\n                      description,\n                      events as \"events!\",\n                      created_at as \"created_at!\",\n                      updated_at as \"updated_at!\"\n            ",
+  "query": "\n        SELECT deployment_id as \"deployment_id!\",\n               slug as \"slug!\",\n               name as \"name!\",\n               description,\n               events as \"events!\",\n               created_at as \"created_at!\",\n               updated_at as \"updated_at!\"\n        FROM webhook_event_catalogs\n        WHERE deployment_id = $1 AND slug = $2\n        FOR UPDATE\n        ",
   "describe": {
     "columns": [
       {
@@ -42,8 +42,7 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Text",
-        "Jsonb"
+        "Text"
       ]
     },
     "nullable": [
@@ -56,5 +55,5 @@
       false
     ]
   },
-  "hash": "03c2bf398474cfe4c942300051001ed0b35e0fc35e34d6a4d04d3f924e71eb62"
+  "hash": "39d57fb02b4858bca2fec10bc12482d8a9f3b5e3db0fb48f0dfdee5c8b7e8a1a"
 }

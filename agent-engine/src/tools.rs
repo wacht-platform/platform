@@ -193,7 +193,7 @@ impl ToolExecutor {
                     "{}",
                     if scratch_saved {
                         format!(
-                            "Output is larger than {} chars, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with read_file/execute_command.",
+                            "Output is larger than {} chars, so inline data is omitted. Read '{}' now (execution-scoped temp file) and filter with execute_command.",
                             threshold, scratch_path
                         )
                     } else {

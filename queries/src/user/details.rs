@@ -13,11 +13,11 @@ impl GetUserDetailsQuery {
         }
     }
 
-    pub async fn execute_with_db<'a, Db>(&self, db: Db) -> Result<UserDetails, AppError>
+    pub async fn execute_with_db<'a, A>(&self, acquirer: A) -> Result<UserDetails, AppError>
     where
-        Db: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+        A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
     {
-        let mut conn = db.acquire().await?;
+        let mut conn = acquirer.acquire().await?;
         let user_row = sqlx::query!(
             r#"
             SELECT

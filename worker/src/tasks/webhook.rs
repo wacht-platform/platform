@@ -94,6 +94,64 @@ async fn insert_webhook_log_safe(app_state: &AppState, log: &WebhookLog, label: 
     }
 }
 
+async fn log_and_delete_active_delivery(
+    app_state: &AppState,
+    log: &WebhookLog,
+    label: &str,
+    delivery_id: i64,
+) -> Result<()> {
+    insert_webhook_log_safe(app_state, log, label).await;
+    delete_active_delivery(app_state, delivery_id).await
+}
+
+struct FailureContext {
+    delivery_id: i64,
+    deployment_id: i64,
+    app_slug: String,
+    endpoint_id: i64,
+    endpoint_url: String,
+    new_attempts: i32,
+    max_attempts: i32,
+}
+
+async fn log_failure_and_handle(
+    app_state: &AppState,
+    context: FailureContext,
+    log: &WebhookLog,
+    label: &str,
+    status_code: Option<u16>,
+    retry_after: Option<std::time::Duration>,
+) -> Result<DeliveryResult> {
+    insert_webhook_log_safe(app_state, log, label).await;
+    handle_delivery_failure(
+        context.delivery_id,
+        context.deployment_id,
+        context.app_slug,
+        context.endpoint_id,
+        context.endpoint_url,
+        context.new_attempts,
+        context.max_attempts,
+        status_code,
+        retry_after,
+        app_state,
+    )
+    .await
+}
+
+async fn delete_active_delivery(app_state: &AppState, delivery_id: i64) -> Result<()> {
+    DeleteActiveDeliveryCommand { delivery_id }
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
+    Ok(())
+}
+
+async fn deactivate_endpoint(app_state: &AppState, endpoint_id: i64) -> Result<()> {
+    DeactivateEndpointCommand { endpoint_id }
+        .execute_with_db(app_state.db_router.writer())
+        .await?;
+    Ok(())
+}
+
 fn parse_retry_after_header(
     value: Option<&reqwest::header::HeaderValue>,
 ) -> Option<std::time::Duration> {
@@ -181,11 +239,13 @@ pub async fn process_webhook_delivery(
                 None,
             );
 
-            insert_webhook_log_safe(app_state, &ch_delivery, "filtered delivery").await;
-
-            DeleteActiveDeliveryCommand { delivery_id }
-                .execute_with_db(app_state.db_router.writer())
-                .await?;
+            log_and_delete_active_delivery(
+                app_state,
+                &ch_delivery,
+                "filtered delivery",
+                delivery_id,
+            )
+            .await?;
             return Ok(DeliveryResult::Success);
         }
     }
@@ -306,17 +366,15 @@ pub async fn process_webhook_delivery(
                     request_headers_json.clone(),
                 );
 
-                insert_webhook_log_safe(app_state, &ch_delivery, "410 Gone delivery").await;
-
-                DeleteActiveDeliveryCommand { delivery_id }
-                    .execute_with_db(app_state.db_router.writer())
-                    .await?;
-
-                DeactivateEndpointCommand {
-                    endpoint_id: delivery.endpoint_id,
-                }
-                .execute_with_db(app_state.db_router.writer())
+                log_and_delete_active_delivery(
+                    app_state,
+                    &ch_delivery,
+                    "410 Gone delivery",
+                    delivery_id,
+                )
                 .await?;
+
+                deactivate_endpoint(app_state, delivery.endpoint_id).await?;
 
                 info!(
                     "Endpoint {} (ID: {}) has been permanently disabled due to 410 Gone response",
@@ -358,11 +416,13 @@ pub async fn process_webhook_delivery(
                     request_headers_json.clone(),
                 );
 
-                insert_webhook_log_safe(app_state, &ch_delivery, "successful delivery").await;
-
-                DeleteActiveDeliveryCommand { delivery_id }
-                    .execute_with_db(app_state.db_router.writer())
-                    .await?;
+                log_and_delete_active_delivery(
+                    app_state,
+                    &ch_delivery,
+                    "successful delivery",
+                    delivery_id,
+                )
+                .await?;
 
                 Ok(DeliveryResult::Success)
             } else {
@@ -394,23 +454,23 @@ pub async fn process_webhook_delivery(
                     request_headers_json.clone(),
                 );
 
-                insert_webhook_log_safe(app_state, &ch_delivery, "failed delivery").await;
-
-                let result = handle_delivery_failure(
-                    delivery_id,
-                    deployment_id,
-                    delivery.app_slug.clone(),
-                    delivery.endpoint_id,
-                    delivery.url.clone(),
-                    delivery.attempts + 1,
-                    delivery.max_attempts,
+                log_failure_and_handle(
+                    app_state,
+                    FailureContext {
+                        delivery_id,
+                        deployment_id,
+                        app_slug: delivery.app_slug.clone(),
+                        endpoint_id: delivery.endpoint_id,
+                        endpoint_url: delivery.url.clone(),
+                        new_attempts: delivery.attempts + 1,
+                        max_attempts: delivery.max_attempts,
+                    },
+                    &ch_delivery,
+                    "failed delivery",
                     Some(status_code),
                     retry_after,
-                    app_state,
                 )
-                .await?;
-
-                Ok(result)
+                .await
             }
         }
         Err(_e) => {
@@ -435,23 +495,23 @@ pub async fn process_webhook_delivery(
                 request_headers_json.clone(),
             );
 
-            insert_webhook_log_safe(app_state, &ch_delivery, "error delivery").await;
-
-            let result = handle_delivery_failure(
-                delivery_id,
-                deployment_id,
-                delivery.app_slug,
-                delivery.endpoint_id,
-                delivery.url,
-                delivery.attempts + 1,
-                delivery.max_attempts,
-                None,
-                None,
+            log_failure_and_handle(
                 app_state,
+                FailureContext {
+                    delivery_id,
+                    deployment_id,
+                    app_slug: delivery.app_slug,
+                    endpoint_id: delivery.endpoint_id,
+                    endpoint_url: delivery.url,
+                    new_attempts: delivery.attempts + 1,
+                    max_attempts: delivery.max_attempts,
+                },
+                &ch_delivery,
+                "error delivery",
+                None,
+                None,
             )
-            .await?;
-
-            Ok(result)
+            .await
         }
     }
 }
@@ -511,9 +571,7 @@ async fn handle_delivery_failure(
         );
         let redis_deps = common::deps::from_app(app_state).redis();
 
-        DeleteActiveDeliveryCommand { delivery_id }
-            .execute_with_db(app_state.db_router.writer())
-            .await?;
+        delete_active_delivery(app_state, delivery_id).await?;
 
         if new_attempts >= max_attempts {
             let failure_count = IncrementEndpointFailuresCommand { endpoint_id }
@@ -527,9 +585,7 @@ async fn handle_delivery_failure(
                     endpoint_id, failure_count
                 );
 
-                DeactivateEndpointCommand { endpoint_id }
-                    .execute_with_db(app_state.db_router.writer())
-                    .await?;
+                deactivate_endpoint(app_state, endpoint_id).await?;
 
                 ClearEndpointFailuresCommand { endpoint_id }
                     .execute_with_deps(&redis_deps)
@@ -552,8 +608,7 @@ async fn handle_delivery_failure(
                         None,
                     );
 
-                    insert_webhook_log_safe(app_state, &ch_delivery, "endpoint deactivation")
-                        .await;
+                    insert_webhook_log_safe(app_state, &ch_delivery, "endpoint deactivation").await;
                 } else {
                     warn!("Failed to generate snowflake id for endpoint deactivation log");
                 }
@@ -632,7 +687,11 @@ async fn send_webhook_failure_notification(
         .redis_client
         .get_multiplexed_async_connection()
         .await?;
-    let email_deps = common::deps::from_app(app_state).db().enc().postmark().template();
+    let email_deps = common::deps::from_app(app_state)
+        .db()
+        .enc()
+        .postmark()
+        .template();
 
     for recipient_email in recipient_emails {
         let dedupe_key = format!(

@@ -7,12 +7,13 @@ fn enqueue_grant_last_used(
     grant_id: i64,
 ) {
     tokio::spawn(async move {
+        let redis_deps = deps::from_app(&app_state).redis();
         let _ = EnqueueOAuthGrantLastUsed {
             deployment_id,
             oauth_client_id,
             grant_id,
         }
-        .execute_with_deps(&deps::from_app(&app_state).redis())
+        .execute_with_deps(&redis_deps)
         .await;
     });
 }
@@ -540,4 +541,3 @@ fn ensure_client_allows_grant_type(
         ))
     }
 }
-
