@@ -39,8 +39,9 @@ pub async fn update_deployment_display_settings(
     deployment_id: i64,
     updates: DeploymentDisplaySettingsUpdates,
 ) -> Result<(), AppError> {
+    let deps = deps::from_app(app_state).db().redis();
     UpdateDeploymentDisplaySettingsCommand::new(deployment_id, updates)
-        .execute_with_deps(&deps::from_app(app_state).db().redis())
+        .execute_with_deps(&deps)
         .await?;
     Ok(())
 }
@@ -50,8 +51,9 @@ pub async fn update_deployment_auth_settings(
     deployment_id: i64,
     updates: DeploymentAuthSettingsUpdates,
 ) -> Result<(), AppError> {
+    let deps = deps::from_app(app_state).db().redis();
     UpdateDeploymentAuthSettingsCommand::new(deployment_id, updates)
-        .execute_with_deps(&deps::from_app(app_state).db().redis())
+        .execute_with_deps(&deps)
         .await?;
     Ok(())
 }
@@ -61,8 +63,9 @@ pub async fn update_deployment_restrictions(
     deployment_id: i64,
     updates: DeploymentRestrictionsUpdates,
 ) -> Result<(), AppError> {
+    let deps = deps::from_app(app_state).db().redis();
     UpdateDeploymentRestrictionsCommand::new(deployment_id, updates)
-        .execute_with_deps(&deps::from_app(app_state).db().redis())
+        .execute_with_deps(&deps)
         .await?;
     Ok(())
 }
@@ -82,9 +85,10 @@ pub async fn create_deployment_jwt_template(
     deployment_id: i64,
     template: NewDeploymentJwtTemplate,
 ) -> Result<DeploymentJwtTemplate, AppError> {
+    let deps = deps::from_app(app_state).db().redis();
     CreateDeploymentJwtTemplateCommand::new(deployment_id, template)
         .with_template_id(app_state.sf.next_id()? as i64)
-        .execute_with_deps(&deps::from_app(app_state).db().redis())
+        .execute_with_deps(&deps)
         .await
 }
 
@@ -94,8 +98,9 @@ pub async fn update_deployment_jwt_template(
     template_id: i64,
     updates: PartialDeploymentJwtTemplate,
 ) -> Result<DeploymentJwtTemplate, AppError> {
+    let deps = deps::from_app(app_state).db().redis();
     UpdateDeploymentJwtTemplateCommand::new(deployment_id, template_id, updates)
-        .execute_with_deps(&deps::from_app(app_state).db().redis())
+        .execute_with_deps(&deps)
         .await
 }
 
@@ -104,8 +109,9 @@ pub async fn delete_deployment_jwt_template(
     deployment_id: i64,
     template_id: i64,
 ) -> Result<(), AppError> {
+    let deps = deps::from_app(app_state).db().redis();
     DeleteDeploymentJwtTemplateCommand::new(deployment_id, template_id)
-        .execute_with_deps(&deps::from_app(app_state).db().redis())
+        .execute_with_deps(&deps)
         .await?;
     Ok(())
 }
@@ -127,8 +133,9 @@ pub async fn update_deployment_email_template(
     template_name: DeploymentNameParams,
     template: EmailTemplate,
 ) -> Result<EmailTemplate, AppError> {
+    let deps = deps::from_app(app_state).db().redis();
     UpdateDeploymentEmailTemplateCommand::new(deployment_id, template_name, template)
-        .execute_with_deps(&deps::from_app(app_state).db().redis())
+        .execute_with_deps(&deps)
         .await
 }
 
@@ -168,6 +175,7 @@ pub async fn update_smtp_config(
     .execute_with_deps(&())
     .await?;
 
+    let deps = deps::from_app(app_state).db().enc();
     let result = UpdateDeploymentSmtpConfigCommand::new(
         deployment_id,
         config.host,
@@ -177,7 +185,7 @@ pub async fn update_smtp_config(
         config.from_email,
         config.use_tls,
     )
-    .execute_with_deps(&deps::from_app(app_state).db().enc())
+    .execute_with_deps(&deps)
     .await?;
 
     Ok(SmtpConfigResponse {
@@ -191,8 +199,9 @@ pub async fn update_smtp_config(
 }
 
 pub async fn remove_smtp_config(app_state: &AppState, deployment_id: i64) -> Result<(), AppError> {
+    let deps = deps::from_app(app_state).db().redis();
     RemoveDeploymentSmtpConfigCommand::new(deployment_id)
-        .execute_with_deps(&deps::from_app(app_state).db().redis())
+        .execute_with_deps(&deps)
         .await?;
     Ok(())
 }

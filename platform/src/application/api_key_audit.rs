@@ -41,6 +41,7 @@ pub async fn get_api_audit_logs(
     app_slug: String,
     params: ListApiAuditLogsQuery,
 ) -> Result<ApiAuditLogsResponse, AppError> {
+    let deps = deps::from_app(app_state).db();
     get_api_auth_app_by_slug(app_state, deployment_id, app_slug.clone()).await?;
 
     let mut cursor_ts = params.cursor_ts;
@@ -64,7 +65,7 @@ pub async fn get_api_audit_logs(
         start_date: params.start_date,
         end_date: params.end_date,
     }
-    .execute_with_deps(&deps::from_app(app_state).db())
+    .execute_with_deps(&deps)
     .await
 }
 
@@ -74,6 +75,7 @@ pub async fn get_api_audit_analytics(
     app_slug: String,
     params: GetApiAuditAnalyticsQuery,
 ) -> Result<ApiAuditAnalyticsResponse, AppError> {
+    let deps = deps::from_app(app_state).db();
     get_api_auth_app_by_slug(app_state, deployment_id, app_slug.clone()).await?;
 
     GetApiAuditAnalyticsDataQuery {
@@ -88,7 +90,7 @@ pub async fn get_api_audit_analytics(
         include_rate_limits: params.include_rate_limits.unwrap_or(false),
         top_limit: params.top_limit.unwrap_or(10),
     }
-    .execute_with_deps(&deps::from_app(app_state).db())
+    .execute_with_deps(&deps)
     .await
 }
 
@@ -98,6 +100,7 @@ pub async fn get_api_audit_timeseries(
     app_slug: String,
     params: GetApiAuditTimeseriesQuery,
 ) -> Result<ApiAuditTimeseriesResponse, AppError> {
+    let deps = deps::from_app(app_state).db();
     get_api_auth_app_by_slug(app_state, deployment_id, app_slug.clone()).await?;
 
     let interval = params.interval.unwrap_or_else(|| "hour".to_string());
@@ -114,6 +117,6 @@ pub async fn get_api_audit_timeseries(
         interval: normalized_interval,
         key_id: params.key_id.map(|v| v.get()),
     }
-    .execute_with_deps(&deps::from_app(app_state).db())
+    .execute_with_deps(&deps)
     .await
 }

@@ -179,8 +179,9 @@ pub async fn delete_ai_knowledge_base(
     deployment_id: i64,
     kb_id: i64,
 ) -> Result<(), AppError> {
+    let deps = deps::from_app(app_state).db();
     DeleteAiKnowledgeBaseCommand::new(deployment_id, kb_id)
-        .execute_with_deps(&deps::from_app(app_state).db())
+        .execute_with_deps(&deps)
         .await?;
     Ok(())
 }
@@ -220,6 +221,7 @@ pub async fn upload_knowledge_base_document(
         .await
         .map_err(|_| knowledge_base_not_found_error())?;
 
+    let deps = deps::from_app(app_state).db().nats();
     let document = UploadKnowledgeBaseDocumentCommand::new(
         kb_id,
         title,
@@ -234,7 +236,7 @@ pub async fn upload_knowledge_base_document(
             .next_id()
             .map_err(|e| AppError::Internal(e.to_string()))? as i64,
     )
-    .execute_with_deps(&deps::from_app(app_state).db().nats())
+    .execute_with_deps(&deps)
     .await?;
 
     Ok(document)
@@ -270,8 +272,9 @@ pub async fn delete_knowledge_base_document(
     kb_id: i64,
     document_id: i64,
 ) -> Result<(), AppError> {
+    let deps = deps::from_app(app_state).db();
     DeleteKnowledgeBaseDocumentCommand::new(deployment_id, kb_id, document_id)
-        .execute_with_deps(&deps::from_app(app_state).db())
+        .execute_with_deps(&deps)
         .await?;
     Ok(())
 }

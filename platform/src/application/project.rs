@@ -29,9 +29,10 @@ pub async fn get_projects(
     app_state: &AppState,
     input: GetProjectsInput,
 ) -> Result<Vec<ProjectWithDeployments>, AppError> {
+    let deps = deps::from_app(app_state).db();
     GetProjectsWithDeploymentQuery::for_user_or_organization(input.user_id, input.organization_id)
         .with_consistency(ReadConsistency::Eventual)
-        .execute_with_deps(&deps::from_app(app_state).db())
+        .execute_with_deps(&deps)
         .await
 }
 
@@ -55,20 +56,13 @@ pub async fn create_project_with_staging(
     app_state: &AppState,
     input: CreateProjectWithStagingInput,
 ) -> Result<ProjectWithDeployments, AppError> {
+    let deps = deps::from_app(app_state).db().id().cloudflare().postmark();
     let command = CreateProjectWithStagingDeploymentCommand::builder()
         .name(input.name)
         .auth_methods(input.auth_methods)
         .owner_id(input.owner_id)
         .build()?;
-    command
-        .execute_with_deps(
-            &deps::from_app(app_state)
-                .db()
-                .id()
-                .cloudflare()
-                .postmark(),
-        )
-        .await
+    command.execute_with_deps(&deps).await
 }
 
 pub struct CreateStagingDeploymentInput {
@@ -89,19 +83,12 @@ pub async fn create_staging_deployment(
     app_state: &AppState,
     input: CreateStagingDeploymentInput,
 ) -> Result<Deployment, AppError> {
+    let deps = deps::from_app(app_state).db().id().cloudflare().postmark();
     let command = CreateStagingDeploymentCommand::builder()
         .project_id(input.project_id)
         .auth_methods(input.auth_methods)
         .build()?;
-    command
-        .execute_with_deps(
-            &deps::from_app(app_state)
-                .db()
-                .id()
-                .cloudflare()
-                .postmark(),
-        )
-        .await
+    command.execute_with_deps(&deps).await
 }
 
 pub struct CreateProductionDeploymentInput {
@@ -124,20 +111,13 @@ pub async fn create_production_deployment(
     app_state: &AppState,
     input: CreateProductionDeploymentInput,
 ) -> Result<Deployment, AppError> {
+    let deps = deps::from_app(app_state).db().id().cloudflare().postmark();
     let command = CreateProductionDeploymentCommand::builder()
         .project_id(input.project_id)
         .custom_domain(input.custom_domain)
         .auth_methods(input.auth_methods)
         .build()?;
-    command
-        .execute_with_deps(
-            &deps::from_app(app_state)
-                .db()
-                .id()
-                .cloudflare()
-                .postmark(),
-        )
-        .await
+    command.execute_with_deps(&deps).await
 }
 
 pub struct VerifyDeploymentDnsRecordsInput {
@@ -154,10 +134,11 @@ pub async fn verify_deployment_dns_records(
     app_state: &AppState,
     input: VerifyDeploymentDnsRecordsInput,
 ) -> Result<Deployment, AppError> {
+    let deps = deps::from_app(app_state).db().cloudflare().dns();
     VerifyDeploymentDnsRecordsCommand::builder()
         .deployment_id(input.deployment_id)
         .build()?
-        .execute_with_deps(&deps::from_app(app_state).db().cloudflare().dns())
+        .execute_with_deps(&deps)
         .await
 }
 

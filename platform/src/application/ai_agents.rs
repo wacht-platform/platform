@@ -8,7 +8,7 @@ use dto::{
     json::deployment::{CreateAgentRequest, UpdateAgentRequest},
     query::deployment::GetAgentsQuery,
 };
-use models::{AiAgent, AiAgentWithDetails, IntegrationType};
+use models::{AgentIntegration, AiAgent, AiAgentWithDetails, IntegrationType};
 use queries::{
     GetAgentIntegrationsQuery, GetAiAgentByIdQuery, GetAiAgentsByIdsQuery, GetAiAgentsQuery,
 };
@@ -59,6 +59,44 @@ pub struct AgentDetailsResponse {
     pub knowledge_bases: Vec<serde_json::Value>,
     pub sub_agents: Option<Vec<i64>>,
     pub spawn_config: Option<models::SpawnConfig>,
+}
+
+fn map_integrations_with_urls(
+    integrations: Vec<AgentIntegration>,
+    agent_id: i64,
+) -> Vec<IntegrationWithUrl> {
+    let base_url = "https://agentlink.wacht.services".to_string();
+    integrations
+        .into_iter()
+        .filter(|integration| {
+            matches!(
+                integration.integration_type,
+                IntegrationType::Teams | IntegrationType::ClickUp
+            )
+        })
+        .map(|integration| {
+            let webhook_url = match integration.integration_type {
+                IntegrationType::Teams => Some(format!(
+                    "{}/service/{}/{}/message",
+                    base_url,
+                    integration.integration_type.to_string().to_lowercase(),
+                    agent_id
+                )),
+                _ => None,
+            };
+            IntegrationWithUrl {
+                id: integration.id,
+                created_at: integration.created_at,
+                updated_at: integration.updated_at,
+                deployment_id: integration.deployment_id,
+                agent_id: integration.agent_id,
+                integration_type: integration.integration_type,
+                name: integration.name,
+                config: integration.config,
+                webhook_url,
+            }
+        })
+        .collect()
 }
 
 pub async fn get_ai_agents(
@@ -137,38 +175,7 @@ pub async fn get_ai_agent_details(
         .await
         .unwrap_or_default();
 
-    let base_url = "https://agentlink.wacht.services".to_string();
-    let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
-        .into_iter()
-        .filter(|integration| {
-            matches!(
-                integration.integration_type,
-                IntegrationType::Teams | IntegrationType::ClickUp
-            )
-        })
-        .map(|integration| {
-            let webhook_url = match integration.integration_type {
-                IntegrationType::Teams => Some(format!(
-                    "{}/service/{}/{}/message",
-                    base_url,
-                    integration.integration_type.to_string().to_lowercase(),
-                    agent_id
-                )),
-                _ => None,
-            };
-            IntegrationWithUrl {
-                id: integration.id,
-                created_at: integration.created_at,
-                updated_at: integration.updated_at,
-                deployment_id: integration.deployment_id,
-                agent_id: integration.agent_id,
-                integration_type: integration.integration_type,
-                name: integration.name,
-                config: integration.config,
-                webhook_url,
-            }
-        })
-        .collect();
+    let integrations_with_urls = map_integrations_with_urls(integrations, agent_id);
 
     Ok(AgentDetailsResponse {
         id: agent.id,
@@ -284,38 +291,7 @@ pub async fn get_agent_integrations(
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Eventual))
         .await?;
 
-    let base_url = "https://agentlink.wacht.services".to_string();
-    let integrations_with_urls: Vec<IntegrationWithUrl> = integrations
-        .into_iter()
-        .filter(|integration| {
-            matches!(
-                integration.integration_type,
-                IntegrationType::Teams | IntegrationType::ClickUp
-            )
-        })
-        .map(|integration| {
-            let webhook_url = match integration.integration_type {
-                IntegrationType::Teams => Some(format!(
-                    "{}/service/{}/{}/message",
-                    base_url,
-                    integration.integration_type.to_string().to_lowercase(),
-                    agent_id
-                )),
-                _ => None,
-            };
-            IntegrationWithUrl {
-                id: integration.id,
-                created_at: integration.created_at,
-                updated_at: integration.updated_at,
-                deployment_id: integration.deployment_id,
-                agent_id: integration.agent_id,
-                integration_type: integration.integration_type,
-                name: integration.name,
-                config: integration.config,
-                webhook_url,
-            }
-        })
-        .collect();
+    let integrations_with_urls = map_integrations_with_urls(integrations, agent_id);
 
     Ok(IntegrationsResponse {
         integrations: integrations_with_urls,

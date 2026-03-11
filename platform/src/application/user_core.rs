@@ -52,8 +52,9 @@ pub async fn create_user(
     request: CreateUserRequest,
     profile_image_data: Option<(Vec<u8>, String)>,
 ) -> Result<UserWithIdentifiers, AppError> {
+    let deps = deps::from_app(app_state).db().id();
     let user = CreateUserCommand::new(deployment_id, request)
-        .execute_with_deps(&deps::from_app(app_state).db().id())
+        .execute_with_deps(&deps)
         .await?;
 
     if let Some((image_buffer, file_extension)) = profile_image_data {
@@ -82,8 +83,9 @@ pub async fn update_user(
     profile_image_data: Option<(Vec<u8>, String)>,
     remove_profile_image: bool,
 ) -> Result<UserDetails, AppError> {
+    let deps = deps::from_app(app_state).db();
     let user_details = UpdateUserCommand::new(deployment_id, user_id, request)
-        .execute_with_deps(&deps::from_app(app_state).db())
+        .execute_with_deps(&deps)
         .await?;
 
     if remove_profile_image {
@@ -132,8 +134,9 @@ pub async fn update_user_password(
         request.new_password,
         request.skip_password_check,
     );
+    let deps = deps::from_app(app_state).db();
     password_command
-        .execute_with_deps(&deps::from_app(app_state).db())
+        .execute_with_deps(&deps)
         .await?;
     Ok(())
 }
@@ -171,7 +174,8 @@ async fn upload_user_profile_image(
         deployment_id, user_id, file_extension
     );
 
+    let deps = deps::from_app(app_state).s3();
     UploadToCdnCommand::new(file_path, image_buffer)
-        .execute_with_deps(&deps::from_app(app_state).s3())
+        .execute_with_deps(&deps)
         .await
 }

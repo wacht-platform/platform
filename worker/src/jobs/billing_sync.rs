@@ -172,6 +172,9 @@ async fn sync_deployment(
     dirty_key: &str,
     dodo_client: Option<&DodoClient>,
 ) -> Result<i64> {
+    let db_nats_id_deps = common::deps::from_app(app_state).db().nats().id();
+    let db_redis_deps = common::deps::from_app(app_state).db().redis();
+
     let subscription_info = GetDeploymentProviderSubscriptionQuery::new(*deployment_id)
         .execute_with_db(app_state.db_router.reader(ReadConsistency::Strong))
         .await?
@@ -333,9 +336,9 @@ async fn sync_deployment(
                 owner_id: subscription_info.owner_id.clone(),
                 amount_pulse_cents: *delta,
                 transaction_type,
-                reference_id: Some(app_state.sf.next_id().unwrap().to_string()),
+                reference_id: Some((app_state.sf.next_id()? as i64).to_string()),
             };
-            match deduct_pulse_command.execute_with_deps(&common::deps::from_app(app_state).db().nats().id()).await {
+            match deduct_pulse_command.execute_with_deps(&db_nats_id_deps).await {
                 Ok(_) => {
                     info!(
                         "[BILLING SYNC] Deducted {} Pulse cents for {} from deployment {}",
@@ -403,7 +406,7 @@ async fn sync_deployment(
             metrics: metrics_to_sync,
             redis_prefix: current_prefix.clone(),
         }
-        .execute_with_deps(&common::deps::from_app(app_state).db().redis())
+        .execute_with_deps(&db_redis_deps)
         .await?
     } else {
         Vec::new()

@@ -90,6 +90,14 @@ fn next_conversation_id(app_state: &AppState) -> Result<i64, AppError> {
         as i64)
 }
 
+async fn publish_execution_command(
+    app_state: &AppState,
+    command: PublishAgentExecutionCommand,
+) -> Result<(), AppError> {
+    let execution_deps = deps::from_app(app_state).nats().id();
+    command.execute_with_deps(&execution_deps).await
+}
+
 async fn ensure_pulse_usage_if_needed(
     app_state: &AppState,
     deployment_id: i64,
@@ -109,9 +117,8 @@ async fn cancel_running_execution_if_needed(
     has_running_execution: bool,
 ) -> Result<(), AppError> {
     if has_running_execution {
-        let execution_deps = deps::from_app(app_state).nats().id();
         SignalAgentExecutionCancellationCommand::new(context_id)
-            .execute_with_deps(&execution_deps)
+            .execute_with_deps(&deps::from_app(app_state).nats().id())
             .await?;
     }
     Ok(())
@@ -303,8 +310,7 @@ pub async fn execute_agent_async(
                 agent_name.clone(),
                 conversation_id,
             );
-            let execution_deps = deps::from_app(app_state).nats().id();
-            publish_command.execute_with_deps(&execution_deps).await?;
+            publish_execution_command(app_state, publish_command).await?;
 
             info!(
                 "Published new_message execution for context {} (conversation_id: {})",
@@ -344,8 +350,7 @@ pub async fn execute_agent_async(
                 agent_name.clone(),
                 conversation_id,
             );
-            let execution_deps = deps::from_app(app_state).nats().id();
-            publish_command.execute_with_deps(&execution_deps).await?;
+            publish_execution_command(app_state, publish_command).await?;
 
             info!(
                 "Published user_input_response execution for context {} (conversation_id: {})",
@@ -367,8 +372,7 @@ pub async fn execute_agent_async(
                 platform_function_result.execution_id.clone(),
                 platform_function_result.result,
             );
-            let execution_deps = deps::from_app(app_state).nats().id();
-            publish_command.execute_with_deps(&execution_deps).await?;
+            publish_execution_command(app_state, publish_command).await?;
 
             info!(
                 "Published platform_function_result execution for context {} (execution_id: {})",

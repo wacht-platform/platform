@@ -83,6 +83,7 @@ pub async fn create_webhook_endpoint(
         serialize_optional_json(request.rate_limit_config, "rate_limit_config")?;
     let subscriptions = map_event_subscriptions(request.subscriptions);
 
+    let deps = deps::from_app(app_state).db().id();
     let command = CreateWebhookEndpointCommand::new(deployment_id, request.app_slug, request.url)
         .with_description(request.description)
         .with_headers(request.headers)
@@ -91,9 +92,7 @@ pub async fn create_webhook_endpoint(
         .with_timeout_seconds(request.timeout_seconds)
         .with_rate_limit_config(rate_limit_config);
 
-    command
-        .execute_with_deps(&deps::from_app(app_state).db().id())
-        .await
+    command.execute_with_deps(&deps).await
 }
 
 pub async fn update_webhook_endpoint(
@@ -105,6 +104,7 @@ pub async fn update_webhook_endpoint(
     let rate_limit_config =
         serialize_optional_json(request.rate_limit_config, "rate_limit_config")?;
 
+    let deps = deps::from_app(app_state).db();
     let command = UpdateWebhookEndpointCommand::new(endpoint_id, deployment_id)
         .with_url(request.url)
         .with_description(request.description)
@@ -115,9 +115,7 @@ pub async fn update_webhook_endpoint(
         .with_subscriptions(request.subscriptions.map(map_event_subscriptions))
         .with_rate_limit_config(rate_limit_config);
 
-    command
-        .execute_with_deps(&deps::from_app(app_state).db())
-        .await
+    command.execute_with_deps(&deps).await
 }
 
 pub async fn delete_webhook_endpoint(
@@ -137,8 +135,9 @@ pub async fn reactivate_webhook_endpoint(
     deployment_id: i64,
     endpoint_id: i64,
 ) -> Result<ReactivateEndpointResponse, AppError> {
+    let deps = deps::from_app(app_state).db().redis();
     let endpoint = ReactivateEndpointCommand::new(endpoint_id, deployment_id)
-        .execute_with_deps(&deps::from_app(app_state).db().redis())
+        .execute_with_deps(&deps)
         .await?;
 
     if let Ok(log_id) = app_state.sf.next_id() {
@@ -189,8 +188,9 @@ pub async fn test_webhook_endpoint(
         })
     });
 
+    let deps = deps::from_app(app_state).db().nats().id();
     let result = TestWebhookEndpointCommand::new(endpoint_id, deployment_id, test_payload)
-        .execute_with_deps(&deps::from_app(app_state).db().nats().id())
+        .execute_with_deps(&deps)
         .await?;
 
     Ok(TestWebhookEndpointResponse {

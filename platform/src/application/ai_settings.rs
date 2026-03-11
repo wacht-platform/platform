@@ -47,11 +47,12 @@ pub async fn update_ai_settings(
         ));
     }
 
+    let deps = deps::from_app(app_state).db().enc();
     let settings = UpdateDeploymentAiSettingsCommand::builder()
         .deployment_id(deployment_id)
         .updates(updates)
         .build()?
-        .execute_with_deps(&deps::from_app(app_state).db().enc())
+        .execute_with_deps(&deps)
         .await?;
 
     Ok(DeploymentAiSettingsResponse::from(settings))
