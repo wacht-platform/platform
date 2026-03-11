@@ -132,11 +132,8 @@ impl CreateRateLimitSchemeCommand {
             deployment_id: row.deployment_id.unwrap_or(self.deployment_id),
             slug: row.slug.unwrap_or(slug),
             name: row.name.unwrap_or(name),
-            description: row.description,
-            rules: row
-                .rules
-                .map(json_default)
-                .unwrap_or_default(),
+            description: row.description.or(description),
+            rules: row.rules.map(json_default).unwrap_or_default(),
             created_at: row.created_at,
             updated_at: row.updated_at,
         })

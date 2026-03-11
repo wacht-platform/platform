@@ -4,6 +4,13 @@ use common::error::AppError;
 use dto::json::{AddEmailRequest, AddPhoneRequest, UpdateEmailRequest, UpdatePhoneRequest};
 use models::{UserEmailAddress, UserPhoneNumber, VerificationStrategy};
 
+const EMAIL_NOT_FOUND: &str = "Email not found";
+const PHONE_NOT_FOUND: &str = "Phone number not found";
+
+fn require_id(value: Option<i64>, field: &'static str) -> Result<i64, AppError> {
+    value.ok_or_else(|| AppError::Validation(format!("{field} is required")))
+}
+
 pub struct AddUserEmailCommand {
     email_id: Option<i64>,
     deployment_id: i64,
@@ -30,9 +37,7 @@ impl AddUserEmailCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let email_id = self
-            .email_id
-            .ok_or_else(|| AppError::Validation("email_id is required".to_string()))?;
+        let email_id = require_id(self.email_id, "email_id")?;
         let now = Utc::now();
         let verified = self.request.verified.unwrap_or(false);
         let is_primary = self.request.is_primary.unwrap_or(false);
@@ -80,7 +85,7 @@ impl AddUserEmailCommand {
             self.request.email,
             is_primary,
             verified,
-            if verified { now } else { now },
+            now,
             "otp"
         )
         .fetch_one(executor)
@@ -180,7 +185,7 @@ impl UpdateUserEmailCommand {
         )
         .fetch_optional(executor)
         .await?
-        .ok_or_else(|| AppError::NotFound("Email not found".to_string()))?;
+        .ok_or_else(|| AppError::NotFound(EMAIL_NOT_FOUND.to_string()))?;
 
         Ok(UserEmailAddress {
             id: row.id,
@@ -260,9 +265,7 @@ impl AddUserPhoneCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let phone_id = self
-            .phone_id
-            .ok_or_else(|| AppError::Validation("phone_id is required".to_string()))?;
+        let phone_id = require_id(self.phone_id, "phone_id")?;
         let now = Utc::now();
         let verified = self.request.verified.unwrap_or(false);
         let is_primary = self.request.is_primary.unwrap_or(false);
@@ -365,7 +368,7 @@ impl UpdateUserPhoneCommand {
         )
         .fetch_optional(executor)
         .await?
-        .ok_or_else(|| AppError::NotFound("Phone number not found".to_string()))?;
+        .ok_or_else(|| AppError::NotFound(PHONE_NOT_FOUND.to_string()))?;
 
         Ok(UserPhoneNumber {
             id: row.id,

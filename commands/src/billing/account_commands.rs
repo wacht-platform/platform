@@ -1,5 +1,12 @@
 use common::error::AppError;
 
+fn to_i32_limit(value: Option<i64>, field: &'static str) -> Result<Option<i32>, AppError> {
+    value
+        .map(i32::try_from)
+        .transpose()
+        .map_err(|_| AppError::Validation(format!("{field} is out of range")))
+}
+
 pub struct CreateBillingAccountCommand {
     id: i64,
     owner_id: String,
@@ -99,22 +106,12 @@ impl CreateBillingAccountCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let max_projects_per_account = self
-            .max_projects_per_account
-            .map(i32::try_from)
-            .transpose()
-            .map_err(|_| {
-                AppError::Validation("max_projects_per_account is out of range".to_string())
-            })?;
-        let max_staging_deployments_per_project = self
-            .max_staging_deployments_per_project
-            .map(i32::try_from)
-            .transpose()
-            .map_err(|_| {
-                AppError::Validation(
-                    "max_staging_deployments_per_project is out of range".to_string(),
-                )
-            })?;
+        let max_projects_per_account =
+            to_i32_limit(self.max_projects_per_account, "max_projects_per_account")?;
+        let max_staging_deployments_per_project = to_i32_limit(
+            self.max_staging_deployments_per_project,
+            "max_staging_deployments_per_project",
+        )?;
 
         sqlx::query!(
             r#"
@@ -302,22 +299,12 @@ impl UpdateBillingAccountCommand {
     where
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
-        let max_projects_per_account = self
-            .max_projects_per_account
-            .map(i32::try_from)
-            .transpose()
-            .map_err(|_| {
-                AppError::Validation("max_projects_per_account is out of range".to_string())
-            })?;
-        let max_staging_deployments_per_project = self
-            .max_staging_deployments_per_project
-            .map(i32::try_from)
-            .transpose()
-            .map_err(|_| {
-                AppError::Validation(
-                    "max_staging_deployments_per_project is out of range".to_string(),
-                )
-            })?;
+        let max_projects_per_account =
+            to_i32_limit(self.max_projects_per_account, "max_projects_per_account")?;
+        let max_staging_deployments_per_project = to_i32_limit(
+            self.max_staging_deployments_per_project,
+            "max_staging_deployments_per_project",
+        )?;
 
         sqlx::query(
             r#"

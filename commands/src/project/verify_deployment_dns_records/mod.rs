@@ -1,4 +1,7 @@
 use super::*;
+mod records;
+use records::*;
+
 pub struct VerifyDeploymentDnsRecordsCommand {
     deployment_id: i64,
 }
@@ -21,46 +24,22 @@ impl VerifyDeploymentDnsRecordsCommand {
     where
         D: common::HasDbRouter + common::HasCloudflareProvider + common::HasDnsVerificationProvider,
     {
-        // Get current deployment with DNS records
         let deployment_row = queries::DeploymentByIdQuery::builder()
             .deployment_id(self.deployment_id)
             .execute_with_db(deps.writer_pool())
             .await?;
 
-        // Extract domain from backend host for email verification
-        let domain = if deployment_row.backend_host.starts_with("frontend.") {
-            deployment_row
-                .backend_host
-                .strip_prefix("frontend.")
-                .unwrap_or(&deployment_row.backend_host)
-        } else {
-            &deployment_row.backend_host
-        };
+        let domain = backend_domain(&deployment_row.backend_host);
 
-        // Get existing records from database or create new ones
-        let mut domain_verification_records = deployment_row
-            .domain_verification_records
-            .map(|v| serde_json::from_value(v))
-            .transpose()
-            .map_err(|e| {
-                AppError::Internal(format!("Invalid domain_verification_records JSON: {}", e))
-            })?
-            .unwrap_or_else(|| {
-                deps.cloudflare_provider()
-                    .generate_domain_verification_records(
-                        &deployment_row.frontend_host,
-                        &deployment_row.backend_host,
-                    )
-            });
+        let mut domain_verification_records = parse_or_generate_domain_records(
+            deployment_row.domain_verification_records,
+            &deployment_row.frontend_host,
+            &deployment_row.backend_host,
+            deps,
+        )?;
 
-        let mut email_verification_records = deployment_row
-            .email_verification_records
-            .map(|v| serde_json::from_value(v))
-            .transpose()
-            .map_err(|e| {
-                AppError::Internal(format!("Invalid email_verification_records JSON: {}", e))
-            })?
-            .unwrap_or_default();
+        let mut email_verification_records =
+            parse_or_default_email_records(deployment_row.email_verification_records)?;
 
         deps.dns_verification_provider()
             .verify_domain_records(&mut domain_verification_records, deps.cloudflare_provider())

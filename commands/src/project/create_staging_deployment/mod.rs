@@ -1,4 +1,7 @@
 use super::*;
+mod project_lookup;
+use project_lookup::*;
+
 pub struct CreateStagingDeploymentCommand {
     project_id: i64,
     auth_methods: Vec<String>,
@@ -28,13 +31,7 @@ impl CreateStagingDeploymentCommand {
     {
         let mut tx = deps.db_router().writer().begin().await?;
 
-        let project = queries::ProjectWithBillingForStagingQuery::builder()
-            .project_id(self.project_id)
-            .execute_with_db(tx.as_mut())
-            .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("Project with id {} not found", self.project_id))
-            })?;
+        let project = load_project_with_billing_for_staging(self.project_id, tx.as_mut()).await?;
 
         ensure_billing_status_active(&project.status, "deployment")?;
 

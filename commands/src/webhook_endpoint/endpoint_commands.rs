@@ -11,6 +11,8 @@ use super::validation::{
     validate_endpoint_max_retries, validate_event_subscriptions,
 };
 
+const WEBHOOK_ENDPOINT_NOT_FOUND: &str = "Webhook endpoint not found";
+
 async fn replace_endpoint_subscriptions(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     endpoint_id: i64,
@@ -149,10 +151,10 @@ impl CreateWebhookEndpointCommand {
         )
         .await?;
 
+        validate_requested_max_retries(self.max_retries)?;
         let max_allowed_retries =
             max_attempts_for_retry_window(MAX_ENDPOINT_RETRY_WINDOW_SECONDS);
         let endpoint_max_retries = self.max_retries.unwrap_or(max_allowed_retries);
-        validate_endpoint_max_retries(endpoint_max_retries, max_allowed_retries)?;
 
         let mut tx = deps.writer_pool().begin().await?;
         let endpoint_id = deps.id_provider().next_id()? as i64;
@@ -331,7 +333,7 @@ impl UpdateWebhookEndpointCommand {
         )
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?;
+        .ok_or_else(|| AppError::NotFound(WEBHOOK_ENDPOINT_NOT_FOUND.to_string()))?;
 
         if let Some(subscriptions) = self.subscriptions {
             validate_event_subscriptions(
@@ -397,7 +399,7 @@ impl UpdateEndpointSubscriptionsCommand {
         )
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| AppError::NotFound("Webhook endpoint not found".to_string()))?
+        .ok_or_else(|| AppError::NotFound(WEBHOOK_ENDPOINT_NOT_FOUND.to_string()))?
         .app_slug;
 
         let subscriptions =
@@ -455,7 +457,7 @@ impl DeleteWebhookEndpointCommand {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("Webhook endpoint not found".to_string()));
+            return Err(AppError::NotFound(WEBHOOK_ENDPOINT_NOT_FOUND.to_string()));
         }
 
         Ok(())

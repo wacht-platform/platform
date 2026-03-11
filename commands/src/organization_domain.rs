@@ -5,6 +5,9 @@ use models::organization_domain::OrganizationDomain;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
+const DOMAIN_NOT_FOUND: &str = "Domain not found";
+const DEFAULT_VERIFICATION_DNS_NAME: &str = "_wacht-verification";
+
 #[derive(Debug, Serialize, Deserialize, Validate)]
 pub struct CreateOrganizationDomainRequest {
     #[serde(default)]
@@ -209,7 +212,7 @@ impl DeleteOrganizationDomainCommand {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("Domain not found".to_string()));
+            return Err(AppError::NotFound(DOMAIN_NOT_FOUND.to_string()));
         }
 
         Ok(())
@@ -323,7 +326,7 @@ impl VerifyOrganizationDomainCommand {
             domain
                 .verification_dns_record_name
                 .as_deref()
-                .unwrap_or("_wacht-verification"),
+                .unwrap_or(DEFAULT_VERIFICATION_DNS_NAME),
             domain.fqdn
         );
 

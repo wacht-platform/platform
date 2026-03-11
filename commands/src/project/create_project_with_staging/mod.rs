@@ -1,4 +1,7 @@
 use super::*;
+mod owner_billing;
+use owner_billing::*;
+
 pub struct CreateProjectWithStagingDeploymentCommand {
     name: String,
     auth_methods: Vec<String>,
@@ -30,14 +33,6 @@ impl CreateProjectWithStagingDeploymentCommand {
         self
     }
 
-    fn owner_id_fragment(owner_id: &str) -> Result<&str, AppError> {
-        owner_id
-            .split('_')
-            .next_back()
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| AppError::Validation("Invalid owner id format".to_string()))
-    }
-
     pub async fn execute_with_deps<D>(self, deps: &D) -> Result<ProjectWithDeployments, AppError>
     where
         D: common::HasDbRouter + common::HasIdProvider + Sync,
@@ -51,32 +46,18 @@ impl CreateProjectWithStagingDeploymentCommand {
             .owner_id
             .as_deref()
             .ok_or_else(|| AppError::Validation("Project must have an owner".to_string()))?;
-        let owner_id_fragment = Self::owner_id_fragment(owner_id)?;
-        let billing_account = queries::BillingAccountForOwnerLockQuery::builder()
-            .owner_id(owner_id)
-            .execute_with_db(tx.as_mut())
-            .await?
-            .ok_or_else(|| AppError::Validation("No billing account found".to_string()))?;
+        let owner_id_fragment = owner_id_fragment(owner_id)?;
+        let billing_account = load_billing_account_for_owner(owner_id, tx.as_mut()).await?;
 
         ensure_billing_status_active(&billing_account.status, "project")?;
 
         let billing_account_id = billing_account.id;
-        let max_projects_per_account = if billing_account.max_projects_per_account > 0 {
-            billing_account.max_projects_per_account
-        } else {
-            MAX_PROJECTS_PER_BILLING_ACCOUNT
-        };
-        let project_count = queries::ProjectsCountByBillingAccountQuery::builder()
-            .billing_account_id(billing_account_id)
-            .execute_with_db(tx.as_mut())
-            .await?;
-
-        if project_count >= max_projects_per_account {
-            return Err(AppError::Validation(format!(
-                "Project limit reached. You can create up to {} projects.",
-                max_projects_per_account
-            )));
-        }
+        ensure_project_limit_not_reached(
+            billing_account_id,
+            billing_account.max_projects_per_account,
+            tx.as_mut(),
+        )
+        .await?;
 
         let project_row = ProjectInsert::builder()
             .id(project_id)
