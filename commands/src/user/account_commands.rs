@@ -8,6 +8,11 @@ use dto::json::{CreateUserRequest, UpdateUserRequest};
 use models::{UserDetails, UserWithIdentifiers};
 use queries::{GetDeploymentAuthSettingsQuery, GetUserDetailsQuery};
 
+const ERR_MISSING_EMAIL_ID: &str = "Missing email ID for user email insert";
+const ERR_MISSING_PHONE_ID: &str = "Missing phone ID for user phone insert";
+const ERR_BUILD_QUERY_ARGS: &str = "Failed to build query arguments";
+const ERR_MISSING_QUERY_ARGS: &str = "Failed to construct query arguments";
+
 pub struct CreateUserCommand {
     deployment_id: i64,
     request: CreateUserRequest,
@@ -109,7 +114,7 @@ impl CreateUserCommand {
 
         if let Some(email) = &self.request.email_address {
             let email_id = ids.1.ok_or_else(|| {
-                AppError::Internal("Missing email ID for user email insert".to_string())
+                AppError::Internal(ERR_MISSING_EMAIL_ID.to_string())
             })?;
 
             sqlx::query!(
@@ -147,7 +152,7 @@ impl CreateUserCommand {
 
         if let Some(phone) = &self.request.phone_number {
             let phone_id = ids.2.ok_or_else(|| {
-                AppError::Internal("Missing phone ID for user phone insert".to_string())
+                AppError::Internal(ERR_MISSING_PHONE_ID.to_string())
             })?;
 
             sqlx::query!(
@@ -264,15 +269,13 @@ impl UpdateUserCommand {
 
         let arguments = query
             .take_arguments()
-            .map_err(|e| AppError::Internal(format!("Failed to build query arguments: {}", e)))?;
+            .map_err(|e| AppError::Internal(format!("{ERR_BUILD_QUERY_ARGS}: {}", e)))?;
         let sql = query.sql();
 
         if let Some(args) = arguments {
             let (_user_id,): (i64,) = sqlx::query_as_with(sql, args).fetch_one(&mut *tx).await?;
         } else {
-            return Err(AppError::Internal(
-                "Failed to construct query arguments".to_string(),
-            ));
+            return Err(AppError::Internal(ERR_MISSING_QUERY_ARGS.to_string()));
         }
 
         if let Some(true) = self.request.disabled {

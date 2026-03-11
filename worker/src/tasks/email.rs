@@ -9,6 +9,18 @@ use queries::{
 };
 use serde::{Deserialize, Serialize};
 
+async fn run_email_command(
+    command: SendEmailCommand,
+    app_state: &AppState,
+    error_prefix: &str,
+) -> Result<(), String> {
+    let email_deps = common::deps::from_app(app_state).db().enc().postmark().template();
+    command
+        .execute_with_deps(&email_deps)
+        .await
+        .map_err(|e| format!("{error_prefix}: {}", e))
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VerificationEmailTask {
     pub deployment_id: u64,
@@ -130,10 +142,7 @@ pub async fn send_verification_email_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send verification email: {}", e))?;
+    run_email_command(command, app_state, "Failed to send verification email").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -175,10 +184,7 @@ pub async fn send_password_reset_email_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send password reset email: {}", e))?;
+    run_email_command(command, app_state, "Failed to send password reset email").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -216,10 +222,7 @@ pub async fn send_magic_link_email_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send magic link email: {}", e))?;
+    run_email_command(command, app_state, "Failed to send magic link email").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -259,10 +262,7 @@ pub async fn send_signin_notification_email_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send signin notification email: {}", e))?;
+    run_email_command(command, app_state, "Failed to send signin notification email").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -302,10 +302,7 @@ pub async fn send_email_change_notification_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send email change notification: {}", e))?;
+    run_email_command(command, app_state, "Failed to send email change notification").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -338,10 +335,7 @@ pub async fn send_password_change_notification_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send password change notification: {}", e))?;
+    run_email_command(command, app_state, "Failed to send password change notification").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -377,10 +371,7 @@ pub async fn send_password_remove_notification_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send password remove notification: {}", e))?;
+    run_email_command(command, app_state, "Failed to send password remove notification").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -421,10 +412,7 @@ pub async fn send_waitlist_signup_email_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send waitlist signup email: {}", e))?;
+    run_email_command(command, app_state, "Failed to send waitlist signup email").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -477,10 +465,7 @@ pub async fn send_organization_membership_invite_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send organization invite email: {}", e))?;
+    run_email_command(command, app_state, "Failed to send organization invite email").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -552,10 +537,7 @@ pub async fn send_deployment_invite_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send workspace invite email: {}", e))?;
+    run_email_command(command, app_state, "Failed to send workspace invite email").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;
@@ -603,10 +585,7 @@ pub async fn send_waitlist_approval_impl(
         variables,
     );
 
-    command
-        .execute_with_deps(&common::deps::from_app(app_state).db().enc().postmark().template())
-        .await
-        .map_err(|e| format!("Failed to send waitlist invite email: {}", e))?;
+    run_email_command(command, app_state, "Failed to send waitlist invite email").await?;
 
     if should_count_email_usage(&deployment_settings) {
         track_email_billing(deployment_id as i64, &app_state.redis_client).await;

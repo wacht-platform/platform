@@ -509,6 +509,7 @@ async fn handle_delivery_failure(
             "Max attempts reached for delivery {} or non-retryable error",
             delivery_id
         );
+        let redis_deps = common::deps::from_app(app_state).redis();
 
         DeleteActiveDeliveryCommand { delivery_id }
             .execute_with_db(app_state.db_router.writer())
@@ -516,7 +517,7 @@ async fn handle_delivery_failure(
 
         if new_attempts >= max_attempts {
             let failure_count = IncrementEndpointFailuresCommand { endpoint_id }
-                .execute_with_deps(&common::deps::from_app(app_state).redis())
+                .execute_with_deps(&redis_deps)
                 .await?;
 
             const DEACTIVATION_THRESHOLD: i64 = 10;
@@ -531,7 +532,7 @@ async fn handle_delivery_failure(
                     .await?;
 
                 ClearEndpointFailuresCommand { endpoint_id }
-                    .execute_with_deps(&common::deps::from_app(app_state).redis())
+                    .execute_with_deps(&redis_deps)
                     .await?;
 
                 if let Ok(log_id) = app_state.sf.next_id() {

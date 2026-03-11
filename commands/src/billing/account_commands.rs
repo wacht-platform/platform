@@ -1,10 +1,12 @@
 use common::error::AppError;
 
-fn to_i32_limit(value: Option<i64>, field: &'static str) -> Result<Option<i32>, AppError> {
-    value
-        .map(i32::try_from)
-        .transpose()
-        .map_err(|_| AppError::Validation(format!("{field} is out of range")))
+fn normalize_limit(value: Option<i64>, field: &'static str) -> Result<Option<i64>, AppError> {
+    if let Some(v) = value
+        && v < 0
+    {
+        return Err(AppError::Validation(format!("{field} cannot be negative")));
+    }
+    Ok(value)
 }
 
 pub struct CreateBillingAccountCommand {
@@ -107,8 +109,8 @@ impl CreateBillingAccountCommand {
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let max_projects_per_account =
-            to_i32_limit(self.max_projects_per_account, "max_projects_per_account")?;
-        let max_staging_deployments_per_project = to_i32_limit(
+            normalize_limit(self.max_projects_per_account, "max_projects_per_account")?;
+        let max_staging_deployments_per_project = normalize_limit(
             self.max_staging_deployments_per_project,
             "max_staging_deployments_per_project",
         )?;
@@ -141,7 +143,7 @@ impl CreateBillingAccountCommand {
                 pulse_notified_disabled,
                 created_at,
                 updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'USD', 'en-US', 0, COALESCE($14, 10), COALESCE($15, 3), true, false, false, false, NOW(), NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', 'USD', 'en-US', 0, COALESCE($14::BIGINT, 10::BIGINT), COALESCE($15::BIGINT, 3::BIGINT), true, false, false, false, NOW(), NOW())
             "#,
             self.id,
             self.owner_id,
@@ -300,13 +302,13 @@ impl UpdateBillingAccountCommand {
         E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     {
         let max_projects_per_account =
-            to_i32_limit(self.max_projects_per_account, "max_projects_per_account")?;
-        let max_staging_deployments_per_project = to_i32_limit(
+            normalize_limit(self.max_projects_per_account, "max_projects_per_account")?;
+        let max_staging_deployments_per_project = normalize_limit(
             self.max_staging_deployments_per_project,
             "max_staging_deployments_per_project",
         )?;
 
-        sqlx::query(
+        sqlx::query!(
             r#"
             UPDATE billing_accounts
             SET
@@ -325,20 +327,20 @@ impl UpdateBillingAccountCommand {
                 updated_at = NOW()
             WHERE id = $13
             "#,
+            self.legal_name,
+            self.billing_email,
+            self.billing_phone,
+            self.tax_id,
+            self.address_line1,
+            self.address_line2,
+            self.city,
+            self.state,
+            self.postal_code,
+            self.country,
+            max_projects_per_account,
+            max_staging_deployments_per_project,
+            self.id
         )
-        .bind(self.legal_name)
-        .bind(self.billing_email)
-        .bind(self.billing_phone)
-        .bind(self.tax_id)
-        .bind(self.address_line1)
-        .bind(self.address_line2)
-        .bind(self.city)
-        .bind(self.state)
-        .bind(self.postal_code)
-        .bind(self.country)
-        .bind(max_projects_per_account)
-        .bind(max_staging_deployments_per_project)
-        .bind(self.id)
         .execute(executor)
         .await?;
 
