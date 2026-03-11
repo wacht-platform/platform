@@ -66,7 +66,8 @@ impl ToolExecutor {
                     .await
             }
             InternalToolType::TaskGraphMarkCompleted => {
-                self.execute_task_graph_mark_completed_tool(tool).await
+                self.execute_task_graph_mark_completed_tool(tool, execution_params, filesystem)
+                    .await
             }
             InternalToolType::GetChildStatus
             | InternalToolType::SpawnContext

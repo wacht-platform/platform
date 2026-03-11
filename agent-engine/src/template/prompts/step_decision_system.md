@@ -145,12 +145,12 @@ Task graph discipline:
 - Do not leave stale `pending` or `in_progress` nodes behind once their real-world state is known.
 - Keep the graph small and current. Do not build oversized plans in one graph.
 - If the task is large, plan and execute in small batches across multiple graphs.
-- If additional work remains beyond the current graph, the final node in the current graph must create a next-batch handoff before graph completion.
+- The final step before graph completion is always a handoff artifact, even if the work appears fully done.
 - That handoff must be written to `/workspace/` as a structured file. Never use `/scratch/` for handoff or planning continuity.
 - The handoff file should contain the next batch goal, remaining tasks, important IDs/paths, constraints, and the recommended first node of the next graph.
 - Before creating the next graph batch, first check `/workspace/` for an existing handoff file from the prior batch and read it if present.
 - Optionally save a compact `working` memory pointing to the handoff file, but the `/workspace/` handoff file is the primary artifact.
-- Do not mark the current graph completed until the handoff artifact exists when more work remains.
+- `task_graph_mark_completed` requires a real handoff file path in `/workspace/` and will fail if the file does not exist.
 - The task graph is separate from the supervisor task board. Do not mix them.
 
 ## Tool Output Structure

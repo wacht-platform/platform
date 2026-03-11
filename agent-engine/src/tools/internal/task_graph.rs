@@ -1,4 +1,5 @@
 use super::{parse_params, ToolExecutor};
+use crate::filesystem::AgentFilesystem;
 use common::error::AppError;
 use serde::Deserialize;
 use serde_json::Value;
@@ -27,6 +28,11 @@ struct TaskGraphCompleteNodeParams {
 struct TaskGraphFailNodeParams {
     node_id: Value,
     error: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TaskGraphMarkCompletedParams {
+    handoff_path: String,
 }
 
 fn parse_i64_field(value: &Value, field_name: &str) -> Result<i64, AppError> {
@@ -198,7 +204,24 @@ impl ToolExecutor {
     pub(super) async fn execute_task_graph_mark_completed_tool(
         &self,
         tool: &models::AiTool,
+        execution_params: &Value,
+        filesystem: &AgentFilesystem,
     ) -> Result<Value, AppError> {
+        let params: TaskGraphMarkCompletedParams =
+            parse_params(execution_params, "task_graph_mark_completed")?;
+        if !params.handoff_path.starts_with("/workspace/") {
+            return Err(AppError::BadRequest(
+                "handoff_path must be inside /workspace/".to_string(),
+            ));
+        }
+        let handoff_full_path = filesystem.resolve_path_public(&params.handoff_path)?;
+        if tokio::fs::metadata(&handoff_full_path).await.is_err() {
+            return Err(AppError::BadRequest(format!(
+                "Cannot mark task graph completed because handoff file does not exist: {}",
+                params.handoff_path
+            )));
+        }
+
         let graph = self.ensure_task_graph().await?;
         let updated = commands::MarkExecutionTaskGraphCompletedCommand { graph_id: graph.id }
             .execute_with_db(self.app_state().db_router.writer())
@@ -207,7 +230,8 @@ impl ToolExecutor {
         Ok(serde_json::json!({
             "success": true,
             "tool": tool.name,
-            "graph": updated
+            "graph": updated,
+            "handoff_path": params.handoff_path
         }))
     }
 }
